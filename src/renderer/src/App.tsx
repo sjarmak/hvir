@@ -41,6 +41,7 @@ import { initialHostConnectionTarget } from './workspaces/initial-host-connectio
 import { FileTree } from './tree/FileTree'
 import { DirectoryTree } from './tree/DirectoryTree'
 import { isGitIgnoreRulePath } from './tree/git-ignore-refresh'
+import { BeadsPanel } from './beads/BeadsPanel'
 import { GitPanel } from './git/GitPanel'
 import { workspaceGitEnabled } from './git/git-capability'
 import { GitGraphView } from './git/GitGraphView'
@@ -119,7 +120,7 @@ export function App(): ReactElement {
     readonly hash?: string
   }>({ serial: 0 })
   const [restored, setRestored] = useState(false)
-  const [railMode, setRailMode] = useState<'files' | 'git' | 'harness'>('files')
+  const [railMode, setRailMode] = useState<'files' | 'git' | 'beads' | 'harness'>('files')
   const [gitChanges, setGitChanges] = useState<GitChanges>()
   const [connectionState, setConnectionState] = useState<HostConnectionState>('connected')
   const [watchTier, setWatchTier] = useState<HostWatchTier>('native')
@@ -1315,6 +1316,14 @@ export function App(): ReactElement {
             ) : null}
             <button
               type="button"
+              className={railMode === 'beads' ? 'active' : ''}
+              aria-current={railMode === 'beads' ? 'page' : undefined}
+              onClick={() => setRailMode('beads')}
+            >
+              Beads
+            </button>
+            <button
+              type="button"
               className={railMode === 'harness' ? 'active' : ''}
               aria-current={railMode === 'harness' ? 'page' : undefined}
               onClick={() => setRailMode('harness')}
@@ -1363,6 +1372,12 @@ export function App(): ReactElement {
                 autoFetchIntervalMs={settings.gitAutoFetchIntervalMs}
               />
             ) : null}
+            <BeadsPanel
+              key={`beads:${root.hostId}:${root.path}`}
+              root={root}
+              connected={connectionState === 'connected'}
+              hidden={railMode !== 'beads'}
+            />
             <section
               className="rail-section harness-placeholder"
               aria-label="Harness"

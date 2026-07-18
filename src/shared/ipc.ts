@@ -8,6 +8,12 @@
  * adding an entry here first.
  */
 
+import type {
+  BeadsChangedEvent,
+  BeadsListRequest,
+  BeadsListResponse,
+  BeadsWatchRequest,
+} from './beads'
 import type { Disposer } from './disposer'
 import type { DirEntry, FileType, WatchEvent } from './fs-types'
 import type { HostPath } from './host-path'
@@ -489,6 +495,9 @@ export interface IpcInvokeMap {
     response: TerminalRecoverySession
   }
   'pty:start': { request: StartPtyRequest; response: StartPtyResponse }
+  'beads:list': { request: BeadsListRequest; response: BeadsListResponse }
+  'beads:watch': { request: BeadsWatchRequest; response: void }
+  'beads:unwatch': { request: BeadsWatchRequest; response: void }
 }
 
 /**
@@ -520,6 +529,7 @@ export interface IpcEventMap {
     readonly harnessSessionId?: string
     readonly identityStatus: TerminalIdentityStatus
   }
+  'beads:changed': BeadsChangedEvent
 }
 
 export type IpcInvokeChannel = keyof IpcInvokeMap
@@ -600,6 +610,9 @@ export const INVOKE_CHANNELS = [
   'terminal:forget',
   'terminal:rebind-profile',
   'pty:start',
+  'beads:list',
+  'beads:watch',
+  'beads:unwatch',
 ] as const satisfies readonly IpcInvokeChannel[]
 
 export const SEND_CHANNELS = [
@@ -619,6 +632,7 @@ export const EVENT_CHANNELS = [
   'pty:exit',
   'pty:telemetry',
   'pty:identity',
+  'beads:changed',
 ] as const satisfies readonly IpcEventChannel[]
 
 // Compile-time proof that INVOKE_CHANNELS stays in sync with IpcInvokeMap.

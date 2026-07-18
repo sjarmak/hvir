@@ -20,6 +20,8 @@ import { ProjectRegistry, RendererSshPrompter } from './project-registry'
 import { PtySupervisor } from './pty/pty-supervisor'
 import { isSafeExternalUrl, isWorkbenchDocument } from './navigation-policy'
 import { AttentionBadge } from './attention-badge'
+import { BeadsService } from './beads/beads-service'
+import { registerBeadsIpcHandlers } from './beads/beads-ipc'
 import { harnessProviderCatalog } from './harness/harness-provider'
 import { HarnessProfileStore } from './harness/harness-profile-store'
 import { HarnessProbeManager } from './harness/harness-probe'
@@ -82,6 +84,7 @@ let terminalSessionRegistry: TerminalSessionRegistry | null = null
 let harnessProfileStore: HarnessProfileStore | null = null
 let attentionBadge: AttentionBadge | null = null
 let projectWatchController: ProjectWatchController | null = null
+let beadsService: BeadsService | null = null
 let projectWatchInterestCache: ProjectWatchInterestCache = new Map()
 let projectWatchInterestGeneration = 0
 let workspacePoll: ReturnType<typeof setInterval> | null = null
@@ -460,6 +463,14 @@ async function startup(): Promise<void> {
     htmlPreviews,
     emit,
   })
+  beadsService = new BeadsService({
+    getProject: () => {
+      if (!projectRegistry) throw new Error('Project registry is unavailable')
+      return projectRegistry.active
+    },
+    emitChanged: (event) => emit('beads:changed', event),
+  })
+  registerBeadsIpcHandlers(beadsService)
   // Paint the workbench before background watch and Git discovery can touch a
   // slow or unexpectedly broad directory.
   createWindow()
@@ -3812,6 +3823,8 @@ async function shutdown(): Promise<void> {
   gitWorker = null
   htmlPreviews.dispose()
   harnessProbeManager.dispose()
+  beadsService?.dispose()
+  beadsService = null
 }
 
 async function settleWorkspaceRefreshes(): Promise<void> {
