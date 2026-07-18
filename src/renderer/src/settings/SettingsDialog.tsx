@@ -49,6 +49,11 @@ export function SettingsDialog({
       },
     )
   }, [onClose])
+  // Held in a ref so the alignment effect below can run once per open instead of
+  // re-running on every parent render (onClose is a fresh closure each time),
+  // which would re-arm the aligner and steal focus from the field being edited.
+  const requestCloseRef = useRef(requestClose)
+  requestCloseRef.current = requestClose
 
   useEffect(() => {
     const container = dialog.current
@@ -113,7 +118,7 @@ export function SettingsDialog({
     const keydown = (event: KeyboardEvent): void => {
       if (dialog.current?.querySelector('.modal-backdrop.nested')) return
       if (event.key === 'Escape' && !(event.target instanceof HTMLTextAreaElement)) {
-        requestClose()
+        requestCloseRef.current()
       }
     }
     container?.addEventListener('focusin', stopOnInteraction)
@@ -123,7 +128,7 @@ export function SettingsDialog({
       container?.removeEventListener('focusin', stopOnInteraction)
       window.removeEventListener('keydown', keydown)
     }
-  }, [initialSection, requestClose])
+  }, [initialSection])
 
   const save = async (): Promise<void> => {
     try {
