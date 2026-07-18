@@ -122,6 +122,50 @@ describe('LocalHost', () => {
     expect(r.stdout).toBe('piped-input')
   })
 
+  it('passes BEADS_DOLT_* through the login shell without stripping', async () => {
+    // Port resolution depends on bd seeing BEADS_DOLT_* overrides. A login-shell
+    // exec must still inherit them from the Electron process environment.
+    const envShell = join(dir, 'print-env-shell.sh')
+    await writeFile(envShell, '#!/bin/sh\nprintf "%s" "$BEADS_DOLT_SERVER_PORT"\n', {
+      mode: 0o755,
+    })
+    const previousShell = process.env.SHELL
+    const previousPort = process.env.BEADS_DOLT_SERVER_PORT
+    process.env.SHELL = envShell
+    process.env.BEADS_DOLT_SERVER_PORT = '29620'
+    try {
+      const r = await host.exec('true', [], { loginShell: true })
+      expect(r.stdout).toBe('29620')
+    } finally {
+      if (previousShell === undefined) delete process.env.SHELL
+      else process.env.SHELL = previousShell
+      if (previousPort === undefined) delete process.env.BEADS_DOLT_SERVER_PORT
+      else process.env.BEADS_DOLT_SERVER_PORT = previousPort
+    }
+  })
+
+  it('routes a login-shell exec through $SHELL so a profile PATH resolves', async () => {
+    // A fake $SHELL that echoes how it was invoked, then runs its -c payload.
+    // This proves the command went through a login shell (which would source a
+    // profile PATH) rather than being spawned directly.
+    const fakeShell = join(dir, 'fake-login-shell.sh')
+    await writeFile(
+      fakeShell,
+      '#!/bin/sh\nprintf "INVOKED %s\\n" "$*"\nshift 2\neval "$1"\n',
+      { mode: 0o755 },
+    )
+    const previousShell = process.env.SHELL
+    process.env.SHELL = fakeShell
+    try {
+      const r = await host.exec('printf', ['hi'], { loginShell: true })
+      expect(r.stdout).toContain('INVOKED -l -c')
+      expect(r.stdout).toContain('hi')
+    } finally {
+      if (previousShell === undefined) delete process.env.SHELL
+      else process.env.SHELL = previousShell
+    }
+  })
+
   it('decodes multibyte output split across process chunks', async () => {
     const script = [
       'process.stdout.write(Buffer.from([0xe2]))',

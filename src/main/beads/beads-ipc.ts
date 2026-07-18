@@ -22,6 +22,7 @@ function handle<C extends IpcInvokeChannel>(
 
 export function registerBeadsIpcHandlers(service: BeadsService): void {
   handle('beads:list', (req) => service.list(req))
+  handle('beads:probe', (req) => service.probe(req.root))
   handle('beads:watch', (req) => service.watch(req.root))
   handle('beads:unwatch', (req) => {
     service.unwatch(req.root)

@@ -789,6 +789,51 @@ describe('SshHost remote behavior', () => {
     await host.dispose()
   })
 
+  it('wraps a login-shell exec so a profile PATH resolves the command', async () => {
+    const stderr = new EventEmitter()
+    let remote = ''
+    const channel = Object.assign(new EventEmitter(), {
+      stderr,
+      close: vi.fn(() => channel.emit('close')),
+      end: vi.fn(() => {
+        channel.emit('exit', 0)
+        channel.emit('close')
+      }),
+    })
+    const client = Object.assign(
+      fakeClient(() => undefined),
+      {
+        exec: vi.fn(
+          (
+            command: string,
+            callback: (error: Error | undefined, value: unknown) => void,
+          ) => {
+            remote = command
+            callback(undefined, channel)
+          },
+        ),
+      },
+    )
+    const host = new SshHost({
+      config: aliasConfig(),
+      prompter: { prompt: () => Promise.resolve(undefined) },
+    })
+    const internals = host as unknown as { state: 'connected'; client: Client }
+    internals.state = 'connected'
+    internals.client = client as unknown as Client
+
+    await host.exec('bd', ['list', '--json'], {
+      cwd: hostPath(host.hostId, '/work'),
+      loginShell: true,
+    })
+
+    // The bd invocation, cwd included, runs inside `<shell> -l -c '…'`. The
+    // probe resolves the fake host's shell to /bin/sh (empty $SHELL).
+    expect(remote).toContain("'/bin/sh' -l -c '")
+    expect(remote).toContain('bd')
+    await host.dispose()
+  })
+
   it('returns a bounded remote prefix at the stdout record limit', async () => {
     const stderr = new EventEmitter()
     const channel = Object.assign(new EventEmitter(), {

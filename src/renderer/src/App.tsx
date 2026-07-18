@@ -156,6 +156,10 @@ export function App(): ReactElement {
     (workspace) => workspace.id === projectState?.activeWorkspaceId,
   )
   const gitEnabled = workspaceGitEnabled(activeWorkspace)
+  // Beads-ness is discovered asynchronously (a `.beads` stat on the host), so
+  // it starts hidden and reveals once the probe confirms — a plain directory
+  // never flashes a Beads tab. Mirrors how `gitEnabled` gates the Git tab.
+  const [beadsEnabled, setBeadsEnabled] = useState(false)
 
   const applyProjectState = useCallback((state: ProjectState): void => {
     setProjectState(state)
@@ -501,6 +505,28 @@ export function App(): ReactElement {
     return () => observer.disconnect()
   }, [root])
 
+  // Probe whether the active workspace has a `.beads` project; drives the Beads
+  // tab's visibility. Re-runs on workspace/connection change, with a cancel
+  // guard so a slow probe for a previous workspace can't clobber the result.
+  useEffect(() => {
+    if (!root || connectionState !== 'connected') {
+      setBeadsEnabled(false)
+      return
+    }
+    let cancelled = false
+    void window.hvir
+      .invoke('beads:probe', { root })
+      .then((result) => {
+        if (!cancelled) setBeadsEnabled(result.hasProject)
+      })
+      .catch(() => {
+        if (!cancelled) setBeadsEnabled(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [root, connectionState])
+
   useEffect(() => {
     if (
       (activeWorkspace?.repository === false || activeWorkspace?.missing) &&
@@ -508,11 +534,14 @@ export function App(): ReactElement {
     ) {
       setRailMode('files')
     }
+    if (!beadsEnabled && railMode === 'beads') {
+      setRailMode('files')
+    }
     if (activeWorkspace?.missing) {
       setGitGraphOpen(false)
       setGitGraphActive(false)
     }
-  }, [activeWorkspace?.missing, activeWorkspace?.repository, railMode])
+  }, [activeWorkspace?.missing, activeWorkspace?.repository, beadsEnabled, railMode])
 
   useEffect(() => {
     const actionable = Object.values(terminalRollups).reduce(
@@ -1314,14 +1343,16 @@ export function App(): ReactElement {
                 Git{changedCount > 0 ? ` ${changedCountLabel}` : ''}
               </button>
             ) : null}
-            <button
-              type="button"
-              className={railMode === 'beads' ? 'active' : ''}
-              aria-current={railMode === 'beads' ? 'page' : undefined}
-              onClick={() => setRailMode('beads')}
-            >
-              Beads
-            </button>
+            {beadsEnabled ? (
+              <button
+                type="button"
+                className={railMode === 'beads' ? 'active' : ''}
+                aria-current={railMode === 'beads' ? 'page' : undefined}
+                onClick={() => setRailMode('beads')}
+              >
+                Beads
+              </button>
+            ) : null}
             <button
               type="button"
               className={railMode === 'harness' ? 'active' : ''}
@@ -1372,12 +1403,14 @@ export function App(): ReactElement {
                 autoFetchIntervalMs={settings.gitAutoFetchIntervalMs}
               />
             ) : null}
-            <BeadsPanel
-              key={`beads:${root.hostId}:${root.path}`}
-              root={root}
-              connected={connectionState === 'connected'}
-              hidden={railMode !== 'beads'}
-            />
+            {beadsEnabled ? (
+              <BeadsPanel
+                key={`beads:${root.hostId}:${root.path}`}
+                root={root}
+                connected={connectionState === 'connected'}
+                hidden={railMode !== 'beads'}
+              />
+            ) : null}
             <section
               className="rail-section harness-placeholder"
               aria-label="Harness"

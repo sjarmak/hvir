@@ -2,9 +2,16 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 
 import type { BeadIssue, BeadsListResponse, HostPath } from '../../../shared'
 import { groupBeads, priorityLabel, type BeadsSectionKey } from './beads-model'
+import { createVisibilityRefresh } from './beads-refresh'
 import './beads.css'
 
 const CHANGED_REFETCH_DELAY_MS = 300
+/**
+ * Bounded poll period while the panel is visible. Shared-Dolt mutations do not
+ * touch the rig's `.beads/` directory, so the file watcher can miss them; a
+ * modest visible-only poll keeps the panel current without hammering `bd`.
+ */
+const VISIBLE_POLL_INTERVAL_MS = 5000
 
 interface BeadsPanelProps {
   readonly root: HostPath
@@ -48,9 +55,12 @@ export function BeadsPanel({
     [root],
   )
 
+  // Local-change signal: watch `.beads/` and refetch on a debounced burst. This
+  // stays subscribed regardless of visibility, but it is a best-effort hint —
+  // shared-Dolt mutations happen in the central server and may never touch this
+  // directory, which is why the visible-only poll below is the reliable signal.
   useEffect(() => {
     if (!connected) return
-    void refresh(showClosedRef.current)
     void window.hvir.invoke('beads:watch', { root }).catch(() => undefined)
     let timer: ReturnType<typeof setTimeout> | undefined
     const dispose = window.hvir.on('beads:changed', (event) => {
@@ -67,6 +77,25 @@ export function BeadsPanel({
       void window.hvir.invoke('beads:unwatch', { root }).catch(() => undefined)
     }
   }, [root, connected, refresh])
+
+  // Visible-only refresh + bounded polling. Refreshes on becoming visible and
+  // on regaining focus, polls while visible, and stops the moment the panel is
+  // hidden or the component unmounts, so a background panel never drives `bd`.
+  useEffect(() => {
+    const controller = createVisibilityRefresh({
+      onRefresh: () => void refresh(showClosedRef.current),
+      intervalMs: VISIBLE_POLL_INTERVAL_MS,
+    })
+    controller.setVisible(connected && !hidden)
+    const onFocus = (): void => controller.focus()
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+      controller.dispose()
+    }
+  }, [connected, hidden, refresh])
 
   const toggleClosed = (): void => {
     const next = !showClosed

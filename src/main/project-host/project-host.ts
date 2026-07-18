@@ -41,6 +41,14 @@ export interface ExecOptions {
    */
   readonly keepStdinOpen?: boolean
   readonly signal?: AbortSignal
+  /**
+   * Run the command through the host's login shell so PATH entries configured
+   * in a login profile (for example `~/.local/bin` or Homebrew) resolve. An
+   * interactive terminal gets this for free because its shell sources the
+   * profile; a one-shot buffered `exec` does not. Set this for user-installed
+   * CLIs such as `bd` that live outside the default non-login PATH.
+   */
+  readonly loginShell?: boolean
   /** Max bytes to buffer across stdout+stderr before failing. */
   readonly maxBuffer?: number
   /** Terminate and return the buffered prefix instead of rejecting at maxBuffer. */

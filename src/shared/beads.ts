@@ -40,7 +40,14 @@ export interface BeadIssue {
   readonly dependentCount: number
 }
 
-export type BeadsUnavailableReason = 'no-database' | 'bd-missing' | 'error'
+export type BeadsUnavailableReason =
+  | 'no-database'
+  | 'bd-missing'
+  /** bd reached a database backend that is configured but not reachable — most
+   * often a shared Dolt server whose port bd could not resolve (a missing or
+   * invalid `.beads/dolt-server.port`, surfaced by bd as `127.0.0.1:0`). */
+  | 'server-unreachable'
+  | 'error'
 
 export interface BeadsListRequest {
   readonly root: HostPath
@@ -68,6 +75,19 @@ export type BeadsListResponse = BeadsSnapshot | BeadsUnavailable
 
 export interface BeadsWatchRequest {
   readonly root: HostPath
+}
+
+export interface BeadsProbeRequest {
+  readonly root: HostPath
+}
+
+/**
+ * Cheap "does this workspace have a beads project" check — a `.beads` directory
+ * stat, no `bd` and no server. Drives whether the Beads rail tab is shown, the
+ * same way `.git` discovery drives the Git tab.
+ */
+export interface BeadsProbeResponse {
+  readonly hasProject: boolean
 }
 
 export interface BeadsChangedEvent {

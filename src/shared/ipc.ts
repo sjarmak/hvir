@@ -12,6 +12,8 @@ import type {
   BeadsChangedEvent,
   BeadsListRequest,
   BeadsListResponse,
+  BeadsProbeRequest,
+  BeadsProbeResponse,
   BeadsWatchRequest,
 } from './beads'
 import type { Disposer } from './disposer'
@@ -496,6 +498,7 @@ export interface IpcInvokeMap {
   }
   'pty:start': { request: StartPtyRequest; response: StartPtyResponse }
   'beads:list': { request: BeadsListRequest; response: BeadsListResponse }
+  'beads:probe': { request: BeadsProbeRequest; response: BeadsProbeResponse }
   'beads:watch': { request: BeadsWatchRequest; response: void }
   'beads:unwatch': { request: BeadsWatchRequest; response: void }
 }
@@ -611,6 +614,7 @@ export const INVOKE_CHANNELS = [
   'terminal:rebind-profile',
   'pty:start',
   'beads:list',
+  'beads:probe',
   'beads:watch',
   'beads:unwatch',
 ] as const satisfies readonly IpcInvokeChannel[]

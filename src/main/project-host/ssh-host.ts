@@ -312,6 +312,10 @@ export class SshHost implements ProjectHost {
     opts: ExecOptions = {},
   ): Promise<ExecResult> {
     const statusMarker = `__hvir_exec_status_${randomUUID()}__`
+    // Resolve the login shell before reserving a slot: defaultShell() runs its
+    // own exec, and holding a buffered slot across that nested call can deadlock
+    // a pool of size one.
+    const loginShell = opts.loginShell ? await this.defaultShell() : undefined
     // Connecting performs its own short capability probe through exec(). Do
     // not reserve a buffered slot until that handshake has completed.
     const release = await this.acquireExecSlot(opts.signal)
@@ -322,7 +326,7 @@ export class SshHost implements ProjectHost {
           new Promise<ClientChannel>((resolve, reject) => {
             try {
               transport.client.exec(
-                remoteBufferedCommand(command, args, opts, statusMarker),
+                remoteBufferedCommand(command, args, opts, statusMarker, loginShell),
                 (error, value) => (error ? reject(error) : resolve(value)),
               )
             } catch (error) {
@@ -1888,6 +1892,7 @@ function remoteCommand(
   command: string,
   args: readonly string[],
   opts: Pick<ExecOptions, 'cwd' | 'env' | 'unsetEnv'>,
+  loginShell?: string,
 ): string {
   const executable = [command, ...args].map(quote).join(' ')
   const unset = (opts.unsetEnv ?? []).map((key) => `-u ${quote(key)}`).join(' ')
@@ -1896,15 +1901,21 @@ function remoteCommand(
     .join(' ')
   const environment = [unset, env].filter(Boolean).join(' ')
   const invocation = environment ? `env ${environment} ${executable}` : executable
-  return opts.cwd ? `cd -- ${quote(opts.cwd.path)} && ${invocation}` : invocation
+  const withCwd = opts.cwd ? `cd -- ${quote(opts.cwd.path)} && ${invocation}` : invocation
+  // Route through the login shell so a profile-configured PATH (~/.local/bin,
+  // Homebrew, …) is sourced before the command runs. cwd and env stay inside
+  // that shell so they still take effect. Separate `-l -c` flags keep shells
+  // like fish that reject the combined `-lc` form working.
+  return loginShell ? `${quote(loginShell)} -l -c ${quote(withCwd)}` : withCwd
 }
 function remoteBufferedCommand(
   command: string,
   args: readonly string[],
   opts: Pick<ExecOptions, 'cwd' | 'env' | 'unsetEnv'>,
   statusMarker: string,
+  loginShell?: string,
 ): string {
-  const invocation = remoteCommand(command, args, opts)
+  const invocation = remoteCommand(command, args, opts, loginShell)
   return `( ${invocation} ); hvir_status=$?; printf '%s%s' ${quote(statusMarker)} "$hvir_status" >&2; exit "$hvir_status"`
 }
 function recoverBufferedExecStatus(

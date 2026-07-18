@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { BeadsService, parseBeadsListOutput } from '../src/main/beads/beads-service'
+import {
+  BeadsService,
+  classifyListFailure,
+  parseBeadsListOutput,
+} from '../src/main/beads/beads-service'
 import type { ProjectHost } from '../src/main/project-host'
 import {
   asHostId,
@@ -112,6 +116,47 @@ describe('BeadsService.list', () => {
     )
   })
 
+  it('uses a login shell and never strips the environment (port-file operation)', async () => {
+    // Port-file-only operation depends on bd inheriting the full environment
+    // and resolving `.beads/dolt-server.port` under the requested root. The
+    // service must request a login shell and must not pass `env`/`unsetEnv`,
+    // which would drop BEADS_DOLT_* overrides or PATH.
+    const { host, exec } = fakeHost()
+    await service(host).list({ root: ROOT })
+    expect(exec.mock.calls.length).toBeGreaterThan(0)
+    for (const call of exec.mock.calls) {
+      const [command, args, opts] = call as [
+        string,
+        readonly string[],
+        { loginShell?: boolean; env?: unknown; unsetEnv?: unknown } | undefined,
+      ]
+      expect(command).toBe('bd')
+      expect(args).toEqual(
+        expect.arrayContaining(['-C', ROOT.path, 'list', '--json', '--flat', '--no-pager']),
+      )
+      expect(opts?.loginShell).toBe(true)
+      expect(opts?.env).toBeUndefined()
+      expect(opts?.unsetEnv).toBeUndefined()
+    }
+  })
+
+  it('surfaces an unreachable Dolt server as an actionable port-file error', async () => {
+    const { host } = fakeHost({
+      exec: () =>
+        execResult(
+          1,
+          '',
+          'Error: failed to open database: Dolt server unreachable at 127.0.0.1:0: ' +
+            'dial tcp 127.0.0.1:0: connect: connection refused',
+        ),
+    })
+    const result = await service(host).list({ root: ROOT })
+    expect(result).toMatchObject({ available: false, reason: 'server-unreachable' })
+    if (result.available) throw new Error('unreachable')
+    expect(result.message).toContain(`${ROOT.path}/.beads/dolt-server.port`)
+    expect(result.message).toContain('BEADS_DOLT_SERVER_PORT')
+  })
+
   it('fetches closed issues only when requested', async () => {
     const { host, exec } = fakeHost({
       exec: (_command, args) =>
@@ -179,6 +224,32 @@ describe('BeadsService.list', () => {
   })
 })
 
+describe('BeadsService.probe', () => {
+  it('reports a project when .beads is a directory', async () => {
+    const { host } = fakeHost({ statType: 'dir' })
+    expect(await service(host).probe(ROOT)).toEqual({ hasProject: true })
+  })
+
+  it('reports no project when .beads is absent or not a directory', async () => {
+    const missing = fakeHost({ statType: 'missing' })
+    expect(await service(missing.host).probe(ROOT)).toEqual({ hasProject: false })
+    const file = fakeHost({ statType: 'file' })
+    expect(await service(file.host).probe(ROOT)).toEqual({ hasProject: false })
+  })
+
+  it('never shells out to bd', async () => {
+    const { host, exec } = fakeHost({ statType: 'dir' })
+    await service(host).probe(ROOT)
+    expect(exec).not.toHaveBeenCalled()
+  })
+
+  it('rejects a probe for a root other than the active workspace', async () => {
+    const { host } = fakeHost({ statType: 'dir' })
+    const other = hostPath(asHostId('local'), '/projects/other')
+    await expect(service(host).probe(other)).rejects.toThrow(/active workspace root/)
+  })
+})
+
 describe('BeadsService watch lifecycle', () => {
   it('watches .beads once, debounces bursts into one event, and unwatches', async () => {
     vi.useFakeTimers()
@@ -220,6 +291,25 @@ describe('BeadsService watch lifecycle', () => {
     await beads.watch(ROOT)
     beads.dispose()
     expect(stopWatch).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('classifyListFailure', () => {
+  it('flags every unreachable-server phrasing bd emits, and only those', () => {
+    for (const stderr of [
+      'dial tcp 127.0.0.1:0: connect: connection refused',
+      'Dolt server: not reachable (external)',
+      'auto-start is disabled (dolt.auto-start: false)',
+      'auto-start is suppressed because the server is externally managed',
+    ]) {
+      expect(classifyListFailure(ROOT, stderr, 1).reason).toBe('server-unreachable')
+    }
+  })
+
+  it('keeps no-database and generic failures distinct from unreachable', () => {
+    expect(classifyListFailure(ROOT, 'no beads project found', 1).reason).toBe('no-database')
+    const generic = classifyListFailure(ROOT, 'dolt server exploded', 2)
+    expect(generic).toMatchObject({ reason: 'error', message: 'dolt server exploded' })
   })
 })
 

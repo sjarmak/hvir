@@ -84,8 +84,9 @@ export class LocalHost implements ProjectHost {
     opts: ExecOptions = {},
   ): Promise<ExecResult> {
     const environment = childEnvironment(opts.env, opts.unsetEnv)
+    const invocation = loginShellInvocation(command, args, opts.loginShell)
     return new Promise<ExecResult>((resolve, reject) => {
-      const child = spawn(command, [...args], {
+      const child = spawn(invocation.command, invocation.args, {
         cwd: opts.cwd ? this.resolve(opts.cwd) : undefined,
         env: environment,
         signal: opts.signal,
@@ -518,6 +519,30 @@ function childEnvironment(
   const environment = { ...process.env }
   for (const name of inheritedUnsets ?? []) delete environment[name]
   return Object.assign(environment, explicit)
+}
+
+/**
+ * Resolve the process to spawn, optionally routing through a login shell so a
+ * profile-configured PATH (~/.local/bin, Homebrew, …) is sourced. A GUI-
+ * launched app inherits only the minimal launchd PATH, so user-installed CLIs
+ * such as `bd` are otherwise unreachable. Windows has no `-l -c` login shell,
+ * so it always spawns directly and relies on the inherited environment.
+ */
+function loginShellInvocation(
+  command: string,
+  args: readonly string[],
+  loginShell: boolean | undefined,
+): { readonly command: string; readonly args: string[] } {
+  if (!loginShell || process.platform === 'win32') {
+    return { command, args: [...args] }
+  }
+  const shell = process.env.SHELL ?? '/bin/bash'
+  const inner = [command, ...args].map(posixQuote).join(' ')
+  return { command: shell, args: ['-l', '-c', inner] }
+}
+
+function posixQuote(value: string): string {
+  return `'${value.replaceAll("'", `'"'"'`)}'`
 }
 
 function asError(reason: unknown): Error {

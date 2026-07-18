@@ -5,6 +5,7 @@ import {
   type BeadsChangedEvent,
   type BeadsListRequest,
   type BeadsListResponse,
+  type BeadsProbeResponse,
   type BeadsUnavailable,
   type Disposer,
   type HostPath,
@@ -60,6 +61,23 @@ export class BeadsService {
       issues: base.issues,
       readyIds: ready.issues.map((issue) => issue.id),
       ...(closedIssues ? { closedIssues } : {}),
+    }
+  }
+
+  /**
+   * Does the active workspace have a beads project? A `.beads` directory stat —
+   * no `bd`, no server — so the rail can hide the Beads tab for plain
+   * directories the same way it hides Git for non-repositories. A workspace
+   * with a `.beads` directory but an unreachable server still counts (the tab
+   * shows, then reports the actionable connection error).
+   */
+  async probe(requestedRoot: HostPath): Promise<BeadsProbeResponse> {
+    const { host, root } = this.activeProject(requestedRoot)
+    try {
+      const stat = await host.stat(joinRoot(root, '.beads'))
+      return { hasProject: stat.type === 'dir' }
+    } catch {
+      return { hasProject: false }
     }
   }
 
@@ -150,10 +168,20 @@ export class BeadsService {
     ]
     let result
     try {
-      result = await host.exec('bd', args, { maxBuffer: MAX_OUTPUT_BYTES })
+      // `bd` is a user-installed CLI that commonly lives in ~/.local/bin, which
+      // a non-login shell (SSH exec) or a GUI-launched app's minimal PATH does
+      // not include. Route through the host's login shell so it resolves the
+      // same way it does in an interactive terminal — PATH and any
+      // BEADS_DOLT_* overrides included. The full environment is inherited (no
+      // unsetEnv), so port resolution matches the terminal.
+      result = await host.exec('bd', args, {
+        maxBuffer: MAX_OUTPUT_BYTES,
+        loginShell: true,
+      })
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason)
       const missing = /ENOENT|not found/i.test(message)
+      logBeadsFailure(root, args, { thrown: message })
       return {
         ok: false,
         unavailable: {
@@ -165,17 +193,8 @@ export class BeadsService {
     }
     if (result.code !== 0) {
       const stderr = result.stderr.trim()
-      const noDatabase = /no beads project found|no database found/i.test(stderr)
-      return {
-        ok: false,
-        unavailable: {
-          available: false,
-          reason: noDatabase ? 'no-database' : 'error',
-          message: noDatabase
-            ? 'No beads database in this project.'
-            : stderr || `bd exited with code ${result.code}`,
-        },
-      }
+      logBeadsFailure(root, args, { code: result.code, stderr })
+      return { ok: false, unavailable: classifyListFailure(root, stderr, result.code) }
     }
     try {
       return { ok: true, issues: parseBeadsListOutput(result.stdout) }
@@ -205,6 +224,78 @@ export class BeadsService {
       console.error('[beads] failed to stop watcher', reason)
     }
   }
+}
+
+/** bd could not find a beads project/database under the requested root. */
+const NO_DATABASE = /no beads project found|no database found/i
+/**
+ * bd found a database configured for a Dolt server it cannot reach. The
+ * hallmark is an unresolved port (`127.0.0.1:0`), but bd phrases the same
+ * failure several ways depending on why the port never resolved.
+ */
+const SERVER_UNREACHABLE =
+  /127\.0\.0\.1:0\b|:0: connect|dolt server (unreachable|is not running|not reachable)|not reachable \(external\)|auto-start is (disabled|suppressed)|externally managed/i
+
+/**
+ * Turn a non-zero `bd list` into a typed, actionable unavailability. The
+ * server-unreachable case is called out specifically because its raw stderr
+ * ("dial tcp 127.0.0.1:0: connect: connection refused") tells a user nothing
+ * about the real fix — a missing or invalid `.beads/dolt-server.port`.
+ */
+export function classifyListFailure(
+  root: HostPath,
+  stderr: string,
+  code: number | null,
+): BeadsUnavailable {
+  if (NO_DATABASE.test(stderr)) {
+    return {
+      available: false,
+      reason: 'no-database',
+      message: 'No beads database in this project.',
+    }
+  }
+  if (SERVER_UNREACHABLE.test(stderr)) {
+    const detail = firstLine(stderr)
+    return {
+      available: false,
+      reason: 'server-unreachable',
+      message:
+        `Beads Dolt server is not reachable — bd could not resolve a server port. ` +
+        `Check that ${root.path}/.beads/dolt-server.port exists and holds the shared ` +
+        `Dolt port, or set BEADS_DOLT_SERVER_PORT.` +
+        (detail ? ` (bd: ${detail})` : ''),
+    }
+  }
+  return {
+    available: false,
+    reason: 'error',
+    message: stderr || `bd exited with code ${code}`,
+  }
+}
+
+function firstLine(text: string): string {
+  return text.split(/\r?\n/, 1)[0]?.trim() ?? ''
+}
+
+/**
+ * Log the workspace root, the exact `bd` argv, and the exit code + stderr on a
+ * failed `bd list`. Deliberately never logs stdout (issue data) — only the
+ * command and its error channel, which carry no credentials.
+ */
+function logBeadsFailure(
+  root: HostPath,
+  args: readonly string[],
+  outcome: { readonly code?: number | null; readonly stderr?: string; readonly thrown?: string },
+): void {
+  console.error('[beads] bd list failed', {
+    host: root.hostId,
+    root: root.path,
+    command: 'bd (login shell)',
+    argv: args.join(' '),
+    ...(outcome.thrown !== undefined ? { error: outcome.thrown } : {}),
+    ...(outcome.code !== undefined ? { code: outcome.code } : {}),
+    ...(outcome.stderr ? { stderr: outcome.stderr } : {}),
+  })
 }
 
 /** Parse `bd list --json` output; exported for tests. */
