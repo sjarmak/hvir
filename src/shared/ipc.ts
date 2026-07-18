@@ -58,6 +58,11 @@ import type {
   HarnessProfileInput,
 } from './harness-profile'
 import type { RegisteredProjectState } from './workspace-types'
+import type { KeybindingAction, KeybindingMap } from './keybindings'
+import type { WebPaneDiagnosticEvent } from './web-pane'
+
+export type WebPaneCommandAction =
+  KeybindingAction | 'closeWebPane' | 'escapeWebPaneFocus'
 
 /** Basic app/runtime info — the trivial round-trip that proves the contract. */
 export interface AppInfo {
@@ -349,6 +354,43 @@ export interface ForgetTerminalRequest {
   readonly id: string
 }
 
+export type OpenWebPaneRequest =
+  | {
+      readonly source: 'terminal'
+      readonly root: HostPath
+      readonly terminalId: string
+      readonly url: string
+    }
+  | {
+      readonly source: 'pane'
+      readonly paneId: string
+      readonly url: string
+    }
+
+export interface OpenWebPaneResponse {
+  readonly paneId: string
+  readonly partition: string
+  readonly url: string
+  readonly origin: string
+}
+
+export interface CloseWebPaneRequest {
+  readonly paneId: string
+}
+
+export interface OpenWebPaneExternalRequest {
+  readonly paneId: string
+  readonly url: string
+}
+
+export type OpenWebPaneBrowserRequest = OpenWebPaneExternalRequest
+
+export interface WebPaneBlockedNavigation {
+  readonly paneId: string
+  readonly kind: 'loopback' | 'external'
+  readonly url: string
+}
+
 export interface RebindTerminalProfileRequest {
   readonly root: HostPath
   readonly id: string
@@ -501,6 +543,13 @@ export interface IpcInvokeMap {
   'beads:probe': { request: BeadsProbeRequest; response: BeadsProbeResponse }
   'beads:watch': { request: BeadsWatchRequest; response: void }
   'beads:unwatch': { request: BeadsWatchRequest; response: void }
+  'web-pane:open': {
+    request: OpenWebPaneRequest
+    response: OperationResult<OpenWebPaneResponse>
+  }
+  'web-pane:close': { request: CloseWebPaneRequest; response: void }
+  'web-pane:open-external': { request: OpenWebPaneExternalRequest; response: void }
+  'web-pane:open-browser': { request: OpenWebPaneBrowserRequest; response: void }
 }
 
 /**
@@ -513,6 +562,8 @@ export interface IpcSendMap {
   'pty:resize': { readonly id: string; readonly cols: number; readonly rows: number }
   'pty:kill': { readonly id: string }
   'app:attention': { readonly count: number }
+  'web-pane:reserved-bindings': KeybindingMap
+  'web-pane:full-page': { readonly paneId?: string }
 }
 
 /** Main -> renderer push channels. */
@@ -533,6 +584,15 @@ export interface IpcEventMap {
     readonly identityStatus: TerminalIdentityStatus
   }
   'beads:changed': BeadsChangedEvent
+  'web-pane:navigation-blocked': WebPaneBlockedNavigation
+  'web-pane:command': {
+    readonly paneId: string
+    readonly action: WebPaneCommandAction
+  }
+  'web-pane:diagnostic': {
+    readonly paneId: string
+    readonly event: WebPaneDiagnosticEvent
+  }
 }
 
 export type IpcInvokeChannel = keyof IpcInvokeMap
@@ -617,6 +677,10 @@ export const INVOKE_CHANNELS = [
   'beads:probe',
   'beads:watch',
   'beads:unwatch',
+  'web-pane:open',
+  'web-pane:close',
+  'web-pane:open-external',
+  'web-pane:open-browser',
 ] as const satisfies readonly IpcInvokeChannel[]
 
 export const SEND_CHANNELS = [
@@ -625,6 +689,8 @@ export const SEND_CHANNELS = [
   'pty:resize',
   'pty:kill',
   'app:attention',
+  'web-pane:reserved-bindings',
+  'web-pane:full-page',
 ] as const satisfies readonly IpcSendChannel[]
 
 export const EVENT_CHANNELS = [
@@ -637,6 +703,9 @@ export const EVENT_CHANNELS = [
   'pty:telemetry',
   'pty:identity',
   'beads:changed',
+  'web-pane:navigation-blocked',
+  'web-pane:command',
+  'web-pane:diagnostic',
 ] as const satisfies readonly IpcEventChannel[]
 
 // Compile-time proof that INVOKE_CHANNELS stays in sync with IpcInvokeMap.
