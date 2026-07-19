@@ -6,11 +6,8 @@ import { HarnessProfilesSettings } from '../src/renderer/src/settings/HarnessPro
 import { localPath } from '../src/shared'
 
 describe('HarnessProfilesSettings', () => {
-  it('opens to add-harness without crashing before providers load', () => {
-    // `initialAddOpen` mounts the add dialog on first render, but the provider
-    // catalog loads in an effect that has not run yet — so `providers` is still
-    // empty. The dialog must not mount against an empty list (it would read
-    // `providers[0]!.id` and throw "cannot read properties of undefined").
+  it('waits for providers before opening the add-harness dialog', () => {
+    // Effects do not run during SSR, so the provider catalog remains at its initial [] state.
     const markup = renderToStaticMarkup(
       createElement(HarnessProfilesSettings, {
         workspaceRoot: localPath('/tmp/hvir'),
@@ -18,8 +15,7 @@ describe('HarnessProfilesSettings', () => {
         initialAddOpen: true,
       }),
     )
-    // The trigger renders (disabled), but the dialog itself is gated off until
-    // providers exist.
+
     expect(markup).toContain('Add a harness')
     expect(markup).not.toContain('add-harness-dialog')
   })

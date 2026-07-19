@@ -1,0 +1,386 @@
+.viewer-panel {
+  grid-column: 3 / 5;
+  grid-row: 1;
+  border-right: 0;
+}
+
+.viewer-groups {
+  --viewer-primary-track: minmax(0, 1fr);
+
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.viewer-groups.split {
+  grid-template-columns: var(--viewer-primary-track) 1px minmax(240px, 1fr);
+}
+
+.viewer-group {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.viewer-group-primary {
+  grid-column: 1;
+}
+
+.viewer-group-secondary {
+  grid-column: 3;
+}
+
+.workspace-view {
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-view[hidden] {
+  display: none;
+}
+
+.tab-strip {
+  flex: 0 0 28px;
+  display: flex;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: #111419;
+  scrollbar-width: thin;
+}
+
+/* Leading inset that still carries the baseline, like the rail-nav's padding. */
+.tab-strip::before {
+  content: '';
+  flex: 0 0 6px;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+/* The strip baseline lives on each child so the active tab can open its own
+ * segment into the viewer below, mirroring the rail-nav folder tabs. */
+.tab-strip-empty {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border-strong);
+  color: #687180;
+  font-size: 12px;
+}
+
+.tab-strip-spacer {
+  min-width: 8px;
+  flex: 1 1 auto;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.viewer-pane-action {
+  width: 31px;
+  flex: 0 0 31px;
+  border: 0;
+  border-bottom: 1px solid var(--border-strong);
+  border-left: 1px solid #282d36;
+  background: #111419;
+  color: #8993a1;
+  font-size: 15px;
+}
+
+.viewer-pane-action:hover,
+.viewer-pane-action:focus-visible {
+  outline: none;
+  color: #edf0f5;
+  background: #252b34;
+}
+
+.viewer-tab {
+  height: 24px;
+  flex: 0 0 auto;
+  align-self: end;
+  min-width: 116px;
+  max-width: 220px;
+  display: flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-bottom-color: var(--border-strong);
+  border-radius: 5px 5px 0 0;
+  background: transparent;
+  color: #969eaa;
+}
+
+.viewer-tab:hover {
+  background: #171b21;
+}
+
+.viewer-tab.active {
+  border-color: var(--border-strong);
+  border-bottom-color: var(--viewer-bg);
+  background: var(--viewer-bg);
+  color: #e2e5ea;
+}
+
+.viewer-tab.preview .tab-name {
+  font-style: italic;
+}
+
+.tab-main,
+.tab-close {
+  border: 0;
+  color: inherit;
+  background: transparent;
+}
+
+.tab-main:focus-visible,
+.tab-close:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.tab-main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 4px 0 10px;
+  text-align: left;
+}
+
+.tab-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-status {
+  width: 9px;
+  flex: 0 0 9px;
+  color: #d8a85f;
+  font-size: 9px;
+  text-align: center;
+}
+
+.tab-status.conflict {
+  color: #e06c75;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tab-close {
+  width: 25px;
+  padding: 0;
+  border-radius: 3px;
+  font-size: 16px;
+  opacity: 0;
+}
+
+.viewer-tab:hover .tab-close,
+.viewer-tab.active .tab-close,
+.tab-close:focus-visible {
+  opacity: 1;
+}
+
+.tab-close:hover {
+  background: #343a45;
+}
+
+.viewer-floating-controls {
+  position: absolute;
+  z-index: 4;
+  top: 8px;
+  /* Clear the overlay scrollbar that draws along the viewer's right edge. */
+  right: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: calc(100% - 26px);
+  filter: drop-shadow(0 2px 5px rgb(0 0 0 / 38%));
+}
+
+.view-controls {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  font-size: 11px;
+  /* Recede while reading; conflict/save badges beside this group stay at
+   * full strength because they demand attention. */
+  opacity: 0.5;
+  transition: opacity 120ms ease-out;
+}
+
+.view-controls:hover,
+.view-controls:focus-within {
+  opacity: 1;
+}
+
+.viewer-body:has(.source-meta, .diff-labels) .viewer-floating-controls {
+  top: 32px;
+}
+
+.conflict-badge {
+  min-height: 24px;
+  padding: 3px 7px;
+  border: 1px solid #773d43;
+  border-radius: 4px;
+  background: #1c171b;
+  color: #e18a90;
+  font-size: 10px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.viewer-operation-error {
+  max-width: 180px;
+  overflow: hidden;
+  min-height: 24px;
+  padding: 4px 7px;
+  border: 1px solid #773d43;
+  border-radius: 4px;
+  background: #1c171b;
+  color: #dc7b82;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mode-control {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid #343a44;
+  border-radius: 5px;
+  background: #15181e;
+}
+
+.mode-control button {
+  min-width: 0;
+  min-height: 22px;
+  padding: 3px 8px;
+  border: 0;
+  border-right: 1px solid #343a44;
+  background: #15181e;
+  color: #8e97a5;
+  cursor: pointer;
+  font-size: 10px;
+  text-transform: capitalize;
+}
+
+.mode-control button:last-child {
+  border-right: 0;
+}
+
+/* A click or keyboard focus deliberately expands the full toggle. Keeping
+ * hover from changing its geometry prevents the pointer target from moving. */
+.mode-control:not(.expanded) button:not(.active) {
+  display: none;
+}
+
+.mode-control:not(.expanded) button.active {
+  border-right: 0;
+}
+
+.blame-toggle {
+  min-height: 24px;
+  padding: 3px 8px;
+  border: 1px solid #343a44;
+  border-radius: 4px;
+  background: #15181e;
+  color: #8e97a5;
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.blame-toggle.active {
+  border-color: #4d8fd8;
+  color: #e3e7ec;
+}
+
+.cm-blame-gutter {
+  min-width: 165px;
+}
+
+.cm-blame-marker {
+  display: block;
+  max-width: 165px;
+  overflow: hidden;
+  padding: 0 8px;
+  color: #697383;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mode-control button:hover,
+.mode-control button.active {
+  background: #29384a;
+  color: #e2e8f0;
+}
+
+.mode-control button:focus-visible,
+.blame-toggle:focus-visible,
+.conflict-badge:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 1px #4d8fd8;
+}
+
+.mode-control:has(:focus-visible),
+.mode-control:hover {
+  border-color: #4d8fd8;
+}
+
+.mode-control button:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.mode-control button:disabled:hover {
+  background: #15181e;
+  color: #8e97a5;
+}
+
+.diff-base-select {
+  min-height: 24px;
+  max-width: 132px;
+  padding: 3px 22px 3px 7px;
+  border: 1px solid #343a44;
+  border-radius: 4px;
+  outline: none;
+  background: #15181e;
+  color: #b8bec8;
+  font-size: 10px;
+}
+
+.mode-select {
+  display: none;
+  min-height: 24px;
+  max-width: 92px;
+  padding: 3px 22px 3px 7px;
+  border: 1px solid #343a44;
+  border-radius: 4px;
+  outline: none;
+  background: #15181e;
+  color: #b8bec8;
+  font-size: 10px;
+}
+
+@container (max-width: 360px) {
+  .mode-control {
+    display: none;
+  }
+
+  .mode-select {
+    display: block;
+  }
+}

@@ -8,15 +8,15 @@ import {
   type HostWatchTier,
   type WorkspaceState,
 } from '../../../shared'
-import type { TerminalWorkspaceRollup } from '../terminal/TerminalWorkspace'
 import { RemoteConnectionBadge } from './ConnectionStatus'
 import { connectionStateLabel } from './connection-status'
+import type { WorkspaceAttentionRollups } from './project-session-model'
 import { aggregateWorkspaceAttention } from './workspace-attention'
 import type { AppTheme } from '../theme'
 
 interface ProjectsBarProps {
   readonly state: ProjectState
-  readonly rollups: Readonly<Record<string, TerminalWorkspaceRollup>>
+  readonly rollups: WorkspaceAttentionRollups
   readonly busy: boolean
   readonly onAdd: () => void
   readonly onSwitch: (projectId: string, workspaceId: string) => void
@@ -81,6 +81,13 @@ export function ProjectsBar({
     activeProject?.workspaces.filter(
       (workspace) => workspace.prunableReason !== undefined,
     ) ?? []
+  // A single-checkout project has nothing to switch between; reclaim the row.
+  // Errors and prune prompts still force the bar because it is their only home.
+  const showWorkspacesBar =
+    activeProject !== undefined &&
+    (activeProject.workspaces.length > 1 ||
+      Boolean(statusError) ||
+      prunable.length > 0)
   const pruneProject = state.projects.find((project) => project.id === pruneProjectId)
   const closeProject = state.projects.find((project) => project.id === closeProjectId)
   const pruneTargets =
@@ -232,8 +239,9 @@ export function ProjectsBar({
           >
             <span aria-hidden="true">⚙</span>
           </button>
+          <span className="projects-bar-spacer" />
         </nav>
-        {activeProject ? (
+        {activeProject && showWorkspacesBar ? (
           <nav className="workspaces-bar" aria-label="Workspaces">
             {activeProject.workspaces.map((workspace) => (
               <div

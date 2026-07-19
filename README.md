@@ -6,7 +6,7 @@ A lightweight, view-first workbench for agentic development: a polished code and
 explorer wrapped around the terminals where Claude Code, Codex, and your shell do the
 work.
 
-![hvir in the dark theme](docs/screenshots/workbench-dark.png)
+![hvir dark theme with compact project, viewer, and terminal controls](docs/screenshots/workbench-dark.png)
 
 ## Why hvir?
 
@@ -22,12 +22,12 @@ them.
   Git operations stay in the terminal.
 - Multiple shell, Claude Code, and Codex sessions split, recover, resume, and report
   attention without a daemon.
-- Dark/light themes, viewer splits, terminal splits, configurable core shortcuts, and a
-  one-click terminal-focus mode keep the workbench fluid.
+- Compact tabs and floating Rendered/Source/Diff controls keep the viewer focused on
+  content instead of chrome.
+- Dark/light themes, viewer and terminal splits, three-state pane controls, and
+  configurable core shortcuts keep the workbench fluid.
 - Heavy filesystem, Git, rendering, watching, and telemetry work stays off the render
   thread.
-
-![hvir light theme with split viewers and terminals](docs/screenshots/workbench-light-splits.png)
 
 ## Install
 
@@ -84,8 +84,9 @@ Build the npm payload for the current supported platform with the matching
 
 | Document | Purpose |
 | --- | --- |
-| [Design and ADRs](docs/design.md) | Product philosophy, hard boundaries, architecture, and decisions |
-| [Plan of Record](docs/plan/00-overview.md) | Phased implementation status and acceptance criteria |
+| [Design and ADR index](docs/design.md) | Product philosophy, hard boundaries, architecture, and decision index |
+| [Architecture decisions](docs/adr/README.md) | Canonical decision-only ADR records and template |
+| [Historical implementation plan](docs/plan/00-overview.md) | Frozen early implementation context; active work lives in GitHub issues |
 | [AGENTS.md](AGENTS.md) | Repository rules for AI collaborators |
 
 The deliberate boundary remains: hvir may surface rich read-only information and permit
