@@ -194,6 +194,10 @@ pack-stamped lead that a rig override suspended drops out, leaving the hand-defi
 - **The context cache re-inserts on a hit** so its eviction is least-recently-*used*. A Map
   evicts in insertion order, and without the re-insert the workspace you keep returning to
   is dropped while one abandoned long ago survives.
+- **Record which gc a timing describes.** The measurements below came from a build 1921
+  commits behind upstream on a PR-checking branch with local edits. That is the right binary
+  for sizing *hvir's* problem, because it is the one on the login-shell PATH — and the wrong
+  one to cite in a gc bug report. A timing without its build is not evidence.
 - **Measure gc before optimizing around it; the costs are not where they look.** On a real
   city (~22 rigs, ~73 sessions, 2026-07-19), timed on the host itself: `gc session list
   --json` **2.3–3.3 s**, `gc rig list --json` **2.7–2.9 s**, `gc config show` **0.25 s**.

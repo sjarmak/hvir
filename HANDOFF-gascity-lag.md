@@ -12,6 +12,12 @@ crew view landed.
 Taken on the gc host itself (`work` = `ds-5090`, the SSH host every workspace in
 `projects.json` lives on), city of ~22 rigs and ~73 sessions. Three runs each.
 
+**Which gc these describe:** `~/.local/bin/gc` → `~/go/bin/gc`, built 2026-07-19 from
+`/home/ds/gascity` on branch `_pr1945_check` — HEAD `58e0b8dbb` dated 2026-05-11, **1921
+commits behind `origin/HEAD`**, 3 local commits ahead, 10 dirty files. That is the binary
+hvir actually invokes through the login shell, so the timings are the right ones for sizing
+hvir's problem. They are *not* evidence about upstream gascity; see "Remaining".
+
 | what | result |
 | --- | --- |
 | ICMP RTT to the host | **9.8 ms**, 0% loss |
@@ -97,16 +103,17 @@ happy-dom harness the repo already uses for `PaneResizer`.
 
 ## Remaining
 
-Everything on hvir's side is done; what is left is not hvir's to fix.
+Everything on hvir's side is done. hvir hides the cost rather than removing it: a workspace
+switch on a warm host is free, but the first read after a 60 s idle still takes three
+seconds, and nothing on this side can change that.
 
-**`gc session list --json` taking ~3 s for 73 sessions is the actual defect**, and `gc rig
-list` at ~2.8 s for 3.7 KB is the same story. Worth reporting upstream with the timings in
-this document. Note that issue #1 step 5's projection PR does *not* address it: that removes
+**Do not file an issue against `gastownhall/gascity` from the timings above.** The binary
+they measure is 1921 commits behind upstream, on a PR-checking branch, with local commits
+and uncommitted edits — a claim built on it would be a claim about that scratch branch, not
+about gc. To get something reportable: rebuild gc from current `origin/HEAD`, re-run the
+three timings in the table, and only then decide whether there is a defect to raise. Note
+that issue #1 step 5's projection PR would not address it either way — that removes
 `gc config show`, the one command already measured cheap.
-
-Until then hvir hides the cost rather than removing it. A workspace switch on a warm host is
-free, but the first read after a 60 s idle still takes three seconds, and nothing here can
-make it not.
 
 ## Constraints to respect
 
