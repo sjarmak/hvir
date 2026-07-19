@@ -1,6 +1,7 @@
 import {
   hostPathEquals,
   isExecutableLeaf,
+  isHostPathShape,
   type BeadDependencyEdge,
   type BeadGate,
   type BeadIssue,
@@ -16,7 +17,6 @@ import {
 import type { ProjectHost } from '../project-host'
 import {
   classifyListFailure,
-  isHostPathShape,
   joinRoot,
   logBeadsFailure,
   parseBeadsListOutput,

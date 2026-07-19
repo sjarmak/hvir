@@ -15,7 +15,7 @@ describe('BeadsPanel', () => {
     const markup = renderToStaticMarkup(
       createElement(BeadsPanel, { root: ROOT, connected: false }),
     )
-    expect(markup).toContain('Beads')
+    expect(markup).toContain('Gas City')
     expect(markup).toContain('No data yet.')
   })
 })

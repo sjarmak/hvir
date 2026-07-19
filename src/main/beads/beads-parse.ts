@@ -265,12 +265,6 @@ function numberField(
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
-export function isHostPathShape(candidate: unknown): candidate is HostPath {
-  if (!candidate || typeof candidate !== 'object') return false
-  const record = candidate as Record<string, unknown>
-  return typeof record['hostId'] === 'string' && typeof record['path'] === 'string'
-}
-
 export function watchKey(root: HostPath): string {
   return `${root.hostId}:${root.path}`
 }

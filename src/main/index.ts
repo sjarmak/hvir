@@ -14,6 +14,7 @@ import { ProjectCoordinator } from './project-coordinator'
 import { PtySupervisor } from './pty/pty-supervisor'
 import { AttentionBadge } from './attention-badge'
 import { ownBeadsService } from './beads/beads-owner'
+import { ownGasCityService } from './gascity/gascity-owner'
 import { HarnessProfileStore } from './harness/harness-profile-store'
 import { HarnessProbeManager } from './harness/harness-probe'
 import { ProjectWatchController } from './project-watch'
@@ -335,6 +336,7 @@ function createWorkbenchEntry(): void {
       return projectRegistry.active
     }
     const beadsService = ownBeadsService(runtime, getProject, emit)
+    const gasCityService = ownGasCityService(getProject)
     runtime.own(
       'IPC authority router',
       registerIpcHandlers({
@@ -402,6 +404,7 @@ function createWorkbenchEntry(): void {
         harnessProfiles: harnessProfileStore,
         harnessProbes: harnessProbeManager,
         beads: beadsService,
+        gascity: gasCityService,
         updateAttention: (owner, count) =>
           attentionBadge?.update(owner.id, count, owner.generation),
         updateWebPaneBindings: (owner, bindings) =>

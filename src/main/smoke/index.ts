@@ -2,6 +2,7 @@ import { app, webContents, type BrowserWindow } from 'electron'
 
 import { dispatchWorkerHostCall } from '../git/worker-host-broker'
 import { BeadsService } from '../beads/beads-service'
+import { GasCityService } from '../gascity/gascity-service'
 import { HarnessProfileStore } from '../harness/harness-profile-store'
 import { harnessProviderCatalog } from '../harness/harness-provider'
 import type { HarnessProbeManager } from '../harness/harness-probe'
@@ -232,6 +233,9 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       emitChanged: (event) => emit('beads:changed', event),
     })
     cleanup.defer('beads service', () => smokeBeads.dispose())
+    const smokeGasCity = new GasCityService({
+      getProject: () => ({ host, root: smokeRoot }),
+    })
     let smokeIpcProjectState = smokeProjectState()
     const ipcRouter = registerIpcHandlers({
       echoWorker: worker,
@@ -305,6 +309,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       harnessProfiles: smokeHarnessProfiles,
       harnessProbes: harnessProbeManager,
       beads: smokeBeads,
+      gascity: smokeGasCity,
       updateAttention: () => undefined,
       updateWebPaneBindings: (owner, bindings) =>
         updateWebPaneBindings(owner.id, bindings),

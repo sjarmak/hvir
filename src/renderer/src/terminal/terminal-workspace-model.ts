@@ -19,6 +19,13 @@ export interface TerminalAttachRequest {
   readonly command: string
   /** Monotonic id so repeat requests (even for the same command) re-fire. */
   readonly nonce: number
+  /**
+   * Identity this request attaches to (a gc alias or session name). When the
+   * workspace still has the live terminal it launched for this key, the request
+   * focuses that terminal instead of spawning another one. Omit for one-shot
+   * commands, which always want a fresh shell.
+   */
+  readonly key?: string
 }
 
 export interface TerminalSession {
@@ -145,6 +152,28 @@ export function createTerminalSession(
     ...(initialInput ? { initialInput } : {}),
     pane,
   }
+}
+
+export type TerminalAttachOutcome =
+  | { readonly type: 'focus'; readonly id: string }
+  | { readonly type: 'launch' }
+
+/**
+ * Focus an existing terminal or open one — never both. A keyed request names a
+ * crew identity; if the terminal this workspace launched for that identity is
+ * still alive, the request focuses it. Requests without a key, and keys whose
+ * terminal has since closed, launch a fresh shell.
+ */
+export function resolveTerminalAttach(
+  request: TerminalAttachRequest,
+  launchedByKey: ReadonlyMap<string, string>,
+  model: TerminalWorkspaceModel,
+): TerminalAttachOutcome {
+  const existing = request.key === undefined ? undefined : launchedByKey.get(request.key)
+  if (existing !== undefined && model.sessions.some((session) => session.id === existing)) {
+    return { type: 'focus', id: existing }
+  }
+  return { type: 'launch' }
 }
 
 export function terminalWorkspaceSplit(model: TerminalWorkspaceModel): boolean {

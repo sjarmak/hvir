@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { HostConnectionState, HostPath } from '../../../shared'
 import type { TerminalAttachRequest } from '../terminal/terminal-workspace-model'
 import type { WorkbenchRailMode } from '../workbench/use-workbench-layout'
+import { gasCityCommand, type GasCityAction } from './gascity-commands'
 
 export interface BeadsWorkspaceAttach {
   readonly workspaceId: string
@@ -16,8 +17,8 @@ export interface BeadsWorkspace {
    * Beads tab — mirrors how `gitEnabled` gates the Git tab.
    */
   readonly beadsEnabled: boolean
-  /** Request a `gc session attach <worker>` terminal in the active workspace. */
-  readonly requestAttachWorker: (worker: string) => void
+  /** Run a gc action against a crew identity in the active workspace's terminal. */
+  readonly requestCrewAction: (action: GasCityAction, target: string) => void
   /** The pending attach request for `workspaceId`, if it targets that workspace. */
   readonly attachRequestFor: (workspaceId: string) => TerminalAttachRequest | undefined
 }
@@ -38,7 +39,7 @@ interface BeadsRailContext {
 /**
  * Owns the renderer-side Beads workspace policy that App otherwise inlines: the
  * `.beads` probe that gates the Beads tab, the rail fallback when it disappears,
- * and the worker-attach request wired from the Beads panel to a terminal.
+ * and the gc crew actions wired from the Beads panel to a terminal.
  */
 export function useBeadsWorkspace(
   session: BeadsWorkspaceContext,
@@ -50,18 +51,20 @@ export function useBeadsWorkspace(
   const [attachRequest, setAttachRequest] = useState<BeadsWorkspaceAttach | undefined>()
   const attachNonce = useRef(0)
 
-  // Open a terminal running `gc session attach <worker>` in the active
-  // workspace when a live worker name is clicked in the Beads panel. The worker
-  // id is shell-quoted since it flows into an interactive shell command line.
-  const requestAttachWorker = (worker: string): void => {
+  // Run a gc command in the active workspace's terminal. `attach` carries an
+  // identity key so a repeat click focuses the terminal already showing that
+  // session instead of opening another one; the one-shot commands do not.
+  const requestCrewAction = (action: GasCityAction, target: string): void => {
     const workspaceId = activeWorkspace?.id
     if (!workspaceId) return
+    const { command, key } = gasCityCommand(action, target)
     attachNonce.current += 1
     setAttachRequest({
       workspaceId,
       request: {
-        command: `gc session attach ${shellQuoteArg(worker)}`,
+        command,
         nonce: attachNonce.current,
+        ...(key === undefined ? {} : { key }),
       },
     })
   }
@@ -99,14 +102,5 @@ export function useBeadsWorkspace(
     if (!beadsEnabled && railMode === 'beads') setRailMode('files')
   }, [beadsEnabled, railMode, setRailMode])
 
-  return { beadsEnabled, requestAttachWorker, attachRequestFor }
-}
-
-/**
- * POSIX single-quote a value so it is safe to splice into an interactive shell
- * command line. Worker ids are normally plain identifiers, but the value flows
- * into a shell, so quote defensively rather than trusting the input.
- */
-function shellQuoteArg(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`
+  return { beadsEnabled, requestCrewAction, attachRequestFor }
 }

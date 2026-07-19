@@ -12,6 +12,7 @@ import type {
   ProjectWatchInterestsResponse,
 } from '../../shared'
 import type { BeadsService } from '../beads/beads-service'
+import type { GasCityService } from '../gascity/gascity-service'
 import type { HarnessProfileStoreContract } from '../harness/harness-profile-store'
 import type { HarnessProbeManager } from '../harness/harness-probe'
 import type { HtmlPreviewProtocol } from '../html-preview-protocol'
@@ -75,6 +76,7 @@ export interface IpcDeps {
   readonly harnessProfiles: HarnessProfileStoreContract
   readonly harnessProbes: HarnessProbeManager
   readonly beads: Pick<BeadsService, 'list' | 'probe' | 'watch' | 'unwatch'>
+  readonly gascity: Pick<GasCityService, 'crew' | 'probe'>
   readonly updateAttention: (owner: RendererOwner, count: number) => void
   readonly updateWebPaneBindings: (owner: RendererOwner, bindings: KeybindingMap) => void
   readonly updateWebPaneFullPage: (owner: RendererOwner, paneId?: string) => void

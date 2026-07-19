@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   initialTerminalWorkspaceModel,
   nextTerminalSplitPane,
+  resolveTerminalAttach,
   terminalPaneActiveId,
   terminalWorkspaceReducer,
   type TerminalSession,
@@ -69,6 +70,41 @@ function reduce(
 ): TerminalWorkspaceModel {
   return terminalWorkspaceReducer(model, action)
 }
+
+describe('focus-or-attach', () => {
+  const model = reduce(initialTerminalWorkspaceModel, {
+    type: 'session-added',
+    session: session('live', 'primary'),
+  })
+
+  it('focuses the terminal already launched for an identity', () => {
+    const outcome = resolveTerminalAttach(
+      { command: "gc session attach 'mayor'", nonce: 2, key: 'gc:mayor' },
+      new Map([['gc:mayor', 'live']]),
+      model,
+    )
+    expect(outcome).toEqual({ type: 'focus', id: 'live' })
+  })
+
+  it('launches again once that terminal has been closed', () => {
+    const closed = reduce(model, { type: 'session-closed', id: 'live' })
+    const outcome = resolveTerminalAttach(
+      { command: "gc session attach 'mayor'", nonce: 3, key: 'gc:mayor' },
+      new Map([['gc:mayor', 'live']]),
+      closed,
+    )
+    expect(outcome).toEqual({ type: 'launch' })
+  })
+
+  it('always launches an unkeyed one-shot command', () => {
+    const outcome = resolveTerminalAttach(
+      { command: "gc session peek 'mayor'", nonce: 4 },
+      new Map([['gc:mayor', 'live']]),
+      model,
+    )
+    expect(outcome).toEqual({ type: 'launch' })
+  })
+})
 
 function session(id: string, pane: 'primary' | 'secondary'): TerminalSession {
   return {

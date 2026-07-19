@@ -31,7 +31,7 @@ describe('architecture hotspot report', () => {
     const main = report.rows.find((row) => row.path === 'src/main/index.ts')
     expect(report.baselineCommit).toBe('ea1c157')
     expect(typeof main?.lines).toBe('number')
-    expect(main?.limit).toBe(522)
+    expect(main?.limit).toBe(525)
     expect(main?.exception?.owner).toBe('architecture epic #33')
     expect(main?.exception?.rationale).toContain('composition root')
     expect(main?.exception?.removalIssue).toBe('#35-#40')

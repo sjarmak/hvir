@@ -18,6 +18,12 @@ import type {
 } from './beads'
 import type { Disposer } from './disposer'
 import type { DirEntry, FileType, WatchEvent } from './fs-types'
+import type {
+  GasCityCrewRequest,
+  GasCityCrewResponse,
+  GasCityProbeRequest,
+  GasCityProbeResponse,
+} from './gascity'
 import type { HostPath } from './host-path'
 import type {
   CreateHtmlPreviewRequest,
@@ -543,6 +549,8 @@ export interface IpcInvokeMap {
   'beads:probe': { request: BeadsProbeRequest; response: BeadsProbeResponse }
   'beads:watch': { request: BeadsWatchRequest; response: void }
   'beads:unwatch': { request: BeadsWatchRequest; response: void }
+  'gascity:crew': { request: GasCityCrewRequest; response: GasCityCrewResponse }
+  'gascity:probe': { request: GasCityProbeRequest; response: GasCityProbeResponse }
   'web-pane:open': {
     request: OpenWebPaneRequest
     response: OperationResult<OpenWebPaneResponse>
@@ -678,6 +686,8 @@ export const INVOKE_CHANNELS = [
   'beads:probe',
   'beads:watch',
   'beads:unwatch',
+  'gascity:crew',
+  'gascity:probe',
   'web-pane:open',
   'web-pane:close',
   'web-pane:open-external',

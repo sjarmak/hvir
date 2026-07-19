@@ -19,9 +19,9 @@
   "legacyHotspots": [
     {
       "path": "src/main/index.ts",
-      "maxLines": 522,
+      "maxLines": 525,
       "owner": "architecture epic #33",
-      "rationale": "The composition root wires runtime owners, window presentation, coordinators, worker adapters, and IPC; this strict cap prevents product workflows from returning. Fork: +2 over upstream's zero-headroom cap for the single BeadsService owner call (construction extracted to beads-owner.ts); the getProject closure is shared with the IPC router.",
+      "rationale": "The composition root wires runtime owners, window presentation, coordinators, worker adapters, and IPC; this strict cap prevents product workflows from returning. Fork: +5 over upstream's zero-headroom cap for the single BeadsService and GasCityService owner calls (construction extracted to beads-owner.ts / gascity-owner.ts); the getProject closure is shared with the IPC router.",
       "removalIssue": "#35-#40",
       "expiresOn": "2026-09-30"
     },
@@ -43,9 +43,9 @@
     },
     {
       "path": "src/renderer/src/terminal/TerminalWorkspace.tsx",
-      "maxLines": 437,
+      "maxLines": 444,
       "owner": "architecture epic #33",
-      "rationale": "TerminalWorkspace is now the feature composition view over extracted policy, effects, persistence, recovery, and presentation modules; the named cap preserves that boundary. Fork: +15 over upstream's zero-headroom cap for the worker-attach wiring (attachRequest prop, initialInput threading, one-shot launch); the effect and type live in use-terminal-attach-request.ts and the model.",
+      "rationale": "TerminalWorkspace is now the feature composition view over extracted policy, effects, persistence, recovery, and presentation modules; the named cap preserves that boundary. Fork: +22 over upstream's zero-headroom cap for the crew-attach wiring (attachRequest prop, initialInput threading, focus-or-attach ports); the effect, the launched-terminal map, and the resolution rule live in use-terminal-attach-request.ts and the model.",
       "removalIssue": "#46",
       "expiresOn": "2026-09-30"
     },

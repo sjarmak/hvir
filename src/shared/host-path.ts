@@ -43,6 +43,17 @@ export function isLocal(p: HostPath): boolean {
   return p.hostId === LOCAL_HOST_ID
 }
 
+/**
+ * Structural check for a value crossing a trust boundary (IPC decode, config).
+ * The brand is a compile-time device only, so a decoded value has to be shape-
+ * checked before it can be treated as a HostPath.
+ */
+export function isHostPathShape(candidate: unknown): candidate is HostPath {
+  if (!candidate || typeof candidate !== 'object') return false
+  const record = candidate as Record<string, unknown>
+  return typeof record['hostId'] === 'string' && typeof record['path'] === 'string'
+}
+
 export function hostPathEquals(a: HostPath, b: HostPath): boolean {
   return a.hostId === b.hostId && a.path === b.path
 }

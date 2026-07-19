@@ -11,6 +11,9 @@ import {
 } from './beads-model'
 import { beadDetail, beadSignals } from './bead-card'
 import { createVisibilityRefresh } from './beads-refresh'
+import { CrewSection } from './CrewSection'
+import type { GasCityAction } from './gascity-commands'
+import { useGasCityCrew } from './use-gascity-crew'
 import './beads.css'
 
 const CHANGED_REFETCH_DELAY_MS = 300
@@ -33,15 +36,15 @@ interface BeadsPanelProps {
   readonly root: HostPath
   readonly connected: boolean
   readonly hidden?: boolean
-  /** Open a terminal attached to a live in-flight worker (`gc session attach …`). */
-  readonly onAttachWorker?: (worker: string) => void
+  /** Run a gc action (attach/peek/reset/handoff) against a crew identity. */
+  readonly onCrewAction?: (action: GasCityAction, target: string) => void
 }
 
 export function BeadsPanel({
   root,
   connected,
   hidden = false,
-  onAttachWorker,
+  onCrewAction,
 }: BeadsPanelProps): ReactElement {
   const [response, setResponse] = useState<BeadsListResponse>()
   const [error, setError] = useState<string>()
@@ -59,6 +62,12 @@ export function BeadsPanel({
   showClosedRef.current = showClosed
   const showInternalsRef = useRef(showInternals)
   showInternalsRef.current = showInternals
+  const crew = useGasCityCrew({
+    root,
+    connected,
+    hidden,
+    includeInternals: showInternals,
+  })
 
   const refresh = useCallback(async (): Promise<void> => {
     // Non-reentrant: a poll tick, focus, or watch event that arrives while a
@@ -163,22 +172,41 @@ export function BeadsPanel({
   }
 
   return (
-    <section className="rail-section beads-panel" aria-label="Beads" hidden={hidden}>
+    <section className="rail-section beads-panel" aria-label="Gas City" hidden={hidden}>
       <div className="panel-header beads-header">
-        <span className="beads-title">Beads</span>
+        <span className="beads-title">Gas City</span>
         <button
           type="button"
           className="beads-refresh"
-          title="Refresh beads"
+          title="Refresh crew and beads"
           disabled={loading || !connected}
           onClick={() => void refresh()}
         >
           {loading ? '…' : '⟳'}
         </button>
       </div>
-      <div className="beads-body">{renderBody()}</div>
+      <div className="beads-body">
+        {renderCrew()}
+        {renderBody()}
+      </div>
     </section>
   )
+
+  // The crew is rendered outside `renderBody` on purpose: a `bd` failure must
+  // not also hide who is running in the rig — that is exactly when you want to
+  // see it. It joins against whatever beads did load, or none.
+  function renderCrew(): ReactElement | null {
+    if (!onCrewAction) return null
+    return (
+      <CrewSection
+        response={crew.response}
+        issues={response?.available === true ? response.issues : []}
+        collapsed={collapsedSections.has('crew')}
+        onToggle={() => toggleSection('crew')}
+        onAction={onCrewAction}
+      />
+    )
+  }
 
   function renderBody(): ReactElement {
     if (error) {
@@ -302,7 +330,7 @@ export function BeadsPanel({
           </span>
           <span className="beads-type">{issue.issueType}</span>
         </button>
-        {beadSignals(card, onAttachWorker)}
+        {beadSignals(card, onCrewAction && ((worker) => onCrewAction('attach', worker)))}
         {open ? beadDetail(card) : null}
       </li>
     )

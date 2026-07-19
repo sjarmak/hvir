@@ -8,10 +8,12 @@ import type { BeadsWorkspace } from './use-beads-workspace'
 export { useBeadsWorkspace, type BeadsWorkspace } from './use-beads-workspace'
 
 /**
- * Self-contained rail integration for the Beads feature: the nav tab and the
- * panel. Both take the App `session`/`layout` context objects (the same shape
- * the Beads hook reads) and gate themselves on the probe result, so App
- * composes them in one line each without inlining the visibility conditionals.
+ * Self-contained rail integration for the Gas City pane: the nav tab and the
+ * panel. The pane is named for what it shows — the rig's crew above its bead
+ * queue — while the code, IPC channels, and CSS keep their `beads` names, since
+ * the `.beads` project is still what gates the tab. Both take the App
+ * `session`/`layout` context objects and gate themselves on the probe result,
+ * so App composes them in one line each without inlining the conditionals.
  */
 
 interface BeadsRailContext {
@@ -40,7 +42,7 @@ export function BeadsRailTab({
       aria-current={active ? 'page' : undefined}
       onClick={() => layout.setRailMode('beads')}
     >
-      Beads
+      Gas City
     </button>
   )
 }
@@ -62,7 +64,7 @@ export function BeadsRailPanel({
       root={root}
       connected={session.connectionState === 'connected'}
       hidden={layout.railMode !== 'beads'}
-      onAttachWorker={beads.requestAttachWorker}
+      onCrewAction={beads.requestCrewAction}
     />
   )
 }

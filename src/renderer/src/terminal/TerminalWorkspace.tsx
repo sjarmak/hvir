@@ -73,7 +73,8 @@ interface TerminalWorkspaceProps {
   readonly onOpenSettings: () => void
   readonly onOpenHarnessSettings: () => void
   readonly onAddHarness: () => void
-  /** When set, opens a bare shell running `command` (deduped by `nonce`). */
+  /** When set, focuses the terminal already open for the request's identity, or
+   * opens a bare shell running `command` (deduped by `nonce`). */
   readonly attachRequest?: TerminalAttachRequest
 }
 
@@ -226,7 +227,7 @@ export function TerminalWorkspace({
     provider: HarnessProviderDescriptor,
     riskAcknowledged: boolean,
     initialInput?: string,
-  ): void => {
+  ): string => {
     const current = modelRef.current
     const pane = terminalWorkspaceSplit(current) ? current.activePane : 'primary'
     const session = createTerminalSession(
@@ -241,14 +242,20 @@ export function TerminalWorkspace({
     )
     send({ type: 'session-added', session })
     setMenuOpen(false)
+    return session.id
   }
 
   // Open a bare shell running an attach command (e.g. `gc session attach
-  // <worker>`) when the Beads panel requests one.
-  useTerminalAttachRequest(attachRequest, (command) => {
-    if (available && defaultProvider && defaultProfile) {
-      launchSession(defaultProfile, defaultProvider, true, command)
-    }
+  // <worker>`) when the Beads panel requests one. A keyed request identifies a
+  // crew identity: if the terminal launched for it earlier is still alive, the
+  // click focuses that one rather than piling up another shell.
+  useTerminalAttachRequest(attachRequest, {
+    currentModel: () => modelRef.current,
+    focusSession,
+    launch: (command) =>
+      available && defaultProvider && defaultProfile
+        ? launchSession(defaultProfile, defaultProvider, true, command)
+        : undefined,
   })
 
   const splitTerminal = (): void => {

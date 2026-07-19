@@ -5,6 +5,7 @@ import type { IpcDeps } from './ipc/deps'
 import { registerAppIpc } from './ipc/features/app'
 import { registerBeadsIpc } from './ipc/features/beads'
 import { registerFilesystemIpc } from './ipc/features/filesystem'
+import { registerGasCityIpc } from './ipc/features/gascity'
 import { registerGitIpc } from './ipc/features/git'
 import { registerHarnessIpc } from './ipc/features/harness'
 import { registerPreviewIpc } from './ipc/features/preview'
@@ -29,6 +30,7 @@ export function registerIpcHandlers(
     registerWebPaneIpc(router, deps)
     registerTerminalIpc(router, deps)
     registerBeadsIpc(router, deps)
+    registerGasCityIpc(router, deps)
     router.assertComplete()
     return router
   } catch (error) {
