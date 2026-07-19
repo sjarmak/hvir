@@ -12,11 +12,16 @@ crew view landed.
 Taken on the gc host itself (`work` = `ds-5090`, the SSH host every workspace in
 `projects.json` lives on), city of ~22 rigs and ~73 sessions. Three runs each.
 
-**Which gc these describe:** `~/.local/bin/gc` → `~/go/bin/gc`, built 2026-07-19 from
-`/home/ds/gascity` on branch `_pr1945_check` — HEAD `58e0b8dbb` dated 2026-05-11, **1921
-commits behind `origin/HEAD`**, 3 local commits ahead, 10 dirty files. That is the binary
-hvir actually invokes through the login shell, so the timings are the right ones for sizing
-hvir's problem. They are *not* evidence about upstream gascity; see "Remaining".
+**Which gc these describe:** `~/.local/bin/gc` → `~/go/bin/gc`, whose embedded build stamp
+(`go version -m`) reads `-X main.commit=2f57a364e -X main.date=2026-07-19T20:46:03Z`. That
+commit is `/home/ds/gascity-main` sitting exactly on `origin/HEAD` — current upstream main,
+0 behind and 0 ahead. So these are timings of upstream gascity, not of a local branch.
+
+Read that stamp; do not infer it from a checkout. There are ~20 gascity trees on that host
+(`gascity`, `gascity-main`, `gascity-pr-4075-…`, `gascity-wt-3407`, …), most of them stale
+PR-check branches, and the name that looks canonical is not the one that builds the binary.
+The binary is also rebuilt roughly hourly by the city's own agents, so its mtime and size
+move under you mid-investigation; any timing worth quoting carries its commit.
 
 | what | result |
 | --- | --- |
@@ -107,12 +112,14 @@ Everything on hvir's side is done. hvir hides the cost rather than removing it: 
 switch on a warm host is free, but the first read after a 60 s idle still takes three
 seconds, and nothing on this side can change that.
 
-**Do not file an issue against `gastownhall/gascity` from the timings above.** The binary
-they measure is 1921 commits behind upstream, on a PR-checking branch, with local commits
-and uncommitted edits — a claim built on it would be a claim about that scratch branch, not
-about gc. To get something reportable: rebuild gc from current `origin/HEAD`, re-run the
-three timings in the table, and only then decide whether there is a defect to raise. Note
-that issue #1 step 5's projection PR would not address it either way — that removes
+**`gc session list --json` at ~2.5 s for 73 sessions is the actual defect**, and `gc rig
+list --json` at ~2.3 s for 3.7 KB of output is the same story. Both are reproducible against
+current upstream main (`2f57a364e`), on a host where `true`, `git status --porcelain`, and
+`bd list --json` all return in under 50 ms — so it is gc's own cost, not the machine and not
+the link (9.8 ms RTT). Worth raising at `github.com/gastownhall/gascity` with the table
+above, the commit, and the city's shape (~22 rigs, ~73 sessions).
+
+Note that issue #1 step 5's projection PR does *not* address it: that removes
 `gc config show`, the one command already measured cheap.
 
 ## Constraints to respect

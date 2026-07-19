@@ -194,10 +194,15 @@ pack-stamped lead that a rig override suspended drops out, leaving the hand-defi
 - **The context cache re-inserts on a hit** so its eviction is least-recently-*used*. A Map
   evicts in insertion order, and without the re-insert the workspace you keep returning to
   is dropped while one abandoned long ago survives.
-- **Record which gc a timing describes.** The measurements below came from a build 1921
-  commits behind upstream on a PR-checking branch with local edits. That is the right binary
-  for sizing *hvir's* problem, because it is the one on the login-shell PATH — and the wrong
-  one to cite in a gc bug report. A timing without its build is not evidence.
+- **Read the gc binary's build stamp; never infer it from a checkout.** `go version -m
+  $(readlink -f ~/.local/bin/gc)` carries `-X main.commit=…`, which is the only reliable
+  answer to "which gc did I just measure". A gc host runs many trees — around twenty on
+  ds-5090, most of them stale PR-check branches — and the one named plainly `gascity` was
+  *not* the one building the binary on PATH, which came from `gascity-main` at `origin/HEAD`.
+  Guessing from the directory name produced a confident, wrong claim that the measurements
+  described a two-month-old branch. The binary is also rebuilt roughly hourly by the city's
+  own agents, so its mtime and size shift mid-investigation. A timing without its commit is
+  not evidence.
 - **Measure gc before optimizing around it; the costs are not where they look.** On a real
   city (~22 rigs, ~73 sessions, 2026-07-19), timed on the host itself: `gc session list
   --json` **2.3–3.3 s**, `gc rig list --json` **2.7–2.9 s**, `gc config show` **0.25 s**.
