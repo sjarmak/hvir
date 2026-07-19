@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { BeadsService } from '../src/main/beads/beads-service'
 import {
-  BeadsService,
   classifyListFailure,
   parseBeadsListOutput,
   parseDigraphEdges,
   parseDispatchableOutput,
   parseGatesOutput,
-} from '../src/main/beads/beads-service'
+} from '../src/main/beads/beads-parse'
 import type { ProjectHost } from '../src/main/project-host'
 import {
   asHostId,

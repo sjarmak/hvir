@@ -39,9 +39,11 @@ import {
   terminalPaneActiveId,
   terminalWorkspaceReducer,
   terminalWorkspaceSplit,
+  type TerminalAttachRequest,
   type TerminalSession,
   type TerminalWorkspaceAction,
 } from './terminal-workspace-model'
+import { useTerminalAttachRequest } from './use-terminal-attach-request'
 import {
   useTerminalAttentionController,
   useTerminalAttentionRollup,
@@ -50,13 +52,6 @@ import { useTerminalProfiles } from './use-terminal-profiles'
 import { useTerminalPersistence } from './use-terminal-persistence'
 import { useTerminalRecovery } from './use-terminal-recovery'
 import { harnessLaunchMenuState } from './harness-launch-menu'
-
-/** A one-shot request to open a bare shell running a command (e.g. worker attach). */
-export interface TerminalAttachRequest {
-  readonly command: string
-  /** Monotonic id so repeat requests (even for the same command) re-fire. */
-  readonly nonce: number
-}
 
 interface TerminalWorkspaceProps {
   readonly cwd: HostPath
@@ -249,18 +244,12 @@ export function TerminalWorkspace({
   }
 
   // Open a bare shell running an attach command (e.g. `gc session attach
-  // <worker>`) when the Beads panel requests one. Deduped by nonce so a
-  // re-render never re-launches, but clicking again (new nonce) does.
-  const lastAttachNonce = useRef<number | undefined>(undefined)
-  useEffect(() => {
-    if (!attachRequest || lastAttachNonce.current === attachRequest.nonce) return
-    lastAttachNonce.current = attachRequest.nonce
-    if (!available || !defaultProvider || !defaultProfile) return
-    launchSession(defaultProfile, defaultProvider, true, attachRequest.command)
-    // launchSession/defaultProfile are stable enough for this one-shot trigger;
-    // the nonce guard is what actually gates re-runs.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attachRequest, available])
+  // <worker>`) when the Beads panel requests one.
+  useTerminalAttachRequest(attachRequest, (command) => {
+    if (available && defaultProvider && defaultProfile) {
+      launchSession(defaultProfile, defaultProvider, true, command)
+    }
+  })
 
   const splitTerminal = (): void => {
     if (!available || !defaultProvider || !defaultProfile) return

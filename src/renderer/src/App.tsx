@@ -19,7 +19,6 @@ import type { WebViewState } from './dashboards/WebPane'
 import { WebPaneStack } from './dashboards/WebPaneStack'
 import { useWebPaneWorkspace } from './dashboards/use-web-pane-workspace'
 import { TerminalWorkspace } from './terminal/TerminalWorkspace'
-import type { TerminalAttachRequest } from './terminal/TerminalWorkspace'
 import { useTerminalAttention } from './terminal/use-terminal-attention'
 import { ProjectsBar } from './workspaces/ProjectsBar'
 import { MissingWorkspaceNotice } from './workspaces/MissingWorkspaceNotice'
@@ -29,7 +28,7 @@ import { SessionDialog } from './workspaces/SessionDialog'
 import { SshPromptDialog } from './workspaces/SshPromptDialog'
 import { FileTree } from './tree/FileTree'
 import { isGitIgnoreRulePath } from './tree/git-ignore-refresh'
-import { BeadsPanel } from './beads/BeadsPanel'
+import { BeadsRailPanel, BeadsRailTab, useBeadsWorkspace } from './beads/BeadsRail'
 import { GitPanel } from './git/GitPanel'
 import { workspaceGitEnabled } from './git/git-capability'
 import { GitGraphView } from './git/GitGraphView'
@@ -45,15 +44,6 @@ import { useWorkbenchCommands } from './workbench/use-workbench-commands'
 import { useWorkbenchLayout } from './workbench/use-workbench-layout'
 import { useWorkbenchOverlays } from './workbench/use-workbench-overlays'
 import { TerminalLayoutControls } from './workbench/TerminalLayoutControls'
-
-/**
- * POSIX single-quote a value so it is safe to splice into an interactive shell
- * command line. Worker ids are normally plain identifiers, but the value flows
- * into a shell, so quote defensively rather than trusting the input.
- */
-function shellQuoteArg(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`
-}
 
 export function App(): ReactElement {
   const theme = useAppTheme()
@@ -233,60 +223,7 @@ export function App(): ReactElement {
   deactivateGitGraphRef.current = deactivateGitGraph
   deactivateWebPaneRef.current = () => setWebViewActive(false)
 
-  // Beads-ness is discovered asynchronously (a `.beads` stat on the host), so
-  // it starts hidden and reveals once the probe confirms — a plain directory
-  // never flashes a Beads tab. Mirrors how `gitEnabled` gates the Git tab.
-  const [beadsEnabled, setBeadsEnabled] = useState(false)
-  // A pending "open a terminal running this command" request, targeted at one
-  // workspace. Set when a live worker name is clicked in the Beads panel.
-  const [attachRequest, setAttachRequest] = useState<
-    { readonly workspaceId: string; readonly request: TerminalAttachRequest } | undefined
-  >()
-  const attachNonce = useRef(0)
-
-  // Open a terminal running `gc session attach <worker>` in the active
-  // workspace when a live worker name is clicked in the Beads panel. The worker
-  // id is shell-quoted since it flows into an interactive shell command line.
-  const requestAttachWorker = (worker: string): void => {
-    const workspaceId = activeWorkspace?.id
-    if (!workspaceId) return
-    attachNonce.current += 1
-    setAttachRequest({
-      workspaceId,
-      request: {
-        command: `gc session attach ${shellQuoteArg(worker)}`,
-        nonce: attachNonce.current,
-      },
-    })
-  }
-
-  // Probe whether the active workspace has a `.beads` project; drives the Beads
-  // tab's visibility. Re-runs on workspace/connection change, with a cancel
-  // guard so a slow probe for a previous workspace can't clobber the result.
-  useEffect(() => {
-    if (!root || connectionState !== 'connected') {
-      setBeadsEnabled(false)
-      return
-    }
-    let cancelled = false
-    void window.hvir
-      .invoke('beads:probe', { root })
-      .then((result) => {
-        if (!cancelled) setBeadsEnabled(result.hasProject)
-      })
-      .catch(() => {
-        if (!cancelled) setBeadsEnabled(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [root, connectionState])
-
-  // The Beads tab can't stay selected once the active workspace has no Beads
-  // project; fall back to Files, mirroring the Git-tab gating in the layout hook.
-  useEffect(() => {
-    if (!beadsEnabled && railMode === 'beads') setRailMode('files')
-  }, [beadsEnabled, railMode, setRailMode])
+  const beads = useBeadsWorkspace(session, layout)
 
   useEffect(() => {
     if (overlays.projectPickerOpen) void refreshHosts()
@@ -500,16 +437,7 @@ export function App(): ReactElement {
                 Git{changedCount > 0 ? ` ${changedCountLabel}` : ''}
               </button>
             ) : null}
-            {beadsEnabled ? (
-              <button
-                type="button"
-                className={railMode === 'beads' ? 'active' : ''}
-                aria-current={railMode === 'beads' ? 'page' : undefined}
-                onClick={() => setRailMode('beads')}
-              >
-                Beads
-              </button>
-            ) : null}
+            <BeadsRailTab beads={beads} layout={layout} />
             <button
               type="button"
               className={railMode === 'harness' ? 'active' : ''}
@@ -560,15 +488,7 @@ export function App(): ReactElement {
                 autoFetchIntervalMs={settings.gitAutoFetchIntervalMs}
               />
             ) : null}
-            {beadsEnabled ? (
-              <BeadsPanel
-                key={`beads:${root.hostId}:${root.path}`}
-                root={root}
-                connected={connectionState === 'connected'}
-                hidden={railMode !== 'beads'}
-                onAttachWorker={requestAttachWorker}
-              />
-            ) : null}
+            <BeadsRailPanel beads={beads} session={session} layout={layout} />
             <section
               className="rail-section harness-placeholder"
               aria-label="Harness"
@@ -698,11 +618,7 @@ export function App(): ReactElement {
               available={!workspace.missing}
               visible={workspace.id === projectState.activeWorkspaceId}
               connectionState={project.connectionState}
-              attachRequest={
-                attachRequest?.workspaceId === workspace.id
-                  ? attachRequest.request
-                  : undefined
-              }
+              attachRequest={beads.attachRequestFor(workspace.id)}
               onRollup={terminalAttention.updateRollup}
               onOpenPath={(target) =>
                 openFile(

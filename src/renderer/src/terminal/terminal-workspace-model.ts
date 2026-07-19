@@ -14,6 +14,13 @@ import { profileRiskAcknowledged } from './terminal-profile-recovery'
 
 export type TerminalSplitPane = 'primary' | 'secondary'
 
+/** A one-shot request to open a bare shell running a command (e.g. worker attach). */
+export interface TerminalAttachRequest {
+  readonly command: string
+  /** Monotonic id so repeat requests (even for the same command) re-fire. */
+  readonly nonce: number
+}
+
 export interface TerminalSession {
   readonly id: string
   readonly providerId: HarnessProviderId

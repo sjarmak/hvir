@@ -289,7 +289,9 @@ function buildPlannedSection(
   byId: ReadonlyMap<string, BeadIssue>,
 ): BeadsSection {
   const epicIds = new Set(
-    cards.filter((card) => classifyIssueType(card.issue.issueType) === 'outcome').map((c) => c.issue.id),
+    cards
+      .filter((card) => classifyIssueType(card.issue.issueType) === 'outcome')
+      .map((c) => c.issue.id),
   )
   const groups: BeadGroup[] = []
   const grouped = new Map<string, BeadCard[]>()
@@ -349,7 +351,11 @@ function isDecision(issueType: string): boolean {
  * `needs-human` label. Never inferred from a "Decide:" title or prose.
  */
 function needsHuman(issue: BeadIssue, category: string): boolean {
-  if (category === 'outcome' && isDecision(issue.issueType) && issue.status !== 'closed') {
+  if (
+    category === 'outcome' &&
+    isDecision(issue.issueType) &&
+    issue.status !== 'closed'
+  ) {
     return true
   }
   return issue.labels.some((label) => label.toLowerCase() === 'needs-human')

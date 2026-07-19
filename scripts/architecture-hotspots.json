@@ -19,33 +19,33 @@
   "legacyHotspots": [
     {
       "path": "src/main/index.ts",
-      "maxLines": 535,
+      "maxLines": 522,
       "owner": "architecture epic #33",
-      "rationale": "The composition root wires runtime owners, window presentation, coordinators, worker adapters, and IPC; this strict cap prevents product workflows from returning. Fork: +15 for BeadsService owner wiring.",
+      "rationale": "The composition root wires runtime owners, window presentation, coordinators, worker adapters, and IPC; this strict cap prevents product workflows from returning. Fork: +2 over upstream's zero-headroom cap for the single BeadsService owner call (construction extracted to beads-owner.ts); the getProject closure is shared with the IPC router.",
       "removalIssue": "#35-#40",
       "expiresOn": "2026-09-30"
     },
     {
       "path": "src/renderer/src/App.tsx",
-      "maxLines": 775,
+      "maxLines": 686,
       "owner": "architecture epic #33",
-      "rationale": "The renderer root is now a composition shell for feature-owned models and views; this strict cap prevents it from reabsorbing feature state and policy. Fork: +89 for Beads tab wiring (probe, rail tab/panel, worker-attach request).",
+      "rationale": "The renderer root is now a composition shell for feature-owned models and views; this strict cap prevents it from reabsorbing feature state and policy.",
       "removalIssue": "#43-#45",
       "expiresOn": "2026-09-30"
     },
     {
       "path": "src/main/project-host/ssh-host.ts",
-      "maxLines": 1210,
+      "maxLines": 1192,
       "owner": "architecture epic #33",
-      "rationale": "The public SshHost owns one authentication, connection, cache, and capacity policy while delegating file, watch, and transport-pool mechanics to private collaborators. Fork: +18 for login-shell buffered-exec support.",
+      "rationale": "The public SshHost owns one authentication, connection, cache, and capacity policy while delegating file, watch, and transport-pool mechanics to private collaborators.",
       "removalIssue": "#41",
       "expiresOn": "2026-09-30"
     },
     {
       "path": "src/renderer/src/terminal/TerminalWorkspace.tsx",
-      "maxLines": 455,
+      "maxLines": 437,
       "owner": "architecture epic #33",
-      "rationale": "TerminalWorkspace is now the feature composition view over extracted policy, effects, persistence, recovery, and presentation modules; the named cap preserves that boundary. Fork: +33 for worker-attach request (initialInput one-shot launch).",
+      "rationale": "TerminalWorkspace is now the feature composition view over extracted policy, effects, persistence, recovery, and presentation modules; the named cap preserves that boundary. Fork: +15 over upstream's zero-headroom cap for the worker-attach wiring (attachRequest prop, initialInput threading, one-shot launch); the effect and type live in use-terminal-attach-request.ts and the model.",
       "removalIssue": "#46",
       "expiresOn": "2026-09-30"
     },
@@ -75,27 +75,11 @@
     },
     {
       "path": "test/ssh-host.test.ts",
-      "maxLines": 1735,
+      "maxLines": 1685,
       "owner": "architecture epic #33",
-      "rationale": "Legacy end-to-end SshHost adapter characterization remains in one test module while new collaborator policy is tested in focused modules. Fork: +50 for login-shell buffered-exec coverage.",
+      "rationale": "Legacy end-to-end SshHost adapter characterization remains in one test module while new collaborator policy is tested in focused modules.",
       "removalIssue": "#41",
       "expiresOn": "2026-09-30"
-    },
-    {
-      "path": "src/main/beads/beads-service.ts",
-      "maxLines": 640,
-      "owner": "fork: beads integration",
-      "rationale": "Fork feature module. The Beads main-process service owns project resolution, listing, taxonomy-driven dispatchability, gates, and host watch/refresh for the read-only Beads rail; kept as one service pending extraction of the listing/gates collaborators.",
-      "removalIssue": "fork-beads",
-      "expiresOn": "2026-12-31"
-    },
-    {
-      "path": "src/renderer/src/beads/BeadsPanel.tsx",
-      "maxLines": 560,
-      "owner": "fork: beads integration",
-      "rationale": "Fork feature module. The Beads rail view composes section classification, liveness, and worker-attach interactions; kept as one view pending extraction of the section/card presentation collaborators.",
-      "removalIssue": "fork-beads",
-      "expiresOn": "2026-12-31"
     },
     {
       "path": "src/main/smoke/index.ts",

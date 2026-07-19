@@ -13,7 +13,7 @@ import { ProjectRegistry, RendererSshPrompter } from './project-registry'
 import { ProjectCoordinator } from './project-coordinator'
 import { PtySupervisor } from './pty/pty-supervisor'
 import { AttentionBadge } from './attention-badge'
-import { BeadsService } from './beads/beads-service'
+import { ownBeadsService } from './beads/beads-owner'
 import { HarnessProfileStore } from './harness/harness-profile-store'
 import { HarnessProbeManager } from './harness/harness-probe'
 import { ProjectWatchController } from './project-watch'
@@ -330,26 +330,17 @@ function createWorkbenchEntry(): void {
       return sshPrompter.runForOwner(owner, operation)
     }
 
-    const beadsService = runtime.own(
-      'beads service',
-      new BeadsService({
-        getProject: () => {
-          if (!projectRegistry) throw new Error('Project registry is unavailable')
-          return projectRegistry.active
-        },
-        emitChanged: (event) => emit('beads:changed', event),
-      }),
-      (service) => service.dispose(),
-    )
+    const getProject = () => {
+      if (!projectRegistry) throw new Error('Project registry is unavailable')
+      return projectRegistry.active
+    }
+    const beadsService = ownBeadsService(runtime, getProject, emit)
     runtime.own(
       'IPC authority router',
       registerIpcHandlers({
         echoWorker,
         gitWorker,
-        getProject: () => {
-          if (!projectRegistry) throw new Error('Project registry is unavailable')
-          return projectRegistry.active
-        },
+        getProject,
         getRegisteredWorkspaceRoot: (root) =>
           projectRegistry?.registeredWorkspaceRoot(root),
         getProjectState: () => {
