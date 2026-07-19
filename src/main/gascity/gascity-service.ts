@@ -188,6 +188,14 @@ export class GasCityService {
    * non-login shell (SSH exec) or a GUI-launched app's minimal PATH does not
    * include. Route through the host's login shell so it resolves the same way it
    * does in an interactive terminal.
+   *
+   * The background lane is not an optimization, it is containment. On a real
+   * city `gc session list` takes about three seconds and `gc rig list` about the
+   * same, against tens of milliseconds for `bd` or `git status`. The host's
+   * buffered-exec budget is shared by every subsystem, so without a cap a crew
+   * poll on a 4-second timer holds most of it, and the git discovery a user is
+   * waiting on after a workspace switch queues behind gc. Capping gc at one slot
+   * makes a slow city cost the crew section its own latency and nothing else.
    */
   private async run(
     host: ProjectHost,
@@ -200,6 +208,7 @@ export class GasCityService {
         cwd: root,
         maxBuffer: MAX_OUTPUT_BYTES,
         loginShell: true,
+        lane: 'background',
       })
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason)

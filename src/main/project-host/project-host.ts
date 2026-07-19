@@ -28,6 +28,17 @@ export type { Disposer }
 /** Maximum UTF-8 payload accepted by one duplex exec-stream write. */
 export const MAX_EXEC_STREAM_WRITE_BYTES = 256 * 1024
 
+/**
+ * Which share of a host's exec concurrency a command may claim.
+ *
+ * `interactive` is anything a user is waiting on — git status after a workspace
+ * switch, a probe that gates a tab. `background` is a periodic poll whose result
+ * refreshes a panel already on screen. The distinction exists because a host's
+ * exec budget is small and shared: one slow poll repeated on a timer can hold
+ * most of it, and everything a user is actually waiting for queues behind it.
+ */
+export type ExecLane = 'interactive' | 'background'
+
 export interface ExecOptions {
   readonly cwd?: HostPath
   readonly env?: Record<string, string>
@@ -52,6 +63,11 @@ export interface ExecOptions {
    * CLIs such as `bd` that live outside the default non-login PATH.
    */
   readonly loginShell?: boolean
+  /**
+   * Defaults to `interactive`. Set `background` on periodic polls so a slow one
+   * cannot consume the host's whole exec budget; see {@link ExecLane}.
+   */
+  readonly lane?: ExecLane
   /** Max bytes to buffer across stdout+stderr before failing. */
   readonly maxBuffer?: number
   /** Terminate and return the buffered prefix instead of rejecting at maxBuffer. */

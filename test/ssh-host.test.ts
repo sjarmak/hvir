@@ -890,96 +890,57 @@ describe('SshHost remote behavior', () => {
   })
 
   it('keeps buffered execs within the SSH session budget', async () => {
-    const channels = Array.from({ length: 3 }, () => {
-      const channel = Object.assign(new EventEmitter(), {
-        stderr: new EventEmitter(),
-        close: vi.fn(() => channel.emit('close')),
-        end: vi.fn(),
-      })
-      return channel
-    })
-    const [first, second, third] = channels
-    if (!first || !second || !third) throw new Error('Expected three test channels')
-    let nextChannel = 0
-    const client = Object.assign(
-      fakeClient(() => undefined),
-      {
-        exec: vi.fn(
-          (
-            _command: string,
-            callback: (error: Error | undefined, value: unknown) => void,
-          ) => callback(undefined, channels[nextChannel++]),
-        ),
-      },
-    )
-    const host = new SshHost({
-      config: aliasConfig(),
-      maxConcurrentExecs: 2,
-      prompter: { prompt: () => Promise.resolve(undefined) },
-    })
-    const internals = host as unknown as { state: 'connected'; client: Client }
-    internals.state = 'connected'
-    internals.client = client as unknown as Client
-
+    const { host, client, channels } = execBudgetFixture(3, 2)
     const results = [host.exec('one', []), host.exec('two', []), host.exec('three', [])]
+    // Two channels opened means the third command is queued, not running.
     await vi.waitFor(() => expect(client.exec).toHaveBeenCalledTimes(2))
-    expect(third.end).not.toHaveBeenCalled()
-
-    first.emit('exit', 0)
-    first.emit('close')
+    settleExec(channels[0])
     await vi.waitFor(() => expect(client.exec).toHaveBeenCalledTimes(3))
-    second.emit('exit', 0)
-    second.emit('close')
-    third.emit('exit', 0)
-    third.emit('close')
+    settleExec(channels[1])
+    settleExec(channels[2])
 
     await expect(Promise.all(results)).resolves.toHaveLength(3)
     await host.dispose()
   })
 
   it('admits bounded parallel buffered execs by default', async () => {
-    const channels = Array.from({ length: SSH_DEFAULT_MAX_CONCURRENT_EXECS + 1 }, () =>
-      Object.assign(new EventEmitter(), {
-        stderr: new EventEmitter(),
-        close: vi.fn(),
-        end: vi.fn(),
-      }),
+    const { host, client, channels } = execBudgetFixture(
+      SSH_DEFAULT_MAX_CONCURRENT_EXECS + 1,
     )
-    const first = channels[0]
-    if (!first) throw new Error('Expected test channels')
-    let nextChannel = 0
-    const client = Object.assign(
-      fakeClient(() => undefined),
-      {
-        exec: vi.fn(
-          (
-            _command: string,
-            callback: (error: Error | undefined, value: unknown) => void,
-          ) => callback(undefined, channels[nextChannel++]),
-        ),
-      },
-    )
-    const host = new SshHost({
-      config: aliasConfig(),
-      prompter: { prompt: () => Promise.resolve(undefined) },
-    })
-    const internals = host as unknown as { state: 'connected'; client: Client }
-    internals.state = 'connected'
-    internals.client = client as unknown as Client
 
     const results = channels.map((_, index) => host.exec(`command-${index}`, []))
     await vi.waitFor(() =>
       expect(client.exec).toHaveBeenCalledTimes(SSH_DEFAULT_MAX_CONCURRENT_EXECS),
     )
-    first.emit('exit', 0)
-    first.emit('close')
+    settleExec(channels[0])
     await vi.waitFor(() => expect(client.exec).toHaveBeenCalledTimes(channels.length))
-    for (const channel of channels.slice(1)) {
-      channel.emit('exit', 0)
-      channel.emit('close')
-    }
+    for (const channel of channels.slice(1)) settleExec(channel)
 
     await expect(Promise.all(results)).resolves.toHaveLength(channels.length)
+    await host.dispose()
+  })
+
+  it('routes a background exec into the reserved lane, not the whole budget', async () => {
+    const { host, client, channels } = execBudgetFixture(3, 4)
+
+    const results = [
+      host.exec('poll-one', [], { lane: 'background' }),
+      host.exec('poll-two', [], { lane: 'background' }),
+      host.exec('status-check', []),
+    ]
+    // Two of four slots are in use: the second poll waits on the background
+    // lane while the interactive command runs regardless of it. The lane rules
+    // themselves are covered in ssh-exec-slots.test.ts.
+    await vi.waitFor(() => expect(client.exec).toHaveBeenCalledTimes(2))
+    const started = client.exec.mock.calls.map((call) => String(call[0]))
+    expect(started.map((command) => command.includes('poll'))).toEqual([true, false])
+
+    // Releasing the running poll frees the lane the queued one is waiting on.
+    settleExec(channels[0])
+    await vi.waitFor(() => expect(client.exec).toHaveBeenCalledTimes(3))
+    for (const channel of channels.slice(1)) settleExec(channel)
+
+    await expect(Promise.all(results)).resolves.toHaveLength(3)
     await host.dispose()
   })
 
@@ -1642,6 +1603,45 @@ function fakeClient(connect: () => void): EventEmitter & {
     destroy: vi.fn(() => client.emit('close')),
   })
   return client
+}
+
+type ExecChannel = EventEmitter & { end: ReturnType<typeof vi.fn> }
+
+/**
+ * A connected host whose client hands out one prepared channel per `exec`, so a
+ * test can hold commands open and observe which ones the slot budget started.
+ */
+function execBudgetFixture(channelCount: number, maxConcurrentExecs?: number) {
+  const channels = Array.from({ length: channelCount }, () => {
+    const channel: ExecChannel = Object.assign(new EventEmitter(), {
+      stderr: new EventEmitter(),
+      close: vi.fn(() => channel.emit('close')),
+      end: vi.fn(),
+    })
+    return channel
+  })
+  let next = 0
+  const client = Object.assign(fakeClient(() => undefined), {
+    exec: vi.fn(
+      (_command: string, callback: (error: Error | undefined, value: unknown) => void) =>
+        callback(undefined, channels[next++]),
+    ),
+  })
+  const host = new SshHost({
+    config: aliasConfig(),
+    prompter: { prompt: () => Promise.resolve(undefined) },
+    ...(maxConcurrentExecs === undefined ? {} : { maxConcurrentExecs }),
+  })
+  const internals = host as unknown as { state: 'connected'; client: Client }
+  internals.state = 'connected'
+  internals.client = client as unknown as Client
+  return { host, client, channels }
+}
+
+function settleExec(channel: ExecChannel | undefined): void {
+  if (!channel) throw new Error('Expected a prepared exec channel')
+  channel.emit('exit', 0)
+  channel.emit('close')
 }
 
 function fingerprint(key: Buffer): string {

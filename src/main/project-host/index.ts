@@ -1,5 +1,6 @@
 export type {
   Disposer,
+  ExecLane,
   ExecOptions,
   ExecStreamHandle,
   ProjectHost,
@@ -14,8 +15,12 @@ export { assertLoopbackEndpoint, MAX_EXEC_STREAM_WRITE_BYTES } from './project-h
 export { LocalHost } from './local-host'
 export { SshHost } from './ssh-host'
 export {
-  SSH_CONTROL_CHANNEL_BUDGET,
+  ExecSlots,
   SSH_DEFAULT_MAX_CONCURRENT_EXECS,
+  SSH_MAX_BACKGROUND_EXECS,
+} from './ssh-exec-slots'
+export {
+  SSH_CONTROL_CHANNEL_BUDGET,
   SSH_MAX_CONTROL_TRANSPORTS,
   SSH_MAX_KEYBOARD_INTERACTIVE_ROUNDS,
   SSH_MAX_PHYSICAL_TRANSPORTS,

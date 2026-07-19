@@ -18,7 +18,7 @@ function stubHost(
   responses: Readonly<Record<string, ExecResult | Error>>,
   stats: readonly string[] = [],
 ): { host: ProjectHost; exec: ReturnType<typeof vi.fn> } {
-  const exec = vi.fn((_command: string, args: readonly string[]) => {
+  const exec = vi.fn((_command: string, args: readonly string[], _opts?: unknown) => {
     const key = args.slice(0, 2).join(' ')
     const response = responses[key]
     if (response === undefined) return Promise.reject(new Error(`unexpected gc: ${key}`))
@@ -238,6 +238,19 @@ rig = "mem"
       .slice(afterFirst)
       .map((call) => (call[1] as string[]).slice(0, 2).join(' '))
     expect(added).toContain('config show')
+  })
+
+  it('runs every gc invocation on the background exec lane', async () => {
+    const { host, exec } = stubHost({
+      'session list': execResult(0, '[]'),
+      'rig list': RIG_LIST,
+      'config show': CONFIG,
+    })
+    await service(host).crew({ root: ROOT })
+    expect(exec.mock.calls.length).toBeGreaterThan(0)
+    for (const call of exec.mock.calls) {
+      expect(call[2]).toMatchObject({ lane: 'background' })
+    }
   })
 
   it('rejects a request for anything but the active workspace root', async () => {

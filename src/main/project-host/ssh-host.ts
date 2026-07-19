@@ -33,6 +33,7 @@ import {
   remoteCommand,
 } from './ssh-remote-command'
 import type { SshAliasConfig } from './ssh-config'
+import { ExecSlots } from './ssh-exec-slots'
 import { SshFileAccess } from './ssh-file-access'
 import {
   SshTransportPool,
@@ -98,7 +99,6 @@ export interface SshHostOptions {
   readonly clientFactory?: () => Client
 }
 
-export const SSH_DEFAULT_MAX_CONCURRENT_EXECS = 4
 export const SSH_MAX_KEYBOARD_INTERACTIVE_ROUNDS = 4
 
 interface SshCredentialAttempt {
@@ -130,14 +130,7 @@ export class SshHost implements ProjectHost {
   private acceptedHostFingerprint?: string
   private poolGrowthPromptBlocked = false
   private lifecycleAbort = new AbortController()
-  private readonly maxConcurrentExecs: number
-  private activeExecs = 0
-  private readonly execWaiters: Array<{
-    resolve: (release: () => void) => void
-    reject: (error: Error) => void
-    signal?: AbortSignal
-    abort?: () => void
-  }> = []
+  private readonly execSlots: ExecSlots
   private readonly transportPool: SshTransportPool
   private readonly files: SshFileAccess
   private readonly watches: SshWatchService
@@ -171,16 +164,12 @@ export class SshHost implements ProjectHost {
       this.files,
       options,
     )
-    const requestedExecs = options.maxConcurrentExecs ?? SSH_DEFAULT_MAX_CONCURRENT_EXECS
-    this.maxConcurrentExecs = Math.max(
-      1,
-      Math.min(
-        16,
-        Number.isFinite(requestedExecs)
-          ? Math.floor(requestedExecs)
-          : SSH_DEFAULT_MAX_CONCURRENT_EXECS,
-      ),
-    )
+    this.execSlots = new ExecSlots({
+      disposed: () => this.disposed,
+      ...(options.maxConcurrentExecs === undefined
+        ? {}
+        : { maxConcurrent: options.maxConcurrentExecs }),
+    })
   }
   get connectionState(): HostConnectionState {
     return this.state
@@ -229,10 +218,7 @@ export class SshHost implements ProjectHost {
       this.reconnectTimer = undefined
     }
     this.reconnectAttempt = 0
-    for (const waiter of this.execWaiters.splice(0)) {
-      if (waiter.abort) waiter.signal?.removeEventListener('abort', waiter.abort)
-      waiter.reject(new Error('SSH connection cancelled'))
-    }
+    this.execSlots.cancelAll(new Error('SSH connection cancelled'))
     const clients = new Set<Client>([
       ...this.transportPool.dispose(),
       ...this.pendingClients,
@@ -274,7 +260,7 @@ export class SshHost implements ProjectHost {
     const loginShell = opts.loginShell ? await this.defaultShell() : undefined
     // Connecting performs its own short capability probe through exec(). Do
     // not reserve a buffered slot until that handshake has completed.
-    const release = await this.acquireExecSlot(opts.signal)
+    const release = await this.execSlots.acquire(opts.lane ?? 'interactive', opts.signal)
     try {
       const stream = await this.transportPool.openChannel(
         'control',
@@ -1036,57 +1022,6 @@ export class SshHost implements ProjectHost {
     await this.connect()
     if (!this.client || this.state !== 'connected') throw new Error('SSH disconnected')
     return this.client
-  }
-
-  private acquireExecSlot(signal?: AbortSignal): Promise<() => void> {
-    if (signal?.aborted) return Promise.reject(abortError())
-    if (this.disposed) {
-      return Promise.reject(
-        new Error('SSH host is disconnected; reconnect explicitly before retrying'),
-      )
-    }
-    if (this.activeExecs < this.maxConcurrentExecs) {
-      this.activeExecs++
-      return Promise.resolve(this.execRelease())
-    }
-    return new Promise((resolve, reject) => {
-      const waiter: (typeof this.execWaiters)[number] = { resolve, reject, signal }
-      if (signal) {
-        const abort = (): void => {
-          const index = this.execWaiters.indexOf(waiter)
-          if (index >= 0) this.execWaiters.splice(index, 1)
-          reject(abortError())
-        }
-        waiter.abort = abort
-        signal.addEventListener('abort', abort, { once: true })
-      }
-      this.execWaiters.push(waiter)
-    })
-  }
-
-  private execRelease(): () => void {
-    let released = false
-    return () => {
-      if (released) return
-      released = true
-      this.activeExecs = Math.max(0, this.activeExecs - 1)
-      while (this.execWaiters.length > 0) {
-        const waiter = this.execWaiters.shift()
-        if (!waiter) return
-        if (waiter.abort) waiter.signal?.removeEventListener('abort', waiter.abort)
-        if (this.disposed) {
-          waiter.reject(new Error('SSH connection cancelled'))
-          continue
-        }
-        if (waiter.signal?.aborted) {
-          waiter.reject(abortError())
-          continue
-        }
-        this.activeExecs++
-        waiter.resolve(this.execRelease())
-        return
-      }
-    }
   }
 
   private scheduleReconnect(): void {
