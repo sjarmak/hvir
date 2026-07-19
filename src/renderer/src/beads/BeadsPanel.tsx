@@ -180,7 +180,10 @@ export function BeadsPanel({
           className="beads-refresh"
           title="Refresh crew and beads"
           disabled={loading || !connected}
-          onClick={() => void refresh()}
+          onClick={() => {
+            void refresh()
+            crew.refresh()
+          }}
         >
           {loading ? '…' : '⟳'}
         </button>

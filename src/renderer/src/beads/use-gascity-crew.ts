@@ -21,6 +21,7 @@ export interface GasCityCrewState {
   /** Undefined until the first crew fetch resolves; absent for non-city workspaces. */
   readonly response: GasCityCrewResponse | undefined
   readonly loading: boolean
+  /** Re-read sessions and, unlike the poll, the city's cached shape too. */
   readonly refresh: () => void
 }
 
@@ -40,7 +41,7 @@ export function useGasCityCrew(options: GasCityCrewOptions): GasCityCrewState {
   const includeInternalsRef = useRef(includeInternals)
   includeInternalsRef.current = includeInternals
 
-  const refresh = useCallback(async (): Promise<void> => {
+  const refresh = useCallback(async (force: boolean): Promise<void> => {
     // Non-reentrant for the same reason the bead refresh is: a slow `gc` call
     // over SSH can outlast the poll interval, and overlapping them would only
     // multiply the work.
@@ -52,6 +53,7 @@ export function useGasCityCrew(options: GasCityCrewOptions): GasCityCrewState {
       const result = await window.hvir.invoke('gascity:crew', {
         root,
         includeInternals: includeInternalsRef.current,
+        ...(force ? { refresh: true } : {}),
       })
       if (serial !== requestSerial.current) return
       setResponse(result)
@@ -93,7 +95,7 @@ export function useGasCityCrew(options: GasCityCrewOptions): GasCityCrewState {
   useEffect(() => {
     if (!hasCity) return
     const controller = createVisibilityRefresh({
-      onRefresh: () => void refresh(),
+      onRefresh: () => void refresh(false),
       intervalMs: VISIBLE_POLL_INTERVAL_MS,
     })
     controller.setVisible(connected && !hidden)
@@ -109,8 +111,8 @@ export function useGasCityCrew(options: GasCityCrewOptions): GasCityCrewState {
 
   // A toggled internals filter changes the request, not just the rendering.
   useEffect(() => {
-    if (hasCity && connected) void refresh()
+    if (hasCity && connected) void refresh(false)
   }, [includeInternals, hasCity, connected, refresh])
 
-  return { response, loading, refresh: () => void refresh() }
+  return { response, loading, refresh: () => void refresh(true) }
 }

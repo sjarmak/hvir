@@ -206,6 +206,40 @@ rig = "mem"
     ])
   })
 
+  it('re-reads only the session list on a repeat poll', async () => {
+    const { host, exec } = stubHost({
+      'session list': execResult(0, JSON.stringify([])),
+      'rig list': RIG_LIST,
+      'config show': CONFIG,
+    })
+    const gascity = service(host)
+    await gascity.crew({ root: ROOT })
+    const afterFirst = exec.mock.calls.length
+    await gascity.crew({ root: ROOT })
+    const added = exec.mock.calls
+      .slice(afterFirst)
+      .map((call) => (call[1] as string[]).slice(0, 2).join(' '))
+    // The city's shape is cached; re-composing it every poll is what made the
+    // panel slow on a real city.
+    expect(added).toEqual(['session list'])
+  })
+
+  it('re-reads the city shape when a refresh asks for it', async () => {
+    const { host, exec } = stubHost({
+      'session list': execResult(0, JSON.stringify([])),
+      'rig list': RIG_LIST,
+      'config show': CONFIG,
+    })
+    const gascity = service(host)
+    await gascity.crew({ root: ROOT })
+    const afterFirst = exec.mock.calls.length
+    await gascity.crew({ root: ROOT, refresh: true })
+    const added = exec.mock.calls
+      .slice(afterFirst)
+      .map((call) => (call[1] as string[]).slice(0, 2).join(' '))
+    expect(added).toContain('config show')
+  })
+
   it('rejects a request for anything but the active workspace root', async () => {
     const { host } = stubHost({})
     await expect(

@@ -14,6 +14,11 @@ import {
 } from '../../shared'
 import type { ProjectHost } from '../project-host'
 import { EMPTY_RESOLVED_CONFIG, parseResolvedConfig } from './gascity-config'
+import {
+  GasCityContextCache,
+  isCityWorkspace,
+  type GasCityContext,
+} from './gascity-context'
 import { deriveCrew } from './gascity-crew'
 import {
   hasProjectedTierFields,
@@ -49,10 +54,19 @@ interface GcResult {
  * skipped entirely.
  */
 export class GasCityService {
+  /**
+   * The city's shape, cached per workspace. Only the session list is re-read
+   * every poll; see `gascity-context.ts` for why the rest must not be.
+   */
+  private readonly contexts = new GasCityContextCache({
+    load: (root, withConfig) => this.loadContext(root, withConfig),
+  })
+
   constructor(private readonly deps: GasCityServiceDeps) {}
 
   async crew(req: GasCityCrewRequest): Promise<GasCityCrewResponse> {
     const { host, root } = this.activeProject(req.root)
+    if (req.refresh === true) this.contexts.invalidate(root)
     const listed = await this.run(host, root, ['session', 'list', '--json'])
     if (!listed.ok) return listed.unavailable as GasCityUnavailable
 
@@ -69,26 +83,40 @@ export class GasCityService {
     // Best-effort enrichments: without them the crew degrades to "every session
     // in this directory is a worker", which is wrong but not misleading, and the
     // failure is logged rather than blanking the section.
+    const context = await this.contexts.get(root, tierSource === 'config')
+
+    return deriveCrew({
+      sessions,
+      config: context.config,
+      rigRoot: root,
+      cityWorkspace: isCityWorkspace(context, root),
+      includeInternals: req.includeInternals === true,
+      tierSource,
+      ...(context.rigName === undefined ? {} : { rigName: context.rigName }),
+      ...(context.cityRoot === undefined ? {} : { cityRoot: context.cityRoot }),
+      ...(context.hqRigName === undefined ? {} : { hqRigName: context.hqRigName }),
+    })
+  }
+
+  private async loadContext(
+    root: HostPath,
+    withConfig: boolean,
+  ): Promise<GasCityContext> {
+    const { host } = this.activeProject(root)
     const [rigs, config] = await Promise.all([
       this.resolveRigs(host, root),
-      tierSource === 'config'
+      withConfig
         ? this.resolveConfig(host, root)
         : Promise.resolve(EMPTY_RESOLVED_CONFIG),
     ])
     const rigName = rigForPath(rigs, root.path)?.name
     const { cityRoot, hqRigName } = await this.resolveCity(host, root, rigs)
-
-    return deriveCrew({
-      sessions,
+    return {
       config,
-      rigRoot: root,
-      cityWorkspace: cityRoot !== undefined && hostPathEquals(cityRoot, root),
-      includeInternals: req.includeInternals === true,
-      tierSource,
       ...(rigName === undefined ? {} : { rigName }),
       ...(cityRoot === undefined ? {} : { cityRoot }),
       ...(hqRigName === undefined ? {} : { hqRigName }),
-    })
+    }
   }
 
   /**
@@ -124,12 +152,19 @@ export class GasCityService {
     root: HostPath,
     rigs: readonly GasCityRig[],
   ): Promise<{ readonly cityRoot?: HostPath; readonly hqRigName?: string }> {
-    for (const rig of rigs) {
-      const candidate = hostPath(root.hostId, rig.path)
-      if (await hasMarker(host, candidate, [CITY_ROOT_MARKER])) {
-        return { cityRoot: candidate, hqRigName: rig.name }
-      }
-    }
+    // Stat every rig at once: a city has tens of rigs and these are round trips
+    // over SSH, so doing them in sequence is the difference between snappy and
+    // not on the first load.
+    const marked = await Promise.all(
+      rigs.map(async (rig) => {
+        const candidate = hostPath(root.hostId, rig.path)
+        return (await hasMarker(host, candidate, [CITY_ROOT_MARKER]))
+          ? { cityRoot: candidate, hqRigName: rig.name }
+          : undefined
+      }),
+    )
+    const found = marked.find((entry) => entry !== undefined)
+    if (found) return found
     const walked = await findCityRoot(host, root)
     return walked === undefined ? {} : { cityRoot: walked }
   }

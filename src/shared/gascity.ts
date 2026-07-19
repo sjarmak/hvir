@@ -131,6 +131,13 @@ export interface GasCityCrewRequest {
   readonly root: HostPath
   /** Also return `internal` tier members (the orchestration-internals toggle). */
   readonly includeInternals?: boolean
+  /**
+   * Re-read the city's shape (rigs, city root, resolved config) instead of
+   * using the cached copy. Set by an explicit refresh, never by the poll — the
+   * poll exists to track sessions, and re-composing the whole city every tick is
+   * what made the panel slow.
+   */
+  readonly refresh?: boolean
 }
 
 export interface GasCityProbeRequest {
