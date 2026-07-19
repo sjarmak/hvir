@@ -21,6 +21,7 @@ import {
   isTerminalWebTarget,
 } from './terminal-file-link'
 import { TerminalFitController } from './ghostty-terminal-fit'
+import { terminalMouseButton } from './terminal-mouse'
 import { TerminalSignalParser } from './terminal-signals'
 import { writePreservingViewport } from './terminal-viewport'
 import { TerminalWheelController } from './terminal-wheel'
@@ -83,6 +84,7 @@ class GhosttyTerminalPane implements TerminalPane {
   private disposed = false
   private readonly signalParser = new TerminalSignalParser()
   private readonly wheel = new TerminalWheelController()
+  private pressedMouseButton: number | undefined
   private lastTitle = ''
 
   readonly events: TerminalPaneEvents = {
@@ -109,6 +111,18 @@ class GhosttyTerminalPane implements TerminalPane {
     )
     this.terminal.attachCustomWheelEventHandler((event) => this.handleWheel(event))
     const canvas = this.terminal.renderer?.getCanvas()
+    if (canvas) {
+      const mouseDown = (event: MouseEvent): void => this.handleMouseDown(event, canvas)
+      const mouseUp = (event: MouseEvent): void => this.handleMouseUp(event, canvas)
+      container.addEventListener('mousedown', mouseDown, true)
+      document.addEventListener('mouseup', mouseUp, true)
+      this.engineDisposers.push({
+        dispose: () => {
+          container.removeEventListener('mousedown', mouseDown, true)
+          document.removeEventListener('mouseup', mouseUp, true)
+        },
+      })
+    }
     if (canvas) canvas.style.visibility = 'hidden'
     this.fit.fit()
     // A fresh pane must begin from an explicitly reset VT buffer. Depending on
@@ -196,17 +210,66 @@ class GhosttyTerminalPane implements TerminalPane {
     this.titleListeners.emit(title)
   }
 
-  private handleWheel(event: WheelEvent): boolean {
+  private handleMouseDown(event: MouseEvent, canvas: HTMLCanvasElement): void {
+    const result = terminalMouseButton(
+      'press',
+      this.mouseEvent(event, canvas),
+      this.mouseState(),
+    )
+    if (!result.handled) return
+    event.preventDefault()
+    event.stopPropagation()
+    this.focus()
+    if (result.data) {
+      this.pressedMouseButton = event.button
+      this.dataListeners.emit(result.data)
+    }
+  }
+
+  private handleMouseUp(event: MouseEvent, canvas: HTMLCanvasElement): void {
+    if (this.pressedMouseButton === undefined) return
+    const button = this.pressedMouseButton
+    this.pressedMouseButton = undefined
+    const result = terminalMouseButton(
+      'release',
+      { ...this.mouseEvent(event, canvas), button },
+      this.mouseState(),
+    )
+    if (!result.handled) return
+    event.preventDefault()
+    event.stopPropagation()
+    if (result.data) this.dataListeners.emit(result.data)
+  }
+
+  private mouseEvent(event: MouseEvent, canvas: HTMLCanvasElement) {
+    const bounds = canvas.getBoundingClientRect()
+    return {
+      button: event.button,
+      offsetX: event.clientX - bounds.left,
+      offsetY: event.clientY - bounds.top,
+      shiftKey: event.shiftKey,
+      altKey: event.altKey,
+      ctrlKey: event.ctrlKey,
+    }
+  }
+
+  private mouseState() {
     const term = this.terminal.wasmTerm
     const renderer = this.terminal.renderer
-    const result = this.wheel.handle(event, {
-      alternateScreen: term?.isAlternateScreen() ?? false,
+    return {
       mouseTracking: term?.hasMouseTracking() ?? false,
       sgrMouse: term?.getMode(1006) ?? false,
       cols: this.terminal.cols,
       rows: this.terminal.rows,
       cellWidth: renderer?.charWidth ?? 1,
       cellHeight: renderer?.charHeight ?? 16,
+    }
+  }
+
+  private handleWheel(event: WheelEvent): boolean {
+    const result = this.wheel.handle(event, {
+      ...this.mouseState(),
+      alternateScreen: this.terminal.wasmTerm?.isAlternateScreen() ?? false,
     })
     for (const data of result.data) {
       this.dataListeners.emit(data)
