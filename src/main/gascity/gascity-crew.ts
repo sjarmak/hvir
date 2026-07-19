@@ -71,25 +71,54 @@ export function deriveCrew(input: DeriveCrewInput): GasCityCrew {
  */
 function inScope(candidate: CrewCandidate, input: DeriveCrewInput): boolean {
   if (input.cityWorkspace) return true
-  if (belongsToRig(candidate.session, input)) return true
+  if (belongsToRig(candidate, input)) return true
   return candidate.member.tier === 'lead' && isCityLead(candidate, input)
 }
 
 /**
- * Rig association: working directory at or under the rig root, or gc saying so,
- * or a rig-qualified template.
+ * Rig association, strongest signal first.
+ *
+ * gc qualifies a session's name and template with the **rig root path**
+ * (`/home/ds/projects/mem/mem-worker`), which is the one signal that survives
+ * worktrees: a worker's `work_dir` is often a worktree
+ * (`/home/ds/gascity-worktrees/polecat-3`) that lives nowhere near the rig it
+ * belongs to, so containment alone loses it.
  */
-function belongsToRig(
-  session: GasCitySession,
-  input: Pick<DeriveCrewInput, 'rigRoot' | 'rigName'>,
-): boolean {
+function belongsToRig(candidate: CrewCandidate, input: DeriveCrewInput): boolean {
+  const { session, named } = candidate
   const { rigRoot, rigName } = input
-  if (session.workDir && isAtOrUnder(session.workDir, rigRoot)) return true
-  if (rigName !== undefined) {
-    if (session.rig === rigName) return true
-    if (session.template?.startsWith(`${rigName}/`) === true) return true
+  if (rigName !== undefined && (session.rig === rigName || named?.rig === rigName)) {
+    return true
   }
-  return false
+  const qualified = qualifiedRoot(session, rigRoot.hostId)
+  if (qualified) {
+    // An absolute qualifier names the rig outright, so it settles the question
+    // either way — a worktree `work_dir` under some unrelated root must not then
+    // claim the session for a different rig.
+    return hostPathEquals(qualified, rigRoot)
+  }
+  if (rigName !== undefined && session.template?.startsWith(`${rigName}/`) === true) {
+    return true
+  }
+  return session.workDir !== undefined && isAtOrUnder(session.workDir, rigRoot)
+}
+
+/**
+ * The rig root gc qualified this session with:
+ * `/home/ds/projects/mem/mem-worker` yields `/home/ds/projects/mem`.
+ *
+ * Only an **absolute** prefix is a rig root. A relative qualifier (`mem/agent`)
+ * names a rig, not a directory, and is matched against the rig name instead; a
+ * bare identity (`mayor`) has neither.
+ */
+function qualifiedRoot(
+  session: GasCitySession,
+  hostId: HostPath['hostId'],
+): HostPath | undefined {
+  const source = session.template ?? session.name
+  if (!source.startsWith('/')) return undefined
+  const slash = source.lastIndexOf('/')
+  return slash > 0 ? hostPath(hostId, source.slice(0, slash)) : undefined
 }
 
 /**
@@ -118,15 +147,19 @@ function isCityLead(candidate: CrewCandidate, input: DeriveCrewInput): boolean {
 }
 
 /**
- * Where an identity is rooted. The live session's working directory is the
- * truth when it is running; for a dormant one, the configured `work_dir` on the
- * named session or on its backing agent says where it would run.
+ * Where an identity is rooted. The rig-qualified name wins over `work_dir`,
+ * which for a pooled worker is usually a worktree rather than the rig itself.
+ * For a dormant identity the configured `work_dir` says where it would run.
  */
 function identityRoot(
   candidate: CrewCandidate,
   input: DeriveCrewInput,
 ): HostPath | undefined {
-  return candidate.session.workDir ?? configuredRoot(candidate.named, input)
+  return (
+    qualifiedRoot(candidate.session, input.rigRoot.hostId) ??
+    candidate.session.workDir ??
+    configuredRoot(candidate.named, input)
+  )
 }
 
 function configuredRoot(
@@ -159,15 +192,14 @@ function crewCandidate(session: GasCitySession, input: DeriveCrewInput): CrewCan
   const named = matchNamedSession(session, input.config)
   const tier = sessionTier(session, named, input)
   const poolName = tier === 'worker' ? workerPoolName(session, input) : undefined
-  const target = session.alias ?? session.name
   return {
     session,
     named,
     member: {
       key: session.id,
       tier,
-      label: target,
-      target,
+      label: displayLabel(session),
+      target: commandTarget(session),
       identityKeys: identityKeys(session),
       ...(poolName === undefined ? {} : { poolName }),
       session,
@@ -214,14 +246,52 @@ function workerPoolName(
   if (session.pool !== undefined) return session.pool
   const template = unqualifiedTemplate(session.template)
   if (template === undefined) return undefined
-  const agent = input.config.agents.find((candidate) => candidate.name === template)
+  // The same agent name recurs once per rig, so prefer the entry scoped to this
+  // session's rig before falling back to any entry with that name.
+  const rig = candidateRig(session, input)
+  const byName = input.config.agents.filter((agent) => agent.name === template)
+  const agent = byName.find((candidate) => candidate.rig === rig) ?? byName[0]
   return agent?.poolName ?? template
 }
 
+/** The rig a session's qualified name points at, as a rig *name* when known. */
+function candidateRig(
+  session: GasCitySession,
+  input: DeriveCrewInput,
+): string | undefined {
+  if (session.rig !== undefined) return session.rig
+  const qualified = qualifiedRoot(session, input.rigRoot.hostId)
+  return qualified !== undefined && hostPathEquals(qualified, input.rigRoot)
+    ? input.rigName
+    : undefined
+}
+
+/**
+ * gc names sessions with their rig path baked in
+ * (`/home/ds/projects/mem/mem-worker-2`). The path is how the crew resolves a
+ * rig, but it is not what anyone wants to read on a card.
+ */
+function displayLabel(session: GasCitySession): string {
+  return basename(session.alias ?? session.name)
+}
+
+/**
+ * What `gc session <verb> <target>` gets. The session id is unambiguous and
+ * documented; the alias is preferred only when it is a plain identifier, since
+ * a path-shaped alias is fragile on a command line and unreadable in a title.
+ */
+function commandTarget(session: GasCitySession): string {
+  const alias = session.alias ?? session.name
+  return alias.includes('/') ? session.id : alias
+}
+
+function basename(value: string): string {
+  const slash = value.lastIndexOf('/')
+  return slash >= 0 ? value.slice(slash + 1) : value
+}
+
 function unqualifiedTemplate(template: string | undefined): string | undefined {
-  if (template === undefined) return undefined
-  const slash = template.lastIndexOf('/')
-  return slash >= 0 ? template.slice(slash + 1) : template
+  return template === undefined ? undefined : basename(template)
 }
 
 /**
@@ -257,10 +327,13 @@ function matchNamedSession(
  * active-bead matcher uses, so the panel's bead join agrees with the scheduler.
  */
 function identityKeys(session: GasCitySession): readonly string[] {
-  const keys = [session.id, session.name, session.alias, session.template]
-  const unqualified = unqualifiedTemplate(session.template)
-  if (unqualified !== undefined) keys.push(unqualified)
-  return [...new Set(keys.filter((key): key is string => key !== undefined && key !== ''))]
+  const qualified = [session.id, session.name, session.alias, session.template]
+  // Both forms count: a bead can be assigned by the full rig-qualified name or
+  // by the bare one, and gc's matcher accepts either.
+  const keys = qualified.flatMap((key) =>
+    key === undefined ? [] : [key, basename(key)],
+  )
+  return [...new Set(keys.filter((key) => key !== ''))]
 }
 
 /**

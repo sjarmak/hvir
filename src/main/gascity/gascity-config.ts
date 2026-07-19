@@ -21,7 +21,11 @@ import { isRecord } from './gascity-parse'
 export interface GasCityAgentConfig {
   /** Agent/template name as configured, unqualified. */
   readonly name: string
-  /** Rig the agent is scoped to; absent for city-scope agents. */
+  /**
+   * Rig the agent is scoped to, from its `dir` field. City-scope agents carry
+   * `scope = "city"` and no `dir`. The same agent name recurs once per rig
+   * (`codex`, `core.control-dispatcher`), so name alone never identifies one.
+   */
   readonly rig?: string
   readonly workDir?: string
   /** Multi-session: has a namepool or an active-session range above one. */
@@ -30,12 +34,21 @@ export interface GasCityAgentConfig {
 }
 
 export interface GasCityNamedSessionConfig {
+  /**
+   * The agent template this named session instantiates — and its identity.
+   * `[[named_session]]` entries are keyed by `template`, not `name`; a `name`
+   * key is the exception, not the rule.
+   */
   readonly name: string
   readonly alias?: string
-  /** Agent template this named session instantiates. */
   readonly agent?: string
+  /** `always` pins the identity; `on_demand` does not. */
   readonly mode: string
   readonly suspended: boolean
+  /**
+   * Rig association, from the entry's own `dir` or — for a city-scope entry
+   * that names a rig-scoped template — from that template's agent.
+   */
   readonly rig?: string
   /** Binding-qualified named sessions (`core.control-dispatcher`) are internal. */
   readonly binding?: string
@@ -68,7 +81,23 @@ export function parseResolvedConfig(toml: string): GasCityResolvedConfig {
   const agents: GasCityAgentConfig[] = []
   const namedSessions: GasCityNamedSessionConfig[] = []
   walk(decoded, undefined, 0, agents, namedSessions)
-  return { agents, namedSessions }
+  return { agents, namedSessions: namedSessions.map((named) => withAgentRig(named, agents)) }
+}
+
+/**
+ * A rig's project lead is declared at *city* scope with no `dir` of its own —
+ * `[[named_session]] template = "aoa-pl"` — and the rig it leads is knowable
+ * only through the agent that template names, which carries `dir = "aoa"`.
+ * Without this pass every rig lead looks rig-less, which reads as "this is the
+ * city's own lead" and pins every rig's lead into every workspace.
+ */
+function withAgentRig(
+  named: GasCityNamedSessionConfig,
+  agents: readonly GasCityAgentConfig[],
+): GasCityNamedSessionConfig {
+  if (named.rig !== undefined || named.agent === undefined) return named
+  const agent = agents.find((candidate) => candidate.name === named.agent)
+  return agent?.rig === undefined ? named : { ...named, rig: agent.rig }
 }
 
 function walk(
@@ -136,7 +165,9 @@ function parseNamedSession(
   entry: Record<string, unknown>,
   rig: string | undefined,
 ): GasCityNamedSessionConfig | undefined {
-  const name = text(entry, 'name')
+  // `template` is the identity; `name` appears only when an entry overrides it.
+  const template = text(entry, 'template', 'session_template', 'agent')
+  const name = text(entry, 'name') ?? template
   if (name === undefined) return undefined
   // A binding-qualified name (`core.control-dispatcher`) marks orchestration
   // plumbing rather than a crew identity.
@@ -146,8 +177,8 @@ function parseNamedSession(
     mode: text(entry, 'mode') ?? '',
     suspended: entry['suspended'] === true,
     ...defined('alias', text(entry, 'alias')),
-    ...defined('agent', text(entry, 'agent', 'template', 'session_template')),
-    ...defined('rig', text(entry, 'rig') ?? rig),
+    ...defined('agent', template),
+    ...defined('rig', text(entry, 'dir', 'rig') ?? rig),
     ...defined('binding', dot > 0 ? name.slice(0, dot) : undefined),
     ...defined('workDir', text(entry, 'work_dir')),
   }
@@ -169,7 +200,8 @@ function parseAgent(
   return {
     name,
     pooled,
-    ...defined('rig', text(entry, 'rig') ?? rig),
+    // `dir` is how an agent names its rig; `scope = "city"` agents have none.
+    ...defined('rig', text(entry, 'dir', 'rig') ?? rig),
     ...defined('workDir', text(entry, 'work_dir')),
     // The pool label the panel groups under falls back to the agent name, which
     // is what gc's own session classification uses when no namepool is named.
