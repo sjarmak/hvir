@@ -5,7 +5,7 @@ generated: "2026-07-19"
 # Staleness stamp — machine-readable so a refresh can test drift without a model.
 # `sources` are area-relative paths (relative to THIS file's directory). Recompute:
 #   node ~/.claude/skills/project-compass/compass-hash.mjs src/main/gascity/COMPASS.md
-sources_hash: "sha256-16:66788faf7e7c5829"
+sources_hash: "sha256-16:c6bd71b5c3bc16ed"
 sources:
   - gascity-service.ts
   - gascity-context.ts
@@ -179,6 +179,18 @@ pack-stamped lead that a rig override suspended drops out, leaving the hand-defi
   deliberate — but if the loader returned `[]` the cache would hold that emptiness for a
   minute for *every* workspace on the host. `loadRigs` / `loadConfig` throw so the entry
   evicts; `degradeTo` in `loadContext` supplies the fallback and logs.
+- **The poll period is a floor the host raises, not a schedule.** What a refresh costs is a
+  property of the host: the same `gc session list` returns in milliseconds locally and in
+  about three seconds against a real city over SSH. A fixed 4-second interval left the
+  reader permanently mid-read. `createVisibilityRefresh` now chains — refresh, measure, wait
+  a multiple of what that cost, repeat — so a fast host keeps the configured period and a
+  slow one backs off to a cap without a constant here having to guess which it is. It also
+  means a poll can no longer overlap its own successor.
+- **The city probe waits for the section to be on screen.** `BeadsPanel` stays mounted
+  behind the Files and Git tabs, so an ungated probe walked up to a dozen directory levels —
+  one SSH round trip each — on every workspace switch, for a section the user may never
+  open. The answer holds as long as the workspace does, so `probedRoot` also stops a
+  hide/show cycle from asking again.
 - **The context cache re-inserts on a hit** so its eviction is least-recently-*used*. A Map
   evicts in insertion order, and without the re-insert the workspace you keep returning to
   is dropped while one abandoned long ago survives.

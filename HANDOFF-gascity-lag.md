@@ -82,21 +82,35 @@ of caching emptiness host-wide (`degradeTo` at the call site keeps the workers-o
 and `GasCityContextCache` re-inserts on a hit so its eviction is least-recently-*used* rather
 than insertion-ordered — it had been dropping the workspace you keep returning to.
 
-## Remaining, in order
+**Let the host set the poll period** (`beads-refresh.ts`). Rather than raising the 4-second
+constant to another guess, `createVisibilityRefresh` now chains: refresh, measure, wait a
+multiple of what that refresh actually cost (5x, capped at 30 s), repeat. A 3-second read
+settles at 15 s; a fast local gc keeps the 4-second floor. A poll can no longer overlap its
+own successor either, which the old fixed interval allowed and the `inFlight` guard merely
+swallowed.
 
-1. **Raise `VISIBLE_POLL_INTERVAL_MS`** off 4000 (`use-gascity-crew.ts`). Polling a 3-second
-   command every 4 seconds leaves no headroom.
-2. **Gate the probe on visibility** (original H2). `use-gascity-crew.ts:75` fires
-   `gascity:probe` on every root change with no `hidden` guard; the walk is up to 12 levels ×
-   2 markers of sequential SFTP lstats. At 9.8 ms RTT this is tens of ms, not seconds — real
-   but minor next to gc.
-3. **Upstream: `gc session list --json` taking ~3 s for 73 sessions is the actual defect.**
-   Worth reporting with these timings. Note that issue #1 step 5's projection PR does *not*
-   fix it — that removes `gc config show`, the cheap one.
+**Gate the city probe on visibility** (original H2). `BeadsPanel` stays mounted behind the
+Files and Git tabs, so the probe's marker walk ran on every workspace switch for a section
+the user may never open. It now waits until the section is on screen, and `probedRoot` keeps
+a hide/show cycle from asking again. `test/use-gascity-crew.test.tsx` covers it with the
+happy-dom harness the repo already uses for `PaneResizer`.
+
+## Remaining
+
+Everything on hvir's side is done; what is left is not hvir's to fix.
+
+**`gc session list --json` taking ~3 s for 73 sessions is the actual defect**, and `gc rig
+list` at ~2.8 s for 3.7 KB is the same story. Worth reporting upstream with the timings in
+this document. Note that issue #1 step 5's projection PR does *not* address it: that removes
+`gc config show`, the one command already measured cheap.
+
+Until then hvir hides the cost rather than removing it. A workspace switch on a warm host is
+free, but the first read after a 60 s idle still takes three seconds, and nothing here can
+make it not.
 
 ## Constraints to respect
 
-- `npm run verify` must stay green (739 tests, seam checks, ADR checks, module budgets).
+- `npm run verify` must stay green (750 tests, seam checks, ADR checks, module budgets).
 - New production modules cap at 500 lines; named hotspot budgets live in
   `scripts/architecture-hotspots.json` and are asserted by `test/architecture-hotspots.test.ts`.
 - All process/filesystem access goes through `ProjectHost` — never `child_process` or `fs`
@@ -112,7 +126,7 @@ than insertion-ordered — it had been dropping the workspace you keep returning
 - `gascity-service.ts` — orchestration, `gc` invocation, city/rig resolution.
 - `gascity-context.ts` — the per-workspace derivation left after the reads moved out.
 - `gascity-host-cache.ts` — the shared reads and why their key is the host.
-- `use-gascity-crew.ts` — probe + poll policy (remaining items 1 and 2).
+- `use-gascity-crew.ts` / `beads-refresh.ts` — probe gating and the cost-driven poll period.
 
 ## Known-good behaviour to avoid regressing
 

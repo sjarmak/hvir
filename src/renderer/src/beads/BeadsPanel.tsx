@@ -127,7 +127,7 @@ export function BeadsPanel({
   // hidden or the component unmounts, so a background panel never drives `bd`.
   useEffect(() => {
     const controller = createVisibilityRefresh({
-      onRefresh: () => void refresh(),
+      onRefresh: () => refresh(),
       intervalMs: VISIBLE_POLL_INTERVAL_MS,
     })
     controller.setVisible(connected && !hidden)

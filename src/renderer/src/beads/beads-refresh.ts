@@ -8,20 +8,45 @@
  * polls on a bounded interval. Polling stops the moment the panel is hidden or
  * disposed so a background panel never drives `bd` on the host.
  *
+ * **The period is a floor, not a schedule.** What a refresh costs is a property
+ * of the host, not of this code: the same `gc session list` returns in
+ * milliseconds locally and in about three seconds against a real city over SSH.
+ * A fixed interval shorter than the refresh it triggers leaves the reader
+ * permanently mid-read, so each poll waits a multiple of what the last one
+ * actually took. A fast host keeps the configured period; a slow one backs off
+ * on its own, without a constant here having to guess which it is.
+ *
  * The controller is framework-agnostic (no React) so its visibility/polling
- * rules are unit-testable. Timer functions are injectable for the same reason;
- * they default to the globals.
+ * rules are unit-testable. Timers and the clock are injectable for the same
+ * reason; they default to the globals.
  */
 
+type TimerHandle = ReturnType<typeof setTimeout>
+
+/** Share of the poll period a refresh may spend running before it backs off. */
+const DEFAULT_COST_FACTOR = 5
+/** However slow the host, a visible panel still refreshes this often. */
+const DEFAULT_MAX_INTERVAL_MS = 30_000
+
 export interface VisibilityRefreshOptions {
-  /** Runs a refresh. Called on becoming visible, on {@link VisibilityRefresh.focus}, and each poll tick. */
-  readonly onRefresh: () => void
-  /** Poll period while visible. */
+  /**
+   * Runs a refresh. Called on becoming visible, on {@link VisibilityRefresh.focus},
+   * and each poll tick. A returned promise is awaited, and how long it takes
+   * sets the floor for the next poll.
+   */
+  readonly onRefresh: () => void | Promise<unknown>
+  /** Minimum poll period while visible. */
   readonly intervalMs: number
-  /** Injectable for tests; defaults to `setInterval`. */
-  readonly schedule?: (callback: () => void, ms: number) => ReturnType<typeof setInterval>
-  /** Injectable for tests; defaults to `clearInterval`. */
-  readonly cancel?: (handle: ReturnType<typeof setInterval>) => void
+  /** Multiple of the last refresh's own cost the next poll waits at least. */
+  readonly costFactor?: number
+  /** Ceiling on the backed-off period. */
+  readonly maxIntervalMs?: number
+  /** Injectable for tests; defaults to `setTimeout`. */
+  readonly schedule?: (callback: () => void, ms: number) => TimerHandle
+  /** Injectable for tests; defaults to `clearTimeout`. */
+  readonly cancel?: (handle: TimerHandle) => void
+  /** Injectable for tests; defaults to `Date.now`. */
+  readonly now?: () => number
 }
 
 export interface VisibilityRefresh {
@@ -36,12 +61,15 @@ export interface VisibilityRefresh {
 export function createVisibilityRefresh(
   options: VisibilityRefreshOptions,
 ): VisibilityRefresh {
-  const schedule = options.schedule ?? ((cb, ms) => setInterval(cb, ms))
-  const cancel = options.cancel ?? ((handle) => clearInterval(handle))
+  const schedule = options.schedule ?? ((cb, ms) => setTimeout(cb, ms))
+  const cancel = options.cancel ?? ((handle) => clearTimeout(handle))
+  const now = options.now ?? (() => Date.now())
+  const costFactor = options.costFactor ?? DEFAULT_COST_FACTOR
+  const maxIntervalMs = options.maxIntervalMs ?? DEFAULT_MAX_INTERVAL_MS
 
   let visible = false
   let disposed = false
-  let timer: ReturnType<typeof setInterval> | undefined
+  let timer: TimerHandle | undefined
 
   const stopPolling = (): void => {
     if (timer !== undefined) {
@@ -50,23 +78,34 @@ export function createVisibilityRefresh(
     }
   }
 
+  const nextDelay = (elapsedMs: number): number =>
+    Math.min(maxIntervalMs, Math.max(options.intervalMs, elapsedMs * costFactor))
+
+  // Refresh, then schedule the next one from what this one cost. Chained rather
+  // than a fixed interval so a refresh can never overlap its own successor.
+  const cycle = async (): Promise<void> => {
+    const startedAt = now()
+    try {
+      await options.onRefresh()
+    } catch {
+      // A refresh reports its own failures; the poll must outlive them.
+    }
+    if (disposed || !visible) return
+    // A non-positive period means "refresh on signals only", never on a timer.
+    if (options.intervalMs <= 0) return
+    timer = schedule(() => void cycle(), nextDelay(now() - startedAt))
+  }
+
   return {
     setVisible(next: boolean): void {
       if (disposed || next === visible) return
       visible = next
-      if (visible) {
-        options.onRefresh()
-        // Guard against a zero/negative interval degenerating into a busy loop.
-        if (options.intervalMs > 0) {
-          timer = schedule(() => options.onRefresh(), options.intervalMs)
-        }
-      } else {
-        stopPolling()
-      }
+      if (visible) void cycle()
+      else stopPolling()
     },
     focus(): void {
       if (disposed || !visible) return
-      options.onRefresh()
+      void options.onRefresh()
     },
     dispose(): void {
       if (disposed) return
