@@ -24,6 +24,8 @@ interface TerminalViewProps {
   readonly fallbackTitle: string
   readonly harnessSessionId?: string
   readonly resumeOnStart: boolean
+  /** Command typed into the shell once, right after first launch (e.g. `gc session attach …`). */
+  readonly initialInput?: string
   readonly position: number
   readonly slot: 'primary' | 'secondary'
   readonly visible: boolean
@@ -58,6 +60,7 @@ export function TerminalView({
   fallbackTitle,
   harnessSessionId,
   resumeOnStart,
+  initialInput,
   position,
   slot,
   visible,
@@ -93,6 +96,11 @@ export function TerminalView({
   const disconnectedRef = useRef(false)
   const restartRequestedRef = useRef(false)
   const hasStartedRef = useRef(false)
+  const initialInputRef = useRef(initialInput)
+  initialInputRef.current = initialInput
+  // The initial command is typed exactly once — the first launch — never on a
+  // reconnect or manual restart, which would re-run it unexpectedly.
+  const initialInputSentRef = useRef(false)
   const handlersRef = useRef({
     onTitle,
     onStatus,
@@ -283,6 +291,20 @@ export function TerminalView({
         if (pendingInput) {
           window.hvir.send('pty:write', { id: sessionId, data: pendingInput })
           pendingInput = ''
+        }
+        // Auto-run the initial command (e.g. `gc session attach <worker>`) on the
+        // very first launch, once, after any buffered keystrokes.
+        if (
+          initialInputRef.current &&
+          !initialInputSentRef.current &&
+          !isReconnect &&
+          !isManualRestart
+        ) {
+          initialInputSentRef.current = true
+          window.hvir.send('pty:write', {
+            id: sessionId,
+            data: `${initialInputRef.current}\r`,
+          })
         }
         setStatus(
           result.resumed

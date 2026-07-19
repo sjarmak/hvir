@@ -4,6 +4,9 @@ import {
   BeadsService,
   classifyListFailure,
   parseBeadsListOutput,
+  parseDigraphEdges,
+  parseDispatchableOutput,
+  parseGatesOutput,
 } from '../src/main/beads/beads-service'
 import type { ProjectHost } from '../src/main/project-host'
 import {
@@ -108,12 +111,16 @@ describe('BeadsService.list', () => {
       acceptanceCriteria: undefined,
       dependencyCount: 2,
     })
-    expect(exec).toHaveBeenCalledTimes(2)
     const [command, args] = exec.mock.calls[0] as [string, readonly string[]]
     expect(command).toBe('bd')
     expect(args).toEqual(
       expect.arrayContaining(['-C', ROOT.path, 'list', '--json', '--flat', '-n', '0']),
     )
+    // Enrichment calls (dependency edges + gates) run after the core pair; the
+    // ready query is still exactly `bd list --ready`.
+    expect(
+      exec.mock.calls.some(([, callArgs]) => (callArgs as string[]).includes('--ready')),
+    ).toBe(true)
   })
 
   it('uses a login shell and never strips the environment (port-file operation)', async () => {
@@ -125,19 +132,25 @@ describe('BeadsService.list', () => {
     await service(host).list({ root: ROOT })
     expect(exec.mock.calls.length).toBeGreaterThan(0)
     for (const call of exec.mock.calls) {
-      const [command, args, opts] = call as [
+      const [command, , opts] = call as [
         string,
         readonly string[],
         { loginShell?: boolean; env?: unknown; unsetEnv?: unknown } | undefined,
       ]
+      // Every shelled command (bd list/gate/digraph) inherits the full env via a
+      // login shell so BEADS_DOLT_* overrides and PATH resolve.
       expect(command).toBe('bd')
-      expect(args).toEqual(
-        expect.arrayContaining(['-C', ROOT.path, 'list', '--json', '--flat', '--no-pager']),
-      )
       expect(opts?.loginShell).toBe(true)
       expect(opts?.env).toBeUndefined()
       expect(opts?.unsetEnv).toBeUndefined()
     }
+    // The core list query still carries the canonical flags.
+    const listCall = exec.mock.calls.find(([, args]) =>
+      (args as string[]).includes('--json') && (args as string[]).includes('--flat'),
+    )
+    expect(listCall?.[1]).toEqual(
+      expect.arrayContaining(['-C', ROOT.path, 'list', '--json', '--flat', '--no-pager']),
+    )
   })
 
   it('surfaces an unreachable Dolt server as an actionable port-file error', async () => {
@@ -170,10 +183,19 @@ describe('BeadsService.list', () => {
     const result = await service(host).list({ root: ROOT, includeClosed: true })
     if (!result.available) throw new Error('expected availability')
     expect(result.closedIssues?.map((issue) => issue.id)).toEqual(['demo-9'])
-    expect(exec).toHaveBeenCalledTimes(3)
-    expect(exec.mock.calls[2]?.[1]).toEqual(
-      expect.arrayContaining(['--status', 'closed']),
-    )
+    expect(
+      exec.mock.calls.some(([, args]) =>
+        (args as string[]).includes('--status') && (args as string[]).includes('closed'),
+      ),
+    ).toBe(true)
+  })
+
+  it('omits the closed query when not requested', async () => {
+    const { host, exec } = fakeHost()
+    await service(host).list({ root: ROOT })
+    expect(
+      exec.mock.calls.some(([, args]) => (args as string[]).includes('closed')),
+    ).toBe(false)
   })
 
   it('classifies a missing database, a missing CLI, and other failures', async () => {
@@ -344,5 +366,156 @@ describe('parseBeadsListOutput', () => {
       /missing an id/,
     )
     expect(() => parseBeadsListOutput('[{"id":"x"}]')).toThrow(/title or status/)
+  })
+})
+
+describe('parseDigraphEdges', () => {
+  it('reads blocker→blocked edges, skipping blank and single-token lines', () => {
+    const edges = parseDigraphEdges('gc-a gc-b gc-c\n\ngc-d\ngc-b gc-e\n')
+    expect(edges).toEqual([
+      { blockerId: 'gc-a', blockedId: 'gc-b' },
+      { blockerId: 'gc-a', blockedId: 'gc-c' },
+      { blockerId: 'gc-b', blockedId: 'gc-e' },
+    ])
+  })
+
+  it('returns no edges for empty output', () => {
+    expect(parseDigraphEdges('')).toEqual([])
+  })
+})
+
+describe('parseGatesOutput', () => {
+  it('parses gates and tolerates field-name variants', () => {
+    const gates = parseGatesOutput(
+      JSON.stringify([
+        { id: 'g1', title: 'Approve release', gate_type: 'human', blocked_id: 'gc-x', state: 'open' },
+        { id: 'g2', title: 'CI', type: 'gh:run', issue_id: 'gc-y', status: 'open' },
+        { title: 'no id, dropped' },
+      ]),
+    )
+    expect(gates).toEqual([
+      { id: 'g1', title: 'Approve release', gateType: 'human', blockedId: 'gc-x', state: 'open' },
+      { id: 'g2', title: 'CI', gateType: 'gh:run', blockedId: 'gc-y', state: 'open' },
+    ])
+  })
+
+  it('returns no gates for non-array or invalid output', () => {
+    expect(parseGatesOutput('not json')).toEqual([])
+    expect(parseGatesOutput('{}')).toEqual([])
+  })
+})
+
+describe('parseDispatchableOutput', () => {
+  it('accepts an id array, an object array, and newline-delimited forms', () => {
+    expect(parseDispatchableOutput('["gc-a","gc-b"]')).toEqual(['gc-a', 'gc-b'])
+    expect(parseDispatchableOutput('[{"id":"gc-a"},{"id":"gc-c"}]')).toEqual(['gc-a', 'gc-c'])
+    expect(parseDispatchableOutput('{"id":"gc-a"}\n{"id":"gc-b"}')).toEqual(['gc-a', 'gc-b'])
+    expect(parseDispatchableOutput('gc-a\ngc-b')).toEqual(['gc-a', 'gc-b'])
+  })
+
+  it('is empty for empty output', () => {
+    expect(parseDispatchableOutput('')).toEqual([])
+  })
+})
+
+describe('BeadsService.list enrichment', () => {
+  function enrichedHost(overrides: {
+    readonly base: Record<string, unknown>[]
+    readonly ready: Record<string, unknown>[]
+    readonly digraph?: string
+    readonly gates?: Record<string, unknown>[]
+    readonly hasPredicate?: boolean
+    readonly jq?: () => ExecResult
+  }) {
+    return fakeHost({
+      statType: overrides.hasPredicate ? 'file' : 'missing',
+      exec: (command, args) => {
+        if (command === 'jq') return overrides.jq?.() ?? execResult(0, '[]')
+        if (args.includes('gate')) return execResult(0, JSON.stringify(overrides.gates ?? []))
+        if (args.includes('digraph')) return execResult(0, overrides.digraph ?? '')
+        if (args.includes('--ready')) return execResult(0, JSON.stringify(overrides.ready))
+        return execResult(0, JSON.stringify(overrides.base))
+      },
+    })
+  }
+
+  it('derives dispatchable structurally when no predicate is configured', async () => {
+    // 3 dependency-ready, but only the executable-leaf ones are dispatchable.
+    const { host } = enrichedHost({
+      base: [
+        issueJson({ id: 'leaf-1', issue_type: 'task' }),
+        issueJson({ id: 'epic-1', issue_type: 'epic' }),
+        issueJson({ id: 'convoy-1', issue_type: 'convoy' }),
+      ],
+      ready: [
+        issueJson({ id: 'leaf-1', issue_type: 'task' }),
+        issueJson({ id: 'epic-1', issue_type: 'epic' }),
+        issueJson({ id: 'convoy-1', issue_type: 'convoy' }),
+      ],
+    })
+    const result = await service(host).list({ root: ROOT })
+    if (!result.available) throw new Error('expected availability')
+    expect(result.readyIds).toEqual(['leaf-1', 'epic-1', 'convoy-1'])
+    expect(result.dispatchableIds).toEqual(['leaf-1'])
+    expect(result.dispatchabilitySource).toBe('structural')
+  })
+
+  it('uses a configured predicate and trusts its output', async () => {
+    const { host, exec } = enrichedHost({
+      base: [issueJson({ id: 'leaf-1' }), issueJson({ id: 'leaf-2' })],
+      ready: [issueJson({ id: 'leaf-1' }), issueJson({ id: 'leaf-2' })],
+      hasPredicate: true,
+      jq: () => execResult(0, '["leaf-2"]'),
+    })
+    const result = await service(host).list({ root: ROOT })
+    if (!result.available) throw new Error('expected availability')
+    expect(result.dispatchableIds).toEqual(['leaf-2'])
+    expect(result.dispatchabilitySource).toBe('predicate')
+    expect(exec.mock.calls.some(([command]) => command === 'jq')).toBe(true)
+  })
+
+  it('falls back to structural when the predicate errors', async () => {
+    const { host } = enrichedHost({
+      base: [issueJson({ id: 'leaf-1', issue_type: 'bug' })],
+      ready: [issueJson({ id: 'leaf-1', issue_type: 'bug' })],
+      hasPredicate: true,
+      jq: () => execResult(3, '', 'jq: error'),
+    })
+    const result = await service(host).list({ root: ROOT })
+    if (!result.available) throw new Error('expected availability')
+    expect(result.dispatchableIds).toEqual(['leaf-1'])
+    expect(result.dispatchabilitySource).toBe('structural')
+  })
+
+  it('attaches dependency edges and gates', async () => {
+    const { host } = enrichedHost({
+      base: [issueJson({ id: 'gc-a' }), issueJson({ id: 'gc-b' })],
+      ready: [],
+      digraph: 'gc-a gc-b',
+      gates: [{ id: 'g1', title: 'Approve', gate_type: 'human', blocked_id: 'gc-a', state: 'open' }],
+    })
+    const result = await service(host).list({ root: ROOT })
+    if (!result.available) throw new Error('expected availability')
+    expect(result.dependencies).toEqual([{ blockerId: 'gc-a', blockedId: 'gc-b' }])
+    expect(result.gates).toEqual([
+      { id: 'g1', title: 'Approve', gateType: 'human', blockedId: 'gc-a', state: 'open' },
+    ])
+  })
+
+  it('degrades supplementary failures without failing the snapshot', async () => {
+    const { host } = fakeHost({
+      statType: 'missing',
+      exec: (_command, args) => {
+        if (args.includes('gate')) return execResult(1, '', 'gate boom')
+        if (args.includes('digraph')) return Promise.reject(new Error('digraph boom'))
+        if (args.includes('--ready')) return execResult(0, '[]')
+        return execResult(0, JSON.stringify([issueJson({ id: 'gc-a' })]))
+      },
+    })
+    const result = await service(host).list({ root: ROOT })
+    if (!result.available) throw new Error('expected availability')
+    expect(result.issues.map((i) => i.id)).toEqual(['gc-a'])
+    expect(result.dependencies).toEqual([])
+    expect(result.gates).toEqual([])
   })
 })

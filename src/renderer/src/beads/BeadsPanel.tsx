@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 
 import type { BeadIssue, BeadsListResponse, HostPath } from '../../../shared'
-import { groupBeads, priorityLabel, type BeadsSectionKey } from './beads-model'
+import {
+  classifyBeads,
+  priorityLabel,
+  type BeadCard,
+  type BeadsSection,
+  type BeadsView,
+  type GateItem,
+} from './beads-model'
 import { createVisibilityRefresh } from './beads-refresh'
 import './beads.css'
 
@@ -12,48 +19,72 @@ const CHANGED_REFETCH_DELAY_MS = 300
  * modest visible-only poll keeps the panel current without hammering `bd`.
  */
 const VISIBLE_POLL_INTERVAL_MS = 5000
+/**
+ * Ignore `.beads/` change events for a short window after a refetch completes.
+ * Our own `bd` reads (several per refresh: list, ready, gates, edges, jq) can
+ * touch `.beads/`, which the watcher then reports as a change — a feedback loop
+ * that would refetch continuously. This cooldown breaks that loop while still
+ * catching genuine external edits after it, and the visible poll is the backstop.
+ */
+const CHANGED_COOLDOWN_MS = 2500
 
 interface BeadsPanelProps {
   readonly root: HostPath
   readonly connected: boolean
   readonly hidden?: boolean
+  /** Open a terminal attached to a live in-flight worker (`gc session attach …`). */
+  readonly onAttachWorker?: (worker: string) => void
 }
 
 export function BeadsPanel({
   root,
   connected,
   hidden = false,
+  onAttachWorker,
 }: BeadsPanelProps): ReactElement {
   const [response, setResponse] = useState<BeadsListResponse>()
   const [error, setError] = useState<string>()
   const [loading, setLoading] = useState(false)
   const [showClosed, setShowClosed] = useState(false)
+  const [showInternals, setShowInternals] = useState(false)
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<string>>(
     new Set(),
   )
   const requestSerial = useRef(0)
+  const inFlight = useRef(false)
+  const lastCompletedAt = useRef(0)
   const showClosedRef = useRef(showClosed)
   showClosedRef.current = showClosed
+  const showInternalsRef = useRef(showInternals)
+  showInternalsRef.current = showInternals
 
-  const refresh = useCallback(
-    async (includeClosed: boolean): Promise<void> => {
-      const serial = ++requestSerial.current
-      setLoading(true)
-      try {
-        const result = await window.hvir.invoke('beads:list', { root, includeClosed })
-        if (serial !== requestSerial.current) return
-        setResponse(result)
-        setError(undefined)
-      } catch (reason) {
-        if (serial !== requestSerial.current) return
-        setError(reason instanceof Error ? reason.message : String(reason))
-      } finally {
-        if (serial === requestSerial.current) setLoading(false)
-      }
-    },
-    [root],
-  )
+  const refresh = useCallback(async (): Promise<void> => {
+    // Non-reentrant: a poll tick, focus, or watch event that arrives while a
+    // refetch is in flight is dropped rather than overlapped (slow SSH `bd`
+    // calls can outlast the 5s poll), so the button never flickers.
+    if (inFlight.current) return
+    inFlight.current = true
+    const serial = ++requestSerial.current
+    setLoading(true)
+    try {
+      const result = await window.hvir.invoke('beads:list', {
+        root,
+        includeClosed: showClosedRef.current,
+        includeInternals: showInternalsRef.current,
+      })
+      if (serial !== requestSerial.current) return
+      setResponse(result)
+      setError(undefined)
+    } catch (reason) {
+      if (serial !== requestSerial.current) return
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      inFlight.current = false
+      lastCompletedAt.current = Date.now()
+      if (serial === requestSerial.current) setLoading(false)
+    }
+  }, [root])
 
   // Local-change signal: watch `.beads/` and refetch on a debounced burst. This
   // stays subscribed regardless of visibility, but it is a best-effort hint —
@@ -65,10 +96,13 @@ export function BeadsPanel({
     let timer: ReturnType<typeof setTimeout> | undefined
     const dispose = window.hvir.on('beads:changed', (event) => {
       if (event.root.hostId !== root.hostId || event.root.path !== root.path) return
+      // Suppress the echo of our own reads: a change right after a refetch is
+      // almost certainly bd touching `.beads/`, not a real external edit.
+      if (Date.now() - lastCompletedAt.current < CHANGED_COOLDOWN_MS) return
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
         timer = undefined
-        void refresh(showClosedRef.current)
+        void refresh()
       }, CHANGED_REFETCH_DELAY_MS)
     })
     return () => {
@@ -83,7 +117,7 @@ export function BeadsPanel({
   // hidden or the component unmounts, so a background panel never drives `bd`.
   useEffect(() => {
     const controller = createVisibilityRefresh({
-      onRefresh: () => void refresh(showClosedRef.current),
+      onRefresh: () => void refresh(),
       intervalMs: VISIBLE_POLL_INTERVAL_MS,
     })
     controller.setVisible(connected && !hidden)
@@ -98,9 +132,15 @@ export function BeadsPanel({
   }, [connected, hidden, refresh])
 
   const toggleClosed = (): void => {
-    const next = !showClosed
-    setShowClosed(next)
-    void refresh(next)
+    setShowClosed(!showClosed)
+    showClosedRef.current = !showClosed
+    void refresh()
+  }
+
+  const toggleInternals = (): void => {
+    setShowInternals(!showInternals)
+    showInternalsRef.current = !showInternals
+    void refresh()
   }
 
   const toggleExpanded = (id: string): void => {
@@ -130,7 +170,7 @@ export function BeadsPanel({
           className="beads-refresh"
           title="Refresh beads"
           disabled={loading || !connected}
-          onClick={() => void refresh(showClosed)}
+          onClick={() => void refresh()}
         >
           {loading ? '…' : '⟳'}
         </button>
@@ -149,52 +189,105 @@ export function BeadsPanel({
     if (!response.available) {
       return <p className="beads-empty">{response.message}</p>
     }
-    const sections = groupBeads(response.issues, response.readyIds)
-    const empty = response.issues.length === 0
+    const view = classifyBeads(response)
+    const empty =
+      response.issues.length === 0 && view.gates.length === 0 && view.dataHygiene.length === 0
     return (
       <>
         {empty ? <p className="beads-empty">No open beads.</p> : null}
-        {sections
-          .filter((section) => section.issues.length > 0)
-          .map((section) => renderSection(section.key, section.label, section.issues))}
-        <div className="beads-closed-toggle">
-          <button type="button" onClick={toggleClosed}>
+        {view.sections
+          .filter((section) => sectionHasContent(section, view))
+          .map((section) => renderSection(section, view))}
+        {renderDataHygiene(view.dataHygiene)}
+        <div className="beads-toggles">
+          <button
+            type="button"
+            aria-pressed={showClosed}
+            onClick={toggleClosed}
+          >
             {showClosed ? 'Hide closed' : 'Show closed'}
           </button>
+          <button
+            type="button"
+            aria-pressed={showInternals}
+            onClick={toggleInternals}
+          >
+            {showInternals ? 'Hide orchestration internals' : 'Show orchestration internals'}
+          </button>
         </div>
+        {showInternals ? renderInternals(view, response.orchestrationIssues ?? []) : null}
         {showClosed && response.closedIssues
-          ? renderSection('closed', 'Closed', response.closedIssues)
+          ? renderClosedSection(response.closedIssues)
           : null}
       </>
     )
   }
 
-  function renderSection(
-    key: BeadsSectionKey | 'closed',
-    label: string,
-    issues: readonly BeadIssue[],
-  ): ReactElement {
-    const collapsed = collapsedSections.has(key)
+  function sectionHasContent(section: BeadsSection, view: BeadsView): boolean {
+    if (section.key === 'needsYou' && view.gates.length > 0) return true
+    return section.count > 0
+  }
+
+  function renderSection(section: BeadsSection, view: BeadsView): ReactElement {
+    const collapsed = collapsedSections.has(section.key)
+    const displayCount =
+      section.count + (section.key === 'needsYou' ? view.gates.length : 0)
     return (
-      <div className="beads-section" key={key}>
+      <div className="beads-section" key={section.key}>
         <button
           type="button"
           className="beads-section-header"
           aria-expanded={!collapsed}
-          onClick={() => toggleSection(key)}
+          onClick={() => toggleSection(section.key)}
         >
           <span className={`beads-caret${collapsed ? '' : ' expanded'}`}>▸</span>
-          <span className={`beads-section-label beads-section-${key}`}>{label}</span>
-          <span className="beads-section-count">{issues.length}</span>
+          <span className={`beads-section-label beads-section-${section.key}`}>
+            {section.label}
+          </span>
+          <span className="beads-section-count">{displayCount}</span>
         </button>
         {collapsed ? null : (
-          <ul className="beads-list">{issues.map((issue) => renderIssue(issue))}</ul>
+          <>
+            {section.note ? <p className="beads-section-note">{section.note}</p> : null}
+            {section.key === 'needsYou'
+              ? view.gates.map((item) => renderGate(item))
+              : null}
+            <ul className="beads-list">
+              {section.cards.map((card) => renderCard(card))}
+            </ul>
+            {section.groups?.map((group) => (
+              <div className="beads-group" key={group.outcome.id}>
+                <div className="beads-group-outcome" title={group.outcome.title}>
+                  <span className="beads-group-badge">epic</span>
+                  <span className="beads-group-title">{group.outcome.title}</span>
+                </div>
+                <ul className="beads-list beads-group-list">
+                  {group.cards.map((card) => renderCard(card))}
+                </ul>
+              </div>
+            ))}
+          </>
         )}
       </div>
     )
   }
 
-  function renderIssue(issue: BeadIssue): ReactElement {
+  function renderGate(item: GateItem): ReactElement {
+    return (
+      <div className="beads-gate" key={item.gate.id}>
+        <span className="beads-gate-badge">{item.gate.gateType} gate</span>
+        <span className="beads-gate-title" title={item.gate.title}>
+          {item.gate.title}
+        </span>
+        {item.blocks ? (
+          <span className="beads-gate-unlocks">unblocks {item.blocks.title}</span>
+        ) : null}
+      </div>
+    )
+  }
+
+  function renderCard(card: BeadCard): ReactElement {
+    const { issue } = card
     const open = expanded.has(issue.id)
     return (
       <li key={issue.id}>
@@ -212,28 +305,210 @@ export function BeadsPanel({
           </span>
           <span className="beads-type">{issue.issueType}</span>
         </button>
-        {open ? renderDetail(issue) : null}
+        {renderSignals(card)}
+        {open ? renderDetail(card) : null}
       </li>
     )
   }
 
-  function renderDetail(issue: BeadIssue): ReactElement {
+  /** Compact per-card signals: parent outcome, liveness, blockers, unlocks. */
+  function renderSignals(card: BeadCard): ReactElement | null {
+    const { issue } = card
+    const bits: ReactElement[] = []
+    if (card.shipState) {
+      bits.push(
+        <span className="beads-shipstate" key="ship">
+          {card.shipState}
+        </span>,
+      )
+    }
+    if (card.parentOutcome) {
+      bits.push(
+        <span className="beads-parent" key="parent" title={card.parentOutcome.title}>
+          ↳ {card.parentOutcome.title}
+        </span>,
+      )
+    }
+    if (card.liveness) {
+      bits.push(
+        <span className={`beads-liveness beads-liveness-${card.liveness}`} key="live">
+          {livenessLabel(card.liveness)}
+        </span>,
+      )
+    }
+    if (card.owner) {
+      const owner = card.owner
+      const elapsed =
+        issue.status === 'in_progress' && issue.updatedAt
+          ? ` · ${elapsedSince(issue.updatedAt)}`
+          : ''
+      // A live/stale in-flight worker can be attached to: click opens a terminal
+      // running `gc session attach <worker>` so you can watch what it's doing.
+      bits.push(
+        onAttachWorker && card.liveness ? (
+          <button
+            type="button"
+            className="beads-owner beads-owner-attach"
+            key="owner"
+            title={`Attach to ${owner} (gc session attach)`}
+            onClick={() => onAttachWorker(owner)}
+          >
+            @{owner}
+            {elapsed}
+          </button>
+        ) : (
+          <span className="beads-owner" key="owner">
+            @{owner}
+            {elapsed}
+          </span>
+        ),
+      )
+    }
+    if (card.blockedBy.length > 0) {
+      bits.push(
+        <span className="beads-blockedby" key="blocked">
+          Blocked by: {card.blockedBy[0]?.title}
+          {card.blockedBy.length > 1 ? ` +${card.blockedBy.length - 1}` : ''}
+        </span>,
+      )
+    }
+    if (card.unlocksCount > 0) {
+      bits.push(
+        <span className="beads-unlocks" key="unlocks">
+          Unlocks {card.unlocksCount}
+        </span>,
+      )
+    }
+    if (bits.length === 0) return null
+    return <div className="beads-signals">{bits}</div>
+  }
+
+  function renderDetail(card: BeadCard): ReactElement {
+    const { issue } = card
     return (
       <div className="beads-detail">
         <div className="beads-detail-meta">
           <span className="beads-id">{issue.id}</span>
-          {issue.assignee ? <span>assignee: {issue.assignee}</span> : null}
-          {issue.parent ? <span>parent: {issue.parent}</span> : null}
-          {issue.dependencyCount > 0 ? <span>deps: {issue.dependencyCount}</span> : null}
+          {card.parentOutcome ? <span>parent: {card.parentOutcome.title}</span> : null}
           {issue.labels.length > 0 ? <span>{issue.labels.join(', ')}</span> : null}
           {issue.updatedAt ? <span>updated {formatDate(issue.updatedAt)}</span> : null}
           {issue.closedAt ? <span>closed {formatDate(issue.closedAt)}</span> : null}
         </div>
+        {card.nextUnblock ? (
+          <div className="beads-field">
+            <span className="beads-field-label">Next unblock</span>
+            <p className="beads-field-value">
+              {card.nextUnblock.action}
+              {card.nextUnblock.owner ? ` — ${card.nextUnblock.owner}` : ''}
+            </p>
+          </div>
+        ) : null}
+        {card.blockedBy.length > 0 ? (
+          <div className="beads-field">
+            <span className="beads-field-label">Blocked by</span>
+            <ul className="beads-deplist">
+              {card.blockedBy.map((dep) => (
+                <li key={dep.id}>
+                  {dep.title} <span className="beads-dep-state">({dep.status})</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {card.unlocks.length > 0 ? (
+          <div className="beads-field">
+            <span className="beads-field-label">Unlocks {card.unlocksCount}</span>
+            <ul className="beads-deplist">
+              {card.unlocks.map((dep) => (
+                <li key={dep.id}>{dep.title}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         {renderField('Description', issue.description)}
         {renderField('Design', issue.design)}
         {renderField('Acceptance criteria', issue.acceptanceCriteria)}
         {renderField('Notes', issue.notes)}
         {renderField('Close reason', issue.closeReason)}
+      </div>
+    )
+  }
+
+  function renderDataHygiene(issues: readonly BeadIssue[]): ReactElement | null {
+    if (issues.length === 0) return null
+    return (
+      <div className="beads-section beads-hygiene" role="alert">
+        <div className="beads-hygiene-header">
+          <span className="beads-hygiene-badge">⚠</span>
+          <span className="beads-section-label">Unclassified ({issues.length})</span>
+        </div>
+        <p className="beads-hygiene-note">
+          Missing typed semantics — not classifiable as executable, blocked, or planned.
+          Fix the bead type/metadata rather than guessing from its title.
+        </p>
+        <ul className="beads-list">
+          {issues.map((issue) => (
+            <li key={issue.id} className="beads-hygiene-row">
+              <span className="beads-row-title" title={issue.title}>
+                {issue.title}
+              </span>
+              <span className="beads-type">{issue.issueType || '(no type)'}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )
+  }
+
+  function renderInternals(
+    view: BeadsView,
+    orchestration: readonly BeadIssue[],
+  ): ReactElement {
+    return (
+      <div className="beads-section beads-internals">
+        <div className="beads-section-header beads-internals-header">
+          <span className="beads-section-label">Orchestration internals</span>
+          <span className="beads-section-count">{orchestration.length}</span>
+        </div>
+        <ul className="beads-list">
+          {orchestration.map((issue) => (
+            <li key={issue.id} className="beads-internals-row">
+              <span className="beads-row-title" title={issue.title}>
+                {issue.title}
+              </span>
+              <span className="beads-type">{issue.issueType}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="beads-hygiene-note">
+          Dependency edges: {view.dependencies.length} · dispatchability source:{' '}
+          {view.dispatchabilitySource}
+        </p>
+      </div>
+    )
+  }
+
+  function renderClosedSection(issues: readonly BeadIssue[]): ReactElement {
+    const collapsed = collapsedSections.has('completed')
+    return (
+      <div className="beads-section" key="completed">
+        <button
+          type="button"
+          className="beads-section-header"
+          aria-expanded={!collapsed}
+          onClick={() => toggleSection('completed')}
+        >
+          <span className={`beads-caret${collapsed ? '' : ' expanded'}`}>▸</span>
+          <span className="beads-section-label beads-section-completed">
+            Completed recently
+          </span>
+          <span className="beads-section-count">{issues.length}</span>
+        </button>
+        {collapsed ? null : (
+          <ul className="beads-list">
+            {issues.map((issue) => renderCard({ issue, blockedBy: [], unlocksCount: 0, unlocks: [] }))}
+          </ul>
+        )}
       </div>
     )
   }
@@ -247,6 +522,22 @@ export function BeadsPanel({
       </div>
     )
   }
+}
+
+function livenessLabel(liveness: 'live' | 'stale' | 'unknown'): string {
+  if (liveness === 'live') return 'live'
+  if (liveness === 'stale') return 'may be stale'
+  return 'liveness unknown'
+}
+
+function elapsedSince(iso: string): string {
+  const then = Date.parse(iso)
+  if (Number.isNaN(then)) return ''
+  const ms = Date.now() - then
+  const hours = Math.floor(ms / (60 * 60 * 1000))
+  if (hours < 1) return '<1h'
+  if (hours < 24) return `${hours}h`
+  return `${Math.floor(hours / 24)}d`
 }
 
 function formatDate(iso: string): string {

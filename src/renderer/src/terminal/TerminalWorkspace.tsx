@@ -62,10 +62,19 @@ interface TerminalSession {
   readonly harnessSessionId?: string
   readonly identityStatus?: TerminalIdentityStatus
   readonly resumeOnStart: boolean
+  /** Command auto-typed into the shell on first launch (worker-attach terminals). */
+  readonly initialInput?: string
   readonly pane: TerminalSplitPane
 }
 
 type TerminalSplitPane = 'primary' | 'secondary'
+
+/** A one-shot request to open a bare shell running a command (e.g. worker attach). */
+export interface TerminalAttachRequest {
+  readonly command: string
+  /** Monotonic id so repeat requests (even for the same command) re-fire. */
+  readonly nonce: number
+}
 
 interface TerminalWorkspaceProps {
   readonly cwd: HostPath
@@ -87,6 +96,8 @@ interface TerminalWorkspaceProps {
   readonly onOpenSettings: () => void
   readonly onOpenHarnessSettings: () => void
   readonly onAddHarness: () => void
+  /** When set, opens a bare shell running `command` (deduped by `nonce`). */
+  readonly attachRequest?: TerminalAttachRequest
 }
 
 export interface TerminalWorkspaceRollup {
@@ -110,6 +121,7 @@ export function TerminalWorkspace({
   onOpenSettings,
   onOpenHarnessSettings,
   onAddHarness,
+  attachRequest,
 }: TerminalWorkspaceProps): ReactElement {
   const appTheme = useAppTheme()
   const effectiveTerminalTheme = terminalTheme === 'app' ? appTheme : terminalTheme
@@ -553,6 +565,7 @@ export function TerminalWorkspace({
     profile: HarnessProfile,
     provider: HarnessProviderDescriptor,
     riskAcknowledged: boolean,
+    initialInput?: string,
   ): void => {
     const split = sessionsRef.current.some((session) => session.pane === 'secondary')
     const pane = split ? activePaneRef.current : 'primary'
@@ -563,12 +576,27 @@ export function TerminalWorkspace({
       pane,
       riskAcknowledged,
       profileProbe(probes, profile)?.capabilities,
+      initialInput,
     )
     setSessions((current) => [...current, session])
     activeByPaneRef.current[pane] = session.id
     setActiveId(session.id)
     setMenuOpen(false)
   }
+
+  // Open a bare shell running an attach command (e.g. `gc session attach
+  // <worker>`) when the Beads panel requests one. Deduped by nonce so a
+  // re-render never re-launches, but clicking again (new nonce) does.
+  const lastAttachNonce = useRef<number | undefined>(undefined)
+  useEffect(() => {
+    if (!attachRequest || lastAttachNonce.current === attachRequest.nonce) return
+    lastAttachNonce.current = attachRequest.nonce
+    if (!available || !defaultProvider || !defaultProfile) return
+    launchSession(defaultProfile, defaultProvider, true, attachRequest.command)
+    // launchSession/defaultProfile are stable enough for this one-shot trigger;
+    // the nonce guard is what actually gates re-runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attachRequest, available])
 
   const splitTerminal = (): void => {
     if (!available || !defaultProvider || !defaultProfile) return
@@ -758,6 +786,7 @@ export function TerminalWorkspace({
               fallbackTitle={session.fallbackTitle}
               harnessSessionId={session.harnessSessionId}
               resumeOnStart={session.resumeOnStart}
+              initialInput={session.initialInput}
               position={position}
               slot={session.pane}
               visible={
@@ -1530,6 +1559,7 @@ function createSession(
   pane: TerminalSplitPane,
   riskAcknowledged = false,
   capabilities: HarnessProviderCapabilities = provider.capabilities,
+  initialInput?: string,
 ): TerminalSession {
   const fallbackTitle = `${provider.displayName} · ${basenameHostPath(cwd)}`
   return {
@@ -1543,6 +1573,7 @@ function createSession(
     title: fallbackTitle,
     status: 'Starting…',
     resumeOnStart: false,
+    ...(initialInput ? { initialInput } : {}),
     pane,
   }
 }

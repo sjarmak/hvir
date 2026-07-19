@@ -74,8 +74,28 @@
   text-transform: uppercase;
 }
 
-.beads-section-inProgress {
+.beads-section-needsYou {
+  color: #e05d5d;
+}
+
+.beads-section-inFlight {
   color: var(--accent);
+}
+
+.beads-section-readyToShip {
+  color: #4a90d9;
+}
+
+.beads-section-readyNext {
+  color: #4aa564;
+}
+
+.beads-section-note {
+  margin: 0 8px 3px 20px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-style: italic;
+  line-height: 1.4;
 }
 
 .beads-section-count {
@@ -183,11 +203,14 @@
   overflow-wrap: anywhere;
 }
 
-.beads-closed-toggle {
+.beads-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   padding: 8px 8px 0;
 }
 
-.beads-closed-toggle button {
+.beads-toggles button {
   border: 1px solid var(--border-strong);
   border-radius: 4px;
   background: none;
@@ -197,6 +220,194 @@
   cursor: pointer;
 }
 
-.beads-closed-toggle button:hover {
+.beads-toggles button:hover,
+.beads-toggles button[aria-pressed='true'] {
   color: var(--text-strong);
+}
+
+/* Per-card signals: compact, wrap, always visible under the row title. */
+.beads-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  padding: 0 8px 3px 20px;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.beads-parent {
+  color: var(--text-muted);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.beads-owner {
+  color: var(--text-muted);
+}
+
+.beads-owner-attach {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.beads-owner-attach:hover {
+  color: var(--text-strong);
+  text-decoration-style: solid;
+}
+
+.beads-blockedby {
+  color: #d89b4a;
+}
+
+.beads-unlocks {
+  color: #4aa564;
+}
+
+.beads-shipstate {
+  color: #4a90d9;
+  font-weight: 700;
+}
+
+.beads-liveness {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.beads-liveness-live {
+  color: #4aa564;
+}
+
+.beads-liveness-stale {
+  color: #d89b4a;
+}
+
+.beads-liveness-unknown {
+  color: var(--text-muted);
+}
+
+/* Gates in "Needs you". */
+.beads-gate {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  padding: 3px 8px 3px 20px;
+}
+
+.beads-gate-badge {
+  flex: none;
+  color: #e05d5d;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.beads-gate-title {
+  min-width: 0;
+  flex: 1;
+  color: var(--text);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.beads-gate-unlocks {
+  color: var(--text-muted);
+  font-size: 9px;
+}
+
+/* Planned outcome groups. */
+.beads-group-outcome {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 8px 2px 20px;
+}
+
+.beads-group-badge {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.beads-group-title {
+  min-width: 0;
+  color: var(--text-strong);
+  font-size: 11px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.beads-group-list .beads-row {
+  padding-left: 32px;
+}
+
+.beads-deplist {
+  margin: 2px 0 0;
+  padding-left: 16px;
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.beads-dep-state {
+  color: var(--text-muted);
+}
+
+/* Data hygiene / needs-triage callout. */
+.beads-hygiene {
+  margin-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.beads-hygiene-header {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 8px 3px;
+}
+
+.beads-hygiene-badge {
+  color: #d89b4a;
+  font-size: 11px;
+}
+
+.beads-hygiene-note {
+  margin: 0 8px 4px 20px;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.beads-hygiene-row,
+.beads-internals-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 8px 3px 20px;
+}
+
+/* Orchestration internals (debug). */
+.beads-internals {
+  margin-top: 6px;
+  border-top: 1px solid var(--border-subtle);
+  opacity: 0.85;
+}
+
+.beads-internals-header {
+  cursor: default;
 }

@@ -35,7 +35,10 @@ import {
 import { PaneResizer } from './layout/PaneResizer'
 import { WebPane, type WebViewState } from './dashboards/WebPane'
 import { TerminalWorkspace } from './terminal/TerminalWorkspace'
-import type { TerminalWorkspaceRollup } from './terminal/TerminalWorkspace'
+import type {
+  TerminalAttachRequest,
+  TerminalWorkspaceRollup,
+} from './terminal/TerminalWorkspace'
 import { ProjectsBar } from './workspaces/ProjectsBar'
 import { RemoteConnectionBadge } from './workspaces/ConnectionStatus'
 import { MissingWorkspaceNotice } from './workspaces/MissingWorkspaceNotice'
@@ -148,6 +151,12 @@ export function App(): ReactElement {
   const [terminalRollups, setTerminalRollups] = useState<
     Readonly<Record<string, TerminalWorkspaceRollup>>
   >({})
+  // A pending "open a terminal running this command" request, targeted at one
+  // workspace. Set when a live worker name is clicked in the Beads panel.
+  const [attachRequest, setAttachRequest] = useState<
+    { readonly workspaceId: string; readonly request: TerminalAttachRequest } | undefined
+  >()
+  const attachNonce = useRef(0)
   const [terminalFocused, setTerminalFocused] = useState(false)
   const [treeCollapsed, setTreeCollapsed] = useState(false)
   const expandedWatchPaths = useRef(new Map<string, HostPath>())
@@ -175,6 +184,22 @@ export function App(): ReactElement {
   // it starts hidden and reveals once the probe confirms — a plain directory
   // never flashes a Beads tab. Mirrors how `gitEnabled` gates the Git tab.
   const [beadsEnabled, setBeadsEnabled] = useState(false)
+
+  // Open a terminal running `gc session attach <worker>` in the active
+  // workspace when a live worker name is clicked in the Beads panel. The worker
+  // id is shell-quoted since it flows into an interactive shell command line.
+  const requestAttachWorker = (worker: string): void => {
+    const workspaceId = activeWorkspace?.id
+    if (!workspaceId) return
+    attachNonce.current += 1
+    setAttachRequest({
+      workspaceId,
+      request: {
+        command: `gc session attach ${shellQuoteArg(worker)}`,
+        nonce: attachNonce.current,
+      },
+    })
+  }
 
   useEffect(() => {
     const disposeNavigation = window.hvir.on(
@@ -1728,6 +1753,7 @@ export function App(): ReactElement {
                 root={root}
                 connected={connectionState === 'connected'}
                 hidden={railMode !== 'beads'}
+                onAttachWorker={requestAttachWorker}
               />
             ) : null}
             <section
@@ -1879,6 +1905,11 @@ export function App(): ReactElement {
               available={!workspace.missing}
               visible={workspace.id === projectState.activeWorkspaceId}
               connectionState={project.connectionState}
+              attachRequest={
+                attachRequest?.workspaceId === workspace.id
+                  ? attachRequest.request
+                  : undefined
+              }
               onRollup={updateTerminalRollup}
               onOpenPath={(target) =>
                 openFile(
@@ -2662,6 +2693,15 @@ function reorderTabs(
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
+}
+
+/**
+ * POSIX single-quote a value so it is safe to splice into an interactive shell
+ * command line. Worker ids are normally plain identifiers, but the value flows
+ * into a shell, so quote defensively rather than trusting the input.
+ */
+function shellQuoteArg(value: string): string {
+  return `'${value.replaceAll("'", `'\\''`)}'`
 }
 
 function sanitizedWebPaneTitle(title: string): string {

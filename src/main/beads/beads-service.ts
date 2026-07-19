@@ -1,12 +1,16 @@
 import {
   hostPath,
   hostPathEquals,
+  isExecutableLeaf,
+  type BeadDependencyEdge,
+  type BeadGate,
   type BeadIssue,
   type BeadsChangedEvent,
   type BeadsListRequest,
   type BeadsListResponse,
   type BeadsProbeResponse,
   type BeadsUnavailable,
+  type DispatchabilitySource,
   type Disposer,
   type HostPath,
 } from '../../shared'
@@ -44,23 +48,52 @@ export class BeadsService {
 
   async list(req: BeadsListRequest): Promise<BeadsListResponse> {
     const { host, root } = this.activeProject(req.root)
+    // Core fetch: without these two the panel has nothing to show, so their
+    // failure fails the whole snapshot (existing behaviour, preserved).
     const [base, ready] = await Promise.all([
       this.runList(host, root, []),
       this.runList(host, root, ['--ready']),
     ])
     if (!base.ok) return base.unavailable
     if (!ready.ok) return ready.unavailable
+    const readyIds = ready.issues.map((issue) => issue.id)
+
+    // Supplementary enrichments: each is best-effort. A failure degrades that
+    // one field (empty edges/gates, structural dispatchability) and is logged —
+    // it never blanks the core issue list.
+    const [dependencies, gates, dispatch] = await Promise.all([
+      this.runDependencyEdges(host, root),
+      this.runGates(host, root),
+      this.computeDispatchable(host, root, base.issues, base.stdout, readyIds),
+    ])
+
     let closedIssues: readonly BeadIssue[] | undefined
     if (req.includeClosed === true) {
       const closed = await this.runList(host, root, ['--status', 'closed'])
       if (!closed.ok) return closed.unavailable
       closedIssues = closed.issues
     }
+    let orchestrationIssues: readonly BeadIssue[] | undefined
+    if (req.includeInternals === true) {
+      const internals = await this.runList(host, root, [
+        '--include-infra',
+        '--include-templates',
+        '--include-gates',
+      ])
+      // Debug-only view: if it fails, still return the human snapshot below.
+      orchestrationIssues = internals.ok ? internals.issues : []
+    }
+
     return {
       available: true,
       issues: base.issues,
-      readyIds: ready.issues.map((issue) => issue.id),
+      readyIds,
+      dispatchableIds: dispatch.ids,
+      dispatchabilitySource: dispatch.source,
+      dependencies,
+      gates,
       ...(closedIssues ? { closedIssues } : {}),
+      ...(orchestrationIssues ? { orchestrationIssues } : {}),
     }
   }
 
@@ -152,7 +185,7 @@ export class BeadsService {
     root: HostPath,
     extraArgs: readonly string[],
   ): Promise<
-    | { readonly ok: true; readonly issues: readonly BeadIssue[] }
+    | { readonly ok: true; readonly issues: readonly BeadIssue[]; readonly stdout: string }
     | { readonly ok: false; readonly unavailable: BeadsUnavailable }
   > {
     const args = [
@@ -197,7 +230,7 @@ export class BeadsService {
       return { ok: false, unavailable: classifyListFailure(root, stderr, result.code) }
     }
     try {
-      return { ok: true, issues: parseBeadsListOutput(result.stdout) }
+      return { ok: true, issues: parseBeadsListOutput(result.stdout), stdout: result.stdout }
     } catch (reason) {
       return {
         ok: false,
@@ -208,6 +241,119 @@ export class BeadsService {
         },
       }
     }
+  }
+
+  /**
+   * Blocking edges across the whole project, in one call. `bd list --format
+   * digraph` emits `<blocker> <blocked>...` lines (dependency graph, execution
+   * order: leftmost/source = nothing blocking it). Best-effort: on any failure
+   * we log and return no edges rather than failing the snapshot.
+   */
+  private async runDependencyEdges(
+    host: ProjectHost,
+    root: HostPath,
+  ): Promise<readonly BeadDependencyEdge[]> {
+    try {
+      const result = await host.exec(
+        'bd',
+        ['-C', root.path, 'list', '--format', 'digraph', '--flat', '--no-pager', '-n', '0'],
+        { maxBuffer: MAX_OUTPUT_BYTES, loginShell: true },
+      )
+      if (result.code !== 0) {
+        console.error('[beads] dependency edges unavailable', { code: result.code })
+        return []
+      }
+      return parseDigraphEdges(result.stdout)
+    } catch (reason) {
+      console.error('[beads] dependency edge query failed', reason)
+      return []
+    }
+  }
+
+  /** Open coordination gates (`bd gate list`) — the backbone of "Needs you". */
+  private async runGates(host: ProjectHost, root: HostPath): Promise<readonly BeadGate[]> {
+    try {
+      const result = await host.exec(
+        'bd',
+        ['-C', root.path, 'gate', 'list', '--json', '--no-pager'],
+        { maxBuffer: MAX_OUTPUT_BYTES, loginShell: true },
+      )
+      if (result.code !== 0) return []
+      return parseGatesOutput(result.stdout)
+    } catch (reason) {
+      console.error('[beads] gate query failed', reason)
+      return []
+    }
+  }
+
+  /**
+   * Scheduler-dispatchable ids. If a dispatchability predicate is configured —
+   * `<root>/.beads/dispatchability.jq` or the `BEADS_DISPATCHABILITY_JQ` path —
+   * we run the raw bd JSON through it and trust its output (the scheduler
+   * contract is the authority). Otherwise we fall back to a purely structural
+   * filter over typed fields: dependency-ready ∩ executable-leaf. Either way the
+   * result is computed once, here, never re-derived in the UI.
+   */
+  private async computeDispatchable(
+    host: ProjectHost,
+    root: HostPath,
+    baseIssues: readonly BeadIssue[],
+    baseStdout: string,
+    readyIds: readonly string[],
+  ): Promise<{ readonly ids: readonly string[]; readonly source: DispatchabilitySource }> {
+    const structural = (): { readonly ids: readonly string[]; readonly source: DispatchabilitySource } => {
+      const executable = new Set(
+        baseIssues.filter((issue) => isExecutableLeaf(issue.issueType)).map((issue) => issue.id),
+      )
+      return { ids: readyIds.filter((id) => executable.has(id)), source: 'structural' }
+    }
+
+    const predicate = await this.resolveDispatchabilityPredicate(host, root)
+    if (predicate === undefined) return structural()
+    try {
+      const result = await host.exec('jq', ['-cf', predicate], {
+        cwd: root,
+        loginShell: true,
+        input: baseStdout,
+        maxBuffer: MAX_OUTPUT_BYTES,
+      })
+      if (result.code !== 0) {
+        console.error('[beads] dispatchability predicate failed; using structural filter', {
+          predicate,
+          code: result.code,
+          stderr: result.stderr.trim(),
+        })
+        return structural()
+      }
+      return { ids: parseDispatchableOutput(result.stdout), source: 'predicate' }
+    } catch (reason) {
+      console.error('[beads] dispatchability predicate errored; using structural filter', reason)
+      return structural()
+    }
+  }
+
+  /**
+   * Locate a dispatchability predicate. The env override wins; otherwise we look
+   * at the known conventional locations, in order. Gas City's scheduler
+   * dispatchability contract (dr-zkmc) ships as `bin/dispatchability.jq`, so that
+   * is checked alongside a project-local `.beads/dispatchability.jq`.
+   */
+  private async resolveDispatchabilityPredicate(
+    host: ProjectHost,
+    root: HostPath,
+  ): Promise<string | undefined> {
+    const override = process.env['BEADS_DISPATCHABILITY_JQ']
+    if (override && override !== '') return override
+    for (const relative of ['.beads/dispatchability.jq', 'bin/dispatchability.jq']) {
+      const candidate = joinRoot(root, relative)
+      try {
+        const stat = await host.stat(candidate)
+        if (stat.type === 'file') return candidate.path
+      } catch {
+        // Not present; try the next conventional location.
+      }
+    }
+    return undefined
   }
 
   private stopWatch(key: string): void {
@@ -347,9 +493,110 @@ function parseBeadIssue(candidate: unknown, index: number): BeadIssue {
     updatedAt: stringField(record, 'updated_at'),
     closedAt: stringField(record, 'closed_at'),
     closeReason: stringField(record, 'close_reason'),
+    deferUntil: stringField(record, 'defer_until'),
+    ...(parseMetadata(record['metadata']) ? { metadata: parseMetadata(record['metadata']) } : {}),
     dependencyCount: numberField(record, 'dependency_count', 0),
     dependentCount: numberField(record, 'dependent_count', 0),
   }
+}
+
+/** Flatten bd's metadata object to string→string, dropping non-scalar values. */
+function parseMetadata(value: unknown): Readonly<Record<string, string>> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const out: Record<string, string> = {}
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof raw === 'string') out[key] = raw
+    else if (typeof raw === 'number' || typeof raw === 'boolean') out[key] = String(raw)
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/**
+ * Parse `bd list --format digraph` into blocking edges. Each non-empty line is
+ * `<blocker> <blocked> [<blocked> …]` (whitespace-separated); the first token
+ * blocks each of the rest. Lines with a single token contribute no edge.
+ */
+export function parseDigraphEdges(stdout: string): readonly BeadDependencyEdge[] {
+  const edges: BeadDependencyEdge[] = []
+  for (const line of stdout.split(/\r?\n/)) {
+    const tokens = line.trim().split(/\s+/).filter((token) => token !== '')
+    const [blockerId, ...blocked] = tokens
+    if (blockerId === undefined || blocked.length === 0) continue
+    for (const blockedId of blocked) {
+      edges.push({ blockerId, blockedId })
+    }
+  }
+  return edges
+}
+
+/** Parse `bd gate list --json` into typed gates; tolerant of field-name variants. */
+export function parseGatesOutput(stdout: string): readonly BeadGate[] {
+  const trimmed = stdout.trim()
+  if (trimmed === '') return []
+  let raw: unknown
+  try {
+    raw = JSON.parse(trimmed)
+  } catch {
+    return []
+  }
+  if (!Array.isArray(raw)) return []
+  const gates: BeadGate[] = []
+  for (const candidate of raw) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) continue
+    const record = candidate as Record<string, unknown>
+    const id = stringField(record, 'id')
+    if (id === undefined) continue
+    gates.push({
+      id,
+      title: stringField(record, 'title') ?? id,
+      gateType: stringField(record, 'gate_type') ?? stringField(record, 'type') ?? 'human',
+      blockedId:
+        stringField(record, 'blocked_id') ??
+        stringField(record, 'issue_id') ??
+        stringField(record, 'blocks'),
+      state: stringField(record, 'state') ?? stringField(record, 'status') ?? 'open',
+    })
+  }
+  return gates
+}
+
+/**
+ * Parse a dispatchability predicate's output into ids. Accepts a compact JSON
+ * array of ids, a JSON array of bead objects (with an `id`), or a stream of
+ * either one-per-line. Anything unrecognised contributes nothing.
+ */
+export function parseDispatchableOutput(stdout: string): readonly string[] {
+  const ids = new Set<string>()
+  const collect = (value: unknown): void => {
+    if (typeof value === 'string') {
+      if (value !== '') ids.add(value)
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const id = (value as Record<string, unknown>)['id']
+      if (typeof id === 'string' && id !== '') ids.add(id)
+    }
+  }
+  const consume = (parsed: unknown): void => {
+    if (Array.isArray(parsed)) parsed.forEach(collect)
+    else collect(parsed)
+  }
+  const trimmed = stdout.trim()
+  if (trimmed === '') return []
+  try {
+    consume(JSON.parse(trimmed))
+  } catch {
+    // Not a single JSON document — try newline-delimited JSON (jq `.[]` output).
+    for (const line of trimmed.split(/\r?\n/)) {
+      const piece = line.trim()
+      if (piece === '') continue
+      try {
+        consume(JSON.parse(piece))
+      } catch {
+        // A bare unquoted id token on its own line.
+        ids.add(piece)
+      }
+    }
+  }
+  return [...ids]
 }
 
 function stringField(record: Record<string, unknown>, key: string): string | undefined {
