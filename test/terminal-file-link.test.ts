@@ -7,6 +7,7 @@ import {
   normalizeTerminalWebTarget,
   parseTerminalFileTarget,
   resolveTerminalFileTarget,
+  terminalLinkActivationAt,
 } from '../src/renderer/src/terminal/terminal-file-link'
 
 const root = hostPath(asHostId('remote'), '/srv/project')
@@ -103,5 +104,24 @@ describe('terminal web links', () => {
     expect(normalizeTerminalWebTarget('localhost:65536')).toBeUndefined()
     expect(normalizeTerminalWebTarget('src/main.ts:9')).toBeUndefined()
     expect(normalizeTerminalWebTarget('example.com:8080/x')).toBeUndefined()
+  })
+
+  it('resolves a clicked terminal cell to a typed hvir link activation', () => {
+    const line = 'open http://localhost:8082 or src/main.ts:9'
+
+    expect(terminalLinkActivationAt(line, 12)).toEqual({
+      kind: 'loopback-http',
+      target: 'http://localhost:8082',
+    })
+    expect(terminalLinkActivationAt(line, 36)).toEqual({
+      kind: 'file',
+      target: 'src/main.ts:9',
+    })
+    expect(terminalLinkActivationAt(line, 0)).toBeUndefined()
+    expect(terminalLinkActivationAt('label', 2, 'http://localhost:4173/app')).toEqual({
+      kind: 'loopback-http',
+      target: 'http://localhost:4173/app',
+    })
+    expect(terminalLinkActivationAt('external', 2, 'https://example.com')).toBeUndefined()
   })
 })

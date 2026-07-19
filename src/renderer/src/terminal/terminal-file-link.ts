@@ -4,6 +4,7 @@ import {
   parseLoopbackHttpTarget,
   type HostPath,
 } from '../../../shared'
+import type { TerminalLinkActivation } from './terminal-pane'
 
 export interface TerminalFileLink {
   readonly target: string
@@ -168,6 +169,28 @@ export function isTerminalWebTarget(rawTarget: string): boolean {
   } catch {
     return false
   }
+}
+
+/** Resolve one zero-based terminal column to a link hvir is authorized to activate. */
+export function terminalLinkActivationAt(
+  text: string,
+  column: number,
+  hyperlinkTarget?: string,
+): TerminalLinkActivation | undefined {
+  if (hyperlinkTarget) {
+    if (isFileUri(hyperlinkTarget)) return { kind: 'file', target: hyperlinkTarget }
+    if (isTerminalWebTarget(hyperlinkTarget)) {
+      return { kind: 'loopback-http', target: hyperlinkTarget }
+    }
+  }
+  const web = detectTerminalWebLinks(text).find(
+    (candidate) => candidate.start <= column && column <= candidate.end,
+  )
+  if (web) return { kind: 'loopback-http', target: web.target }
+  const file = detectTerminalFileLinks(text).find(
+    (candidate) => candidate.start <= column && column <= candidate.end,
+  )
+  return file ? { kind: 'file', target: file.target } : undefined
 }
 
 function isPlainPathCandidate(path: string): boolean {

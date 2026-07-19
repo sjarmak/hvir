@@ -19,6 +19,7 @@ import {
   detectTerminalWebLinks,
   isFileUri,
   isTerminalWebTarget,
+  terminalLinkActivationAt,
 } from './terminal-file-link'
 import { TerminalFitController } from './ghostty-terminal-fit'
 import {
@@ -228,13 +229,58 @@ class GhosttyTerminalPane implements TerminalPane {
     const pending = this.pendingMousePress
     if (!pending) return
     this.pendingMousePress = undefined
+    const hasSelection = this.terminal.hasSelection()
+    if (!hasSelection && pending.event.button === 0) {
+      const activation = this.linkActivationAt(pending.event)
+      if (activation) {
+        this.linkListeners.emit(activation)
+        return
+      }
+    }
     const data = terminalMouseClick(
       pending.event,
       this.mouseEvent(event, canvas),
       pending.state,
-      this.terminal.hasSelection(),
+      hasSelection,
     )
     for (const chunk of data) this.dataListeners.emit(chunk)
+  }
+
+  private linkActivationAt(
+    event: TerminalMouseButtonEvent,
+  ): TerminalLinkActivation | undefined {
+    const term = this.terminal.wasmTerm
+    const renderer = this.terminal.renderer
+    if (!term || !renderer) return undefined
+    const column = Math.floor(event.offsetX / renderer.charWidth)
+    const row = Math.floor(event.offsetY / renderer.charHeight)
+    if (
+      column < 0 ||
+      column >= this.terminal.cols ||
+      row < 0 ||
+      row >= this.terminal.rows
+    ) {
+      return undefined
+    }
+    const scrollbackLength = term.getScrollbackLength()
+    const viewportY = Math.max(0, Math.floor(this.terminal.viewportY))
+    const bufferRow =
+      viewportY > 0
+        ? row < viewportY
+          ? scrollbackLength - viewportY + row
+          : scrollbackLength + row - viewportY
+        : scrollbackLength + row
+    const line = this.terminal.buffer.active.getLine(bufferRow)
+    if (!line) return undefined
+    const text: string[] = []
+    for (let index = 0; index < line.length; index += 1) {
+      const codepoint = line.getCell(index)?.getCodepoint() ?? 0
+      text.push(codepoint < 32 ? ' ' : String.fromCodePoint(codepoint))
+    }
+    const hyperlinkId = line.getCell(column)?.getHyperlinkId() ?? 0
+    const hyperlinkTarget =
+      hyperlinkId > 0 ? (term.getHyperlinkUri(hyperlinkId) ?? undefined) : undefined
+    return terminalLinkActivationAt(text.join(''), column, hyperlinkTarget)
   }
 
   private mouseEvent(event: MouseEvent, canvas: HTMLCanvasElement) {
