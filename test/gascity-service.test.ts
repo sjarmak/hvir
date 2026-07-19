@@ -33,8 +33,11 @@ function stubHost(
   return { host: { exec, stat } as unknown as ProjectHost, exec }
 }
 
-function service(host: ProjectHost): GasCityService {
-  return new GasCityService({ getProject: () => ({ host, root: ROOT }) })
+function service(host: ProjectHost, now?: () => number): GasCityService {
+  return new GasCityService({
+    getProject: () => ({ host, root: ROOT }),
+    ...(now === undefined ? {} : { now }),
+  })
 }
 
 const RIG_LIST = execResult(
@@ -207,21 +210,37 @@ rig = "mem"
   })
 
   it('re-reads only the session list on a repeat poll', async () => {
+    let clock = 0
     const { host, exec } = stubHost({
       'session list': execResult(0, JSON.stringify([])),
       'rig list': RIG_LIST,
       'config show': CONFIG,
     })
-    const gascity = service(host)
+    const gascity = service(host, () => clock)
     await gascity.crew({ root: ROOT })
     const afterFirst = exec.mock.calls.length
+    clock = 4000
     await gascity.crew({ root: ROOT })
     const added = exec.mock.calls
       .slice(afterFirst)
       .map((call) => (call[1] as string[]).slice(0, 2).join(' '))
     // The city's shape is cached; re-composing it every poll is what made the
-    // panel slow on a real city.
+    // panel slow on a real city. The session list is the live half and a poll
+    // interval later it must be re-read.
     expect(added).toEqual(['session list'])
+  })
+
+  it('shares one session read between polls landing in the same window', async () => {
+    const { host, exec } = stubHost({
+      'session list': execResult(0, JSON.stringify([])),
+      'rig list': RIG_LIST,
+      'config show': CONFIG,
+    })
+    const gascity = service(host, () => 0)
+    await gascity.crew({ root: ROOT })
+    const afterFirst = exec.mock.calls.length
+    await gascity.crew({ root: ROOT })
+    expect(exec.mock.calls.slice(afterFirst)).toEqual([])
   })
 
   it('re-reads the city shape when a refresh asks for it', async () => {
@@ -251,6 +270,39 @@ rig = "mem"
     for (const call of exec.mock.calls) {
       expect(call[2]).toMatchObject({ lane: 'background' })
     }
+  })
+
+  it('reads the session list once for two workspaces in the same city', async () => {
+    const other = hostPath(asHostId('local'), '/home/dev/city/rigs/aoa')
+    let active = ROOT
+    const { host, exec } = stubHost(
+      {
+        'session list': execResult(0, '[]'),
+        'rig list': execResult(
+          0,
+          JSON.stringify([
+            { name: 'hq', path: '/home/dev/city' },
+            { name: 'mem', path: ROOT.path },
+            { name: 'aoa', path: other.path },
+          ]),
+        ),
+        'config show': CONFIG,
+      },
+      ['/home/dev/city/city.toml'],
+    )
+    const gascity = new GasCityService({
+      getProject: () => ({ host, root: active }),
+      now: () => 0,
+    })
+    await gascity.crew({ root: ROOT })
+    active = other
+    await gascity.crew({ root: other })
+    const reads = exec.mock.calls.filter(
+      (call) => (call[1] as string[]).slice(0, 2).join(' ') === 'session list',
+    )
+    // Both workspaces resolve to one city, and `gc session list` ignores --rig,
+    // so the second workspace shares the first's read instead of re-paying it.
+    expect(reads).toHaveLength(1)
   })
 
   it('rejects a request for anything but the active workspace root', async () => {

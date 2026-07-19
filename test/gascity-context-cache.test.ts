@@ -69,6 +69,32 @@ describe('GasCityContextCache', () => {
     expect(load).toHaveBeenCalledTimes(2)
   })
 
+  it('peeks a settled entry without starting a load', async () => {
+    const load = vi.fn(() => Promise.resolve(context('mem')))
+    const cache = new GasCityContextCache({ load, ttlMs: 10_000, now: () => 0 })
+
+    expect(cache.peek(ROOT)).toBeUndefined()
+    await cache.get(ROOT, true)
+    expect(cache.peek(ROOT)).toMatchObject({ rigName: 'mem' })
+    expect(load).toHaveBeenCalledTimes(1)
+  })
+
+  it('peeks nothing while the load is still in flight or has aged out', async () => {
+    let clock = 0
+    let settle!: (value: GasCityContext) => void
+    const load = vi.fn(() => new Promise<GasCityContext>((resolve) => (settle = resolve)))
+    const cache = new GasCityContextCache({ load, ttlMs: 1000, now: () => clock })
+
+    const pending = cache.get(ROOT, true)
+    expect(cache.peek(ROOT)).toBeUndefined()
+    settle(context('mem'))
+    await pending
+    expect(cache.peek(ROOT)).toMatchObject({ rigName: 'mem' })
+
+    clock = 1001
+    expect(cache.peek(ROOT)).toBeUndefined()
+  })
+
   it('re-reads after an explicit invalidate', () => {
     const load = vi.fn(() => Promise.resolve(context('mem')))
     const cache = new GasCityContextCache({ load, ttlMs: 10_000, now: () => 0 })

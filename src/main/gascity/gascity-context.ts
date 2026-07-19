@@ -33,6 +33,8 @@ const MAX_ENTRIES = 8
 interface CacheEntry {
   readonly loadedAt: number
   readonly value: Promise<GasCityContext>
+  /** Set once `value` settles, so {@link GasCityContextCache.peek} can read it. */
+  resolved?: GasCityContext
 }
 
 export interface GasCityContextCacheOptions {
@@ -59,20 +61,45 @@ export class GasCityContextCache {
   }
 
   get(root: HostPath, withConfig: boolean): Promise<GasCityContext> {
-    const key = `${root.hostId}:${root.path}:${withConfig ? 'config' : 'bare'}`
+    const key = cacheKey(root, withConfig)
     const cached = this.entries.get(key)
     if (cached && this.now() - cached.loadedAt < this.ttlMs) return cached.value
 
     const value = this.options.load(root, withConfig)
-    this.entries.set(key, { loadedAt: this.now(), value })
-    void value.catch(() => {
-      if (this.entries.get(key)?.value === value) this.entries.delete(key)
-    })
+    const entry: CacheEntry = { loadedAt: this.now(), value }
+    this.entries.set(key, entry)
+    void value.then(
+      (context) => {
+        entry.resolved = context
+      },
+      () => {
+        if (this.entries.get(key)?.value === value) this.entries.delete(key)
+      },
+    )
     if (this.entries.size > MAX_ENTRIES) {
       const oldest = this.entries.keys().next().value
       if (oldest !== undefined) this.entries.delete(oldest)
     }
     return value
+  }
+
+  /**
+   * What is already known about this workspace's city, without starting a load.
+   *
+   * Callers that need the city root to decide *how* to fetch something cannot
+   * await the context first without inverting the order the crew read depends
+   * on. Peeking answers "do we already know" and returns nothing while a load is
+   * in flight, so an unknown city degrades a caller's behaviour rather than
+   * stalling it.
+   */
+  peek(root: HostPath): GasCityContext | undefined {
+    for (const withConfig of [true, false]) {
+      const entry = this.entries.get(cacheKey(root, withConfig))
+      if (entry && this.now() - entry.loadedAt < this.ttlMs && entry.resolved) {
+        return entry.resolved
+      }
+    }
+    return undefined
   }
 
   /** Drop everything for one workspace — the manual-refresh escape hatch. */
@@ -81,6 +108,10 @@ export class GasCityContextCache {
       if (key.startsWith(`${root.hostId}:${root.path}:`)) this.entries.delete(key)
     }
   }
+}
+
+function cacheKey(root: HostPath, withConfig: boolean): string {
+  return `${root.hostId}:${root.path}:${withConfig ? 'config' : 'bare'}`
 }
 
 /** Whether a resolved context says this workspace is the city itself. */

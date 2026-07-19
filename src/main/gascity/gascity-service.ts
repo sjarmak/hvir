@@ -20,6 +20,7 @@ import {
   type GasCityContext,
 } from './gascity-context'
 import { deriveCrew } from './gascity-crew'
+import { GasCitySessionCache } from './gascity-sessions'
 import {
   hasProjectedTierFields,
   parseRigListOutput,
@@ -35,6 +36,15 @@ const MAX_CITY_WALK_DEPTH = 12
 
 export interface GasCityServiceDeps {
   readonly getProject: () => { readonly host: ProjectHost; readonly root: HostPath }
+  /** Injectable for tests; defaults to `Date.now`. Drives both read caches. */
+  readonly now?: () => number
+}
+
+/** A gc read that failed, carrying the reason the panel should show. */
+class GasCityReadError extends Error {
+  constructor(readonly unavailable: GasCityUnavailable) {
+    super(unavailable.message)
+  }
 }
 
 interface GcResult {
@@ -58,23 +68,39 @@ export class GasCityService {
    * The city's shape, cached per workspace. Only the session list is re-read
    * every poll; see `gascity-context.ts` for why the rest must not be.
    */
-  private readonly contexts = new GasCityContextCache({
-    load: (root, withConfig) => this.loadContext(root, withConfig),
-  })
+  private readonly contexts: GasCityContextCache
+  /**
+   * The live half, cached just long enough for the workspaces of one host to
+   * share a read. See `gascity-sessions.ts` for why the key is the host.
+   */
+  private readonly sessions: GasCitySessionCache
 
-  constructor(private readonly deps: GasCityServiceDeps) {}
+  constructor(private readonly deps: GasCityServiceDeps) {
+    const clock = deps.now === undefined ? {} : { now: deps.now }
+    this.contexts = new GasCityContextCache({
+      load: (root, withConfig) => this.loadContext(root, withConfig),
+      ...clock,
+    })
+    this.sessions = new GasCitySessionCache({
+      load: (root) => this.loadSessions(root),
+      ...clock,
+    })
+  }
 
   async crew(req: GasCityCrewRequest): Promise<GasCityCrewResponse> {
-    const { host, root } = this.activeProject(req.root)
-    if (req.refresh === true) this.contexts.invalidate(root)
-    const listed = await this.run(host, root, ['session', 'list', '--json'])
-    if (!listed.ok) return listed.unavailable as GasCityUnavailable
+    const { root } = this.activeProject(req.root)
+    if (req.refresh === true) {
+      this.contexts.invalidate(root)
+      this.sessions.invalidate()
+    }
 
     let sessions: readonly GasCitySession[]
     try {
-      sessions = parseSessionListOutput(listed.stdout, root.hostId)
+      sessions = await this.sessions.get(root, this.contexts.peek(root)?.cityRoot)
     } catch (reason) {
-      return failure('error', reason)
+      return reason instanceof GasCityReadError
+        ? reason.unavailable
+        : failure('error', reason)
     }
 
     const tierSource: GasCityTierSource = hasProjectedTierFields(sessions)
@@ -84,6 +110,9 @@ export class GasCityService {
     // in this directory is a worker", which is wrong but not misleading, and the
     // failure is logged rather than blanking the section.
     const context = await this.contexts.get(root, tierSource === 'config')
+    // The session read could not know its city; now that one is resolved, say so,
+    // so a workspace in a different city on this host misses rather than sharing.
+    this.sessions.attribute(root.hostId, context.cityRoot)
 
     return deriveCrew({
       sessions,
@@ -96,6 +125,18 @@ export class GasCityService {
       ...(context.cityRoot === undefined ? {} : { cityRoot: context.cityRoot }),
       ...(context.hqRigName === undefined ? {} : { hqRigName: context.hqRigName }),
     })
+  }
+
+  /**
+   * One `gc session list` read, parsed. Throws rather than returning a failure
+   * shape so the cache evicts it: a transient gc failure must not pin an empty
+   * crew in place for the share window.
+   */
+  private async loadSessions(root: HostPath): Promise<readonly GasCitySession[]> {
+    const { host } = this.activeProject(root)
+    const listed = await this.run(host, root, ['session', 'list', '--json'])
+    if (!listed.ok) throw new GasCityReadError(listed.unavailable as GasCityUnavailable)
+    return parseSessionListOutput(listed.stdout, root.hostId)
   }
 
   private async loadContext(

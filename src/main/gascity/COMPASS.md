@@ -5,10 +5,11 @@ generated: "2026-07-19"
 # Staleness stamp — machine-readable so a refresh can test drift without a model.
 # `sources` are area-relative paths (relative to THIS file's directory). Recompute:
 #   node ~/.claude/skills/project-compass/compass-hash.mjs src/main/gascity/COMPASS.md
-sources_hash: "sha256-16:57b5928b131bfed3"
+sources_hash: "sha256-16:221bec0b52d751e1"
 sources:
   - gascity-service.ts
   - gascity-context.ts
+  - gascity-sessions.ts
   - gascity-parse.ts
   - gascity-config.ts
   - gascity-crew.ts
@@ -157,6 +158,20 @@ pack-stamped lead that a rig override suspended drops out, leaving the hand-defi
   `GasCityContextCache` holds the slow half for 60s; an explicit refresh passes
   `refresh: true` to re-read it, the poll never does. Failures are evicted rather than
   cached, so one bad `gc` call cannot pin a degraded crew in place for a full TTL.
+- **The session list is shared per host, and the key could not be the city.** Every
+  workspace in one city gets the identical `gc session list` payload, so without sharing a
+  tab switch pays the full read again. The obvious key — the city — is unavailable at the
+  moment it is needed: gc resolves the city from the working directory through its
+  machine-wide registry, and hvir learns it only from `gc rig list`, which is the read the
+  cache exists to avoid waiting on. So `GasCitySessionCache` keys by **host** and
+  `attribute()` records the city afterwards, once `crew` has resolved a context. A read
+  attributed to two different cities is dropped rather than served. Do not "fix" the key to
+  the city without solving the ordering problem first; the naive version deadlocks the two
+  reads against each other, and the version that peeks a cached context never shares on the
+  first visit to a workspace, which is exactly the case that hurts.
+- **`GasCityContextCache.peek` exists for that ordering problem** and nothing else. It
+  returns a context only if one is already resolved and fresh, so a caller that needs the
+  city root to decide *how* to fetch something degrades instead of stalling.
 - **Measure gc before optimizing around it; the costs are not where they look.** On a real
   city (~22 rigs, ~73 sessions, 2026-07-19), timed on the host itself: `gc session list
   --json` **2.3–3.3 s**, `gc rig list --json` **2.7–2.9 s**, `gc config show` **0.25 s**.
