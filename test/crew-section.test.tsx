@@ -48,7 +48,14 @@ function issue(overrides: Partial<BeadIssue> = {}): BeadIssue {
 }
 
 function crew(members: readonly GasCityCrewMember[]): GasCityCrew {
-  return { available: true, members, tierSource: 'config', scope: 'rig', rigName: 'mem' }
+  return {
+    available: true,
+    members,
+    tierSource: 'config',
+    scope: 'rig',
+    rigName: 'mem',
+    diagnostics: { namedSessions: 4, pinned: 2, unmatched: [] },
+  }
 }
 
 describe('crew view', () => {
@@ -210,6 +217,51 @@ describe('CrewSection rendering', () => {
       onAction: noop,
     })
     expect(cityScoped).toContain('city-wide')
+  })
+
+  it('says so when the config yielded no pinned identities at all', () => {
+    // The failure that cost five rounds: a config key read under the wrong name
+    // produces zero leads and looks exactly like a city that has none.
+    const markup = render({
+      response: {
+        ...crew([member()]),
+        diagnostics: { namedSessions: 0, pinned: 0, unmatched: [] },
+      },
+      issues: [],
+      collapsed: false,
+      onToggle: noop,
+      onAction: noop,
+    })
+    expect(markup).toContain('No pinned identities')
+    expect(markup).toContain('0 named sessions')
+  })
+
+  it('names the sessions no config entry describes, and counts the rest', () => {
+    const markup = render({
+      response: {
+        ...crew([member()]),
+        diagnostics: { namedSessions: 4, pinned: 2, unmatched: ['a', 'b', 'c', 'd', 'e'] },
+      },
+      issues: [],
+      collapsed: false,
+      onToggle: noop,
+      onAction: noop,
+    })
+    expect(markup).toContain('Unclassified')
+    expect(markup).toContain('a, b, c')
+    expect(markup).toContain('+2')
+  })
+
+  it('stays quiet when everything was accounted for', () => {
+    const markup = render({
+      response: crew([member()]),
+      issues: [],
+      collapsed: false,
+      onToggle: noop,
+      onAction: noop,
+    })
+    expect(markup).not.toContain('Unclassified')
+    expect(markup).not.toContain('No pinned identities')
   })
 
   it('renders nothing outside a Gas City', () => {

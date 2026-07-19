@@ -83,6 +83,24 @@ export type GasCityTierSource = 'session-fields' | 'config'
  */
 export type GasCityCrewScope = 'city' | 'rig'
 
+/**
+ * What the derivation could *not* account for.
+ *
+ * The crew is built by matching gc's output against gc's resolved config, and
+ * every failure so far has been a rule quietly deciding on data that was not
+ * there — a config key read under the wrong name yields zero leads and looks
+ * exactly like a city that has none. These counts make that difference visible
+ * in the panel instead of leaving it to be reported as a bug.
+ */
+export interface GasCityCrewDiagnostics {
+  /** Named sessions found in the resolved config. */
+  readonly namedSessions: number
+  /** Of those, how many are pinned identities (`mode = "always"`, not suspended). */
+  readonly pinned: number
+  /** In-scope sessions matching no named session and no agent — nothing is known about these. */
+  readonly unmatched: readonly string[]
+}
+
 export interface GasCityCrew {
   readonly available: true
   readonly members: readonly GasCityCrewMember[]
@@ -90,6 +108,7 @@ export interface GasCityCrew {
   readonly scope: GasCityCrewScope
   /** The rig the workspace resolved to; absent when gc could not name one. */
   readonly rigName?: string
+  readonly diagnostics: GasCityCrewDiagnostics
 }
 
 export type GasCityUnavailableReason = 'gc-missing' | 'no-city' | 'error'

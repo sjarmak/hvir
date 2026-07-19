@@ -222,6 +222,60 @@ describe('live gc crew derivation', () => {
   })
 })
 
+describe('crew diagnostics', () => {
+  it('reports the pinned count so a mis-read config is visible, not silent', () => {
+    const derived = deriveCrew({
+      sessions: LIVE_SESSIONS,
+      config: LIVE_CONFIG,
+      rigRoot: hostPath(HOST, LIVE_MEM),
+      rigName: 'mem',
+      cityRoot: hostPath(HOST, LIVE_CITY),
+      cityWorkspace: false,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    expect(derived.diagnostics.namedSessions).toBe(3)
+    expect(derived.diagnostics.pinned).toBe(2)
+    expect(derived.diagnostics.unmatched).toEqual([])
+  })
+
+  it('lists an in-scope session no named session or agent describes', () => {
+    const derived = deriveCrew({
+      sessions: parseSessionListOutput(
+        JSON.stringify([
+          { id: 'gc-9', name: `${LIVE_MEM}/ghost-1`, template: `${LIVE_MEM}/ghost` },
+        ]),
+        HOST,
+      ),
+      config: LIVE_CONFIG,
+      rigRoot: hostPath(HOST, LIVE_MEM),
+      rigName: 'mem',
+      cityRoot: hostPath(HOST, LIVE_CITY),
+      cityWorkspace: false,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    expect(derived.diagnostics.unmatched).toEqual(['ghost-1'])
+  })
+
+  it('reports zero pinned when the config could not be read at all', () => {
+    const derived = deriveCrew({
+      sessions: LIVE_SESSIONS,
+      config: { agents: [], namedSessions: [] },
+      rigRoot: hostPath(HOST, LIVE_MEM),
+      rigName: 'mem',
+      cityRoot: hostPath(HOST, LIVE_CITY),
+      cityWorkspace: false,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    expect(derived.diagnostics).toMatchObject({ namedSessions: 0, pinned: 0 })
+  })
+})
+
 describe('gc session list parsing', () => {
   it('normalizes a bare array of sessions and host-qualifies work_dir', () => {
     const sessions = parseSessionListOutput(JSON.stringify([sessionJson()]), HOST)

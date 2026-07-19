@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react'
 
-import type { BeadIssue, GasCityCrewResponse } from '../../../shared'
+import type { BeadIssue, GasCityCrew, GasCityCrewResponse } from '../../../shared'
 import { buildCrewView, type CrewCard, type CrewGroup } from './crew-model'
 import {
   GAS_CITY_ACTIONS,
@@ -9,6 +9,9 @@ import {
   type GasCityAction,
 } from './gascity-commands'
 import './crew.css'
+
+/** Enough names to recognize the pattern; the count carries the rest. */
+const UNMATCHED_SHOWN = 3
 
 interface CrewSectionProps {
   readonly response: GasCityCrewResponse | undefined
@@ -69,6 +72,7 @@ export function CrewSection({
           {view.internals.length > 0
             ? renderPool({ key: 'internals', label: 'orchestration', cards: view.internals })
             : null}
+          {renderUnaccounted(response)}
           {response.tierSource === 'config' ? (
             <p className="beads-section-note">
               Tiering derived from the resolved city config; gc does not yet project it.
@@ -78,6 +82,38 @@ export function CrewSection({
       )}
     </div>
   )
+
+  /**
+   * Say what the derivation could not account for, rather than rendering a
+   * confidently wrong crew. A config read under the wrong key yields zero
+   * pinned identities and is otherwise indistinguishable from a city that has
+   * none — this is the difference, on screen.
+   */
+  function renderUnaccounted(crew: GasCityCrew): ReactElement | null {
+    const { namedSessions, pinned, unmatched } = crew.diagnostics
+    const noPins = crew.tierSource === 'config' && pinned === 0
+    if (!noPins && unmatched.length === 0) return null
+    return (
+      <div className="crew-unaccounted" role="note">
+        {noPins ? (
+          <p>
+            No pinned identities in the resolved config ({namedSessions} named session
+            {namedSessions === 1 ? '' : 's'} read). Every session here is shown as a
+            worker.
+          </p>
+        ) : null}
+        {unmatched.length > 0 ? (
+          <p>
+            Unclassified: {unmatched.slice(0, UNMATCHED_SHOWN).join(', ')}
+            {unmatched.length > UNMATCHED_SHOWN
+              ? ` +${unmatched.length - UNMATCHED_SHOWN}`
+              : ''}{' '}
+            — no named session or agent describes {unmatched.length === 1 ? 'it' : 'them'}.
+          </p>
+        ) : null}
+      </div>
+    )
+  }
 
   function renderPool(group: CrewGroup): ReactElement {
     return (

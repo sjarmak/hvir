@@ -40,10 +40,10 @@ export interface DeriveCrewInput {
 }
 
 export function deriveCrew(input: DeriveCrewInput): GasCityCrew {
-  const live = input.sessions
+  const scoped = input.sessions
     .map((session) => crewCandidate(session, input))
     .filter((candidate) => inScope(candidate, input))
-    .map(({ member }) => member)
+  const live = scoped.map(({ member }) => member)
   const dormant = dormantLeads(input, live)
   const members = sortCrew(dedupeByTarget([...live, ...dormant])).filter(
     (member) => input.includeInternals || member.tier !== 'internal',
@@ -54,6 +54,13 @@ export function deriveCrew(input: DeriveCrewInput): GasCityCrew {
     tierSource: input.tierSource,
     scope: input.cityWorkspace ? 'city' : 'rig',
     ...(input.rigName === undefined ? {} : { rigName: input.rigName }),
+    diagnostics: {
+      namedSessions: input.config.namedSessions.length,
+      pinned: input.config.namedSessions.filter(isPinned).length,
+      unmatched: scoped
+        .filter((candidate) => !candidate.classified)
+        .map((candidate) => candidate.member.label),
+    },
   }
 }
 
@@ -186,15 +193,22 @@ interface CrewCandidate {
   readonly session: GasCitySession
   readonly member: GasCityCrewMember
   readonly named: GasCityNamedSessionConfig | undefined
+  /** Whether any config entry — named session or agent — described this session. */
+  readonly classified: boolean
 }
 
 function crewCandidate(session: GasCitySession, input: DeriveCrewInput): CrewCandidate {
   const named = matchNamedSession(session, input.config)
   const tier = sessionTier(session, named, input)
   const poolName = tier === 'worker' ? workerPoolName(session, input) : undefined
+  const template = unqualifiedTemplate(session.template)
   return {
     session,
     named,
+    classified:
+      named !== undefined ||
+      (template !== undefined &&
+        input.config.agents.some((agent) => agent.name === template)),
     member: {
       key: session.id,
       tier,
