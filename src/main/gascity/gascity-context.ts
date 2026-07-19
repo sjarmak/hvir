@@ -63,7 +63,14 @@ export class GasCityContextCache {
   get(root: HostPath, withConfig: boolean): Promise<GasCityContext> {
     const key = cacheKey(root, withConfig)
     const cached = this.entries.get(key)
-    if (cached && this.now() - cached.loadedAt < this.ttlMs) return cached.value
+    if (cached && this.now() - cached.loadedAt < this.ttlMs) {
+      // Re-insert so eviction below is least-recently-*used*. A Map evicts in
+      // insertion order, which without this drops the workspace you keep coming
+      // back to while a long-abandoned one survives.
+      this.entries.delete(key)
+      this.entries.set(key, cached)
+      return cached.value
+    }
 
     const value = this.options.load(root, withConfig)
     const entry: CacheEntry = { loadedAt: this.now(), value }

@@ -95,6 +95,20 @@ describe('GasCityContextCache', () => {
     expect(cache.peek(ROOT)).toBeUndefined()
   })
 
+  it('evicts the least recently used workspace, not the first one visited', () => {
+    const load = vi.fn(() => Promise.resolve(context('mem')))
+    const cache = new GasCityContextCache({ load, ttlMs: 10_000, now: () => 0 })
+    const workspace = (n: number): ReturnType<typeof hostPath> =>
+      hostPath(HOST, `/home/dev/city/rigs/w${n}`)
+
+    for (let n = 0; n < 8; n += 1) void cache.get(workspace(n), true)
+    void cache.get(workspace(0), true) // keep using the first one
+    void cache.get(workspace(8), true) // overflow: something must go
+    void cache.get(workspace(0), true)
+    // The workspace still in use survives; the one untouched longest does not.
+    expect(load).toHaveBeenCalledTimes(9)
+  })
+
   it('re-reads after an explicit invalidate', () => {
     const load = vi.fn(() => Promise.resolve(context('mem')))
     const cache = new GasCityContextCache({ load, ttlMs: 10_000, now: () => 0 })

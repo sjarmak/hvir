@@ -13,14 +13,19 @@ import {
   type HostPath,
 } from '../../shared'
 import type { ProjectHost } from '../project-host'
-import { EMPTY_RESOLVED_CONFIG, parseResolvedConfig } from './gascity-config'
 import {
+  EMPTY_RESOLVED_CONFIG,
+  parseResolvedConfig,
+  type GasCityResolvedConfig,
+} from './gascity-config'
+import {
+  CONTEXT_TTL_MS,
   GasCityContextCache,
   isCityWorkspace,
   type GasCityContext,
 } from './gascity-context'
 import { deriveCrew } from './gascity-crew'
-import { GasCitySessionCache } from './gascity-sessions'
+import { HostReadCache, SESSION_TTL_MS } from './gascity-host-cache'
 import {
   hasProjectedTierFields,
   parseRigListOutput,
@@ -70,10 +75,12 @@ export class GasCityService {
    */
   private readonly contexts: GasCityContextCache
   /**
-   * The live half, cached just long enough for the workspaces of one host to
-   * share a read. See `gascity-sessions.ts` for why the key is the host.
+   * Every `gc` read, shared per host. All three are city-wide; see
+   * `gascity-host-cache.ts` for why the key is the host and not the city.
    */
-  private readonly sessions: GasCitySessionCache
+  private readonly sessions: HostReadCache<readonly GasCitySession[]>
+  private readonly rigLists: HostReadCache<readonly GasCityRig[]>
+  private readonly configs: HostReadCache<GasCityResolvedConfig>
 
   constructor(private readonly deps: GasCityServiceDeps) {
     const clock = deps.now === undefined ? {} : { now: deps.now }
@@ -81,17 +88,33 @@ export class GasCityService {
       load: (root, withConfig) => this.loadContext(root, withConfig),
       ...clock,
     })
-    this.sessions = new GasCitySessionCache({
+    this.sessions = new HostReadCache({
       load: (root) => this.loadSessions(root),
+      ttlMs: SESSION_TTL_MS,
       ...clock,
     })
+    this.rigLists = new HostReadCache({
+      load: (root) => this.loadRigs(root),
+      ttlMs: CONTEXT_TTL_MS,
+      ...clock,
+    })
+    this.configs = new HostReadCache({
+      load: (root) => this.loadConfig(root),
+      ttlMs: CONTEXT_TTL_MS,
+      ...clock,
+    })
+  }
+
+  /** The host-wide reads, for the operations that apply to all of them alike. */
+  private get hostReads(): readonly HostReadCache<unknown>[] {
+    return [this.sessions, this.rigLists, this.configs]
   }
 
   async crew(req: GasCityCrewRequest): Promise<GasCityCrewResponse> {
     const { root } = this.activeProject(req.root)
     if (req.refresh === true) {
       this.contexts.invalidate(root)
-      this.sessions.invalidate()
+      for (const cache of this.hostReads) cache.invalidate()
     }
 
     let sessions: readonly GasCitySession[]
@@ -110,9 +133,10 @@ export class GasCityService {
     // in this directory is a worker", which is wrong but not misleading, and the
     // failure is logged rather than blanking the section.
     const context = await this.contexts.get(root, tierSource === 'config')
-    // The session read could not know its city; now that one is resolved, say so,
-    // so a workspace in a different city on this host misses rather than sharing.
-    this.sessions.attribute(root.hostId, context.cityRoot)
+    // None of the host-wide reads could know their city; now that one is
+    // resolved, say so, so a workspace in a different city on this host misses
+    // rather than being served this one's crew.
+    for (const cache of this.hostReads) cache.attribute(root.hostId, context.cityRoot)
 
     return deriveCrew({
       sessions,
@@ -139,15 +163,24 @@ export class GasCityService {
     return parseSessionListOutput(listed.stdout, root.hostId)
   }
 
+  /**
+   * The city's shape as this workspace sees it.
+   *
+   * Both `gc` reads here are city-wide and shared per host; what is left to do
+   * per workspace is the rig it maps to — a pure lookup in the shared rig list —
+   * and the marker stats that locate the city. A degraded read still yields a
+   * workers-only crew rather than a blank section, so a failure is swallowed
+   * here rather than in the cache, which must evict it.
+   */
   private async loadContext(
     root: HostPath,
     withConfig: boolean,
   ): Promise<GasCityContext> {
     const { host } = this.activeProject(root)
     const [rigs, config] = await Promise.all([
-      this.resolveRigs(host, root),
+      this.rigLists.get(root).catch(degradeTo<readonly GasCityRig[]>([], root, 'rig list')),
       withConfig
-        ? this.resolveConfig(host, root)
+        ? this.configs.get(root).catch(degradeTo(EMPTY_RESOLVED_CONFIG, root, 'config show'))
         : Promise.resolve(EMPTY_RESOLVED_CONFIG),
     ])
     const rigName = rigForPath(rigs, root.path)?.name
@@ -160,6 +193,13 @@ export class GasCityService {
     }
   }
 
+  private async loadRigs(root: HostPath): Promise<readonly GasCityRig[]> {
+    const { host } = this.activeProject(root)
+    const result = await this.run(host, root, ['rig', 'list', '--json'])
+    if (!result.ok) throw new GasCityReadError(result.unavailable as GasCityUnavailable)
+    return parseRigListOutput(result.stdout)
+  }
+
   /**
    * Does this workspace sit inside a Gas City? A bounded walk up from the root
    * looking for `city.toml` or `.gc` — no `gc` invocation, so it stays cheap
@@ -168,14 +208,6 @@ export class GasCityService {
   async probe(requestedRoot: HostPath): Promise<GasCityProbeResponse> {
     const { host, root } = this.activeProject(requestedRoot)
     return { hasCity: await isInCity(host, root) }
-  }
-
-  private async resolveRigs(
-    host: ProjectHost,
-    root: HostPath,
-  ): Promise<readonly GasCityRig[]> {
-    const result = await this.run(host, root, ['rig', 'list', '--json'])
-    return result.ok ? parseRigListOutput(result.stdout) : []
   }
 
   /**
@@ -210,12 +242,14 @@ export class GasCityService {
     return walked === undefined ? {} : { cityRoot: walked }
   }
 
-  private async resolveConfig(
-    host: ProjectHost,
-    root: HostPath,
-  ): Promise<ReturnType<typeof parseResolvedConfig>> {
+  /**
+   * A failed read throws so the cache evicts it; output gc produced but hvir
+   * cannot parse is a real answer, cached as the empty config it amounts to.
+   */
+  private async loadConfig(root: HostPath): Promise<GasCityResolvedConfig> {
+    const { host } = this.activeProject(root)
     const result = await this.run(host, root, ['config', 'show'])
-    if (!result.ok) return EMPTY_RESOLVED_CONFIG
+    if (!result.ok) throw new GasCityReadError(result.unavailable as GasCityUnavailable)
     try {
       return parseResolvedConfig(result.stdout)
     } catch (reason) {
@@ -363,6 +397,23 @@ function classifyFailure(stderr: string): GasCityUnavailable {
     available: false,
     reason: 'error',
     message: stderr === '' ? 'gc exited with a non-zero status.' : stderr,
+  }
+}
+
+/**
+ * Fall back to `value` when an enrichment read fails. A partial crew beats a
+ * blank section, so this is logged rather than surfaced — but it lives at the
+ * call site, not in the cache, which has to evict the failure so the next
+ * workspace on this host retries instead of inheriting it.
+ */
+function degradeTo<T>(value: T, root: HostPath, read: string): (reason: unknown) => T {
+  return (reason) => {
+    console.error('[gascity] enrichment unavailable; crew degraded', {
+      root: root.path,
+      read,
+      detail: reason instanceof Error ? reason.message : String(reason),
+    })
+    return value
   }
 }
 

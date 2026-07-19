@@ -61,38 +61,42 @@ Tests: `test/ssh-exec-slots.test.ts` (lane rules) and one wiring test in
 `bd` stays on the interactive lane deliberately — at 40 ms it is not a contention source,
 and putting it behind gc would only make the bead list slower.
 
-**Share the session list** (`src/main/gascity/gascity-sessions.ts`). `gc session list`
-returns the whole city regardless of `--rig`, so every workspace in it wants the identical
-payload. `GasCitySessionCache` holds it for 3 s and shares the in-flight read, so a tab
-switch during or just after a read costs nothing instead of another 3 s.
+**Share every gc read per host** (`src/main/gascity/gascity-host-cache.ts`). All three are
+city-wide: `gc session list` ignores `--rig`, `gc rig list` describes the whole city, and
+`gc config show` is the city's composed config. The only per-workspace fact is which rig it
+maps to, and `rigForPath` derives that from the shared rig list with no IO. `HostReadCache`
+holds sessions for 3 s and the other two for 60 s, sharing the in-flight read in all three
+cases. **Switching workspaces on a warm host now costs no `gc` at all** — only the marker
+stats that locate the city.
 
 The key is the **host**, not the city, and that is forced: gc resolves the city from the
 working directory through its machine-wide registry, and hvir learns it only from
-`gc rig list` — the read this cache exists to avoid waiting on. Keying by a peeked context
-was tried and abandoned: it never shares on the first visit to a workspace, which is the
-case that hurts. `attribute()` records the city after the fact and drops a read attributed
-to two different cities, so a second city on one host costs a repeat read rather than
-showing the wrong crew. `GasCityContextCache.peek` was added for this ordering problem.
+`gc rig list` — one of the reads being cached. Keying by a peeked context was tried and
+abandoned: it never shares on the first visit to a workspace, which is the case that hurts.
+`attribute()` records the city after the fact and drops a read attributed to two different
+cities, so a second city on one host costs a repeat read rather than showing the wrong crew.
+`GasCityContextCache.peek` was added for this ordering problem.
+
+Two related fixes came with it: the rig/config loaders now throw so a failure evicts instead
+of caching emptiness host-wide (`degradeTo` at the call site keeps the workers-only fallback),
+and `GasCityContextCache` re-inserts on a hit so its eviction is least-recently-*used* rather
+than insertion-ordered — it had been dropping the workspace you keep returning to.
 
 ## Remaining, in order
 
-1. **Split the context cache** (original H1) so `gc rig list` is keyed by city/host rather
-   than by workspace. `GasCityContextCache` currently keys on `${hostId}:${path}:${withConfig}`
-   with `MAX_ENTRIES = 8`, so cycling more than ~4 workspaces re-pays 2.7 s each time. Only
-   `rigName` is per-workspace and `rigForPath` derives it from the cached rig list with no IO.
-2. **Raise `VISIBLE_POLL_INTERVAL_MS`** off 4000 (`use-gascity-crew.ts`). Polling a 3-second
+1. **Raise `VISIBLE_POLL_INTERVAL_MS`** off 4000 (`use-gascity-crew.ts`). Polling a 3-second
    command every 4 seconds leaves no headroom.
-3. **Gate the probe on visibility** (original H2). `use-gascity-crew.ts:75` fires
+2. **Gate the probe on visibility** (original H2). `use-gascity-crew.ts:75` fires
    `gascity:probe` on every root change with no `hidden` guard; the walk is up to 12 levels ×
    2 markers of sequential SFTP lstats. At 9.8 ms RTT this is tens of ms, not seconds — real
    but minor next to gc.
-4. **Upstream: `gc session list --json` taking ~3 s for 73 sessions is the actual defect.**
+3. **Upstream: `gc session list --json` taking ~3 s for 73 sessions is the actual defect.**
    Worth reporting with these timings. Note that issue #1 step 5's projection PR does *not*
    fix it — that removes `gc config show`, the cheap one.
 
 ## Constraints to respect
 
-- `npm run verify` must stay green (736 tests, seam checks, ADR checks, module budgets).
+- `npm run verify` must stay green (739 tests, seam checks, ADR checks, module budgets).
 - New production modules cap at 500 lines; named hotspot budgets live in
   `scripts/architecture-hotspots.json` and are asserted by `test/architecture-hotspots.test.ts`.
 - All process/filesystem access goes through `ProjectHost` — never `child_process` or `fs`
@@ -106,9 +110,9 @@ showing the wrong crew. `GasCityContextCache.peek` was added for this ordering p
   background-lane rule.
 - `src/main/project-host/COMPASS.md` — the exec-budget and lane reasoning.
 - `gascity-service.ts` — orchestration, `gc` invocation, city/rig resolution.
-- `gascity-context.ts` — the cache to split (remaining item 1).
-- `gascity-sessions.ts` — the shared session read and why its key is the host.
-- `use-gascity-crew.ts` — probe + poll policy (remaining items 2 and 3).
+- `gascity-context.ts` — the per-workspace derivation left after the reads moved out.
+- `gascity-host-cache.ts` — the shared reads and why their key is the host.
+- `use-gascity-crew.ts` — probe + poll policy (remaining items 1 and 2).
 
 ## Known-good behaviour to avoid regressing
 

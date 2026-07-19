@@ -272,7 +272,7 @@ rig = "mem"
     }
   })
 
-  it('reads the session list once for two workspaces in the same city', async () => {
+  it('costs no gc at all to switch to another workspace on the host', async () => {
     const other = hostPath(asHostId('local'), '/home/dev/city/rigs/aoa')
     let active = ROOT
     const { host, exec } = stubHost(
@@ -295,14 +295,82 @@ rig = "mem"
       now: () => 0,
     })
     await gascity.crew({ root: ROOT })
+    const afterFirst = exec.mock.calls.length
     active = other
     await gascity.crew({ root: other })
-    const reads = exec.mock.calls.filter(
-      (call) => (call[1] as string[]).slice(0, 2).join(' ') === 'session list',
+    // Every gc read is city-wide; only which rig the workspace maps to differs,
+    // and that is derived from the shared rig list without touching the host.
+    expect(exec.mock.calls.slice(afterFirst)).toEqual([])
+  })
+
+  it('still maps each workspace to its own rig off the shared rig list', async () => {
+    const other = hostPath(asHostId('local'), '/home/dev/city/rigs/aoa')
+    let active = ROOT
+    const { host } = stubHost(
+      {
+        'session list': execResult(
+          0,
+          JSON.stringify([
+            { id: 'gc-1', name: 'mem-worker-1', state: 'active', work_dir: ROOT.path },
+            { id: 'gc-2', name: 'aoa-worker-1', state: 'active', work_dir: other.path },
+          ]),
+        ),
+        'rig list': execResult(
+          0,
+          JSON.stringify([
+            { name: 'hq', path: '/home/dev/city' },
+            { name: 'mem', path: ROOT.path },
+            { name: 'aoa', path: other.path },
+          ]),
+        ),
+        // No pinned identities, so only the rig mapping decides what shows.
+        'config show': execResult(0, ''),
+      },
+      ['/home/dev/city/city.toml'],
     )
-    // Both workspaces resolve to one city, and `gc session list` ignores --rig,
-    // so the second workspace shares the first's read instead of re-paying it.
-    expect(reads).toHaveLength(1)
+    const gascity = new GasCityService({
+      getProject: () => ({ host, root: active }),
+      now: () => 0,
+    })
+    const mem = await gascity.crew({ root: ROOT })
+    active = other
+    const aoa = await gascity.crew({ root: other })
+    expect(mem.available && mem.members.map((member) => member.label)).toEqual([
+      'mem-worker-1',
+    ])
+    expect(aoa.available && aoa.members.map((member) => member.label)).toEqual([
+      'aoa-worker-1',
+    ])
+  })
+
+  it('does not pin a failed rig list across the whole host', async () => {
+    const other = hostPath(asHostId('local'), '/home/dev/city/rigs/aoa')
+    let active = ROOT
+    const rigList = vi
+      .fn<() => ExecResult>()
+      .mockReturnValueOnce(execResult(1, '', 'boom'))
+      .mockReturnValue(RIG_LIST)
+    const exec = vi.fn((_command: string, args: readonly string[]) => {
+      const key = args.slice(0, 2).join(' ')
+      if (key === 'rig list') return Promise.resolve(rigList())
+      if (key === 'config show') return Promise.resolve(CONFIG)
+      return Promise.resolve(execResult(0, '[]'))
+    })
+    const host = {
+      exec,
+      stat: () => Promise.reject(new Error('ENOENT')),
+    } as unknown as ProjectHost
+    const gascity = new GasCityService({
+      getProject: () => ({ host, root: active }),
+      now: () => 0,
+    })
+
+    await gascity.crew({ root: ROOT })
+    active = other
+    await gascity.crew({ root: other })
+    // A degraded crew for the workspace that hit the failure is deliberate;
+    // handing that failure to every other workspace on the host is not.
+    expect(rigList).toHaveBeenCalledTimes(2)
   })
 
   it('rejects a request for anything but the active workspace root', async () => {
