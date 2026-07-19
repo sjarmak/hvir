@@ -109,9 +109,12 @@ function belongsToRig(
 function isCityLead(candidate: CrewCandidate, input: DeriveCrewInput): boolean {
   const rig = candidate.named?.rig ?? candidate.session.rig
   if (rig !== undefined) return rig === input.hqRigName
+  // With no city root resolved there is nothing to compare against. Be
+  // permissive rather than silently dropping the mayor: an extra lead is a
+  // visible annoyance, a missing one looks like the crew view is just wrong.
+  if (input.cityRoot === undefined) return true
   const root = identityRoot(candidate, input)
-  if (root === undefined) return true
-  return input.cityRoot !== undefined && hostPathEquals(root, input.cityRoot)
+  return root === undefined || hostPathEquals(root, input.cityRoot)
 }
 
 /**
@@ -303,9 +306,8 @@ function dormantLeadInScope(
   }
   // Same rule as a live identity: rooted under this rig, or rooted at the city.
   const root = configuredRoot(named, input)
-  if (root === undefined) return true
-  if (isAtOrUnder(root, input.rigRoot)) return true
-  return input.cityRoot !== undefined && hostPathEquals(root, input.cityRoot)
+  if (root === undefined || input.cityRoot === undefined) return true
+  return isAtOrUnder(root, input.rigRoot) || hostPathEquals(root, input.cityRoot)
 }
 
 /**

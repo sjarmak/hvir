@@ -1,5 +1,6 @@
 import {
   dirnameHostPath,
+  hostPath,
   hostPathEquals,
   isHostPathShape,
   joinHostPath,
@@ -68,20 +69,14 @@ export class GasCityService {
     // Best-effort enrichments: without them the crew degrades to "every session
     // in this directory is a worker", which is wrong but not misleading, and the
     // failure is logged rather than blanking the section.
-    const [rigs, cityRoot, config] = await Promise.all([
+    const [rigs, config] = await Promise.all([
       this.resolveRigs(host, root),
-      findCityRoot(host, root),
       tierSource === 'config'
         ? this.resolveConfig(host, root)
         : Promise.resolve(EMPTY_RESOLVED_CONFIG),
     ])
     const rigName = rigForPath(rigs, root.path)?.name
-    // The HQ rig is the one whose own root carries the city marker — a
-    // structural test, so no rig has to be recognized by name.
-    const hqRigName =
-      cityRoot === undefined
-        ? undefined
-        : rigs.find((rig) => rig.path === cityRoot.path)?.name
+    const { cityRoot, hqRigName } = await this.resolveCity(host, root, rigs)
 
     return deriveCrew({
       sessions,
@@ -112,6 +107,31 @@ export class GasCityService {
   ): Promise<readonly GasCityRig[]> {
     const result = await this.run(host, root, ['rig', 'list', '--json'])
     return result.ok ? parseRigListOutput(result.stdout) : []
+  }
+
+  /**
+   * Locate the city and its HQ rig.
+   *
+   * `gc rig list` reports the HQ rig — the city itself — alongside every
+   * registered rig, so the city is found by asking which listed rig root carries
+   * `city.toml`. That works for rigs registered *outside* the city directory,
+   * where walking up from the workspace never reaches the city at all and the
+   * mayor would otherwise vanish from the crew. The walk stays as the fallback
+   * for when the rig list is unavailable.
+   */
+  private async resolveCity(
+    host: ProjectHost,
+    root: HostPath,
+    rigs: readonly GasCityRig[],
+  ): Promise<{ readonly cityRoot?: HostPath; readonly hqRigName?: string }> {
+    for (const rig of rigs) {
+      const candidate = hostPath(root.hostId, rig.path)
+      if (await hasMarker(host, candidate, [CITY_ROOT_MARKER])) {
+        return { cityRoot: candidate, hqRigName: rig.name }
+      }
+    }
+    const walked = await findCityRoot(host, root)
+    return walked === undefined ? {} : { cityRoot: walked }
   }
 
   private async resolveConfig(

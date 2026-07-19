@@ -295,6 +295,22 @@ describe('rig leads defined at city scope', () => {
     expect([...labels].sort()).toEqual(['mayor', 'mem-pl', 'mem-worker-ash'])
   })
 
+  it('keeps the mayor visible when the city root could not be resolved', () => {
+    // A rig registered outside the city directory: nothing to compare roots
+    // against, so the crew errs toward showing a lead rather than hiding one.
+    const blind = deriveCrew({
+      sessions: CITY_WIDE,
+      config: WORKDIR_SCOPED_CONFIG,
+      rigName: 'mem',
+      rigRoot: RIG_ROOT,
+      cityWorkspace: false,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    expect(blind.members.map((member) => member.label)).toContain('mayor')
+  })
+
   it('scopes dormant leads by their configured work_dir, not by having no rig', () => {
     // Nothing running at all: every lead is dormant and only `work_dir` can say
     // which rig it belongs to.

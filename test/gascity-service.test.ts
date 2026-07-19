@@ -158,6 +158,54 @@ describe('GasCityService', () => {
     ])
   })
 
+  it('finds the city through the rig list when the rig sits outside it', async () => {
+    // `gc rig list` reports the HQ rig alongside the others, so the city is
+    // found by asking which listed rig root carries city.toml — the walk up from
+    // this workspace would never reach it.
+    const { host } = stubHost(
+      {
+        'session list': execResult(
+          0,
+          JSON.stringify([
+            { id: 'gc-1', name: 'mayor', state: 'active', work_dir: '/srv/city' },
+            { id: 'gc-2', name: 'mem-pl', state: 'active', work_dir: ROOT.path },
+          ]),
+        ),
+        'rig list': execResult(
+          0,
+          JSON.stringify([
+            { name: 'hq', path: '/srv/city' },
+            { name: 'mem', path: ROOT.path },
+          ]),
+        ),
+        'config show': execResult(
+          0,
+          `
+[[named_session]]
+name = "mayor"
+alias = "mayor"
+mode = "always"
+
+[[named_session]]
+name = "mem-pl"
+alias = "mem-pl"
+mode = "always"
+rig = "mem"
+`,
+        ),
+      },
+      ['/srv/city/city.toml'],
+    )
+    const crew = await service(host).crew({ root: ROOT })
+    expect(crew.available).toBe(true)
+    if (!crew.available) return
+    expect(crew.scope).toBe('rig')
+    expect([...crew.members.map((member) => member.label)].sort()).toEqual([
+      'mayor',
+      'mem-pl',
+    ])
+  })
+
   it('rejects a request for anything but the active workspace root', async () => {
     const { host } = stubHost({})
     await expect(
