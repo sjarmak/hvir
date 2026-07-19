@@ -135,7 +135,12 @@ export function CrewSection({
     const { member, bead } = card
     const state = member.session?.state ?? 'not running'
     return (
-      <div className={`crew-card${lead ? ' crew-card-lead' : ''}`} key={member.key}>
+      <div
+        className={`crew-card${lead ? ' crew-card-lead' : ''}${
+          member.cityLead === true ? ' crew-card-city' : ''
+        }`}
+        key={member.key}
+      >
         <button
           type="button"
           className="crew-card-main"

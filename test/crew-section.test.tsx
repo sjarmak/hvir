@@ -219,6 +219,25 @@ describe('CrewSection rendering', () => {
     expect(cityScoped).toContain('city-wide')
   })
 
+  it('marks the city lead so it reads as the head of the crew', () => {
+    const markup = render({
+      response: crew([
+        member({
+          key: 'gc-9',
+          tier: 'lead',
+          label: 'mayor',
+          target: 'mayor',
+          cityLead: true,
+        }),
+      ]),
+      issues: [],
+      collapsed: false,
+      onToggle: noop,
+      onAction: noop,
+    })
+    expect(markup).toContain('crew-card-city')
+  })
+
   it('says so when the config yielded no pinned identities at all', () => {
     // The failure that cost five rounds: a config key read under the wrong name
     // produces zero leads and looks exactly like a city that has none.

@@ -561,6 +561,12 @@ describe('workspace scope', () => {
     )
   })
 
+  it('puts the mayor at the very top of the city workspace crew', () => {
+    const first = scopedTo(true).members[0]
+    expect(first?.label).toBe('mayor')
+    expect(first?.cityLead).toBe(true)
+  })
+
   it('pins every rig lead in the city workspace', () => {
     const leads = scopedTo(true)
       .members.filter((member) => member.tier === 'lead')

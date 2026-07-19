@@ -54,6 +54,18 @@
   border-left: 2px solid #b07fd4;
 }
 
+/* The city's own lead heads the crew; a brighter rule and a stronger name make
+   it read as the top of the hierarchy rather than the first row of a list. */
+.crew-card-city {
+  border-left-width: 3px;
+  border-left-color: #d4a5ff;
+}
+
+.crew-card-city .crew-name {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
 .crew-card-main {
   width: 100%;
   display: flex;

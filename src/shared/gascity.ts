@@ -66,6 +66,12 @@ export interface GasCityCrewMember {
   readonly identityKeys: readonly string[]
   /** Worker-type label for tier 2 grouping (`mem-worker`, `polecat`, …). */
   readonly poolName?: string
+  /**
+   * This identity belongs to the city rather than to any rig — the mayor. It
+   * sorts above the rig leads, since in the orchestration workspace the city's
+   * own lead is the one you are looking for first.
+   */
+  readonly cityLead?: boolean
   readonly session?: GasCitySession
 }
 

@@ -79,7 +79,7 @@ export function deriveCrew(input: DeriveCrewInput): GasCityCrew {
 function inScope(candidate: CrewCandidate, input: DeriveCrewInput): boolean {
   if (input.cityWorkspace) return true
   if (belongsToRig(candidate, input)) return true
-  return candidate.member.tier === 'lead' && isCityLead(candidate, input)
+  return candidate.member.tier === 'lead' && candidate.member.cityLead === true
 }
 
 /**
@@ -142,14 +142,18 @@ function qualifiedRoot(
  * rig. An identity with neither a rig nor a working directory has nothing tying
  * it to a rig, so it counts as the city's.
  */
-function isCityLead(candidate: CrewCandidate, input: DeriveCrewInput): boolean {
-  const rig = candidate.named?.rig ?? candidate.session.rig
+function isCityLead(
+  session: GasCitySession,
+  named: GasCityNamedSessionConfig | undefined,
+  input: DeriveCrewInput,
+): boolean {
+  const rig = named?.rig ?? session.rig
   if (rig !== undefined) return rig === input.hqRigName
   // With no city root resolved there is nothing to compare against. Be
   // permissive rather than silently dropping the mayor: an extra lead is a
   // visible annoyance, a missing one looks like the crew view is just wrong.
   if (input.cityRoot === undefined) return true
-  const root = identityRoot(candidate, input)
+  const root = identityRoot(session, named, input)
   return root === undefined || hostPathEquals(root, input.cityRoot)
 }
 
@@ -159,13 +163,14 @@ function isCityLead(candidate: CrewCandidate, input: DeriveCrewInput): boolean {
  * For a dormant identity the configured `work_dir` says where it would run.
  */
 function identityRoot(
-  candidate: CrewCandidate,
+  session: GasCitySession,
+  named: GasCityNamedSessionConfig | undefined,
   input: DeriveCrewInput,
 ): HostPath | undefined {
   return (
-    qualifiedRoot(candidate.session, input.rigRoot.hostId) ??
-    candidate.session.workDir ??
-    configuredRoot(candidate.named, input)
+    qualifiedRoot(session, input.rigRoot.hostId) ??
+    session.workDir ??
+    configuredRoot(named, input)
   )
 }
 
@@ -202,6 +207,7 @@ function crewCandidate(session: GasCitySession, input: DeriveCrewInput): CrewCan
   const tier = sessionTier(session, named, input)
   const poolName = tier === 'worker' ? workerPoolName(session, input) : undefined
   const template = unqualifiedTemplate(session.template)
+  const cityLead = tier === 'lead' && isCityLead(session, named, input)
   return {
     session,
     named,
@@ -216,6 +222,7 @@ function crewCandidate(session: GasCitySession, input: DeriveCrewInput): CrewCan
       target: commandTarget(session),
       identityKeys: identityKeys(session),
       ...(poolName === undefined ? {} : { poolName }),
+      ...(cityLead ? { cityLead: true } : {}),
       session,
     },
   }
@@ -371,6 +378,7 @@ function dormantLeads(
         tier: 'lead' as const,
         label: target,
         target,
+        ...(named.rig === undefined ? { cityLead: true } : {}),
         identityKeys: [
           ...new Set([named.name, named.alias, named.agent].filter((key): key is string => !!key)),
         ],
@@ -420,6 +428,10 @@ function sortCrew(members: readonly GasCityCrewMember[]): readonly GasCityCrewMe
     const byTier =
       GAS_CITY_CREW_TIERS.indexOf(left.tier) - GAS_CITY_CREW_TIERS.indexOf(right.tier)
     if (byTier !== 0) return byTier
+    // The city's own lead heads the crew; in the orchestration workspace it is
+    // the one identity you are looking for before any rig's.
+    const byCity = Number(right.cityLead ?? false) - Number(left.cityLead ?? false)
+    if (byCity !== 0) return byCity
     const byPool = (left.poolName ?? '').localeCompare(right.poolName ?? '')
     if (byPool !== 0) return byPool
     return left.label.localeCompare(right.label)
