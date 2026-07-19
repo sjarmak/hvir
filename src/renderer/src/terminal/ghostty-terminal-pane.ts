@@ -21,7 +21,12 @@ import {
   isTerminalWebTarget,
 } from './terminal-file-link'
 import { TerminalFitController } from './ghostty-terminal-fit'
-import { terminalMouseButton } from './terminal-mouse'
+import {
+  terminalMouseButton,
+  terminalMouseClick,
+  type TerminalMouseButtonEvent,
+  type TerminalMouseState,
+} from './terminal-mouse'
 import { TerminalSignalParser } from './terminal-signals'
 import { writePreservingViewport } from './terminal-viewport'
 import { TerminalWheelController } from './terminal-wheel'
@@ -84,7 +89,8 @@ class GhosttyTerminalPane implements TerminalPane {
   private disposed = false
   private readonly signalParser = new TerminalSignalParser()
   private readonly wheel = new TerminalWheelController()
-  private pressedMouseButton: number | undefined
+  private pendingMousePress:
+    { event: TerminalMouseButtonEvent; state: TerminalMouseState } | undefined
   private lastTitle = ''
 
   readonly events: TerminalPaneEvents = {
@@ -115,11 +121,11 @@ class GhosttyTerminalPane implements TerminalPane {
       const mouseDown = (event: MouseEvent): void => this.handleMouseDown(event, canvas)
       const mouseUp = (event: MouseEvent): void => this.handleMouseUp(event, canvas)
       container.addEventListener('mousedown', mouseDown, true)
-      document.addEventListener('mouseup', mouseUp, true)
+      document.addEventListener('mouseup', mouseUp)
       this.engineDisposers.push({
         dispose: () => {
           container.removeEventListener('mousedown', mouseDown, true)
-          document.removeEventListener('mouseup', mouseUp, true)
+          document.removeEventListener('mouseup', mouseUp)
         },
       })
     }
@@ -211,34 +217,24 @@ class GhosttyTerminalPane implements TerminalPane {
   }
 
   private handleMouseDown(event: MouseEvent, canvas: HTMLCanvasElement): void {
-    const result = terminalMouseButton(
-      'press',
-      this.mouseEvent(event, canvas),
-      this.mouseState(),
-    )
-    if (!result.handled) return
-    event.preventDefault()
-    event.stopPropagation()
+    const terminalEvent = this.mouseEvent(event, canvas)
+    const state = this.mouseState()
+    if (!terminalMouseButton('press', terminalEvent, state).data) return
+    this.pendingMousePress = { event: terminalEvent, state }
     this.focus()
-    if (result.data) {
-      this.pressedMouseButton = event.button
-      this.dataListeners.emit(result.data)
-    }
   }
 
   private handleMouseUp(event: MouseEvent, canvas: HTMLCanvasElement): void {
-    if (this.pressedMouseButton === undefined) return
-    const button = this.pressedMouseButton
-    this.pressedMouseButton = undefined
-    const result = terminalMouseButton(
-      'release',
-      { ...this.mouseEvent(event, canvas), button },
-      this.mouseState(),
+    const pending = this.pendingMousePress
+    if (!pending) return
+    this.pendingMousePress = undefined
+    const data = terminalMouseClick(
+      pending.event,
+      this.mouseEvent(event, canvas),
+      pending.state,
+      this.terminal.hasSelection(),
     )
-    if (!result.handled) return
-    event.preventDefault()
-    event.stopPropagation()
-    if (result.data) this.dataListeners.emit(result.data)
+    for (const chunk of data) this.dataListeners.emit(chunk)
   }
 
   private mouseEvent(event: MouseEvent, canvas: HTMLCanvasElement) {
@@ -253,7 +249,7 @@ class GhosttyTerminalPane implements TerminalPane {
     }
   }
 
-  private mouseState() {
+  private mouseState(): TerminalMouseState {
     const term = this.terminal.wasmTerm
     const renderer = this.terminal.renderer
     return {

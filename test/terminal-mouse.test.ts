@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   terminalMouseButton,
+  terminalMouseClick,
   type TerminalMouseButtonEvent,
   type TerminalMouseState,
 } from '../src/renderer/src/terminal/terminal-mouse'
@@ -72,5 +73,15 @@ describe('terminal mouse-button behavior', () => {
     expect(terminalMouseButton('press', { ...baseEvent, button: 3 }, baseState)).toEqual({
       handled: false,
     })
+  })
+
+  it('forwards clicks but leaves drag selections local to the terminal', () => {
+    const release = { ...baseEvent, offsetX: 34, offsetY: 45 }
+
+    expect(terminalMouseClick(baseEvent, release, baseState, false)).toEqual([
+      '\x1b[<0;3;4M',
+      '\x1b[<0;4;5m',
+    ])
+    expect(terminalMouseClick(baseEvent, release, baseState, true)).toEqual([])
   })
 })

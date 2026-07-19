@@ -51,3 +51,20 @@ export function terminalMouseButton(
     data: `\x1b[<${event.button + modifier};${col};${row}${suffix}`,
   }
 }
+
+/** Emit a complete terminal click only when the gesture did not select text. */
+export function terminalMouseClick(
+  press: TerminalMouseButtonEvent,
+  release: TerminalMouseButtonEvent,
+  state: TerminalMouseState,
+  hasSelection: boolean,
+): readonly string[] {
+  if (hasSelection) return []
+  const pressData = terminalMouseButton('press', press, state).data
+  const releaseData = terminalMouseButton(
+    'release',
+    { ...release, button: press.button },
+    state,
+  ).data
+  return pressData && releaseData ? [pressData, releaseData] : []
+}
