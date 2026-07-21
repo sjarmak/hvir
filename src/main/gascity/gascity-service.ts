@@ -13,6 +13,7 @@ import {
   type HostPath,
 } from '../../shared'
 import type { ProjectHost } from '../project-host'
+import { isExecTimeout } from '../project-host/exec-timeout'
 import {
   EMPTY_RESOLVED_CONFIG,
   parseResolvedConfig,
@@ -38,6 +39,16 @@ import {
 const MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 /** How far up from the workspace root to look for a city marker. */
 const MAX_CITY_WALK_DEPTH = 12
+/**
+ * How long a single `gc` read may take before the crew gives up on it.
+ *
+ * On a real city `gc session list` runs about three seconds, so this is roughly
+ * a 5x headroom over the slowest healthy read — long enough that a merely busy
+ * city still loads, short enough that a wedged `gc` surfaces as an error inside
+ * one poll instead of silently freezing the section forever. `gc` runs on the
+ * one-slot background lane, so an unbounded read blocks every later poll too.
+ */
+const GC_TIMEOUT_MS = 15_000
 
 export interface GasCityServiceDeps {
   readonly getProject: () => { readonly host: ProjectHost; readonly root: HostPath }
@@ -284,10 +295,25 @@ export class GasCityService {
         maxBuffer: MAX_OUTPUT_BYTES,
         loginShell: true,
         lane: 'background',
+        timeout: GC_TIMEOUT_MS,
       })
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason)
       logFailure(root, args, message)
+      // A timeout is its own diagnosis: gc is installed and the host is
+      // reachable, it just never answered. Saying so beats "error", which reads
+      // as a broken install and sends the user looking in the wrong place.
+      if (isExecTimeout(reason)) {
+        return {
+          ok: false,
+          stdout: '',
+          unavailable: {
+            available: false,
+            reason: 'error',
+            message: `gc ${args.join(' ')} did not respond within ${reason.timeoutMs / 1000}s.`,
+          },
+        }
+      }
       return {
         ok: false,
         stdout: '',

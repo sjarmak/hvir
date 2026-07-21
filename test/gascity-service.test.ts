@@ -2,7 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { GasCityService } from '../src/main/gascity/gascity-service'
 import type { ProjectHost } from '../src/main/project-host'
-import { asHostId, hostPath, type ExecResult, type HostPath } from '../src/shared'
+import { ExecTimeoutError } from '../src/main/project-host/exec-timeout'
+import {
+  asHostId,
+  hostPath,
+  type ExecResult,
+  type GasCityUnavailable,
+  type HostPath,
+} from '../src/shared'
 
 const ROOT = hostPath(asHostId('local'), '/home/dev/city/rigs/mem')
 
@@ -388,5 +395,27 @@ rig = "mem"
   it('reports no city when no ancestor carries a marker', async () => {
     const { host } = stubHost({})
     await expect(service(host).probe(ROOT)).resolves.toEqual({ hasCity: false })
+  })
+
+  it('bounds every gc read so a wedged CLI cannot hold the background lane', async () => {
+    const { host, exec } = stubHost({ 'session list': execResult(0, '[]') })
+    await service(host).crew({ root: ROOT })
+    expect(exec).toHaveBeenCalled()
+    for (const [command, , opts] of exec.mock.calls) {
+      expect(command).toBe('gc')
+      expect((opts as { timeout?: number }).timeout).toBeGreaterThan(0)
+    }
+  })
+
+  it('reports a gc timeout as a stated failure rather than an empty crew', async () => {
+    // The bug this guards: an unbounded `gc` never settles, the crew section
+    // renders null, and the panel looks empty rather than broken.
+    const { host } = stubHost({
+      'session list': new ExecTimeoutError('gc', 15_000),
+    })
+    const response = await service(host).crew({ root: ROOT })
+    expect(response.available).toBe(false)
+    expect(response).toMatchObject({ reason: 'error' })
+    expect((response as GasCityUnavailable).message).toMatch(/did not respond within 15s/)
   })
 })

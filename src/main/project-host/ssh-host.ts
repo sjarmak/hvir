@@ -33,6 +33,7 @@ import {
   remoteCommand,
 } from './ssh-remote-command'
 import type { SshAliasConfig } from './ssh-config'
+import { execDeadline, ExecTimeoutError } from './exec-timeout'
 import { ExecSlots } from './ssh-exec-slots'
 import { SshFileAccess } from './ssh-file-access'
 import {
@@ -258,9 +259,13 @@ export class SshHost implements ProjectHost {
     // own exec, and holding a buffered slot across that nested call can deadlock
     // a pool of size one.
     const loginShell = opts.loginShell ? await this.defaultShell() : undefined
+    // The budget covers the queue wait too. A command that never returns holds
+    // the background lane's only slot, so everything behind it is just as stuck
+    // as the command itself — starting the clock at acquire is what bounds that.
+    const deadline = execDeadline(opts.signal, opts.timeout)
     // Connecting performs its own short capability probe through exec(). Do
     // not reserve a buffered slot until that handshake has completed.
-    const release = await this.execSlots.acquire(opts.lane ?? 'interactive', opts.signal)
+    const release = await this.execSlots.acquire(opts.lane ?? 'interactive', deadline.signal)
     try {
       const stream = await this.transportPool.openChannel(
         'control',
@@ -275,7 +280,7 @@ export class SshHost implements ProjectHost {
               reject(asError(error))
             }
           }),
-        opts.signal,
+        deadline.signal,
       )
       return await new Promise((resolve, reject) => {
         let stdout = '',
@@ -335,19 +340,27 @@ export class SshHost implements ProjectHost {
           }
           settled = true
         })
-        if (opts.signal) {
+        const watched = deadline.signal
+        if (watched) {
           const abort = (): void => {
-            if (!settled) reject(abortError())
+            if (!settled) {
+              reject(
+                deadline.expired() && opts.timeout !== undefined
+                  ? new ExecTimeoutError(command, opts.timeout)
+                  : abortError(),
+              )
+            }
             settled = true
             stream.close()
           }
-          opts.signal.addEventListener('abort', abort, { once: true })
-          stream.once('close', () => opts.signal?.removeEventListener('abort', abort))
+          watched.addEventListener('abort', abort, { once: true })
+          stream.once('close', () => watched.removeEventListener('abort', abort))
         }
         stream.end(opts.input)
       })
     } finally {
       release()
+      deadline.dispose()
     }
   }
 

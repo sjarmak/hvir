@@ -21,6 +21,7 @@ import { StringDecoder } from 'node:string_decoder'
 import chokidar from 'chokidar'
 
 import { hostPath, LOCAL_HOST_ID } from '../../shared'
+import { execDeadline, ExecTimeoutError } from './exec-timeout'
 import type {
   DirEntry,
   ExecResult,
@@ -87,11 +88,12 @@ export class LocalHost implements ProjectHost {
   ): Promise<ExecResult> {
     const environment = childEnvironment(opts.env, opts.unsetEnv)
     const invocation = loginShellInvocation(command, args, opts.loginShell)
+    const deadline = execDeadline(opts.signal, opts.timeout)
     return new Promise<ExecResult>((resolve, reject) => {
       const child = spawn(invocation.command, invocation.args, {
         cwd: opts.cwd ? this.resolve(opts.cwd) : undefined,
         env: environment,
-        signal: opts.signal,
+        signal: deadline.signal,
       })
       const maxBuffer = opts.maxBuffer ?? DEFAULT_MAX_BUFFER
       let stdout = ''
@@ -117,6 +119,7 @@ export class LocalHost implements ProjectHost {
         }
         settled = true
         child.kill()
+        deadline.dispose()
         reject(new Error(`exec output exceeded maxBuffer (${maxBuffer} bytes)`))
         return true
       }
@@ -139,12 +142,20 @@ export class LocalHost implements ProjectHost {
       child.on('error', (err) => {
         if (!settled) {
           settled = true
-          reject(err)
+          deadline.dispose()
+          // The abort that fires on expiry surfaces here as a generic
+          // AbortError; only the deadline knows it was a budget, not a caller.
+          reject(
+            deadline.expired() && opts.timeout !== undefined
+              ? new ExecTimeoutError(command, opts.timeout)
+              : err,
+          )
         }
       })
       child.on('close', (code, signal) => {
         if (settled) return
         settled = true
+        deadline.dispose()
         stdout += stdoutDecoder.end()
         stderr += stderrDecoder.end()
         resolve({

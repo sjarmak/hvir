@@ -56,6 +56,16 @@ export interface ExecOptions {
   readonly keepStdinOpen?: boolean
   readonly signal?: AbortSignal
   /**
+   * Give up after this many milliseconds and reject with `ExecTimeoutError`.
+   *
+   * Set this on any buffered exec that runs an external CLI on a poll timer. A
+   * command that never returns otherwise holds its lane slot for the life of
+   * the process — and on the one-slot background lane that wedges every later
+   * poll silently. Unset means no budget, which is right for user-initiated
+   * commands whose duration is the user's business.
+   */
+  readonly timeout?: number
+  /**
    * Run the command through the host's login shell so PATH entries configured
    * in a login profile (for example `~/.local/bin` or Homebrew) resolve. An
    * interactive terminal gets this for free because its shell sources the
