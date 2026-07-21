@@ -20,6 +20,7 @@ import type { ProjectHost } from '../project-host'
 import type { PtySupervisor } from '../pty/pty-supervisor'
 import type { RendererOwner, RendererResourceScopes } from '../renderer-resource-scopes'
 import type { TerminalSessionStore } from '../terminal/session-registry'
+import type { TerminalWorkspaceMoveCoordinator } from '../terminal/terminal-workspace-move-coordinator'
 import type { WebPaneRouteRegistry } from '../web-pane/web-pane-route-registry'
 import type { WorkerClient } from '../worker-host'
 
@@ -63,6 +64,10 @@ export interface IpcDeps {
     projectId: string,
     workspaceId: string,
   ) => Promise<ProjectState>
+  readonly acknowledgeWorkspace: (
+    projectId: string,
+    workspaceId: string,
+  ) => Promise<ProjectState>
   readonly switchGitBranch: (root: HostPath, branch: string) => Promise<ProjectState>
   readonly fetchGit: (root: HostPath) => Promise<ProjectState>
   readonly pullGit: (root: HostPath) => Promise<ProjectState>
@@ -75,6 +80,7 @@ export interface IpcDeps {
   readonly rendererReady: (owner: RendererOwner) => void
   readonly ptySupervisor: PtySupervisor
   readonly terminalSessions: TerminalSessionStore
+  readonly terminalMoves: Pick<TerminalWorkspaceMoveCoordinator, 'plan' | 'move'>
   readonly harnessProfiles: HarnessProfileStoreContract
   readonly harnessProbes: HarnessProbeManager
   readonly beads: Pick<BeadsService, 'list' | 'probe' | 'watch' | 'unwatch'>

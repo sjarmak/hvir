@@ -18,6 +18,7 @@ import { SmokeCleanup } from './cleanup'
 import { verifyGitDiffBehavior } from './git-diff'
 import { verifyRendererLifecycleCleanup } from './renderer-lifecycle'
 import { verifyViewerPositions } from './viewer-position'
+import { createTerminalMoveSmokeHarness, verifyTerminalMoveSmoke } from './terminal-move'
 import {
   ECHO_REQUEST_TYPE,
   HTML_PREVIEW_SCHEME,
@@ -237,6 +238,16 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       getProject: () => ({ host, root: smokeRoot }),
     })
     let smokeIpcProjectState = smokeProjectState()
+    const terminalMoveSmoke = createTerminalMoveSmokeHarness({
+      sourceState: smokeProjectState,
+      targetRoot: smokeWebSwitchRoot,
+      supervisor,
+      resources: rendererResources,
+      webPanes: webPaneRoutes,
+      onState: (state) => {
+        smokeIpcProjectState = state
+      },
+    })
     const ipcRouter = registerIpcHandlers({
       echoWorker: worker,
       gitWorker: git,
@@ -300,6 +311,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       },
       pruneWorktrees: () => Promise.resolve(smokeProjectState()),
       dismissWorkspace: () => Promise.resolve(smokeProjectState()),
+      acknowledgeWorkspace: () => Promise.resolve(smokeProjectState()),
       switchGitBranch: () => Promise.resolve(smokeProjectState()),
       fetchGit: () => Promise.resolve(smokeProjectState()),
       pullGit: () => Promise.resolve(smokeProjectState()),
@@ -308,6 +320,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       rendererReady: () => undefined,
       ptySupervisor: supervisor,
       terminalSessions: smokeTerminalSessions,
+      terminalMoves: terminalMoveSmoke.coordinator,
       harnessProfiles: smokeHarnessProfiles,
       harnessProbes: harnessProbeManager,
       beads: smokeBeads,
@@ -961,6 +974,14 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     `)) as string
     console.log(`[smoke] terminal input caret contained (${terminalCaretStatus})`)
 
+    const terminalMoveStatus = await verifyTerminalMoveSmoke({
+      win,
+      supervisor,
+      harness: terminalMoveSmoke,
+      emitState: (state) => emit('project:state', state),
+    })
+    console.log(`[smoke] live terminal worktree move OK (${terminalMoveStatus})`)
+
     const reconnectTerminalStatus = await withTimeout(
       (async () => {
         const firstTerminal = supervisor.list()[0]
@@ -1018,6 +1039,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
           window.__hvirSmokeTerminalCanvas = document.querySelector('.terminal-container canvas');
           window.__hvirSmokeTerminalHost = document.querySelector('.terminal-container');
         `)
+        await rendererResources.revokeWorkspace(smokeRoot)
         emit('project:state', smokeProjectState('disconnected'))
         await win.webContents.executeJavaScript(`
           new Promise((resolve, reject) => {
@@ -1044,14 +1066,14 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
               lastState = 'status=' + status +
                 ' canvas=' + Boolean(canvas) +
                 ' host=' + Boolean(host) +
-                ' hostChanged=' + (host !== window.__hvirSmokeTerminalHost) +
-                ' oldDetached=' + (!window.__hvirSmokeTerminalHost?.isConnected);
+                ' hostRetained=' + (host === window.__hvirSmokeTerminalHost) +
+                ' hostConnected=' + Boolean(window.__hvirSmokeTerminalHost?.isConnected);
               if (
                 canvas &&
                 host &&
                 canvas !== window.__hvirSmokeTerminalCanvas &&
-                host !== window.__hvirSmokeTerminalHost &&
-                !window.__hvirSmokeTerminalHost?.isConnected &&
+                host === window.__hvirSmokeTerminalHost &&
+                window.__hvirSmokeTerminalHost?.isConnected &&
                 status.startsWith('New shell · pid ')
               ) {
                 const context = canvas.getContext('2d');
@@ -1062,8 +1084,8 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
                   1
                 ).data;
                 lastState = 'status=' + status +
-                  ' hostChanged=' + (host !== window.__hvirSmokeTerminalHost) +
-                  ' oldDetached=' + (!window.__hvirSmokeTerminalHost?.isConnected) +
+                  ' hostRetained=' + (host === window.__hvirSmokeTerminalHost) +
+                  ' hostConnected=' + Boolean(window.__hvirSmokeTerminalHost?.isConnected) +
                   ' pixel=' + (pixel ? [...pixel].join(',') : 'missing');
                 if (pixel && pixel[0] < 50 && pixel[1] < 50 && pixel[2] < 60) {
                   return resolve(status);
@@ -2081,6 +2103,22 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     )) as string
     console.log(`[smoke] SSH connection controls OK (${remoteConnectionStatus})`)
     emit('project:state', smokeProjectState())
+    await win.webContents.executeJavaScript(`
+      new Promise((resolve, reject) => {
+        const deadline = Date.now() + 5000;
+        const poll = () => {
+          const active = document.querySelector('.project-tab.active');
+          if (active && !active.querySelector('.remote-connection-badge')) return resolve(true);
+          if (Date.now() > deadline) return reject(new Error('local project did not reactivate'));
+          setTimeout(poll, 25);
+        };
+        poll();
+      })
+    `)
+    win.focus()
+    win.webContents.focus()
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' })
+    win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' })
 
     const sessionFlowStatus = (await withTimeout(
       win.webContents.executeJavaScript(`
@@ -2095,11 +2133,16 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
         }
         const projectMain = activeProject?.querySelector('.project-tab-main');
         const viewerMain = document.querySelector('.viewer-tab.active .tab-main');
-        projectMain?.focus();
+        const focusedBefore = document.activeElement;
+        projectMain?.focus({ focusVisible: true });
         if (!projectMain || getComputedStyle(projectMain).boxShadow === 'none') {
-          return reject(new Error('project tab focus ring is missing'));
+          return reject(new Error(
+            'project tab focus ring is missing: before=' + focusedBefore?.className +
+            ' active=' + document.activeElement?.className +
+            ' focusVisible=' + projectMain?.matches(':focus-visible')
+          ));
         }
-        viewerMain?.focus();
+        viewerMain?.focus({ focusVisible: true });
         if (!viewerMain || getComputedStyle(viewerMain).boxShadow === 'none') {
           return reject(new Error('viewer tab focus ring is missing'));
         }

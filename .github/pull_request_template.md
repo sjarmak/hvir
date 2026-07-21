@@ -2,6 +2,15 @@
 
 Closes #
 
+<!--
+For an ordinary PR to main, keep one native `Closes #N` relationship above.
+
+For an epic-child PR, replace the `Closes` line with two exact whole-line trailers outside this
+comment: one for the child and one for its epic. Example spelling:
+
+Contributes-to: #123
+-->
+
 ## Outcome
 
 Describe the user or contributor outcome and why it belongs in hvir.

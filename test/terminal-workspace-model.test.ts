@@ -9,7 +9,7 @@ import {
   type TerminalSession,
   type TerminalWorkspaceModel,
 } from '../src/renderer/src/terminal/terminal-workspace-model'
-import { asHarnessProfileId, asHarnessProviderId } from '../src/shared'
+import { asHarnessProfileId, asHarnessProviderId, localPath } from '../src/shared'
 import { decodeTerminalSplitLayout } from '../src/renderer/src/terminal/terminal-split-persistence'
 
 describe('terminal workspace model', () => {
@@ -123,5 +123,6 @@ function session(id: string, pane: 'primary' | 'secondary'): TerminalSession {
     status: 'Ready',
     resumeOnStart: false,
     pane,
+    cwd: localPath('/project'),
   }
 }

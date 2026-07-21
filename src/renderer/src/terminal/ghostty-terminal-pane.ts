@@ -169,6 +169,16 @@ class GhosttyTerminalPane implements TerminalPane {
     })
   }
 
+  reparent(container: HTMLElement): void {
+    if (this.disposed) throw new Error('Cannot move a disposed terminal pane')
+    if (!this.mounted || !this.terminal.element) {
+      throw new Error('Cannot move a terminal pane before it is mounted')
+    }
+    container.append(this.terminal.element)
+    this.fit.fit()
+    this.redraw()
+  }
+
   write(data: string): void {
     if (this.disposed) return
     this.inspectSignals(data)
@@ -207,9 +217,11 @@ class GhosttyTerminalPane implements TerminalPane {
     this.engineDisposers.length = 0
     const renderer = this.terminal.renderer
     const canvas = renderer?.getCanvas()
+    const element = this.terminal.element
     renderer?.clear()
     if (canvas) canvas.style.visibility = 'hidden'
     this.terminal.dispose()
+    element?.remove()
     this.dataListeners.clear()
     this.titleListeners.clear()
     this.bellListeners.clear()

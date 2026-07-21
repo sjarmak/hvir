@@ -46,6 +46,8 @@ export interface TerminalSession {
   /** Command auto-typed into the shell on first launch (worker-attach terminals). */
   readonly initialInput?: string
   readonly pane: TerminalSplitPane
+  /** Immutable provider launch/recovery context. */
+  readonly cwd: HostPath
 }
 
 export interface TerminalWorkspaceModel {
@@ -151,6 +153,7 @@ export function createTerminalSession(
     resumeOnStart: false,
     ...(initialInput ? { initialInput } : {}),
     pane,
+    cwd,
   }
 }
 

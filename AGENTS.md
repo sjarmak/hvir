@@ -55,13 +55,21 @@ upstream also owns is a **one-line** touch point (`src/main/index.ts`, `src/main
   `Fork: +2 over upstream's cap` rationale in `scripts/architecture-hotspots.json`.
 
 **Start substantive implementation from a governing GitHub issue.** Align on the problem,
-product fit, architecture questions, and acceptance there before editing, then link the pull
-request with `Closes #N`. Broad epics should be decomposed into independently reviewable child
-issues; see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+product fit, architecture questions, and acceptance there before editing. A PR to `main` uses
+`Closes #N`; an epic-child PR uses the exact contribution relationships documented in
+[`CONTRIBUTING.md`](CONTRIBUTING.md). Broad epics should be decomposed into independently
+reviewable child issues.
 
 **Do not spend effort drafting or creating an issue without the user's go-ahead.** An agent may
 briefly propose using `hvir-create-issue`, but must wait for explicit approval before invoking
 it. After drafting, it must show the exact issue and receive separate approval before publishing.
+
+**Use `gh` for ordinary issue and pull-request operations.** When work requires the canonical
+Project or repository reconciliation behavior, use the interfaces documented in
+[`docs/project-management.md`](docs/project-management.md): `project:record` for Project
+membership and Status, `project:kind` for label-derived Kind reconciliation, and `project:pr`
+for PR-related issue Status reconciliation. These commands default to dry-run; review the plan
+before passing `--apply`. Invoke only the capability the task needs, not all three ceremonially.
 
 **Do not publish a pull request that fails locally runnable checks.** After the final changes,
 run `npm run verify` before committing. Push without `--no-verify` so `.githooks/pre-push` runs;
