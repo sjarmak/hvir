@@ -5,7 +5,11 @@ import {
   type ILinkProvider,
 } from 'ghostty-web'
 
-import type { Disposer } from '../../../shared'
+import type {
+  ComposerSubmitMode,
+  Disposer,
+  HarnessModifiedKeyProtocol,
+} from '../../../shared'
 import type {
   OscEvent,
   TerminalPane,
@@ -28,19 +32,27 @@ import {
   type TerminalMouseButtonEvent,
   type TerminalMouseState,
 } from './terminal-mouse'
+import { ghosttyKeyboardOverride } from './ghostty-terminal-keyboard'
 import { TerminalSignalParser } from './terminal-signals'
 import { writePreservingViewport } from './terminal-viewport'
 import { TerminalWheelController } from './terminal-wheel'
 
 let initializeGhostty: Promise<void> | undefined
 
+export interface GhosttyTerminalPaneOptions {
+  readonly modifiedKeyProtocol: HarnessModifiedKeyProtocol
+  readonly metaEnterAliasesControl: boolean
+  readonly composerSubmitMode: ComposerSubmitMode
+}
+
 /** Load the shared WASM instance off the first paint, then create a pane. */
 export async function createGhosttyTerminalPane(
   theme: TerminalColorTheme,
+  options: GhosttyTerminalPaneOptions,
 ): Promise<TerminalPane> {
   initializeGhostty ??= init()
   await initializeGhostty
-  return new GhosttyTerminalPane(theme)
+  return new GhosttyTerminalPane(theme, options)
 }
 
 class ListenerSet<T> {
@@ -66,7 +78,7 @@ class GhosttyTerminalPane implements TerminalPane {
   private readonly terminal: GhosttyTerminal
   private readonly fit: TerminalFitController
 
-  constructor(theme: TerminalColorTheme) {
+  constructor(theme: TerminalColorTheme, options: GhosttyTerminalPaneOptions) {
     this.terminal = new GhosttyTerminal({
       allowTransparency: false,
       cursorBlink: true,
@@ -77,6 +89,12 @@ class GhosttyTerminalPane implements TerminalPane {
       theme,
     })
     this.fit = new TerminalFitController(this.terminal)
+    this.terminal.attachCustomKeyEventHandler((event) => {
+      const data = ghosttyKeyboardOverride(event, options)
+      if (data === undefined) return false
+      this.dataListeners.emit(data)
+      return true
+    })
   }
 
   private readonly dataListeners = new ListenerSet<string>()

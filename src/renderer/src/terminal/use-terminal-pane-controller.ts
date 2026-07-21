@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type {
+  ComposerSubmitMode,
   HarnessProfileId,
+  HarnessModifiedKeyProtocol,
   HarnessProviderCapabilities,
   HarnessTelemetry,
   HostConnectionState,
@@ -29,6 +31,9 @@ export interface TerminalPaneControllerOptions {
   readonly resumeOnStart: boolean
   readonly position: number
   readonly active: boolean
+  readonly modifiedKeyProtocol: HarnessModifiedKeyProtocol
+  readonly metaEnterAliasesControl: boolean
+  readonly composerSubmitMode: ComposerSubmitMode
   readonly cwd: HostPath
   readonly connectionState: HostConnectionState
   readonly onTitle: (title: string) => void
@@ -58,6 +63,8 @@ export function useTerminalPaneController(options: TerminalPaneControllerOptions
     supportsResume,
     fallbackTitle,
     active,
+    modifiedKeyProtocol,
+    metaEnterAliasesControl,
     connectionState,
   } = options
   const workspaceRootRef = useRef(options.cwd)
@@ -168,7 +175,11 @@ export function useTerminalPaneController(options: TerminalPaneControllerOptions
       try {
         // ghostty-web 0.4 cannot recolor cells already in the VT buffer. Keep one
         // canonical palette and apply the light appearance to the retained canvas.
-        const pane = await createGhosttyTerminalPane(baseTerminalTheme())
+        const pane = await createGhosttyTerminalPane(baseTerminalTheme(), {
+          modifiedKeyProtocol,
+          metaEnterAliasesControl,
+          composerSubmitMode: handlersRef.current.composerSubmitMode,
+        })
         if (cancelled) {
           pane.dispose()
           return
@@ -226,6 +237,7 @@ export function useTerminalPaneController(options: TerminalPaneControllerOptions
           title: metadata.title,
           position: metadata.position,
           active: metadata.active,
+          composerSubmitMode: handlersRef.current.composerSubmitMode,
           resume,
           harnessSessionId: resume ? metadata.harnessSessionId : undefined,
           acknowledgeRisk: metadata.riskAcknowledged,
@@ -304,6 +316,8 @@ export function useTerminalPaneController(options: TerminalPaneControllerOptions
     launchRevision,
     riskAcknowledged,
     supportsResume,
+    modifiedKeyProtocol,
+    metaEnterAliasesControl,
     workspaceRoot,
   ])
 

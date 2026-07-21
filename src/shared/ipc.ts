@@ -17,6 +17,7 @@ import type {
   BeadsWatchRequest,
 } from './beads'
 import type { Disposer } from './disposer'
+import type { ComposerSubmitMode } from './composer-submit'
 import type { DirEntry, FileType, WatchEvent } from './fs-types'
 import type {
   GasCityCrewRequest,
@@ -227,6 +228,7 @@ export interface StartPtyRequest {
   readonly title: string
   readonly position: number
   readonly active: boolean
+  readonly composerSubmitMode: ComposerSubmitMode
   readonly resume?: boolean
   readonly harnessSessionId?: string
   /** Explicit user acknowledgment for this profile's current elevated risk. */
@@ -308,6 +310,18 @@ export interface AuthorizeHarnessPathRequest {
   readonly root: HostPath
   readonly path: HostPath
 }
+
+export type ConfigureComposerSubmitRequest =
+  | {
+      readonly scope: 'host'
+      readonly hostId: string
+      readonly mode: ComposerSubmitMode
+    }
+  | {
+      readonly scope: 'all-connected'
+      readonly mode: ComposerSubmitMode
+      readonly previousMode: ComposerSubmitMode
+    }
 
 export interface StartPtyResponse {
   readonly id: string
@@ -534,6 +548,10 @@ export interface IpcInvokeMap {
     request: AuthorizeHarnessPathRequest
     response: HarnessPathGrant
   }
+  'harness:configure-composer-submit': {
+    request: ConfigureComposerSubmitRequest
+    response: void
+  }
   'terminal:recovery': {
     request: TerminalRecoveryRequest
     response: readonly TerminalRecoverySession[]
@@ -677,6 +695,7 @@ export const INVOKE_CHANNELS = [
   'harness:acknowledge-risk',
   'harness:preview',
   'harness:authorize-path',
+  'harness:configure-composer-submit',
   'terminal:recovery',
   'terminal:update-layout',
   'terminal:forget',

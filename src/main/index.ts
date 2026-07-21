@@ -343,6 +343,8 @@ function createWorkbenchEntry(): void {
         echoWorker,
         gitWorker,
         getProject,
+        getHost: (hostId) => projectRegistry?.hostById(hostId),
+        connectedHosts: () => projectRegistry?.connectedHosts() ?? [],
         getRegisteredWorkspaceRoot: (root) =>
           projectRegistry?.registeredWorkspaceRoot(root),
         getProjectState: () => {

@@ -15,7 +15,7 @@ import {
   type HarnessProviderId,
 } from '../../../shared'
 import { fitSplitPrimaryWidth } from '../layout/split-layout-policy'
-import type { TerminalRecoveryMode, TerminalThemeOverride } from '../settings/settings'
+import type { TerminalPreferences } from '../settings/settings'
 import { useAppTheme } from '../theme'
 import {
   normalizeTerminalWebTarget,
@@ -67,9 +67,7 @@ interface TerminalWorkspaceProps {
     readonly workspaceRoot: HostPath
     readonly url: string
   }) => void
-  readonly idleThresholdMs: number
-  readonly recoveryMode: TerminalRecoveryMode
-  readonly terminalTheme: TerminalThemeOverride
+  readonly preferences: TerminalPreferences
   readonly onOpenSettings: () => void
   readonly onOpenHarnessSettings: () => void
   readonly onAddHarness: () => void
@@ -93,16 +91,15 @@ export function TerminalWorkspace({
   onRollup,
   onOpenPath,
   onOpenWebLink,
-  idleThresholdMs,
-  recoveryMode,
-  terminalTheme,
+  preferences,
   onOpenSettings,
   onOpenHarnessSettings,
   onAddHarness,
   attachRequest,
 }: TerminalWorkspaceProps): ReactElement {
   const appTheme = useAppTheme()
-  const effectiveTerminalTheme = terminalTheme === 'app' ? appTheme : terminalTheme
+  const effectiveTerminalTheme =
+    preferences.terminalTheme === 'app' ? appTheme : preferences.terminalTheme
   const workspaceRootRef = useRef(cwd)
   if (
     workspaceRootRef.current.hostId !== cwd.hostId ||
@@ -158,7 +155,7 @@ export function TerminalWorkspace({
     recordInput,
     recordOutput,
   } = useTerminalAttentionController({
-    idleThresholdMs,
+    idleThresholdMs: preferences.idleThresholdMs,
     onUpdateSession: updateSession,
   })
   useTerminalAttentionRollup({ workspaceId, sessions, onRollup })
@@ -166,7 +163,7 @@ export function TerminalWorkspace({
     root: workspaceRoot,
     available,
     visible,
-    mode: recoveryMode,
+    mode: preferences.terminalRecoveryMode,
     model,
     providers,
     profiles,
@@ -343,7 +340,8 @@ export function TerminalWorkspace({
         secondaryActiveId={secondaryActiveId}
         split={terminalSplit}
         primaryWidth={model.primaryWidth}
-        terminalTheme={terminalTheme}
+        terminalTheme={preferences.terminalTheme}
+        composerSubmitMode={preferences.composerSubmitMode}
         workspaceRoot={workspaceRoot}
         connectionState={connectionState}
         onCreateDefault={defaultProfile ? () => addSession(defaultProfile.id) : undefined}
