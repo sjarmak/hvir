@@ -1,9 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  TerminalRuntimeRegistry,
-  type TerminalRuntimeOptions,
-} from '../src/renderer/src/terminal/terminal-runtime'
+import type { TerminalRuntimeOptions } from '../src/renderer/src/terminal/terminal-runtime'
+import { TerminalRuntimeRegistry } from '../src/renderer/src/terminal/terminal-runtime-registry'
 import type { TerminalPane } from '../src/renderer/src/terminal/terminal-pane'
 import {
   asHarnessProfileId,
@@ -27,6 +25,7 @@ function fakePane(): TerminalPane {
     write: vi.fn(),
     resize: vi.fn(),
     setTheme: vi.fn(),
+    setPresentation: vi.fn(),
     redraw: vi.fn(),
     focus: vi.fn(),
     events: {
@@ -42,6 +41,7 @@ function fakePane(): TerminalPane {
 
 function startResponse(): StartPtyResponse {
   return {
+    outcome: 'started',
     id: 'terminal-1',
     pid: 42,
     resumed: false,
@@ -69,6 +69,7 @@ function options(
     resumeOnStart: false,
     position: 0,
     active: true,
+    presentation: 'visible',
     modifiedKeyProtocol: 'csi-u',
     metaEnterAliasesControl: false,
     composerSubmitMode: 'enter',
@@ -80,6 +81,7 @@ function options(
     onTelemetry: vi.fn(),
     onIdentity: vi.fn(),
     onStarted: vi.fn(),
+    onFreshStarted: vi.fn(),
     onCapabilities: vi.fn(),
     onInput: vi.fn(),
     onOutput: vi.fn(),
@@ -109,7 +111,7 @@ describe('TerminalRuntimeRegistry', () => {
     const runtimeOptions = options(localPath('/repo'), 'disconnected')
     const runtime = new TerminalRuntimeRegistry().acquire(runtimeOptions)
 
-    runtime.synchronizeConnection()
+    runtime.synchronizeLifecycle()
 
     expect(runtime.snapshot()).toMatchObject({
       title: 'Codex · repo',
@@ -127,22 +129,35 @@ describe('TerminalRuntime initial input', () => {
     paneFactory.mockReset()
   })
 
-  function stubHvir(): { send: ReturnType<typeof vi.fn> } {
+  function stubHvir(): {
+    send: ReturnType<typeof vi.fn>
+    invoke: ReturnType<typeof vi.fn>
+    emit: (channel: string, payload: unknown) => void
+  } {
     const send = vi.fn()
+    const invoke = vi.fn(() => Promise.resolve(startResponse()))
+    const handlers = new Map<string, (payload: unknown) => void>()
     vi.stubGlobal('window', {
       hvir: {
-        invoke: vi.fn(async () => startResponse()),
+        invoke,
         send,
-        on: vi.fn(() => () => undefined),
+        on: vi.fn((channel: string, handler: (payload: unknown) => void) => {
+          handlers.set(channel, handler)
+          return () => handlers.delete(channel)
+        }),
       },
     })
-    return { send }
+    return {
+      send,
+      invoke,
+      emit: (channel, payload) => handlers.get(channel)?.(payload),
+    }
   }
 
   function ptyWrites(send: ReturnType<typeof vi.fn>): unknown[] {
     return send.mock.calls
       .filter(([channel]) => channel === 'pty:write')
-      .map(([, payload]) => payload)
+      .map(([, payload]) => payload as unknown)
   }
 
   it('types the initial command once, after first launch', async () => {
@@ -164,7 +179,7 @@ describe('TerminalRuntime initial input', () => {
 
   it('does not replay the initial command on a manual restart', async () => {
     paneFactory.mockResolvedValue(fakePane())
-    const { send } = stubHvir()
+    const { send, invoke, emit } = stubHvir()
     const runtime = new TerminalRuntimeRegistry().acquire({
       ...options(localPath('/repo')),
       initialInput: 'gc session attach worker',
@@ -173,23 +188,24 @@ describe('TerminalRuntime initial input', () => {
     runtime.attach({} as unknown as HTMLElement)
     await vi.waitFor(() => expect(ptyWrites(send)).toHaveLength(1))
 
+    // A manual restart is only offered once the session has exited.
+    emit('pty:exit', { id: 'terminal-1', exitCode: 0 })
     paneFactory.mockResolvedValue(fakePane())
     runtime.restart()
-    await vi.waitFor(() =>
-      expect(send).toHaveBeenCalledWith('pty:kill', { id: 'terminal-1' }),
-    )
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(2))
 
+    // Initial input is typed once on first launch, never on the restart.
     expect(ptyWrites(send)).toHaveLength(1)
   })
 
   it('never types a command when no initial input is set', async () => {
     paneFactory.mockResolvedValue(fakePane())
-    const { send } = stubHvir()
+    const { send, invoke } = stubHvir()
     const runtime = new TerminalRuntimeRegistry().acquire(options(localPath('/repo')))
 
     runtime.attach({} as unknown as HTMLElement)
     await vi.waitFor(() =>
-      expect(window.hvir.invoke).toHaveBeenCalledWith('pty:start', expect.anything()),
+      expect(invoke).toHaveBeenCalledWith('pty:start', expect.anything()),
     )
 
     expect(ptyWrites(send)).toHaveLength(0)

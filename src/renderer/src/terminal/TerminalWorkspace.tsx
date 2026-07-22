@@ -48,7 +48,7 @@ import { useTerminalProfiles } from './use-terminal-profiles'
 import { useTerminalPersistence } from './use-terminal-persistence'
 import { useTerminalRecovery } from './use-terminal-recovery'
 import { harnessLaunchMenuState } from './harness-launch-menu'
-import type { TerminalRuntimeRegistry } from './terminal-runtime'
+import type { TerminalRuntimeRegistry } from './terminal-runtime-registry'
 import {
   useTerminalWorkspaceMove,
   type TerminalWorkspaceController,
@@ -323,6 +323,7 @@ export function TerminalWorkspace({
           defaultProfile ? () => commands.add(defaultProfile.id) : undefined
         }
         onUpdateSession={updateSession}
+        onFreshStarted={commands.acceptFreshStart}
         onInput={recordInput}
         onOutput={recordOutput}
         onBell={(id) => raiseAttention(id, 'bell')}

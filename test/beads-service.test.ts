@@ -22,6 +22,14 @@ function execResult(code: number, stdout: string, stderr = ''): ExecResult {
   return { code, signal: null, stdout, stderr }
 }
 
+/**
+ * Silence the intentional degradation logging these failure-path tests provoke,
+ * and hand back the spy so the test can assert the error path actually fired.
+ */
+function captureErrors() {
+  return vi.spyOn(console, 'error').mockImplementation(() => undefined)
+}
+
 function issueJson(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     id: 'demo-1',
@@ -154,6 +162,7 @@ describe('BeadsService.list', () => {
   })
 
   it('surfaces an unreachable Dolt server as an actionable port-file error', async () => {
+    const errors = captureErrors()
     const { host } = fakeHost({
       exec: () =>
         execResult(
@@ -168,6 +177,7 @@ describe('BeadsService.list', () => {
     if (result.available) throw new Error('unreachable')
     expect(result.message).toContain(`${ROOT.path}/.beads/dolt-server.port`)
     expect(result.message).toContain('BEADS_DOLT_SERVER_PORT')
+    expect(errors).toHaveBeenCalled()
   })
 
   it('fetches closed issues only when requested', async () => {
@@ -199,6 +209,7 @@ describe('BeadsService.list', () => {
   })
 
   it('classifies a missing database, a missing CLI, and other failures', async () => {
+    const errors = captureErrors()
     const noDb = fakeHost({
       exec: () =>
         execResult(1, '', 'Error: cannot use -C directory: no beads project found'),
@@ -224,6 +235,7 @@ describe('BeadsService.list', () => {
       reason: 'error',
       message: 'dolt server exploded',
     })
+    expect(errors).toHaveBeenCalled()
   })
 
   it('reports malformed bd JSON as an error state instead of throwing', async () => {
@@ -475,6 +487,7 @@ describe('BeadsService.list enrichment', () => {
   })
 
   it('falls back to structural when the predicate errors', async () => {
+    const errors = captureErrors()
     const { host } = enrichedHost({
       base: [issueJson({ id: 'leaf-1', issue_type: 'bug' })],
       ready: [issueJson({ id: 'leaf-1', issue_type: 'bug' })],
@@ -485,6 +498,7 @@ describe('BeadsService.list enrichment', () => {
     if (!result.available) throw new Error('expected availability')
     expect(result.dispatchableIds).toEqual(['leaf-1'])
     expect(result.dispatchabilitySource).toBe('structural')
+    expect(errors).toHaveBeenCalled()
   })
 
   it('attaches dependency edges and gates', async () => {
@@ -503,6 +517,7 @@ describe('BeadsService.list enrichment', () => {
   })
 
   it('degrades supplementary failures without failing the snapshot', async () => {
+    const errors = captureErrors()
     const { host } = fakeHost({
       statType: 'missing',
       exec: (_command, args) => {
@@ -517,5 +532,6 @@ describe('BeadsService.list enrichment', () => {
     expect(result.issues.map((i) => i.id)).toEqual(['gc-a'])
     expect(result.dependencies).toEqual([])
     expect(result.gates).toEqual([])
+    expect(errors).toHaveBeenCalled()
   })
 })

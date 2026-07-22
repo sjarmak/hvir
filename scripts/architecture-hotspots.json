@@ -1,7 +1,7 @@
 {
   "version": 1,
   "baselineCommit": "ea1c157",
-  "extensions": [".ts", ".tsx", ".css"],
+  "extensions": [".ts", ".tsx", ".mts", ".css"],
   "productionRoots": [
     "src/main",
     "src/preload",
@@ -27,9 +27,9 @@
     },
     {
       "path": "src/renderer/src/App.tsx",
-      "maxLines": 686,
+      "maxLines": 692,
       "owner": "architecture epic #33",
-      "rationale": "The renderer root is now a composition shell for feature-owned models and views; this strict cap prevents it from reabsorbing feature state and policy.",
+      "rationale": "The renderer root is now a composition shell for feature-owned models and views; this strict cap prevents it from reabsorbing feature state and policy. Fork: +6 over upstream's cap for the beads rail composition wiring (BeadsRail import, useBeadsWorkspace hook, BeadsRailTab, BeadsRailPanel, and the attachRequest prop); all beads state and policy live in beads/BeadsRail.",
       "removalIssue": "#43-#45",
       "expiresOn": "2026-09-30"
     },
@@ -46,6 +46,14 @@
       "maxLines": 444,
       "owner": "architecture epic #33",
       "rationale": "TerminalWorkspace is now the feature composition view over extracted policy, effects, persistence, recovery, and presentation modules; the named cap preserves that boundary. Fork: +22 over upstream's zero-headroom cap for the crew-attach wiring (attachRequest prop, initialInput threading, focus-or-attach ports); the effect, the launched-terminal map, and the resolution rule live in use-terminal-attach-request.ts and the model.",
+      "removalIssue": "#46",
+      "expiresOn": "2026-09-30"
+    },
+    {
+      "path": "src/renderer/src/terminal/terminal-runtime.ts",
+      "maxLines": 515,
+      "owner": "architecture epic #33",
+      "rationale": "TerminalRuntime owns one session's PTY start, resume, and fresh-replacement lifecycle over the recovery-refactored event router. Fork: +15 over upstream's cap for the crew initial-input auto-run (typed once on first launch, suppressed on reconnect, manual restart, and fresh replacement), driven by the beads panel through the initialInput option.",
       "removalIssue": "#46",
       "expiresOn": "2026-09-30"
     },
@@ -83,10 +91,10 @@
     },
     {
       "path": "src/main/smoke/index.ts",
-      "maxLines": 3272,
-      "owner": "architecture epic #33",
-      "rationale": "The Electron smoke remains one intentionally high-altitude workflow suite; feature policy and resource semantics are tested in focused modules outside it.",
-      "removalIssue": "#49",
+      "maxLines": 2868,
+      "owner": "testing epic #72",
+      "rationale": "The remaining transitional renderer workflow stays production-composed while focused PTY, viewer-position, and packaged platform contracts run independently.",
+      "removalIssue": "#115 and #116",
       "expiresOn": "2026-09-30"
     }
   ]

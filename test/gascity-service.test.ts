@@ -18,6 +18,14 @@ function execResult(code: number, stdout: string, stderr = ''): ExecResult {
 }
 
 /**
+ * Silence the intentional degradation logging these failure-path tests provoke,
+ * and hand back the spy so the test can assert the error path actually fired.
+ */
+function captureErrors() {
+  return vi.spyOn(console, 'error').mockImplementation(() => undefined)
+}
+
+/**
  * A host whose `exec` answers per gc subcommand, so a test states only the
  * outputs it cares about and every unstubbed call fails loudly.
  */
@@ -110,22 +118,27 @@ describe('GasCityService', () => {
   })
 
   it('reports a missing gc CLI rather than an empty crew', async () => {
+    const errors = captureErrors()
     const { host } = stubHost({
       'session list': new Error('spawn gc ENOENT'),
     })
     const crew = await service(host).crew({ root: ROOT })
     expect(crew).toMatchObject({ available: false, reason: 'gc-missing' })
+    expect(errors).toHaveBeenCalled()
   })
 
   it('classifies a workspace outside a city', async () => {
+    const errors = captureErrors()
     const { host } = stubHost({
       'session list': execResult(1, '', 'gc session list: not in a city directory'),
     })
     const crew = await service(host).crew({ root: ROOT })
     expect(crew).toMatchObject({ available: false, reason: 'no-city' })
+    expect(errors).toHaveBeenCalled()
   })
 
   it('degrades to workers when the rig and config reads fail', async () => {
+    const errors = captureErrors()
     const { host } = stubHost({
       'session list': execResult(
         0,
@@ -140,6 +153,7 @@ describe('GasCityService', () => {
     expect(crew.available).toBe(true)
     if (!crew.available) return
     expect(crew.members.map((member) => member.tier)).toEqual(['worker'])
+    expect(errors).toHaveBeenCalled()
   })
 
   it('treats a workspace carrying the city marker as the whole-city view', async () => {
@@ -351,6 +365,7 @@ rig = "mem"
   })
 
   it('does not pin a failed rig list across the whole host', async () => {
+    const errors = captureErrors()
     const other = hostPath(asHostId('local'), '/home/dev/city/rigs/aoa')
     let active = ROOT
     const rigList = vi
@@ -378,6 +393,7 @@ rig = "mem"
     // A degraded crew for the workspace that hit the failure is deliberate;
     // handing that failure to every other workspace on the host is not.
     expect(rigList).toHaveBeenCalledTimes(2)
+    expect(errors).toHaveBeenCalled()
   })
 
   it('rejects a request for anything but the active workspace root', async () => {
@@ -398,6 +414,7 @@ rig = "mem"
   })
 
   it('bounds every gc read so a wedged CLI cannot hold the background lane', async () => {
+    const errors = captureErrors()
     const { host, exec } = stubHost({ 'session list': execResult(0, '[]') })
     await service(host).crew({ root: ROOT })
     expect(exec).toHaveBeenCalled()
@@ -405,11 +422,13 @@ rig = "mem"
       expect(command).toBe('gc')
       expect((opts as { timeout?: number }).timeout).toBeGreaterThan(0)
     }
+    expect(errors).toHaveBeenCalled()
   })
 
   it('reports a gc timeout as a stated failure rather than an empty crew', async () => {
     // The bug this guards: an unbounded `gc` never settles, the crew section
     // renders null, and the panel looks empty rather than broken.
+    const errors = captureErrors()
     const { host } = stubHost({
       'session list': new ExecTimeoutError('gc', 15_000),
     })
@@ -417,5 +436,6 @@ rig = "mem"
     expect(response.available).toBe(false)
     expect(response).toMatchObject({ reason: 'error' })
     expect((response as GasCityUnavailable).message).toMatch(/did not respond within 15s/)
+    expect(errors).toHaveBeenCalled()
   })
 })

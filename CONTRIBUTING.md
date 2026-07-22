@@ -98,25 +98,28 @@ An authorized open `kind:epic` uses one `epic/N-slug` integration branch from cu
 Keep its history append-only. Start each direct child's issue worktree at the current epic branch.
 Continue to use `main` for ordinary issues.
 
-Use `project:record` to resolve parent and kind metadata. Reuse one unambiguous epic branch.
-Creating the first branch requires authorization for the epic and its intended child set. Retain
-state and report a blocker when metadata, refs, or worktrees conflict.
+Use `npm run issue:context -- --issue N` to resolve the native parent, exact base, deterministic
+issue branch and worktree, planning state, related open PRs, and conflicts. Add `--json` when an
+agent needs the structured record. Reuse one unambiguous epic branch. Creating the first branch
+requires authorization for the epic and its intended child set. Retain state and report a blocker
+when metadata, refs, or worktrees conflict.
 
-An epic-child PR targets the epic branch and has two exact relationships:
+An epic-child PR targets the exact epic branch and names its direct child once:
 
 ```text
-Contributes-to: #<child>
-Contributes-to: #<epic>
+Completes-child: #<child>
 ```
 
-Reserve `Closes` for PRs to `main`. Required CI and CodeQL checks run for `epic/**` targets. The
-trusted Project workflow uses the default-branch implementation. It treats PR text as data and
-advances eligible child and epic records to `In Progress`.
+Automation derives the open direct epic parent from GitHub's native relationship and validates the
+PR base before changing issue state. Reserve `Closes` for PRs to `main`. Keep `Contributes-to: #N`
+for partial work that does not complete an issue. Required CI and CodeQL checks run for `epic/**`
+targets. Trusted automation uses default-branch code, treats PR text as data, and advances the
+eligible child and parent records to `In Progress`.
 
-After the required checks pass, merge the focused child PR into the epic branch. Verify its base,
-head, merge state, and native parent. Then close the feature-complete child with `gh`. Native
-issue-close automation owns `Done`. Reopen the child for a correction. Use another focused
-contribution PR. No intermediate Project Status is used.
+After the required checks pass, merge the focused child PR into the epic branch. Trusted
+automation revalidates its base and native parent, then closes the direct child and converges
+Project Status to `Done`. Failed or ambiguous validation keeps the child open. Reopen the child for
+a correction and use another focused completing PR. No intermediate Project Status is used.
 
 After every intended child closes, merge current `main` into the epic branch. Verify the complete
 `main...epic` candidate. Open one final PR to `main` with `Closes #<epic>`. The maintainer owns
@@ -131,6 +134,8 @@ Development requires Node 24 or newer; release CI uses Node 24.
 npm ci
 npm run verify
 npm run smoke
+npm run smoke:macos        # matching Apple-silicon Mac
+npm run smoke:capacity
 npm run dev
 ```
 
@@ -140,6 +145,29 @@ Linux, run Electron smoke tests under `xvfb-run`. Install the optional pre-push 
 ```sh
 npm run hooks:install
 ```
+
+`npm run smoke` runs the focused `pty-native` and `viewer-position` groups plus the transitional
+`legacy-workflow` group in separate Electron processes with fresh project and user-data roots,
+then reports a result for every scheduled group. Select one group locally with
+`HVIR_SMOKE_SCENARIO=<name> npm run smoke`; the complete name set is `pty-native`,
+`viewer-position`, `platform-contracts`, `terminal-presentation`, `legacy-workflow`, and
+`capacity`. `npm run smoke:macos` runs the focused PTY, viewer, platform-contract, and terminal
+presentation groups;
+`npm run smoke:capacity` selects the capacity group. Both use the same aggregate launcher, so a
+failing group does not prevent reporting its scheduled siblings.
+
+For a bounded local stress run, set `HVIR_SMOKE_REPEAT` to an integer from 1 through 100. For
+example, `HVIR_SMOKE_SCENARIO=pty-native HVIR_SMOKE_REPEAT=20 npm run smoke` schedules 20
+iterations of that group. Each iteration launches a fresh Electron process with fresh project and
+user-data roots. Iterations are fixed stress evidence, not retries: every scheduled iteration runs,
+and any failed iteration makes the aggregate command fail. Pull-request jobs omit the variable and
+therefore run one iteration.
+
+Packaged smoke is a distribution boundary, not a second product workflow. On a matching supported
+host, build the platform tarball and launcher, then run `npm run smoke:packaged`. It installs the
+exact versioned tarballs into a clean prefix and proves launcher selection, executable architecture,
+application/worker/native-PTY loading, preview-protocol handling, and retained platform geometry.
+Ordinary behavior remains in the unpackaged groups.
 
 Use `npm run gauntlet` for the full release gate. Packaging and performance work has additional
 acceptance guidance in [`docs/packaging.md`](docs/packaging.md) and
@@ -178,8 +206,9 @@ before pushing. Fix failures locally or report an environment blocker rather tha
 discover a known failure.
 
 Use capacity, real-host, packaged, or gauntlet checks when the issue's acceptance criteria call
-for them. Report exact evidence and any environment you could not verify; never imply a check
-ran when it did not.
+for them. CI reports verification, Electron behavior, and capacity independently;
+`npm run gauntlet` remains the combined local release gate. Report exact evidence and any
+environment you could not verify; never imply a check ran when it did not.
 
 ## Open a focused pull request
 

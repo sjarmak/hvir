@@ -420,7 +420,7 @@ export function App(): ReactElement {
           onReconnect={() => void session.reconnect()}
           theme={theme}
           onTheme={(nextTheme) => setAppTheme(nextTheme)}
-          onSettings={() => overlays.openSettings('general')}
+          onSettings={() => overlays.openSettings()}
         />
       ) : null}
       <main
@@ -645,9 +645,9 @@ export function App(): ReactElement {
               }
               onOpenWebLink={openWebLink}
               preferences={terminalPreferences(settings)}
-              onOpenSettings={() => overlays.openSettings('general')}
+              onOpenSettings={() => overlays.openSettings()}
               onOpenHarnessSettings={() => overlays.openSettings('harnesses')}
-              onAddHarness={() => overlays.openSettings('harnesses-add')}
+              onAddHarness={overlays.openAddHarnessSettings}
             />
           )),
         )}
@@ -671,7 +671,7 @@ export function App(): ReactElement {
           settings={settings}
           workspaceRoot={root}
           projectRoot={activeProject?.registeredRoot}
-          initialSection={overlays.settingsSection}
+          initialDestination={overlays.settingsDestination}
           onClose={overlays.closeSettings}
           onSave={(nextTheme, nextSettings) => {
             setAppTheme(nextTheme)
