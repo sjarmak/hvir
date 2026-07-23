@@ -11,9 +11,14 @@ import {
   probeAllowsAutoRestore,
   recoverableProfile,
 } from './terminal-profile-recovery'
-import { profileProbe, recoveryProbe } from './terminal-probe-policy'
+import {
+  probeLaunchUnavailable,
+  profileProbe,
+  recoveryProbe,
+} from './terminal-probe-policy'
 import type { StoredTerminalSplitLayout } from './terminal-split-persistence'
 import type { TerminalSession } from './terminal-workspace-model'
+import type { TerminalSplitPane } from './terminal-workspace-model'
 
 export type TerminalAutomaticRecoveryPlan =
   | { readonly kind: 'none' }
@@ -28,11 +33,26 @@ export type TerminalAutomaticRecoveryPlan =
 export interface TerminalRestorationResult {
   readonly sessions: readonly TerminalSession[]
   readonly activeId?: string
+  readonly activeByPane: Readonly<
+    Record<TerminalSplitPane, string | undefined>
+  >
 }
 
 export type TerminalManualRecoveryPlan =
-  | { readonly kind: 'discard' }
-  | { readonly kind: 'restore'; readonly result: TerminalRestorationResult }
+  | {
+      readonly kind: 'discard'
+      readonly decision: TerminalManualRecoveryDecision
+    }
+  | {
+      readonly kind: 'restore'
+      readonly decision: TerminalManualRecoveryDecision
+      readonly result: TerminalRestorationResult
+    }
+
+export interface TerminalManualRecoveryDecision {
+  readonly restoredIds: readonly string[]
+  readonly skippedIds: readonly string[]
+}
 
 export function planManualTerminalRecovery({
   selectedIds,
@@ -49,16 +69,23 @@ export function planManualTerminalRecovery({
   readonly probes: readonly HarnessProfileProbe[]
   readonly splitLayout: StoredTerminalSplitLayout
 }): TerminalManualRecoveryPlan {
-  const selected = records.filter(
+  const eligible = records.filter(
     (record) =>
-      selectedIds.has(record.id) &&
-      providerDescriptor(providers, record.providerId) !== undefined &&
-      recoverableProfile(profiles, record) !== undefined,
+      terminalRecoveryCandidateDecision(record, providers, profiles, probes).action !==
+        'unavailable' && !probeLaunchUnavailable(recoveryProbe(probes, record)),
   )
+  const selected = eligible.filter((record) => selectedIds.has(record.id))
+  const decision = {
+    restoredIds: selected.map(({ id }) => id),
+    skippedIds: eligible
+      .filter((record) => !selectedIds.has(record.id))
+      .map(({ id }) => id),
+  }
   return selected.length === 0
-    ? { kind: 'discard' }
+    ? { kind: 'discard', decision }
     : {
         kind: 'restore',
+        decision,
         result: restoreTerminalSessions(
           selected,
           providers,
@@ -150,7 +177,11 @@ export function mergeTerminalRestorations(
     (id): id is string =>
       id !== undefined && sessions.some((session) => session.id === id),
   )
-  return { sessions, activeId: availableActiveId }
+  const activeByPane = {
+    primary: mergedPaneActiveId('primary', sessions, restored, existing),
+    secondary: mergedPaneActiveId('secondary', sessions, restored, existing),
+  }
+  return { sessions, activeId: availableActiveId, activeByPane }
 }
 
 export function restoreTerminalSessions(
@@ -164,7 +195,7 @@ export function restoreTerminalSessions(
   const ordered = [...records].sort(
     (left, right) => left.position - right.position || left.updatedAt - right.updatedAt,
   )
-  const sessions = ordered.flatMap<TerminalSession>((record) => {
+  const dormantSessions = ordered.flatMap<TerminalSession>((record) => {
     const provider = providerDescriptor(providers, record.providerId)
     const profile = recoverableProfile(profiles, record)
     if (!provider || !profile) return []
@@ -185,10 +216,11 @@ export function restoreTerminalSessions(
       fallbackTitle: record.title,
       title: record.title,
       status: !hasHarnessIdentity
-        ? 'Ready to restore'
+        ? 'Ready to start'
         : resumable
           ? 'Ready to resume'
-          : 'Ready to restart',
+          : 'Ready to start',
+      attention: record.attention,
       harnessSessionId: record.harnessSessionId,
       identityStatus: !hasHarnessIdentity
         ? 'none'
@@ -196,16 +228,48 @@ export function restoreTerminalSessions(
           ? 'identified'
           : 'unavailable',
       resumeOnStart: resumable,
+      dormant: true,
+      startMode: 'interactive',
       pane: splitLayout.secondaryIds.includes(record.id) ? 'secondary' : 'primary',
       cwd: record.cwd,
     }
   })
+  const persistedActiveId = ordered.find(
+    (record) =>
+      record.active && dormantSessions.some((session) => session.id === record.id),
+  )?.id
+  const activeByPane = {
+    primary: restoredPaneActiveId(
+      'primary',
+      dormantSessions,
+      splitLayout,
+      persistedActiveId,
+    ),
+    secondary: restoredPaneActiveId(
+      'secondary',
+      dormantSessions,
+      splitLayout,
+      persistedActiveId,
+    ),
+  }
+  const visibleIds = new Set(
+    [activeByPane.primary, activeByPane.secondary].filter(
+      (id): id is string => id !== undefined,
+    ),
+  )
+  const sessions = dormantSessions.map((session) =>
+    visibleIds.has(session.id)
+      ? {
+          ...session,
+          dormant: false,
+          status: session.resumeOnStart ? 'Resuming…' : 'Starting…',
+        }
+      : session,
+  )
   return {
     sessions,
-    activeId:
-      ordered.find(
-        (record) => record.active && sessions.some(({ id }) => id === record.id),
-      )?.id ?? sessions[0]?.id,
+    activeId: persistedActiveId ?? activeByPane.primary ?? activeByPane.secondary,
+    activeByPane,
   }
 }
 
@@ -265,4 +329,33 @@ function providerDescriptor(
   id: TerminalRecoverySession['providerId'],
 ): HarnessProviderDescriptor | undefined {
   return providers.find((provider) => provider.id === id)
+}
+
+function restoredPaneActiveId(
+  pane: TerminalSplitPane,
+  sessions: readonly TerminalSession[],
+  splitLayout: StoredTerminalSplitLayout,
+  persistedActiveId?: string,
+): string | undefined {
+  const preferred = splitLayout.activeByPane?.[pane]
+  return (
+    sessions.find((session) => session.pane === pane && session.id === preferred)?.id ??
+    sessions.find(
+      (session) => session.pane === pane && session.id === persistedActiveId,
+    )?.id ??
+    sessions.find((session) => session.pane === pane)?.id
+  )
+}
+
+function mergedPaneActiveId(
+  pane: TerminalSplitPane,
+  sessions: readonly TerminalSession[],
+  restored: TerminalRestorationResult,
+  existing: TerminalRestorationResult,
+): string | undefined {
+  return [restored.activeByPane[pane], existing.activeByPane[pane]].find(
+    (id): id is string =>
+      id !== undefined &&
+      sessions.some((session) => session.pane === pane && session.id === id),
+  ) ?? sessions.find((session) => session.pane === pane)?.id
 }

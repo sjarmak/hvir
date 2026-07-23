@@ -14,7 +14,7 @@ import type { TerminalThemeOverride } from '../settings/settings'
 import { useAppTheme, type AppTheme } from '../theme'
 import type { TerminalLinkActivation } from './terminal-pane'
 import { useTerminalPaneController } from './use-terminal-pane-controller'
-import type { FreshTerminalStart } from './terminal-runtime'
+import type { FreshTerminalStart } from './terminal-runtime-options'
 import type { TerminalRuntimeRegistry } from './terminal-runtime-registry'
 
 interface TerminalViewProps {
@@ -28,6 +28,7 @@ interface TerminalViewProps {
   readonly resumeOnStart: boolean
   /** Command typed into the shell once, right after first launch (e.g. `gc session attach …`). */
   readonly initialInput?: string
+  readonly startMode: 'interactive' | 'bulk'
   readonly position: number
   readonly slot: 'primary' | 'secondary'
   readonly visible: boolean
@@ -119,6 +120,10 @@ export function TerminalView(props: TerminalViewProps): ReactElement {
         className="terminal-container"
         data-terminal-theme={effectiveTheme}
         ref={containerRef}
+        tabIndex={-1}
+        onFocus={(event) => {
+          if (event.target === event.currentTarget) focus()
+        }}
         onMouseDown={focus}
       />
     </section>

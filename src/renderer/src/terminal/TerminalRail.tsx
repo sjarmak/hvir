@@ -7,13 +7,14 @@ import type {
   HarnessProviderId,
   WorkspaceState,
 } from '../../../shared'
-import { terminalAttentionLabel } from './terminal-attention'
+import { terminalAttentionBadgeText, terminalAttentionLabel } from './terminal-attention'
 import {
   compactHarnessCapabilityLabel,
   type HarnessLaunchMenuState,
 } from './harness-launch-menu'
 import { TerminalContextMeter } from './TerminalContextMeter'
 import type { TerminalSession } from './terminal-workspace-model'
+import { useTerminalLaunchMenuLayout } from './use-terminal-launch-menu-layout'
 
 export interface TerminalLaunchMenuEntry {
   readonly profile: HarnessProfile
@@ -47,6 +48,7 @@ export function TerminalRail({
   onAddHarness,
   onRefreshProbes,
   onOpenHarnessSettings,
+  onResumeAll,
   onFocusSession,
   onMoveSession,
   onCloseSession,
@@ -76,10 +78,15 @@ export function TerminalRail({
   readonly onAddHarness: () => void
   readonly onRefreshProbes: () => void
   readonly onOpenHarnessSettings: () => void
+  readonly onResumeAll: () => void
   readonly onFocusSession: (id: string) => void
   readonly onMoveSession: (id: string) => void
   readonly onCloseSession: (id: string) => void
 }): ReactElement {
+  const { menuRef: launchMenuRef, menuStyle: launchMenuStyle } =
+    useTerminalLaunchMenuLayout(menuOpen)
+  const dormantCount = sessions.filter((session) => session.dormant).length
+
   return (
     <aside
       className="terminal-rail"
@@ -91,6 +98,18 @@ export function TerminalRail({
       <header className="terminal-rail-header">
         <span>Terminals</span>
         <div className="terminal-header-actions">
+          {dormantCount > 0 ? (
+            <button
+              type="button"
+              className="terminal-resume-all-button"
+              aria-label={`Resume all now, start ${dormantCount} dormant ${dormantCount === 1 ? 'terminal' : 'terminals'}`}
+              title={`Start ${dormantCount} dormant ${dormantCount === 1 ? 'terminal' : 'terminals'} with bounded per-host concurrency`}
+              disabled={!recoveryReady || !available}
+              onClick={onResumeAll}
+            >
+              Resume all now · {dormantCount}
+            </button>
+          ) : null}
           <div className="terminal-move-control">
             <button
               type="button"
@@ -179,7 +198,12 @@ export function TerminalRail({
               +
             </button>
             {menuOpen ? (
-              <div className="terminal-new-menu" role="menu">
+              <div
+                ref={launchMenuRef}
+                className="terminal-new-menu"
+                role="menu"
+                style={launchMenuStyle}
+              >
                 {launchMenuEntries.flatMap(({ profile, provider, state }) => {
                   if (!state.visible) return []
                   const capability = compactHarnessCapabilityLabel(
@@ -241,7 +265,8 @@ export function TerminalRail({
           return (
             <div
               key={session.id}
-              className={`terminal-list-row${session.id === activeId ? ' active' : ''}`}
+              className={`terminal-list-row${session.id === activeId ? ' active' : ''}${session.dormant ? ' dormant' : ''}`}
+              data-terminal-dormant={session.dormant ? 'true' : undefined}
               role="listitem"
             >
               <button
@@ -277,11 +302,7 @@ export function TerminalRail({
                     aria-label={terminalAttentionLabel(session.attention)}
                     title={terminalAttentionLabel(session.attention)}
                   >
-                    {session.attention === 'output'
-                      ? 'new'
-                      : session.attention === 'bell'
-                        ? 'bell'
-                        : 'ready'}
+                    {terminalAttentionBadgeText(session.attention)}
                   </span>
                 ) : null}
               </button>

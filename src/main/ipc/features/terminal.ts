@@ -22,6 +22,23 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
     return deps.terminalSessions.list(root)
   })
 
+  ipc.handle('terminal:record-recovery-decision', async (req) => {
+    const root = ipc.authority.workspaceRoot(req.root)
+    const restoredIds = recoveryDecisionIds(req.restoredIds)
+    const skippedIds = recoveryDecisionIds(req.skippedIds)
+    if (restoredIds.length + skippedIds.length > 500) {
+      throw new Error('Invalid terminal recovery decision')
+    }
+    const decided = new Set(restoredIds)
+    if (skippedIds.some((id) => decided.has(id))) {
+      throw new Error('Invalid terminal recovery decision')
+    }
+    await deps.terminalSessions.recordRecoveryDecision(root, {
+      restoredIds,
+      skippedIds,
+    })
+  })
+
   ipc.handle('terminal:update-layout', async (req) => {
     const root = ipc.authority.workspaceRoot(req.root)
     const rawSessions: unknown = req.sessions
@@ -34,6 +51,7 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
       const title = value['title']
       const position = value['position']
       const active = value['active']
+      const attention = value['attention']
       if (
         !isTerminalId(id) ||
         !isTerminalTitle(title) ||
@@ -41,11 +59,12 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
         typeof position !== 'number' ||
         position < 0 ||
         position >= 500 ||
-        typeof active !== 'boolean'
+        typeof active !== 'boolean' ||
+        (attention !== undefined && !isTerminalAttention(attention))
       ) {
         throw new Error('Invalid terminal layout entry')
       }
-      return { id, title, position, active }
+      return { id, title, position, active, attention }
     })
     await deps.terminalSessions.updateLayout(root, sessions)
   })
@@ -134,6 +153,9 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
       req.position >= 500 ||
       typeof req.active !== 'boolean' ||
       (req.composerSubmitMode !== 'enter' && req.composerSubmitMode !== 'ctrl-enter') ||
+      (req.admission !== undefined &&
+        req.admission !== 'interactive' &&
+        req.admission !== 'bulk') ||
       (req.resume !== undefined && typeof req.resume !== 'boolean') ||
       (req.acknowledgeRisk !== undefined && typeof req.acknowledgeRisk !== 'boolean')
     ) {
@@ -242,6 +264,7 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
         sessionId: req.sessionId,
         harnessSessionId: launchMode === 'resume' ? req.harnessSessionId : undefined,
         resume: launchMode === 'resume',
+        admission: req.admission,
         cols,
         rows,
         onClassifiedLaunchFailure: () => {
@@ -375,6 +398,17 @@ function isTerminalId(value: unknown): value is string {
   return typeof value === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(value)
 }
 
+function recoveryDecisionIds(value: unknown): readonly string[] {
+  if (!Array.isArray(value) || value.length > 500) {
+    throw new Error('Invalid terminal recovery decision')
+  }
+  const ids = value.filter(isTerminalId)
+  if (ids.length !== value.length || new Set(ids).size !== ids.length) {
+    throw new Error('Invalid terminal recovery decision')
+  }
+  return ids
+}
+
 function isTerminalTitle(value: unknown): value is string {
   return (
     typeof value === 'string' &&
@@ -382,6 +416,10 @@ function isTerminalTitle(value: unknown): value is string {
     value.length <= 512 &&
     !hasControlCharacter(value)
   )
+}
+
+function isTerminalAttention(value: unknown): value is 'working' | 'bell' | 'idle' {
+  return value === 'working' || value === 'bell' || value === 'idle'
 }
 
 function isHarnessSessionId(value: unknown): value is string {

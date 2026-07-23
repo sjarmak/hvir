@@ -201,6 +201,7 @@ export function useTerminalRecovery({
         type: 'sessions-replaced',
         sessions: plan.result.sessions,
         activeId: plan.result.activeId,
+        activeByPane: plan.result.activeByPane,
       })
       setCandidates(plan.residual)
       if (plan.residual.length === 0) recoveryRecords.current = []
@@ -260,8 +261,28 @@ export function useTerminalRecovery({
     setReady(true)
   }, [])
 
-  const resume = useCallback((ids: ReadonlySet<string>): void => {
+  const skip = useCallback(async (): Promise<void> => {
     const current = stateRef.current
+    const currentGeneration = generation.current.snapshot()
+    const plan = planManualTerminalRecovery({
+      selectedIds: new Set(),
+      records: candidatesRef.current,
+      providers: current.providers,
+      profiles: current.profiles,
+      probes: current.probes,
+      splitLayout: current.splitLayout,
+    })
+    await window.hvir.invoke('terminal:record-recovery-decision', {
+      root: current.root,
+      ...plan.decision,
+    })
+    if (!generation.current.isCurrent(currentGeneration)) return
+    discardRef.current()
+  }, [])
+
+  const resume = useCallback(async (ids: ReadonlySet<string>): Promise<void> => {
+    const current = stateRef.current
+    const currentGeneration = generation.current.snapshot()
     const plan = planManualTerminalRecovery({
       selectedIds: ids,
       records: candidatesRef.current,
@@ -270,6 +291,11 @@ export function useTerminalRecovery({
       probes: current.probes,
       splitLayout: current.splitLayout,
     })
+    await window.hvir.invoke('terminal:record-recovery-decision', {
+      root: current.root,
+      ...plan.decision,
+    })
+    if (!generation.current.isCurrent(currentGeneration)) return
     if (plan.kind === 'discard') {
       discardRef.current()
       return
@@ -278,6 +304,7 @@ export function useTerminalRecovery({
       {
         sessions: current.model.sessions,
         activeId: current.model.activeId,
+        activeByPane: current.model.activeByPane,
       },
       plan.result,
       recoveryRecords.current,
@@ -286,6 +313,7 @@ export function useTerminalRecovery({
       type: 'sessions-replaced',
       sessions: merged.sessions,
       activeId: merged.activeId,
+      activeByPane: merged.activeByPane,
     })
     recoveryRecords.current = []
     setCandidates([])
@@ -326,7 +354,8 @@ export function useTerminalRecovery({
     candidates,
     defaultProvider: defaultLaunch?.provider,
     defaultProfile: defaultLaunch?.profile,
-    discard,
+    dismiss: discard,
+    skip,
     resume,
     rebind,
   }

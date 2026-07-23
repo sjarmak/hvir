@@ -167,6 +167,22 @@ Preview plus explicit Copy or Save remains the report boundary until a bundled p
 exact-session semantic submission, truthful host and attachment behavior, and revocable lifecycle
 semantics without generic PTY injection or new persistence.
 
+### [ADR-018 — Script-free first-use native payload preparation](adr/ADR-018-script-free-native-payload-preparation.md)
+
+Platform packages carry no lifecycle scripts; the launcher verifies and atomically prepares one
+common archived payload lifecycle in a bounded per-user cache while npm retains installation,
+platform selection, integrity, and provenance authority.
+
+### [ADR-019 — Working output is not actionable attention](adr/ADR-019-working-output-is-not-actionable-attention.md)
+
+Ongoing output after a submitted turn remains visible as low-salience Working state while
+workspace and project rollups count only actionable Ready and bell signals.
+
+### [ADR-020 — Two explicit recovery skips forget the hvir record](adr/ADR-020-two-explicit-recovery-skips-forget-record.md)
+
+One explicit skip retains and marks a decision-ready recovery record; a second consecutive skip
+forgets only hvir's host-qualified metadata while provider-native recovery remains untouched.
+
 ## 5. Architecture
 
 ### Process model

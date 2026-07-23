@@ -93,7 +93,7 @@ class GhosttyTerminalPane implements TerminalPane {
     this.terminal.attachCustomKeyEventHandler((event) => {
       const data = ghosttyKeyboardOverride(event, options)
       if (data === undefined) return false
-      this.dataListeners.emit(data)
+      this.emitInput(data)
       return true
     })
   }
@@ -139,7 +139,7 @@ class GhosttyTerminalPane implements TerminalPane {
     container.append(surface)
     this.surface = surface
     this.engineDisposers.push(
-      this.terminal.onData((data) => this.dataListeners.emit(data)),
+      this.terminal.onData((data) => this.emitInput(data)),
       this.terminal.onResize((size) => this.resizeListeners.emit(size)),
       this.terminal.onTitleChange((title) => this.emitTitle(title)),
     )
@@ -269,6 +269,11 @@ class GhosttyTerminalPane implements TerminalPane {
     if (title === this.lastTitle) return
     this.lastTitle = title
     this.titleListeners.emit(title)
+  }
+
+  private emitInput(data: string): void {
+    this.terminal.resetCursorBlink()
+    this.dataListeners.emit(data)
   }
 
   private handleMouseDown(event: MouseEvent, canvas: HTMLCanvasElement): void {
