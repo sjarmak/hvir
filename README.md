@@ -45,6 +45,17 @@ another supported release path; see [docs/packaging.md](docs/packaging.md).
 hvir expects the system `git` binary. Claude Code and Codex launch options use those CLIs
 from the selected host's login-shell environment; plain shells work without either.
 
+## Runtime diagnostics
+
+Packaged hvir keeps content-free startup, shutdown, PTY, session-registry, and host-control
+events in `runtime-diagnostics.jsonl` under Electron's local user-data directory. That is
+normally `~/Library/Application Support/hvir` on macOS and
+`$XDG_CONFIG_HOME/hvir` (or `~/.config/hvir`) on Linux. Older segments use
+`runtime-diagnostics.1.jsonl` through `.3.jsonl`; each file is limited to 1 MiB and material
+older than seven days is removed. Local and SSH projects share this one local journal, and
+hvir never records terminal contents, prompts, credentials, environment values, or project
+paths there.
+
 ## Feedback and project tracking
 
 Public questions and problem reports belong in the
@@ -111,3 +122,9 @@ Build the npm payload for the current supported platform with the matching
 
 The deliberate boundary remains: hvir may surface rich read-only information and permit
 a minor edit-and-save, but it does not grow into an IDE.
+
+## License
+
+hvir is available under the [MIT License](LICENSE). See
+[Third-party notices](THIRD_PARTY_NOTICES.md) for software redistributed with hvir,
+including the locally modified terminal runtime.

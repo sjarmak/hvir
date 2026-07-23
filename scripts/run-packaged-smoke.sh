@@ -47,14 +47,17 @@ case "$(uname -s):$(uname -m)" in
 Darwin:arm64)
   package_name='hvir-darwin-arm64'
   executable_path='app/hvir.app/Contents/MacOS/hvir'
+  notices_path='app/hvir.app/Contents/Resources/THIRD_PARTY_NOTICES.md'
   ;;
 Linux:x86_64)
   package_name='hvir-linux-x64'
   executable_path='app/hvir'
+  notices_path='app/resources/THIRD_PARTY_NOTICES.md'
   ;;
 Linux:aarch64 | Linux:arm64)
   package_name='hvir-linux-arm64'
   executable_path='app/hvir'
+  notices_path='app/resources/THIRD_PARTY_NOTICES.md'
   ;;
 *)
   echo "Unsupported packaged-smoke host: $(uname -s) $(uname -m)" >&2
@@ -90,6 +93,19 @@ if [[ ! -x "$executable" ]]; then
   exit 1
 fi
 
+platform_package="$installation_root/node_modules/$package_name"
+for notices in \
+  "$platform_package/THIRD_PARTY_NOTICES.md" \
+  "$platform_package/$notices_path" \
+  "$installation_root/node_modules/hvir-workbench/THIRD_PARTY_NOTICES.md"; do
+  if [[ ! -f "$notices" ]]; then
+    echo "Installed hvir third-party notices are missing: $notices" >&2
+    exit 1
+  fi
+  grep -Fq 'Copyright (c) 2025 Coder' "$notices"
+  grep -Fq 'Copyright (c) 2024 Mitchell Hashimoto, Ghostty contributors' "$notices"
+done
+
 if [[ "$(uname -s)" == "Darwin" ]]; then
   file "$executable" | grep -q 'arm64'
 else
@@ -113,3 +129,7 @@ fi
     --no-sandbox \
     --user-data-dir="$user_data_root"
 )
+
+diagnostic_journal="$user_data_root/runtime-diagnostics.jsonl"
+test -f "$diagnostic_journal"
+grep -q '"kind":"application-starting"' "$diagnostic_journal"

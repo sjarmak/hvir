@@ -19,17 +19,17 @@
   "legacyHotspots": [
     {
       "path": "src/main/index.ts",
-      "maxLines": 525,
+      "maxLines": 526,
       "owner": "architecture epic #33",
-      "rationale": "The composition root wires runtime owners, window presentation, coordinators, worker adapters, and IPC; this strict cap prevents product workflows from returning. Fork: +5 over upstream's zero-headroom cap for the single BeadsService and GasCityService owner calls (construction extracted to beads-owner.ts / gascity-owner.ts); the getProject closure is shared with the IPC router.",
+      "rationale": "The composition root wires runtime owners, window presentation, coordinators, worker adapters, and IPC; this strict cap prevents product workflows from returning. Fork: +6 over upstream's cap for the single BeadsService and GasCityService owner calls (construction extracted to beads-owner.ts / gascity-owner.ts); the getProject closure is shared with the IPC router.",
       "removalIssue": "#35-#40",
       "expiresOn": "2026-09-30"
     },
     {
       "path": "src/renderer/src/App.tsx",
-      "maxLines": 692,
+      "maxLines": 693,
       "owner": "architecture epic #33",
-      "rationale": "The renderer root is now a composition shell for feature-owned models and views; this strict cap prevents it from reabsorbing feature state and policy. Fork: +6 over upstream's cap for the beads rail composition wiring (BeadsRail import, useBeadsWorkspace hook, BeadsRailTab, BeadsRailPanel, and the attachRequest prop); all beads state and policy live in beads/BeadsRail.",
+      "rationale": "The renderer root is now a composition shell for feature-owned models and views; this strict cap prevents it from reabsorbing feature state and policy. Fork: +7 over upstream's cap for the beads rail composition wiring (BeadsRail import, useBeadsWorkspace hook, BeadsRailTab, BeadsRailPanel, and the attachRequest prop); all beads state and policy live in beads/BeadsRail.",
       "removalIssue": "#43-#45",
       "expiresOn": "2026-09-30"
     },
@@ -51,9 +51,9 @@
     },
     {
       "path": "src/renderer/src/terminal/terminal-runtime.ts",
-      "maxLines": 515,
+      "maxLines": 520,
       "owner": "architecture epic #33",
-      "rationale": "TerminalRuntime owns one session's PTY start, resume, and fresh-replacement lifecycle over the recovery-refactored event router. Fork: +15 over upstream's cap for the crew initial-input auto-run (typed once on first launch, suppressed on reconnect, manual restart, and fresh replacement), driven by the beads panel through the initialInput option.",
+      "rationale": "TerminalRuntime owns one session's PTY start, resume, and fresh-replacement lifecycle over the recovery-refactored event router. Fork: +20 over upstream's default module cap for the crew initial-input auto-run (typed once on first launch, suppressed on reconnect, manual restart, and fresh replacement), driven by the beads panel through the initialInput option.",
       "removalIssue": "#46",
       "expiresOn": "2026-09-30"
     },
@@ -91,9 +91,9 @@
     },
     {
       "path": "src/main/smoke/index.ts",
-      "maxLines": 2868,
+      "maxLines": 2880,
       "owner": "testing epic #72",
-      "rationale": "The remaining transitional renderer workflow stays production-composed while focused PTY, viewer-position, and packaged platform contracts run independently.",
+      "rationale": "The remaining transitional renderer workflow stays production-composed while focused PTY, viewer-position, and packaged platform contracts run independently. Fork: +12 over upstream's cap to construct and wire the BeadsService and GasCityService owners into the smoke renderer deps so the beads rail participates in the harness.",
       "removalIssue": "#115 and #116",
       "expiresOn": "2026-09-30"
     }

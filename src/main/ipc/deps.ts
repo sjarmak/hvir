@@ -10,6 +10,8 @@ import type {
   ProjectHostOption,
   ProjectState,
   ProjectWatchInterestsResponse,
+  RenderContainmentDiagnosticBatch,
+  WorkbenchHealthSnapshot,
 } from '../../shared'
 import type { BeadsService } from '../beads/beads-service'
 import type { GasCityService } from '../gascity/gascity-service'
@@ -23,6 +25,9 @@ import type { TerminalSessionStore } from '../terminal/session-registry'
 import type { TerminalWorkspaceMoveCoordinator } from '../terminal/terminal-workspace-move-coordinator'
 import type { WebPaneRouteRegistry } from '../web-pane/web-pane-route-registry'
 import type { WorkerClient } from '../worker-host'
+import type { IpcContractDiagnostic } from './authority-router'
+import type { DiagnosticReportCoordinator } from '../diagnostics/diagnostic-report-coordinator'
+import type { RuntimeDiagnostics } from '../diagnostics/runtime-diagnostics'
 
 export type EmitRendererEvent = <E extends IpcEventChannel>(
   channel: E,
@@ -78,6 +83,28 @@ export interface IpcDeps {
   ) => void
   readonly rendererResources: RendererResourceScopes
   readonly rendererReady: (owner: RendererOwner) => void
+  readonly getWorkbenchHealth: () => WorkbenchHealthSnapshot
+  readonly acknowledgeWorkbenchHealth: (occurrenceId: string) => WorkbenchHealthSnapshot
+  readonly diagnostics: {
+    readonly reports: Pick<
+      DiagnosticReportCoordinator,
+      'create' | 'capture' | 'copy' | 'save' | 'cancel' | 'delete'
+    >
+    readonly responsiveness: Pick<
+      RuntimeDiagnostics,
+      | 'responsivenessState'
+      | 'startResponsiveness'
+      | 'recordResponsiveness'
+      | 'stopResponsiveness'
+      | 'deleteResponsiveness'
+    >
+    readonly evidence: Pick<RuntimeDiagnostics, 'evidenceState' | 'deleteEvidence'>
+  }
+  readonly recordIpcContractDiagnostic: (event: IpcContractDiagnostic) => void
+  readonly recordRenderContainment: (
+    owner: RendererOwner,
+    batch: RenderContainmentDiagnosticBatch,
+  ) => void
   readonly ptySupervisor: PtySupervisor
   readonly terminalSessions: TerminalSessionStore
   readonly terminalMoves: Pick<TerminalWorkspaceMoveCoordinator, 'plan' | 'move'>

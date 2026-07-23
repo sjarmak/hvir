@@ -25,6 +25,9 @@ import { TerminalWorkspaceMoveCoordinator } from './terminal/terminal-workspace-
 import { RendererResourceScopes, type RendererOwner } from './renderer-resource-scopes'
 import { createElectronWindowManager } from './window/electron-window-manager'
 import { WorkbenchRuntime } from './workbench-runtime'
+import { RuntimeDiagnostics } from './diagnostics/runtime-diagnostics'
+import { createDiagnosticReportCoordinator } from './diagnostics/diagnostic-report-coordinator'
+import { RendererEventPublisher } from './renderer-event-publisher'
 import {
   GIT_CHANGED_FILE_COUNT_TYPE,
   GIT_FETCH_TYPE,
@@ -36,8 +39,6 @@ import {
   LOCAL_HOST_ID,
   type EchoWorkerProtocol,
   type GitWorkerProtocol,
-  type IpcEventChannel,
-  type IpcEventPayload,
   HTML_PREVIEW_SCHEME,
 } from '../shared'
 
@@ -47,7 +48,6 @@ protocol.registerSchemesAsPrivileged([
     privileges: { standard: true, secure: true, bypassCSP: false },
   },
 ])
-
 function createWorkbenchEntry(): void {
   const runtime = new WorkbenchRuntime({
     start: startup,
@@ -70,12 +70,29 @@ function createWorkbenchEntry(): void {
     new RendererResourceScopes(),
     (scopes) => scopes.dispose(),
   )
+  const rendererEvents = new RendererEventPublisher(rendererScopes)
+  const diagnostics = RuntimeDiagnostics.create(
+    app.getPath('userData'),
+    app.isPackaged || process.env['HVIR_SMOKE'] === '1',
+    (state) => rendererEvents.toWindows('workbench-health:state', state),
+    !app.isPackaged,
+  )
+  const diagnosticReports = runtime.own(
+    'Diagnostic reports',
+    createDiagnosticReportCoordinator(diagnostics, rendererScopes),
+    (reports) => reports.dispose(),
+  )
+  const diagnosticIpc = {
+    reports: diagnosticReports,
+    responsiveness: diagnostics,
+    evidence: diagnostics,
+  }
+  diagnostics.recordApplication('application-starting')
   const gitMutationAuthorizations = runtime.own(
     'Git mutation authorizations',
     new GitMutationAuthorization(),
     (authorizations) => authorizations.dispose(),
   )
-
   let echoWorker: WorkerClient<EchoWorkerProtocol> | null = null
   let gitWorker: WorkerClient<GitWorkerProtocol> | null = null
   let projectRegistry: ProjectRegistry | null = null
@@ -86,7 +103,6 @@ function createWorkbenchEntry(): void {
   let attentionBadge: AttentionBadge | null = null
   let workspaceCoordinator: WorkspaceCoordinator | null = null
   let projectCoordinator: ProjectCoordinator | null = null
-
   const installRendererPresentation = (owner: RendererOwner): RendererOwner => {
     rendererScopes.register(owner, { lifetime: 'renderer', type: 'attention' }, () =>
       attentionBadge?.remove(owner.id, owner.generation),
@@ -95,6 +111,11 @@ function createWorkbenchEntry(): void {
       owner,
       { lifetime: 'renderer', type: 'ssh-prompt-presentation' },
       () => sshPrompter?.revokeOwner(owner),
+    )
+    rendererScopes.register(
+      owner,
+      { lifetime: 'renderer', type: 'diagnostic-report' },
+      () => diagnosticReports.revoke(owner),
     )
     return owner
   }
@@ -106,6 +127,7 @@ function createWorkbenchEntry(): void {
       activateRenderer: (ownerId) =>
         installRendererPresentation(rendererScopes.activateOwner(ownerId)),
       rolloverRenderer: (owner) => {
+        diagnostics.revokeRenderer(owner)
         const transition = rendererScopes.rolloverOwner(owner.id)
         void transition.cleanup.catch((error) =>
           console.error('[renderer] generation cleanup failed', error),
@@ -113,6 +135,7 @@ function createWorkbenchEntry(): void {
         return installRendererPresentation(transition.owner)
       },
       revokeRenderer: (owner) => {
+        diagnostics.closeRenderer(owner)
         void rendererScopes
           .revokeOwner(owner.id)
           .catch((error) => console.error('[renderer] owner cleanup failed', error))
@@ -120,6 +143,8 @@ function createWorkbenchEntry(): void {
       isRendererCurrent: (owner) => rendererScopes.isCurrent(owner),
       setOwnerFocused: (owner, focused) =>
         attentionBadge?.setFocused(owner.id, focused, owner.generation),
+      startRendererDiagnostics: (owner) => diagnostics.startRenderer(owner),
+      recordWindowHealth: (event) => diagnostics.recordWindowHealth(event),
       onLastWindowClosed: () => {
         void runtime
           .suspend()
@@ -133,36 +158,15 @@ function createWorkbenchEntry(): void {
   )
   const webPaneRoutes = windowManager.routes
   const createWindow = windowManager.createWindow
-
-  function emitToWindows<E extends IpcEventChannel>(
-    channel: E,
-    payload: IpcEventPayload<E>,
-  ): void {
-    for (const window of BrowserWindow.getAllWindows()) {
-      if (!window.isDestroyed()) window.webContents.send(channel, payload)
-    }
-  }
-
-  function emitToRenderer<E extends IpcEventChannel>(
-    owner: RendererOwner,
-    channel: E,
-    payload: IpcEventPayload<E>,
-  ): void {
-    if (!rendererScopes.isCurrent(owner)) return
-    const window = BrowserWindow.getAllWindows().find(
-      (candidate) => candidate.webContents.id === owner.id,
-    )
-    if (window && !window.isDestroyed()) window.webContents.send(channel, payload)
-  }
-
   async function startup(): Promise<void> {
     htmlPreviews.register()
-    const emit = emitToWindows
+    const emit = rendererEvents.toWindows
     sshPrompter = runtime.own(
       'SSH prompter',
       new RendererSshPrompter(
-        (owner, prompt) => emitToRenderer(owner, 'ssh:prompt', prompt),
-        (owner, hostId) => emitToRenderer(owner, 'ssh:prompt-cancel', { hostId }),
+        (owner, prompt) => rendererEvents.toRenderer(owner, 'ssh:prompt', prompt),
+        (owner, hostId) =>
+          rendererEvents.toRenderer(owner, 'ssh:prompt-cancel', { hostId }),
       ),
       (prompter) => prompter.cancelAll(),
     )
@@ -198,6 +202,7 @@ function createWorkbenchEntry(): void {
       await TerminalSessionRegistry.load(
         metadataHost,
         localPath(join(app.getPath('userData'), 'terminal-sessions.json')),
+        (event) => diagnostics.recordSessionRegistry(event),
       ),
       (sessions) => sessions.flush(),
     )
@@ -267,6 +272,7 @@ function createWorkbenchEntry(): void {
         },
       },
       onError: (message, error) => console.error(message, error),
+      onHostControlDiagnostic: (event) => diagnostics.recordHostControl(event),
     })
     const gitMutations = new GitMutationCoordinator({
       registry: projectRegistry,
@@ -298,8 +304,10 @@ function createWorkbenchEntry(): void {
       },
       onError: (message, error) => console.error(message, error),
     })
-    ptySupervisor = runtime.own('PTY supervisor', new PtySupervisor(), (supervisor) =>
-      supervisor.disposeAllAndWait(),
+    ptySupervisor = runtime.own(
+      'PTY supervisor',
+      new PtySupervisor({ onDiagnostic: (event) => diagnostics.recordPty(event) }),
+      (supervisor) => supervisor.disposeAllAndWait(),
     )
     const terminalMoves = new TerminalWorkspaceMoveCoordinator({
       projects: projectRegistry,
@@ -326,7 +334,7 @@ function createWorkbenchEntry(): void {
             console.error('[terminal] identity persistence failed', error),
           )
       }
-      emitToRenderer(
+      rendererEvents.toRenderer(
         { id: info.ownerId, generation: info.ownerGeneration },
         'pty:identity',
         {
@@ -347,7 +355,6 @@ function createWorkbenchEntry(): void {
       git: gitMutations,
       withSshPresentation,
     })
-
     const getProject = () => {
       if (!projectRegistry) throw new Error('Project registry is unavailable')
       return projectRegistry.active
@@ -374,6 +381,12 @@ function createWorkbenchEntry(): void {
           sshPrompter?.respond(owner, id, answers),
         rendererResources: rendererScopes,
         rendererReady: (owner) => sshPrompter?.activateOwner(owner),
+        getWorkbenchHealth: () => diagnostics.healthSnapshot(),
+        acknowledgeWorkbenchHealth: (id) => diagnostics.acknowledgeHealth(id),
+        diagnostics: diagnosticIpc,
+        recordIpcContractDiagnostic: (event) => diagnostics.recordIpcContract(event),
+        recordRenderContainment: (owner, batch) =>
+          diagnostics.recordRenderContainment(owner, batch),
         ptySupervisor,
         terminalSessions: terminalSessionRegistry,
         terminalMoves,
@@ -433,6 +446,7 @@ function createWorkbenchEntry(): void {
           harnessProbeManager,
           htmlPreviews,
           rendererResources: rendererScopes,
+          diagnostics: diagnosticIpc,
           webPaneRoutes,
           updateWebPaneBindings: windowManager.updateWebPaneBindings,
           updateWebPaneFullPage: windowManager.updateWebPaneFullPage,
@@ -442,8 +456,11 @@ function createWorkbenchEntry(): void {
         return
       }
       await runtime.start()
+      diagnostics.recordApplication('application-ready')
     })
-    .catch((error: unknown) => {
+    .catch(async (error: unknown) => {
+      diagnostics.recordApplication('application-startup-failed')
+      await diagnostics.dispose()
       console.error('HVIR_STARTUP_FAIL', error)
       app.exit(1)
     })
@@ -462,10 +479,18 @@ function createWorkbenchEntry(): void {
     if (runtime.isShutdown) return
     event.preventDefault()
     if (runtime.isShuttingDown) return
+    diagnostics.recordApplication('application-shutdown-starting')
     void runtime
       .shutdown()
-      .catch((error) => console.error('[shutdown] workbench cleanup failed', error))
-      .finally(() => app.quit())
+      .then(() => diagnostics.recordApplication('application-shutdown-completed'))
+      .catch((error) => {
+        diagnostics.recordApplication('application-shutdown-failed')
+        console.error('[shutdown] workbench cleanup failed', error)
+      })
+      .finally(async () => {
+        await diagnostics.dispose()
+        app.quit()
+      })
   })
 
   async function suspendWorkbenchSessions(): Promise<void> {

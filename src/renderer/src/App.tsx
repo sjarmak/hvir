@@ -224,7 +224,6 @@ export function App(): ReactElement {
     fetch: fetchGit,
     pull: pullGit,
   } = git
-
   rootRef.current = root
   sessionErrorRef.current = session.reportError
   workspaceSwitchRef.current = session.switchRelativeWorkspace
@@ -244,7 +243,6 @@ export function App(): ReactElement {
   useEffect(() => {
     if (activeWorkspace?.missing) resetGitGraph()
   }, [activeWorkspace?.missing, resetGitGraph])
-
   useWorkbenchCommands(settings.keybindings, {
     closeWebPane: closeWebView,
     escapeWebPaneFocus: () => setWebViewFocused(false),
@@ -256,7 +254,6 @@ export function App(): ReactElement {
     focusTree,
     switchWorkspace: (direction) => workspaceSwitchRef.current(direction),
   })
-
   const revealSourceTerminal = async (view: WebViewState): Promise<void> => {
     const target = projectState?.projects
       .flatMap((project) =>
@@ -279,10 +276,8 @@ export function App(): ReactElement {
       if (!source) session.reportError('The source terminal has closed')
     })
   }
-
   if (rootError) return <div className="startup-error">{rootError}</div>
   if (!root) return <div className="startup-loading">Starting hvir…</div>
-
   const workspaceWebViews = webViews.filter((view) =>
     hostPathEquals(view.workspaceRoot, root),
   )
@@ -296,6 +291,7 @@ export function App(): ReactElement {
     <section
       className={`viewer-group viewer-group-${pane}`}
       aria-label={`${pane === 'primary' ? 'Primary' : 'Secondary'} file viewer`}
+      data-diagnostic-capture="viewer"
       data-viewer-pane={pane}
       tabIndex={-1}
       onPointerDownCapture={() => {
@@ -427,7 +423,12 @@ export function App(): ReactElement {
         className={`workbench${connectionState === 'connected' ? '' : ' project-stale'}${terminalMode === 'maximized' ? ' terminal-focused' : ''}${terminalMode === 'collapsed' ? ' terminal-collapsed' : ''}${treeCollapsed ? ' tree-collapsed' : ''}${webViewFocused && webViewActive ? ' web-focused' : ''}`}
         ref={workbenchRef}
       >
-        <aside className="tree-panel" aria-label="Project rail" tabIndex={-1}>
+        <aside
+          className="tree-panel"
+          aria-label="Project rail"
+          data-diagnostic-capture="project-navigation"
+          tabIndex={-1}
+        >
           <nav className="rail-nav" aria-label="Project views">
             <button
               type="button"
