@@ -211,6 +211,15 @@ export class LoopbackHttpProxy {
     socket: Duplex,
     head: Buffer,
   ): Promise<void> {
+    // A pane that closes resets its socket rather than closing it, and nothing
+    // else listens for errors on a CONNECT socket. An unheard reset or EPIPE
+    // becomes a fatal uncaught exception, so this must cover every path below,
+    // including the authentication reply and route resolution.
+    let upstream: Duplex | undefined
+    socket.once('error', () => {
+      socket.destroy()
+      upstream?.destroy()
+    })
     if (!this.authorized(request.headers)) {
       socket.end(
         `HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="${this.credentials.realm}"\r\nConnection: close\r\n\r\n`,
@@ -223,14 +232,14 @@ export class LoopbackHttpProxy {
       }
       const target = new URL(`http://${request.url}/`)
       this.validateTarget(target)
-      const upstream = await this.openTarget(target)
+      upstream = await this.openTarget(target)
       if (socket.destroyed || this.closed) {
         upstream.destroy()
         return
       }
       socket.write('HTTP/1.1 200 Connection Established\r\n\r\n')
       if (head.length > 0) upstream.write(head)
-      socket.once('close', () => upstream.destroy())
+      socket.once('close', () => upstream?.destroy())
       upstream.once('close', () => socket.destroy())
       upstream.once('error', () => socket.destroy())
       socket.pipe(upstream)
