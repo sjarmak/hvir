@@ -86,6 +86,12 @@ const baseConfig: UserConfig = {
     // explicit list first use re-optimizes dependencies and reloads the whole
     // Electron renderer in the middle of a view-mode change.
     optimizeDeps: {
+      // ghostty-web resolves its wasm with `new URL('ghostty-vt.wasm',
+      // import.meta.url)`. Pre-bundling serves the module from .vite/deps,
+      // where the wasm is never copied, so that URL falls through to the SPA
+      // HTML and instantiation fails. Serving the package from its own dist
+      // keeps the sibling wasm resolvable.
+      exclude: ['ghostty-web'],
       include: [
         'markdown-it',
         'markdown-it-task-lists',
