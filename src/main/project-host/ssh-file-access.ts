@@ -26,6 +26,9 @@ import { SshExclusiveCreate } from './ssh-exclusive-create'
 import { SshProjectFileTransfer } from './ssh-project-file-transfer'
 import { abortError, withAbort, writeSftpFile } from './ssh-abort'
 
+/** Bounded retries when a connection-generation bump invalidates an in-flight SFTP open. */
+const SSH_SFTP_GENERATION_RETRY_LIMIT = 2
+
 export interface SshFileAccessOptions {
   readonly fingerprintObservationWindowMs?: number
 }
@@ -348,14 +351,7 @@ export class SshFileAccess {
 
   async getSftp(): Promise<SFTPWrapper> {
     if (this.sftpSession) return this.sftpSession
-    const generation = this.generation
-    const pending = this.owner.openSftp().then((session) => {
-      if (generation !== this.generation) {
-        session.end()
-        throw new Error('SSH SFTP session belongs to a stale connection generation')
-      }
-      return session
-    })
+    const pending = this.openForCurrentGeneration(0)
     this.sftpSession = pending
     void pending.then(
       (session) => {
@@ -368,6 +364,22 @@ export class SshFileAccess {
       },
     )
     return pending
+  }
+
+  /**
+   * A connection-generation bump (reconnect) mid-open is an expected, recoverable race, not a
+   * fatal one: retry against the new generation instead of failing a caller that happened to
+   * ask while the transport was replaced. Bounded so a flapping connection still fails visibly.
+   */
+  private async openForCurrentGeneration(attempt: number): Promise<SFTPWrapper> {
+    const generation = this.generation
+    const session = await this.owner.openSftp()
+    if (generation === this.generation) return session
+    session.end()
+    if (attempt >= SSH_SFTP_GENERATION_RETRY_LIMIT) {
+      throw new Error('SSH SFTP session belongs to a stale connection generation')
+    }
+    return this.openForCurrentGeneration(attempt + 1)
   }
 
   invalidate(path: string): void {
