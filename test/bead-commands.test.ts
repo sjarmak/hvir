@@ -29,18 +29,49 @@ describe('beadCommand', () => {
   })
 
   it('keeps a leading-dash title a title rather than a bd flag', () => {
-    expect(beadCommand({ action: 'create', title: '-v flag is ignored' }).command).toBe(
+    expect(beadCommand({ action: 'create', title: '-v flag is ignored' })?.command).toBe(
       "bd create --title '-v flag is ignored'",
     )
   })
 
-  it('single-quotes ids and titles so shell metacharacters stay literal', () => {
-    expect(beadCommand({ action: 'close', id: "a'; rm -rf /" }).command).toBe(
-      "bd close 'a'\\''; rm -rf /'",
-    )
-    expect(beadCommand({ action: 'create', title: "don't break" }).command).toBe(
+  it('single-quotes titles so shell metacharacters stay literal', () => {
+    expect(beadCommand({ action: 'create', title: "don't break" })?.command).toBe(
       "bd create --title 'don'\\''t break'",
     )
+  })
+
+  it('accepts every id shape bd issues today', () => {
+    for (const id of [
+      'projects-5c6',
+      'projects-sl7.4',
+      'hv-12',
+      'gc-mol-a1',
+      'd905c314-d3cd-5d4e-8bb9-ff2a644aebe0',
+    ]) {
+      expect(beadCommand({ action: 'claim', id })?.command).toBe(
+        `bd update '${id}' --claim`,
+      )
+    }
+  })
+
+  it('refuses an id carrying terminal control bytes rather than quoting it', () => {
+    // Quoting cannot help: the command is delivered as keystrokes, so Ctrl-C
+    // interrupts the line editor and the newline submits whatever follows.
+    expect(beadCommand({ action: 'claim', id: "hv-1'\u0003rm -rf /\n" })).toBeUndefined()
+    expect(beadCommand({ action: 'close', id: 'hv-1\u001b[A' })).toBeUndefined()
+    expect(beadCommand({ action: 'close', id: 'hv-1\u0085' })).toBeUndefined()
+  })
+
+  it('refuses an id outside the bd identifier grammar without rewriting it', () => {
+    expect(beadCommand({ action: 'close', id: "a'; rm -rf /" })).toBeUndefined()
+    expect(beadCommand({ action: 'close', id: 'hv 1' })).toBeUndefined()
+    expect(beadCommand({ action: 'close', id: '' })).toBeUndefined()
+    expect(beadCommand({ action: 'close', id: 'hv-1\u2028' })).toBeUndefined()
+  })
+
+  it('refuses a title that still carries a line or paragraph separator', () => {
+    expect(beadCommand({ action: 'create', title: 'one\u2028two' })).toBeUndefined()
+    expect(beadCommand({ action: 'create', title: 'one\u0003two' })).toBeUndefined()
   })
 })
 
@@ -48,6 +79,10 @@ describe('normalizeBeadTitle', () => {
   it('collapses whitespace runs, including newlines, to one space and trims', () => {
     // A newline typed into the terminal would submit the command early.
     expect(normalizeBeadTitle('  Fix\nthe\t thing  ')).toBe('Fix the thing')
+  })
+
+  it('collapses Unicode line and paragraph separators like any other whitespace', () => {
+    expect(normalizeBeadTitle('one\u2028two\u2029three')).toBe('one two three')
   })
 
   it('removes control characters the line editor would read as keys', () => {

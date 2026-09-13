@@ -6,7 +6,7 @@ import {
   availableBeadActions,
   type BeadActionRequest,
 } from './bead-commands'
-import type { HoneycombLinkConfig } from '../../../shared'
+import { isBeadId, type HoneycombLinkConfig } from '../../../shared'
 import { BeadTraceLink } from './BeadTraceLink'
 import type { BeadCard } from './beads-model'
 
@@ -171,6 +171,8 @@ function beadActions(
 ): ReactElement | null {
   const actions = availableBeadActions(status)
   if (actions.length === 0) return null
+  // The parser refuses such ids, so this only guards a future looser boundary.
+  const typeable = isBeadId(id)
   return (
     <div className="beads-actions">
       {actions.map((action) => (
@@ -178,7 +180,8 @@ function beadActions(
           type="button"
           key={action}
           className={`beads-action beads-action-${action}`}
-          title={BEAD_ACTION_HINTS[action]}
+          title={typeable ? BEAD_ACTION_HINTS[action] : `${id} is not a valid bd id`}
+          disabled={!typeable}
           onClick={() => onBeadAction({ action, id })}
         >
           {BEAD_ACTION_LABELS[action]}

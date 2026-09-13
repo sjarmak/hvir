@@ -379,6 +379,19 @@ describe('parseBeadsListOutput', () => {
     )
     expect(() => parseBeadsListOutput('[{"id":"x"}]')).toThrow(/title or status/)
   })
+
+  it('rejects an id outside the bd identifier grammar at the boundary', () => {
+    // A control byte in an id would later be typed into a PTY as a keystroke.
+    expect(() =>
+      parseBeadsListOutput('[{"id":"hv-1\\u0003","title":"t","status":"open"}]'),
+    ).toThrow(/not a valid bd id/)
+    expect(() =>
+      parseBeadsListOutput('[{"id":"hv 1","title":"t","status":"open"}]'),
+    ).toThrow(/not a valid bd id/)
+    expect(
+      parseBeadsListOutput('[{"id":"projects-sl7.4","title":"t","status":"open"}]')[0]?.id,
+    ).toBe('projects-sl7.4')
+  })
 })
 
 describe('parseDigraphEdges', () => {

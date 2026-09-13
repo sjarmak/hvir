@@ -10,6 +10,7 @@
  * finish. The panel collects the title inline and builds the full command.
  */
 
+import { isBeadId } from '../../../shared'
 import { shellQuoteArg } from './gascity-commands'
 
 export const BEAD_ACTIONS = ['claim', 'close', 'create'] as const
@@ -38,21 +39,35 @@ export const BEAD_ACTION_HINTS: Readonly<Record<BeadAction, string>> = {
 }
 
 /**
- * Build the shell command for a request. No `-C`: the launched terminal's cwd
- * is the workspace root, the same assumption the gc commands make.
+ * Build the shell command for a request, or undefined when it must not be
+ * typed. No `-C`: the launched terminal's cwd is the workspace root, the same
+ * assumption the gc commands make.
+ *
+ * Shell quoting protects the shell, not the line editor: the command is
+ * delivered as PTY keystrokes, so a Ctrl-C or newline inside a quoted argument
+ * still interrupts and submits. An id is therefore held to the bd grammar
+ * (already enforced where bd output is parsed) and a title to "no control or
+ * line-separator characters"; a value that fails is refused outright, never
+ * rewritten into some other id.
  */
-export function beadCommand(request: BeadActionRequest): BeadCommand {
+export function beadCommand(request: BeadActionRequest): BeadCommand | undefined {
   switch (request.action) {
     case 'claim':
+      if (!isBeadId(request.id)) return undefined
       return { command: `bd update ${shellQuoteArg(request.id)} --claim` }
     case 'close':
+      if (!isBeadId(request.id)) return undefined
       return { command: `bd close ${shellQuoteArg(request.id)}` }
     case 'create':
+      if (TERMINAL_CONTROL.test(request.title)) return undefined
       // `--title` rather than a positional: a title starting with `-` would
       // otherwise be parsed by bd as a flag ("title required").
       return { command: `bd create --title ${shellQuoteArg(request.title)}` }
   }
 }
+
+/** C0/C1 controls plus the Unicode line and paragraph separators. */
+const TERMINAL_CONTROL = /[\p{Cc}\u2028\u2029]/u
 
 /**
  * Drop C0/C1 control characters, then collapse every whitespace run (newlines

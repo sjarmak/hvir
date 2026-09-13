@@ -80,7 +80,8 @@ export function useBeadsWorkspace(
   }
 
   const requestBeadAction = (request: BeadActionRequest): void => {
-    requestCommand(beadCommand(request).command)
+    const built = beadCommand(request)
+    if (built !== undefined) requestCommand(built.command)
   }
 
   // Resolve the pending attach request for one workspace (App maps this over

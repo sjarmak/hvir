@@ -7,6 +7,7 @@
 
 import {
   hostPath,
+  isBeadId,
   type BeadDependencyEdge,
   type BeadGate,
   type BeadIssue,
@@ -114,6 +115,11 @@ function parseBeadIssue(candidate: unknown, index: number): BeadIssue {
   const status = record['status']
   if (typeof id !== 'string' || id === '') {
     throw new Error(`bd issue at index ${index} is missing an id`)
+  }
+  // Ids are later spliced into typed terminal commands; anything outside the
+  // grammar is refused here, whole, rather than quoted or normalized later.
+  if (!isBeadId(id)) {
+    throw new Error(`bd issue at index ${index} has an id that is not a valid bd id`)
   }
   if (typeof title !== 'string' || typeof status !== 'string') {
     throw new Error(`bd issue '${id}' is missing a title or status`)
