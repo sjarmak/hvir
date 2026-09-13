@@ -93,6 +93,7 @@ describe('GasCityService', () => {
     expect(crew.members.map((member) => [member.label, member.tier])).toEqual([
       ['mem-pl', 'lead'],
     ])
+    expect(crew.members[0]?.traceRig).toBe('mem')
   })
 
   it('skips the config read once gc projects the tiering fields itself', async () => {

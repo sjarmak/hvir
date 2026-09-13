@@ -10,6 +10,7 @@ import {
   type HostPath,
 } from '../../shared'
 import type { GasCityNamedSessionConfig, GasCityResolvedConfig } from './gascity-config'
+import { rigForPath, type GasCityRig } from './gascity-parse'
 
 /**
  * Crew tiering. Every rule here is structural — a session's working directory,
@@ -21,6 +22,8 @@ import type { GasCityNamedSessionConfig, GasCityResolvedConfig } from './gascity
 export interface DeriveCrewInput {
   readonly sessions: readonly GasCitySession[]
   readonly config: GasCityResolvedConfig
+  /** Every registered rig and its root, so a session can be placed in any rig. */
+  readonly rigs?: readonly GasCityRig[]
   /** Rig the workspace maps to, when `gc rig list` resolved one. */
   readonly rigName?: string
   /** Workspace root; the rig root for `work_dir` containment. */
@@ -209,6 +212,7 @@ function crewCandidate(session: GasCitySession, input: DeriveCrewInput): CrewCan
   const poolName = tier === 'worker' ? workerPoolName(session, input) : undefined
   const template = unqualifiedTemplate(session.template)
   const cityLead = tier === 'lead' && isCityLead(session, named, input)
+  const traceRig = cityLead ? cityTraceRig(input) : sessionRig(session, named, input)
   return {
     session,
     named,
@@ -224,9 +228,50 @@ function crewCandidate(session: GasCitySession, input: DeriveCrewInput): CrewCan
       identityKeys: identityKeys(session),
       ...(poolName === undefined ? {} : { poolName }),
       ...(cityLead ? { cityLead: true } : {}),
+      ...(traceRig === undefined ? {} : { traceRig }),
       session,
     },
   }
+}
+
+/**
+ * The rig gas-city's exporter tags the city's own leads with. A seat with no
+ * rig falls through to the basename of its seat root, which for the mayor is
+ * the city directory itself — `gas-city`, not the HQ rig's registered name.
+ */
+function cityTraceRig(input: DeriveCrewInput): string | undefined {
+  return input.cityRoot === undefined ? undefined : basename(input.cityRoot.path)
+}
+
+/**
+ * The rig a session runs under, by name: what gc projects, then the named
+ * session's configured rig, then wherever the identity is rooted looked up in
+ * the rig list. The rig-qualified name wins over `work_dir` inside
+ * {@link identityRoot}, so a worktree-based worker still lands in its rig. A
+ * session on the HQ rig, however it got there, is a city seat tagged like the
+ * mayor: the exporter never uses the HQ rig's registered name.
+ */
+function sessionRig(
+  session: GasCitySession,
+  named: GasCityNamedSessionConfig | undefined,
+  input: DeriveCrewInput,
+): string | undefined {
+  const rig = session.rig ?? named?.rig ?? rootedRig(session, named, input)
+  return rig !== undefined && rig === input.hqRigName ? (cityTraceRig(input) ?? rig) : rig
+}
+
+/** The rig whose root contains the identity's root, by name. */
+function rootedRig(
+  session: GasCitySession,
+  named: GasCityNamedSessionConfig | undefined,
+  input: DeriveCrewInput,
+): string | undefined {
+  const root = identityRoot(session, named, input)
+  if (root === undefined) return undefined
+  return (
+    rigForPath(input.rigs ?? [], root.path)?.name ??
+    (isAtOrUnder(root, input.rigRoot) ? input.rigName : undefined)
+  )
 }
 
 function sessionTier(

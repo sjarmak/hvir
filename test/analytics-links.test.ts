@@ -15,7 +15,7 @@ import {
   traceLinkTitle,
   workIdInput,
 } from '../src/renderer/src/beads/analytics-links'
-import type { HoneycombLinkConfig, OmniLinkConfig } from '../src/shared'
+import type { GasCitySession, HoneycombLinkConfig, OmniLinkConfig } from '../src/shared'
 
 const HONEYCOMB: HoneycombLinkConfig = {
   team: 'steph.jarmak',
@@ -61,12 +61,20 @@ describe('honeycombQueryUrl', () => {
 })
 
 describe('agentName', () => {
-  it('strips a rig-qualified template to its basename', () => {
-    expect(agentName('mem', { name: 'x', template: 'mem/polecat' })).toBe('mem.polecat')
+  it('uses the session identity, not the template: a pooled worker exports its own name', () => {
+    const pooled: GasCitySession = {
+      id: 'gc-1',
+      name: 'gascity-worker-pool-2',
+      template: 'gascity/worker',
+      state: 'active',
+    }
+    expect(agentName('gascity', pooled)).toBe('gascity.gascity-worker-pool-2')
   })
 
-  it('falls back to the session name', () => {
-    expect(agentName('mem', { name: 'mem-worker-ash' })).toBe('mem.mem-worker-ash')
+  it('prefers the alias and strips a rig-qualified path to its basename', () => {
+    expect(
+      agentName('mem', { name: 'gc-517749', alias: '/home/ds/projects/mem/mem-worker-2' }),
+    ).toBe('mem.mem-worker-2')
   })
 
   it('refuses names gas-city would not have exported', () => {
@@ -83,7 +91,7 @@ describe('sessionTraceUrl', () => {
   })
 
   it('carries exactly the agent and rig filters', () => {
-    const url = sessionTraceUrl(HONEYCOMB, 'mem', { name: 'x', template: 'mem/polecat' })
+    const url = sessionTraceUrl(HONEYCOMB, 'mem', { name: 'polecat' })
     expect(url).toBeDefined()
     expect(querySpec(url as string).filters).toEqual([
       { column: 'gen_ai.agent.name', op: '=', value: 'mem.polecat' },

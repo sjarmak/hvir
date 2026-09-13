@@ -572,7 +572,8 @@ describe('CrewSection observability links', () => {
     return {
       response: crew([
         member({
-          session: { id: 'gc-1', name: 'x', state: 'active', template: 'mem/polecat' },
+          traceRig: 'mem',
+          session: { id: 'gc-1', name: 'polecat', state: 'active', template: 'mem/worker' },
         }),
       ]),
       issues: [],
@@ -636,60 +637,49 @@ describe('CrewSection observability links', () => {
     expect(anchors(none, 'Trace')).toHaveLength(0)
   })
 
-  it('renders neither link for a city-scoped crew, even though it names the HQ rig', () => {
+  it('keeps Trace but drops Analytics for a city-scoped crew', () => {
     // gascity-service resolves the city root through a rig, so a city-scoped
-    // response still carries rigName; filtering every member on it would match
-    // nothing.
+    // response still carries rigName; the Omni filter would pin every member on
+    // it, but each member's own trace rig still names the right spans.
     const response = base().response as GasCityCrew
     const markup = render(
       base({ response: { ...response, scope: 'city', rigName: 'hq' } }),
     )
     expect(anchors(markup, 'Analytics')).toHaveLength(0)
-    expect(anchors(markup, 'Trace')).toHaveLength(0)
+    const [traceTag] = anchors(markup, 'Trace')
+    expect(filtersOf(hrefOf(traceTag as string))).toEqual({
+      'gen_ai.agent.name': 'mem.polecat',
+      'gc.rig': 'mem',
+    })
   })
 
-  it('gives the city lead in a rig workspace no Trace link unless gc projects its rig', () => {
-    const mayor = (rig?: string) =>
-      member({
-        key: 'gc-9',
-        tier: 'lead',
-        label: 'mayor',
-        target: 'mayor',
-        cityLead: true,
-        session: { id: 'gc-9', name: 'mayor', state: 'active', ...(rig ? { rig } : {}) },
-      })
-    const unprojected = render(base({ response: crew([mayor()]) }))
-    expect(anchors(unprojected, 'Trace')).toHaveLength(0)
-    expect(anchors(unprojected, 'Analytics')).toHaveLength(1)
-
-    const projected = render(base({ response: crew([mayor('gas-city')]) }))
-    const [traceTag] = anchors(projected, 'Trace')
+  it('links the city lead under the rig the crew derived for it', () => {
+    const mayor = member({
+      key: 'gc-9',
+      tier: 'lead',
+      label: 'mayor',
+      target: 'mayor',
+      cityLead: true,
+      traceRig: 'gas-city',
+      session: { id: 'gc-9', name: 'mayor', state: 'active' },
+    })
+    const [traceTag] = anchors(render(base({ response: crew([mayor]) })), 'Trace')
     expect(filtersOf(hrefOf(traceTag as string))).toEqual({
       'gen_ai.agent.name': 'gas-city.mayor',
       'gc.rig': 'gas-city',
     })
+    expect(traceTag).toContain('title="Honeycomb: spans for gas-city.mayor')
   })
 
-  it('prefers the rig gc projects on a session over the workspace rig', () => {
+  it('renders no Trace for a member whose rig the crew could not derive', () => {
     const markup = render(
       base({
         response: crew([
-          member({
-            session: {
-              id: 'gc-1',
-              name: 'x',
-              state: 'active',
-              template: 'polecat',
-              rig: 'other',
-            },
-          }),
+          member({ session: { id: 'gc-1', name: 'drifter', state: 'active' } }),
         ]),
       }),
     )
-    const [traceTag] = anchors(markup, 'Trace')
-    expect(filtersOf(hrefOf(traceTag as string))).toEqual({
-      'gen_ai.agent.name': 'other.polecat',
-      'gc.rig': 'other',
-    })
+    expect(anchors(markup, 'Trace')).toHaveLength(0)
+    expect(anchors(markup, 'Analytics')).toHaveLength(1)
   })
 })

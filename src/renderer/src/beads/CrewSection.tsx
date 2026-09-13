@@ -78,9 +78,10 @@ export function CrewSection({
 
   const view = buildCrewView(response, issues)
   if (view.total === 0) return null
-  // Only a rig-scoped crew has a rig to filter on. A city-scoped response still
-  // carries the HQ rig it was resolved from, which would filter every member on
-  // the wrong rig, so the city view links nowhere.
+  // Only a rig-scoped crew has one rig to filter Analytics on. A city-scoped
+  // response still carries the HQ rig it was resolved from, which would pin the
+  // dashboard on the wrong rig, so the city view gets no Analytics link; each
+  // member's Trace link carries its own rig instead.
   const rig = response.scope === 'rig' ? response.rigName : undefined
 
   return (
@@ -261,17 +262,15 @@ export function CrewSection({
 
   /**
    * The member's Honeycomb link, as a plain anchor: the main window routes
-   * every window-open to the OS browser. Absent when the name could not have
-   * been exported, so no link ever opens a query gas-city cannot match. The
-   * rig gc projects on the session wins over the workspace rig; the city lead
-   * shown inside a rig workspace exports under the HQ rig, which the response
-   * does not name, so it gets no link unless gc projects its rig.
+   * every window-open to the OS browser. Absent when the crew could not place
+   * the member in a rig or the name could not have been exported, so no link
+   * ever opens a query gas-city cannot match.
    */
   function renderTrace({ member }: CrewCard): ReactElement | null {
-    if (!analytics?.honeycomb || !member.session) return null
-    const memberRig = member.session.rig ?? (member.cityLead === true ? undefined : rig)
-    if (memberRig === undefined) return null
-    const href = sessionTraceUrl(analytics.honeycomb, memberRig, member.session)
+    if (!analytics?.honeycomb || !member.session || member.traceRig === undefined) {
+      return null
+    }
+    const href = sessionTraceUrl(analytics.honeycomb, member.traceRig, member.session)
     if (href === undefined) return null
     return (
       <a
@@ -279,7 +278,7 @@ export function CrewSection({
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        title={traceLinkTitle(agentName(memberRig, member.session) ?? member.label)}
+        title={traceLinkTitle(agentName(member.traceRig, member.session) ?? member.label)}
       >
         Trace
       </a>

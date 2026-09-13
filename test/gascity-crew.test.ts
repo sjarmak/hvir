@@ -795,3 +795,142 @@ max_active_sessions = 4
     expect(projected.members[1]?.poolName).toBe('polecat')
   })
 })
+
+describe('trace rig', () => {
+  // The rig half of the `gen_ai.agent.name` gas-city exports, as verified in
+  // Honeycomb: a rig member carries its rig name, the city's own leads carry the
+  // basename of the city directory (gc-seat-tracing.sh falls through to
+  // basename(GC_SEAT_ROOT) for a seat with no rig), and anything that cannot be
+  // placed gets nothing rather than a filter that matches no span.
+  const RIGS = parseRigListOutput(
+    JSON.stringify([
+      { name: 'mem', path: `${CITY}/rigs/mem` },
+      { name: 'aoa', path: `${CITY}/rigs/aoa` },
+      { name: 'hq', path: CITY },
+    ]),
+  )
+
+  function cityView(sessions: readonly GasCitySession[] = CITY_WIDE) {
+    return deriveCrew({
+      sessions,
+      config: CITY_WIDE_CONFIG,
+      rigs: RIGS,
+      rigName: 'hq',
+      rigRoot: CITY_ROOT,
+      cityWorkspace: true,
+      cityRoot: CITY_ROOT,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+  }
+
+  function traceRigOf(crew: ReturnType<typeof deriveCrew>, label: string) {
+    return crew.members.find((member) => member.label === label)?.traceRig
+  }
+
+  it('names the city directory for the city lead, not the HQ rig', () => {
+    expect(traceRigOf(cityView(), 'mayor')).toBe('gas-city')
+  })
+
+  it('names the rig from the config or gc projection for a rig lead', () => {
+    const crew = cityView()
+    expect(traceRigOf(crew, 'mem-pl')).toBe('mem')
+    expect(traceRigOf(crew, 'aoa-pl')).toBe('aoa')
+    expect(traceRigOf(crew, 'city-infra-pl')).toBe('city-infra')
+  })
+
+  it('places a worker by its work_dir against the rig list in the city view', () => {
+    const crew = cityView()
+    expect(traceRigOf(crew, 'mem-worker-ash')).toBe('mem')
+    expect(traceRigOf(crew, 'aoa-worker-elm')).toBe('aoa')
+  })
+
+  it('tags a worker rooted at the city like the mayor, not with the HQ rig name', () => {
+    expect(traceRigOf(cityView(), 'city-infra-polecat-fig')).toBe('gas-city')
+  })
+
+  it('tags a worker gc projects onto the HQ rig like the mayor too', () => {
+    const crew = cityView(
+      parseSessionListOutput(
+        JSON.stringify([sessionJson({ id: 'gc-4', name: 'city-infra-polecat-oak', rig: 'hq' })]),
+        HOST,
+      ),
+    )
+    expect(traceRigOf(crew, 'city-infra-polecat-oak')).toBe('gas-city')
+  })
+
+  it('places a worktree-based worker by its rig-qualified name', () => {
+    const crew = deriveCrew({
+      sessions: LIVE_SESSIONS,
+      config: LIVE_CONFIG,
+      rigs: parseRigListOutput(
+        JSON.stringify([
+          { name: 'mem', path: LIVE_MEM },
+          { name: 'gascity', path: LIVE_GASCITY_RIG },
+        ]),
+      ),
+      rigName: 'hq',
+      rigRoot: hostPath(HOST, LIVE_CITY),
+      cityWorkspace: true,
+      cityRoot: hostPath(HOST, LIVE_CITY),
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    expect(traceRigOf(crew, 'polecat-3')).toBe('gascity')
+    expect(traceRigOf(crew, 'mem-worker-2')).toBe('mem')
+  })
+
+  it('falls back to the workspace rig when no rig list was read', () => {
+    const crew = deriveCrew({
+      sessions: CITY_WIDE,
+      config: CITY_WIDE_CONFIG,
+      rigName: 'mem',
+      rigRoot: RIG_ROOT,
+      cityWorkspace: false,
+      cityRoot: CITY_ROOT,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    expect(traceRigOf(crew, 'mem-worker-ash')).toBe('mem')
+    expect(traceRigOf(crew, 'mayor')).toBe('gas-city')
+  })
+
+  it('prefers the rig gc projects on the session', () => {
+    const crew = cityView(
+      parseSessionListOutput(
+        JSON.stringify([sessionJson({ id: 'gc-2', name: 'mem-worker-ash', rig: 'other' })]),
+        HOST,
+      ),
+    )
+    expect(traceRigOf(crew, 'mem-worker-ash')).toBe('other')
+  })
+
+  it('leaves the rig unset when nothing places the session', () => {
+    const crew = cityView(
+      parseSessionListOutput(
+        JSON.stringify([
+          sessionJson({ id: 'gc-3', name: 'drifter', template: 'drifter', work_dir: '/elsewhere' }),
+        ]),
+        HOST,
+      ),
+    )
+    expect(traceRigOf(crew, 'drifter')).toBeUndefined()
+  })
+
+  it('leaves the city lead unset when the city root is unknown', () => {
+    const crew = deriveCrew({
+      sessions: CITY_WIDE,
+      config: CITY_WIDE_CONFIG,
+      rigName: 'mem',
+      rigRoot: RIG_ROOT,
+      cityWorkspace: false,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    expect(traceRigOf(crew, 'mayor')).toBeUndefined()
+  })
+})

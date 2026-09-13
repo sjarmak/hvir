@@ -72,6 +72,13 @@ export interface GasCityCrewMember {
    * own lead is the one you are looking for first.
    */
   readonly cityLead?: boolean
+  /**
+   * The `gc.rig` gas-city's Honeycomb exporter tags this member's spans with:
+   * its rig name, or for the city's own leads the basename of the city
+   * directory. Absent when the crew could not place the session, so the panel
+   * renders no link rather than one that matches nothing.
+   */
+  readonly traceRig?: string
   readonly session?: GasCitySession
 }
 

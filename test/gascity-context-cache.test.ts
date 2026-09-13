@@ -12,7 +12,13 @@ const ROOT = hostPath(HOST, '/home/dev/city/rigs/mem')
 const CITY = hostPath(HOST, '/home/dev/city')
 
 function context(rigName: string): GasCityContext {
-  return { rigName, cityRoot: CITY, hqRigName: 'hq', config: { agents: [], namedSessions: [] } }
+  return {
+    rigs: [{ name: rigName, path: ROOT.path }],
+    rigName,
+    cityRoot: CITY,
+    hqRigName: 'hq',
+    config: { agents: [], namedSessions: [] },
+  }
 }
 
 describe('GasCityContextCache', () => {
@@ -140,7 +146,7 @@ describe('isCityWorkspace', () => {
 
   it('is false when no city root resolved', () => {
     expect(
-      isCityWorkspace({ config: { agents: [], namedSessions: [] } }, CITY),
+      isCityWorkspace({ rigs: [], config: { agents: [], namedSessions: [] } }, CITY),
     ).toBe(false)
   })
 })

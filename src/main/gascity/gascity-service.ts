@@ -157,6 +157,7 @@ export class GasCityService {
     return deriveCrew({
       sessions,
       config: context.config,
+      rigs: context.rigs,
       rigRoot: root,
       cityWorkspace: isCityWorkspace(context, root),
       includeInternals: req.includeInternals === true,
@@ -202,6 +203,7 @@ export class GasCityService {
     const rigName = rigForPath(rigs, root.path)?.name
     const { cityRoot, hqRigName } = await this.resolveCity(host, root, rigs)
     return {
+      rigs,
       config,
       ...(rigName === undefined ? {} : { rigName }),
       ...(cityRoot === undefined ? {} : { cityRoot }),

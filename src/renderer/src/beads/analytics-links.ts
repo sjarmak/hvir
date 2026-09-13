@@ -12,10 +12,13 @@ import {
  * tests can pin the exact filters a link carries. No credential ever enters a
  * URL; the links open the vendor UI, which authenticates on its own.
  *
- * The identity facts encoded here were verified against gas-city's exporter,
- * not the brief: `gen_ai.agent.name` is `<rig>.<agent>` with the agent being the
- * safe-component basename of GC_AGENT (bin/lib/gc-seat-tracing.sh), and a bead
- * appears only as `gc.work.id`, the sha256 of the compact, ensure_ascii JSON
+ * The identity facts encoded here were verified against gas-city's exporter
+ * and against live spans, not the brief: `gen_ai.agent.name` is `<rig>.<agent>`
+ * with the agent being the safe-component basename of GC_AGENT, which gc sets
+ * to the session's own identity — its alias or instance name, so a pooled
+ * worker exports `gascity-worker-pool-2`, never its template
+ * (bin/lib/gc-seat-tracing.sh, cmd/gc/build_desired_state.go). A bead appears
+ * only as `gc.work.id`, the sha256 of the compact, ensure_ascii JSON
  * `["work", "<store_ref>", "<bead id>"]` (bin/honeycomb_lifecycle.py).
  */
 
@@ -55,9 +58,9 @@ export function honeycombQueryUrl(
  */
 export function agentName(
   rig: string,
-  session: Pick<GasCitySession, 'template' | 'name'>,
+  session: Pick<GasCitySession, 'alias' | 'name'>,
 ): string | undefined {
-  const source = session.template ?? session.name
+  const source = session.alias ?? session.name
   const agent = source.slice(source.lastIndexOf('/') + 1)
   if (!SAFE_COMPONENT.test(rig) || !SAFE_COMPONENT.test(agent)) return undefined
   return `${rig}.${agent}`
@@ -66,7 +69,7 @@ export function agentName(
 export function sessionTraceUrl(
   cfg: HoneycombLinkConfig,
   rig: string,
-  session: Pick<GasCitySession, 'template' | 'name'>,
+  session: Pick<GasCitySession, 'alias' | 'name'>,
 ): string | undefined {
   const agent = agentName(rig, session)
   if (agent === undefined) return undefined

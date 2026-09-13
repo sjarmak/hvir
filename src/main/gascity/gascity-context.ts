@@ -1,5 +1,6 @@
 import { hostPathEquals, type HostPath } from '../../shared'
 import type { GasCityResolvedConfig } from './gascity-config'
+import type { GasCityRig } from './gascity-parse'
 
 /**
  * The slow half of a crew snapshot, cached.
@@ -17,6 +18,8 @@ import type { GasCityResolvedConfig } from './gascity-config'
  * single `gc session list`.
  */
 export interface GasCityContext {
+  /** Every registered rig and its root, from `gc rig list`; empty when degraded. */
+  readonly rigs: readonly GasCityRig[]
   /** Rig the workspace maps to, when `gc rig list` resolved one. */
   readonly rigName?: string
   readonly cityRoot?: HostPath
