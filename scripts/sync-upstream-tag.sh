@@ -86,17 +86,36 @@ git -C "$repo_root" fetch --quiet "$FORK_REMOTE"
 # --- Resolve the tag -------------------------------------------------------
 
 if [ -n "$requested_tag" ]; then
+  git check-ref-format "refs/tags/$requested_tag" \
+    || die "'$requested_tag' is not a valid tag name"
   git -C "$repo_root" rev-parse --verify --quiet "refs/tags/$requested_tag^{commit}" >/dev/null \
     || die "tag '$requested_tag' does not exist after fetching $UPSTREAM_REMOTE"
   tag="$requested_tag"
 else
-  tag="$(git -C "$repo_root" tag --list 'v[0-9]*' --sort=-version:refname | head -n 1)"
-  [ -n "$tag" ] || die "no v* release tags found after fetching $UPSTREAM_REMOTE"
+  # Candidates are the tags the upstream remote actually publishes: a local or
+  # fork-only v* tag that sorts higher must not be mistaken for a release.
+  upstream_tags="$(git -C "$repo_root" ls-remote --tags --refs "$UPSTREAM_REMOTE" 'refs/tags/v[0-9]*' \
+    | sed 's|.*refs/tags/||')"
+  [ -n "$upstream_tags" ] || die "no v* release tags found on $UPSTREAM_REMOTE"
+  tag="$(git -C "$repo_root" tag --list 'v[0-9]*' --sort=-version:refname \
+    | grep -Fx -f <(printf '%s\n' "$upstream_tags") | head -n 1 || true)"
+  [ -n "$tag" ] || die "no v* release tags found locally after fetching $UPSTREAM_REMOTE"
 fi
 
 if git -C "$repo_root" merge-base --is-ancestor "$tag" "$OVERLAY_BRANCH"; then
   echo "$tag is already merged into $OVERLAY_BRANCH; nothing to do"
   exit 0
+fi
+
+# An untracked file the tag would write makes git abort the merge after the
+# scratch branch exists; refuse up front instead, naming the paths.
+blocking_untracked="$(comm -12 \
+  <(git -C "$repo_root" diff --name-only "$OVERLAY_BRANCH" "$tag" | sort) \
+  <(git -C "$repo_root" ls-files --others --exclude-standard | sort))"
+if [ -n "$blocking_untracked" ]; then
+  echo "sync-upstream-tag: untracked files would be overwritten by $tag; move or commit them first:" >&2
+  printf '%s\n' "$blocking_untracked" | sed 's/^/    /' >&2
+  exit 2
 fi
 
 # --- Scratch branch --------------------------------------------------------
@@ -124,7 +143,9 @@ echo "[merge] $tag into $scratch"
 if ! git -C "$repo_root" merge --no-ff --no-edit "$tag"; then
   conflicted="$(git -C "$repo_root" diff --name-only --diff-filter=U)"
   if [ -z "$conflicted" ]; then
-    echo "merge failed without conflicts; see git status" >&2
+    git -C "$repo_root" switch --quiet "$OVERLAY_BRANCH"
+    echo "merge failed without conflicts; see the git output above" >&2
+    echo "back on $OVERLAY_BRANCH; scratch branch $scratch is unused and can be deleted by name" >&2
     exit 1
   fi
   wiring_hits=""
@@ -151,21 +172,27 @@ fi
 # --- Gates -----------------------------------------------------------------
 
 mkdir -p "$log_dir"
-declare -A gate_status=()
+# Parallel indexed arrays rather than an associative one: macOS ships bash 3.2.
 gate_order=()
+gate_results=()
+
+record_gate() {
+  gate_order+=("$1")
+  gate_results+=("$2")
+}
 
 run_gate() {
   local label="$1"
   shift
   local log="$log_dir/$label.log"
-  gate_order+=("$label")
+  local status=0
   echo "[gate] $label: running ($*)"
-  if (cd "$repo_root" && "$@") >"$log" 2>&1; then
-    gate_status["$label"]=0
+  (cd "$repo_root" && "$@") >"$log" 2>&1 || status=$?
+  record_gate "$label" "$status"
+  if [ "$status" -eq 0 ]; then
     echo "[gate] $label: PASS"
   else
-    gate_status["$label"]=$?
-    echo "[gate] $label: FAIL (exit ${gate_status[$label]}; log $log)"
+    echo "[gate] $label: FAIL (exit $status; log $log)"
   fi
 }
 
@@ -176,26 +203,30 @@ run_gate check-seams "$NPM_BIN" run check-seams
 run_gate check-adrs "$NPM_BIN" run check-adrs
 
 vitest_log="$log_dir/vitest.log"
-gate_order+=(vitest)
 echo "[gate] vitest: running ($NPX_BIN vitest run)"
 vitest_exit=0
 (cd "$repo_root" && "$NPX_BIN" vitest run) >"$vitest_log" 2>&1 || vitest_exit=$?
 
-fail_lines="$(grep -E '^[[:space:]]*(FAIL|×|✗)' "$vitest_log" || true)"
-known_lines="$(printf '%s\n' "$fail_lines" | grep -F "$KNOWN_FAILURE" || true)"
-unexpected_lines="$(printf '%s\n' "$fail_lines" | grep -vF "$KNOWN_FAILURE" | grep -v '^$' || true)"
+# Only the "Failed Tests" summary lines (` FAIL  <file> > <suite> > <test>`)
+# carry the full test name; the per-test tree line (`× <test> 9ms`) does not,
+# so matching it would mark the known failure as unexpected on every run. The
+# known name is anchored at the end of the line so a longer name that merely
+# starts with it is still unexpected.
+known_re="$(printf '%s' "$KNOWN_FAILURE" | sed 's/[][\\.*^$|+?(){}]/\\&/g')"
+fail_lines="$(grep -E '^[[:space:]]*FAIL[[:space:]]' "$vitest_log" || true)"
+known_lines="$(printf '%s\n' "$fail_lines" | grep -E "> $known_re[[:space:]]*\$" || true)"
+unexpected_lines="$(printf '%s\n' "$fail_lines" | grep -vE "> $known_re[[:space:]]*\$" | grep -v '^$' || true)"
 vitest_note=""
+vitest_status="$vitest_exit"
 if [ "$vitest_exit" -eq 0 ]; then
-  gate_status[vitest]=0
+  vitest_status=0
 elif [ -n "$known_lines" ] && [ -z "$unexpected_lines" ]; then
-  gate_status[vitest]=0
-else
-  gate_status[vitest]="$vitest_exit"
-  if [ -z "$fail_lines" ]; then
-    vitest_note="vitest exited $vitest_exit with no parsed failures; see $vitest_log"
-  fi
+  vitest_status=0
+elif [ -z "$fail_lines" ]; then
+  vitest_note="vitest exited $vitest_exit with no parsed failures; see $vitest_log"
 fi
-if [ "${gate_status[vitest]}" -eq 0 ]; then
+record_gate vitest "$vitest_status"
+if [ "$vitest_status" -eq 0 ]; then
   echo "[gate] vitest: PASS"
 else
   echo "[gate] vitest: FAIL (exit $vitest_exit; log $vitest_log)"
@@ -206,13 +237,15 @@ fi
 echo
 echo "Summary for $tag on $scratch"
 all_passed=1
+index=0
 for label in "${gate_order[@]}"; do
-  if [ "${gate_status[$label]}" -eq 0 ]; then
+  if [ "${gate_results[$index]}" -eq 0 ]; then
     echo "  $label: PASS"
   else
     echo "  $label: FAIL"
     all_passed=0
   fi
+  index=$((index + 1))
 done
 if [ -n "$vitest_note" ]; then
   echo "  $vitest_note"

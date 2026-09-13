@@ -55,11 +55,17 @@ const npxStub = `#!/usr/bin/env bash
 printf '%s %s\\n' "$(basename "$0")" "$*" >> "$FIXTURE_CALLS_LOG"
 case "\${STUB_VITEST_MODE:-pass}" in
   known)
+    echo "     × removes only the observed version of a file 9ms"
     echo " FAIL  test/local-host.test.ts > ${knownFailure}"
     exit 1 ;;
   extra)
+    echo "     × removes only the observed version of a file 9ms"
+    echo "     × breaks 2ms"
     echo " FAIL  test/local-host.test.ts > ${knownFailure}"
     echo " FAIL  test/other.test.ts > other > breaks"
+    exit 1 ;;
+  prefix)
+    echo " FAIL  test/local-host.test.ts > ${knownFailure} when the host reconnects"
     exit 1 ;;
   crash)
     echo "Error: failed to load config"
@@ -255,6 +261,15 @@ describe('sync-upstream-tag.sh', () => {
     expect(result.stdout).toContain('Known pre-existing failure')
   })
 
+  it('treats a longer test name that starts with the known one as unexpected', async () => {
+    const fixture = await createFixture({ conflict: false })
+    const result = fixture.run([], { STUB_VITEST_MODE: 'prefix' })
+    expect(result.status).toBe(1)
+    expect(result.stdout).toContain('vitest: FAIL')
+    expect(result.stdout).toContain('Unexpected test failures:')
+    expect(result.stdout).not.toContain('Known pre-existing failure')
+  })
+
   it('fails closed when vitest exits non-zero with no FAIL lines', async () => {
     const fixture = await createFixture({ conflict: false })
     const result = fixture.run([], { STUB_VITEST_MODE: 'crash' })
@@ -277,12 +292,58 @@ describe('sync-upstream-tag.sh', () => {
 
     const unknown = fixture.run(['v9.9.9'])
     expect(unknown.status).toBe(2)
+
+    const peeled = fixture.run(['v0.2.0^{}'])
+    expect(peeled.status).toBe(2)
+    expect(peeled.stderr).toContain('not a valid tag name')
+    expect(scratchBranches(fixture)).toHaveLength(1)
+  })
+
+  it('ignores local and fork-only v* tags when picking the newest release', async () => {
+    const fixture = await createFixture({ conflict: false })
+    fixture.git(fixture.work, 'tag', 'v9.9.9-local', 'feat/beads-panel')
+    fixture.git(fixture.work, 'push', '-q', 'fork', 'refs/tags/v9.9.9-local:refs/tags/v9.9.8-fork')
+    fixture.git(fixture.work, 'tag', '-d', 'v9.9.9-local')
+    const withLocal = fixture.run([])
+    expect(withLocal.status).toBe(0)
+    expect(withLocal.stdout).not.toContain('already merged')
+    expect(scratchBranches(fixture)).toHaveLength(1)
+    expect(scratchBranches(fixture)[0]).toMatch(/^sync\/v0\.2\.0-/)
+    expect(fixture.git(fixture.work, 'tag', '--list', 'v9.9.8-fork').trim()).toBe('v9.9.8-fork')
+  })
+
+  it('refuses before branching when an untracked file would be overwritten', async () => {
+    const fixture = await createFixture({ conflict: false })
+    await writeFile(join(fixture.work, 'src', 'main', 'ipc.ts.orig'), 'scratch\n')
+    await mkdir(join(fixture.work, 'docs'))
+    await writeFile(join(fixture.work, 'docs', 'new.md'), 'local draft\n')
+    const upstream = join(fixture.root, 'upstream')
+    await mkdir(join(upstream, 'docs'))
+    await writeFile(join(upstream, 'docs', 'new.md'), 'upstream doc\n')
+    fixture.git(upstream, 'add', 'docs/new.md')
+    fixture.git(upstream, 'commit', '-q', '-m', 'add doc')
+    fixture.git(upstream, 'tag', 'v0.3.0')
+    fixture.git(upstream, 'push', '-q', fixture.upstreamBare, 'main', 'refs/tags/v0.3.0')
+
+    const result = fixture.run()
+    expect(result.status).toBe(2)
+    expect(result.stderr).toContain('untracked files would be overwritten')
+    expect(result.stderr).toContain('docs/new.md')
+    expect(result.stderr).not.toContain('ipc.ts.orig')
+    expect(scratchBranches(fixture)).toEqual([])
+    expect(fixture.git(fixture.work, 'branch', '--show-current').trim()).toBe('feat/beads-panel')
   })
 
   it('stops on conflicts and groups wiring files', async () => {
     const fixture = await createFixture({ conflict: true })
+    const refsBefore = {
+      upstream: fixture.git(fixture.upstreamBare, 'for-each-ref'),
+      fork: fixture.git(fixture.forkBare, 'for-each-ref'),
+    }
     const result = fixture.run()
     expect(result.status).toBe(1)
+    expect(fixture.git(fixture.upstreamBare, 'for-each-ref')).toBe(refsBefore.upstream)
+    expect(fixture.git(fixture.forkBare, 'for-each-ref')).toBe(refsBefore.fork)
 
     const wiringIndex = result.stdout.indexOf('Overlay wiring files')
     const otherIndex = result.stdout.indexOf('Other conflicted files')
@@ -300,9 +361,7 @@ describe('sync-upstream-tag.sh', () => {
     expect(existsSync(fixture.callsLog)).toBe(false)
   })
 
-  it('never pushes and the old push-and-rerere script is gone', async () => {
-    const script = await readFile(scriptPath, 'utf8')
-    expect(script).not.toMatch(/git push|--force/)
+  it('the old push-and-rerere script is gone', () => {
     expect(existsSync(join(repoRoot, 'scripts', 'sync-upstream.sh'))).toBe(false)
   })
 })

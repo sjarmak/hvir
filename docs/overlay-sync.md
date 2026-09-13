@@ -24,15 +24,18 @@ bash scripts/sync-upstream-tag.sh v0.2.3
 ```
 
 Preflight, all hard failures (exit 2): no uncommitted changes to tracked files
-(untracked files do not block, but commit or stash untracked overlay work anyway so
-the merge cannot trip over a path it needs); `rerere.enabled` set explicitly to
-`false`; remotes `origin` and `fork` configured; `feat/beads-panel` present locally.
+(untracked files do not block unless the tag would write one of them, in which case
+the script names the paths and stops before branching); `rerere.enabled` set
+explicitly to `false`; remotes `origin` and `fork` configured; `feat/beads-panel`
+present locally; an explicit tag argument must be a plain tag name. The script
+needs only bash 3.2, so the macOS system bash runs it.
 Env overrides `HVIR_SYNC_UPSTREAM_REMOTE`, `HVIR_SYNC_FORK_REMOTE`,
 `HVIR_SYNC_OVERLAY_BRANCH`, `HVIR_SYNC_NPM`, `HVIR_SYNC_NPX` exist for the test
 fixture only.
 
-The script fetches both remotes, picks the newest `v*` tag by version sort (pass the
-tag explicitly if a pre-release sorts above the release you want), and exits 0 with
+The script fetches both remotes, picks the newest `v*` tag by version sort among the
+tags `origin` publishes (a local or fork-only tag is never a candidate; pass the tag
+explicitly if a pre-release sorts above the release you want), and exits 0 with
 "already merged" when the tag is already an ancestor of the overlay branch.
 Otherwise it creates `sync/<tag>-<utc timestamp>` off `feat/beads-panel` and runs
 `git merge --no-ff <tag>` there. The overlay branch itself is never modified.
