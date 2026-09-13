@@ -43,10 +43,24 @@ function workIdFilter(): string | undefined {
   return spec.filters.find((filter) => filter.column === 'gc.work.id')?.value
 }
 
-async function settle(): Promise<void> {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  })
+/**
+ * Wait for the digest to resolve rather than for one tick: how long it takes
+ * depends on worker load. Each poll flushes React inside its own act, since
+ * state set while an act is still pending is not committed until it ends.
+ */
+async function settle(until: () => void): Promise<void> {
+  const deadline = Date.now() + 2000
+  for (;;) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    })
+    try {
+      until()
+      return
+    } catch (failure) {
+      if (Date.now() > deadline) throw failure
+    }
+  }
 }
 
 describe('BeadTraceLink', () => {
@@ -55,7 +69,7 @@ describe('BeadTraceLink', () => {
       root.render(createElement(BeadTraceLink, { config: CONFIG, rig: 'mem', beadId: 'mem-42' }))
     })
     expect(host.querySelector('a')).toBeNull()
-    await settle()
+    await settle(() => expect(host.querySelector('a')).not.toBeNull())
     const anchors = host.querySelectorAll('a')
     expect(anchors).toHaveLength(1)
     expect(anchors[0]?.getAttribute('target')).toBe('_blank')
@@ -68,12 +82,11 @@ describe('BeadTraceLink', () => {
     act(() => {
       root.render(createElement(BeadTraceLink, { config: CONFIG, rig: 'mem', beadId: 'mem-42' }))
     })
-    await settle()
+    await settle(() => expect(workIdFilter()).toBe(expectedHash('mem-42')))
     act(() => {
       root.render(createElement(BeadTraceLink, { config: CONFIG, rig: 'mem', beadId: 'mem-43' }))
     })
-    await settle()
-    expect(workIdFilter()).toBe(expectedHash('mem-43'))
+    await settle(() => expect(workIdFilter()).toBe(expectedHash('mem-43')))
   })
 
   it('unmounts before the digest resolves without throwing or logging', async () => {
@@ -81,7 +94,9 @@ describe('BeadTraceLink', () => {
       root.render(createElement(BeadTraceLink, { config: CONFIG, rig: 'mem', beadId: 'mem-42' }))
     })
     act(() => root.unmount())
-    await settle()
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
     expect(host.querySelector('a')).toBeNull()
     root = createRoot(host)
   })

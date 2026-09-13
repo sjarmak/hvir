@@ -64,9 +64,16 @@ describe('useAnalyticsConfig', () => {
     expect(seen).toEqual(CONFIG)
   })
 
-  it('stays undefined, silently, when the invoke fails', async () => {
-    invoke.mockImplementation(() => Promise.reject(new Error('bridge down')))
+  it('stays undefined when the invoke fails, warns, and re-asks on the next enable', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    invoke.mockImplementationOnce(() => Promise.reject(new Error('bridge down')))
     await render(true)
     expect(seen).toBeUndefined()
+    expect(warn).toHaveBeenCalledTimes(1)
+
+    await render(false)
+    await render(true)
+    expect(invoke).toHaveBeenCalledTimes(2)
+    expect(seen).toEqual(CONFIG)
   })
 })

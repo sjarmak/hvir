@@ -526,11 +526,50 @@ describe('CrewSection observability links', () => {
     expect(anchors(none, 'Trace')).toHaveLength(0)
   })
 
-  it('renders neither link for a city-scoped crew with no rig', () => {
+  it('renders neither link for a city-scoped crew, even though it names the HQ rig', () => {
+    // gascity-service resolves the city root through a rig, so a city-scoped
+    // response still carries rigName; filtering every member on it would match
+    // nothing.
     const response = base().response as GasCityCrew
-    const { rigName: _rigName, ...cityWide } = { ...response, scope: 'city' as const }
-    const markup = render(base({ response: cityWide }))
+    const markup = render(base({ response: { ...response, scope: 'city', rigName: 'hq' } }))
     expect(anchors(markup, 'Analytics')).toHaveLength(0)
     expect(anchors(markup, 'Trace')).toHaveLength(0)
+  })
+
+  it('gives the city lead in a rig workspace no Trace link unless gc projects its rig', () => {
+    const mayor = (rig?: string) =>
+      member({
+        key: 'gc-9',
+        tier: 'lead',
+        label: 'mayor',
+        target: 'mayor',
+        cityLead: true,
+        session: { id: 'gc-9', name: 'mayor', state: 'active', ...(rig ? { rig } : {}) },
+      })
+    const unprojected = render(base({ response: crew([mayor()]) }))
+    expect(anchors(unprojected, 'Trace')).toHaveLength(0)
+    expect(anchors(unprojected, 'Analytics')).toHaveLength(1)
+
+    const projected = render(base({ response: crew([mayor('gas-city')]) }))
+    const [traceTag] = anchors(projected, 'Trace')
+    expect(filtersOf(hrefOf(traceTag as string))).toEqual({
+      'gen_ai.agent.name': 'gas-city.mayor',
+      'gc.rig': 'gas-city',
+    })
+  })
+
+  it('prefers the rig gc projects on a session over the workspace rig', () => {
+    const markup = render(
+      base({
+        response: crew([
+          member({ session: { id: 'gc-1', name: 'x', state: 'active', template: 'polecat', rig: 'other' } }),
+        ]),
+      }),
+    )
+    const [traceTag] = anchors(markup, 'Trace')
+    expect(filtersOf(hrefOf(traceTag as string))).toEqual({
+      'gen_ai.agent.name': 'other.polecat',
+      'gc.rig': 'other',
+    })
   })
 })

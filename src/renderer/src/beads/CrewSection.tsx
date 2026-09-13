@@ -74,8 +74,10 @@ export function CrewSection({
 
   const view = buildCrewView(response, issues)
   if (view.total === 0) return null
-  // Only a rig-scoped crew has a rig to filter on; the city view links nowhere.
-  const rig = response.rigName
+  // Only a rig-scoped crew has a rig to filter on. A city-scoped response still
+  // carries the HQ rig it was resolved from, which would filter every member on
+  // the wrong rig, so the city view links nowhere.
+  const rig = response.scope === 'rig' ? response.rigName : undefined
 
   return (
     <div className="beads-section crew-section">
@@ -254,11 +256,16 @@ export function CrewSection({
   /**
    * The member's Honeycomb link, as a plain anchor: the main window routes
    * every window-open to the OS browser. Absent when the name could not have
-   * been exported, so no link ever opens a query gas-city cannot match.
+   * been exported, so no link ever opens a query gas-city cannot match. The
+   * rig gc projects on the session wins over the workspace rig; the city lead
+   * shown inside a rig workspace exports under the HQ rig, which the response
+   * does not name, so it gets no link unless gc projects its rig.
    */
   function renderTrace({ member }: CrewCard): ReactElement | null {
-    if (!analytics?.honeycomb || rig === undefined || !member.session) return null
-    const href = sessionTraceUrl(analytics.honeycomb, rig, member.session)
+    if (!analytics?.honeycomb || !member.session) return null
+    const memberRig = member.session.rig ?? (member.cityLead === true ? undefined : rig)
+    if (memberRig === undefined) return null
+    const href = sessionTraceUrl(analytics.honeycomb, memberRig, member.session)
     if (href === undefined) return null
     return (
       <a
@@ -266,7 +273,7 @@ export function CrewSection({
         href={href}
         target="_blank"
         rel="noopener noreferrer"
-        title={traceLinkTitle(agentName(rig, member.session) ?? member.label)}
+        title={traceLinkTitle(agentName(memberRig, member.session) ?? member.label)}
       >
         Trace
       </a>

@@ -7,8 +7,9 @@ import type { GasCityAnalyticsConfig } from '../../../shared'
  * first time the section is on screen. The environment does not change while
  * the app runs, so there is nothing to poll, and an answer that arrives after
  * the section is hidden again is kept for when it returns. A failed read leaves
- * the config undefined and no link renders: the panel degrades to what it
- * showed before these links existed, silently, the same way the crew probe does.
+ * the config undefined and no link renders, is logged once, and is asked again
+ * the next time the section is enabled, so one transient bridge failure does
+ * not hide the links for the rest of the app session.
  */
 export function useAnalyticsConfig(enabled: boolean): GasCityAnalyticsConfig | undefined {
   const [config, setConfig] = useState<GasCityAnalyticsConfig>()
@@ -30,7 +31,10 @@ export function useAnalyticsConfig(enabled: boolean): GasCityAnalyticsConfig | u
       .then((result) => {
         if (mounted.current) setConfig(result)
       })
-      .catch(() => undefined)
+      .catch((reason: unknown) => {
+        asked.current = false
+        console.warn('[beads] analytics config unavailable; links hidden until re-asked', reason)
+      })
   }, [enabled])
 
   return config
