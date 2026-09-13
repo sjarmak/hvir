@@ -1,11 +1,11 @@
 ---
 compass_area: "gascity — read-only gc crew bridge (fork-only)"
 area_path: "src/main/gascity/"
-generated: "2026-07-19"
+generated: "2026-09-12"
 # Staleness stamp — machine-readable so a refresh can test drift without a model.
 # `sources` are area-relative paths (relative to THIS file's directory). Recompute:
 #   node ~/.claude/skills/project-compass/compass-hash.mjs src/main/gascity/COMPASS.md
-sources_hash: "sha256-16:c6bd71b5c3bc16ed"
+sources_hash: "sha256-16:ca6ba5c6ec4f8d55"
 sources:
   - gascity-service.ts
   - gascity-context.ts
@@ -20,6 +20,10 @@ sources:
   - ../../renderer/src/beads/gascity-commands.ts
   - ../../renderer/src/beads/use-gascity-crew.ts
   - ../../renderer/src/beads/CrewSection.tsx
+  - ../../shared/gascity-analytics.ts
+  - ../../renderer/src/beads/analytics-links.ts
+  - ../../renderer/src/beads/use-analytics-config.ts
+  - ../../renderer/src/beads/BeadTraceLink.tsx
 ---
 
 # Compass: gascity — read-only gc crew bridge (fork-only)
@@ -66,6 +70,11 @@ pack-stamped lead that a rig override suspended drops out, leaving the hand-defi
 - **`src/renderer/src/beads/gascity-commands.ts`** — the gc command vocabulary
   (attach / peek / reset / handoff) and the one place a target is shell-quoted.
 - **`src/renderer/src/beads/crew-model.ts`** — the bead join and tier grouping, pure.
+- **`src/shared/gascity-analytics.ts`** — the non-secret Honeycomb / Omni link configuration,
+  read from the main-process environment (`gascity:analytics-config`). Overlay-only defaults
+  live here under an explicit header; no API key is ever read.
+- **`src/renderer/src/beads/analytics-links.ts`** — pure URL builders for the Trace and
+  Analytics links; the one place the gas-city identity facts below are encoded.
 
 ## How it connects
 
@@ -249,6 +258,40 @@ pack-stamped lead that a rig override suspended drops out, leaving the hand-defi
 - **Actions are typed commands in a real terminal, never background invocations.** That is
   what keeps `reset` and `handoff` visible and interruptible. `gc handoff` requires a
   subject, which is why the command carries one.
+
+## Observability links (Trace / Analytics)
+
+- **Links are plain anchors; there is no open-link IPC.** `target="_blank"` on an `<a>` is
+  routed by the main window's `setWindowOpenHandler` (`electron-window-manager.ts`) through
+  `isSafeExternalUrl` to `shell.openExternal`, the same path rendered-document links use.
+  If an upstream merge ever removes that handler the links would open an in-app window;
+  the crew-section test asserts `target`/`rel` but cannot assert the main-side route.
+- **`gen_ai.agent.name` is `<rig>.<agent>`, not the session name.** gas-city sets agent to
+  `_gc_seat_trace_safe_component(basename "$GC_AGENT")` and joins it to the rig
+  (gas-city `bin/lib/gc-seat-tracing.sh:43-53`, `:317`). hvir approximates the agent with the
+  basename of `session.template ?? session.name`, applies the same `[A-Za-z0-9_.-]{1,64}`
+  rule, and renders no Trace link when either half fails it: a link that could never match
+  is worse than none. Where gc's template differs from `GC_AGENT` the query opens correctly
+  formed but empty; the `gc.rig` filter stays so the agent filter can be dropped in the UI.
+- **A bead id never appears on a span.** `gc.session_name` / `gc.root_bead_id` are bd
+  metadata keys, absent from the dataset. The only bead signal is
+  `gc.work.id = sha256(json.dumps(["work", store_ref, id], separators=(",",":"),
+  ensure_ascii=True))` (`bin/honeycomb_lifecycle.py:31-33,68`) with `store_ref` being
+  `rig:<name>` or `city:<name>` (`bin/honeycomb_work_observation.py:102`), and it is only on
+  `city.*` event spans (the collector strips it from model/tool spans). `BeadTraceLink`
+  hashes under `rig:<rigName>`; a city-owned bead hashes under a city name hvir does not
+  know and opens empty.
+- **Absence rule, applied uniformly:** unset or blank variable means the overlay default is
+  shown; an explicit invalid value, or the literal `off`, hides that surface. `off` is spelled
+  out because it would otherwise pass the path-segment rule and become a Honeycomb 404.
+- **No health strip.** No production main module performs outbound HTTP, ADR-013 keeps
+  network bytes out of renderer IPC, and gas-city documents `HONEYCOMB_API_KEY` as
+  ingest/boards-only with no Query Data API access. Because no analytics value is rendered,
+  the read-time convention is met by each link stating its window (last 2h from the click)
+  rather than a timestamp on a cached number.
+- **Omni rig filter is opt-in.** No mart carries a rig column and the dashboard/filter ids are
+  not recorded locally, so without `OMNI_DASHBOARD_ID` and `OMNI_RIG_FILTER_ID` the link lands
+  on the model home unfiltered.
 
 ## Failure modes seen here
 

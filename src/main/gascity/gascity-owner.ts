@@ -10,5 +10,5 @@ import { GasCityService } from './gascity-service'
 export function ownGasCityService(
   getProject: () => { readonly host: ProjectHost; readonly root: HostPath },
 ): GasCityService {
-  return new GasCityService({ getProject })
+  return new GasCityService({ getProject, env: process.env })
 }

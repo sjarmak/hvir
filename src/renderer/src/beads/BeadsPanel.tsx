@@ -9,12 +9,13 @@ import {
   type BeadsView,
   type GateItem,
 } from './beads-model'
-import { beadDetail, beadSignals } from './bead-card'
+import { beadDetail, beadSignals, type BeadTraceScope } from './bead-card'
 import type { BeadActionRequest } from './bead-commands'
 import { BeadCreateForm } from './bead-create-form'
 import { createVisibilityRefresh } from './beads-refresh'
 import { CrewSection } from './CrewSection'
 import type { GasCityAction } from './gascity-commands'
+import { useAnalyticsConfig } from './use-analytics-config'
 import { useGasCityCrew } from './use-gascity-crew'
 import './beads.css'
 
@@ -76,6 +77,14 @@ export function BeadsPanel({
     hidden,
     includeInternals: showInternals,
   })
+  const analytics = useAnalyticsConfig(connected && !hidden)
+  const traceScope: BeadTraceScope | undefined =
+    analytics?.honeycomb &&
+    crew.response?.available === true &&
+    crew.response.scope === 'rig' &&
+    crew.response.rigName !== undefined
+      ? { config: analytics.honeycomb, rig: crew.response.rigName }
+      : undefined
 
   const refresh = useCallback(async (): Promise<void> => {
     // Non-reentrant: a poll tick, focus, or watch event that arrives while a
@@ -230,6 +239,7 @@ export function BeadsPanel({
         onToggle={() => toggleSection('crew')}
         onAction={onCrewAction}
         onSelectBead={focusBead}
+        analytics={analytics}
       />
     )
   }
@@ -359,7 +369,11 @@ export function BeadsPanel({
           </span>
           <span className="beads-type">{issue.issueType}</span>
         </button>
-        {beadSignals(card, onCrewAction && ((worker) => onCrewAction('attach', worker)))}
+        {beadSignals(
+          card,
+          onCrewAction && ((worker) => onCrewAction('attach', worker)),
+          traceScope,
+        )}
         {open ? beadDetail(card, onBeadAction) : null}
       </li>
     )

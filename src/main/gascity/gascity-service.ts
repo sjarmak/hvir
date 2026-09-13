@@ -4,6 +4,8 @@ import {
   hostPathEquals,
   isHostPathShape,
   joinHostPath,
+  analyticsConfigFromEnv,
+  type GasCityAnalyticsConfig,
   type GasCityCrewRequest,
   type GasCityCrewResponse,
   type GasCityProbeResponse,
@@ -54,6 +56,8 @@ export interface GasCityServiceDeps {
   readonly getProject: () => { readonly host: ProjectHost; readonly root: HostPath }
   /** Injectable for tests; defaults to `Date.now`. Drives both read caches. */
   readonly now?: () => number
+  /** Process environment for the non-secret analytics link configuration. */
+  readonly env?: Readonly<Record<string, string | undefined>>
 }
 
 /** A gc read that failed, carrying the reason the panel should show. */
@@ -219,6 +223,14 @@ export class GasCityService {
   async probe(requestedRoot: HostPath): Promise<GasCityProbeResponse> {
     const { host, root } = this.activeProject(requestedRoot)
     return { hasCity: await isInCity(host, root) }
+  }
+
+  /**
+   * Where the Honeycomb and Omni links point. Pure over the environment: no
+   * exec, no workspace, so no `activeProject` guard. Never carries a key.
+   */
+  analyticsConfig(): GasCityAnalyticsConfig {
+    return analyticsConfigFromEnv(this.deps.env ?? {})
   }
 
   /**

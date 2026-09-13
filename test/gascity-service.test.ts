@@ -439,3 +439,26 @@ rig = "mem"
     expect(errors).toHaveBeenCalled()
   })
 })
+
+describe('analyticsConfig', () => {
+  it('returns the overlay defaults when built without an environment', () => {
+    const { host, exec } = stubHost({})
+    expect(service(host).analyticsConfig()).toEqual({
+      honeycomb: { team: 'steph.jarmak', environment: 'test', dataset: 'gas-city-agent' },
+      omni: { baseUrl: 'https://sjarmak.omniapp.co' },
+    })
+    expect(exec).not.toHaveBeenCalled()
+  })
+
+  it('reads the injected environment and never touches the host', () => {
+    const { host, exec } = stubHost({})
+    const configured = new GasCityService({
+      getProject: () => ({ host, root: ROOT }),
+      env: { HONEYCOMB_TEAM: 'acme', OMNI_BASE_URL: 'off' },
+    })
+    expect(configured.analyticsConfig()).toEqual({
+      honeycomb: { team: 'acme', environment: 'test', dataset: 'gas-city-agent' },
+    })
+    expect(exec).not.toHaveBeenCalled()
+  })
+})

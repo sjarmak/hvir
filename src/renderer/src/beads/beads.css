@@ -247,6 +247,17 @@
   color: var(--text-muted);
 }
 
+.beads-trace {
+  color: var(--text-muted);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.beads-trace:hover {
+  color: var(--text-strong);
+  text-decoration-style: solid;
+}
+
 .beads-owner-attach {
   border: 0;
   background: none;

@@ -9,6 +9,7 @@ import {
   asHostId,
   hostPath,
   type BeadIssue,
+  type GasCityAnalyticsConfig,
   type GasCityCrew,
   type GasCityCrewMember,
 } from '../src/shared'
@@ -411,5 +412,100 @@ describe('CrewSection rendering', () => {
       onSelectBead: noop,
     })
     expect(markup).not.toContain('crew-held')
+  })
+})
+
+describe('CrewSection observability links', () => {
+  function render(props: Parameters<typeof CrewSection>[0]): string {
+    return renderToStaticMarkup(createElement(CrewSection, props))
+  }
+
+  const noop = (): void => undefined
+  const analytics: GasCityAnalyticsConfig = {
+    honeycomb: { team: 'steph.jarmak', environment: 'test', dataset: 'gas-city-agent' },
+    omni: { baseUrl: 'https://sjarmak.omniapp.co' },
+  }
+
+  /** The opening tags of every anchor whose text is exactly `label`. */
+  function anchors(markup: string, label: string): string[] {
+    return [...markup.matchAll(new RegExp(`(<a [^>]*>)${label}</a>`, 'g'))].map(
+      (match) => match[1] as string,
+    )
+  }
+
+  function hrefOf(tag: string): string {
+    const href = /href="([^"]*)"/.exec(tag)?.[1] ?? ''
+    return href.replaceAll('&amp;', '&')
+  }
+
+  function filtersOf(href: string): Record<string, string> {
+    const raw = new URL(href).searchParams.get('query') ?? ''
+    const spec = JSON.parse(raw) as { filters: { column: string; value: string }[] }
+    return Object.fromEntries(spec.filters.map((filter) => [filter.column, filter.value]))
+  }
+
+  function base(overrides: Partial<Parameters<typeof CrewSection>[0]> = {}) {
+    return {
+      response: crew([member({ session: { id: 'gc-1', name: 'x', state: 'active', template: 'mem/polecat' } })]),
+      issues: [],
+      collapsed: false,
+      onToggle: noop,
+      onAction: noop,
+      analytics,
+      ...overrides,
+    }
+  }
+
+  it('renders an Analytics anchor beside, not inside, the header button', () => {
+    const markup = render(base())
+    const [analyticsTag] = anchors(markup, 'Analytics')
+    expect(analyticsTag).toBeDefined()
+    expect(hrefOf(analyticsTag as string).startsWith('https://sjarmak.omniapp.co')).toBe(true)
+    expect(analyticsTag).toContain('target="_blank"')
+    expect(analyticsTag).toContain('rel="noopener noreferrer"')
+    const button = /<button[^>]*class="beads-section-header"[^>]*>[\s\S]*?<\/button>/.exec(markup)
+    expect(button?.[0]).not.toContain('<a ')
+  })
+
+  it('renders a Trace anchor per member filtered on its agent name and rig', () => {
+    const markup = render(base())
+    const [traceTag] = anchors(markup, 'Trace')
+    expect(traceTag).toBeDefined()
+    expect(traceTag).toContain('target="_blank"')
+    expect(traceTag).toContain('rel="noopener noreferrer"')
+    expect(filtersOf(hrefOf(traceTag as string))).toEqual({
+      'gen_ai.agent.name': 'mem.polecat',
+      'gc.rig': 'mem',
+    })
+  })
+
+  it('suppresses the Trace anchor for a name gas-city would not have exported', () => {
+    const markup = render(
+      base({ response: crew([member({ session: { id: 'gc-1', name: 'a b', state: 'active' } })]) }),
+    )
+    expect(anchors(markup, 'Trace')).toHaveLength(0)
+    expect(anchors(markup, 'Analytics')).toHaveLength(1)
+  })
+
+  it('renders each surface only when its config is present', () => {
+    const noOmni = render(base({ analytics: { honeycomb: analytics.honeycomb } }))
+    expect(anchors(noOmni, 'Analytics')).toHaveLength(0)
+    expect(anchors(noOmni, 'Trace')).toHaveLength(1)
+
+    const noHoneycomb = render(base({ analytics: { omni: analytics.omni } }))
+    expect(anchors(noHoneycomb, 'Analytics')).toHaveLength(1)
+    expect(anchors(noHoneycomb, 'Trace')).toHaveLength(0)
+
+    const none = render(base({ analytics: undefined }))
+    expect(anchors(none, 'Analytics')).toHaveLength(0)
+    expect(anchors(none, 'Trace')).toHaveLength(0)
+  })
+
+  it('renders neither link for a city-scoped crew with no rig', () => {
+    const response = base().response as GasCityCrew
+    const { rigName: _rigName, ...cityWide } = { ...response, scope: 'city' as const }
+    const markup = render(base({ response: cityWide }))
+    expect(anchors(markup, 'Analytics')).toHaveLength(0)
+    expect(anchors(markup, 'Trace')).toHaveLength(0)
   })
 })

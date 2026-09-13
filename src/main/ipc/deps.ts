@@ -168,7 +168,7 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   /** Defaults to the Electron clipboard; scenarios override it to stay inert. */
   readonly systemClipboard?: SystemClipboardPort
   readonly beads: Pick<BeadsService, 'list' | 'probe' | 'watch' | 'unwatch'>
-  readonly gascity: Pick<GasCityService, 'crew' | 'probe'>
+  readonly gascity: Pick<GasCityService, 'crew' | 'probe' | 'analyticsConfig'>
   readonly updateAttention: (owner: RendererOwner, count: number) => void
   readonly updateWebPaneBindings: (owner: RendererOwner, bindings: KeybindingMap) => void
   readonly updateWebPaneFullPage: (owner: RendererOwner, paneId?: string) => void

@@ -8,6 +8,31 @@
   color: #b07fd4;
 }
 
+.crew-header-row {
+  display: flex;
+  align-items: center;
+}
+
+.crew-header-row .beads-section-header {
+  flex: 1;
+  min-width: 0;
+}
+
+.crew-analytics {
+  flex: none;
+  margin-right: 8px;
+  color: var(--text-muted);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.crew-analytics:hover {
+  color: var(--text-strong);
+  text-decoration-style: solid;
+}
+
 .crew-scope {
   color: var(--text-muted);
   font-size: 9px;
@@ -221,6 +246,10 @@
   font: inherit;
   font-size: 9px;
   cursor: pointer;
+}
+
+.crew-action-trace {
+  text-decoration: none;
 }
 
 .crew-action:hover {

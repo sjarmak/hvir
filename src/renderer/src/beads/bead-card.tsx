@@ -6,6 +6,8 @@ import {
   availableBeadActions,
   type BeadActionRequest,
 } from './bead-commands'
+import type { HoneycombLinkConfig } from '../../../shared'
+import { BeadTraceLink } from './BeadTraceLink'
 import type { BeadCard } from './beads-model'
 
 /**
@@ -15,10 +17,17 @@ import type { BeadCard } from './beads-model'
  * attach-worker / bead-action callbacks — lives here.
  */
 
-/** Compact per-card signals: parent outcome, liveness, blockers, unlocks. */
+/** The rig whose spans a bead's trace link filters on, when Honeycomb is configured. */
+export interface BeadTraceScope {
+  readonly config: HoneycombLinkConfig
+  readonly rig: string
+}
+
+/** Compact per-card signals: parent outcome, liveness, blockers, unlocks, trace. */
 export function beadSignals(
   card: BeadCard,
   onAttachWorker?: (worker: string) => void,
+  trace?: BeadTraceScope,
 ): ReactElement | null {
   const { issue } = card
   const bits: ReactElement[] = []
@@ -69,6 +78,11 @@ export function beadSignals(
           {elapsed}
         </span>
       ),
+    )
+  }
+  if (trace) {
+    bits.push(
+      <BeadTraceLink key="trace" config={trace.config} rig={trace.rig} beadId={issue.id} />,
     )
   }
   if (card.blockedBy.length > 0) {

@@ -1,6 +1,12 @@
 import type { ReactElement } from 'react'
 
-import type { BeadIssue, GasCityCrew, GasCityCrewResponse } from '../../../shared'
+import type {
+  BeadIssue,
+  GasCityAnalyticsConfig,
+  GasCityCrew,
+  GasCityCrewResponse,
+} from '../../../shared'
+import { agentName, omniAnalyticsUrl, sessionTraceUrl, traceLinkTitle } from './analytics-links'
 import { buildCrewView, type CrewCard, type CrewGroup, type HeldBead } from './crew-model'
 import {
   GAS_CITY_ACTIONS,
@@ -24,7 +30,13 @@ interface CrewSectionProps {
   readonly onAction: (action: GasCityAction, target: string) => void
   /** Focus a held bead's row in the bead sections; held chips are inert without it. */
   readonly onSelectBead?: (beadId: string) => void
+  /** Where the Trace and Analytics links point; a missing surface renders no link. */
+  readonly analytics?: GasCityAnalyticsConfig
 }
+
+const OMNI_HINT =
+  'Omni: Gas City Analytics (Neon marts, read-only; refreshed by the factory-analytics ' +
+  'order, read the snapshot provenance tile for the source window)'
 
 /**
  * The rig's crew, pinned above the bead sections: the workspace's permanent
@@ -40,6 +52,7 @@ export function CrewSection({
   onToggle,
   onAction,
   onSelectBead,
+  analytics,
 }: CrewSectionProps): ReactElement | null {
   // A workspace outside a Gas City, or one where gc is not installed, simply has
   // no crew — that is not an error worth a banner in the bead panel.
@@ -54,22 +67,37 @@ export function CrewSection({
 
   const view = buildCrewView(response, issues)
   if (view.total === 0) return null
+  // Only a rig-scoped crew has a rig to filter on; the city view links nowhere.
+  const rig = response.rigName
 
   return (
     <div className="beads-section crew-section">
-      <button
-        type="button"
-        className="beads-section-header"
-        aria-expanded={!collapsed}
-        onClick={onToggle}
-      >
-        <span className={`beads-caret${collapsed ? '' : ' expanded'}`}>▸</span>
-        <span className="beads-section-label beads-section-crew">Crew</span>
-        <span className="crew-scope" title={scopeHint(response.scope)}>
-          {response.scope === 'city' ? 'city-wide' : (response.rigName ?? 'this rig')}
-        </span>
-        <span className="beads-section-count">{view.total}</span>
-      </button>
+      <div className="crew-header-row">
+        <button
+          type="button"
+          className="beads-section-header"
+          aria-expanded={!collapsed}
+          onClick={onToggle}
+        >
+          <span className={`beads-caret${collapsed ? '' : ' expanded'}`}>▸</span>
+          <span className="beads-section-label beads-section-crew">Crew</span>
+          <span className="crew-scope" title={scopeHint(response.scope)}>
+            {response.scope === 'city' ? 'city-wide' : (response.rigName ?? 'this rig')}
+          </span>
+          <span className="beads-section-count">{view.total}</span>
+        </button>
+        {analytics?.omni && rig !== undefined ? (
+          <a
+            className="crew-analytics"
+            href={omniAnalyticsUrl(analytics.omni, rig)}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={OMNI_HINT}
+          >
+            Analytics
+          </a>
+        ) : null}
+      </div>
       {collapsed ? null : (
         <>
           {view.leads.map((card) => renderCard(card, true))}
@@ -179,6 +207,7 @@ export function CrewSection({
               {GAS_CITY_ACTION_LABELS[action]}
             </button>
           ))}
+          {renderTrace(card)}
         </div>
       </div>
     )
@@ -205,6 +234,28 @@ export function CrewSection({
           <span className="crew-held-more">+{held.length - HELD_SHOWN}</span>
         ) : null}
       </div>
+    )
+  }
+
+  /**
+   * The member's Honeycomb link, as a plain anchor: the main window routes
+   * every window-open to the OS browser. Absent when the name could not have
+   * been exported, so no link ever opens a query gas-city cannot match.
+   */
+  function renderTrace({ member }: CrewCard): ReactElement | null {
+    if (!analytics?.honeycomb || rig === undefined || !member.session) return null
+    const href = sessionTraceUrl(analytics.honeycomb, rig, member.session)
+    if (href === undefined) return null
+    return (
+      <a
+        className="crew-action crew-action-trace"
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={traceLinkTitle(agentName(rig, member.session) ?? member.label)}
+      >
+        Trace
+      </a>
     )
   }
 }
