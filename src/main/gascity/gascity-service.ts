@@ -31,6 +31,7 @@ import { deriveCrew } from './gascity-crew'
 import { HostReadCache, SESSION_TTL_MS } from './gascity-host-cache'
 import {
   hasProjectedTierFields,
+  isRecord,
   parseRigListOutput,
   parseSessionListOutput,
   rigForPath,
@@ -423,8 +424,19 @@ async function hasMarker(
   return false
 }
 
+/**
+ * gc reports failures two ways: a one-line message, or (under `--json`) a
+ * structured envelope whose `message` carries the same text. Both classify the
+ * same, so the envelope is unwrapped first and the rest reads the message.
+ *
+ * A store gc never provisioned is the second "no city" signal. gc accepts a
+ * stray `.gc/` as a city marker and only then fails on the first bd read, with
+ * bd rejecting the `session` issue type that `gc init` would have registered.
+ * That is a plain beads workspace, not a broken city, so it hides like one.
+ */
 function classifyFailure(stderr: string): GasCityUnavailable {
-  if (/not in a city directory|no city\.toml/i.test(stderr)) {
+  const message = unwrapErrorEnvelope(stderr)
+  if (/not in a city directory|no city\.toml|invalid issue type "session"/i.test(message)) {
     return {
       available: false,
       reason: 'no-city',
@@ -434,8 +446,19 @@ function classifyFailure(stderr: string): GasCityUnavailable {
   return {
     available: false,
     reason: 'error',
-    message: stderr === '' ? 'gc exited with a non-zero status.' : stderr,
+    message: message === '' ? 'gc exited with a non-zero status.' : message,
   }
+}
+
+function unwrapErrorEnvelope(stderr: string): string {
+  if (!stderr.startsWith('{')) return stderr
+  try {
+    const parsed: unknown = JSON.parse(stderr)
+    if (isRecord(parsed) && typeof parsed.message === 'string') return parsed.message
+  } catch {
+    // Not an envelope after all; the raw text is the best diagnosis available.
+  }
+  return stderr
 }
 
 /**

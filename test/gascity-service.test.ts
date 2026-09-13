@@ -137,6 +137,43 @@ describe('GasCityService', () => {
     expect(errors).toHaveBeenCalled()
   })
 
+  it('treats a beads store gc never provisioned as outside a city', async () => {
+    // gc accepts a stray `.gc/` as a city marker, then fails on the first bd
+    // read because the store has none of gc's custom issue types. That is a
+    // plain beads workspace, not a broken city, so the section stays hidden.
+    const errors = captureErrors()
+    const envelope = JSON.stringify({
+      schema_version: '1',
+      level: 'error',
+      code: 'session_list_failed',
+      message:
+        'gc session list: listing sessions: listing session beads by type: bd list both tiers: bd list: bd list: exit status 1: Error: invalid issue type "session" (valid: bug, feature, task, epic, chore, decision)',
+      exit_code: 1,
+    })
+    const { host } = stubHost({ 'session list': execResult(1, '', envelope) })
+    const crew = await service(host).crew({ root: ROOT })
+    expect(crew).toMatchObject({ available: false, reason: 'no-city' })
+    expect(errors).toHaveBeenCalled()
+  })
+
+  it('surfaces the message from a gc JSON error envelope, not the raw envelope', async () => {
+    captureErrors()
+    const envelope = JSON.stringify({
+      schema_version: '1',
+      level: 'error',
+      code: 'session_list_failed',
+      message: 'gc session list: dolt server unreachable',
+      exit_code: 1,
+    })
+    const { host } = stubHost({ 'session list': execResult(1, '', envelope) })
+    const crew = await service(host).crew({ root: ROOT })
+    expect(crew).toEqual({
+      available: false,
+      reason: 'error',
+      message: 'gc session list: dolt server unreachable',
+    })
+  })
+
   it('degrades to workers when the rig and config reads fail', async () => {
     const errors = captureErrors()
     const { host } = stubHost({
