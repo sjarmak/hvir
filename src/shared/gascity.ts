@@ -114,6 +114,11 @@ export interface GasCityCrew {
   readonly scope: GasCityCrewScope
   /** The rig the workspace resolved to; absent when gc could not name one. */
   readonly rigName?: string
+  /**
+   * The city's hq rig; the city bead store is addressed as `city:<hqRigName>`
+   * downstream (gas-city handoff_store). Absent when gc could not name it.
+   */
+  readonly hqRigName?: string
   readonly diagnostics: GasCityCrewDiagnostics
 }
 

@@ -17,6 +17,7 @@ import {
   type GateItem,
 } from './beads-model'
 import { beadDetail, beadSignals, type BeadTraceScope } from './bead-card'
+import { beadStore } from './analytics-links'
 import { beadSectionKeys } from './bead-placement'
 import type { BeadActionRequest } from './bead-commands'
 import { BeadCreateForm } from './bead-create-form'
@@ -111,12 +112,11 @@ export function BeadsPanel({
     includeInternals: showInternals,
   })
   const analytics = useAnalyticsConfig(connected && !hidden)
+  // The store decides the work-id hash, so no store known means no link.
+  const store = beadStore(crew.response?.available === true ? crew.response : undefined)
   const traceScope: BeadTraceScope | undefined =
-    analytics?.honeycomb &&
-    crew.response?.available === true &&
-    crew.response.scope === 'rig' &&
-    crew.response.rigName !== undefined
-      ? { config: analytics.honeycomb, rig: crew.response.rigName }
+    analytics?.honeycomb && store !== undefined
+      ? { config: analytics.honeycomb, store }
       : undefined
   const placement = useMemo(
     () =>

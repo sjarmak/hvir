@@ -7,6 +7,7 @@ import {
   type BeadActionRequest,
 } from './bead-commands'
 import { isBeadId, type HoneycombLinkConfig } from '../../../shared'
+import type { BeadStore } from './analytics-links'
 import { BeadTraceLink } from './BeadTraceLink'
 import type { BeadCard } from './beads-model'
 
@@ -20,7 +21,7 @@ import type { BeadCard } from './beads-model'
 /** The rig whose spans a bead's trace link filters on, when Honeycomb is configured. */
 export interface BeadTraceScope {
   readonly config: HoneycombLinkConfig
-  readonly rig: string
+  readonly store: BeadStore
 }
 
 /** Compact per-card signals: parent outcome, liveness, blockers, unlocks, trace. */
@@ -82,7 +83,7 @@ export function beadSignals(
   }
   if (trace) {
     bits.push(
-      <BeadTraceLink key="trace" config={trace.config} rig={trace.rig} beadId={issue.id} />,
+      <BeadTraceLink key="trace" config={trace.config} store={trace.store} beadId={issue.id} />,
     )
   }
   if (card.blockedBy.length > 0) {

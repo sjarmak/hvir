@@ -157,10 +157,12 @@ describe('live gc config shapes', () => {
 
   it("reads an agent's rig from dir, leaving city-scope agents rig-less", () => {
     expect(LIVE_CONFIG.agents.find((agent) => agent.name === 'mem-pl')?.rig).toBe('mem')
-    expect(LIVE_CONFIG.agents.find((agent) => agent.name === 'mayor')?.rig).toBeUndefined()
+    expect(
+      LIVE_CONFIG.agents.find((agent) => agent.name === 'mayor')?.rig,
+    ).toBeUndefined()
   })
 
-  it("gives a rig lead its rig via the agent its template names", () => {
+  it('gives a rig lead its rig via the agent its template names', () => {
     // `[[named_session]] template = "mem-pl"` declares no dir of its own.
     expect(LIVE_CONFIG.namedSessions.find((n) => n.name === 'mem-pl')?.rig).toBe('mem')
     expect(LIVE_CONFIG.namedSessions.find((n) => n.name === 'mayor')?.rig).toBeUndefined()
@@ -187,6 +189,11 @@ describe('live gc crew derivation', () => {
       ...(rigName === undefined ? {} : { rigName }),
     })
   }
+
+  it('names the hq rig so the renderer can address the city bead store', () => {
+    expect(inWorkspace(LIVE_MEM, 'mem').hqRigName).toBe('hq')
+    expect(inWorkspace(LIVE_CITY, 'hq', true).hqRigName).toBe('hq')
+  })
 
   it('pins the mayor and shows this rig only, in a rig workspace', () => {
     const crew = inWorkspace(LIVE_MEM, 'mem')
@@ -302,7 +309,9 @@ describe('gc session list parsing', () => {
   it('detects gc-projected tier fields so the config read can be skipped', () => {
     const plain = parseSessionListOutput(JSON.stringify([sessionJson()]), HOST)
     const enriched = parseSessionListOutput(
-      JSON.stringify([sessionJson({ pool: 'mem-worker', configured_named_session: false })]),
+      JSON.stringify([
+        sessionJson({ pool: 'mem-worker', configured_named_session: false }),
+      ]),
       HOST,
     )
     expect(hasProjectedTierFields(plain)).toBe(false)

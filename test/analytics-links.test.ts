@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   agentName,
+  beadStore,
   beadTraceUrl,
   beadWorkId,
   escapeNonAscii,
@@ -40,7 +41,9 @@ describe('honeycombQueryUrl', () => {
       { column: 'gc.rig', op: '=', value: 'mem' },
     ])
     expect(
-      url.startsWith('https://ui.honeycomb.io/a%20b/environments/e%2F1/datasets/d/?query='),
+      url.startsWith(
+        'https://ui.honeycomb.io/a%20b/environments/e%2F1/datasets/d/?query=',
+      ),
     ).toBe(true)
     expect(querySpec(url)).toEqual({
       calculations: [{ op: 'COUNT' }],
@@ -91,13 +94,47 @@ describe('sessionTraceUrl', () => {
 })
 
 describe('beadTraceUrl', () => {
-  it('carries exactly the work id and rig filters', () => {
-    const url = beadTraceUrl(HONEYCOMB, 'mem', 'abc')
+  it('carries exactly the work id and rig filters for a rig store', () => {
+    const url = beadTraceUrl(HONEYCOMB, { kind: 'rig', name: 'mem' }, 'abc')
     expect(querySpec(url).filters).toEqual([
       { column: 'gc.work.id', op: '=', value: 'abc' },
       { column: 'gc.rig', op: '=', value: 'mem' },
     ])
     assertClean(url)
+  })
+
+  it('carries only the work id filter for a city store', () => {
+    const url = beadTraceUrl(HONEYCOMB, { kind: 'city', name: 'hq' }, 'abc')
+    expect(querySpec(url).filters).toEqual([
+      { column: 'gc.work.id', op: '=', value: 'abc' },
+    ])
+    assertClean(url)
+  })
+})
+
+describe('beadStore', () => {
+  const base = { available: true as const, members: [], tierSource: 'config' as const }
+  const diagnostics = { namedSessions: 0, pinned: 0, unmatched: [] }
+
+  it('is the rig store for a rig workspace that named its rig', () => {
+    expect(beadStore({ ...base, diagnostics, scope: 'rig', rigName: 'mem' })).toEqual({
+      kind: 'rig',
+      name: 'mem',
+    })
+  })
+
+  it('is the city store, named after the hq rig, for a city workspace', () => {
+    expect(
+      beadStore({ ...base, diagnostics, scope: 'city', rigName: 'hq', hqRigName: 'hq' }),
+    ).toEqual({ kind: 'city', name: 'hq' })
+  })
+
+  it('is unknown when the provenance cannot be named', () => {
+    expect(beadStore({ ...base, diagnostics, scope: 'rig' })).toBeUndefined()
+    expect(
+      beadStore({ ...base, diagnostics, scope: 'city', rigName: 'hq' }),
+    ).toBeUndefined()
+    expect(beadStore(undefined)).toBeUndefined()
   })
 })
 
@@ -115,7 +152,9 @@ describe('work id derivation', () => {
   })
 
   it('hashes to the sha256 of the ensure_ascii JSON', async () => {
-    const expected = createHash('sha256').update('["work","rig:mem","mem-42"]').digest('hex')
+    const expected = createHash('sha256')
+      .update('["work","rig:mem","mem-42"]')
+      .digest('hex')
     await expect(beadWorkId('rig:mem', 'mem-42')).resolves.toBe(expected)
   })
 })
@@ -134,7 +173,10 @@ describe('omniAnalyticsUrl', () => {
   })
 
   it('filters on the rig only when both filter id and rig are present', () => {
-    const filtered = omniAnalyticsUrl({ ...OMNI, dashboardId: 'd1', rigFilterId: 'rig' }, 'mem')
+    const filtered = omniAnalyticsUrl(
+      { ...OMNI, dashboardId: 'd1', rigFilterId: 'rig' },
+      'mem',
+    )
     expect(filtered).toBe(
       `https://sjarmak.omniapp.co/dashboards/d1?f--rig=${encodeURIComponent('{"values":["mem"]}')}`,
     )

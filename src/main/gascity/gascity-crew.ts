@@ -54,6 +54,7 @@ export function deriveCrew(input: DeriveCrewInput): GasCityCrew {
     tierSource: input.tierSource,
     scope: input.cityWorkspace ? 'city' : 'rig',
     ...(input.rigName === undefined ? {} : { rigName: input.rigName }),
+    ...(input.hqRigName === undefined ? {} : { hqRigName: input.hqRigName }),
     diagnostics: {
       namedSessions: input.config.namedSessions.length,
       pinned: input.config.namedSessions.filter(isPinned).length,

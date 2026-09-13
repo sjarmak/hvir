@@ -1,5 +1,6 @@
 import {
   SAFE_COMPONENT,
+  type GasCityCrew,
   type GasCitySession,
   type HoneycombLinkConfig,
   type OmniLinkConfig,
@@ -75,10 +76,43 @@ export function sessionTraceUrl(
   ])
 }
 
-export function beadTraceUrl(cfg: HoneycombLinkConfig, rig: string, workId: string): string {
+/**
+ * The bd store a workspace's beads belong to, as gas-city names it in a work
+ * id: `rig:<rig>` for a rig store and `city:<hq rig>` for the city store.
+ */
+export interface BeadStore {
+  readonly kind: 'rig' | 'city'
+  readonly name: string
+}
+
+export function beadStoreRef(store: BeadStore): string {
+  return `${store.kind}:${store.name}`
+}
+
+/**
+ * Which store the loaded crew says this workspace's beads live in, or undefined
+ * when the provenance cannot be named; a link hashed under the wrong store
+ * opens an empty query, so no link is the safer render.
+ */
+export function beadStore(crew: GasCityCrew | undefined): BeadStore | undefined {
+  if (crew === undefined) return undefined
+  if (crew.scope === 'rig') {
+    return crew.rigName === undefined ? undefined : { kind: 'rig', name: crew.rigName }
+  }
+  return crew.hqRigName === undefined ? undefined : { kind: 'city', name: crew.hqRigName }
+}
+
+/** City beads are worked from any rig, so only the rig store narrows on `gc.rig`. */
+export function beadTraceUrl(
+  cfg: HoneycombLinkConfig,
+  store: BeadStore,
+  workId: string,
+): string {
   return honeycombQueryUrl(cfg, [
     { column: 'gc.work.id', op: '=', value: workId },
-    { column: 'gc.rig', op: '=', value: rig },
+    ...(store.kind === 'rig'
+      ? [{ column: 'gc.rig', op: '=' as const, value: store.name }]
+      : []),
   ])
 }
 
@@ -100,9 +134,9 @@ export function workIdInput(storeRef: string, beadId: string): string {
 export async function beadWorkId(storeRef: string, beadId: string): Promise<string> {
   const bytes = new TextEncoder().encode(workIdInput(storeRef, beadId))
   const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join(
-    '',
-  )
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, '0'),
+  ).join('')
 }
 
 /**
@@ -111,7 +145,9 @@ export async function beadWorkId(storeRef: string, beadId: string): Promise<stri
  */
 export function omniAnalyticsUrl(cfg: OmniLinkConfig, rig?: string): string {
   const page =
-    cfg.dashboardId === undefined ? cfg.baseUrl : `${cfg.baseUrl}/dashboards/${enc(cfg.dashboardId)}`
+    cfg.dashboardId === undefined
+      ? cfg.baseUrl
+      : `${cfg.baseUrl}/dashboards/${enc(cfg.dashboardId)}`
   if (cfg.rigFilterId === undefined || rig === undefined) return page
   return `${page}?f--${cfg.rigFilterId}=${enc(JSON.stringify({ values: [rig] }))}`
 }
