@@ -45,15 +45,13 @@ export interface CrewView {
   readonly total: number
 }
 
-export function buildCrewView(
-  crew: GasCityCrew,
-  issues: readonly BeadIssue[],
-): CrewView {
+export function buildCrewView(crew: GasCityCrew, issues: readonly BeadIssue[]): CrewView {
   const inFlight = issues.filter((issue) => issue.status === 'in_progress')
   const byId = new Map(issues.map((issue) => [issue.id, issue]))
+  const ambiguous = ambiguousIdentityKeys(crew.members)
   const cards = crew.members.map((member) => {
-    const bead = joinBead(member, inFlight, byId)
-    const held = heldBeads(member, issues, bead)
+    const bead = joinBead(member, inFlight, byId, ambiguous)
+    const held = heldBeads(member, issues, bead, ambiguous)
     return { member, held, ...(bead ? { bead } : {}) }
   })
   const pools = new Map<string, CrewCard[]>()
@@ -86,14 +84,33 @@ function joinBead(
   member: GasCityCrewMember,
   inFlight: readonly BeadIssue[],
   byId: ReadonlyMap<string, BeadIssue>,
+  ambiguous: ReadonlySet<string>,
 ): CrewBead | undefined {
   const projected = member.session?.activeBead
   if (projected !== undefined) {
     const issue = byId.get(projected)
     return issue ? beadContext(issue) : { id: projected, title: projected }
   }
-  const issue = inFlight.find((candidate) => holdsBead(member, candidate))
+  const issue = inFlight.find((candidate) => holdsBead(member, candidate, ambiguous))
   return issue ? beadContext(issue) : undefined
+}
+
+/**
+ * Identity keys claimed by more than one crew member. A bare session name or
+ * template basename recurs once per rig (`polecat` in mem and in hq), so an
+ * assignee that only names the bare key names nobody in particular; the
+ * rig-qualified path and the session id stay unique and keep joining.
+ */
+export function ambiguousIdentityKeys(
+  members: readonly GasCityCrewMember[],
+): ReadonlySet<string> {
+  const owners = new Map<string, number>()
+  for (const member of members) {
+    for (const key of new Set(member.identityKeys)) {
+      owners.set(key, (owners.get(key) ?? 0) + 1)
+    }
+  }
+  return new Set([...owners].filter(([, count]) => count > 1).map(([key]) => key))
 }
 
 /**
@@ -108,25 +125,37 @@ function joinBead(
  * `controller`, `codex-w1h`). gc's crew derivation already emits both the
  * qualified and basename form of a session's id, name, alias and template into
  * `identityKeys`, so exact membership covers the first three shapes, and the
- * fourth correctly stays unjoined.
+ * fourth correctly stays unjoined. A key in `ambiguous` (claimed by several
+ * members crew-wide) joins nobody: the assignee then does not name one member.
  *
  * Prefix matching and basename-of-assignee matching are deliberately excluded:
  * `/home/ds/gas-city/city-infra-worker-1` must never join a session whose
  * template is `/home/ds/gas-city/city-infra-worker`. The rule is the one
  * `joinBead` uses, so the panel and gc's scheduler agree about ownership.
  */
-export function holdsBead(member: GasCityCrewMember, issue: BeadIssue): boolean {
-  return issue.assignee !== undefined && member.identityKeys.includes(issue.assignee)
+export function holdsBead(
+  member: GasCityCrewMember,
+  issue: BeadIssue,
+  ambiguous: ReadonlySet<string> = new Set(),
+): boolean {
+  return (
+    issue.assignee !== undefined &&
+    !ambiguous.has(issue.assignee) &&
+    member.identityKeys.includes(issue.assignee)
+  )
 }
 
 function heldBeads(
   member: GasCityCrewMember,
   issues: readonly BeadIssue[],
   active: CrewBead | undefined,
+  ambiguous: ReadonlySet<string>,
 ): readonly HeldBead[] {
   const owned = issues.filter(
     (issue) =>
-      issue.status !== 'closed' && issue.id !== active?.id && holdsBead(member, issue),
+      issue.status !== 'closed' &&
+      issue.id !== active?.id &&
+      holdsBead(member, issue, ambiguous),
   )
   const inProgress = owned.filter((issue) => issue.status === 'in_progress')
   const rest = owned.filter((issue) => issue.status !== 'in_progress')

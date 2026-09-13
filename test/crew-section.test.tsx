@@ -121,7 +121,12 @@ describe('crew view', () => {
     const view = buildCrewView(crew([member()]), [
       issue({ id: 'mem-1', status: 'open', priority: 2, assignee: 'mem-worker-ash' }),
       issue({ id: 'mem-42', status: 'in_progress', assignee: 'mem-worker-ash' }),
-      issue({ id: 'mem-7', status: 'in_progress', priority: 3, assignee: 'mem-worker-ash' }),
+      issue({
+        id: 'mem-7',
+        status: 'in_progress',
+        priority: 3,
+        assignee: 'mem-worker-ash',
+      }),
       issue({ id: 'mem-3', status: 'blocked', priority: 0, assignee: 'mem-worker-ash' }),
       issue({ id: 'mem-9', status: 'closed', assignee: 'mem-worker-ash' }),
     ])
@@ -136,7 +141,11 @@ describe('crew view', () => {
       identityKeys: ['gc-1', 'goal-3-decisions', '/home/ds/gas-city/goal-3-decisions'],
     })
     const view = buildCrewView(crew([templated]), [
-      issue({ id: 'g-1', status: 'open', assignee: '/home/ds/gas-city/goal-3-decisions' }),
+      issue({
+        id: 'g-1',
+        status: 'open',
+        assignee: '/home/ds/gas-city/goal-3-decisions',
+      }),
       issue({ id: 'g-2', status: 'open', assignee: 'goal-3-decisions' }),
       issue({ id: 'g-3', status: 'open', assignee: '/elsewhere/goal-3-decisions' }),
     ])
@@ -148,7 +157,11 @@ describe('crew view', () => {
       identityKeys: ['/home/ds/gas-city/city-infra-worker', 'city-infra-worker'],
     })
     const view = buildCrewView(crew([template]), [
-      issue({ id: 'c-1', status: 'open', assignee: '/home/ds/gas-city/city-infra-worker-1' }),
+      issue({
+        id: 'c-1',
+        status: 'open',
+        assignee: '/home/ds/gas-city/city-infra-worker-1',
+      }),
     ])
     expect(view.pools[0]?.cards[0]?.held).toEqual([])
   })
@@ -160,6 +173,63 @@ describe('crew view', () => {
       issue({ id: 'h-3', status: 'open' }),
     ])
     expect(view.pools[0]?.cards[0]?.held).toEqual([])
+  })
+
+  it('joins an ambiguous identity key to no member, only a unique one', () => {
+    // Two rigs each run a `polecat`: the bare key is shared, the rig-qualified
+    // path and the session id are not. A bead assigned `polecat` names neither,
+    // so it must attach to neither rather than to both.
+    const memPolecat = member({
+      key: 'gc-1',
+      label: 'polecat',
+      target: 'polecat',
+      poolName: 'polecat',
+      identityKeys: ['gc-1', 'polecat', '/rigs/mem/polecat'],
+      session: {
+        id: 'gc-1',
+        name: 'polecat',
+        state: 'active',
+        rig: 'mem',
+        workDir: hostPath(HOST, '/rigs/mem'),
+      },
+    })
+    const hqPolecat = member({
+      key: 'gc-2',
+      label: 'polecat',
+      target: 'polecat',
+      poolName: 'polecat',
+      identityKeys: ['gc-2', 'polecat', '/rigs/hq/polecat'],
+      session: {
+        id: 'gc-2',
+        name: 'polecat',
+        state: 'active',
+        rig: 'hq',
+        workDir: hostPath(HOST, '/rigs/hq'),
+      },
+    })
+    const view = buildCrewView(crew([memPolecat, hqPolecat]), [
+      issue({ id: 'p-1', status: 'in_progress', assignee: 'polecat' }),
+      issue({ id: 'p-2', status: 'open', assignee: 'polecat' }),
+      issue({ id: 'p-3', status: 'open', assignee: '/rigs/hq/polecat' }),
+      issue({ id: 'p-4', status: 'in_progress', assignee: 'gc-1' }),
+    ])
+    const cards = view.pools[0]?.cards ?? []
+    expect(cards.map((card) => card.bead?.id)).toEqual(['p-4', undefined])
+    expect(cards.map((card) => card.held.map((held) => held.id))).toEqual([[], ['p-3']])
+  })
+
+  it('still trusts the projected active bead over an ambiguous key', () => {
+    const shared = ['polecat']
+    const first = member({ key: 'gc-1', identityKeys: ['gc-1', ...shared] })
+    const second = member({
+      key: 'gc-2',
+      identityKeys: ['gc-2', ...shared],
+      session: { id: 'gc-2', name: 'polecat', state: 'active', activeBead: 'p-1' },
+    })
+    const view = buildCrewView(crew([first, second]), [
+      issue({ id: 'p-1', status: 'in_progress', assignee: 'polecat' }),
+    ])
+    expect(view.pools[0]?.cards.map((card) => card.bead?.id)).toEqual([undefined, 'p-1'])
   })
 
   it('held is empty when the member holds nothing', () => {
@@ -341,7 +411,11 @@ describe('CrewSection rendering', () => {
     const markup = render({
       response: {
         ...crew([member()]),
-        diagnostics: { namedSessions: 4, pinned: 2, unmatched: ['a', 'b', 'c', 'd', 'e'] },
+        diagnostics: {
+          namedSessions: 4,
+          pinned: 2,
+          unmatched: ['a', 'b', 'c', 'd', 'e'],
+        },
       },
       issues: [],
       collapsed: false,
@@ -389,7 +463,12 @@ describe('CrewSection rendering', () => {
 
   it('renders held beads as buttons that report the bead id', () => {
     const held = [1, 2, 3, 4, 5, 6].map((n) =>
-      issue({ id: `mem-${n}`, title: `Task ${n}`, status: 'open', assignee: 'mem-worker-ash' }),
+      issue({
+        id: `mem-${n}`,
+        title: `Task ${n}`,
+        status: 'open',
+        assignee: 'mem-worker-ash',
+      }),
     )
     const markup = render({
       response: crew([member()]),
@@ -413,7 +492,12 @@ describe('CrewSection rendering', () => {
       response: crew([member()]),
       issues: [
         issue({ id: 'mem-1', status: 'open', assignee: 'mem-worker-ash' }),
-        issue({ id: 'mem-2', status: 'open', issueType: 'gate', assignee: 'mem-worker-ash' }),
+        issue({
+          id: 'mem-2',
+          status: 'open',
+          issueType: 'gate',
+          assignee: 'mem-worker-ash',
+        }),
       ],
       collapsed: false,
       onToggle: noop,
@@ -421,9 +505,9 @@ describe('CrewSection rendering', () => {
       onSelectBead: noop,
       renderedBeadIds: new Set(['mem-1']),
     })
-    const chips = [...markup.matchAll(/<button[^>]*class="crew-held-bead[^"]*"[^>]*>/g)].map(
-      (match) => match[0],
-    )
+    const chips = [
+      ...markup.matchAll(/<button[^>]*class="crew-held-bead[^"]*"[^>]*>/g),
+    ].map((match) => match[0])
     expect(chips).toHaveLength(2)
     expect(chips[0]).not.toContain('disabled')
     expect(chips[1]).toContain('disabled')
@@ -486,7 +570,11 @@ describe('CrewSection observability links', () => {
 
   function base(overrides: Partial<Parameters<typeof CrewSection>[0]> = {}) {
     return {
-      response: crew([member({ session: { id: 'gc-1', name: 'x', state: 'active', template: 'mem/polecat' } })]),
+      response: crew([
+        member({
+          session: { id: 'gc-1', name: 'x', state: 'active', template: 'mem/polecat' },
+        }),
+      ]),
       issues: [],
       collapsed: false,
       onToggle: noop,
@@ -500,10 +588,13 @@ describe('CrewSection observability links', () => {
     const markup = render(base())
     const [analyticsTag] = anchors(markup, 'Analytics')
     expect(analyticsTag).toBeDefined()
-    expect(hrefOf(analyticsTag as string).startsWith('https://sjarmak.omniapp.co')).toBe(true)
+    expect(hrefOf(analyticsTag as string).startsWith('https://sjarmak.omniapp.co')).toBe(
+      true,
+    )
     expect(analyticsTag).toContain('target="_blank"')
     expect(analyticsTag).toContain('rel="noopener noreferrer"')
-    const button = /<button[^>]*class="beads-section-header"[^>]*>[\s\S]*?<\/button>/.exec(markup)
+    const button =
+      /<button[^>]*class="beads-section-header"[^>]*>[\s\S]*?<\/button>/.exec(markup)
     expect(button?.[0]).not.toContain('<a ')
   })
 
@@ -521,7 +612,11 @@ describe('CrewSection observability links', () => {
 
   it('suppresses the Trace anchor for a name gas-city would not have exported', () => {
     const markup = render(
-      base({ response: crew([member({ session: { id: 'gc-1', name: 'a b', state: 'active' } })]) }),
+      base({
+        response: crew([
+          member({ session: { id: 'gc-1', name: 'a b', state: 'active' } }),
+        ]),
+      }),
     )
     expect(anchors(markup, 'Trace')).toHaveLength(0)
     expect(anchors(markup, 'Analytics')).toHaveLength(1)
@@ -546,7 +641,9 @@ describe('CrewSection observability links', () => {
     // response still carries rigName; filtering every member on it would match
     // nothing.
     const response = base().response as GasCityCrew
-    const markup = render(base({ response: { ...response, scope: 'city', rigName: 'hq' } }))
+    const markup = render(
+      base({ response: { ...response, scope: 'city', rigName: 'hq' } }),
+    )
     expect(anchors(markup, 'Analytics')).toHaveLength(0)
     expect(anchors(markup, 'Trace')).toHaveLength(0)
   })
@@ -577,7 +674,15 @@ describe('CrewSection observability links', () => {
     const markup = render(
       base({
         response: crew([
-          member({ session: { id: 'gc-1', name: 'x', state: 'active', template: 'polecat', rig: 'other' } }),
+          member({
+            session: {
+              id: 'gc-1',
+              name: 'x',
+              state: 'active',
+              template: 'polecat',
+              rig: 'other',
+            },
+          }),
         ]),
       }),
     )
