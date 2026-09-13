@@ -22,7 +22,6 @@ export interface HeldBead {
   readonly title: string
   /** `status === 'in_progress'`; a boolean so the renderer never styles from an unknown bd status. */
   readonly inFlight: boolean
-  readonly priority: number
 }
 
 export interface CrewCard {
@@ -135,7 +134,6 @@ function heldBeads(
     id: issue.id,
     title: issue.title,
     inFlight: issue.status === 'in_progress',
-    priority: issue.priority,
   }))
 }
 

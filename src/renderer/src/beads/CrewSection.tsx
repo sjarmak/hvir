@@ -30,6 +30,12 @@ interface CrewSectionProps {
   readonly onAction: (action: GasCityAction, target: string) => void
   /** Focus a held bead's row in the bead sections; held chips are inert without it. */
   readonly onSelectBead?: (beadId: string) => void
+  /**
+   * Ids the bead sections currently render. A held bead outside this set has no
+   * row to focus (closed or internals hidden), so its chip is disabled and says
+   * so. Absent, every chip is focusable.
+   */
+  readonly renderedBeadIds?: ReadonlySet<string>
   /** Where the Trace and Analytics links point; a missing surface renders no link. */
   readonly analytics?: GasCityAnalyticsConfig
 }
@@ -52,6 +58,7 @@ export function CrewSection({
   onToggle,
   onAction,
   onSelectBead,
+  renderedBeadIds,
   analytics,
 }: CrewSectionProps): ReactElement | null {
   // A workspace outside a Gas City, or one where gc is not installed, simply has
@@ -216,20 +223,27 @@ export function CrewSection({
   function renderHeld(held: readonly HeldBead[]): ReactElement {
     return (
       <div className="crew-held" role="list">
-        {held.slice(0, HELD_SHOWN).map((bead) => (
-          <button
-            type="button"
-            role="listitem"
-            key={bead.id}
-            className={`crew-held-bead${bead.inFlight ? ' crew-held-inflight' : ''}`}
-            title={`${bead.id}: ${bead.title}`}
-            disabled={onSelectBead === undefined}
-            onClick={() => onSelectBead?.(bead.id)}
-          >
-            <span className="crew-held-id">{bead.id}</span>
-            <span className="crew-held-title">{bead.title}</span>
-          </button>
-        ))}
+        {held.slice(0, HELD_SHOWN).map((bead) => {
+          const hidden = renderedBeadIds !== undefined && !renderedBeadIds.has(bead.id)
+          return (
+            <span className="crew-held-item" role="listitem" key={bead.id}>
+              <button
+                type="button"
+                className={`crew-held-bead${bead.inFlight ? ' crew-held-inflight' : ''}`}
+                title={
+                  hidden
+                    ? `${bead.id}: ${bead.title} (hidden by the current filters)`
+                    : `${bead.id}: ${bead.title}`
+                }
+                disabled={onSelectBead === undefined || hidden}
+                onClick={() => onSelectBead?.(bead.id)}
+              >
+                <span className="crew-held-id">{bead.id}</span>
+                <span className="crew-held-title">{bead.title}</span>
+              </button>
+            </span>
+          )
+        })}
         {held.length > HELD_SHOWN ? (
           <span className="crew-held-more">+{held.length - HELD_SHOWN}</span>
         ) : null}

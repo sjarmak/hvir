@@ -28,6 +28,17 @@ const BEADS: BeadsListResponse = {
       dependencyCount: 0,
       dependentCount: 0,
     },
+    {
+      id: 'mem-2',
+      title: 'Gate it',
+      status: 'open',
+      priority: 2,
+      issueType: 'gate',
+      assignee: 'mem-worker-ash',
+      labels: [],
+      dependencyCount: 0,
+      dependentCount: 0,
+    },
   ],
   readyIds: [],
   dispatchableIds: [],
@@ -108,20 +119,65 @@ async function renderPanel(): Promise<void> {
   }
 }
 
+function heldChip(id: string): HTMLButtonElement {
+  const chip = [...host.querySelectorAll<HTMLButtonElement>('.crew-held-bead')].find((button) =>
+    button.textContent?.includes(id),
+  )
+  if (!chip) throw new Error(`no held chip for ${id}`)
+  return chip
+}
+
+function sectionHeaderOf(beadId: string): HTMLButtonElement {
+  const header = host
+    .querySelector(`[data-bead-id="${beadId}"]`)
+    ?.closest('.beads-section')
+    ?.querySelector<HTMLButtonElement>('.beads-section-header')
+  if (!header) throw new Error(`no section header around ${beadId}`)
+  return header
+}
+
 describe('BeadsPanel held-bead focus', () => {
   it('clicking a held bead on a crew card expands and scrolls its bead row', async () => {
     await renderPanel()
     const row = host.querySelector('[data-bead-id="mem-1"]')
     expect(row).not.toBeNull()
-    const button = host.querySelector<HTMLButtonElement>('.crew-held-bead')
-    expect(button?.textContent).toContain('mem-1')
+    const button = heldChip('mem-1')
     expect(row?.querySelector('.beads-row')?.classList.contains('expanded')).toBe(false)
 
     act(() => {
-      button?.click()
+      button.click()
     })
 
     expect(row?.querySelector('.beads-row')?.classList.contains('expanded')).toBe(true)
     expect(scrollIntoView).toHaveBeenCalledTimes(1)
+  })
+
+  it('reopens a collapsed section before scrolling to the row', async () => {
+    await renderPanel()
+    const header = sectionHeaderOf('mem-1')
+    act(() => {
+      header.click()
+    })
+    expect(host.querySelector('[data-bead-id="mem-1"]')).toBeNull()
+    expect(header.getAttribute('aria-expanded')).toBe('false')
+
+    act(() => {
+      heldChip('mem-1').click()
+    })
+
+    const row = host.querySelector('[data-bead-id="mem-1"]')
+    expect(row).not.toBeNull()
+    expect(header.getAttribute('aria-expanded')).toBe('true')
+    expect(row?.querySelector('.beads-row')?.classList.contains('expanded')).toBe(true)
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+  })
+
+  it('disables the chip of a held bead the sections do not render', async () => {
+    await renderPanel()
+    expect(host.querySelector('[data-bead-id="mem-2"]')).toBeNull()
+    const chip = heldChip('mem-2')
+    expect(chip.disabled).toBe(true)
+    expect(chip.title).toContain('hidden by the current filters')
+    expect(heldChip('mem-1').disabled).toBe(false)
   })
 })

@@ -388,6 +388,31 @@ describe('CrewSection rendering', () => {
     expect(markup).toContain('mem-1')
     expect(markup).not.toContain('disabled')
     expect(markup).toContain('+2')
+    // The list role sits on a wrapper so the button keeps its button role.
+    expect(markup).toContain('<span class="crew-held-item" role="listitem"><button')
+    expect(markup).not.toMatch(/<button[^>]*role="listitem"/)
+  })
+
+  it('disables a held chip whose bead has no row on screen and says why', () => {
+    const markup = render({
+      response: crew([member()]),
+      issues: [
+        issue({ id: 'mem-1', status: 'open', assignee: 'mem-worker-ash' }),
+        issue({ id: 'mem-2', status: 'open', issueType: 'gate', assignee: 'mem-worker-ash' }),
+      ],
+      collapsed: false,
+      onToggle: noop,
+      onAction: noop,
+      onSelectBead: noop,
+      renderedBeadIds: new Set(['mem-1']),
+    })
+    const chips = [...markup.matchAll(/<button[^>]*class="crew-held-bead[^"]*"[^>]*>/g)].map(
+      (match) => match[0],
+    )
+    expect(chips).toHaveLength(2)
+    expect(chips[0]).not.toContain('disabled')
+    expect(chips[1]).toContain('disabled')
+    expect(chips[1]).toContain('hidden by the current filters')
   })
 
   it('disables held buttons without onSelectBead', () => {

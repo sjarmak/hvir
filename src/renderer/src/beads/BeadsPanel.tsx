@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 
 import type { BeadIssue, BeadsListResponse, HostPath } from '../../../shared'
 import {
@@ -10,6 +10,7 @@ import {
   type GateItem,
 } from './beads-model'
 import { beadDetail, beadSignals, type BeadTraceScope } from './bead-card'
+import { beadSectionKeys } from './bead-placement'
 import type { BeadActionRequest } from './bead-commands'
 import { BeadCreateForm } from './bead-create-form'
 import { createVisibilityRefresh } from './beads-refresh'
@@ -72,6 +73,7 @@ export function BeadsPanel({
   // Owned here, not by the form, so a transient list error that unmounts the
   // form does not discard a half-typed title.
   const [createTitle, setCreateTitle] = useState('')
+  const [pendingFocus, setPendingFocus] = useState<string>()
   const rootRef = useRef<HTMLElement>(null)
   const actionRefreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const requestSerial = useRef(0)
@@ -95,6 +97,13 @@ export function BeadsPanel({
     crew.response.rigName !== undefined
       ? { config: analytics.honeycomb, rig: crew.response.rigName }
       : undefined
+  const placement = useMemo(
+    () =>
+      response?.available === true
+        ? beadSectionKeys(classifyBeads(response), showClosed ? response.closedIssues : [])
+        : new Map<string, string>(),
+    [response, showClosed],
+  )
 
   const refresh = useCallback(async (): Promise<void> => {
     // Non-reentrant: a poll tick, focus, or watch event that arrives while a
@@ -208,14 +217,30 @@ export function BeadsPanel({
     })
   }
 
-  // Expansion first so a collapsed detail opens; the scroll is a no-op when the
-  // row is not rendered (closed or internals hidden, section collapsed).
-  const focusBead = useCallback((id: string): void => {
+  // Open the bead's section and its detail, then scroll once the row exists:
+  // the scroll runs from the effect below, after the re-render that mounts it.
+  // A bead with no section is not on screen (internals or closed hidden); its
+  // chip is already disabled, so this is a no-op by design rather than by luck.
+  const focusBead = (id: string): void => {
+    const section = placement.get(id)
+    if (section === undefined) return
+    setCollapsedSections((current) => {
+      if (!current.has(section)) return current
+      const next = new Set(current)
+      next.delete(section)
+      return next
+    })
     setExpanded((current) => new Set([...current, id]))
+    setPendingFocus(id)
+  }
+
+  useEffect(() => {
+    if (pendingFocus === undefined) return
     rootRef.current
-      ?.querySelector<HTMLElement>(`[data-bead-id="${CSS.escape(id)}"]`)
+      ?.querySelector<HTMLElement>(`[data-bead-id="${CSS.escape(pendingFocus)}"]`)
       ?.scrollIntoView({ block: 'nearest' })
-  }, [])
+    setPendingFocus(undefined)
+  }, [pendingFocus])
 
   const toggleSection = (key: string): void => {
     setCollapsedSections((current) => {
@@ -268,6 +293,7 @@ export function BeadsPanel({
         onToggle={() => toggleSection('crew')}
         onAction={onCrewAction}
         onSelectBead={focusBead}
+        renderedBeadIds={new Set(placement.keys())}
         analytics={analytics}
       />
     )
