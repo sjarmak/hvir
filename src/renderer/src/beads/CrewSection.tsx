@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react'
 
 import type { BeadIssue, GasCityCrew, GasCityCrewResponse } from '../../../shared'
-import { buildCrewView, type CrewCard, type CrewGroup } from './crew-model'
+import { buildCrewView, type CrewCard, type CrewGroup, type HeldBead } from './crew-model'
 import {
   GAS_CITY_ACTIONS,
   GAS_CITY_ACTION_HINTS,
@@ -12,6 +12,8 @@ import './crew.css'
 
 /** Enough names to recognize the pattern; the count carries the rest. */
 const UNMATCHED_SHOWN = 3
+/** Held beads shown per card before the count takes over. */
+const HELD_SHOWN = 4
 
 interface CrewSectionProps {
   readonly response: GasCityCrewResponse | undefined
@@ -20,6 +22,8 @@ interface CrewSectionProps {
   readonly collapsed: boolean
   readonly onToggle: () => void
   readonly onAction: (action: GasCityAction, target: string) => void
+  /** Focus a held bead's row in the bead sections; held chips are inert without it. */
+  readonly onSelectBead?: (beadId: string) => void
 }
 
 /**
@@ -35,6 +39,7 @@ export function CrewSection({
   collapsed,
   onToggle,
   onAction,
+  onSelectBead,
 }: CrewSectionProps): ReactElement | null {
   // A workspace outside a Gas City, or one where gc is not installed, simply has
   // no crew — that is not an error worth a banner in the bead panel.
@@ -161,6 +166,7 @@ export function CrewSection({
             {bead.molecule ? <span className="crew-bead-tag">{bead.molecule}</span> : null}
           </div>
         ) : null}
+        {card.held.length > 0 ? renderHeld(card.held) : null}
         <div className="crew-actions">
           {GAS_CITY_ACTIONS.map((action) => (
             <button
@@ -174,6 +180,30 @@ export function CrewSection({
             </button>
           ))}
         </div>
+      </div>
+    )
+  }
+
+  function renderHeld(held: readonly HeldBead[]): ReactElement {
+    return (
+      <div className="crew-held" role="list">
+        {held.slice(0, HELD_SHOWN).map((bead) => (
+          <button
+            type="button"
+            role="listitem"
+            key={bead.id}
+            className={`crew-held-bead${bead.inFlight ? ' crew-held-inflight' : ''}`}
+            title={`${bead.id}: ${bead.title}`}
+            disabled={onSelectBead === undefined}
+            onClick={() => onSelectBead?.(bead.id)}
+          >
+            <span className="crew-held-id">{bead.id}</span>
+            <span className="crew-held-title">{bead.title}</span>
+          </button>
+        ))}
+        {held.length > HELD_SHOWN ? (
+          <span className="crew-held-more">+{held.length - HELD_SHOWN}</span>
+        ) : null}
       </div>
     )
   }

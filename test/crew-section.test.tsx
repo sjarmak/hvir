@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { CrewSection } from '../src/renderer/src/beads/CrewSection'
-import { buildCrewView } from '../src/renderer/src/beads/crew-model'
+import { buildCrewView, holdsBead } from '../src/renderer/src/beads/crew-model'
 import { gasCityCommand } from '../src/renderer/src/beads/gascity-commands'
 import {
   asHostId,
@@ -114,6 +114,72 @@ describe('crew view', () => {
     expect(view.leads.map((card) => card.member.label)).toEqual(['mem-pl'])
     expect(view.pools).toHaveLength(1)
     expect(view.total).toBe(2)
+  })
+
+  it('lists every open bead the assignee holds, active bead excluded and in-flight first', () => {
+    const view = buildCrewView(crew([member()]), [
+      issue({ id: 'mem-1', status: 'open', priority: 2, assignee: 'mem-worker-ash' }),
+      issue({ id: 'mem-42', status: 'in_progress', assignee: 'mem-worker-ash' }),
+      issue({ id: 'mem-7', status: 'in_progress', priority: 3, assignee: 'mem-worker-ash' }),
+      issue({ id: 'mem-3', status: 'blocked', priority: 0, assignee: 'mem-worker-ash' }),
+      issue({ id: 'mem-9', status: 'closed', assignee: 'mem-worker-ash' }),
+    ])
+    const card = view.pools[0]?.cards[0]
+    expect(card?.bead?.id).toBe('mem-42')
+    expect(card?.held.map((held) => held.id)).toEqual(['mem-7', 'mem-3', 'mem-1'])
+    expect(card?.held.map((held) => held.inFlight)).toEqual([true, false, false])
+  })
+
+  it('joins a path-shaped assignee that equals the session template', () => {
+    const templated = member({
+      identityKeys: ['gc-1', 'goal-3-decisions', '/home/ds/gas-city/goal-3-decisions'],
+    })
+    const view = buildCrewView(crew([templated]), [
+      issue({ id: 'g-1', status: 'open', assignee: '/home/ds/gas-city/goal-3-decisions' }),
+      issue({ id: 'g-2', status: 'open', assignee: 'goal-3-decisions' }),
+      issue({ id: 'g-3', status: 'open', assignee: '/elsewhere/goal-3-decisions' }),
+    ])
+    expect(view.pools[0]?.cards[0]?.held.map((held) => held.id)).toEqual(['g-1', 'g-2'])
+  })
+
+  it('does not prefix-match a pool instance onto its template', () => {
+    const template = member({
+      identityKeys: ['/home/ds/gas-city/city-infra-worker', 'city-infra-worker'],
+    })
+    const view = buildCrewView(crew([template]), [
+      issue({ id: 'c-1', status: 'open', assignee: '/home/ds/gas-city/city-infra-worker-1' }),
+    ])
+    expect(view.pools[0]?.cards[0]?.held).toEqual([])
+  })
+
+  it('leaves human and pseudo assignees unjoined', () => {
+    const view = buildCrewView(crew([member()]), [
+      issue({ id: 'h-1', status: 'open', assignee: 'sjarmak' }),
+      issue({ id: 'h-2', status: 'open', assignee: 'controller' }),
+      issue({ id: 'h-3', status: 'open' }),
+    ])
+    expect(view.pools[0]?.cards[0]?.held).toEqual([])
+  })
+
+  it('held is empty when the member holds nothing', () => {
+    const view = buildCrewView(crew([member()]), [])
+    expect(view.pools[0]?.cards[0]?.held).toEqual([])
+  })
+})
+
+describe('holdsBead', () => {
+  const keyed = member({
+    identityKeys: ['gc-1', 'mem-worker-ash', '/home/ds/gas-city/mem-worker-ash'],
+  })
+
+  it.each([
+    ['exact alias', 'mem-worker-ash', true],
+    ['undefined assignee', undefined, false],
+    ['empty assignee', '', false],
+    ['bare name not in keys', 'mem-worker', false],
+    ['qualified path in keys', '/home/ds/gas-city/mem-worker-ash', true],
+  ])('%s -> %s', (_label, assignee, expected) => {
+    expect(holdsBead(keyed, issue({ assignee }))).toBe(expected)
   })
 })
 
@@ -303,5 +369,47 @@ describe('CrewSection rendering', () => {
       onAction: noop,
     })
     expect(markup).toContain('gc exploded')
+  })
+
+  it('renders held beads as buttons that report the bead id', () => {
+    const held = [1, 2, 3, 4, 5, 6].map((n) =>
+      issue({ id: `mem-${n}`, title: `Task ${n}`, status: 'open', assignee: 'mem-worker-ash' }),
+    )
+    const markup = render({
+      response: crew([member()]),
+      issues: held,
+      collapsed: false,
+      onToggle: noop,
+      onAction: noop,
+      onSelectBead: noop,
+    })
+    expect(markup).toContain('crew-held-bead')
+    expect(markup).toContain('mem-1')
+    expect(markup).not.toContain('disabled')
+    expect(markup).toContain('+2')
+  })
+
+  it('disables held buttons without onSelectBead', () => {
+    const markup = render({
+      response: crew([member()]),
+      issues: [issue({ id: 'mem-1', status: 'open', assignee: 'mem-worker-ash' })],
+      collapsed: false,
+      onToggle: noop,
+      onAction: noop,
+    })
+    expect(markup).toContain('crew-held-bead')
+    expect(markup).toContain('disabled')
+  })
+
+  it('omits the held row when nothing is held', () => {
+    const markup = render({
+      response: crew([member()]),
+      issues: [],
+      collapsed: false,
+      onToggle: noop,
+      onAction: noop,
+      onSelectBead: noop,
+    })
+    expect(markup).not.toContain('crew-held')
   })
 })

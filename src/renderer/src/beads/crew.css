@@ -152,6 +152,59 @@
   color: var(--accent);
 }
 
+/* Beads the member holds beyond the one it is working: a wrapped row of
+   compact chips, each a jump to that bead's row in the sections below. */
+.crew-held {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 0 8px 3px 26px;
+  font-size: 9px;
+}
+
+.crew-held-bead {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  background: none;
+  padding: 0 4px;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.crew-held-bead:hover {
+  border-color: var(--border-strong);
+  color: var(--text-strong);
+}
+
+.crew-held-bead:disabled {
+  cursor: default;
+}
+
+.crew-held-id {
+  flex: none;
+  font-family: monospace;
+}
+
+.crew-held-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+}
+
+.crew-held-inflight {
+  border-color: var(--accent);
+}
+
+.crew-held-more {
+  color: var(--text-muted);
+}
+
 .crew-actions {
   display: flex;
   flex-wrap: wrap;

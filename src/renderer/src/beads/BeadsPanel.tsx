@@ -62,6 +62,7 @@ export function BeadsPanel({
   const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<string>>(
     new Set(),
   )
+  const rootRef = useRef<HTMLElement>(null)
   const requestSerial = useRef(0)
   const inFlight = useRef(false)
   const lastCompletedAt = useRef(0)
@@ -169,6 +170,15 @@ export function BeadsPanel({
     })
   }
 
+  // Expansion first so a collapsed detail opens; the scroll is a no-op when the
+  // row is not rendered (closed or internals hidden, section collapsed).
+  const focusBead = useCallback((id: string): void => {
+    setExpanded((current) => new Set([...current, id]))
+    rootRef.current
+      ?.querySelector<HTMLElement>(`[data-bead-id="${CSS.escape(id)}"]`)
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [])
+
   const toggleSection = (key: string): void => {
     setCollapsedSections((current) => {
       const next = new Set(current)
@@ -179,7 +189,12 @@ export function BeadsPanel({
   }
 
   return (
-    <section className="rail-section beads-panel" aria-label="Gas City" hidden={hidden}>
+    <section
+      className="rail-section beads-panel"
+      aria-label="Gas City"
+      hidden={hidden}
+      ref={rootRef}
+    >
       <div className="panel-header beads-header">
         <span className="beads-title">Gas City</span>
         <button
@@ -214,6 +229,7 @@ export function BeadsPanel({
         collapsed={collapsedSections.has('crew')}
         onToggle={() => toggleSection('crew')}
         onAction={onCrewAction}
+        onSelectBead={focusBead}
       />
     )
   }
@@ -328,7 +344,7 @@ export function BeadsPanel({
     const { issue } = card
     const open = expanded.has(issue.id)
     return (
-      <li key={issue.id}>
+      <li key={issue.id} data-bead-id={issue.id}>
         <button
           type="button"
           className={`beads-row${open ? ' expanded' : ''}`}
