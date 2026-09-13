@@ -246,6 +246,21 @@ describe('CrewSection rendering', () => {
     }
   })
 
+  it('disables every session action with the hint when no terminal can launch', () => {
+    const markup = render({
+      response: crew([member()]),
+      issues: [],
+      collapsed: false,
+      onToggle: noop,
+      onAction: noop,
+      actionsDisabledHint: 'No terminal can launch here',
+    })
+    const disabled = markup.match(/<button[^>]*\bdisabled=""[^>]*>/g) ?? []
+    // The card body (attach) plus the four action buttons.
+    expect(disabled).toHaveLength(5)
+    expect(markup.match(/No terminal can launch here/g)).toHaveLength(5)
+  })
+
   it('shows a dormant lead as not running rather than hiding it', () => {
     const markup = render({
       response: crew([

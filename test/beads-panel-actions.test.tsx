@@ -37,8 +37,9 @@ let listCalls: number
 let listFails: boolean
 
 beforeEach(() => {
-  ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-    true
+  ;(
+    globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true
   vi.useFakeTimers()
   host = document.createElement('div')
   document.body.append(host)
@@ -49,7 +50,9 @@ beforeEach(() => {
     switch (channel) {
       case 'beads:list':
         listCalls += 1
-        return listFails ? Promise.reject(new Error('bd timed out')) : Promise.resolve(BEADS)
+        return listFails
+          ? Promise.reject(new Error('bd timed out'))
+          : Promise.resolve(BEADS)
       case 'gascity:probe':
         return Promise.resolve({ hasCity: false })
       default:
@@ -77,11 +80,24 @@ async function flush(): Promise<void> {
   }
 }
 
-async function renderPanel(onBeadAction: (request: BeadActionRequest) => void): Promise<void> {
+type OnBeadAction = (request: BeadActionRequest) => Promise<boolean>
+
+async function renderPanel(onBeadAction: OnBeadAction, canLaunch = true): Promise<void> {
   act(() => {
-    root.render(createElement(BeadsPanel, { root: ROOT, connected: true, onBeadAction }))
+    root.render(
+      createElement(BeadsPanel, { root: ROOT, connected: true, onBeadAction, canLaunch }),
+    )
   })
   await flush()
+}
+
+const accept: OnBeadAction = () => Promise.resolve(true)
+const reject: OnBeadAction = () => Promise.resolve(false)
+
+function buttonLabelled(label: string): HTMLButtonElement | undefined {
+  return [...host.querySelectorAll('button')].find(
+    (button) => button.textContent === label,
+  )
 }
 
 async function advance(ms: number): Promise<void> {
@@ -92,7 +108,9 @@ async function advance(ms: number): Promise<void> {
 }
 
 function input(): HTMLInputElement {
-  const element = host.querySelector<HTMLInputElement>('input[aria-label="New bead title"]')
+  const element = host.querySelector<HTMLInputElement>(
+    'input[aria-label="New bead title"]',
+  )
   if (!element) throw new Error('create input not rendered')
   return element
 }
@@ -109,8 +127,8 @@ function type(value: string): void {
 }
 
 describe('BeadsPanel bead actions', () => {
-  it('schedules exactly one refresh shortly after a typed action', async () => {
-    const onBeadAction = vi.fn()
+  it('schedules exactly one refresh shortly after an accepted typed action', async () => {
+    const onBeadAction = vi.fn(accept)
     await renderPanel(onBeadAction)
     expect(listCalls).toBe(1)
 
@@ -134,8 +152,39 @@ describe('BeadsPanel bead actions', () => {
     expect(listCalls).toBe(2)
   })
 
+  it('schedules no refresh after an action the terminal did not accept', async () => {
+    const onBeadAction = vi.fn(reject)
+    await renderPanel(onBeadAction)
+    act(() => {
+      host.querySelector<HTMLButtonElement>('.beads-row')?.click()
+    })
+    act(() => {
+      buttonLabelled('Claim')?.click()
+    })
+    expect(onBeadAction).toHaveBeenCalledTimes(1)
+    await advance(2000)
+    expect(listCalls).toBe(1)
+  })
+
+  it('disables Claim, Close and Create with a hint when no terminal can launch', async () => {
+    const onBeadAction = vi.fn(accept)
+    await renderPanel(onBeadAction, false)
+    act(() => {
+      host.querySelector<HTMLButtonElement>('.beads-row')?.click()
+    })
+    for (const label of ['Claim', 'Close', 'Create bead']) {
+      const button = buttonLabelled(label)
+      expect(button?.disabled).toBe(true)
+      expect(button?.title).toContain('No terminal can launch')
+    }
+    act(() => {
+      buttonLabelled('Claim')?.click()
+    })
+    expect(onBeadAction).not.toHaveBeenCalled()
+  })
+
   it('keeps a half-typed create title across a failed refresh', async () => {
-    await renderPanel(vi.fn())
+    await renderPanel(accept)
     type('Draft title')
     expect(input().value).toBe('Draft title')
 

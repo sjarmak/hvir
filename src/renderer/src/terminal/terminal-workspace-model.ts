@@ -26,6 +26,11 @@ export interface TerminalAttachRequest {
    * commands, which always want a fresh shell.
    */
   readonly key?: string
+  /**
+   * Told whether the request was served: `true` when a shell launched or the
+   * keyed terminal was focused, `false` when the workspace could not launch.
+   */
+  readonly onSettled?: (accepted: boolean) => void
 }
 
 export interface TerminalForkRequest {

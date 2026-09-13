@@ -15,6 +15,10 @@ export interface TerminalAttachPorts {
    * when the workspace is not ready to launch one.
    */
   readonly launch: (command: string) => string | undefined
+  /** Whether `launch` would currently open a shell (a default harness exists). */
+  readonly canLaunch: boolean
+  /** Told when `canLaunch` changes, so the requester can disable its actions. */
+  readonly reportAvailability?: (canLaunch: boolean) => void
 }
 
 /**
@@ -46,12 +50,22 @@ export function useTerminalAttachRequest(
     )
     if (outcome.type === 'focus') {
       focusSession(outcome.id)
+      attachRequest.onSettled?.(true)
       return
     }
     const launched = launch(attachRequest.command)
     if (launched !== undefined && attachRequest.key !== undefined) {
       launchedByKey.current.set(attachRequest.key, launched)
     }
+    attachRequest.onSettled?.(launched !== undefined)
     // Ports are read through a ref so only a fresh nonce re-runs this effect.
   }, [attachRequest])
+
+  // Availability is pushed, not polled: the requester lives outside this
+  // workspace and otherwise learns that nothing can launch only by watching a
+  // request vanish.
+  const { canLaunch } = ports
+  useEffect(() => {
+    portsRef.current.reportAvailability?.(canLaunch)
+  }, [canLaunch])
 }

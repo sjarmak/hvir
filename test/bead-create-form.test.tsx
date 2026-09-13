@@ -24,14 +24,42 @@ afterEach(() => {
 })
 
 /** The panel owns the field value; this stands in for it. */
-function Owner({ onCreate }: { readonly onCreate: (title: string) => void }): ReactElement {
+type OnCreate = (title: string) => Promise<boolean>
+
+function Owner({
+  onCreate,
+  disabledHint,
+}: {
+  readonly onCreate: OnCreate
+  readonly disabledHint?: string
+}): ReactElement {
   const [value, setValue] = useState('')
-  return createElement(BeadCreateForm, { value, onChange: setValue, onCreate })
+  return createElement(BeadCreateForm, {
+    value,
+    onChange: setValue,
+    onCreate,
+    ...(disabledHint === undefined ? {} : { disabledHint }),
+  })
 }
 
-function render(onCreate: (title: string) => void): void {
+function render(onCreate: OnCreate, disabledHint?: string): void {
   act(() => {
-    root.render(createElement(Owner, { onCreate }))
+    root.render(
+      createElement(Owner, {
+        onCreate,
+        ...(disabledHint === undefined ? {} : { disabledHint }),
+      }),
+    )
+  })
+}
+
+const accept: OnCreate = () => Promise.resolve(true)
+const reject: OnCreate = () => Promise.resolve(false)
+
+async function settle(): Promise<void> {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
   })
 }
 
@@ -59,17 +87,18 @@ function type(value: string): void {
   })
 }
 
-function submit(): void {
-  act(() => {
+async function submit(): Promise<void> {
+  await act(async () => {
     const form = host.querySelector('form')
     if (!form) throw new Error('form not rendered')
     form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await Promise.resolve()
   })
 }
 
 describe('BeadCreateForm', () => {
   it('disables the submit button while the title is empty or whitespace', () => {
-    render(vi.fn())
+    render(accept)
     expect(button().disabled).toBe(true)
     type('   ')
     expect(button().disabled).toBe(true)
@@ -77,44 +106,67 @@ describe('BeadCreateForm', () => {
     expect(button().disabled).toBe(false)
   })
 
-  it('submits the normalized title once and clears the field', () => {
-    const onCreate = vi.fn()
+  it('submits the normalized title once and clears the field when accepted', async () => {
+    const onCreate = vi.fn(accept)
     render(onCreate)
     type('  Ship  it ')
-    submit()
+    await submit()
     expect(onCreate).toHaveBeenCalledTimes(1)
     expect(onCreate).toHaveBeenCalledWith('Ship it')
+    await settle()
     expect(input().value).toBe('')
   })
 
-  it('handles the form submit event (Enter) without navigating', () => {
-    const onCreate = vi.fn()
+  it('keeps the typed title when the request was not accepted', async () => {
+    const onCreate = vi.fn(reject)
+    render(onCreate)
+    type('Ship it')
+    await submit()
+    expect(onCreate).toHaveBeenCalledTimes(1)
+    await settle()
+    expect(input().value).toBe('Ship it')
+  })
+
+  it('disables submit with the hint while no terminal can launch, keeping the title', async () => {
+    const onCreate = vi.fn(accept)
+    render(onCreate, 'No terminal can launch here')
+    type('Ship it')
+    expect(button().disabled).toBe(true)
+    expect(button().title).toBe('No terminal can launch here')
+    await submit()
+    expect(onCreate).not.toHaveBeenCalled()
+    expect(input().value).toBe('Ship it')
+  })
+
+  it('handles the form submit event (Enter) without navigating', async () => {
+    const onCreate = vi.fn(accept)
     render(onCreate)
     type('Enter title')
     const form = host.querySelector('form')
     if (!form) throw new Error('form not rendered')
     const event = new Event('submit', { bubbles: true, cancelable: true })
-    act(() => {
+    await act(async () => {
       form.dispatchEvent(event)
+      await Promise.resolve()
     })
     expect(event.defaultPrevented).toBe(true)
     expect(onCreate).toHaveBeenCalledWith('Enter title')
   })
 
-  it('collapses pasted whitespace runs to a space before submitting', () => {
+  it('collapses pasted whitespace runs to a space before submitting', async () => {
     // A text input strips newlines itself (browser semantics, mirrored by
     // happy-dom); tabs and repeated spaces from a paste still reach the value.
-    const onCreate = vi.fn()
+    const onCreate = vi.fn(accept)
     render(onCreate)
     type('two\t  lines')
-    submit()
+    await submit()
     expect(onCreate).toHaveBeenCalledWith('two lines')
   })
 
-  it('ignores a submit while the title is blank', () => {
-    const onCreate = vi.fn()
+  it('ignores a submit while the title is blank', async () => {
+    const onCreate = vi.fn(accept)
     render(onCreate)
-    submit()
+    await submit()
     expect(onCreate).not.toHaveBeenCalled()
   })
 })

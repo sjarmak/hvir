@@ -636,6 +636,7 @@ export function App(): ReactElement {
           railCompact={layout.terminalRailCompact}
           onRailCompact={layout.setTerminalRailCompact}
           attachRequestFor={beads.attachRequestFor}
+          onAttachAvailability={beads.reportLaunchAvailability}
           onRollup={terminalAttention.updateRollup}
           onOpenPath={terminalPathActivation.activate}
           onOpenWebLink={openWebLink}

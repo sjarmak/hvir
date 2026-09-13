@@ -107,11 +107,13 @@ export function beadSignals(
 /**
  * Expanded detail. With `onBeadAction`, the applicable bd write actions
  * (claim/close, by status) render as buttons that type the command into the
- * workspace terminal; without it the detail stays read-only.
+ * workspace terminal; without it the detail stays read-only. A `disabledHint`
+ * keeps the buttons visible but inert, explaining why nothing can be typed.
  */
 export function beadDetail(
   card: BeadCard,
   onBeadAction?: (request: BeadActionRequest) => void,
+  disabledHint?: string,
 ): ReactElement {
   const { issue } = card
   return (
@@ -123,7 +125,7 @@ export function beadDetail(
         {issue.updatedAt ? <span>updated {formatDate(issue.updatedAt)}</span> : null}
         {issue.closedAt ? <span>closed {formatDate(issue.closedAt)}</span> : null}
       </div>
-      {onBeadAction ? beadActions(issue.id, issue.status, onBeadAction) : null}
+      {onBeadAction ? beadActions(issue.id, issue.status, onBeadAction, disabledHint) : null}
       {card.nextUnblock ? (
         <div className="beads-field">
           <span className="beads-field-label">Next unblock</span>
@@ -168,11 +170,12 @@ function beadActions(
   id: string,
   status: string,
   onBeadAction: (request: BeadActionRequest) => void,
+  disabledHint: string | undefined,
 ): ReactElement | null {
   const actions = availableBeadActions(status)
   if (actions.length === 0) return null
   // The parser refuses such ids, so this only guards a future looser boundary.
-  const typeable = isBeadId(id)
+  const blocked = disabledHint ?? (isBeadId(id) ? undefined : `${id} is not a valid bd id`)
   return (
     <div className="beads-actions">
       {actions.map((action) => (
@@ -180,8 +183,8 @@ function beadActions(
           type="button"
           key={action}
           className={`beads-action beads-action-${action}`}
-          title={typeable ? BEAD_ACTION_HINTS[action] : `${id} is not a valid bd id`}
-          disabled={!typeable}
+          title={blocked ?? BEAD_ACTION_HINTS[action]}
+          disabled={blocked !== undefined}
           onClick={() => onBeadAction({ action, id })}
         >
           {BEAD_ACTION_LABELS[action]}

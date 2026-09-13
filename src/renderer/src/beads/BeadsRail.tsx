@@ -66,6 +66,7 @@ export function BeadsRailPanel({
       hidden={layout.railMode !== 'beads'}
       onCrewAction={beads.requestCrewAction}
       onBeadAction={beads.requestBeadAction}
+      canLaunch={beads.actionsAvailable}
     />
   )
 }

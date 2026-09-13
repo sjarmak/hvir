@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react'
 
 import type { BeadIssue, BeadsListResponse, HostPath } from '../../../shared'
 import {
@@ -43,6 +50,9 @@ const CHANGED_COOLDOWN_MS = 2500
  * inside the echo cooldown; bd itself finishes in well under this.
  */
 const ACTION_REFRESH_DELAY_MS = 1500
+/** Shown on every typed action while the workspace terminal cannot open a shell. */
+export const LAUNCH_UNAVAILABLE_HINT =
+  'No terminal can launch in this workspace (no default harness); the command cannot be typed'
 
 interface BeadsPanelProps {
   readonly root: HostPath
@@ -50,8 +60,17 @@ interface BeadsPanelProps {
   readonly hidden?: boolean
   /** Run a gc action (attach/peek/reset/handoff) against a crew identity. */
   readonly onCrewAction?: (action: GasCityAction, target: string) => void
-  /** Type a bd write action (claim/close/create) into the workspace terminal. */
-  readonly onBeadAction?: (request: BeadActionRequest) => void
+  /**
+   * Type a bd write action (claim/close/create) into the workspace terminal;
+   * resolves true once the terminal reports the command was typed.
+   */
+  readonly onBeadAction?: (request: BeadActionRequest) => Promise<boolean>
+  /**
+   * Whether the workspace terminal can open a shell for a typed action. When
+   * false every crew and bead action is disabled with a hint rather than fired
+   * into nothing. Defaults to true for callers that own no terminal.
+   */
+  readonly canLaunch?: boolean
 }
 
 export function BeadsPanel({
@@ -60,7 +79,9 @@ export function BeadsPanel({
   hidden = false,
   onCrewAction,
   onBeadAction,
+  canLaunch = true,
 }: BeadsPanelProps): ReactElement {
+  const launchHint = canLaunch ? undefined : LAUNCH_UNAVAILABLE_HINT
   const [response, setResponse] = useState<BeadsListResponse>()
   const [error, setError] = useState<string>()
   const [loading, setLoading] = useState(false)
@@ -100,7 +121,10 @@ export function BeadsPanel({
   const placement = useMemo(
     () =>
       response?.available === true
-        ? beadSectionKeys(classifyBeads(response), showClosed ? response.closedIssues : [])
+        ? beadSectionKeys(
+            classifyBeads(response),
+            showClosed ? response.closedIssues : [],
+          )
         : new Map<string, string>(),
     [response, showClosed],
   )
@@ -179,21 +203,26 @@ export function BeadsPanel({
 
   useEffect(
     () => () => {
-      if (actionRefreshTimer.current !== undefined) clearTimeout(actionRefreshTimer.current)
+      if (actionRefreshTimer.current !== undefined)
+        clearTimeout(actionRefreshTimer.current)
     },
     [],
   )
 
-  // Deliver the action, then schedule exactly one follow-up refresh; a second
-  // action inside the window restarts the timer rather than stacking a refresh.
-  const requestBeadAction = (request: BeadActionRequest): void => {
-    if (!onBeadAction) return
-    onBeadAction(request)
+  // Deliver the action and, once the terminal accepted it, schedule exactly one
+  // follow-up refresh; a second action inside the window restarts the timer
+  // rather than stacking a refresh. A refused action changes nothing in bd, so
+  // it earns no refresh.
+  const requestBeadAction = async (request: BeadActionRequest): Promise<boolean> => {
+    if (!onBeadAction || !canLaunch) return false
+    const accepted = await onBeadAction(request)
+    if (!accepted) return false
     if (actionRefreshTimer.current !== undefined) clearTimeout(actionRefreshTimer.current)
     actionRefreshTimer.current = setTimeout(() => {
       actionRefreshTimer.current = undefined
       void refresh()
     }, ACTION_REFRESH_DELAY_MS)
+    return true
   }
 
   const toggleClosed = (): void => {
@@ -292,6 +321,7 @@ export function BeadsPanel({
         collapsed={collapsedSections.has('crew')}
         onToggle={() => toggleSection('crew')}
         onAction={onCrewAction}
+        {...(launchHint === undefined ? {} : { actionsDisabledHint: launchHint })}
         onSelectBead={focusBead}
         renderedBeadIds={new Set(placement.keys())}
         analytics={analytics}
@@ -326,6 +356,7 @@ export function BeadsPanel({
             value={createTitle}
             onChange={setCreateTitle}
             onCreate={(title) => requestBeadAction({ action: 'create', title })}
+            {...(launchHint === undefined ? {} : { disabledHint: launchHint })}
           />
         ) : null}
         <div className="beads-toggles">
@@ -433,7 +464,13 @@ export function BeadsPanel({
           onCrewAction && ((worker) => onCrewAction('attach', worker)),
           traceScope,
         )}
-        {open ? beadDetail(card, onBeadAction && requestBeadAction) : null}
+        {open
+          ? beadDetail(
+              card,
+              onBeadAction && ((request) => void requestBeadAction(request)),
+              launchHint,
+            )
+          : null}
       </li>
     )
   }

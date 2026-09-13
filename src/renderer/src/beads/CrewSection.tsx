@@ -28,6 +28,8 @@ interface CrewSectionProps {
   readonly collapsed: boolean
   readonly onToggle: () => void
   readonly onAction: (action: GasCityAction, target: string) => void
+  /** When set, every session action is disabled and this says why. */
+  readonly actionsDisabledHint?: string
   /** Focus a held bead's row in the bead sections; held chips are inert without it. */
   readonly onSelectBead?: (beadId: string) => void
   /**
@@ -57,10 +59,12 @@ export function CrewSection({
   collapsed,
   onToggle,
   onAction,
+  actionsDisabledHint,
   onSelectBead,
   renderedBeadIds,
   analytics,
 }: CrewSectionProps): ReactElement | null {
+  const actionsBlocked = actionsDisabledHint !== undefined
   // A workspace outside a Gas City, or one where gc is not installed, simply has
   // no crew — that is not an error worth a banner in the bead panel.
   if (!response) return null
@@ -186,7 +190,8 @@ export function CrewSection({
         <button
           type="button"
           className="crew-card-main"
-          title={`Attach to ${member.target}`}
+          title={actionsDisabledHint ?? `Attach to ${member.target}`}
+          disabled={actionsBlocked}
           onClick={() => onAction('attach', member.target)}
         >
           {lead ? <span className="crew-pin" aria-hidden="true">📌</span> : null}
@@ -210,7 +215,8 @@ export function CrewSection({
               type="button"
               key={action}
               className={`crew-action crew-action-${action}`}
-              title={GAS_CITY_ACTION_HINTS[action]}
+              title={actionsDisabledHint ?? GAS_CITY_ACTION_HINTS[action]}
+              disabled={actionsBlocked}
               onClick={() => onAction(action, member.target)}
             >
               {GAS_CITY_ACTION_LABELS[action]}

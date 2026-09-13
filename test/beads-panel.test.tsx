@@ -28,7 +28,7 @@ describe('BeadsPanel write actions', () => {
       createElement(BeadsPanel, {
         root: ROOT,
         connected: false,
-        onBeadAction: () => undefined,
+        onBeadAction: () => Promise.resolve(true),
       }),
     )
     expect(markup).toContain('Gas City')

@@ -15,6 +15,8 @@ interface TerminalWorkspaceCollectionProps {
   readonly onRailCompact: WorkspaceProps['onRailCompact']
   /** Beads-panel attach requests, keyed by workspace id. */
   readonly attachRequestFor?: (workspaceId: string) => WorkspaceProps['attachRequest']
+  /** Per-workspace launch availability for those requests. */
+  readonly onAttachAvailability?: (workspaceId: string, canLaunch: boolean) => void
   readonly onRollup: WorkspaceProps['onRollup']
   readonly onOpenPath: WorkspaceProps['onOpenPath']
   readonly onOpenWebLink: WorkspaceProps['onOpenWebLink']
@@ -33,6 +35,7 @@ export function TerminalWorkspaceCollection({
   railCompact,
   onRailCompact,
   attachRequestFor,
+  onAttachAvailability,
   onRollup,
   onOpenPath,
   onOpenWebLink,
@@ -69,6 +72,10 @@ export function TerminalWorkspaceCollection({
                   onRailCompact={onRailCompact}
                   connectionState={project.connectionState}
                   attachRequest={attachRequestFor?.(workspace.id)}
+                  onAttachAvailability={
+                    onAttachAvailability &&
+                    ((canLaunch) => onAttachAvailability(workspace.id, canLaunch))
+                  }
                   {...runtime.moveProps(project, workspace)}
                   onRollup={onRollup}
                   onOpenPath={onOpenPath}

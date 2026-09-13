@@ -81,6 +81,8 @@ interface TerminalWorkspaceProps {
   /** When set, focuses the terminal already open for the request's identity, or
    * opens a bare shell running `command` (deduped by `nonce`). */
   readonly attachRequest?: TerminalAttachRequest
+  /** Told whether an attach request could currently launch a shell here. */
+  readonly onAttachAvailability?: (canLaunch: boolean) => void
   readonly runtimes: TerminalRuntimeRegistry
   readonly moveTargets: readonly WorkspaceState[]
   readonly onMaterializationChange: (workspaceId: string, retained: boolean) => void
@@ -130,6 +132,7 @@ export function TerminalWorkspace({
   onOpenHarnessSettings,
   onAddHarness,
   attachRequest,
+  onAttachAvailability,
   runtimes,
   moveTargets,
   onMaterializationChange,
@@ -307,6 +310,10 @@ export function TerminalWorkspace({
     currentModel: () => modelRef.current,
     focusSession: commands.focus,
     launch: commands.launchAttach,
+    canLaunch: available && defaultProvider !== undefined && defaultProfile !== undefined,
+    ...(onAttachAvailability === undefined
+      ? {}
+      : { reportAvailability: onAttachAvailability }),
   })
 
   const terminalSplit = terminalWorkspaceSplit(model)
