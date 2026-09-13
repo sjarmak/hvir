@@ -65,6 +65,7 @@ export function BeadsRailPanel({
       connected={session.connectionState === 'connected'}
       hidden={layout.railMode !== 'beads'}
       onCrewAction={beads.requestCrewAction}
+      onBeadAction={beads.requestBeadAction}
     />
   )
 }

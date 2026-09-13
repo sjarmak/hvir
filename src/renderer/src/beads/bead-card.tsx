@@ -1,12 +1,18 @@
 import type { ReactElement } from 'react'
 
+import {
+  BEAD_ACTION_HINTS,
+  BEAD_ACTION_LABELS,
+  availableBeadActions,
+  type BeadActionRequest,
+} from './bead-commands'
 import type { BeadCard } from './beads-model'
 
 /**
  * Presentation for a single bead card's signals and expanded detail. Split out
  * of `BeadsPanel` so the panel owns list state (expansion, sections, polling)
  * while the per-card rendering — which depends only on the card and the
- * attach-worker callback — lives here.
+ * attach-worker / bead-action callbacks — lives here.
  */
 
 /** Compact per-card signals: parent outcome, liveness, blockers, unlocks. */
@@ -84,7 +90,15 @@ export function beadSignals(
   return <div className="beads-signals">{bits}</div>
 }
 
-export function beadDetail(card: BeadCard): ReactElement {
+/**
+ * Expanded detail. With `onBeadAction`, the applicable bd write actions
+ * (claim/close, by status) render as buttons that type the command into the
+ * workspace terminal; without it the detail stays read-only.
+ */
+export function beadDetail(
+  card: BeadCard,
+  onBeadAction?: (request: BeadActionRequest) => void,
+): ReactElement {
   const { issue } = card
   return (
     <div className="beads-detail">
@@ -95,6 +109,7 @@ export function beadDetail(card: BeadCard): ReactElement {
         {issue.updatedAt ? <span>updated {formatDate(issue.updatedAt)}</span> : null}
         {issue.closedAt ? <span>closed {formatDate(issue.closedAt)}</span> : null}
       </div>
+      {onBeadAction ? beadActions(issue.id, issue.status, onBeadAction) : null}
       {card.nextUnblock ? (
         <div className="beads-field">
           <span className="beads-field-label">Next unblock</span>
@@ -131,6 +146,30 @@ export function beadDetail(card: BeadCard): ReactElement {
       {beadField('Acceptance criteria', issue.acceptanceCriteria)}
       {beadField('Notes', issue.notes)}
       {beadField('Close reason', issue.closeReason)}
+    </div>
+  )
+}
+
+function beadActions(
+  id: string,
+  status: string,
+  onBeadAction: (request: BeadActionRequest) => void,
+): ReactElement | null {
+  const actions = availableBeadActions(status)
+  if (actions.length === 0) return null
+  return (
+    <div className="beads-actions">
+      {actions.map((action) => (
+        <button
+          type="button"
+          key={action}
+          className={`beads-action beads-action-${action}`}
+          title={BEAD_ACTION_HINTS[action]}
+          onClick={() => onBeadAction({ action, id })}
+        >
+          {BEAD_ACTION_LABELS[action]}
+        </button>
+      ))}
     </div>
   )
 }

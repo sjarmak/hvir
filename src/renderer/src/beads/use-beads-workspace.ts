@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { HostConnectionState, HostPath } from '../../../shared'
 import type { TerminalAttachRequest } from '../terminal/terminal-workspace-model'
 import type { WorkbenchRailMode } from '../workbench/use-workbench-layout'
+import { beadCommand, type BeadActionRequest } from './bead-commands'
 import { gasCityCommand, type GasCityAction } from './gascity-commands'
 
 export interface BeadsWorkspaceAttach {
@@ -19,6 +20,11 @@ export interface BeadsWorkspace {
   readonly beadsEnabled: boolean
   /** Run a gc action against a crew identity in the active workspace's terminal. */
   readonly requestCrewAction: (action: GasCityAction, target: string) => void
+  /**
+   * Type a bd write action (claim/close/create) into the active workspace's
+   * terminal. Never keyed: every action is one-shot and opens a fresh shell.
+   */
+  readonly requestBeadAction: (request: BeadActionRequest) => void
   /** The pending attach request for `workspaceId`, if it targets that workspace. */
   readonly attachRequestFor: (workspaceId: string) => TerminalAttachRequest | undefined
 }
@@ -51,13 +57,12 @@ export function useBeadsWorkspace(
   const [attachRequest, setAttachRequest] = useState<BeadsWorkspaceAttach | undefined>()
   const attachNonce = useRef(0)
 
-  // Run a gc command in the active workspace's terminal. `attach` carries an
-  // identity key so a repeat click focuses the terminal already showing that
-  // session instead of opening another one; the one-shot commands do not.
-  const requestCrewAction = (action: GasCityAction, target: string): void => {
+  // Type a command into the active workspace's terminal. A `key` marks a
+  // long-lived identity so a repeat click focuses the terminal already showing
+  // it instead of opening another one; one-shot commands pass none.
+  const requestCommand = (command: string, key?: string): void => {
     const workspaceId = activeWorkspace?.id
     if (!workspaceId) return
-    const { command, key } = gasCityCommand(action, target)
     attachNonce.current += 1
     setAttachRequest({
       workspaceId,
@@ -67,6 +72,15 @@ export function useBeadsWorkspace(
         ...(key === undefined ? {} : { key }),
       },
     })
+  }
+
+  const requestCrewAction = (action: GasCityAction, target: string): void => {
+    const { command, key } = gasCityCommand(action, target)
+    requestCommand(command, key)
+  }
+
+  const requestBeadAction = (request: BeadActionRequest): void => {
+    requestCommand(beadCommand(request).command)
   }
 
   // Resolve the pending attach request for one workspace (App maps this over
@@ -102,5 +116,5 @@ export function useBeadsWorkspace(
     if (!beadsEnabled && railMode === 'beads') setRailMode('files')
   }, [beadsEnabled, railMode, setRailMode])
 
-  return { beadsEnabled, requestCrewAction, attachRequestFor }
+  return { beadsEnabled, requestCrewAction, requestBeadAction, attachRequestFor }
 }

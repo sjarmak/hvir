@@ -19,3 +19,20 @@ describe('BeadsPanel', () => {
     expect(markup).toContain('No data yet.')
   })
 })
+
+describe('BeadsPanel write actions', () => {
+  it('does not paint the create form before bead data has loaded', () => {
+    // The create form lives inside the data branch of the body, so a workspace
+    // where bd is unavailable never shows a write affordance it cannot honour.
+    const markup = renderToStaticMarkup(
+      createElement(BeadsPanel, {
+        root: ROOT,
+        connected: false,
+        onBeadAction: () => undefined,
+      }),
+    )
+    expect(markup).toContain('Gas City')
+    expect(markup).toContain('No data yet.')
+    expect(markup).not.toContain('beads-create')
+  })
+})

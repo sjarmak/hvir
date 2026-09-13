@@ -10,6 +10,8 @@ import {
   type GateItem,
 } from './beads-model'
 import { beadDetail, beadSignals } from './bead-card'
+import type { BeadActionRequest } from './bead-commands'
+import { BeadCreateForm } from './bead-create-form'
 import { createVisibilityRefresh } from './beads-refresh'
 import { CrewSection } from './CrewSection'
 import type { GasCityAction } from './gascity-commands'
@@ -21,6 +23,8 @@ const CHANGED_REFETCH_DELAY_MS = 300
  * Bounded poll period while the panel is visible. Shared-Dolt mutations do not
  * touch the rig's `.beads/` directory, so the file watcher can miss them; a
  * modest visible-only poll keeps the panel current without hammering `bd`.
+ * Typed bd write actions (claim/close/create) rely on this poll too: the watch
+ * is best-effort and the echo cooldown below may swallow their change event.
  */
 const VISIBLE_POLL_INTERVAL_MS = 5000
 /**
@@ -38,6 +42,8 @@ interface BeadsPanelProps {
   readonly hidden?: boolean
   /** Run a gc action (attach/peek/reset/handoff) against a crew identity. */
   readonly onCrewAction?: (action: GasCityAction, target: string) => void
+  /** Type a bd write action (claim/close/create) into the workspace terminal. */
+  readonly onBeadAction?: (request: BeadActionRequest) => void
 }
 
 export function BeadsPanel({
@@ -45,6 +51,7 @@ export function BeadsPanel({
   connected,
   hidden = false,
   onCrewAction,
+  onBeadAction,
 }: BeadsPanelProps): ReactElement {
   const [response, setResponse] = useState<BeadsListResponse>()
   const [error, setError] = useState<string>()
@@ -233,6 +240,9 @@ export function BeadsPanel({
           .filter((section) => sectionHasContent(section, view))
           .map((section) => renderSection(section, view))}
         {renderDataHygiene(view.dataHygiene)}
+        {onBeadAction ? (
+          <BeadCreateForm onCreate={(title) => onBeadAction({ action: 'create', title })} />
+        ) : null}
         <div className="beads-toggles">
           <button type="button" aria-pressed={showClosed} onClick={toggleClosed}>
             {showClosed ? 'Hide closed' : 'Show closed'}
@@ -334,7 +344,7 @@ export function BeadsPanel({
           <span className="beads-type">{issue.issueType}</span>
         </button>
         {beadSignals(card, onCrewAction && ((worker) => onCrewAction('attach', worker)))}
-        {open ? beadDetail(card) : null}
+        {open ? beadDetail(card, onBeadAction) : null}
       </li>
     )
   }

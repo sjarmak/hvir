@@ -57,6 +57,6 @@ export function gasCityCommand(action: GasCityAction, target: string): GasCityCo
  * command line. Session names are normally plain identifiers, but the value
  * flows into a shell, so quote defensively rather than trusting the input.
  */
-function shellQuoteArg(value: string): string {
+export function shellQuoteArg(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`
 }
