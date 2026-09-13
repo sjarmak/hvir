@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactElement } from 'react'
+import type { FormEvent, ReactElement } from 'react'
 
 import {
   BEAD_ACTION_HINTS,
@@ -6,23 +6,26 @@ import {
   normalizeBeadTitle,
 } from './bead-commands'
 
-/**
- * Inline title field for `bd create`. Purely presentational: it normalizes the
- * title and hands it to `onCreate`, which builds and delivers the command.
- */
-export function BeadCreateForm({
-  onCreate,
-}: {
+interface BeadCreateFormProps {
+  /** The raw field value; owned by the parent so it survives this form unmounting. */
+  readonly value: string
+  readonly onChange: (value: string) => void
   readonly onCreate: (title: string) => void
-}): ReactElement {
-  const [value, setValue] = useState('')
+}
+
+/**
+ * Inline title field for `bd create`. Purely presentational and controlled: it
+ * normalizes the title and hands it to `onCreate`, which builds and delivers
+ * the command, then clears the field through `onChange`.
+ */
+export function BeadCreateForm({ value, onChange, onCreate }: BeadCreateFormProps): ReactElement {
   const title = normalizeBeadTitle(value)
 
   const submit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault()
     if (title === '') return
     onCreate(title)
-    setValue('')
+    onChange('')
   }
 
   return (
@@ -33,7 +36,7 @@ export function BeadCreateForm({
         placeholder="New bead title"
         maxLength={200}
         value={value}
-        onChange={(event) => setValue(event.target.value)}
+        onChange={(event) => onChange(event.target.value)}
       />
       <button type="submit" title={BEAD_ACTION_HINTS.create} disabled={title === ''}>
         {BEAD_ACTION_LABELS.create}

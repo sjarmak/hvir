@@ -22,10 +22,16 @@ describe('beadCommand', () => {
     })
   })
 
-  it('builds create with the title as the single argument', () => {
+  it('builds create with the title passed by --title', () => {
     expect(beadCommand({ action: 'create', title: 'Fix the thing' })).toEqual({
-      command: "bd create 'Fix the thing'",
+      command: "bd create --title 'Fix the thing'",
     })
+  })
+
+  it('keeps a leading-dash title a title rather than a bd flag', () => {
+    expect(beadCommand({ action: 'create', title: '-v flag is ignored' }).command).toBe(
+      "bd create --title '-v flag is ignored'",
+    )
   })
 
   it('single-quotes ids and titles so shell metacharacters stay literal', () => {
@@ -33,7 +39,7 @@ describe('beadCommand', () => {
       "bd close 'a'\\''; rm -rf /'",
     )
     expect(beadCommand({ action: 'create', title: "don't break" }).command).toBe(
-      "bd create 'don'\\''t break'",
+      "bd create --title 'don'\\''t break'",
     )
   })
 })
@@ -42,6 +48,13 @@ describe('normalizeBeadTitle', () => {
   it('collapses whitespace runs, including newlines, to one space and trims', () => {
     // A newline typed into the terminal would submit the command early.
     expect(normalizeBeadTitle('  Fix\nthe\t thing  ')).toBe('Fix the thing')
+  })
+
+  it('removes control characters the line editor would read as keys', () => {
+    // ESC [ A is an up-arrow to readline; \u0003 is Ctrl-C. Neither may reach the PTY.
+    expect(normalizeBeadTitle('x\u001b[Ay')).toBe('x [Ay')
+    expect(normalizeBeadTitle('stop\u0003now')).toBe('stop now')
+    expect(normalizeBeadTitle('\u0003\u001b')).toBe('')
   })
 
   it('returns an empty string for whitespace-only input', () => {

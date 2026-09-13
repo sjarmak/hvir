@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import { act, createElement } from 'react'
+import { act, createElement, useState, type ReactElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -23,9 +23,15 @@ afterEach(() => {
   host.remove()
 })
 
+/** The panel owns the field value; this stands in for it. */
+function Owner({ onCreate }: { readonly onCreate: (title: string) => void }): ReactElement {
+  const [value, setValue] = useState('')
+  return createElement(BeadCreateForm, { value, onChange: setValue, onCreate })
+}
+
 function render(onCreate: (title: string) => void): void {
   act(() => {
-    root.render(createElement(BeadCreateForm, { onCreate }))
+    root.render(createElement(Owner, { onCreate }))
   })
 }
 

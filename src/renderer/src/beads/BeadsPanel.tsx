@@ -36,6 +36,12 @@ const VISIBLE_POLL_INTERVAL_MS = 5000
  * catching genuine external edits after it, and the visible poll is the backstop.
  */
 const CHANGED_COOLDOWN_MS = 2500
+/**
+ * One refresh this long after a typed bd write action. The visible poll backs
+ * off to as much as 30 s on a slow host, and the watch may miss the change
+ * inside the echo cooldown; bd itself finishes in well under this.
+ */
+const ACTION_REFRESH_DELAY_MS = 1500
 
 interface BeadsPanelProps {
   readonly root: HostPath
@@ -63,7 +69,11 @@ export function BeadsPanel({
   const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<string>>(
     new Set(),
   )
+  // Owned here, not by the form, so a transient list error that unmounts the
+  // form does not discard a half-typed title.
+  const [createTitle, setCreateTitle] = useState('')
   const rootRef = useRef<HTMLElement>(null)
+  const actionRefreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const requestSerial = useRef(0)
   const inFlight = useRef(false)
   const lastCompletedAt = useRef(0)
@@ -157,6 +167,25 @@ export function BeadsPanel({
       controller.dispose()
     }
   }, [connected, hidden, refresh])
+
+  useEffect(
+    () => () => {
+      if (actionRefreshTimer.current !== undefined) clearTimeout(actionRefreshTimer.current)
+    },
+    [],
+  )
+
+  // Deliver the action, then schedule exactly one follow-up refresh; a second
+  // action inside the window restarts the timer rather than stacking a refresh.
+  const requestBeadAction = (request: BeadActionRequest): void => {
+    if (!onBeadAction) return
+    onBeadAction(request)
+    if (actionRefreshTimer.current !== undefined) clearTimeout(actionRefreshTimer.current)
+    actionRefreshTimer.current = setTimeout(() => {
+      actionRefreshTimer.current = undefined
+      void refresh()
+    }, ACTION_REFRESH_DELAY_MS)
+  }
 
   const toggleClosed = (): void => {
     setShowClosed(!showClosed)
@@ -267,7 +296,11 @@ export function BeadsPanel({
           .map((section) => renderSection(section, view))}
         {renderDataHygiene(view.dataHygiene)}
         {onBeadAction ? (
-          <BeadCreateForm onCreate={(title) => onBeadAction({ action: 'create', title })} />
+          <BeadCreateForm
+            value={createTitle}
+            onChange={setCreateTitle}
+            onCreate={(title) => requestBeadAction({ action: 'create', title })}
+          />
         ) : null}
         <div className="beads-toggles">
           <button type="button" aria-pressed={showClosed} onClick={toggleClosed}>
@@ -374,7 +407,7 @@ export function BeadsPanel({
           onCrewAction && ((worker) => onCrewAction('attach', worker)),
           traceScope,
         )}
-        {open ? beadDetail(card, onBeadAction) : null}
+        {open ? beadDetail(card, onBeadAction && requestBeadAction) : null}
       </li>
     )
   }

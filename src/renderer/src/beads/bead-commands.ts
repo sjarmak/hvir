@@ -48,16 +48,23 @@ export function beadCommand(request: BeadActionRequest): BeadCommand {
     case 'close':
       return { command: `bd close ${shellQuoteArg(request.id)}` }
     case 'create':
-      return { command: `bd create ${shellQuoteArg(request.title)}` }
+      // `--title` rather than a positional: a title starting with `-` would
+      // otherwise be parsed by bd as a flag ("title required").
+      return { command: `bd create --title ${shellQuoteArg(request.title)}` }
   }
 }
 
 /**
- * Collapse every whitespace run (newlines included) to one space and trim. A
- * newline inside the title would submit the terminal command early.
+ * Drop C0/C1 control characters, then collapse every whitespace run (newlines
+ * included) to one space and trim. The command is delivered as keystrokes, so
+ * shell quoting cannot help: a newline would submit early, and an ESC or Ctrl-C
+ * byte would be read by the line editor as a key before the shell ever saw it.
  */
 export function normalizeBeadTitle(raw: string): string {
-  return raw.replaceAll(/\s+/g, ' ').trim()
+  return raw
+    .replaceAll(/\p{Cc}/gu, ' ')
+    .replaceAll(/\s+/g, ' ')
+    .trim()
 }
 
 /**
