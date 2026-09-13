@@ -3,7 +3,8 @@
 # Re-sync the overlay branch (feat/beads-panel) onto an upstream release tag.
 #
 # Replaces scripts/sync-upstream.sh. Policy:
-#   - merges at upstream release tags only (newest v* tag, or the tag in $1);
+#   - merges at upstream release tags only (newest v* tag, or the v* tag in
+#     $1, which must exist on the upstream remote at the same commit);
 #   - refuses to run unless rerere.enabled is explicitly false (the v0.2.3 sync
 #     replayed a stale rerere resolution and silently dropped overlay hunks);
 #   - works on a scratch branch off the overlay branch, never on the overlay
@@ -76,20 +77,58 @@ git -C "$repo_root" remote get-url "$FORK_REMOTE" >/dev/null 2>&1 \
 git -C "$repo_root" rev-parse --verify --quiet "refs/heads/$OVERLAY_BRANCH" >/dev/null \
   || die "overlay branch '$OVERLAY_BRANCH' does not exist locally"
 
+# --- Explicit tag: must be a release the upstream remote publishes ----------
+
+# The commit a tag names on the upstream remote, peeled through an annotated
+# tag; empty when the remote has no such tag. One ls-remote, no fetch.
+upstream_tag_commit() {
+  local name="$1" peeled plain
+  peeled="$(git -C "$repo_root" ls-remote --tags "$UPSTREAM_REMOTE" "refs/tags/$name^{}" \
+    | awk '{ print $1 }' | head -n 1)"
+  if [ -n "$peeled" ]; then
+    printf '%s\n' "$peeled"
+    return 0
+  fi
+  plain="$(git -C "$repo_root" ls-remote --tags --refs "$UPSTREAM_REMOTE" "refs/tags/$name" \
+    | awk '{ print $1 }' | head -n 1)"
+  printf '%s\n' "$plain"
+}
+
+# Refuse before any fetch: a local tag that disagrees with upstream would also
+# make `fetch --tags` fail, with a message that names neither tag nor cause.
+expected_commit=""
+if [ -n "$requested_tag" ]; then
+  git check-ref-format "refs/tags/$requested_tag" \
+    || die "'$requested_tag' is not a valid tag name"
+  case "$requested_tag" in
+    v[0-9]*) ;;
+    *) die "'$requested_tag' is not a v* release tag; the overlay merges at upstream releases only" ;;
+  esac
+  expected_commit="$(upstream_tag_commit "$requested_tag")"
+  [ -n "$expected_commit" ] \
+    || die "tag '$requested_tag' is not published on $UPSTREAM_REMOTE (a local-only or fork-only tag is not a release)"
+  local_commit="$(git -C "$repo_root" rev-parse --verify --quiet "refs/tags/$requested_tag^{commit}" || true)"
+  if [ -n "$local_commit" ] && [ "$local_commit" != "$expected_commit" ]; then
+    die "local tag '$requested_tag' differs from $UPSTREAM_REMOTE ($local_commit vs $expected_commit); delete the local tag by name and retry"
+  fi
+fi
+
 # --- Fetch (read-only against both remotes) --------------------------------
 
 echo "[fetch] $UPSTREAM_REMOTE (with tags)"
-git -C "$repo_root" fetch --quiet --tags "$UPSTREAM_REMOTE"
+git -C "$repo_root" fetch --quiet --tags "$UPSTREAM_REMOTE" \
+  || die "fetching $UPSTREAM_REMOTE failed; a local tag that differs from the upstream tag of the same name must be deleted by name first"
 echo "[fetch] $FORK_REMOTE"
 git -C "$repo_root" fetch --quiet "$FORK_REMOTE"
 
 # --- Resolve the tag -------------------------------------------------------
 
 if [ -n "$requested_tag" ]; then
-  git check-ref-format "refs/tags/$requested_tag" \
-    || die "'$requested_tag' is not a valid tag name"
-  git -C "$repo_root" rev-parse --verify --quiet "refs/tags/$requested_tag^{commit}" >/dev/null \
+  local_commit="$(git -C "$repo_root" rev-parse --verify --quiet "refs/tags/$requested_tag^{commit}" || true)"
+  [ -n "$local_commit" ] \
     || die "tag '$requested_tag' does not exist after fetching $UPSTREAM_REMOTE"
+  [ "$local_commit" = "$expected_commit" ] \
+    || die "local tag '$requested_tag' differs from $UPSTREAM_REMOTE ($local_commit vs $expected_commit); delete the local tag by name and retry"
   tag="$requested_tag"
 else
   # Candidates are the tags the upstream remote actually publishes: a local or

@@ -299,17 +299,78 @@ describe('sync-upstream-tag.sh', () => {
     expect(scratchBranches(fixture)).toHaveLength(1)
   })
 
+  it('refuses an explicit tag outside the v* release convention', async () => {
+    const fixture = await createFixture({ conflict: false })
+    fixture.git(fixture.work, 'tag', 'nightly-1', 'v0.1.0')
+    const result = fixture.run(['nightly-1'])
+    expect(result.status).toBe(2)
+    expect(result.stderr).toContain('not a v* release tag')
+    expect(scratchBranches(fixture)).toEqual([])
+  })
+
+  it('refuses an explicit tag that exists only locally', async () => {
+    const fixture = await createFixture({ conflict: false })
+    fixture.git(fixture.work, 'tag', 'v0.9.0', 'feat/beads-panel')
+    const result = fixture.run(['v0.9.0'])
+    expect(result.status).toBe(2)
+    expect(result.stderr).toContain("'v0.9.0' is not published on origin")
+    expect(scratchBranches(fixture)).toEqual([])
+    expect(fixture.git(fixture.work, 'tag', '--list', 'v0.9.0').trim()).toBe('v0.9.0')
+  })
+
+  it('refuses an explicit tag that exists only on the fork remote', async () => {
+    const fixture = await createFixture({ conflict: false })
+    fixture.git(fixture.work, 'tag', 'v0.9.1', 'feat/beads-panel')
+    fixture.git(fixture.work, 'push', '-q', 'fork', 'refs/tags/v0.9.1')
+    fixture.git(fixture.work, 'tag', '-d', 'v0.9.1')
+    const result = fixture.run(['v0.9.1'])
+    expect(result.status).toBe(2)
+    expect(result.stderr).toContain("'v0.9.1' is not published on origin")
+    expect(scratchBranches(fixture)).toEqual([])
+  })
+
+  it('refuses an explicit tag whose local commit differs from the upstream one', async () => {
+    const fixture = await createFixture({ conflict: false })
+    // The fixture deleted the local v0.2.0; re-create it on the overlay commit.
+    fixture.git(fixture.work, 'tag', 'v0.2.0', 'feat/beads-panel')
+    const result = fixture.run(['v0.2.0'])
+    expect(result.status).toBe(2)
+    expect(result.stderr).toContain("'v0.2.0' differs from origin")
+    expect(scratchBranches(fixture)).toEqual([])
+    expect(fixture.git(fixture.work, 'rev-parse', 'v0.2.0^{commit}')).toBe(
+      fixture.git(fixture.work, 'rev-parse', 'feat/beads-panel'),
+    )
+  })
+
+  it('accepts an explicit annotated tag whose peeled commit matches upstream', async () => {
+    const fixture = await createFixture({ conflict: false })
+    const upstream = join(fixture.root, 'upstream')
+    fixture.git(upstream, 'tag', '-a', '-m', 'release 0.2.1', 'v0.2.1', 'v0.2.0')
+    fixture.git(upstream, 'push', '-q', fixture.upstreamBare, 'refs/tags/v0.2.1')
+    const result = fixture.run(['v0.2.1'])
+    expect(result.status).toBe(0)
+    expect(scratchBranches(fixture)[0]).toContain('v0.2.1')
+  })
+
   it('ignores local and fork-only v* tags when picking the newest release', async () => {
     const fixture = await createFixture({ conflict: false })
     fixture.git(fixture.work, 'tag', 'v9.9.9-local', 'feat/beads-panel')
-    fixture.git(fixture.work, 'push', '-q', 'fork', 'refs/tags/v9.9.9-local:refs/tags/v9.9.8-fork')
+    fixture.git(
+      fixture.work,
+      'push',
+      '-q',
+      'fork',
+      'refs/tags/v9.9.9-local:refs/tags/v9.9.8-fork',
+    )
     fixture.git(fixture.work, 'tag', '-d', 'v9.9.9-local')
     const withLocal = fixture.run([])
     expect(withLocal.status).toBe(0)
     expect(withLocal.stdout).not.toContain('already merged')
     expect(scratchBranches(fixture)).toHaveLength(1)
     expect(scratchBranches(fixture)[0]).toMatch(/^sync\/v0\.2\.0-/)
-    expect(fixture.git(fixture.work, 'tag', '--list', 'v9.9.8-fork').trim()).toBe('v9.9.8-fork')
+    expect(fixture.git(fixture.work, 'tag', '--list', 'v9.9.8-fork').trim()).toBe(
+      'v9.9.8-fork',
+    )
   })
 
   it('refuses before branching when an untracked file would be overwritten', async () => {
@@ -331,7 +392,9 @@ describe('sync-upstream-tag.sh', () => {
     expect(result.stderr).toContain('docs/new.md')
     expect(result.stderr).not.toContain('ipc.ts.orig')
     expect(scratchBranches(fixture)).toEqual([])
-    expect(fixture.git(fixture.work, 'branch', '--show-current').trim()).toBe('feat/beads-panel')
+    expect(fixture.git(fixture.work, 'branch', '--show-current').trim()).toBe(
+      'feat/beads-panel',
+    )
   })
 
   it('stops on conflicts and groups wiring files', async () => {
