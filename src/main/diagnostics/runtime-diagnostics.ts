@@ -7,9 +7,6 @@ import {
   type DiagnosticEvidenceState,
   type HostPath,
   type RenderContainmentDiagnosticBatch,
-  type ResponsivenessDiagnosticsState,
-  type ResponsivenessObservationBatch,
-  type ResponsivenessStopReason,
   type RendererDiagnosticSession,
   type WorkbenchHealthSnapshot,
 } from '../../shared'
@@ -21,7 +18,7 @@ import type { ProjectHostControlDiagnostic } from '../project-coordinator'
 import type { PtySupervisorDiagnostic } from '../pty/pty-supervisor'
 import type { TerminalSessionRegistryDiagnostic } from '../terminal/session-registry'
 import type { RendererOwner } from '../renderer-resource-scopes'
-import type { IpcContractDiagnostic } from '../ipc/authority-router'
+import type { IpcContractDiagnostic } from '../ipc/authority-port'
 import {
   DiagnosticIntake,
   MAX_RECENT_DIAGNOSTIC_BYTES,
@@ -39,19 +36,25 @@ import {
   type DiagnosticSegmentMetadata,
 } from './diagnostic-journal'
 import type { StoredDiagnosticEvent } from './diagnostic-event'
-import { ResponsivenessDiagnosticSessions } from './responsiveness-diagnostic-sessions'
+import {
+  prepareDiagnosticReportEvidence,
+  type DiagnosticLifetimeStart,
+  type DiagnosticReportEvidenceSnapshot,
+} from './diagnostic-report-evidence'
 
 const JOURNAL_FILE = 'runtime-diagnostics.jsonl'
 type PublishHealth = (snapshot: WorkbenchHealthSnapshot) => void
 
 /** App-lifetime diagnostics facade; feature owners can emit only their closed schemas. */
 export class RuntimeDiagnostics {
+  private evidenceRevision = 0
+  private currentLifetimeStart?: DiagnosticLifetimeStart
+
   private constructor(
     private readonly intake: DiagnosticIntake,
     private readonly health: WorkbenchHealth,
     private readonly persistenceEnabled: boolean,
     private readonly publish: PublishHealth,
-    private readonly responsiveness: ResponsivenessDiagnosticSessions,
     private readonly journal?: DiagnosticJournal,
     private readonly localHost?: LocalHost,
   ) {}
@@ -60,7 +63,6 @@ export class RuntimeDiagnostics {
     userDataPath: string,
     enabled: boolean,
     publish: PublishHealth = () => undefined,
-    responsivenessAvailable = false,
   ): RuntimeDiagnostics {
     const health = new WorkbenchHealth()
     let runtime: RuntimeDiagnostics | undefined
@@ -69,37 +71,25 @@ export class RuntimeDiagnostics {
     }
     if (!enabled) {
       const intake = new DiagnosticIntake({ onAccepted })
-      runtime = new RuntimeDiagnostics(
-        intake,
-        health,
-        false,
-        publish,
-        new ResponsivenessDiagnosticSessions(intake, {
-          available: responsivenessAvailable,
-        }),
-      )
+      runtime = new RuntimeDiagnostics(intake, health, false, publish)
       return runtime
     }
     const localHost = new LocalHost()
     const storage = new ProjectHostDiagnosticStorage(localHost, userDataPath)
     const journal = new DiagnosticJournal(storage)
     const intake = new DiagnosticIntake({ writer: journal, onAccepted })
-    runtime = new RuntimeDiagnostics(
-      intake,
-      health,
-      true,
-      publish,
-      new ResponsivenessDiagnosticSessions(intake, {
-        available: responsivenessAvailable,
-      }),
-      journal,
-      localHost,
-    )
+    runtime = new RuntimeDiagnostics(intake, health, true, publish, journal, localHost)
     return runtime
   }
 
   recordApplication(kind: ApplicationDiagnosticKind): void {
-    this.intake.record({ kind })
+    const accepted = this.intake.record({ kind })
+    if (kind === 'application-starting' && accepted) {
+      this.currentLifetimeStart = {
+        correlation: accepted.correlation,
+        occurredAt: accepted.occurredAt,
+      }
+    }
   }
 
   recordPty(event: PtySupervisorDiagnostic): void {
@@ -130,20 +120,20 @@ export class RuntimeDiagnostics {
   }
 
   startRenderer(owner: RendererOwner): RendererDiagnosticSession {
-    const session = this.intake.startRenderer(owner)
+    return this.intake.startRenderer(owner)
+  }
+
+  rendererReady(owner: RendererOwner): void {
     const recovered = this.health.rendererReady(owner, nowIso())
     if (recovered.length > 0) this.publishHealth()
     for (const event of recovered) this.intake.record(event)
-    return session
   }
 
   revokeRenderer(owner: RendererOwner): void {
-    this.responsiveness.revoke(owner)
     this.intake.revokeRenderer(owner)
   }
 
   closeRenderer(owner: RendererOwner): void {
-    this.responsiveness.revoke(owner)
     this.intake.revokeRenderer(owner)
     const recovered = this.health.rendererClosed(owner, nowIso())
     if (recovered.length > 0) this.publishHealth()
@@ -161,38 +151,38 @@ export class RuntimeDiagnostics {
     this.intake.recordRenderContainment(owner, batch)
   }
 
-  responsivenessState(owner: RendererOwner): ResponsivenessDiagnosticsState {
-    return this.responsiveness.state(owner)
-  }
-
-  startResponsiveness(owner: RendererOwner): ResponsivenessDiagnosticsState {
-    return this.responsiveness.start(owner)
-  }
-
-  recordResponsiveness(
-    owner: RendererOwner,
-    batch: ResponsivenessObservationBatch,
-  ): void {
-    this.responsiveness.observe(owner, batch)
-  }
-
-  stopResponsiveness(
-    owner: RendererOwner,
-    diagnosticSessionId: string,
-    reason: Exclude<ResponsivenessStopReason, 'timeout'>,
-  ): ResponsivenessDiagnosticsState {
-    return this.responsiveness.stop(owner, diagnosticSessionId, reason)
-  }
-
-  deleteResponsiveness(
-    owner: RendererOwner,
-    diagnosticSessionId: string,
-  ): ResponsivenessDiagnosticsState {
-    return this.responsiveness.delete(owner, diagnosticSessionId)
-  }
-
   snapshot(): DiagnosticRecentSnapshot {
     return this.intake.snapshot()
+  }
+
+  async prepareReportSnapshot(): Promise<
+    | {
+        readonly revision: number
+        readonly diagnostics: DiagnosticReportEvidenceSnapshot
+        readonly health: WorkbenchHealthSnapshot
+      }
+    | undefined
+  > {
+    const revision = this.evidenceRevision
+    const current = this.intake.snapshot()
+    const health = this.healthSnapshot()
+    const durable = this.journal
+      ? await this.journal.readReportEvidence()
+      : { availability: 'unavailable' as const, events: [] }
+    if (!this.isReportSnapshotCurrent(revision)) return undefined
+    return {
+      revision,
+      diagnostics: prepareDiagnosticReportEvidence(
+        current,
+        durable,
+        this.currentLifetimeStart,
+      ),
+      health,
+    }
+  }
+
+  isReportSnapshotCurrent(revision: number): boolean {
+    return revision === this.evidenceRevision
   }
 
   healthSnapshot(): WorkbenchHealthSnapshot {
@@ -227,6 +217,8 @@ export class RuntimeDiagnostics {
   }
 
   async deleteEvidence(): Promise<DiagnosticEvidenceDeleteResult> {
+    this.evidenceRevision++
+    this.currentLifetimeStart = undefined
     this.intake.clear()
     this.health.clear()
     this.publishHealth()
@@ -249,7 +241,6 @@ export class RuntimeDiagnostics {
   }
 
   async dispose(): Promise<void> {
-    this.responsiveness.dispose()
     await this.journal?.dispose()
     await this.localHost?.dispose()
   }

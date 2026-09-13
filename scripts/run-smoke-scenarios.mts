@@ -1,6 +1,14 @@
+import { appendFile } from 'node:fs/promises'
+import type { SmokeFailureEvidence } from '../src/main/smoke/failure-evidence.mts'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join, resolve } from 'node:path'
+import {
+  SmokeAttemptEvidenceCollector,
+  formatSmokeFailureEvidence,
+  createSmokeFailureArtifact,
+  writeSmokeFailureArtifact,
+} from './smoke-failure-artifact.mts'
 import {
   parseElectronSmokeScenario,
   type ElectronSmokeScenario,
@@ -9,7 +17,15 @@ import {
 export const DEFAULT_SMOKE_SCENARIOS = [
   'pty-native',
   'viewer-position',
-  'legacy-workflow',
+  'native-host-worker',
+  'workbench-health',
+  'platform-contracts',
+  'terminal-theme',
+  'terminal-move',
+  'workbench-layout',
+  'terminal-split',
+  'app-settings',
+  'harness-profiles',
 ] as const satisfies readonly ElectronSmokeScenario[]
 
 export type SmokeScenarioName = ElectronSmokeScenario
@@ -22,6 +38,8 @@ export interface SmokeScenarioResult {
   readonly exitCode?: number
   readonly signal?: NodeJS.Signals
   readonly error?: string
+  readonly failureEvidence?: SmokeFailureEvidence | null
+  readonly durationMs?: number
 }
 
 type InvokeSmokeScenario = (
@@ -31,6 +49,33 @@ type InvokeSmokeScenario = (
 ) => Promise<Omit<SmokeScenarioResult, 'scenario' | 'iteration' | 'repetitionCount'>>
 
 const MAX_SMOKE_REPETITIONS = 100
+const DEFAULT_SMOKE_ATTEMPT_TIMEOUT_MS = 180_000
+const CAPACITY_SMOKE_ATTEMPT_TIMEOUT_MS = 600_000
+const FAILURE_ARTIFACT_TIMEOUT_MS = 1_000
+const SMOKE_TERMINATION_GRACE_MS = 15_000
+const SMOKE_FORCE_KILL_SETTLE_MS = 1_000
+// Independent acceptance oracle for Electron's native standard-error text.
+const DISPOSED_RENDER_FRAME_MESSAGE =
+  'Render frame was disposed before WebFrameMain could be accessed'
+
+export interface SmokeScenarioInvocationOptions {
+  readonly command?: string
+  readonly args?: readonly string[]
+  readonly cwd?: string
+  readonly environment?: NodeJS.ProcessEnv
+  readonly timeoutMs?: number
+  readonly terminationGraceMs?: number
+  readonly forceKillSettleMs?: number
+  readonly artifactDirectory?: string
+  readonly interruptionSignal?: AbortSignal
+  readonly registerSignalEscalation?: (escalate: () => void) => () => void
+}
+
+export function smokeAttemptTimeoutMs(scenario: SmokeScenarioName): number {
+  return scenario === 'capacity'
+    ? CAPACITY_SMOKE_ATTEMPT_TIMEOUT_MS
+    : DEFAULT_SMOKE_ATTEMPT_TIMEOUT_MS
+}
 
 export function parseSmokeRepetitionCount(value: string | undefined): number {
   if (value === undefined) return 1
@@ -72,10 +117,21 @@ export async function runSmokeScenarioGroups(
   scenarios: readonly SmokeScenarioName[],
   repetitionCount: number,
   invoke: InvokeSmokeScenario,
+  interruptionSignal?: AbortSignal,
 ): Promise<readonly SmokeScenarioResult[]> {
   const results: SmokeScenarioResult[] = []
   for (let iteration = 1; iteration <= repetitionCount; iteration += 1) {
     for (const scenario of scenarios) {
+      if (interruptionSignal?.aborted) {
+        results.push({
+          scenario,
+          iteration,
+          repetitionCount,
+          status: 'failed',
+          error: 'launcher interrupted',
+        })
+        return results
+      }
       try {
         results.push({
           scenario,
@@ -92,6 +148,7 @@ export async function runSmokeScenarioGroups(
           error: reason instanceof Error ? reason.message : String(reason),
         })
       }
+      if (interruptionSignal?.aborted) return results
     }
   }
   return results
@@ -109,37 +166,290 @@ export function smokeScenarioEnvironment(
   return childEnvironment
 }
 
-function invokeSmokeScenario(
+export function classifySmokeAttempt(options: {
+  readonly exitCode: number | null
+  readonly signal: NodeJS.Signals | null
+  readonly successSentinel: boolean
+  readonly disposedFrameDeliveryFailure?: boolean
+  readonly durationMs: number
+}): Omit<SmokeScenarioResult, 'scenario' | 'iteration' | 'repetitionCount'> {
+  const status =
+    options.exitCode === 0 &&
+    options.successSentinel &&
+    options.disposedFrameDeliveryFailure !== true
+      ? 'passed'
+      : 'failed'
+  return {
+    status,
+    ...(options.exitCode === null ? {} : { exitCode: options.exitCode }),
+    ...(options.signal === null ? {} : { signal: options.signal }),
+    ...(options.disposedFrameDeliveryFailure
+      ? { error: 'disposed renderer frame delivery reached standard error' }
+      : !options.successSentinel && options.exitCode === 0
+        ? { error: 'missing success sentinel' }
+        : {}),
+    durationMs: options.durationMs,
+  }
+}
+
+export function invokeSmokeScenario(
   scenario: SmokeScenarioName,
   iteration: number,
   repetitionCount: number,
+  options: SmokeScenarioInvocationOptions = {},
 ): Promise<Omit<SmokeScenarioResult, 'scenario' | 'iteration' | 'repetitionCount'>> {
+  if (options.interruptionSignal?.aborted) {
+    return Promise.resolve({ status: 'failed', error: 'launcher interrupted' })
+  }
   const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
   console.log(
     `[smoke:group] ${scenario} iteration ${iteration}/${repetitionCount} starting`,
   )
+  const startedAt = performance.now()
   return new Promise((resolveResult) => {
-    const child = spawn('bash', [join(repositoryRoot, 'scripts/run-smoke.sh')], {
-      cwd: repositoryRoot,
-      env: smokeScenarioEnvironment(process.env, scenario),
-      stdio: 'inherit',
-    })
+    const collector = new SmokeAttemptEvidenceCollector()
+    const child = spawn(
+      options.command ?? 'bash',
+      [...(options.args ?? [join(repositoryRoot, 'scripts/run-smoke.sh')])],
+      {
+        cwd: options.cwd ?? repositoryRoot,
+        detached: process.platform !== 'win32',
+        env: smokeScenarioEnvironment(options.environment ?? process.env, scenario),
+        stdio: ['inherit', 'pipe', 'pipe'],
+      },
+    )
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
     let settled = false
-    child.once('error', (error) => {
+    let disposedFrameDeliveryFailure = false
+    let stderrMarkerSuffix = ''
+    const timers: {
+      attempt?: ReturnType<typeof setTimeout>
+      termination?: ReturnType<typeof setTimeout>
+      forcedSettle?: ReturnType<typeof setTimeout>
+    } = {}
+    let forcedOutcome:
+      | {
+          readonly outcome: 'attempt-contained' | 'launcher-interrupted'
+          readonly error: string
+        }
+      | undefined
+    const clearTimers = (): void => {
+      if (timers.attempt) clearTimeout(timers.attempt)
+      if (timers.termination) clearTimeout(timers.termination)
+      if (timers.forcedSettle) clearTimeout(timers.forcedSettle)
+    }
+    let unregisterSignalEscalation: (() => void) | undefined
+    const releaseInterruptionOwnership = (): void => {
+      options.interruptionSignal?.removeEventListener('abort', interrupt)
+      unregisterSignalEscalation?.()
+      unregisterSignalEscalation = undefined
+    }
+    const settleForcedAttempt = (
+      exitCode: number | null,
+      signal: NodeJS.Signals | null,
+    ): void => {
+      if (settled || !forcedOutcome) return
+      settled = true
+      clearTimers()
+      releaseInterruptionOwnership()
+      child.stdout.destroy()
+      child.stderr.destroy()
+      collector.finish()
+      const durationMs = performance.now() - startedAt
+      const result = {
+        failureEvidence: collector.evidence().snapshot,
+        status: 'failed',
+        ...(exitCode === null ? {} : { exitCode }),
+        ...(signal === null ? {} : { signal }),
+        error: forcedOutcome.error,
+        durationMs,
+      } as const
+      void retainFailureArtifact(
+        {
+          scenario,
+          iteration,
+          repetitionCount,
+          durationMs,
+          exitCode,
+          signal,
+          spawnError: false,
+          outcome: forcedOutcome.outcome,
+          collector,
+        },
+        options.artifactDirectory,
+      ).finally(() => resolveResult(result))
+    }
+    const escalateForcedTermination = (): void => {
+      if (settled || !forcedOutcome) return
+      if (timers.termination) clearTimeout(timers.termination)
+      terminateSmokeAttempt(child.pid, 'SIGKILL')
+      timers.forcedSettle ??= setTimeout(
+        () => settleForcedAttempt(null, null),
+        options.forceKillSettleMs ?? SMOKE_FORCE_KILL_SETTLE_MS,
+      )
+    }
+    const beginForcedTermination = (
+      outcome: 'attempt-contained' | 'launcher-interrupted',
+      error: string,
+    ): void => {
+      if (settled || forcedOutcome) return
+      forcedOutcome = { outcome, error }
+      if (timers.attempt) clearTimeout(timers.attempt)
+      terminateSmokeAttempt(child.pid, 'SIGTERM')
+      timers.termination = setTimeout(
+        escalateForcedTermination,
+        options.terminationGraceMs ?? SMOKE_TERMINATION_GRACE_MS,
+      )
+    }
+    const interrupt = (): void =>
+      beginForcedTermination('launcher-interrupted', 'launcher interrupted')
+    options.interruptionSignal?.addEventListener('abort', interrupt, { once: true })
+    unregisterSignalEscalation = options.registerSignalEscalation?.(
+      escalateForcedTermination,
+    )
+    child.stdout.on('data', (chunk: string) => {
+      process.stdout.write(chunk)
+      collector.observe('stdout', chunk)
+    })
+    child.stderr.on('data', (chunk: string) => {
+      process.stderr.write(chunk)
+      collector.observe('stderr', chunk)
+      const candidate = `${stderrMarkerSuffix}${chunk}`
+      disposedFrameDeliveryFailure ||= candidate.includes(DISPOSED_RENDER_FRAME_MESSAGE)
+      stderrMarkerSuffix = candidate.slice(-(DISPOSED_RENDER_FRAME_MESSAGE.length - 1))
+    })
+    timers.attempt = setTimeout(
+      () =>
+        beginForcedTermination(
+          'attempt-contained',
+          'process exceeded outer attempt containment',
+        ),
+      options.timeoutMs ?? smokeAttemptTimeoutMs(scenario),
+    )
+    if (options.interruptionSignal?.aborted) interrupt()
+    child.once('error', () => {
       if (settled) return
       settled = true
-      resolveResult({ status: 'failed', error: error.message })
+      clearTimers()
+      releaseInterruptionOwnership()
+      collector.finish()
+      const durationMs = performance.now() - startedAt
+      void retainFailureArtifact(
+        {
+          scenario,
+          iteration,
+          repetitionCount,
+          durationMs,
+          exitCode: null,
+          signal: null,
+          spawnError: true,
+          outcome: 'spawn-failure',
+          collector,
+        },
+        options.artifactDirectory,
+      ).finally(() =>
+        resolveResult({
+          status: 'failed',
+          error: 'process spawn failed',
+          durationMs,
+          failureEvidence: collector.evidence().snapshot,
+        }),
+      )
     })
     child.once('close', (exitCode, signal) => {
       if (settled) return
+      if (forcedOutcome) {
+        settleForcedAttempt(exitCode, signal)
+        return
+      }
       settled = true
-      resolveResult({
-        status: exitCode === 0 ? 'passed' : 'failed',
-        ...(exitCode === null ? {} : { exitCode }),
-        ...(signal === null ? {} : { signal }),
+      clearTimers()
+      releaseInterruptionOwnership()
+      collector.finish()
+      const durationMs = performance.now() - startedAt
+      const successSentinel = collector.evidence().logs.successSentinel
+      const result = classifySmokeAttempt({
+        exitCode,
+        signal,
+        successSentinel,
+        disposedFrameDeliveryFailure,
+        durationMs,
       })
+      if (result.status === 'passed') {
+        resolveResult(result)
+        return
+      }
+      void retainFailureArtifact(
+        {
+          scenario,
+          iteration,
+          repetitionCount,
+          durationMs,
+          exitCode,
+          signal,
+          spawnError: false,
+          collector,
+        },
+        options.artifactDirectory,
+      ).finally(() =>
+        resolveResult({ ...result, failureEvidence: collector.evidence().snapshot }),
+      )
     })
   })
+}
+
+function terminateSmokeAttempt(
+  pid: number | undefined,
+  signal: 'SIGTERM' | 'SIGKILL',
+): void {
+  if (!pid) return
+  try {
+    if (process.platform === 'win32') process.kill(pid, signal)
+    else process.kill(-pid, signal)
+  } catch (error) {
+    const code = (error as { code?: unknown } | undefined)?.code
+    if (code !== 'ESRCH') {
+      console.error('[smoke:launcher] failed to terminate timed-out process group')
+    }
+  }
+}
+
+async function retainFailureArtifact(
+  options: Parameters<typeof createSmokeFailureArtifact>[0],
+  directory = process.env.HVIR_SMOKE_ARTIFACT_DIR,
+): Promise<void> {
+  try {
+    const path = await writeSmokeFailureArtifactWithinDeadline(() =>
+      writeSmokeFailureArtifact(directory, createSmokeFailureArtifact(options)),
+    )
+    if (path) console.error('[smoke:artifact] retained bounded failure evidence')
+  } catch {
+    console.error('[smoke:artifact] failed to retain bounded failure evidence')
+  }
+}
+
+export async function writeSmokeFailureArtifactWithinDeadline(
+  writeArtifact: () => Promise<string | undefined>,
+  timeoutMs = FAILURE_ARTIFACT_TIMEOUT_MS,
+): Promise<string | undefined> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error('Smoke failure artifact deadline was invalid')
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      writeArtifact(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error('Smoke failure artifact retention timed out')),
+          timeoutMs,
+        )
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 export function formatSmokeScenarioResults(
@@ -154,24 +464,86 @@ export function formatSmokeScenarioResults(
         (result.signal
           ? `signal ${result.signal}`
           : `exit ${result.exitCode ?? 'unknown'}`)
-      return `- ${result.scenario} iteration ${result.iteration}/${result.repetitionCount}: ${result.status} (${detail})`
+      const duration =
+        result.durationMs === undefined ? '' : ` · ${Math.round(result.durationMs)}ms`
+      return `- ${result.scenario} iteration ${result.iteration}/${result.repetitionCount}: ${result.status} (${detail}${duration})${result.status === 'failed' ? ` · ${formatSmokeFailureEvidence(result.failureEvidence ?? null)}` : ''}`
     }),
   ].join('\n')
 }
 
 async function main(): Promise<void> {
+  const interruption = new AbortController()
+  let escalateActiveAttempt: (() => void) | undefined
+  const removeSignalHandlers = registerSmokeLauncherSignals(interruption, () =>
+    escalateActiveAttempt?.(),
+  )
   const scenarios = selectedSmokeScenarios(
     process.env.HVIR_SMOKE_SCENARIO,
     process.argv.slice(2),
   )
   const repetitionCount = parseSmokeRepetitionCount(process.env.HVIR_SMOKE_REPEAT)
-  const results = await runSmokeScenarioGroups(
-    scenarios,
-    repetitionCount,
-    invokeSmokeScenario,
-  )
-  console.log(formatSmokeScenarioResults(results))
-  if (results.some((result) => result.status === 'failed')) process.exitCode = 1
+  try {
+    const results = await runSmokeScenarioGroups(
+      scenarios,
+      repetitionCount,
+      (scenario, iteration, total) =>
+        invokeSmokeScenario(scenario, iteration, total, {
+          interruptionSignal: interruption.signal,
+          registerSignalEscalation: (escalate) => {
+            escalateActiveAttempt = escalate
+            return () => {
+              if (escalateActiveAttempt === escalate) escalateActiveAttempt = undefined
+            }
+          },
+        }),
+      interruption.signal,
+    )
+    console.log(formatSmokeScenarioResults(results))
+    try {
+      if (process.env.GITHUB_STEP_SUMMARY) {
+        const summary = results
+          .map(
+            (result) =>
+              `- ${result.scenario} iteration ${result.iteration}/${result.repetitionCount}: ${result.status}` +
+              (result.status === 'failed'
+                ? ` · ${formatSmokeFailureEvidence(result.failureEvidence ?? null)}`
+                : ''),
+          )
+          .join('\n')
+        await appendFile(
+          process.env.GITHUB_STEP_SUMMARY,
+          `\nElectron smoke: ${results.length} scheduled results\n\n${summary}\n`,
+        )
+      }
+    } catch {
+      console.error('[smoke:summary] failed to write bounded job summary')
+    }
+    if (results.some((result) => result.status === 'failed')) process.exitCode = 1
+  } finally {
+    removeSignalHandlers()
+  }
+}
+
+export function registerSmokeLauncherSignals(
+  interruption: AbortController,
+  escalate: () => void = () => undefined,
+  target: {
+    on(signal: NodeJS.Signals, handler: () => void): void
+    off(signal: NodeJS.Signals, handler: () => void): void
+  } = process,
+): () => void {
+  const handlers = new Map<NodeJS.Signals, () => void>()
+  for (const signal of ['SIGHUP', 'SIGINT', 'SIGTERM'] as const) {
+    const handler = (): void => {
+      if (interruption.signal.aborted) return escalate()
+      interruption.abort(signal)
+    }
+    handlers.set(signal, handler)
+    target.on(signal, handler)
+  }
+  return () => {
+    for (const [signal, handler] of handlers) target.off(signal, handler)
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

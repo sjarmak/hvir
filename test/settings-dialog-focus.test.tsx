@@ -105,6 +105,26 @@ describe('SettingsDialog section workflow', () => {
     expect(confirmSafeToLeave).toHaveBeenCalledTimes(2)
   })
 
+  it('guards both Close and Escape before leaving a dirty Harnesses section', async () => {
+    const onClose = vi.fn()
+    confirmSafeToLeave.mockResolvedValueOnce(false).mockResolvedValueOnce(true)
+    renderDialog({ section: 'harnesses' }, vi.fn(), onClose)
+
+    await act(async () => {
+      button('Close settings').click()
+      await Promise.resolve()
+    })
+    expect(onClose).not.toHaveBeenCalled()
+    expect(document.querySelector('#settings-harnesses-title')).toBeTruthy()
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      await Promise.resolve()
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(confirmSafeToLeave).toHaveBeenCalledTimes(2)
+  })
+
   it('reveals and focuses the section containing an invalid app setting', async () => {
     renderDialog()
     await selectSection('Terminal')
@@ -155,6 +175,160 @@ describe('SettingsDialog section workflow', () => {
       'dark',
       expect.objectContaining({ composerSubmitMode: 'ctrl-enter' }),
     )
+  })
+
+  it('previews custom fonts and applies typography only through Save', async () => {
+    const onSave = vi.fn()
+    renderDialog(undefined, onSave)
+
+    changeSelect(
+      document.querySelector<HTMLSelectElement>('#settings-interface-font-mode')!,
+      'custom',
+    )
+    changeValue(
+      document.querySelector<HTMLInputElement>('#settings-interface-font')!,
+      'Example Sans',
+    )
+    changeSelect(
+      document.querySelector<HTMLSelectElement>('#settings-monospace-font-mode')!,
+      'custom',
+    )
+    changeValue(
+      document.querySelector<HTMLInputElement>('#settings-monospace-font')!,
+      'Example Mono',
+    )
+    changeValue(
+      document.querySelector<HTMLInputElement>('#settings-interface-scale')!,
+      '1.25',
+    )
+    changeValue(
+      document.querySelector<HTMLInputElement>('#settings-terminal-text-size')!,
+      '18',
+    )
+
+    expect(onSave).not.toHaveBeenCalled()
+    const previews = document.querySelectorAll<HTMLElement>('.settings-font-preview')
+    expect(previews[0]?.style.fontFamily).toContain('Example Sans')
+    expect(previews[0]?.style.fontFamily).toContain('sans-serif')
+    expect(previews[1]?.style.fontFamily).toContain('Example Mono')
+    expect(previews[1]?.style.fontFamily).toContain('monospace')
+
+    await act(async () => {
+      button('Save app settings').click()
+      await Promise.resolve()
+    })
+    expect(onSave).toHaveBeenCalledWith(
+      'dark',
+      expect.objectContaining({
+        interfaceFont: { mode: 'custom', family: 'Example Sans' },
+        monospaceFont: { mode: 'custom', family: 'Example Mono' },
+        interfaceScale: 1.25,
+        terminalTextSize: 18,
+      }),
+    )
+  })
+
+  it('closes without applying an unsaved typography draft', async () => {
+    const onSave = vi.fn()
+    const onClose = vi.fn()
+    renderDialog(undefined, onSave, onClose)
+    changeValue(
+      document.querySelector<HTMLInputElement>('#settings-terminal-text-size')!,
+      '20',
+    )
+
+    await act(async () => {
+      button('Close settings').click()
+      await Promise.resolve()
+    })
+
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('saves cursor defaults together and closes without applying a later draft', async () => {
+    const onSave = vi.fn()
+    const onClose = vi.fn()
+    renderDialog(undefined, onSave, onClose)
+    await selectSection('Terminal')
+
+    const shape = document.querySelector<HTMLSelectElement>(
+      '#settings-terminal-cursor-shape',
+    )!
+    const blink = document.querySelector<HTMLSelectElement>(
+      '#settings-terminal-cursor-blink',
+    )!
+    expect([...shape.options].map(({ text }) => text)).toEqual([
+      'Block',
+      'Hollow block',
+      'Bar',
+      'Underline',
+    ])
+    expect([...blink.options].map(({ text }) => text)).toEqual([
+      'Terminal-controlled',
+      'Blinking default',
+      'Steady default',
+    ])
+    expect(document.body.textContent).toContain(
+      "follows the terminal's DEC blinking mode",
+    )
+
+    changeSelect(shape, 'hollow-block')
+    changeSelect(blink, 'blinking')
+    await act(async () => {
+      button('Save app settings').click()
+      await Promise.resolve()
+    })
+    expect(onSave).toHaveBeenCalledWith(
+      'dark',
+      expect.objectContaining({
+        terminalCursorShape: 'hollow-block',
+        terminalCursorBlink: 'blinking',
+      }),
+    )
+
+    onSave.mockClear()
+    changeSelect(shape, 'underline')
+    await act(async () => {
+      button('Close settings').click()
+      await Promise.resolve()
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(onSave).not.toHaveBeenCalled()
+  })
+
+  it('saves the ligatures toggle and leaves a canceled draft ineffective', async () => {
+    const onSave = vi.fn()
+    const onClose = vi.fn()
+    renderDialog(undefined, onSave, onClose)
+    await selectSection('Terminal')
+
+    const ligatures = document.querySelector<HTMLInputElement>(
+      '#settings-terminal-ligatures',
+    )!
+    expect(ligatures.checked).toBe(true)
+    expect(document.body.textContent).toContain(
+      'Cell positions, selection, and copying remain unchanged',
+    )
+
+    act(() => ligatures.click())
+    await act(async () => {
+      button('Save app settings').click()
+      await Promise.resolve()
+    })
+    expect(onSave).toHaveBeenCalledWith(
+      'dark',
+      expect.objectContaining({ terminalLigatures: false }),
+    )
+
+    onSave.mockClear()
+    act(() => ligatures.click())
+    await act(async () => {
+      button('Close settings').click()
+      await Promise.resolve()
+    })
+    expect(onClose).toHaveBeenCalledOnce()
+    expect(onSave).not.toHaveBeenCalled()
   })
 
   it('contains focus and Escape inside the nested composer consent dialog', async () => {
@@ -215,6 +389,15 @@ describe('SettingsDialog section workflow', () => {
         ?.getAttribute('data-initial-add-open'),
     ).toBe('false')
   })
+
+  it('leaves initial add-harness focus to the nested dialog owner', () => {
+    renderDialog({ section: 'harnesses', intent: 'add-harness' })
+
+    expect(frameCallbacks.size).toBe(0)
+    expect(document.activeElement).not.toBe(
+      document.querySelector('#settings-harnesses-title'),
+    )
+  })
 })
 
 function renderDialog(
@@ -231,6 +414,15 @@ function renderDialog(
           gitAutoFetchIntervalMs: 5 * 60_000,
           terminalRecoveryMode: 'prompt',
           terminalTheme: 'app',
+          terminalLightThemeId: 'hvir-default-light',
+          terminalDarkThemeId: 'hvir-default-dark',
+          terminalCursorShape: 'block',
+          terminalCursorBlink: 'terminal',
+          terminalLigatures: true,
+          interfaceFont: { mode: 'system', family: '' },
+          monospaceFont: { mode: 'system', family: '' },
+          interfaceScale: 1,
+          terminalTextSize: 13,
           composerSubmitMode: 'enter',
           keybindings: DEFAULT_KEYBINDINGS,
         },
@@ -284,6 +476,16 @@ function changeValue(
         : HTMLInputElement.prototype
     Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(control, value)
     control.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+
+function changeSelect(control: HTMLSelectElement, value: string): void {
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set?.call(
+      control,
+      value,
+    )
+    control.dispatchEvent(new Event('change', { bubbles: true }))
   })
 }
 

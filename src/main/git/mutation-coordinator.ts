@@ -7,6 +7,7 @@ import {
 } from '../../shared'
 import type { GitMutationGrant, GitMutationGrantRequest } from './mutation-authorization'
 import type { ProjectWatchTarget } from '../project-watch'
+import type { WorkspaceRemovalPort } from '../workspace-removal-coordinator'
 
 export interface GitMutationRegistryPort {
   readonly active: ProjectWatchTarget & {
@@ -18,7 +19,6 @@ export interface GitMutationRegistryPort {
     projectId: string,
     discovery: WorktreeDiscovery,
   ): Promise<ProjectState>
-  dismissWorkspace(projectId: string, workspaceId: string): Promise<ProjectState>
 }
 
 export interface GitMutationWorkerPort {
@@ -46,13 +46,6 @@ export interface GitMutationWorkspacePort {
   replaceWatch(target?: ProjectWatchTarget): Promise<void>
 }
 
-export interface GitMutationCleanupPort {
-  forgetWorkspaceSessions(root: HostPath): Promise<void>
-  revokeWorkspace(root: HostPath): Promise<void>
-  closeWorkspace(root: HostPath): Promise<void>
-  clearHtmlPreviews(): void
-}
-
 export interface GitMutationCoordinatorOptions {
   readonly registry: GitMutationRegistryPort
   readonly worker: GitMutationWorkerPort
@@ -60,7 +53,7 @@ export interface GitMutationCoordinatorOptions {
   readonly authorizations: {
     grant(request: GitMutationGrantRequest): GitMutationGrant
   }
-  readonly cleanup: GitMutationCleanupPort
+  readonly removal: WorkspaceRemovalPort
   readonly onError?: (message: string, error: unknown) => void
 }
 
@@ -104,16 +97,17 @@ export class GitMutationCoordinator {
         root,
         target: branch,
       })
-      try {
-        await this.options.worker.switchBranch(
-          root,
-          branch,
-          this.relatedWorktreeRoots(projectId),
-        )
-      } finally {
-        grant.revoke()
-      }
-      return this.refreshAfterMutation(projectId, 'branch switch')
+      return this.mutateAndRefresh(projectId, 'branch switch', async () => {
+        try {
+          await this.options.worker.switchBranch(
+            root,
+            branch,
+            this.relatedWorktreeRoots(projectId),
+          )
+        } finally {
+          grant.revoke()
+        }
+      })
     })
   }
 
@@ -147,17 +141,18 @@ export class GitMutationCoordinator {
         projectId,
         root,
       })
-      try {
-        await this.options.worker.pull(root, this.relatedWorktreeRoots(projectId))
-      } finally {
-        grant.revoke()
-      }
-      return this.refreshAfterMutation(projectId, 'pull')
+      return this.mutateAndRefresh(projectId, 'pull', async () => {
+        try {
+          await this.options.worker.pull(root, this.relatedWorktreeRoots(projectId))
+        } finally {
+          grant.revoke()
+        }
+      })
     })
   }
 
   private async performPrune(projectId: string): Promise<ProjectState> {
-    const { registry, cleanup } = this.options
+    const { registry } = this.options
     const project = registry.projectById(projectId)
     if (!project) throw new Error('Unknown project')
     if (project.connectionState !== 'connected') {
@@ -190,16 +185,10 @@ export class GitMutationCoordinator {
       ) {
         continue
       }
-      await cleanup.forgetWorkspaceSessions(target.root)
-      await registry.dismissWorkspace(projectId, target.id)
-      await Promise.all([
-        cleanup.revokeWorkspace(target.root),
-        cleanup.closeWorkspace(target.root),
-      ])
+      await this.options.removal.removeMissingWorkspace(projectId, target.id)
     }
     if (prunesActiveWorkspace) {
       await this.options.workspaces.stopWatch()
-      cleanup.clearHtmlPreviews()
       await this.options.workspaces.replaceWatch(registry.active)
     }
     return registry.state()
@@ -224,6 +213,24 @@ export class GitMutationCoordinator {
         ?.workspaces.filter((workspace) => !workspace.missing)
         .map((workspace) => workspace.root) ?? []
     )
+  }
+
+  private async mutateAndRefresh(
+    projectId: string,
+    operation: string,
+    mutation: () => Promise<void>,
+  ): Promise<ProjectState> {
+    let succeeded = false
+    let failure: unknown
+    try {
+      await mutation()
+      succeeded = true
+    } catch (error) {
+      failure = error
+    }
+    const state = await this.refreshAfterMutation(projectId, operation)
+    if (!succeeded) throw failure
+    return state
   }
 
   private async refreshAfterMutation(

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 
 import {
   unwrapOperation,
@@ -14,6 +14,7 @@ import type {
 
 export interface TerminalWorkspaceController {
   readonly hasSession: (id: string) => boolean
+  readonly selectSession: (id: string) => boolean
   readonly transferOut: (id: string) => TerminalSession | undefined
   readonly transferIn: (session: TerminalSession) => void
 }
@@ -25,6 +26,8 @@ export function useTerminalWorkspaceMove({
   forgetAttention,
   moveTargets,
   registerController,
+  prepareMoveTarget,
+  releaseMoveTarget,
   onMoved,
   acknowledgeTargets,
   onError,
@@ -38,6 +41,8 @@ export function useTerminalWorkspaceMove({
     workspaceId: string,
     controller: TerminalWorkspaceController | undefined,
   ) => void
+  readonly prepareMoveTarget: (workspaceId: string) => Promise<void>
+  readonly releaseMoveTarget: (workspaceId: string) => void
   readonly onMoved: (
     sessionId: string,
     sourceWorkspaceId: string,
@@ -49,10 +54,16 @@ export function useTerminalWorkspaceMove({
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [pending, setPending] = useState<TerminalMovePlan>()
+  const confirmationInFlight = useRef(false)
 
   useEffect(() => {
     const controller: TerminalWorkspaceController = {
       hasSession: (id) => modelRef.current.sessions.some((session) => session.id === id),
+      selectSession: (id) => {
+        if (!modelRef.current.sessions.some((session) => session.id === id)) return false
+        send({ type: 'session-selected', id })
+        return true
+      },
       transferOut: (id) => {
         const session = modelRef.current.sessions.find((candidate) => candidate.id === id)
         if (!session) return undefined
@@ -97,25 +108,35 @@ export function useTerminalWorkspaceMove({
   )
 
   const confirm = useCallback(async (): Promise<void> => {
-    if (!pending) return
-    const response = unwrapOperation(
-      await window.hvir.invoke('terminal:move', {
-        terminalId: pending.terminalId,
-        sourceWorkspaceId: pending.sourceWorkspaceId,
-        targetWorkspaceId: pending.targetWorkspaceId,
-        expectedWebPaneIds: pending.webPaneIds,
-      }),
-    )
-    onMoved(
-      pending.terminalId,
-      pending.sourceWorkspaceId,
-      pending.targetWorkspaceId,
-      response,
-    )
-    setPending(undefined)
-  }, [onMoved, pending])
+    if (!pending || confirmationInFlight.current) return
+    confirmationInFlight.current = true
+    try {
+      await prepareMoveTarget(pending.targetWorkspaceId)
+      const response = unwrapOperation(
+        await window.hvir.invoke('terminal:move', {
+          terminalId: pending.terminalId,
+          sourceWorkspaceId: pending.sourceWorkspaceId,
+          targetWorkspaceId: pending.targetWorkspaceId,
+          expectedWebPaneIds: pending.webPaneIds,
+        }),
+      )
+      onMoved(
+        pending.terminalId,
+        pending.sourceWorkspaceId,
+        pending.targetWorkspaceId,
+        response,
+      )
+      setPending(undefined)
+    } catch (reason) {
+      onError(errorMessage(reason))
+    } finally {
+      confirmationInFlight.current = false
+      releaseMoveTarget(pending.targetWorkspaceId)
+    }
+  }, [onError, onMoved, pending, prepareMoveTarget, releaseMoveTarget])
 
   return {
+    moveTargets,
     menuOpen,
     pending,
     toggleMenu: () => setMenuOpen((open) => !open),

@@ -1,26 +1,43 @@
+import { homedir } from 'node:os'
+
 import {
   LOCAL_HOST_ID,
+  asHostId,
+  hostPath,
   type BrowseHostResponse,
   type ConnectedHost,
   type HostPath,
   type ProjectHostOption,
   type ProjectState,
   type RegisteredProjectState,
+  type WorkspaceClosePlan,
 } from '../shared'
+import type { ProjectHost } from './project-host/project-host'
 import type { ProjectWatchTarget } from './project-watch'
+import type { WorkspaceRemovalPort } from './workspace-removal-coordinator'
 
 export interface ProjectRegistryPort {
   readonly active: ProjectWatchTarget & { readonly workspaceId: string }
   state(): ProjectState
   projectById(projectId: string): RegisteredProjectState | undefined
-  connectHost(hostId: string): Promise<ConnectedHost>
-  disconnectHost(hostId: string): Promise<ProjectHostOption>
-  browseHost(hostId: string, path: string): Promise<BrowseHostResponse>
   open(hostId: string, path: string): Promise<ProjectState>
   activate(projectId: string, workspaceId: string): Promise<ProjectState>
   closeProject(projectId: string): Promise<ProjectState>
-  dismissWorkspace(projectId: string, workspaceId: string): Promise<ProjectState>
+  closeWorkspace(projectId: string, workspaceId: string): Promise<ProjectState>
+  restoreWorkspaceAfterFailedClose(
+    projectId: string,
+    workspaceId: string,
+  ): Promise<ProjectState>
+  reopenWorkspace(projectId: string, workspaceId: string): Promise<ProjectState>
   acknowledgeWorkspace(projectId: string, workspaceId: string): Promise<ProjectState>
+}
+
+/** Host control is independent of registered project state and persistence. */
+export interface ProjectHostControlPort {
+  materializeHost(hostId: string): Promise<ProjectHost>
+  hostById(hostId: string): ProjectHost | undefined
+  listHosts(): readonly ProjectHostOption[]
+  disconnectHost(hostId: string): Promise<ProjectHostOption>
 }
 
 export interface ProjectWorkspacePort {
@@ -28,12 +45,14 @@ export interface ProjectWorkspacePort {
   refresh(projectId: string): Promise<ProjectState>
   replaceWatch(target?: ProjectWatchTarget): Promise<void>
   invalidateProject(projectId: string): void
-  settleProject(projectId: string): Promise<void>
+  settleProject(projectId: string, obsoleteRefresh?: 'wait' | 'skip'): Promise<void>
 }
 
 export interface ProjectCleanupPort {
   revokeWorkspace(root: HostPath): Promise<void>
-  closeWorkspace(root: HostPath): Promise<void>
+  closeWorkspaceWebPanes(root: HostPath): Promise<void>
+  workspaceTerminalIds(root: HostPath): readonly string[]
+  closeWorkspaceTerminals(root: HostPath): void
   forgetWorkspaceSessions(root: HostPath): Promise<void>
 }
 
@@ -44,8 +63,10 @@ export interface ProjectHostControlDiagnostic {
 
 export interface ProjectCoordinatorOptions {
   readonly registry: ProjectRegistryPort
+  readonly hosts: ProjectHostControlPort
   readonly workspaces: ProjectWorkspacePort
   readonly cleanup: ProjectCleanupPort
+  readonly removal: WorkspaceRemovalPort
   readonly onError?: (message: string, error: unknown) => void
   readonly onHostControlDiagnostic?: (event: ProjectHostControlDiagnostic) => void
 }
@@ -68,7 +89,7 @@ export class ProjectCoordinator {
       await this.settleTransition(transition)
       this.assertCurrent(transition)
       const connected = await this.controlHost('connect', hostId, () =>
-        this.options.registry.connectHost(hostId),
+        this.connectAndSuggestPath(hostId),
       )
       this.assertCurrent(transition)
       if (this.options.registry.active.host.hostId === hostId) {
@@ -106,7 +127,7 @@ export class ProjectCoordinator {
         await Promise.all(roots.map((root) => this.options.cleanup.revokeWorkspace(root)))
         this.assertCurrent(transition)
         const disconnected = await this.controlHost('disconnect', hostId, () =>
-          this.options.registry.disconnectHost(hostId),
+          this.options.hosts.disconnectHost(hostId),
         )
         this.assertCurrent(transition)
         return disconnected
@@ -122,11 +143,30 @@ export class ProjectCoordinator {
     })
   }
 
-  async browseHost(hostId: string, path: string): Promise<BrowseHostResponse> {
+  async browseHost(hostId: string, rawPath: string): Promise<BrowseHostResponse> {
     const generation = this.transitionGeneration
-    const result = await this.options.registry.browseHost(hostId, path)
-    if (generation !== this.transitionGeneration) throw staleTransitionError()
-    return result
+    const host = this.options.hosts.hostById(hostId)
+    if (!host || host.connectionState !== 'connected') {
+      throw new Error(`Connect to ${hostId} before browsing folders`)
+    }
+    if (!rawPath.startsWith('/')) throw new Error('Folder path must be absolute')
+    try {
+      const path = await host.realpath(hostPath(asHostId(hostId), rawPath))
+      const stat = await host.stat(path)
+      if (stat.type !== 'dir') throw new Error(`Not a directory: ${rawPath}`)
+      const directories = (await host.readdir(path))
+        .filter((entry) => entry.type === 'dir')
+        .sort((left, right) => left.name.localeCompare(right.name))
+      if (generation !== this.transitionGeneration) throw staleTransitionError()
+      return { path, directories }
+    } catch (reason) {
+      const code = (reason as { code?: unknown } | undefined)?.code
+      if (code === 2 || code === 'ENOENT')
+        throw new Error(`Folder not found: ${rawPath}`, { cause: reason })
+      if (code === 3 || code === 'EACCES')
+        throw new Error(`Cannot access folder: ${rawPath}`, { cause: reason })
+      throw reason
+    }
   }
 
   openProject(hostId: string, path: string): Promise<ProjectState> {
@@ -181,7 +221,7 @@ export class ProjectCoordinator {
         await Promise.all(
           roots.flatMap((root) => [
             this.options.cleanup.revokeWorkspace(root),
-            this.options.cleanup.closeWorkspace(root),
+            this.options.cleanup.closeWorkspaceWebPanes(root),
           ]),
         )
         this.assertCurrent(transition)
@@ -198,28 +238,94 @@ export class ProjectCoordinator {
     })
   }
 
+  planWorkspaceClose(projectId: string, workspaceId: string): WorkspaceClosePlan {
+    const workspace = this.closeableWorkspace(projectId, workspaceId)
+    return {
+      terminalCount: new Set(this.options.cleanup.workspaceTerminalIds(workspace.root))
+        .size,
+    }
+  }
+
+  closeWorkspace(
+    projectId: string,
+    workspaceId: string,
+    expectedTerminalCount: number,
+    terminateTerminals: boolean,
+  ): Promise<ProjectState> {
+    const transition = this.beginTransition()
+    return this.options.workspaces.serialize(async () => {
+      this.assertCurrent(transition)
+      await this.settleTransition(transition)
+      this.assertCurrent(transition)
+      const workspace = this.closeableWorkspace(projectId, workspaceId)
+      const terminalCount = new Set(
+        this.options.cleanup.workspaceTerminalIds(workspace.root),
+      ).size
+      if (
+        !Number.isSafeInteger(expectedTerminalCount) ||
+        expectedTerminalCount < 0 ||
+        terminalCount !== expectedTerminalCount
+      ) {
+        throw new Error('Workspace terminal count changed; review the close again')
+      }
+      if (terminalCount > 0 && terminateTerminals !== true) {
+        throw new Error('Confirm terminal termination before closing this workspace')
+      }
+      const state = await this.options.registry.closeWorkspace(projectId, workspaceId)
+      const cleanups = await Promise.allSettled([
+        Promise.resolve().then(() =>
+          this.options.cleanup.closeWorkspaceTerminals(workspace.root),
+        ),
+        this.options.cleanup.forgetWorkspaceSessions(workspace.root),
+        this.options.cleanup.revokeWorkspace(workspace.root),
+        this.options.cleanup.closeWorkspaceWebPanes(workspace.root),
+      ])
+      const failures: unknown[] = []
+      for (const result of cleanups) {
+        if (result.status === 'rejected') failures.push(result.reason as unknown)
+      }
+      if (failures.length > 0) {
+        try {
+          await this.options.registry.restoreWorkspaceAfterFailedClose(
+            projectId,
+            workspaceId,
+          )
+        } catch (error) {
+          failures.push(error)
+        }
+        throw new AggregateError(failures, 'Workspace close cleanup failed')
+      }
+      this.assertCurrent(transition)
+      return state
+    })
+  }
+
+  reopenWorkspace(projectId: string, workspaceId: string): Promise<ProjectState> {
+    const transition = this.beginTransition()
+    return this.options.workspaces.serialize(async () => {
+      this.assertCurrent(transition)
+      await this.settleTransition(transition)
+      this.assertCurrent(transition)
+      const state = await this.options.registry.reopenWorkspace(projectId, workspaceId)
+      this.assertCurrent(transition)
+      await this.options.workspaces.replaceWatch(this.options.registry.active)
+      return state
+    })
+  }
+
   dismissWorkspace(projectId: string, workspaceId: string): Promise<ProjectState> {
     const transition = this.beginTransition()
     return this.options.workspaces.serialize(async () => {
       this.assertCurrent(transition)
       await this.settleTransition(transition)
       this.assertCurrent(transition)
-      const workspace = this.options.registry
-        .projectById(projectId)
-        ?.workspaces.find((candidate) => candidate.id === workspaceId)
       const wasActive =
         this.options.registry.active.projectId === projectId &&
         this.options.registry.active.workspaceId === workspaceId
-      if (workspace?.missing) {
-        await this.options.cleanup.forgetWorkspaceSessions(workspace.root)
-      }
-      const state = await this.options.registry.dismissWorkspace(projectId, workspaceId)
-      if (workspace) {
-        await Promise.all([
-          this.options.cleanup.revokeWorkspace(workspace.root),
-          this.options.cleanup.closeWorkspace(workspace.root),
-        ])
-      }
+      const state = await this.options.removal.removeMissingWorkspace(
+        projectId,
+        workspaceId,
+      )
       this.assertCurrent(transition)
       if (wasActive) {
         await this.options.workspaces.replaceWatch(this.options.registry.active)
@@ -234,6 +340,26 @@ export class ProjectCoordinator {
     )
   }
 
+  private async connectAndSuggestPath(hostId: string): Promise<ConnectedHost> {
+    const host = await this.options.hosts.materializeHost(hostId)
+    await host.connect()
+    const active = this.options.registry.active
+    let suggestedPath = active.host.hostId === host.hostId ? active.root.path : '/'
+    if (host.hostId === LOCAL_HOST_ID) {
+      suggestedPath = active.host.hostId === host.hostId ? active.root.path : homedir()
+    } else {
+      const pwd = await host.exec('pwd', [])
+      if (pwd.code === 0 && pwd.stdout.trim().startsWith('/')) {
+        suggestedPath = pwd.stdout.trim()
+      }
+    }
+    const option = this.options.hosts
+      .listHosts()
+      .find((candidate) => candidate.hostId === hostId)
+    if (!option) throw new Error(`Unknown project host: ${hostId}`)
+    return { host: option, suggestedPath }
+  }
+
   private beginTransition(): Transition {
     const transition = {
       generation: ++this.transitionGeneration,
@@ -245,10 +371,29 @@ export class ProjectCoordinator {
     return transition
   }
 
+  private closeableWorkspace(
+    projectId: string,
+    workspaceId: string,
+  ): RegisteredProjectState['workspaces'][number] {
+    const workspace = this.options.registry
+      .projectById(projectId)
+      ?.workspaces.find((candidate) => candidate.id === workspaceId)
+    if (!workspace) throw new Error('Unknown project workspace')
+    if (
+      this.options.registry.active.projectId === projectId &&
+      this.options.registry.active.workspaceId === workspaceId
+    ) {
+      throw new Error('Select another workspace before closing this one')
+    }
+    if (workspace.missing) throw new Error('Only present workspaces can be closed')
+    if (workspace.closed) throw new Error('Workspace is already closed')
+    return workspace
+  }
+
   private settleTransition(transition: Transition): Promise<void> {
     return Promise.all(
       transition.projects.map((projectId) =>
-        this.options.workspaces.settleProject(projectId),
+        this.options.workspaces.settleProject(projectId, 'skip'),
       ),
     ).then(() => undefined)
   }

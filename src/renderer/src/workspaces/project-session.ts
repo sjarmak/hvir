@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 
 import {
   unwrapOperation,
@@ -11,6 +11,7 @@ import {
 } from '../../../shared'
 import { initialHostConnectionTarget } from './initial-host-connection'
 import { subscribeProjectSessionEvents } from './project-session-events'
+import { ProjectStateDelivery } from './project-state-delivery'
 import {
   initialProjectSessionModel,
   projectSessionReducer,
@@ -18,6 +19,8 @@ import {
   selectActiveWorkspace,
   selectRelativeWorkspace,
 } from './project-session-model'
+import { createWorkspaceSessionActions } from './workspace-session-actions'
+import { projectFolderPickerClient } from './project-folder-picker-client'
 
 const WATCH_REFRESH_DELAY_MS = 250
 
@@ -49,12 +52,16 @@ export function useProjectSession(options: UseProjectSessionOptions) {
   const callbacks = useRef(options)
   const modelRef = useRef(model)
   const generation = useRef(0)
+  const delivery = useRef<ProjectStateDelivery | undefined>(undefined)
   callbacks.current = options
   modelRef.current = model
-
-  const acceptProjectState = useCallback((state: ProjectState): void => {
+  delivery.current ??= new ProjectStateDelivery((state) => {
     dispatch({ type: 'project-state', state })
     callbacks.current.onProjectState(state)
+  })
+
+  const acceptProjectState = useCallback((state: ProjectState): void => {
+    delivery.current?.accept(state)
   }, [])
 
   const bumpVersions = useCallback((keys: readonly (keyof ProjectSessionVersions)[]) => {
@@ -81,12 +88,7 @@ export function useProjectSession(options: UseProjectSessionOptions) {
       try {
         const state = await operation()
         if (generation.current !== currentGeneration) return undefined
-        dispatch({
-          type: 'transition-project',
-          generation: currentGeneration,
-          state,
-        })
-        callbacks.current.onProjectState(state)
+        acceptProjectState(state)
         return state
       } catch (reason) {
         if (generation.current === currentGeneration) {
@@ -101,7 +103,7 @@ export function useProjectSession(options: UseProjectSessionOptions) {
         dispatch({ type: 'transition-finished', generation: currentGeneration })
       }
     },
-    [],
+    [acceptProjectState],
   )
 
   const configureComposerSubmit = useCallback(async (hostId: string): Promise<void> => {
@@ -162,6 +164,22 @@ export function useProjectSession(options: UseProjectSessionOptions) {
     [acceptProjectState, configureComposerSubmitNonfatal],
   )
 
+  const ensureProjectConnected = useCallback(
+    async (projectId: string): Promise<void> => {
+      const targetProject = modelRef.current.projectState?.projects.find(
+        (project) => project.id === projectId,
+      )
+      if (
+        targetProject &&
+        targetProject.registeredRoot.hostId !== 'local' &&
+        targetProject.connectionState !== 'connected'
+      ) {
+        await connectHost(targetProject.registeredRoot.hostId)
+      }
+    },
+    [connectHost],
+  )
+
   const switchWorkspace = useCallback(
     async (projectId: string, workspaceId: string): Promise<void> => {
       const current = modelRef.current.projectState
@@ -172,22 +190,13 @@ export function useProjectSession(options: UseProjectSessionOptions) {
         return
       }
       await runTransition(async () => {
-        const targetProject = modelRef.current.projectState?.projects.find(
-          (project) => project.id === projectId,
-        )
-        if (
-          targetProject &&
-          targetProject.registeredRoot.hostId !== 'local' &&
-          targetProject.connectionState !== 'connected'
-        ) {
-          await connectHost(targetProject.registeredRoot.hostId)
-        }
+        await ensureProjectConnected(projectId)
         return unwrapOperation(
           await window.hvir.invoke('project:switch', { projectId, workspaceId }),
         )
       })
     },
-    [connectHost, runTransition],
+    [ensureProjectConnected, runTransition],
   )
 
   const switchRelativeWorkspace = useCallback(
@@ -234,6 +243,17 @@ export function useProjectSession(options: UseProjectSessionOptions) {
       )
     },
     [runTransition],
+  )
+
+  const workspaceActions = useMemo(
+    () =>
+      createWorkspaceSessionActions({
+        runTransition,
+        ensureProjectConnected,
+        reportError: (reason) =>
+          dispatch({ type: 'reported-error', error: errorMessage(reason) }),
+      }),
+    [ensureProjectConnected, runTransition],
   )
 
   const acknowledgeWorkspaces = useCallback(
@@ -330,6 +350,7 @@ export function useProjectSession(options: UseProjectSessionOptions) {
   useEffect(() => {
     let disposed = false
     const timers: Partial<Record<keyof ProjectSessionVersions, number>> = {}
+    const closeDelivery = delivery.current!.open()
     const scheduleVersion = (key: keyof ProjectSessionVersions): void => {
       if (timers[key] !== undefined) return
       timers[key] = window.setTimeout(() => {
@@ -342,8 +363,7 @@ export function useProjectSession(options: UseProjectSessionOptions) {
     void window.hvir.invoke('project:root', undefined).then(
       async (state) => {
         if (disposed || generation.current !== currentGeneration) return
-        dispatch({ type: 'transition-project', generation: currentGeneration, state })
-        callbacks.current.onProjectState(state)
+        acceptProjectState(state)
         if (state.connectionState === 'connected') {
           await configureComposerSubmitNonfatal(state.root.hostId)
         }
@@ -402,6 +422,7 @@ export function useProjectSession(options: UseProjectSessionOptions) {
     return () => {
       disposed = true
       generation.current += 1
+      closeDelivery()
       for (const timer of Object.values(timers)) {
         if (timer !== undefined) window.clearTimeout(timer)
       }
@@ -434,11 +455,13 @@ export function useProjectSession(options: UseProjectSessionOptions) {
     closeProject,
     pruneWorktrees,
     dismissWorkspace,
+    ...workspaceActions,
     acknowledgeWorkspaces,
     disconnect,
     reconnect,
     connectHost,
     browseHost,
+    folderPicker: projectFolderPickerClient,
     disconnectHost,
     openHost,
     answerPrompt,

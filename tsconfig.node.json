@@ -1,7 +1,6 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "allowImportingTsExtensions": true,
     "composite": false,
     "lib": ["ES2023"],
     "types": ["node"]
@@ -12,11 +11,8 @@
     "src/preload/**/*.ts",
     "src/workers/**/*.ts",
     "src/shared/**/*.ts",
-    "npm/**/*.d.mts",
-    "scripts/release-changelog.d.mts",
-    "scripts/check-terminal-runtime-patch.mts",
+    "scripts/**/*.mts",
     "scripts/project-management/**/*.ts",
-    "scripts/run-smoke-scenarios.mts",
     "test/**/*.ts",
     "electron.vite.config.ts",
     "vitest.config.ts"

@@ -1,24 +1,33 @@
+import { execFileSync, spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
 import { parse } from 'yaml'
 
 const workflowSource = readFileSync(
   new URL('../.github/workflows/ci.yml', import.meta.url),
   'utf8',
 )
+const codeqlSource = readFileSync(
+  new URL('../.github/workflows/codeql.yml', import.meta.url),
+  'utf8',
+)
+const releaseValidatorSource = readFileSync(
+  new URL('../scripts/validate-release-pr.mts', import.meta.url),
+  'utf8',
+)
 
 interface WorkflowJob {
+  if?: string
   name: string
   'runs-on': string
   needs?: string | string[]
-  strategy?: {
-    'fail-fast': boolean
-    matrix: {
-      include: Array<Record<string, string>>
-    }
-  }
+  permissions?: Record<string, string>
   steps: Array<{
+    env?: Record<string, string>
     name: string
     run?: string
     uses?: string
@@ -27,104 +36,224 @@ interface WorkflowJob {
 }
 
 const workflow = parse(workflowSource) as {
-  concurrency: {
-    group: string
-    'cancel-in-progress': boolean
-  }
+  concurrency: { group: string; 'cancel-in-progress': boolean }
+  jobs: Record<string, WorkflowJob>
+}
+const codeqlWorkflow = parse(codeqlSource) as {
   jobs: Record<string, WorkflowJob>
 }
 
-const linuxChecks = [
-  {
-    id: 'verify',
-    name: 'Verification (Linux)',
-    command: 'npm run verify',
-    fetchDepth: 0,
-  },
-  {
-    id: 'electron-smoke',
-    name: 'Electron smoke (Linux)',
-    command: 'xvfb-run -a npm run smoke',
-    fetchDepth: undefined,
-  },
-  {
-    id: 'capacity-smoke',
-    name: 'Capacity contracts + performance evidence (Linux)',
-    command: 'xvfb-run -a npm run smoke:capacity',
-    fetchDepth: undefined,
-  },
+const ordinaryCondition =
+  "always() && needs.release-version-integrity.result == 'skipped'"
+const releasePrIdentityCondition = [
+  "github.event_name == 'pull_request'",
+  "github.actor == 'github-actions[bot]'",
+  "github.event.pull_request.user.login == 'github-actions[bot]'",
+  'github.event.pull_request.base.ref == github.event.repository.default_branch',
+  'github.event.pull_request.head.repo.full_name == github.repository',
+  "startsWith(github.event.pull_request.head.ref, 'release/v')",
+].join(' && ')
+const releaseValidatorCheckout = [
+  'scripts/validate-release-pr.mts',
+  ...[...releaseValidatorSource.matchAll(/from\s+['"]\.\/([^'"]+)['"]/g)].map(
+    (match) => `scripts/${match[1]}`,
+  ),
+].join('\n')
+
+const ordinaryJobs = [
+  ['verify', 'Verification (Linux)', 'npm run verify'],
+  ['electron-smoke', 'Electron smoke (Linux)', 'xvfb-run -a npm run smoke'],
+  [
+    'macos-electron-smoke',
+    'Electron correctness (macOS arm64; temporary reduced gate)',
+    'npm run smoke:macos:ci',
+  ],
+  ['codeql', 'CodeQL analysis', undefined],
 ] as const
 
 describe('CI workflow', () => {
-  it('runs verification, Electron smoke, and capacity as independent Linux checks', () => {
-    for (const expected of linuxChecks) {
-      const job = workflow.jobs[expected.id]
-      if (!job) {
-        throw new Error(`Missing CI job: ${expected.id}`)
-      }
+  it('runs only for pull-request candidates on main and epic branches', () => {
+    expect(workflowSource).toMatch(/^on:\n {2}pull_request:\n/m)
+    expect(workflowSource).toContain("      - 'epic/**'")
+    expect(workflowSource).not.toMatch(/^ {2}push:/m)
+  })
 
-      expect(job.name).toBe(expected.name)
-      expect(job.needs).toBeUndefined()
-      expect(job.steps).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ run: 'npm ci' }),
-          expect.objectContaining({ run: expected.command }),
-        ]),
-      )
-
+  it('tests every ordinary required job from the default merge-ref checkout', () => {
+    for (const [id, name, command] of ordinaryJobs) {
+      const job = workflow.jobs[id]
+      if (!job) throw new Error(`Missing CI job: ${id}`)
+      expect(job.name).toBe(name)
+      expect(job.needs).toBe('release-version-integrity')
+      expect(job.if).toBe(ordinaryCondition)
       const checkout = job.steps.find((step) =>
         step.uses?.startsWith('actions/checkout@'),
       )
-      expect(checkout?.with?.['fetch-depth']).toBe(expected.fetchDepth)
+      expect(checkout).toBeDefined()
+      expect(checkout?.with?.ref).toBeUndefined()
+      if (command) {
+        expect(job.steps).toEqual(
+          expect.arrayContaining([expect.objectContaining({ run: command })]),
+        )
+      }
+    }
+    expect(workflow.jobs.codeql?.permissions).toEqual({
+      actions: 'read',
+      contents: 'read',
+      packages: 'read',
+      'security-events': 'write',
+    })
+  })
+
+  it('keeps the exact version-only validator as the sole ordinary-job skip path', () => {
+    const integrity = workflow.jobs['release-version-integrity']
+    if (!integrity) throw new Error('Missing release version integrity job')
+    expect(integrity.if).toBe(releasePrIdentityCondition)
+    expect(integrity.permissions).toEqual({
+      contents: 'read',
+      'pull-requests': 'read',
+    })
+    expect(integrity.steps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Check out trusted release validation',
+          uses: 'actions/checkout@v7',
+          with: {
+            ref: '${{ github.event.pull_request.base.sha }}',
+            'persist-credentials': false,
+            'sparse-checkout': releaseValidatorCheckout,
+            'sparse-checkout-cone-mode': false,
+          },
+        }),
+        expect.objectContaining({
+          name: 'Validate version-only release change',
+          run: 'node scripts/validate-release-pr.mts',
+        }),
+      ]),
+    )
+    for (const [id] of ordinaryJobs) {
+      expect(workflow.jobs[id]).toMatchObject({
+        needs: 'release-version-integrity',
+        if: ordinaryCondition,
+      })
     }
   })
 
-  it('separates macOS correctness from capacity evidence without a hosted budget gate', () => {
-    const job = workflow.jobs['macos-electron-smoke']
-    if (!job) throw new Error('Missing CI job: macos-electron-smoke')
-    expect(job.name).toBe('Electron correctness + capacity evidence (macOS arm64)')
-    expect(job['runs-on']).toBe('macos-15')
-    expect(job.needs).toBeUndefined()
-    expect(job.steps).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ run: 'npm ci' }),
-        expect.objectContaining({ run: 'npm run smoke:macos' }),
-        expect.objectContaining({ run: 'npm run smoke:capacity' }),
-      ]),
-    )
-    expect(job.steps.map((step) => step.run ?? '').join('\n')).not.toContain(
-      'performance:capacity',
-    )
-  })
-
-  it('retains packaged smoke on the three ADR-011 target architectures', () => {
-    const job = workflow.jobs['packaged-smoke']
-    if (!job) throw new Error('Missing CI job: packaged-smoke')
-    expect(job.name).toBe('Packaged smoke (${{ matrix.name }})')
-    expect(job.strategy?.['fail-fast']).toBe(false)
-    expect(job.strategy?.matrix.include).toEqual([
-      {
-        name: 'Linux x64',
-        os: 'ubuntu-24.04',
-        build: 'npm run pack:npm:linux:x64',
-        smoke: 'xvfb-run -a npm run smoke:packaged',
-      },
-      {
-        name: 'Linux arm64',
-        os: 'ubuntu-24.04-arm',
-        build: 'npm run pack:npm:linux:arm64',
-        smoke: 'xvfb-run -a npm run smoke:packaged',
-      },
-      {
-        name: 'macOS arm64',
-        os: 'macos-15',
-        build: 'npm run pack:npm:mac:arm64',
-        smoke: 'npm run smoke:packaged',
-      },
+  it('always reports one coherent-attempt aggregate and fails every incomplete branch', () => {
+    const aggregate = workflow.jobs['merge-acceptance']
+    if (!aggregate) throw new Error('Missing merge acceptance job')
+    expect(aggregate.name).toBe('Merge acceptance')
+    expect(aggregate.if).toBe('always()')
+    expect(aggregate.permissions).toEqual({
+      actions: 'read',
+      contents: 'read',
+    })
+    expect(aggregate.needs).toEqual([
+      'release-version-integrity',
+      'verify',
+      'electron-smoke',
+      'macos-electron-smoke',
+      'codeql',
     ])
+    expect(aggregate.steps[0]).toEqual({
+      name: 'Check out exact head for base ancestry proof',
+      uses: 'actions/checkout@v7',
+      with: {
+        ref: '${{ github.event.pull_request.head.sha }}',
+        'fetch-depth': 0,
+        'persist-credentials': false,
+      },
+    })
+    expect(aggregate.steps).toContainEqual({
+      name: 'Require one coherent CI attempt',
+      env: { GITHUB_TOKEN: '${{ github.token }}' },
+      run: 'node scripts/ci-attempt-evidence.mts',
+    })
+    const step = aggregate.steps.find(
+      (candidate) => candidate.name === 'Require exact candidate ancestry',
+    )
+    expect(step?.env).toEqual({
+      BASE_SHA: '${{ github.event.pull_request.base.sha }}',
+      HEAD_SHA: '${{ github.event.pull_request.head.sha }}',
+    })
+    expect(step?.run).toContain('if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$')
+    expect(step?.run).toContain('if [ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]')
+    expect(step?.run).toContain(
+      'if ! git merge-base --is-ancestor "$BASE_SHA" "$HEAD_SHA"',
+    )
   })
 
-  it('keeps cancellation scoped to the current pull request or branch', () => {
+  it('executes every candidate-identity acceptance branch', async () => {
+    const aggregate = workflow.jobs['merge-acceptance']
+    const script = aggregate?.steps.find(
+      (candidate) => candidate.name === 'Require exact candidate ancestry',
+    )?.run
+    if (!script) throw new Error('Missing merge acceptance decision')
+
+    const repository = await mkdtemp(join(tmpdir(), 'hvir-merge-acceptance-'))
+    onTestFinished(() => rm(repository, { recursive: true, force: true }))
+    const git = (...args: string[]): string =>
+      execFileSync('git', args, { cwd: repository, encoding: 'utf8' }).trim()
+    git('init', '--initial-branch=main')
+    git('config', 'user.email', 'ci@example.invalid')
+    git('config', 'user.name', 'CI')
+    git('commit', '--allow-empty', '-m', 'base')
+    const baseSha = git('rev-parse', 'HEAD')
+    git('commit', '--allow-empty', '-m', 'head')
+    const headSha = git('rev-parse', 'HEAD')
+    git('switch', '--quiet', '--create', 'diverged', baseSha)
+    git('commit', '--allow-empty', '-m', 'diverged')
+    const divergedSha = git('rev-parse', 'HEAD')
+    git('switch', '--quiet', '--detach', headSha)
+
+    const ordinaryEnvironment = {
+      BASE_SHA: baseSha,
+      HEAD_SHA: headSha,
+    }
+    const runAggregate = (overrides: Record<string, string> = {}): number | null =>
+      spawnSync('bash', ['-c', script], {
+        cwd: repository,
+        env: { ...process.env, ...ordinaryEnvironment, ...overrides },
+      }).status
+
+    expect(runAggregate()).toBe(0)
+    const rejectedCases: Array<Record<string, string>> = [
+      { BASE_SHA: divergedSha },
+      { BASE_SHA: 'not-a-sha' },
+      { HEAD_SHA: baseSha },
+    ]
+    for (const rejected of rejectedCases) {
+      expect(runAggregate(rejected)).toBe(1)
+    }
+  })
+
+  it('removes hosted capacity while retaining controlled capacity commands', () => {
+    expect(workflow.jobs['capacity-smoke']).toBeUndefined()
+    expect(workflowSource).not.toContain('npm run smoke:capacity')
+    const packageJson = JSON.parse(
+      readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { scripts: Record<string, string> }
+    expect(packageJson.scripts['performance:capacity']).toBeDefined()
+    expect(packageJson.scripts.gauntlet).toContain('phase8-gauntlet.sh')
+  })
+
+  it('leaves standalone CodeQL with scheduled security ownership only', () => {
+    expect(codeqlSource).toMatch(/^on:\n {2}schedule:/m)
+    expect(codeqlSource).not.toMatch(/^ {2}(push|pull_request|workflow_dispatch):/m)
+    expect(codeqlWorkflow.jobs.analyze?.if).toBeUndefined()
+    expect(codeqlWorkflow.jobs.analyze?.name).toBe('Analyze JavaScript and TypeScript')
+  })
+
+  it('records the comparable candidate and default-branch workload counts', () => {
+    expect(Object.keys(workflow.jobs)).toHaveLength(6)
+    const dependencyInstalls = Object.values(workflow.jobs).flatMap((job) =>
+      job.steps.filter((step) => step.run === 'npm ci'),
+    )
+    expect(dependencyInstalls).toHaveLength(3)
+    expect(workflowSource).not.toMatch(/^ {2}push:/m)
+    expect(codeqlSource).not.toMatch(/^ {2}push:/m)
+  })
+
+  it('keeps cancellation scoped to the current pull request', () => {
     expect(workflow.concurrency).toEqual({
       group: 'ci-${{ github.event.pull_request.number || github.ref }}',
       'cancel-in-progress': true,

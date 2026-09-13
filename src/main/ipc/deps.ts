@@ -10,6 +10,7 @@ import type {
   ProjectHostOption,
   ProjectState,
   ProjectWatchInterestsResponse,
+  WorkspaceClosePlan,
   RenderContainmentDiagnosticBatch,
   WorkbenchHealthSnapshot,
 } from '../../shared'
@@ -17,31 +18,72 @@ import type { BeadsService } from '../beads/beads-service'
 import type { GasCityService } from '../gascity/gascity-service'
 import type { HarnessProfileStoreContract } from '../harness/harness-profile-store'
 import type { HarnessProbeManager } from '../harness/harness-probe'
+import type { RemoteImagePasteCoordinator } from '../harness/remote-image-paste'
 import type { HtmlPreviewProtocol } from '../html-preview-protocol'
 import type { ProjectHost } from '../project-host'
 import type { PtySupervisor } from '../pty/pty-supervisor'
-import type { RendererOwner, RendererResourceScopes } from '../renderer-resource-scopes'
+import type { RendererOwner } from '../renderer-resource-scopes'
 import type { TerminalSessionStore } from '../terminal/session-registry'
 import type { TerminalWorkspaceMoveCoordinator } from '../terminal/terminal-workspace-move-coordinator'
 import type { WebPaneRouteRegistry } from '../web-pane/web-pane-route-registry'
 import type { WorkerClient } from '../worker-host'
-import type { IpcContractDiagnostic } from './authority-router'
+import type { IpcRouterAuthorityPort } from './authority-port'
 import type { DiagnosticReportCoordinator } from '../diagnostics/diagnostic-report-coordinator'
 import type { RuntimeDiagnostics } from '../diagnostics/runtime-diagnostics'
+import type { FilenameSearchCoordinator } from '../filename-search/filename-search-coordinator'
+import type { ProjectFileOperationCoordinator } from '../project-file-operations'
+import type { ProjectFolderPickerCoordinator } from '../project-folder-picker'
+import type {
+  DocumentReviewCoordinator,
+  DocumentReviewDeliveryCoordinator,
+} from '../document-review'
+import type { SessionsObservationPort } from '../sessions/sessions-observation-port'
+import type { SessionsUsageObservationPort } from '../sessions/sessions-usage-observation-port'
 
 export type EmitRendererEvent = <E extends IpcEventChannel>(
   channel: E,
   payload: IpcEventPayload<E>,
 ) => void
 
-export interface IpcDeps {
+/** The application host's clipboard, narrowed to the one write hvir performs. */
+export interface SystemClipboardPort {
+  writeText(text: string): void
+}
+
+export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly echoWorker: WorkerClient<EchoWorkerProtocol>
   readonly gitWorker: WorkerClient<GitWorkerProtocol>
-  readonly getProject: () => { readonly host: ProjectHost; readonly root: HostPath }
+  readonly filenameSearch: Pick<FilenameSearchCoordinator, 'search' | 'cancel' | 'revoke'>
+  readonly projectFiles: Pick<
+    ProjectFileOperationCoordinator,
+    | 'create'
+    | 'acquireClipboard'
+    | 'acquireDropped'
+    | 'copyExternal'
+    | 'discloseExternalMove'
+    | 'acquireExternalMove'
+    | 'releaseExternalMove'
+    | 'moveExternal'
+    | 'organize'
+    | 'discloseDeletion'
+    | 'delete'
+    | 'cancel'
+  >
+  readonly projectFolderPicker: Pick<
+    ProjectFolderPickerCoordinator,
+    'start' | 'browse' | 'createDirectory' | 'close'
+  >
+  readonly documentReview: Pick<
+    DocumentReviewCoordinator,
+    'activate' | 'save' | 'revalidate'
+  >
+  readonly documentReviewDelivery: Pick<
+    DocumentReviewDeliveryCoordinator,
+    'preview' | 'destinations' | 'prepare' | 'insert' | 'sendNow'
+  >
   readonly getHost: (hostId: string) => ProjectHost | undefined
   readonly connectedHosts: () => readonly ProjectHost[]
-  readonly getRegisteredWorkspaceRoot: (root: HostPath) => HostPath | undefined
-  readonly getProjectState: () => ProjectState
+  readonly revealLocalEntry: (path: HostPath) => void
   readonly listHosts: () => readonly ProjectHostOption[]
   readonly connectHost: (hostId: string, owner: RendererOwner) => Promise<ConnectedHost>
   readonly disconnectHost: (hostId: string) => Promise<ProjectHostOption>
@@ -69,6 +111,20 @@ export interface IpcDeps {
     projectId: string,
     workspaceId: string,
   ) => Promise<ProjectState>
+  readonly planWorkspaceClose: (
+    projectId: string,
+    workspaceId: string,
+  ) => Promise<WorkspaceClosePlan>
+  readonly closeWorkspace: (
+    projectId: string,
+    workspaceId: string,
+    expectedTerminalCount: number,
+    terminateTerminals: boolean,
+  ) => Promise<ProjectState>
+  readonly reopenWorkspace: (
+    projectId: string,
+    workspaceId: string,
+  ) => Promise<ProjectState>
   readonly acknowledgeWorkspace: (
     projectId: string,
     workspaceId: string,
@@ -81,8 +137,7 @@ export interface IpcDeps {
     id: number,
     answers?: readonly string[],
   ) => void
-  readonly rendererResources: RendererResourceScopes
-  readonly rendererReady: (owner: RendererOwner) => void
+  readonly rendererReady: (owner: RendererOwner, reportedGeneration: number) => void
   readonly getWorkbenchHealth: () => WorkbenchHealthSnapshot
   readonly acknowledgeWorkbenchHealth: (occurrenceId: string) => WorkbenchHealthSnapshot
   readonly diagnostics: {
@@ -90,26 +145,28 @@ export interface IpcDeps {
       DiagnosticReportCoordinator,
       'create' | 'capture' | 'copy' | 'save' | 'cancel' | 'delete'
     >
-    readonly responsiveness: Pick<
-      RuntimeDiagnostics,
-      | 'responsivenessState'
-      | 'startResponsiveness'
-      | 'recordResponsiveness'
-      | 'stopResponsiveness'
-      | 'deleteResponsiveness'
-    >
     readonly evidence: Pick<RuntimeDiagnostics, 'evidenceState' | 'deleteEvidence'>
   }
-  readonly recordIpcContractDiagnostic: (event: IpcContractDiagnostic) => void
   readonly recordRenderContainment: (
     owner: RendererOwner,
     batch: RenderContainmentDiagnosticBatch,
   ) => void
   readonly ptySupervisor: PtySupervisor
   readonly terminalSessions: TerminalSessionStore
+  readonly sessionsObservation: Pick<
+    SessionsObservationPort,
+    'acquire' | 'snapshot' | 'release' | 'resolveOpen'
+  >
+  readonly sessionsUsage: Pick<
+    SessionsUsageObservationPort,
+    'acquire' | 'snapshot' | 'release'
+  >
   readonly terminalMoves: Pick<TerminalWorkspaceMoveCoordinator, 'plan' | 'move'>
   readonly harnessProfiles: HarnessProfileStoreContract
   readonly harnessProbes: HarnessProbeManager
+  readonly remoteImagePaste: Pick<RemoteImagePasteCoordinator, 'pasteOrForward'>
+  /** Defaults to the Electron clipboard; scenarios override it to stay inert. */
+  readonly systemClipboard?: SystemClipboardPort
   readonly beads: Pick<BeadsService, 'list' | 'probe' | 'watch' | 'unwatch'>
   readonly gascity: Pick<GasCityService, 'crew' | 'probe'>
   readonly updateAttention: (owner: RendererOwner, count: number) => void

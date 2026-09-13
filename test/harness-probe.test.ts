@@ -26,13 +26,125 @@ describe('HarnessProbeManager', () => {
       manager.probeProfiles(request),
     ])
     expect(first[0]).toMatchObject({ status: 'available', version: 'claude 9.2.1' })
+    expect(first[0]?.capabilities.contextPressure).toEqual({
+      assumedWindowTokens: 1_000_000,
+      warningPercent: 20,
+      criticalPercent: 40,
+    })
     expect(second).toEqual(first)
     expect(exec).toHaveBeenCalledTimes(2)
+    expect(exec).toHaveBeenNthCalledWith(
+      1,
+      '/bin/zsh',
+      ['-lic', `command -v 'claude' >/dev/null 2>&1`],
+      expect.any(Object),
+    )
+    expect(exec).toHaveBeenNthCalledWith(
+      2,
+      '/bin/zsh',
+      [
+        '-lic',
+        `printf '\\036hvir-provider-output-v1\\037'; exec 'claude' '--version' 2>&1`,
+      ],
+      expect.any(Object),
+    )
 
     await manager.probeProfiles(request)
     expect(exec).toHaveBeenCalledTimes(2)
     await manager.probeProfiles({ ...request, force: true })
     expect(exec).toHaveBeenCalledTimes(4)
+    manager.dispose()
+  })
+
+  it('keeps detached-shell startup diagnostics out of provider versions', async () => {
+    const fixture = probeHost(
+      'probe-shell-diagnostics',
+      'claude 9.2.1',
+      'connected',
+      true,
+      '',
+      'bash: no job control in this shell\n',
+    )
+    const manager = new HarnessProbeManager()
+
+    const [probe] = await manager.probeProfiles(probeRequest(fixture.host))
+
+    expect(probe).toMatchObject({ status: 'available', version: 'claude 9.2.1' })
+    manager.dispose()
+  })
+
+  it('returns current and expired cached observations without host work', async () => {
+    let now = 1_000
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
+    const { host, exec } = probeHost('probe-snapshot', 'claude 9.2.1')
+    const manager = new HarnessProbeManager()
+    const request = probeRequest(host)
+    try {
+      expect(manager.snapshotProfiles(request)).toEqual([])
+
+      const [observed] = await manager.probeProfiles(request)
+      expect(manager.snapshotProfiles(request)).toEqual([observed])
+      expect(exec).toHaveBeenCalledTimes(2)
+
+      now = observed!.expiresAt! + 1
+      expect(manager.snapshotProfiles(request)).toEqual([observed])
+      expect(exec).toHaveBeenCalledTimes(2)
+    } finally {
+      manager.dispose()
+      clock.mockRestore()
+    }
+  })
+
+  it('grants send-now only from an available exact-profile Codex probe', async () => {
+    const fixture = probeHost('probe-codex-send', 'codex-cli 0.146.0')
+    const manager = new HarnessProbeManager()
+    const request = probeRequest(fixture.host, 'codex')
+    const profile = request.profiles[0]!
+
+    expect(
+      manager.effectiveLaunchCapabilities(request, profile, 'ctrl-enter'),
+    ).not.toHaveProperty('reviewSendNowContractRevision')
+
+    await manager.probeProfiles(request)
+
+    expect(
+      manager.effectiveLaunchCapabilities(request, profile, 'ctrl-enter'),
+    ).toMatchObject({
+      reviewInsertContractRevision: 1,
+      reviewSendNowContractRevision: 1,
+    })
+    expect(fixture.exec).toHaveBeenCalledTimes(2)
+    manager.dispose()
+  })
+
+  it('keeps successful-launch evidence advisory to bounded recovery probes', async () => {
+    const fixture = probeHost('probe-launch', 'unused')
+    const manager = new HarnessProbeManager()
+    const request = probeRequest(fixture.host)
+    const profile = request.profiles[0]!
+    const capabilities = {
+      sessionIdentity: 'preassigned' as const,
+      exactResume: true,
+      contextPresentation: 'count' as const,
+    }
+
+    const observed = manager.recordSuccessfulLaunch(request, profile, capabilities)
+
+    expect(observed).toMatchObject({
+      status: 'available',
+      detail: 'Launch started successfully',
+      capabilities,
+    })
+    expect(manager.snapshotProfiles(request)).toEqual([observed])
+    expect(fixture.exec).not.toHaveBeenCalled()
+
+    const [probed] = await manager.probeProfiles(request)
+    expect(fixture.exec).toHaveBeenCalledTimes(2)
+    expect(manager.snapshotProfiles(request)).toEqual([probed])
+
+    fixture.setConnection('disconnected')
+    fixture.setConnection('connected')
+    expect(manager.snapshotProfiles(request)).toEqual([])
     manager.dispose()
   })
 
@@ -204,7 +316,6 @@ function probeRequest(
       prepare: () => profile,
       save: () => Promise.resolve(profile),
       materializeTemplates: () => Promise.resolve([]),
-      acknowledgeRisk: () => Promise.resolve(profile),
       duplicate: () => Promise.resolve(profile),
       delete: () => Promise.resolve(),
       authorizePath: () => Promise.reject(new Error('not used')),
@@ -220,6 +331,7 @@ function probeHost(
   connectionState: ProjectHost['connectionState'] = 'connected',
   executableAvailable = true,
   capabilityOutput = '',
+  shellStderr = '',
 ) {
   const exec = vi.fn((_command: string, args: readonly string[]) => {
     const script = args.at(-1) ?? ''
@@ -235,11 +347,16 @@ function probeHost(
       return Promise.resolve({
         code: 0,
         signal: null,
-        stdout: capabilityOutput,
-        stderr: '',
+        stdout: `\x1ehvir-provider-output-v1\x1f${capabilityOutput}`,
+        stderr: shellStderr,
       })
     }
-    return Promise.resolve({ code: 0, signal: null, stdout: `${version}\n`, stderr: '' })
+    return Promise.resolve({
+      code: 0,
+      signal: null,
+      stdout: `\x1ehvir-provider-output-v1\x1f${version}\n`,
+      stderr: shellStderr,
+    })
   })
   const listeners = new Set<(state: HostConnectionState) => void>()
   let currentConnectionState = connectionState

@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { startPtyProducer } from '../src/main/smoke/renderer-recovery-producer'
 
 import type { PtyExit } from '../src/main/project-host'
-import { stopPtyAndWaitForExit, waitForPtyOutput } from '../src/main/smoke/pty-lifecycle'
+import {
+  stopPtyAndWaitForExit,
+  waitForPtyOutput,
+  type PtyOutputWaitProgress,
+} from '../src/main/smoke/pty-lifecycle'
 import type { ManagedPty, PtySupervisor } from '../src/main/pty/pty-supervisor'
 import { asHarnessProviderId, asHostId, localPath } from '../src/shared'
 
@@ -10,8 +15,172 @@ type LifecycleSupervisor = Pick<PtySupervisor, 'get' | 'kill' | 'onExit'>
 type OutputSupervisor = Pick<PtySupervisor, 'attach' | 'get'>
 
 describe('smoke PTY output', () => {
+  it.each(['deadline', 'interrupt'] as const)(
+    'releases an unacknowledged output wait on %s',
+    async (kind) => {
+      const fixture = outputFixture()
+      const controller = new AbortController()
+      const progress: PtyOutputWaitProgress[] = []
+      const pending = waitForPtyOutput({
+        supervisor: fixture.supervisor,
+        terminal: fixture.terminal,
+        expected: 'never-emitted',
+        scenario: 'capture readiness',
+        trigger: vi.fn(),
+        timeoutMs: 20,
+        signal: controller.signal,
+        onProgress: (state) => progress.push(state),
+      })
+      const rejected = expect(pending).rejects.toThrow(
+        kind === 'deadline'
+          ? 'timed out awaiting PTY acknowledgement'
+          : 'output wait interrupted',
+      )
+      if (kind === 'interrupt') controller.abort()
+      await rejected
+      expect(fixture.disposeOutput).toHaveBeenCalledOnce()
+      expect(progress.slice(-3).map((state) => state.phase)).toEqual([
+        kind === 'deadline' ? 'timed-out' : 'interrupted',
+        'detach-awaiting',
+        'detach-returned',
+      ])
+    },
+  )
+
+  it.each(['replay', 'exit'] as const)(
+    'does not trigger after synchronous attach %s settlement',
+    async (kind) => {
+      const fixture = outputFixture()
+      const trigger = vi.fn()
+      const progress: PtyOutputWaitProgress[] = []
+      fixture.attach.mockImplementation((_id, _owner, handlers) => {
+        if (kind === 'replay') handlers.onData?.('already-ready')
+        else handlers.onExit?.({ exitCode: 127, signal: undefined })
+        return fixture.disposeOutput
+      })
+      const result = waitForPtyOutput({
+        supervisor: fixture.supervisor,
+        terminal: fixture.terminal,
+        expected: 'already-ready',
+        scenario: 'synchronous attachment',
+        trigger,
+        onProgress: (state) => progress.push(state),
+      })
+      if (kind === 'replay') await expect(result).resolves.toBe('already-ready')
+      else await expect(result).rejects.toThrow('exited before expected output')
+      expect(trigger).not.toHaveBeenCalled()
+      expect(fixture.disposeOutput).toHaveBeenCalledOnce()
+      expect(progress.map((state) => state.phase)).toEqual(
+        kind === 'replay'
+          ? [
+              'attach-awaiting',
+              'first-output',
+              'matched',
+              'attach-returned',
+              'detach-awaiting',
+              'detach-returned',
+            ]
+          : [
+              'attach-awaiting',
+              'exited',
+              'attach-returned',
+              'detach-awaiting',
+              'detach-returned',
+            ],
+      )
+      expect(progress.at(-1)?.matched).toBe(kind === 'replay')
+    },
+  )
+
+  it.each(['local', 'ssh'] as const)(
+    'requires executed %s producer output, including cleanup',
+    async (label) => {
+      const fixture = outputFixture()
+      fixture.get.mockReturnValue(fixture.terminal)
+      const write = vi.fn<PtySupervisor['write']>()
+      let ready = false
+      const pending = startPtyProducer(
+        { ...fixture.supervisor, write },
+        fixture,
+        label,
+      ).then((dispose) => {
+        ready = true
+        return dispose
+      })
+      const command = write.mock.calls[0]![2]
+      fixture.emitData(command)
+      await Promise.resolve()
+      expect(ready).toBe(false)
+      fixture.emitData(`hvir-${label}-producer-ready\r\n`)
+      const dispose = await pending
+      let stopped = false
+      const stopping = dispose().then(() => {
+        stopped = true
+      })
+      const stopCommand = write.mock.calls[1]![2]
+      fixture.emitData(stopCommand)
+      await Promise.resolve()
+      expect(stopped).toBe(false)
+      expect(stopCommand).toBe('\u0003')
+      fixture.emitData(`hvir-${label}-producer-stopped\r\n`)
+      await stopping
+      expect(fixture.disposeOutput).toHaveBeenCalledTimes(2)
+      await dispose()
+      expect(write).toHaveBeenCalledTimes(2)
+    },
+  )
+
   beforeEach(() => {
     vi.useRealTimers()
+  })
+
+  it('bounds content-free progress while keeping attachment and trigger boundaries distinct', async () => {
+    const fixture = outputFixture()
+    const progress: PtyOutputWaitProgress[] = []
+    const pending = waitForPtyOutput({
+      supervisor: fixture.supervisor,
+      terminal: fixture.terminal,
+      expected: 'ready-marker',
+      scenario: 'bounded progress',
+      trigger: vi.fn(),
+      onProgress: (state) => progress.push(state),
+    })
+    expect(progress.map((state) => state.phase)).toEqual([
+      'attach-awaiting',
+      'attach-returned',
+      'trigger-awaiting',
+      'trigger-returned',
+    ])
+    fixture.emitData('private terminal content')
+    for (let index = 0; index < 100; index++) fixture.emitData('x'.repeat(1_000))
+    fixture.emitData('ready-')
+    fixture.emitData('marker')
+    await pending
+    expect(progress.map((state) => state.phase)).toEqual([
+      'attach-awaiting',
+      'attach-returned',
+      'trigger-awaiting',
+      'trigger-returned',
+      'first-output',
+      'output-cap',
+      'matched',
+      'detach-awaiting',
+      'detach-returned',
+    ])
+    expect(progress.at(-1)).toEqual({
+      phase: 'detach-returned',
+      receivedCharacters: 4_096,
+      matched: true,
+    })
+    expect(progress.every((state) => state.receivedCharacters <= 4_096)).toBe(true)
+    expect(
+      progress.every(
+        (state) =>
+          Object.keys(state).sort().join() === 'matched,phase,receivedCharacters',
+      ),
+    ).toBe(true)
+    expect(JSON.stringify(progress)).not.toContain('private terminal content')
+    expect(JSON.stringify(progress)).not.toContain('ready-marker')
   })
 
   it('matches semantic output across chunks and releases its production attachment', async () => {
@@ -40,32 +209,23 @@ describe('smoke PTY output', () => {
     expect(typeof handlers?.onData).toBe('function')
   })
 
-  it('bounds retained output while reporting the last observed production state', async () => {
-    vi.useFakeTimers()
+  it('bounds retained output while allowing slow semantic success', async () => {
     const fixture = outputFixture()
-    fixture.get.mockReturnValue(fixture.terminal)
     const pending = waitForPtyOutput({
       supervisor: fixture.supervisor,
       terminal: fixture.terminal,
-      expected: 'missing-output',
+      expected: 'eventual-output',
       scenario: 'custom profile PTY output',
       trigger: () => fixture.order.push('trigger'),
-      timeoutMs: 20,
-    }).catch((reason: unknown) => reason)
+    })
     fixture.emitData(`discarded-prefix${'x'.repeat(5_000)}`)
+    await Promise.resolve()
+    fixture.emitData('eventual-output')
 
-    await vi.advanceTimersByTimeAsync(20)
-    const reason = await pending
-
-    expect(reason).toBeInstanceOf(Error)
-    const message = (reason as Error).message
-    expect(message).toContain(
-      'custom profile PTY output timed out ' +
-        '(terminalId=profile-smoke-terminal, pid=9102, elapsedMs=20, ' +
-        'outputCallbackFired=true, supervisorMember=true, retainedOutput="',
-    )
-    expect(message).not.toContain('discarded-prefix')
-    expect(message.length).toBeLessThan(4_500)
+    const retained = await pending
+    expect(retained).toContain('eventual-output')
+    expect(retained).not.toContain('discarded-prefix')
+    expect(retained.length).toBeLessThanOrEqual(4_096)
     expect(fixture.disposeOutput).toHaveBeenCalledOnce()
   })
 
@@ -87,7 +247,7 @@ describe('smoke PTY output', () => {
     await expect(pending).rejects.toThrow(
       'custom profile PTY output exited before expected output ' +
         '(terminalId=profile-smoke-terminal, pid=9102, exitCode=127, signal=9, ' +
-        'retainedOutput="partial-output")',
+        'retainedCharacters=14)',
     )
     expect(fixture.disposeOutput).toHaveBeenCalledOnce()
   })
@@ -302,6 +462,7 @@ function outputFixture(): {
 
 function managedPty(id: string, pid: number): ManagedPty {
   return {
+    instanceId: `instance-${id}-${pid}`,
     id,
     ownerId: 17,
     ownerGeneration: 3,

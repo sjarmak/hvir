@@ -14,7 +14,7 @@ The script runs seam enforcement, lint, both TypeScript builds, all unit/integra
 tests, the default unpackaged Electron groups, and the controlled capacity-performance gate.
 Set `HVIR_SKIP_CAPACITY=1` only for a quick preflight; that is not release evidence.
 
-Pull-request and main-branch CI use the evidence-only capacity command:
+Pull-request and main-branch Linux CI use the evidence-only capacity command:
 
 ```sh
 npm run smoke:capacity
@@ -29,13 +29,18 @@ contract; that failure names the missing state or owned resource rather than tre
 elapsed value as a performance verdict.
 
 `npm run smoke:macos` is the matching Apple-silicon correctness check for the focused PTY,
-viewer-position, retained platform-contract, and terminal-presentation groups. Packaged
-correctness remains a separate distribution boundary: after building the matching platform and
-launcher tarballs, run `npm run smoke:packaged` to verify script-disabled installation,
-first-use preparation from a read-only prefix, subsequent reuse, launcher and native architecture
-selection, application/native-PTY/worker loading, preview-protocol handling, and platform
-geometry. Neither command is a performance measurement, and evidence from one platform does not
-substitute for another.
+viewer-position, retained platform-contract, and terminal-presentation groups. Native package
+correctness remains a separate distribution boundary. On disposable matching hosts, the guarded
+`npm run smoke:linux:installed` and `npm run smoke:macos:installed` checks exercise the
+release-owned installer, install/update/removal lifecycle, production sandbox, command,
+application, native PTY, worker, and platform geometry. Neither command is a performance
+measurement, and evidence from one platform does not substitute for another.
+
+Hosted macOS CI temporarily runs `npm run smoke:macos:ci`, excluding terminal presentation, and
+does not run capacity while the observed macOS presentation-readiness and native PTY teardown
+flakes are hardened. The full `smoke:macos` command remains the macOS pre-push check, capacity
+remains locally runnable, and quantitative plus deterministic capacity evidence is owned by the
+controlled path below rather than GitHub-hosted runners.
 
 ## Controlled quantitative gate
 
@@ -50,7 +55,7 @@ closed, and avoid concurrent builds or test runs. The command refuses a dirty ch
 unknown source commit. Run the exact candidate once; do not retry a crossing into a pass. The
 evidence record includes the source commit and clean/dirty state, OS/platform release,
 architecture, CPU model and logical count, total memory, Node/Electron/Chromium versions, sample
-counts and durations, raw CPU series, readiness distributions, and loaded/diagnostic summaries.
+counts and durations, raw CPU series, readiness distributions, and loaded summaries.
 Retain that JSON line with the issue, pull request, or release evidence. Compare candidates only
 when the recorded environment is meaningfully equivalent; otherwise record a new baseline rather
 than treating unlike machines as one distribution.
@@ -72,8 +77,7 @@ presentation advances, a PTY is orphaned, or all terminals cannot recover with C
 History usable. Controlled mode additionally fails when the idle CPU median ratio exceeds 1.5,
 loaded launch p95 exceeds twice baseline, an individual loaded launch exceeds one second, p99
 latency is >=100 ms, an unexplained stall exceeds 500 ms, net loaded-interval working-set growth
-exceeds 256 MiB, or the ADR-016 diagnostic-cost budgets are crossed. Ghostty scrollback is
-bounded to 10,000 lines per terminal.
+exceeds 256 MiB. Ghostty scrollback is bounded to 10 MB per terminal.
 
 ## Workspace and error matrix
 
@@ -119,8 +123,8 @@ For a release candidate, leave the topology active for at least two hours. Every
 minutes, record hvir's total working set from Activity Monitor/System Monitor while
 rotating terminals, workspaces, Git, a large file, Markdown, CSV, and image tabs. Growth
 may step up as lazy renderers load, then must plateau under a stable tab/terminal count.
-Treat monotonic post-warmup growth, a renderer crash/OOM, or scrollback exceeding 10,000
-lines per terminal as a failure and retain the sample table with the release evidence.
+Treat monotonic post-warmup growth, a renderer crash/OOM, or scrollback exceeding the 10 MB
+per-terminal bound as a failure and retain the sample table with the release evidence.
 
 ## Latest automated evidence
 

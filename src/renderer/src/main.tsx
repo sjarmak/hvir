@@ -4,17 +4,36 @@ import { App } from './App'
 import { ErrorBoundary } from './ErrorBoundary'
 import './styles.css'
 import './themes.css'
+import { installScrollbarPresentation } from './scrollbars/scrollbar-presentation'
+import { initializeAppSettings } from './settings/settings'
 import { initializeAppTheme } from './theme'
 
 initializeAppTheme()
+initializeAppSettings(document.documentElement.style)
 
 const container = document.getElementById('root')
 if (!container) throw new Error('hvir: #root element not found')
+const disposeScrollbarPresentation = installScrollbarPresentation(container)
+window.addEventListener('beforeunload', disposeScrollbarPresentation, { once: true })
 
-createRoot(container).render(
+const root = createRoot(container)
+root.render(
   <StrictMode>
     <ErrorBoundary>
       <App />
     </ErrorBoundary>
   </StrictMode>,
 )
+
+if (import.meta.env.DEV) {
+  void import('./development/development-renderer-instrumentation').then(
+    ({ installDevelopmentRendererInstrumentation }) => {
+      installDevelopmentRendererInstrumentation()
+    },
+    (error: unknown) =>
+      console.error(
+        '[development-performance] renderer instrumentation failed to load',
+        error,
+      ),
+  )
+}

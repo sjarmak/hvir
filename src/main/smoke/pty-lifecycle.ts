@@ -2,9 +2,29 @@ import type { Disposer } from '../../shared'
 import type { ManagedPty, PtySupervisor } from '../pty/pty-supervisor'
 
 type PtyLifecycleSupervisor = Pick<PtySupervisor, 'get' | 'kill' | 'onExit'>
-type PtyOutputSupervisor = Pick<PtySupervisor, 'attach' | 'get'>
+type PtyOutputSupervisor = Pick<PtySupervisor, 'attach'>
 
 const MAX_RETAINED_OUTPUT = 4_096
+
+/** Finite progress observations, never terminal content or a readiness substitute. */
+export interface PtyOutputWaitProgress {
+  readonly phase:
+    | 'attach-awaiting'
+    | 'attach-returned'
+    | 'trigger-awaiting'
+    | 'trigger-returned'
+    | 'first-output'
+    | 'output-cap'
+    | 'matched'
+    | 'exited'
+    | 'timed-out'
+    | 'interrupted'
+    | 'detach-awaiting'
+    | 'detach-returned'
+  /** Received character count, saturated at the existing retention bound. */
+  readonly receivedCharacters: number
+  readonly matched: boolean
+}
 
 export interface StopPtyOptions {
   readonly supervisor: PtyLifecycleSupervisor
@@ -23,75 +43,122 @@ export interface WaitForPtyOutputOptions {
   readonly scenario: string
   /** Synchronous action that causes the expected output after attachment. */
   readonly trigger: () => void
+  readonly onProgress?: (progress: PtyOutputWaitProgress) => void
   readonly timeoutMs?: number
+  readonly signal?: AbortSignal
 }
 
 /** Await semantic PTY output through the production stream and retain bounded diagnostics. */
 export async function waitForPtyOutput(
   options: WaitForPtyOutputOptions,
 ): Promise<string> {
-  const { supervisor, terminal, expected, scenario, trigger, timeoutMs = 5_000 } = options
-  const startedAt = Date.now()
+  const { supervisor, terminal, expected, scenario, trigger } = options
   let retainedOutput = ''
-  let outputCallbackFired = false
+  let settled = false
+  let receivedCharacters = 0
+  let matchedOutput = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let rejectWait: (reason: Error) => void = () => undefined
+  const abort = () => {
+    if (settled) return
+    report('interrupted')
+    rejectWait(new Error(`${scenario} output wait interrupted`))
+  }
+  const report = (phase: PtyOutputWaitProgress['phase']) =>
+    options.onProgress?.({ phase, receivedCharacters, matched: matchedOutput })
   let disposeOutput: Disposer = () => undefined
   let primaryFailure: unknown
   let hasPrimaryFailure = false
 
   try {
     const outputEvent = new Promise<void>((resolve, reject) => {
-      let settled = false
+      rejectWait = (reason) => {
+        if (settled) return
+        settled = true
+        reject(reason)
+      }
+      timer = setTimeout(() => {
+        if (settled) return
+        report('timed-out')
+        rejectWait(
+          new Error(
+            `${scenario} timed out awaiting PTY acknowledgement (receivedCharacters=${receivedCharacters})`,
+          ),
+        )
+      }, options.timeoutMs ?? 10_000)
+      options.signal?.addEventListener('abort', abort, { once: true })
+      if (options.signal?.aborted) {
+        abort()
+        return
+      }
+      report('attach-awaiting')
       disposeOutput = supervisor.attach(
         terminal.id,
         terminal.ownerId,
         {
           onData: (data) => {
-            outputCallbackFired = true
             const combined = `${retainedOutput}${data}`
             const matched = combined.includes(expected)
             retainedOutput = combined.slice(-MAX_RETAINED_OUTPUT)
+            if (!settled) {
+              const previousCharacters = receivedCharacters
+              receivedCharacters = Math.min(
+                MAX_RETAINED_OUTPUT,
+                receivedCharacters + data.length,
+              )
+              if (previousCharacters === 0 && receivedCharacters > 0)
+                report('first-output')
+              if (
+                previousCharacters < MAX_RETAINED_OUTPUT &&
+                receivedCharacters === MAX_RETAINED_OUTPUT
+              )
+                report('output-cap')
+            }
             if (matched && !settled) {
               settled = true
+              matchedOutput = true
+              report('matched')
               resolve()
             }
           },
           onExit: (exit) => {
             if (settled) return
             settled = true
+            report('exited')
             reject(
               new Error(
                 `${scenario} exited before expected output (` +
                   `terminalId=${terminal.id}, pid=${terminal.pid}, ` +
                   `exitCode=${exit.exitCode}, signal=${exit.signal ?? 'none'}, ` +
-                  `retainedOutput=${JSON.stringify(retainedOutput)})`,
+                  `retainedCharacters=${retainedOutput.length})`,
               ),
             )
           },
         },
         terminal.ownerGeneration,
       )
+      report('attach-returned')
     })
 
-    trigger()
-    if (!(await eventBeforeDeadline(outputEvent, timeoutMs))) {
-      const elapsedMs = Date.now() - startedAt
-      const supervisorMember = supervisor.get(terminal.id) !== undefined
-      throw new Error(
-        `${scenario} timed out (` +
-          `terminalId=${terminal.id}, pid=${terminal.pid}, elapsedMs=${elapsedMs}, ` +
-          `outputCallbackFired=${outputCallbackFired}, ` +
-          `supervisorMember=${supervisorMember}, ` +
-          `retainedOutput=${JSON.stringify(retainedOutput)})`,
-      )
+    if (!settled) {
+      report('trigger-awaiting')
+      trigger()
+      report('trigger-returned')
     }
+    await outputEvent
   } catch (reason) {
     hasPrimaryFailure = true
     primaryFailure = reason
+  } finally {
+    if (timer) clearTimeout(timer)
+    options.signal?.removeEventListener('abort', abort)
   }
 
   let cleanupFailure: unknown
   try {
+    report('detach-awaiting')
     await disposeOutput()
+    report('detach-returned')
   } catch (reason) {
     cleanupFailure = reason
   }

@@ -1,12 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactElement,
-} from 'react'
-
+import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import {
   GIT_CHANGE_DISPLAY_LIMIT,
   hostPathEquals,
@@ -18,7 +10,7 @@ import { PaneResizer } from './layout/PaneResizer'
 import type { WebViewState } from './dashboards/WebPane'
 import { WebPaneStack } from './dashboards/WebPaneStack'
 import { useWebPaneWorkspace } from './dashboards/use-web-pane-workspace'
-import { TerminalWorkspace } from './terminal/TerminalWorkspace'
+import { TerminalWorkspaceCollection } from './terminal/TerminalWorkspaceCollection'
 import { useTerminalWorkspaceRuntime } from './terminal/use-terminal-workspace-runtime'
 import { useTerminalAttention } from './terminal/use-terminal-attention'
 import { ProjectsBar } from './workspaces/ProjectsBar'
@@ -36,17 +28,21 @@ import { GitGraphView } from './git/GitGraphView'
 import { useGitWorkspace } from './git/use-git-workspace'
 import { FileViewer } from './viewer/FileViewer'
 import { TabStrip } from './viewer/TabStrip'
-import type { ViewerPaneId, ViewerTab } from './viewer/tab-state'
 import { useViewerWorkspace } from './viewer/use-viewer-workspace'
 import { setAppTheme, useAppTheme } from './theme'
 import { SettingsDialog } from './settings/SettingsDialog'
 import { setAppSettings, terminalPreferences, useAppSettings } from './settings/settings'
 import { useWorkbenchCommands } from './workbench/use-workbench-commands'
+import { focusVisibleActiveTerminalAfterLayout } from './workbench/active-terminal-focus'
 import { useWorkbenchLayout } from './workbench/use-workbench-layout'
 import { useWorkbenchOverlays } from './workbench/use-workbench-overlays'
 import { TerminalLayoutControls } from './workbench/TerminalLayoutControls'
-
+import { useRendererReady } from './workbench/use-renderer-ready'
+import { useTerminalPathActivation } from './workbench/use-terminal-path-activation'
+import * as review from './document-review/use-document-review-workspace'
+import { SessionsApplicationDestination } from './sessions/SessionsApplicationDestination'
 export function App(): ReactElement {
+  const [destination, setDestination] = useState<'workspace' | 'sessions'>('workspace')
   const theme = useAppTheme()
   const settings = useAppSettings()
   const rootRef = useRef<HostPath | undefined>(undefined)
@@ -81,6 +77,7 @@ export function App(): ReactElement {
     pinTab,
     setMode: setViewerMode,
     cycleActiveMode,
+    viewerCommands,
     setDiffBase: setViewerDiffBase,
     setContent: setViewerContent,
     navigationHandled,
@@ -96,6 +93,7 @@ export function App(): ReactElement {
     moveTab: moveTabToPane,
     reorderTabs: reorderViewerTabs,
   } = viewer
+  const reviewWatch = review.useWatchFanout(handleWatchEvent)
   const web = useWebPaneWorkspace({
     onActivate: () => {
       focusViewerPane('primary')
@@ -126,42 +124,42 @@ export function App(): ReactElement {
   const changedCountLabel = gitChanges?.workingTreeLimited
     ? `${GIT_CHANGE_DISPLAY_LIMIT.toLocaleString()}+`
     : changedCount.toLocaleString()
-
   const applyProjectViewState = useCallback(
     (state: ProjectState): void => {
+      switchViewerWorkspace(state.root, state.connectionState === 'connected')
       if (!applyWebProjectState(state, rootRef.current)) return
-      switchViewerWorkspace(state.root)
       resetGitGraphRef.current()
       setGitChanges(undefined)
     },
     [applyWebProjectState, switchViewerWorkspace],
   )
-
   const session = useProjectSession({
     composerSubmitMode: settings.composerSubmitMode,
     onProjectState: applyProjectViewState,
     onReloadFiles: reloadCleanFiles,
-    onWatchEvent: handleWatchEvent,
+    onWatchEvent: reviewWatch.handle,
     isIgnoreRulePath: isGitIgnoreRulePath,
   })
+  const accept = session.acceptProjectState
   const {
     projectState,
     root,
-    activeProject,
     activeWorkspace,
     connectionState,
-    watchTier,
     rootError,
     refreshHosts,
   } = session
+  const documentReview = review.useReviewWorkspace(activeWorkspace, reviewWatch)
   const { watch: watchVersion, ignored: ignoredRefreshVersion } = session.versions
   const { content: contentVersion, git: gitVersion } = session.versions
-  const openWatchPaths = useMemo(() => tabs.map((tab) => tab.path), [tabs])
+  useRendererReady(Boolean(root))
   const watchInterests = useProjectWatchInterests({
     root,
     connected: connectionState === 'connected',
     missing: activeWorkspace?.missing,
-    openPaths: openWatchPaths,
+    openPaths: viewer.openWatchPaths,
+    reviewPaths: documentReview.watchPaths,
+    dependencyPaths: viewer.renderedWatchPaths,
   })
   const gitEnabled = workspaceGitEnabled(activeWorkspace)
   const terminalWorkspaces = useTerminalWorkspaceRuntime({
@@ -171,7 +169,6 @@ export function App(): ReactElement {
     acknowledgeWorkspaces: session.acknowledgeWorkspaces,
     onError: session.reportError,
   })
-
   const layout = useWorkbenchLayout({
     root,
     gitAvailable: gitEnabled,
@@ -189,14 +186,10 @@ export function App(): ReactElement {
     treeCollapsed,
     setTreeCollapsed,
     setTreeWidth,
-    resetTreeWidth,
     setTerminalHeight,
-    resetTerminalHeight,
     setViewerPrimaryWidth,
     resetViewerPrimaryWidth,
-    focusTerminal,
-    focusViewer,
-    focusTree,
+    focusTerminal: showTerminal,
   } = layout
   const git = useGitWorkspace({
     root,
@@ -224,6 +217,13 @@ export function App(): ReactElement {
     fetch: fetchGit,
     pull: pullGit,
   } = git
+  const terminalPathActivation = useTerminalPathActivation({
+    root,
+    selectedFile: activeTab?.path,
+    openFile: (path, position) =>
+      openFile(path, true, 'file-tree', 'head', undefined, position),
+    revealDirectory: layout.focusTree,
+  })
   rootRef.current = root
   sessionErrorRef.current = session.reportError
   workspaceSwitchRef.current = session.switchRelativeWorkspace
@@ -244,15 +244,23 @@ export function App(): ReactElement {
     if (activeWorkspace?.missing) resetGitGraph()
   }, [activeWorkspace?.missing, resetGitGraph])
   useWorkbenchCommands(settings.keybindings, {
+    enabled: destination === 'workspace',
     closeWebPane: closeWebView,
     escapeWebPaneFocus: () => setWebViewFocused(false),
-    canCycleViewMode: () => !gitGraphActiveRef.current && !webViewActiveRef.current,
+    canUseViewerCommands: () => !gitGraphActiveRef.current && !webViewActiveRef.current,
     cycleViewMode: cycleActiveMode,
+    findFile: layout.focusFilenameSearch,
+    findInFile: viewerCommands.findInFile,
+    findInTerminal: terminalWorkspaces.openTerminalSearch,
+    goToLine: viewerCommands.goToLine,
     toggleTerminalFocus,
-    focusTerminal,
-    focusViewer: () => focusViewer(getActivePane()),
-    focusTree,
-    switchWorkspace: (direction) => workspaceSwitchRef.current(direction),
+    focusTerminal: layout.focusTerminal,
+    focusViewer: () => layout.focusViewer(getActivePane()),
+    focusTree: layout.focusTree,
+    switchWorkspace: (direction) => {
+      setDestination('workspace')
+      workspaceSwitchRef.current(direction)
+    },
   })
   const revealSourceTerminal = async (view: WebViewState): Promise<void> => {
     const target = projectState?.projects
@@ -278,14 +286,11 @@ export function App(): ReactElement {
   }
   if (rootError) return <div className="startup-error">{rootError}</div>
   if (!root) return <div className="startup-loading">Starting hvir…</div>
-  const workspaceWebViews = webViews.filter((view) =>
-    hostPathEquals(view.workspaceRoot, root),
-  )
-
+  const rootWebViews = webViews.filter((view) => hostPathEquals(view.workspaceRoot, root))
   const renderViewerPane = (
-    pane: ViewerPaneId,
-    paneTabs: readonly ViewerTab[],
-    paneTab: ViewerTab | undefined,
+    pane: 'primary' | 'secondary',
+    paneTabs: typeof primaryTabs,
+    paneTab: typeof primaryActiveTab,
     graphPane: boolean,
   ): ReactElement => (
     <section
@@ -294,7 +299,8 @@ export function App(): ReactElement {
       data-diagnostic-capture="viewer"
       data-viewer-pane={pane}
       tabIndex={-1}
-      onPointerDownCapture={() => {
+      onPointerDownCapture={(event) => {
+        if (event.button !== 0) return
         if (
           paneTab &&
           !(graphPane && gitGraphActive) &&
@@ -308,6 +314,7 @@ export function App(): ReactElement {
     >
       <TabStrip
         tabs={paneTabs}
+        pathCopyRoot={root}
         pane={pane}
         activeId={
           (graphPane && gitGraphActive) || (pane === 'primary' && webViewActive)
@@ -328,7 +335,7 @@ export function App(): ReactElement {
         onCloseGraph={closeGitGraph}
         webTabs={
           pane === 'primary'
-            ? workspaceWebViews.map((view) => ({ id: view.id, title: view.title }))
+            ? rootWebViews.map((view) => ({ id: view.id, title: view.title }))
             : undefined
         }
         activeWebId={pane === 'primary' && webViewActive ? activeWebViewId : undefined}
@@ -371,6 +378,7 @@ export function App(): ReactElement {
           <FileViewer
             key={`${pane}:${paneTab?.id ?? 'empty'}`}
             tab={paneTab}
+            gitRefreshVersion={gitVersion}
             onMode={(mode, at) => paneTab && setViewerMode(paneTab.id, mode, at)}
             onDiffBase={(diffBase) => paneTab && setViewerDiffBase(paneTab.id, diffBase)}
             onContent={(content) => paneTab && setViewerContent(paneTab.id, content)}
@@ -380,18 +388,19 @@ export function App(): ReactElement {
             onNavigationHandled={(serial) =>
               paneTab && navigationHandled(paneTab.id, serial)
             }
+            registerCommands={viewerCommands.register}
             onOpenPath={(path) => {
               focusViewerPane(pane)
               if (paneTab) pinTab(paneTab.id)
               openFile(path, true)
             }}
-            refreshVersion={contentVersion}
+            onRenderedDependencies={viewer.setRenderedDependencies}
+            documentReview={documentReview}
           />
         )}
       </div>
     </section>
   )
-
   return (
     <div className="app-shell">
       {projectState ? (
@@ -400,16 +409,24 @@ export function App(): ReactElement {
           rollups={terminalAttention.rollups}
           busy={session.busy}
           onAdd={overlays.openProjectPicker}
-          onSwitch={(projectId, workspaceId) =>
+          onSwitch={(projectId, workspaceId) => {
+            setDestination('workspace')
             void session.switchWorkspace(projectId, workspaceId)
-          }
+          }}
           onRefresh={(projectId) => void session.refreshProject(projectId)}
           onCloseProject={(projectId) => void session.closeProject(projectId)}
           onPrune={(projectId) => void session.pruneWorktrees(projectId)}
           onDismiss={(projectId, workspaceId) =>
             void session.dismissWorkspace(projectId, workspaceId)
           }
-          watchTier={watchTier}
+          onPlanCloseWorkspace={session.planWorkspaceClose}
+          onCloseWorkspace={(projectId, workspaceId, plan, terminateTerminals) =>
+            void session.closeWorkspace(projectId, workspaceId, plan, terminateTerminals)
+          }
+          onReopenWorkspace={(projectId, workspaceId) =>
+            void session.reopenWorkspace(projectId, workspaceId)
+          }
+          watchTier={session.watchTier}
           statusError={session.error}
           onChangeConnection={overlays.openProjectPicker}
           onDisconnect={() => void session.disconnect()}
@@ -417,11 +434,14 @@ export function App(): ReactElement {
           theme={theme}
           onTheme={(nextTheme) => setAppTheme(nextTheme)}
           onSettings={() => overlays.openSettings()}
+          sessionsActive={destination === 'sessions'}
+          onSessions={() => setDestination('sessions')}
         />
       ) : null}
       <main
-        className={`workbench${connectionState === 'connected' ? '' : ' project-stale'}${terminalMode === 'maximized' ? ' terminal-focused' : ''}${terminalMode === 'collapsed' ? ' terminal-collapsed' : ''}${treeCollapsed ? ' tree-collapsed' : ''}${webViewFocused && webViewActive ? ' web-focused' : ''}`}
+        className={`workbench${connectionState === 'connected' ? '' : ' project-stale'}${terminalMode === 'maximized' ? ' terminal-focused' : ''}${terminalMode === 'collapsed' ? ' terminal-collapsed' : ''}${treeCollapsed ? ' tree-collapsed' : ''}${layout.terminalRailCompact ? ' terminal-rail-compact' : ''}${webViewFocused && webViewActive ? ' web-focused' : ''}`}
         ref={workbenchRef}
+        hidden={destination === 'sessions'}
       >
         <aside
           className="tree-panel"
@@ -449,25 +469,22 @@ export function App(): ReactElement {
               </button>
             ) : null}
             <BeadsRailTab beads={beads} layout={layout} />
-            <button
-              type="button"
-              className={railMode === 'harness' ? 'active' : ''}
-              aria-current={railMode === 'harness' ? 'page' : undefined}
-              onClick={() => setRailMode('harness')}
-            >
-              Harness
-            </button>
           </nav>
           <div className="rail-content">
             <FileTree
               key={`files:${root.hostId}:${root.path}`}
               root={root}
               refreshVersion={watchVersion}
+              searchRefreshVersion={contentVersion}
               ignoredRefreshVersion={ignoredRefreshVersion}
               changedFiles={gitChanges?.workingTree}
               gitChangesLimited={gitChanges?.workingTreeLimited}
-              selected={activeTab?.path}
+              selected={terminalPathActivation.revealRequest?.path ?? activeTab?.path}
+              revealRequest={terminalPathActivation.revealRequest}
               onOpen={openFile}
+              onPointerActivate={focusVisibleActiveTerminalAfterLayout}
+              viewerPathRebind={viewer}
+              onWorkspaceContentChanged={session.refreshWorkspaceContent}
               connected={connectionState === 'connected'}
               missing={activeWorkspace?.missing}
               hidden={railMode !== 'files'}
@@ -500,17 +517,6 @@ export function App(): ReactElement {
               />
             ) : null}
             <BeadsRailPanel beads={beads} session={session} layout={layout} />
-            <section
-              className="rail-section harness-placeholder"
-              aria-label="Harness"
-              hidden={railMode !== 'harness'}
-            >
-              <div className="harness-placeholder-copy">
-                <strong>Harness view</strong>
-                <span>Coming soon</span>
-                <p>Agent activity and session context will live here.</p>
-              </div>
-            </section>
           </div>
         </aside>
         <PaneResizer
@@ -533,7 +539,7 @@ export function App(): ReactElement {
               workbenchRef.current?.querySelector<HTMLElement>('.tree-panel')
             if (current) setTreeWidth(current.getBoundingClientRect().width + delta)
           }}
-          onReset={resetTreeWidth}
+          onReset={layout.resetTreeWidth}
           action={
             <button
               type="button"
@@ -616,43 +622,36 @@ export function App(): ReactElement {
               workbenchRef.current?.querySelector<HTMLElement>('.terminal-panel')
             if (current) setTerminalHeight(current.getBoundingClientRect().height + delta)
           }}
-          onReset={resetTerminalHeight}
+          onReset={layout.resetTerminalHeight}
           action={<TerminalLayoutControls mode={terminalMode} onMode={setTerminalMode} />}
         />
-        {projectState?.projects.flatMap((project) =>
-          project.workspaces.map((workspace) => (
-            <TerminalWorkspace
-              key={workspace.id}
-              workspaceId={workspace.id}
-              cwd={workspace.root}
-              label={workspace.name}
-              available={!workspace.missing}
-              visible={workspace.id === projectState.activeWorkspaceId}
-              connectionState={project.connectionState}
-              attachRequest={beads.attachRequestFor(workspace.id)}
-              {...terminalWorkspaces.moveProps(project, workspace)}
-              onRollup={terminalAttention.updateRollup}
-              onOpenPath={(target) =>
-                openFile(
-                  target.path,
-                  true,
-                  'file-tree',
-                  'head',
-                  undefined,
-                  target.line === undefined
-                    ? undefined
-                    : { line: target.line, column: target.column },
-                )
-              }
-              onOpenWebLink={openWebLink}
-              preferences={terminalPreferences(settings)}
-              onOpenSettings={() => overlays.openSettings()}
-              onOpenHarnessSettings={() => overlays.openSettings('harnesses')}
-              onAddHarness={overlays.openAddHarnessSettings}
-            />
-          )),
-        )}
+        <TerminalWorkspaceCollection
+          state={projectState}
+          runtime={terminalWorkspaces}
+          terminalPresented={
+            destination === 'workspace' &&
+            terminalMode !== 'collapsed' &&
+            !(webViewFocused && webViewActive)
+          }
+          railCompact={layout.terminalRailCompact}
+          onRailCompact={layout.setTerminalRailCompact}
+          attachRequestFor={beads.attachRequestFor}
+          onRollup={terminalAttention.updateRollup}
+          onOpenPath={terminalPathActivation.activate}
+          onOpenWebLink={openWebLink}
+          preferences={terminalPreferences(settings)}
+          onOpenSettings={() => overlays.openSettings()}
+          onOpenTerminalSettings={() => overlays.openSettings('terminal')}
+          onOpenHarnessSettings={() => overlays.openSettings('harnesses')}
+          onAddHarness={overlays.openAddHarnessSettings}
+        />
       </main>
+      <SessionsApplicationDestination
+        active={destination === 'sessions'}
+        runtime={terminalWorkspaces}
+        onOpened={(state) => (showTerminal(), accept(state), setDestination('workspace'))}
+        onError={session.reportError}
+      />
       {overlays.projectPickerOpen ? (
         <SessionDialog
           hosts={session.hosts}
@@ -661,9 +660,10 @@ export function App(): ReactElement {
           onCancel={overlays.closeProjectPicker}
           onConnect={session.connectHost}
           onBrowse={session.browseHost}
+          folderPicker={session.folderPicker}
           onDisconnect={session.disconnectHost}
           onOpen={session.openHost}
-          onOpened={overlays.closeProjectPicker}
+          onOpened={() => (setDestination('workspace'), overlays.closeProjectPicker())}
         />
       ) : null}
       {overlays.settingsOpen ? (
@@ -671,7 +671,7 @@ export function App(): ReactElement {
           theme={theme}
           settings={settings}
           workspaceRoot={root}
-          projectRoot={activeProject?.registeredRoot}
+          projectRoot={session.activeProject?.registeredRoot}
           initialDestination={overlays.settingsDestination}
           onClose={overlays.closeSettings}
           onSave={(nextTheme, nextSettings) => {

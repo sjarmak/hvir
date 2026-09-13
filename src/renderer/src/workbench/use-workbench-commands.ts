@@ -2,9 +2,11 @@ import { useEffect, useRef } from 'react'
 
 import type {
   KeybindingAction,
+  KeybindingContext,
   KeybindingMap,
   WebPaneCommandAction,
 } from '../../../shared'
+import { keybindingAvailableInContext } from '../../../shared'
 import { matchesKeybinding } from '../settings/keybindings'
 import {
   dispatchWorkbenchCommand,
@@ -13,15 +15,20 @@ import {
 
 export function useWorkbenchCommands(
   keybindings: KeybindingMap,
-  ports: WorkbenchCommandPorts,
+  ports: WorkbenchCommandPorts & { readonly enabled?: boolean },
 ): void {
   const portsRef = useRef(ports)
   portsRef.current = ports
 
   useEffect(() => {
-    const perform = (action: WebPaneCommandAction, paneId?: string): void => {
-      if (document.querySelector('[aria-modal="true"]')) return
-      dispatchWorkbenchCommand(action, paneId, portsRef.current)
+    const perform = (
+      action: WebPaneCommandAction,
+      paneId?: string,
+      context?: KeybindingContext,
+    ): boolean => {
+      if (portsRef.current.enabled === false) return false
+      if (document.querySelector('[aria-modal="true"]')) return false
+      return dispatchWorkbenchCommand(action, paneId, portsRef.current, context)
     }
     const keydown = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || document.querySelector('[aria-modal="true"]')) return
@@ -29,15 +36,18 @@ export function useWorkbenchCommands(
         ([, binding]) => matchesKeybinding(event, binding),
       )?.[0]
       if (!action) return
-      if (
-        action === 'cycleViewMode' &&
-        event.target instanceof Element &&
-        event.target.closest('.terminal-panel')
-      ) {
-        return
-      }
+      const context: KeybindingContext =
+        event.target instanceof Element && event.target.closest('.terminal-panel')
+          ? 'terminal'
+          : event.target instanceof Element && event.target.closest('.web-pane')
+            ? 'web-pane'
+            : 'workbench'
+      if (!keybindingAvailableInContext(action, context)) return
+      if (!perform(action, undefined, context)) return
       event.preventDefault()
-      perform(action)
+      // Ghostty owns a target-level key listener. Once a terminal-scoped
+      // workbench command is claimed, keep that same stroke out of the PTY.
+      if (context === 'terminal') event.stopPropagation()
     }
     window.hvir.send('web-pane:reserved-bindings', keybindings)
     const disposeCommand = window.hvir.on('web-pane:command', ({ action, paneId }) =>

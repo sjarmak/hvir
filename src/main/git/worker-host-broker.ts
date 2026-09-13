@@ -1,7 +1,10 @@
 import {
+  assertTextPrefixByteLimit,
   hostPath,
   type ExecResult,
   type HostPath,
+  type Stat,
+  type TextWorkload,
   type WorkerHostCall,
 } from '../../shared'
 import type { ProjectHost } from '../project-host'
@@ -18,7 +21,7 @@ export async function dispatchWorkerHostCall(
   call: WorkerHostCall,
   project: { readonly host: ProjectHost; readonly root: HostPath } | null,
   permissions: GitHostCallPermissions = {},
-): Promise<ExecResult | string> {
+): Promise<ExecResult | Stat | string | TextWorkload> {
   if (!project || call.hostId !== project.host.hostId) {
     throw new Error('git worker requested an inactive host')
   }
@@ -26,6 +29,15 @@ export async function dispatchWorkerHostCall(
   if (call.operation === 'readTextFile') {
     await assertProjectPath(call.path, root, host)
     return host.readTextFile(call.path)
+  }
+  if (call.operation === 'readTextFilePrefix') {
+    await assertProjectPath(call.path, root, host)
+    assertTextPrefixByteLimit(call.maxBytes)
+    return host.readTextFilePrefix(call.path, call.maxBytes)
+  }
+  if (call.operation === 'stat') {
+    await assertProjectPath(call.path, root, host)
+    return host.stat(call.path)
   }
   if (call.command !== 'git') throw new Error('git worker may execute only git')
   if (
@@ -51,6 +63,7 @@ export async function dispatchWorkerHostCall(
     call.args.length === 5 && call.args[2] === 'switch' && call.args[3] === '--no-guess'
   const fetch = sameArgs(call.args.slice(2), GIT_FETCH_ARGS)
   const pull = sameArgs(call.args.slice(2), GIT_PULL_ARGS)
+  const boundedBlobShow = call.args[2] === 'show' && isAllowedBlobShow(call.args.slice(3))
   validateGitInvocation(call.args)
   if (worktreePrune && !permissions.allowWorktreePrune) {
     throw new Error('git worker requested an unauthorized worktree prune')
@@ -69,7 +82,8 @@ export async function dispatchWorkerHostCall(
   }
   if (
     call.allowTruncatedOutput !== undefined &&
-    (call.allowTruncatedOutput !== true || call.args[2] !== 'status')
+    (call.allowTruncatedOutput !== true ||
+      (call.args[2] !== 'status' && !boundedBlobShow))
   ) {
     throw new Error('git worker supplied unsupported output truncation')
   }
@@ -82,6 +96,20 @@ export async function dispatchWorkerHostCall(
       call.args[2] !== 'status')
   ) {
     throw new Error('git worker supplied an invalid stdout record limit')
+  }
+  if (
+    call.allowIndexRefresh !== undefined &&
+    (call.allowIndexRefresh !== true ||
+      !sameArgs(call.args.slice(2), [
+        'status',
+        '--porcelain=v2',
+        '-z',
+        '--untracked-files=all',
+        '--',
+        '.',
+      ]))
+  ) {
+    throw new Error('git worker supplied unsupported index refresh authority')
   }
   const commandRoot = hostPath(root.hostId, call.args[1])
   await assertProjectPath(commandRoot, root, host)
@@ -98,13 +126,16 @@ export async function dispatchWorkerHostCall(
     host.exec('git', [...SAFE_GIT_CONFIG, ...call.args], {
       cwd: root,
       // Background reads suppress optional index refresh writes so the .git
-      // watcher cannot feed a status request back into itself. The one
-      // explicitly authorized mutations retain Git's normal locking.
+      // watcher cannot feed a request back into itself. The bounded workspace
+      // activity status is the one read permitted to persist refreshed stat
+      // data; otherwise content filters can rerun forever against a stale index.
       ...(fetch || pull
         ? { env: { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'Never' } }
         : worktreePrune || branchSwitch
           ? {}
-          : { env: { GIT_OPTIONAL_LOCKS: '0' } }),
+          : call.allowIndexRefresh
+            ? {}
+            : { env: { GIT_OPTIONAL_LOCKS: '0' } }),
       ...(call.input !== undefined ? { input: call.input } : {}),
       maxBuffer,
       ...(call.allowTruncatedOutput === true ? { allowTruncatedOutput: true } : {}),
@@ -258,19 +289,6 @@ function validateGitInvocation(args: readonly string[]): void {
 }
 
 function isAllowedNumstatDiff(args: readonly string[]): boolean {
-  if (
-    args.length === 8 &&
-    args[0] === '--no-ext-diff' &&
-    args[1] === '--no-textconv' &&
-    args[2] === '--no-index' &&
-    args[3] === '--numstat' &&
-    args[4] === '-z' &&
-    args[5] === '--' &&
-    args[6] === '/dev/null' &&
-    isRepositoryPath(args[7] ?? '')
-  ) {
-    return true
-  }
   if (
     !sameArgs(args.slice(0, 4), ['--no-ext-diff', '--no-textconv', '--numstat', '-z'])
   ) {

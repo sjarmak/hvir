@@ -66,32 +66,47 @@ report "IPC features use central owner/path authority" "$hits"
 # consumers continue to depend on ProjectHost and host-qualified paths only.
 hits=$(grep -rnE "from ['\"]ssh2['\"]|import\(['\"]ssh2['\"]\)" \
   "$SRC" --include='*.ts' --include='*.tsx' --include='*.mts' \
-  | grep -vE '^src/main/project-host/ssh-(host|file-access|transport-pool|watch-service)\.ts' || true)
+  | grep -vE '^src/main/project-host/ssh-(client-lifecycle|host|host-options|file-access|exclusive-create|project-file-transfer|abort|transport-pool|watch-service)\.ts' || true)
 report "ssh2 details stay inside the SshHost adapter" "$hits"
 
 # 9. Host-local collaborators share SshHost's authentication lifecycle. They
 # receive authenticated clients through narrow ports and never construct one.
 hits=$(grep -rnE '\bnew Client\(|clientFactory' \
-  src/main/project-host/ssh-{file-access,transport-pool,watch-service}.ts || true)
+  src/main/project-host/ssh-{client-lifecycle,file-access,exclusive-create,project-file-transfer,transport-pool,watch-service}.ts || true)
 report "SSH collaborators do not create independent clients" "$hits"
 
 # 10. The collaborators are private composition details, not parallel
 # ProjectHost façades exposed to consumers through the package barrel.
-hits=$(grep -nE 'Ssh(FileAccess|TransportPool|WatchService)' \
+hits=$(grep -nE 'Ssh(FileAccess|TransportPool|WatchService|AuthenticationLifecycle)|startSshAuthentication' \
   src/main/project-host/index.ts || true)
 report "only SshHost is exported as the remote host façade" "$hits"
 
-# 11. Git capability modules share one command/cancellation/root policy. No
+# 11. The project-host catalog is the only main-process owner allowed to
+# construct SSH hosts. Project persistence/workflows cannot import concrete host
+# owners, and the catalog cannot depend on project persistence/workflows.
+hits=$({
+  grep -rnE '\bnew SshHost\(' src/main --include='*.ts' --include='*.mts' \
+    | grep -v '^src/main/project-host/project-host-catalog.ts' || true
+  grep -nE "RendererSshPrompter|SshHostTrustStore|LocalSshIdentitySource|parseSshConfig|known-hosts|identityFileCandidates|from ['\"]\./project-host/(ssh-host|ssh-host-trust|ssh-identity-source|renderer-ssh-prompter|project-host-catalog)['\"]" \
+    src/main/project-registry.ts src/main/project-coordinator.ts || true
+  grep -nE "from ['\"][^'\"]*(project-registry|project-coordinator)['\"]" \
+    src/main/project-host/project-host-catalog.ts src/main/project-host/project-host.ts || true
+  sed -n '/^export class ProjectRegistry/,$p' src/main/project-registry.ts \
+    | grep -nE '^  (public )?(async )?(listHosts|hostById|connectedHosts|connectHost|disconnectHost|disconnectSshHosts|browseHost)[(:=]' || true
+})
+report "SSH construction and implementation owners stay in the host catalog" "$hits"
+
+# 12. Git capability modules share one command/cancellation/root policy. No
 # capability constructs a git invocation against the host directly.
 hits=$(grep -rnF ".exec('git'" src/main/git --include='*.ts' --include='*.mts' \
   | grep -vE '^src/main/git/(git-command-context|worker-host-broker)\.ts' || true)
 report "Git commands use the shared command context" "$hits"
 
-# 12. The utility-process proxy implements only Git's exact exec/read port,
+# 13. The utility-process proxy implements only Git's exact exec/read/metadata port,
 # rather than pretending to be a complete ProjectHost with never placeholders.
 hits=$(grep -nE 'implements ProjectHost|execStream\(\): never|spawnPty\(\): never|connectLoopback\(\): never|readFile\(\): never|writeFile\(\): never|readdir\(\): never|stat\(\): never|realpath\(\): never|watch\(\): never' \
   src/workers/git-worker.ts || true)
-report "Git worker proxy exposes only exec and text-read operations" "$hits"
+report "Git worker proxy exposes only exact exec, read, and metadata operations" "$hits"
 
 if [[ "$fail" -ne 0 ]]; then
   printf '\n\033[31mseam check failed\033[0m\n'

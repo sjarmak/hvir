@@ -1,10 +1,10 @@
+import { fileUriPath } from '../../../shared/file-uri'
 import {
   hostPath,
   joinHostPath,
   parseLoopbackHttpTarget,
   type HostPath,
 } from '../../../shared'
-import type { TerminalLinkActivation } from './terminal-pane'
 
 export interface TerminalFileLink {
   readonly target: string
@@ -25,7 +25,7 @@ export interface ResolvedTerminalFileTarget {
 }
 
 const TOKEN = /[^\s<>"'`|]+/g
-const TRAILING_PUNCTUATION = /[.),;!?}\]]+$/
+const TRAILING_PUNCTUATION = /[.),;:!?}\]]+$/
 const LEADING_PUNCTUATION = /^[([{]+/
 const LINE_POSITION = /:(\d+)(?::(\d+))?$/
 const FILE_NAME = /(?:^|\/)[^/]+\.[a-z0-9][a-z0-9._-]*$/i
@@ -46,7 +46,7 @@ export function detectTerminalFileLinks(text: string): readonly TerminalFileLink
       continue
     }
     const parsed = parseTerminalFileTarget(target)
-    if (parsed && isPlainPathCandidate(parsed.path)) {
+    if (isFileUri(target) || (parsed && isPlainPathCandidate(parsed.path))) {
       const start = match.index + leading
       links.push({ target, start, end: start + target.length - 1 })
     }
@@ -63,13 +63,9 @@ export function parseTerminalFileTarget(
   if (!target) return undefined
 
   if (target.startsWith('file://')) {
-    try {
-      const uri = new URL(target)
-      if (uri.protocol !== 'file:') return undefined
-      target = decodeURIComponent(uri.pathname)
-    } catch {
-      return undefined
-    }
+    const path = fileUriPath(target)
+    if (!path) return undefined
+    target = path
   } else if (/^[a-z][a-z0-9+.-]*:/i.test(target) && !LINE_POSITION.test(target)) {
     return undefined
   }
@@ -87,7 +83,7 @@ export function parseTerminalFileTarget(
   }
 }
 
-/** Resolve a terminal target inside the terminal's authorized workspace only. */
+/** Keep the terminal host; main separately validates document reads. */
 export function resolveTerminalFileTarget(
   rawTarget: string,
   workspaceRoot: HostPath,
@@ -97,14 +93,11 @@ export function resolveTerminalFileTarget(
   const candidate = parsed.path.startsWith('/')
     ? hostPath(workspaceRoot.hostId, parsed.path)
     : joinHostPath(workspaceRoot, parsed.path)
-  const root = workspaceRoot.path
   const resolved = {
     path: candidate,
     ...(parsed.line === undefined ? {} : { line: parsed.line }),
     ...(parsed.column === undefined ? {} : { column: parsed.column }),
   }
-  if (root === '/') return resolved
-  if (candidate.path !== root && !candidate.path.startsWith(`${root}/`)) return undefined
   return resolved
 }
 
@@ -171,28 +164,6 @@ export function isTerminalWebTarget(rawTarget: string): boolean {
   }
 }
 
-/** Resolve one zero-based terminal column to a link hvir is authorized to activate. */
-export function terminalLinkActivationAt(
-  text: string,
-  column: number,
-  hyperlinkTarget?: string,
-): TerminalLinkActivation | undefined {
-  if (hyperlinkTarget) {
-    if (isFileUri(hyperlinkTarget)) return { kind: 'file', target: hyperlinkTarget }
-    if (isTerminalWebTarget(hyperlinkTarget)) {
-      return { kind: 'loopback-http', target: hyperlinkTarget }
-    }
-  }
-  const web = detectTerminalWebLinks(text).find(
-    (candidate) => candidate.start <= column && column <= candidate.end,
-  )
-  if (web) return { kind: 'loopback-http', target: web.target }
-  const file = detectTerminalFileLinks(text).find(
-    (candidate) => candidate.start <= column && column <= candidate.end,
-  )
-  return file ? { kind: 'file', target: file.target } : undefined
-}
-
 function isPlainPathCandidate(path: string): boolean {
   return (
     path.startsWith('/') ||
@@ -201,4 +172,15 @@ function isPlainPathCandidate(path: string): boolean {
     path.includes('/') ||
     FILE_NAME.test(path)
   )
+}
+
+/** Surface invalid explicit links at activation, never while scanning output. */
+export function activateTerminalFileTarget(
+  target: string,
+  root: HostPath,
+  open: (target: ResolvedTerminalFileTarget) => void,
+): void {
+  const resolved = resolveTerminalFileTarget(target, root)
+  if (resolved) open(resolved)
+  else window.alert('Cannot open file link: invalid path or another host')
 }

@@ -7,8 +7,9 @@
  */
 
 import type { HostPath } from './host-path'
-import type { ExecResult } from './fs-types'
+import type { ExecResult, Stat } from './fs-types'
 import type { GitDiffRequest, GitDiffResponse } from './viewer-types'
+import type { TextWorkload } from './viewer-workload-policy'
 import type {
   GitBlameRun,
   GitBlameRequest,
@@ -25,7 +26,7 @@ import type {
   GitPullRequest,
   GitSwitchBranchRequest,
 } from './git-types'
-import type { WorktreeDiscovery } from './workspace-types'
+import type { WorkspaceActivityResult, WorktreeDiscovery } from './workspace-types'
 
 export interface WorkerRequest<T = unknown> {
   readonly id: number
@@ -48,10 +49,23 @@ export type WorkerHostCallInput =
       readonly maxBuffer?: number
       readonly allowTruncatedOutput?: boolean
       readonly maxStdoutNulRecords?: number
+      /** Narrow authority for status to persist refreshed index stat data. */
+      readonly allowIndexRefresh?: true
     }
   | {
       readonly hostId: string
       readonly operation: 'readTextFile'
+      readonly path: HostPath
+    }
+  | {
+      readonly hostId: string
+      readonly operation: 'readTextFilePrefix'
+      readonly path: HostPath
+      readonly maxBytes: number
+    }
+  | {
+      readonly hostId: string
+      readonly operation: 'stat'
       readonly path: HostPath
     }
 
@@ -60,12 +74,14 @@ export type WorkerHostCall = WorkerHostCallInput & {
   readonly callId: number
 }
 
+export type WorkerHostValue = ExecResult | Stat | string | TextWorkload
+
 export type WorkerHostResult =
   | {
       readonly kind: 'host-result'
       readonly callId: number
       readonly ok: true
-      readonly result: ExecResult | string
+      readonly result: WorkerHostValue
     }
   | {
       readonly kind: 'host-result'
@@ -105,11 +121,12 @@ export const GIT_DIFF_INPUTS_TYPE = 'git:diff-inputs' as const
 export const GIT_CHANGES_TYPE = 'git:changes' as const
 export const GIT_HISTORY_TYPE = 'git:history' as const
 export const GIT_IGNORED_ENTRIES_TYPE = 'git:ignored-entries' as const
+export const GIT_IGNORED_PATHS_TYPE = 'git:ignored-paths' as const
 export const GIT_BLAME_TYPE = 'git:blame' as const
 export const GIT_COMMIT_DETAIL_TYPE = 'git:commit-detail' as const
 export const GIT_WORKTREES_TYPE = 'git:worktrees' as const
 export const GIT_PRUNE_WORKTREES_TYPE = 'git:prune-worktrees' as const
-export const GIT_CHANGED_FILE_COUNT_TYPE = 'git:changed-file-count' as const
+export const GIT_WORKSPACE_ACTIVITY_TYPE = 'git:workspace-activity' as const
 export const GIT_BRANCHES_TYPE = 'git:branches' as const
 export const GIT_FETCH_TYPE = 'git:fetch' as const
 export const GIT_PULL_TYPE = 'git:pull' as const
@@ -134,9 +151,9 @@ export interface GitWorkerProtocol {
     GitSwitchBranchRequest & { readonly relatedWorktreeRoots?: readonly HostPath[] },
     void
   >
-  readonly [GIT_CHANGED_FILE_COUNT_TYPE]: WorkerOperation<
+  readonly [GIT_WORKSPACE_ACTIVITY_TYPE]: WorkerOperation<
     { readonly root: HostPath; readonly relatedWorktreeRoots?: readonly HostPath[] },
-    number
+    WorkspaceActivityResult
   >
   readonly [GIT_WORKTREES_TYPE]: WorkerOperation<
     { readonly root: HostPath },
@@ -158,6 +175,10 @@ export interface GitWorkerProtocol {
   readonly [GIT_IGNORED_ENTRIES_TYPE]: WorkerOperation<
     GitIgnoredEntriesRequest,
     GitIgnoredEntriesResponse
+  >
+  readonly [GIT_IGNORED_PATHS_TYPE]: WorkerOperation<
+    { readonly root: HostPath; readonly paths: readonly string[] },
+    { readonly ignoredPaths: readonly string[] }
   >
   readonly [GIT_COMMIT_DETAIL_TYPE]: WorkerOperation<
     GitCommitDetailRequest,

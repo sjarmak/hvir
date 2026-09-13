@@ -1,13 +1,26 @@
-import { hostPathEquals, type HarnessProviderCapabilities } from '../../../shared'
+import { hostPathEquals } from '../../../shared'
 import { resolveHarnessLaunch } from '../../harness/harness-launch'
 import { harnessProvider, selectHarnessLaunch } from '../../harness/harness-provider'
+import {
+  attachRendererPty,
+  canAttachRetainedRendererPty,
+  registerRendererPty,
+  rendererPtyQualifier,
+} from '../../terminal/renderer-pty-lifecycle'
+import {
+  isAuthorizedTerminalFork,
+  isHarnessSessionId,
+  isTerminalId,
+  terminalLaunchMode,
+} from '../../terminal/terminal-launch-admission'
+import { terminalStartedResponse } from '../../terminal/terminal-start-response'
+import { PtyStartUnavailableError } from '../../pty/pty-supervisor'
 import type { IpcRegistrar } from '../authority-router'
 import type { IpcDeps } from '../deps'
 import { operationResult } from '../operation-result'
-
 type TerminalIpcDeps = Pick<
   IpcDeps,
-  | 'getProject'
+  | 'getHost'
   | 'terminalSessions'
   | 'harnessProfiles'
   | 'harnessProbes'
@@ -22,7 +35,7 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
     return deps.terminalSessions.list(root)
   })
 
-  ipc.handle('terminal:record-recovery-decision', async (req) => {
+  ipc.handle('terminal:record-recovery-decision', async (req, context) => {
     const root = ipc.authority.workspaceRoot(req.root)
     const restoredIds = recoveryDecisionIds(req.restoredIds)
     const skippedIds = recoveryDecisionIds(req.skippedIds)
@@ -37,8 +50,14 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
       restoredIds,
       skippedIds,
     })
+    const owner = context.owner()
+    for (const id of skippedIds) {
+      const qualifier = rendererPtyQualifier(root, id)
+      if (deps.rendererResources.hasTransferredResource(owner, qualifier)) {
+        await deps.rendererResources.disposeResource(owner, 'pty-session', id)
+      }
+    }
   })
-
   ipc.handle('terminal:update-layout', async (req) => {
     const root = ipc.authority.workspaceRoot(req.root)
     const rawSessions: unknown = req.sessions
@@ -68,13 +87,11 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
     })
     await deps.terminalSessions.updateLayout(root, sessions)
   })
-
   ipc.handle('terminal:forget', async (req) => {
     const root = ipc.authority.workspaceRoot(req.root)
     if (!isTerminalId(req.id)) throw new Error('Invalid terminal session id')
     await deps.terminalSessions.forget(root, req.id)
   })
-
   ipc.handle('terminal:plan-move', (req, context) =>
     operationResult(() => Promise.resolve(deps.terminalMoves.plan(req, context.owner()))),
   )
@@ -97,35 +114,28 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
     ) {
       throw new Error('Harness profile is scoped to another project')
     }
-    const acknowledged = profile.risk === 'standard' || req.acknowledgeRisk === true
-    if (!acknowledged) {
-      throw new Error(
-        `${profile.risk === 'elevated' ? 'Elevated' : 'Unclassified'} profile requires acknowledgment`,
-      )
-    }
     return deps.terminalSessions.rebindProfile({
       id: req.id,
       providerId: profile.providerId,
       profileId: profile.id,
       launchRevision: profile.launchRevision,
-      riskAcknowledgedRevision:
-        profile.risk === 'standard' ? undefined : profile.launchRevision,
       workspaceRoot: root,
     })
   })
 
   ipc.handle('pty:start', async (req, context) => {
     if (!isTerminalId(req.sessionId)) throw new Error('Invalid PTY session id')
+    const requestedMode = terminalLaunchMode(req)
     if (
       req.replacesSessionId !== undefined &&
       (!isTerminalId(req.replacesSessionId) ||
         req.replacesSessionId === req.sessionId ||
-        req.resume === true)
+        requestedMode !== 'fresh')
     ) {
       throw new Error('Invalid terminal replacement request')
     }
     const owner = context.owner()
-    const { root, host } = deps.getProject()
+    const root = ipc.authority.workspaceRoot(req.workspaceRoot)
     const projectRoot = ipc.authority.projectRoot(root)
     const cwd = ipc.authority.workspaceRoot(req.cwd)
     if (
@@ -134,6 +144,8 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
     ) {
       throw new Error('Terminal launch context belongs to another project')
     }
+    const host = deps.getHost(root.hostId)
+    if (!host) throw new Error('Terminal launch host is unavailable')
     const cols = terminalDimension(req.cols)
     const rows = terminalDimension(req.rows)
     const profile = deps.harnessProfiles.get(req.profileId)
@@ -156,8 +168,7 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
       (req.admission !== undefined &&
         req.admission !== 'interactive' &&
         req.admission !== 'bulk') ||
-      (req.resume !== undefined && typeof req.resume !== 'boolean') ||
-      (req.acknowledgeRisk !== undefined && typeof req.acknowledgeRisk !== 'boolean')
+      (req.resume !== undefined && typeof req.resume !== 'boolean')
     ) {
       throw new Error('Invalid PTY session metadata')
     }
@@ -167,17 +178,26 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
     ) {
       throw new Error('Harness profile is scoped to another project')
     }
-    if (profile.risk !== 'standard' && req.acknowledgeRisk !== true) {
-      throw new Error(
-        `${profile.risk === 'elevated' ? 'Elevated' : 'Unclassified'} harness profile requires acknowledgment`,
-      )
-    }
-    const effectiveCapabilities: HarnessProviderCapabilities = {
-      sessionIdentity: provider.sessionIdentity,
-      exactResume: provider.supportsResume,
-      contextPresentation: provider.manifest.contextPresentation,
-    }
-    if (req.resume) {
+    const availabilityRequest = {
+      host,
+      projectRoot,
+      workspaceRoot: cwd,
+      profiles: [profile],
+      store: deps.harnessProfiles,
+    } as const
+    let effectiveCapabilities =
+      requestedMode === 'fork'
+        ? await deps.harnessProbes.resolveLaunchCapabilities(
+            availabilityRequest,
+            profile,
+            req.composerSubmitMode,
+          )
+        : deps.harnessProbes.effectiveLaunchCapabilities(
+            availabilityRequest,
+            profile,
+            req.composerSubmitMode,
+          )
+    if (requestedMode === 'resume') {
       if (
         !effectiveCapabilities.exactResume ||
         !isHarnessSessionId(req.harnessSessionId) ||
@@ -194,6 +214,27 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
         throw new Error('Terminal resume is not authorized for this project')
       }
     }
+    if (requestedMode === 'fork') {
+      if (!isAuthorizedTerminalFork({
+        request: req,
+        capabilities: effectiveCapabilities,
+        providerSupportsFork: provider.fork !== undefined,
+        source: isTerminalId(req.forkSourceSessionId)
+          ? deps.ptySupervisor.get(req.forkSourceSessionId)
+          : undefined,
+        profile,
+        sessions: deps.terminalSessions,
+        workspaceRoot: root,
+        cwd,
+      })) {
+        throw new Error('Terminal fork is not authorized for this project')
+      }
+    } else if (
+      req.forkSourceSessionId !== undefined ||
+      req.parentHarnessSessionId !== undefined
+    ) {
+      throw new Error('Invalid terminal fork request')
+    }
     if (
       req.replacesSessionId &&
       (!effectiveCapabilities.exactResume ||
@@ -209,8 +250,56 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
     ) {
       throw new Error('Terminal replacement is not authorized for this project')
     }
+    const qualifier = rendererPtyQualifier(root, req.sessionId)
+    if (deps.rendererResources.hasTransferredResource(owner, qualifier)) {
+      if (
+        !deps.terminalSessions.authorizeReattach({
+          id: req.sessionId,
+          providerId: profile.providerId,
+          profileId: profile.id,
+          launchRevision: profile.launchRevision,
+          harnessSessionId: req.harnessSessionId,
+          workspaceRoot: root,
+          cwd,
+        })
+      ) {
+        throw new Error('Terminal reattachment is not authorized for this project')
+      }
+      const retained = deps.ptySupervisor.get(req.sessionId)
+      if (retained) {
+        if (
+          !canAttachRetainedRendererPty(deps, retained, {
+            owner,
+            root,
+            cwd,
+            profile,
+            request: req,
+          })
+        ) {
+          throw new Error('Retained terminal identity changed during reattachment')
+        }
+        const ptyLease = deps.rendererResources.claimTransferredResource(owner, qualifier)
+        if (!ptyLease) throw new Error('Retained terminal was already reattached')
+        deps.rendererResources.assertCurrent(owner)
+        // If a concurrent rollover has already transferred this lease again,
+        // attachment fails closed without disposing the newer owner's PTY.
+        attachRendererPty(deps, retained, ptyLease, owner, context.sender)
+        return terminalStartedResponse(retained, true)
+      }
+      // The PTY exited after rollover but before recovery was accepted. Retire
+      // its transferred lease and continue through the existing exact-resume path.
+      const ptyLease = deps.rendererResources.claimTransferredResource(owner, qualifier)
+      if (!ptyLease) throw new Error('Retained terminal was already reattached')
+      ptyLease.release()
+    }
+    if (requestedMode !== 'fork') {
+      effectiveCapabilities = await deps.harnessProbes.resolveLaunchCapabilities(
+        availabilityRequest,
+        profile,
+        req.composerSubmitMode,
+      )
+    }
     const defaultShell = await host.defaultShell()
-    const requestedMode = req.resume ? 'resume' : 'fresh'
     const resolved = await resolveHarnessLaunch({
       profile,
       expectedLaunchRevision: req.launchRevision,
@@ -220,7 +309,9 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
       store: deps.harnessProfiles,
       mode: requestedMode,
       context: {
-        sessionId: req.resume ? req.harnessSessionId! : req.sessionId,
+        sessionId: requestedMode === 'resume' ? req.harnessSessionId! : req.sessionId,
+        parentSessionId:
+          requestedMode === 'fork' ? req.parentHarnessSessionId : undefined,
         cwd,
         cols,
         rows,
@@ -230,24 +321,20 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
       },
     })
     const launchDecision = await selectHarnessLaunch(host, provider, requestedMode, {
-      sessionId: req.resume ? req.harnessSessionId! : req.sessionId,
+      sessionId:
+        requestedMode === 'fork'
+          ? req.parentHarnessSessionId!
+          : requestedMode === 'resume'
+            ? req.harnessSessionId!
+            : req.sessionId,
       cwd,
       artifact: resolved.artifact,
-    })
-    if (launchDecision.outcome === 'resume-unavailable') {
-      return { outcome: 'resume-unavailable', reason: launchDecision.reason }
-    }
+    }, effectiveCapabilities)
+    if (launchDecision.outcome !== 'launch') return launchDecision
     const launchMode = launchDecision.mode
-    const ptyLease = deps.rendererResources.register(
-      owner,
-      {
-        lifetime: 'workspace',
-        type: 'pty-session',
-        root,
-        id: req.sessionId,
-      },
-      () => deps.ptySupervisor.disposeSession(req.sessionId, owner.id, owner.generation),
-    )
+    const refreshAfterClassifiedLaunchFailure = (): void =>
+      deps.harnessProbes.refreshProfile(availabilityRequest, profile)
+    const ptyLease = registerRendererPty(deps, owner, root, req.sessionId)
     let managed
     try {
       managed = await deps.ptySupervisor.spawn({
@@ -257,43 +344,43 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
         unsetEnvironment: resolved.unsetEnvironment,
         artifact: resolved.artifact,
         effectiveCapabilities,
+        profileId: profile.id,
+        launchRevision: profile.launchRevision,
+        providerContractVersion: profile.providerContractVersion,
+        composerSubmitMode: req.composerSubmitMode,
         cwd,
         workspaceRoot: root,
         ownerId: owner.id,
         ownerGeneration: owner.generation,
         sessionId: req.sessionId,
         harnessSessionId: launchMode === 'resume' ? req.harnessSessionId : undefined,
+        launchMode,
+        parentHarnessSessionId:
+          launchMode === 'fork' ? req.parentHarnessSessionId : undefined,
         resume: launchMode === 'resume',
         admission: req.admission,
         cols,
         rows,
-        onClassifiedLaunchFailure: () => {
-          deps.harnessProbes.invalidate(host, profile)
-          void deps.harnessProbes.probeProfiles({
-            host,
-            projectRoot,
-            workspaceRoot: cwd,
-            profiles: [profile],
-            store: deps.harnessProfiles,
-            force: true,
-          })
-        },
+        onClassifiedLaunchFailure: refreshAfterClassifiedLaunchFailure,
       })
     } catch (reason) {
       await ptyLease.dispose()
+      if (reason instanceof PtyStartUnavailableError)
+        return {
+          outcome: 'launch-unavailable',
+          reason: reason.reason,
+          retryable: reason.retryable,
+        }
       if (isClassifiedHarnessLaunchFailure(reason)) {
-        deps.harnessProbes.invalidate(host, profile)
-        void deps.harnessProbes.probeProfiles({
-          host,
-          projectRoot,
-          workspaceRoot: cwd,
-          profiles: [profile],
-          store: deps.harnessProfiles,
-          force: true,
-        })
+        refreshAfterClassifiedLaunchFailure()
       }
       throw reason
     }
+    deps.harnessProbes.recordSuccessfulLaunch(
+      availabilityRequest,
+      profile,
+      managed.capabilities,
+    )
     try {
       deps.rendererResources.assertCurrent(owner)
     } catch (error) {
@@ -305,8 +392,6 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
       providerId: profile.providerId,
       profileId: profile.id,
       launchRevision: profile.launchRevision,
-      riskAcknowledgedRevision:
-        profile.risk === 'standard' ? undefined : profile.launchRevision,
       artifactIdentity: resolved.artifactIdentity,
       harnessSessionId: managed.harnessSessionId,
       workspaceRoot: root,
@@ -316,32 +401,8 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
       active: req.active,
     }
     let detach: () => void | Promise<void> = () => undefined
-    const sender = context.sender
     try {
-      detach = deps.ptySupervisor.attach(
-        managed.id,
-        owner.id,
-        {
-          onData: (data) => {
-            if (deps.rendererResources.isCurrent(owner) && !sender.isDestroyed()) {
-              sender.send('pty:data', { id: managed.id, data })
-            }
-          },
-          onExit: (exit) => {
-            void detach()
-            ptyLease.release()
-            if (deps.rendererResources.isCurrent(owner) && !sender.isDestroyed()) {
-              sender.send('pty:exit', { id: managed.id, ...exit })
-            }
-          },
-          onTelemetry: (telemetry) => {
-            if (deps.rendererResources.isCurrent(owner) && !sender.isDestroyed()) {
-              sender.send('pty:telemetry', { id: managed.id, telemetry })
-            }
-          },
-        },
-        owner.generation,
-      )
+      detach = attachRendererPty(deps, managed, ptyLease, owner, context.sender)
       if (req.replacesSessionId) {
         await deps.terminalSessions.recordReplacement({
           replacedId: req.replacesSessionId,
@@ -357,15 +418,7 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
       await ptyLease.dispose()
       throw error
     }
-    return {
-      outcome: 'started',
-      id: managed.id,
-      pid: managed.pid,
-      harnessSessionId: managed.harnessSessionId,
-      identityStatus: managed.identityStatus,
-      capabilities: managed.capabilities,
-      resumed: managed.resumed,
-    }
+    return terminalStartedResponse(managed, false)
   })
 
   ipc.handleSend('pty:write', ({ id, data }, context) => {
@@ -394,10 +447,6 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
   })
 }
 
-function isTerminalId(value: unknown): value is string {
-  return typeof value === 'string' && /^[a-zA-Z0-9-]{1,80}$/.test(value)
-}
-
 function recoveryDecisionIds(value: unknown): readonly string[] {
   if (!Array.isArray(value) || value.length > 500) {
     throw new Error('Invalid terminal recovery decision')
@@ -420,16 +469,6 @@ function isTerminalTitle(value: unknown): value is string {
 
 function isTerminalAttention(value: unknown): value is 'working' | 'bell' | 'idle' {
   return value === 'working' || value === 'bell' || value === 'idle'
-}
-
-function isHarnessSessionId(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length > 0 &&
-    value.length <= 240 &&
-    !/\s/.test(value) &&
-    !hasControlCharacter(value)
-  )
 }
 
 function hasControlCharacter(value: string): boolean {

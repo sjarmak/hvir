@@ -1,13 +1,21 @@
 import {
+  type ComposerSubmitMode,
   type HarnessProfile,
   type HarnessProfileProbe,
+  type HarnessProviderCapabilities,
   type HarnessProbeStatus,
   type HostPath,
 } from '../../shared'
 import type { Disposer, ProjectHost } from '../project-host'
 import { resolveHarnessLaunch } from './harness-launch'
 import type { HarnessProfileStoreContract } from './harness-profile-store'
-import { harnessProvider } from './harness-provider'
+import { harnessLaunchCapabilities } from './harness-provider-capabilities'
+import { harnessProvider } from './bundled-harness-providers'
+import {
+  harnessShellProbeCommandArgs,
+  harnessShellProbeOutput,
+  harnessShellProbeArgs,
+} from './harness-shell-environment'
 
 const AVAILABLE_TTL_MS = 10 * 60_000
 const NEGATIVE_TTL_MS = 2 * 60_000
@@ -22,15 +30,19 @@ interface HostProbeState {
   active: number
   readonly waiters: Array<() => void>
   readonly cache: Map<string, HarnessProfileProbe>
+  readonly advisory: Map<string, HarnessProfileProbe>
   readonly pending: Map<string, Promise<HarnessProfileProbe>>
   disposeConnection: Disposer
 }
 
-export interface ProbeHarnessProfilesRequest {
+export interface HarnessProfileAvailabilityContext {
   readonly host: ProjectHost
   readonly projectRoot: HostPath
   readonly workspaceRoot: HostPath
   readonly profiles: readonly HarnessProfile[]
+}
+
+export interface ProbeHarnessProfilesRequest extends HarnessProfileAvailabilityContext {
   readonly store: HarnessProfileStoreContract
   readonly force?: boolean
 }
@@ -49,6 +61,97 @@ export class HarnessProbeManager {
     return Promise.all(profiles.map((profile) => this.probeProfile(request, profile)))
   }
 
+  /** Returns context-current cache entries without running host commands. */
+  snapshotProfiles(
+    request: HarnessProfileAvailabilityContext,
+  ): readonly HarnessProfileProbe[] {
+    const profiles = request.profiles.slice(0, MAX_PROFILES_PER_REQUEST)
+    if (profiles.length === 0) return []
+    const state = this.stateFor(request.host)
+    return profiles.flatMap((profile) => {
+      const key = cacheKey(
+        profile,
+        state.generation,
+        request.projectRoot,
+        request.workspaceRoot,
+      )
+      const cached = state.cache.get(key) ?? state.advisory.get(key)
+      return cached ? [cached] : []
+    })
+  }
+
+  /** Derives launch-bound capabilities from current exact-profile probe evidence. */
+  effectiveLaunchCapabilities(
+    request: HarnessProfileAvailabilityContext,
+    profile: HarnessProfile,
+    composerSubmitMode: ComposerSubmitMode,
+  ): HarnessProviderCapabilities {
+    const available = this.snapshotProfiles(request).find(
+      (probe) =>
+        probe.status === 'available' &&
+        probe.profileId === profile.id &&
+        probe.launchRevision === profile.launchRevision,
+    )
+    return harnessLaunchCapabilities(harnessProvider(profile.providerId), {
+      profile,
+      composerSubmitMode,
+      probedCapabilities: available?.capabilities,
+    })
+  }
+
+  /** Runs the bounded exact-profile probe before binding a new launch capability set. */
+  async resolveLaunchCapabilities(
+    request: ProbeHarnessProfilesRequest,
+    profile: HarnessProfile,
+    composerSubmitMode: ComposerSubmitMode,
+  ): Promise<HarnessProviderCapabilities> {
+    const provider = harnessProvider(profile.providerId)
+    const current = this.snapshotProfiles(request).find(
+      (probe) =>
+        probe.profileId === profile.id && probe.launchRevision === profile.launchRevision,
+    )
+    if (
+      (provider.probe.versionArgs || provider.probe.capabilityArgs) &&
+      (!current?.expiresAt || current.expiresAt <= Date.now())
+    ) {
+      await this.probeProfiles({ ...request, profiles: [profile] })
+    }
+    return this.effectiveLaunchCapabilities(request, profile, composerSubmitMode)
+  }
+
+  /** A supervised process start is useful advisory evidence without another probe. */
+  recordSuccessfulLaunch(
+    request: HarnessProfileAvailabilityContext,
+    profile: HarnessProfile,
+    capabilities: HarnessProfileProbe['capabilities'],
+  ): HarnessProfileProbe {
+    const state = this.stateFor(request.host)
+    const key = cacheKey(
+      profile,
+      state.generation,
+      request.projectRoot,
+      request.workspaceRoot,
+    )
+    const cached = state.cache.get(key) ?? state.advisory.get(key)
+    const observation = {
+      ...result(
+        {
+          providerId: profile.providerId,
+          profileId: profile.id,
+          launchRevision: profile.launchRevision,
+          hostId: request.host.hostId,
+          capabilities,
+        },
+        'available',
+        'Launch started successfully',
+      ),
+      version: cached?.status === 'available' ? cached.version : undefined,
+    }
+    state.cache.delete(key)
+    state.advisory.set(key, observation)
+    return observation
+  }
+
   invalidate(
     host: ProjectHost,
     profile: Pick<HarnessProfile, 'id' | 'launchRevision' | 'providerId'>,
@@ -57,15 +160,26 @@ export class HarnessProbeManager {
     if (!state) return
     // One profile may have entries for several worktrees; invalidate every
     // matching host entry rather than leaving a context-specific result stale.
-    for (const [key, probe] of state.cache) {
-      if (
-        probe.providerId === profile.providerId &&
-        probe.profileId === profile.id &&
-        probe.launchRevision === profile.launchRevision
-      ) {
-        state.cache.delete(key)
+    for (const observations of [state.cache, state.advisory]) {
+      for (const [key, probe] of observations) {
+        if (
+          probe.providerId === profile.providerId &&
+          probe.profileId === profile.id &&
+          probe.launchRevision === profile.launchRevision
+        ) {
+          observations.delete(key)
+        }
       }
     }
+  }
+
+  /** Invalidates one launch profile and starts one forced bounded refresh. */
+  refreshProfile(
+    request: ProbeHarnessProfilesRequest,
+    profile: HarnessProfile,
+  ): void {
+    this.invalidate(request.host, profile)
+    void this.probeProfiles({ ...request, profiles: [profile], force: true })
   }
 
   dispose(): void {
@@ -99,6 +213,7 @@ export class HarnessProbeManager {
           cacheKey(profile, state.generation, request.projectRoot, request.workspaceRoot)
         ) {
           state.cache.set(key, result)
+          state.advisory.delete(key)
         }
         return result
       })
@@ -152,7 +267,7 @@ export class HarnessProbeManager {
       } as const
       const exists = await host.exec(
         defaultShell,
-        ['-ic', `command -v ${shellQuote(resolved.spec.file)} >/dev/null 2>&1`],
+        harnessShellProbeArgs(resolved.spec.file),
         options,
       )
       if (exists.code !== 0) {
@@ -162,15 +277,10 @@ export class HarnessProbeManager {
       if (provider.probe.versionArgs) {
         const versionResult = await host.exec(
           defaultShell,
-          [
-            '-ic',
-            `exec ${[resolved.spec.file, ...provider.probe.versionArgs]
-              .map(shellQuote)
-              .join(' ')}`,
-          ],
+          harnessShellProbeCommandArgs(resolved.spec.file, provider.probe.versionArgs),
           options,
         )
-        const combined = `${versionResult.stdout}\n${versionResult.stderr}`.trim()
+        const combined = (harnessShellProbeOutput(versionResult.stdout) ?? '').trim()
         if (versionResult.code !== 0) {
           return classifiedFailure(base, versionResult.code, combined)
         }
@@ -183,16 +293,11 @@ export class HarnessProbeManager {
       if (provider.probe.capabilityArgs) {
         const capabilityResult = await host.exec(
           defaultShell,
-          [
-            '-ic',
-            `exec ${[resolved.spec.file, ...provider.probe.capabilityArgs]
-              .map(shellQuote)
-              .join(' ')}`,
-          ],
+          harnessShellProbeCommandArgs(resolved.spec.file, provider.probe.capabilityArgs),
           options,
         )
         if (capabilityResult.code === 0) {
-          capabilityOutput = `${capabilityResult.stdout}\n${capabilityResult.stderr}`
+          capabilityOutput = harnessShellProbeOutput(capabilityResult.stdout)
         }
       }
       return {
@@ -221,6 +326,7 @@ export class HarnessProbeManager {
       active: 0,
       waiters: [],
       cache: new Map(),
+      advisory: new Map(),
       pending: new Map(),
       disposeConnection: () => undefined,
     }
@@ -229,6 +335,7 @@ export class HarnessProbeManager {
       state.connectionState = connectionState
       state.generation++
       state.cache.clear()
+      state.advisory.clear()
     })
     this.hosts.set(host, state)
     return state
@@ -328,8 +435,4 @@ function cleanDetail(value: string): string {
     .join('')
     .trim()
   return first.slice(0, 240) || 'Probe failed'
-}
-
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'"'"'`)}'`
 }

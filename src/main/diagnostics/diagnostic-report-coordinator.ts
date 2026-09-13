@@ -14,6 +14,7 @@ import {
   type DiagnosticReportStateResult,
   type HostPath,
 } from '../../shared'
+import type { ApplicationRuntime } from '../application-runtime-policy'
 import { LocalHost } from '../project-host/local-host'
 import type { RendererOwner } from '../renderer-resource-scopes'
 import {
@@ -32,12 +33,19 @@ import {
   DiagnosticReportStorage,
   ReportStorageTooLargeError,
 } from './diagnostic-report-storage'
-import type { DiagnosticRecentSnapshot } from './diagnostic-intake'
+import type { DiagnosticReportEvidenceSnapshot } from './diagnostic-report-evidence'
 import type { WorkbenchHealthSnapshot } from '../../shared'
 
 export interface DiagnosticReportSnapshotPorts {
-  readonly diagnostics: () => DiagnosticRecentSnapshot
-  readonly health: () => WorkbenchHealthSnapshot
+  readonly prepare: () => Promise<
+    | {
+        readonly revision: number
+        readonly diagnostics: DiagnosticReportEvidenceSnapshot
+        readonly health: WorkbenchHealthSnapshot
+      }
+    | undefined
+  >
+  readonly isCurrent: (revision: number) => boolean
 }
 
 interface ReportRecord {
@@ -104,6 +112,15 @@ export class DiagnosticReportCoordinator {
     }
     this.records.set(reportId, record)
     this.activeByOwner.set(ownerKey(owner), record)
+    const snapshot = await this.snapshots.prepare()
+    if (!snapshot || !this.matches(record, 0)) {
+      this.forget(record)
+      return failure(snapshot ? 'stale-renderer' : 'evidence-changed')
+    }
+    if (!this.snapshots.isCurrent(snapshot.revision)) {
+      this.forget(record)
+      return failure('evidence-changed')
+    }
     let report: DiagnosticReportArtifact['report'] | undefined
     try {
       report = buildDiagnosticReport({
@@ -111,8 +128,8 @@ export class DiagnosticReportCoordinator {
         createdAt: new Date(this.now()).toISOString(),
         application: this.application,
         owner,
-        diagnostics: this.snapshots.diagnostics(),
-        health: this.snapshots.health(),
+        diagnostics: snapshot.diagnostics,
+        health: snapshot.health,
       })
     } catch {
       this.forget(record)
@@ -122,6 +139,10 @@ export class DiagnosticReportCoordinator {
       this.forget(record)
       return failure('report-too-large')
     }
+    if (!this.snapshots.isCurrent(snapshot.revision)) {
+      this.forget(record)
+      return failure('evidence-changed')
+    }
     const artifact: DiagnosticReportArtifact = { report }
     try {
       await this.storage.write(reportId, artifact)
@@ -129,10 +150,14 @@ export class DiagnosticReportCoordinator {
       this.forget(record)
       return failure(storageFailure(error))
     }
-    if (!this.matches(record, 0)) {
+    if (!this.matches(record, 0) || !this.snapshots.isCurrent(snapshot.revision)) {
       this.forget(record)
       await this.storage.remove(reportId).catch(() => undefined)
-      return failure('stale-renderer')
+      return failure(
+        this.accepts(owner) && !this.snapshots.isCurrent(snapshot.revision)
+          ? 'evidence-changed'
+          : 'stale-renderer',
+      )
     }
     record.artifact = artifact
     record.cancelExpiry = this.scheduleExpiry(
@@ -354,16 +379,17 @@ export class DiagnosticReportCoordinator {
 
 export function createDiagnosticReportCoordinator(
   diagnostics: {
-    snapshot(): DiagnosticRecentSnapshot
-    healthSnapshot(): WorkbenchHealthSnapshot
+    prepareReportSnapshot(): ReturnType<DiagnosticReportSnapshotPorts['prepare']>
+    isReportSnapshotCurrent(revision: number): boolean
   },
   renderers: { isCurrent(owner: RendererOwner): boolean },
+  applicationRuntime: ApplicationRuntime,
 ): DiagnosticReportCoordinator {
   const host = new LocalHost()
   const coordinator = new DiagnosticReportCoordinator(
     {
-      diagnostics: () => diagnostics.snapshot(),
-      health: () => diagnostics.healthSnapshot(),
+      prepare: () => diagnostics.prepareReportSnapshot(),
+      isCurrent: (revision) => diagnostics.isReportSnapshotCurrent(revision),
     },
     {
       version: safeVersion(app.getVersion()),
@@ -372,8 +398,9 @@ export function createDiagnosticReportCoordinator(
       platform: reportPlatform(process.platform),
       architecture: reportArchitecture(process.arch),
       mode: app.isPackaged ? 'packaged' : 'development',
+      buildChannel: applicationRuntime.buildChannel,
     },
-    new DiagnosticReportStorage(host, localPath(app.getPath('userData'))),
+    new DiagnosticReportStorage(host, localPath(applicationRuntime.userDataRoot)),
     new ElectronDiagnosticReportActions(host),
     (owner) => renderers.isCurrent(owner),
     () => host.dispose(),

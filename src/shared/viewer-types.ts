@@ -1,5 +1,6 @@
 import type { HostPath } from './host-path'
 import { repositoryImageMimeType } from './rendered-link'
+import type { TextWorkload } from './viewer-workload-policy'
 
 export type ViewMode = 'rendered' | 'source' | 'diff'
 
@@ -31,8 +32,8 @@ export interface GitDiffResponse {
   readonly revision?: string
   readonly baseLabel: string
   readonly currentLabel: string
-  readonly baseContent: string
-  readonly currentContent: string
+  readonly baseInput: TextWorkload
+  readonly currentInput: TextWorkload
 }
 
 /**
@@ -40,12 +41,13 @@ export interface GitDiffResponse {
  * deterministic and visible rather than scattering file-type exceptions
  * through UI components.
  */
-export type FileOpenContext = 'file-tree' | 'git' | 'git-untracked'
+export type FileOpenContext = 'file-tree' | 'created-file' | 'git' | 'git-untracked'
 
 export function defaultViewMode(
   path: HostPath,
   context: FileOpenContext = 'file-tree',
 ): ViewMode {
+  if (context === 'created-file') return 'source'
   if (context === 'git') return 'diff'
   const name = path.path.toLowerCase()
   const extension = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1) : ''

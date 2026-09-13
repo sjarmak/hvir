@@ -1,4 +1,4 @@
-import type { BrowserWindow } from 'electron'
+import { app, type BrowserWindow } from 'electron'
 
 import type { PtySupervisor } from '../pty/pty-supervisor'
 
@@ -9,12 +9,18 @@ export interface TerminalRenderStats {
   readonly fullRenderFrames: number
   readonly paused: boolean
   readonly pendingFrame: boolean
+  readonly synchronizedOutput: boolean
+  readonly synchronizedOutputRecoveries: number
+  readonly retainedRows: number
+  readonly retainedByteLimit: number
 }
 
 export interface TerminalPresentationSample extends TerminalRenderStats {
   readonly sessionId: string
   readonly visible: boolean
   readonly delivery: TerminalDeliverySample
+  readonly semanticRegions: number
+  readonly semanticRegionLimit: number
 }
 
 export interface TerminalDeliverySample {
@@ -37,12 +43,33 @@ export interface TerminalActivityReport {
   readonly deliveryCallbacks: number
   readonly terminalWrites: number
   readonly peakBufferedBytes: number
+  readonly synchronizedPanes: number
 }
 
 export interface TerminalReadinessSampleReport {
   readonly durationsMs: readonly number[]
   readonly p95Ms: number
   readonly maxMs: number
+}
+
+export interface TerminalSearchCapacityReport {
+  readonly durationMs: number
+  readonly retainedRows: number
+}
+
+export interface TerminalPaletteCapacityReport {
+  readonly synchronousMs: number
+  readonly eventLoopDelayMs: number
+  readonly paneCount: number
+  readonly hiddenPanes: number
+  readonly visibleFrames: number
+}
+
+export interface SessionsTerminalCapacityReport {
+  readonly liveTerminals: number
+  readonly ghosttyInstances: number
+  readonly sessionsPresented: number
+  readonly hiddenRenderFrameDelta: number
 }
 
 export async function waitForCapacityTerminalCount(
@@ -168,6 +195,154 @@ export async function activateCapacityTerminal(
   )
 }
 
+/** Move one of twelve live panes through Sessions without allocating presentation work. */
+export async function verifyCapacitySessionsTerminalDetail(
+  win: BrowserWindow,
+  supervisor: PtySupervisor,
+): Promise<SessionsTerminalCapacityReport> {
+  if (supervisor.list().length !== 12) {
+    throw new Error('Sessions capacity detail requires twelve live terminals')
+  }
+  win.show()
+  const focusDeadline = Date.now() + 5_000
+  while (!((await win.webContents.executeJavaScript(`document.hasFocus()`)) as boolean)) {
+    app.focus({ steal: true })
+    win.focus()
+    win.webContents.focus()
+    if (Date.now() > focusDeadline) {
+      throw new Error('Sessions capacity detail window did not regain focus')
+    }
+    await delay(25)
+  }
+  return (await withTimeout(
+    win.webContents.executeJavaScript(`
+      new Promise((resolve, reject) => {
+        const deadline = Date.now() + 20000;
+        const fail = (message) => reject(new Error(message));
+        const engines = [...document.querySelectorAll('.terminal-engine-host')];
+        if (engines.length !== 12) return fail('capacity Ghostty topology missing');
+        const original = new Set(engines);
+        const sameEngines = () => {
+          const current = [...document.querySelectorAll('.terminal-engine-host')];
+          return current.length === original.size && current.every((node) => original.has(node));
+        };
+        const sessions = document.querySelector('.sessions-destination');
+        if (!(sessions instanceof HTMLButtonElement)) {
+          return fail('Sessions destination unavailable');
+        }
+        sessions.click();
+        let detailEngine;
+        const overviewSnapshot = () => ({
+          destinationActive: document.querySelector('.sessions-destination')
+            ?.classList.contains('active') ?? false,
+          overview: Boolean(document.querySelector('.sessions-overview')),
+          cards: document.querySelectorAll('.session-card').length,
+          interact: [...document.querySelectorAll('.session-card button')]
+            .filter((button) => button.textContent?.trim() === 'Interact').length,
+          notices: [...document.querySelectorAll('.sessions-notice')]
+            .map((notice) => notice.textContent?.trim() || '')
+        });
+        const waitForOverview = () => {
+          const cards = [...document.querySelectorAll('.session-card')];
+          const interact = [...document.querySelectorAll('.session-card button')]
+            .filter((button) => button.textContent?.trim() === 'Interact');
+          if (cards.length >= 12 && interact.length === 12 && interact[0] instanceof HTMLButtonElement) {
+            interact[0].click();
+            return waitForDetail();
+          }
+          if (Date.now() > deadline) {
+            return fail('twelve Sessions rows did not settle: ' + JSON.stringify(overviewSnapshot()));
+          }
+          setTimeout(waitForOverview, 25);
+        };
+        const waitForDetail = () => {
+          const container = document.querySelector('.sessions-detail-terminal-container');
+          const current = container?.querySelector('.terminal-engine-host');
+          const delivery = container?.__hvirTerminalDelivery;
+          const stats = current?.__hvirTerminalPerformance;
+          const presented = [...document.querySelectorAll('.terminal-engine-host')]
+            .filter((engine) => engine.parentElement?.__hvirTerminalDelivery?.presentation === 'visible');
+          if (
+            current instanceof HTMLElement &&
+            sameEngines() &&
+            delivery?.presentation === 'visible' &&
+            stats?.paused === false &&
+            presented.length === 1 &&
+            presented[0] === current
+          ) {
+            detailEngine = current;
+            const back = [...document.querySelectorAll('.sessions-detail-actions button')]
+              .find((button) => button.textContent?.trim() === 'Close');
+            if (!(back instanceof HTMLButtonElement)) return fail('Sessions back control missing');
+            back.click();
+            return waitForRelease();
+          }
+          if (Date.now() > deadline) return fail('Sessions detail surface did not settle');
+          setTimeout(waitForDetail, 25);
+        };
+        const waitForRelease = () => {
+          const parent = detailEngine?.parentElement;
+          const stats = detailEngine?.__hvirTerminalPerformance;
+          const delivery = parent?.__hvirTerminalDelivery;
+          if (
+            !document.querySelector('.sessions-terminal-detail') &&
+            detailEngine instanceof HTMLElement &&
+            sameEngines() &&
+            parent?.classList.contains('terminal-container') &&
+            !parent.classList.contains('sessions-detail-terminal-container') &&
+            delivery?.presentation === 'hidden' &&
+            stats?.paused === true &&
+            stats?.pendingFrame === false
+          ) {
+            const renderFrames = stats.renderFrames;
+            return setTimeout(() => finishHidden(renderFrames), 300);
+          }
+          if (Date.now() > deadline) return fail('Sessions detail surface did not restore');
+          setTimeout(waitForRelease, 25);
+        };
+        const finishHidden = (renderFrames) => {
+          const parent = detailEngine?.parentElement;
+          const stats = detailEngine?.__hvirTerminalPerformance;
+          const delivery = parent?.__hvirTerminalDelivery;
+          if (
+            !sameEngines() ||
+            stats?.paused !== true ||
+            stats?.pendingFrame !== false ||
+            delivery?.presentation !== 'hidden' ||
+            stats.renderFrames !== renderFrames
+          ) return fail('released Sessions surface retained recurring presentation work');
+          const project = document.querySelector('.project-tab-main');
+          if (!(project instanceof HTMLButtonElement)) return fail('project navigation missing');
+          project.click();
+          return waitForWorkspace(renderFrames);
+        };
+        const waitForWorkspace = (hiddenFrames) => {
+          const stats = detailEngine?.__hvirTerminalPerformance;
+          const parent = detailEngine?.parentElement;
+          if (
+            !document.querySelector('.sessions-overview') &&
+            sameEngines() &&
+            parent?.__hvirTerminalDelivery?.presentation === 'visible' &&
+            stats?.paused === false
+          ) {
+            return resolve({
+              liveTerminals: 12,
+              ghosttyInstances: original.size,
+              sessionsPresented: 1,
+              hiddenRenderFrameDelta: 0
+            });
+          }
+          if (Date.now() > deadline) return fail('workspace surface did not return');
+          setTimeout(() => waitForWorkspace(hiddenFrames), 25);
+        };
+        waitForOverview();
+      })
+    `),
+    'Sessions terminal capacity detail timed out',
+    25_000,
+  )) as SessionsTerminalCapacityReport
+}
+
 export async function readTerminalPresentation(
   win: BrowserWindow,
 ): Promise<readonly TerminalPresentationSample[]> {
@@ -183,7 +358,15 @@ export async function readTerminalPresentation(
         sessionId: surface.getAttribute('data-terminal-session') || '',
         visible: getComputedStyle(surface).visibility === 'visible',
         ...stats,
-        delivery
+        delivery,
+        semanticRegions: Number(
+          surface.querySelector('.terminal-container')
+            ?.dataset.terminalSemanticRegions ?? -1
+        ),
+        semanticRegionLimit: Number(
+          surface.querySelector('.terminal-container')
+            ?.dataset.terminalSemanticRegionLimit ?? -1
+        )
       };
     }))()
   `)) as readonly TerminalPresentationSample[]
@@ -205,21 +388,263 @@ export async function verifyHiddenPresentationSettles(win: BrowserWindow): Promi
   }
 }
 
-export function startCapacityOutputFixtures(supervisor: PtySupervisor): void {
-  const terminals = supervisor.list()
-  if (terminals.length !== 12) {
-    throw new Error(`capacity fixtures expected 12 terminals, found ${terminals.length}`)
+/** Prove one appearance change updates twelve retained palettes without hidden paint. */
+export async function verifyCapacityPaletteUpdate(
+  win: BrowserWindow,
+): Promise<TerminalPaletteCapacityReport> {
+  return (await withTimeout(
+    win.webContents.executeJavaScript(`
+      new Promise((resolve, reject) => {
+        const deadline = Date.now() + 8000;
+        const surfaces = [...document.querySelectorAll('.terminal-surface')];
+        const toggle = document.querySelector('.theme-toggle');
+        const initialTheme = document.documentElement.dataset.theme;
+        const alternateTheme = initialTheme === 'light' ? 'dark' : 'light';
+        if (
+          surfaces.length !== 12 ||
+          !(toggle instanceof HTMLButtonElement) ||
+          (initialTheme !== 'dark' && initialTheme !== 'light')
+        ) return reject(new Error('capacity palette fixtures missing'));
+        const samples = surfaces.map((surface) => {
+          const engine = surface.querySelector('.terminal-engine-host');
+          const canvas = engine?.querySelector('canvas');
+          const stats = engine?.__hvirTerminalPerformance;
+          if (
+            !(engine instanceof HTMLElement) ||
+            !(canvas instanceof HTMLCanvasElement) ||
+            !stats?.palette
+          ) throw new Error('capacity palette telemetry missing');
+          return {
+            surface,
+            engine,
+            canvas,
+            background: stats.palette.background,
+            renderFrames: stats.renderFrames,
+            fullRenderFrames: stats.fullRenderFrames,
+            hidden: getComputedStyle(surface).visibility !== 'visible'
+          };
+        });
+        const started = performance.now();
+        toggle.click();
+        const synchronousMs = performance.now() - started;
+        let eventLoopDelayMs;
+        setTimeout(() => {
+          eventLoopDelayMs = performance.now() - started;
+        }, 0);
+        const restored = (sample) => {
+          const stats = sample.engine.__hvirTerminalPerformance;
+          return stats?.palette?.background === sample.background &&
+            (sample.hidden
+              ? stats.paused && stats.renderFrames === sample.renderFrames
+              : !stats.paused && stats.fullRenderFrames > sample.fullRenderFrames) &&
+            sample.engine.querySelector('canvas') === sample.canvas;
+        };
+        const changed = (sample) => {
+          const stats = sample.engine.__hvirTerminalPerformance;
+          return stats?.palette?.background !== sample.background &&
+            sample.engine.querySelector('canvas') === sample.canvas &&
+            (sample.hidden
+              ? stats.paused && stats.renderFrames === sample.renderFrames
+              : !stats.paused && stats.fullRenderFrames > sample.fullRenderFrames);
+        };
+        const waitForChanged = () => {
+          if (
+            eventLoopDelayMs !== undefined &&
+            document.documentElement.dataset.theme === alternateTheme &&
+            samples.every(changed)
+          ) {
+            if (synchronousMs > 100 || eventLoopDelayMs > 250) {
+              return reject(new Error(
+                'capacity palette update blocked the renderer: ' +
+                JSON.stringify({ synchronousMs, eventLoopDelayMs })
+              ));
+            }
+            toggle.click();
+            return waitForRestored();
+          }
+          if (Date.now() > deadline) {
+            return reject(new Error('capacity palettes did not update across retained panes'));
+          }
+          setTimeout(waitForChanged, 20);
+        };
+        const waitForRestored = () => {
+          if (
+            document.documentElement.dataset.theme === initialTheme &&
+            samples.every(restored)
+          ) {
+            const hiddenPanes = samples.filter((sample) => sample.hidden).length;
+            const visibleFrames = samples
+              .filter((sample) => !sample.hidden)
+              .reduce((total, sample) => {
+                const stats = sample.engine.__hvirTerminalPerformance;
+                return total + stats.renderFrames - sample.renderFrames;
+              }, 0);
+            return resolve({
+              synchronousMs,
+              eventLoopDelayMs,
+              paneCount: samples.length,
+              hiddenPanes,
+              visibleFrames
+            });
+          }
+          if (Date.now() > deadline) {
+            return reject(new Error('capacity palettes did not restore'));
+          }
+          setTimeout(waitForRestored, 20);
+        };
+        waitForChanged();
+      })
+    `),
+    'capacity palette update timed out',
+    10_000,
+  )) as TerminalPaletteCapacityReport
+}
+
+/** Prove saved cursor and shaping changes stay bounded across twelve retained panes. */
+
+/** Prove bounded search after saturating the accepted retained-byte cap with twelve panes. */
+export async function verifyCapacityTerminalSearch(
+  win: BrowserWindow,
+  supervisor: PtySupervisor,
+): Promise<TerminalSearchCapacityReport> {
+  const emittedRows = 120_000
+  if (supervisor.list().length !== 12) {
+    throw new Error('capacity terminal search requires twelve live terminals')
   }
-  const commands = [
-    `i=0; while :; do printf 'plain-visible-%06d abcdefghijklmnopqrstuvwxyz\\r\\n' "$i"; i=$((i+1)); sleep 0.01; done\n`,
-    `i=0; while :; do printf 'plain-hidden-%06d abcdefghijklmnopqrstuvwxyz\\r\\n' "$i"; i=$((i+1)); sleep 0.01; done\n`,
-    `i=0; while :; do printf '\\r\\033[2K\\033[36mThinking %04d…\\033[0m' "$i"; i=$((i+1)); sleep 0.01; done\n`,
-    `i=0; while :; do printf '\\033[?2026h\\033[33msync-%04d\\033[0m\\r\\nline-a\\r\\nline-b\\033[?2026l' "$i"; i=$((i+1)); sleep 0.04; done\n`,
-  ]
-  commands.forEach((command, index) => {
-    const terminal = terminals[index]!
-    supervisor.write(terminal.id, terminal.ownerId, command)
-  })
+  const sessionId = (await win.webContents.executeJavaScript(`
+    document.querySelector('.terminal-surface.active')?.dataset.terminalSession || ''
+  `)) as string
+  const terminal = supervisor.list().find((candidate) => candidate.id === sessionId)
+  if (!terminal) throw new Error('capacity terminal search has no selected PTY')
+  supervisor.write(
+    terminal.id,
+    terminal.ownerId,
+    `awk 'BEGIN { for (i=0; i<${emittedRows}; i++) ` +
+      `printf "capacity-retained-fill-%06d-` +
+      `abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqr\\r\\n", i }'; ` +
+      `printf '\\033]0;Capacity retained ready\\007'; ` +
+      `IFS= read -r hvir_capacity_search\n`,
+  )
+  try {
+    return (await withTimeout(
+      win.webContents.executeJavaScript(`
+        new Promise((resolve, reject) => {
+          const deadline = Date.now() + 60000;
+          const surface = document.querySelector(
+            '.terminal-surface.active[data-terminal-session=${JSON.stringify(sessionId)}]'
+          );
+          const engine = surface?.querySelector('.terminal-engine-host');
+          const stats = engine?.__hvirTerminalPerformance;
+          if (!(surface instanceof HTMLElement) || !(engine instanceof HTMLElement) || !stats) {
+            return reject(new Error('capacity search fixtures missing'));
+          }
+          if (stats.retainedByteLimit !== 10000000) {
+            return reject(new Error(
+              'capacity retained-byte limit changed: ' + stats.retainedByteLimit
+            ));
+          }
+          const waitForCap = () => {
+            const title = document.querySelector(
+              '.terminal-list-main[data-terminal-session=${JSON.stringify(sessionId)}] ' +
+              '.terminal-list-title'
+            )?.textContent?.trim();
+            const current = engine.__hvirTerminalPerformance;
+            const delivery = surface.querySelector('.terminal-container')
+              ?.__hvirTerminalDelivery;
+            if (
+              title === 'Capacity retained ready' &&
+              current.retainedRows > 0 &&
+              current.retainedRows < ${emittedRows} &&
+              delivery && !delivery.pending &&
+              delivery.receivedBytes === delivery.deliveredBytes
+            ) return openSearch();
+            if (Date.now() > deadline) {
+              return reject(new Error(
+                'capacity retained-byte cap did not settle: ' +
+                JSON.stringify({ title, current, delivery })
+              ));
+            }
+            setTimeout(waitForCap, 20);
+          };
+          const openSearch = () => {
+            const primary = /Mac/.test(navigator.platform)
+              ? { metaKey: true }
+              : { ctrlKey: true };
+            const shortcut = new KeyboardEvent('keydown', {
+              key: 'f',
+              code: 'KeyF',
+              shiftKey: true,
+              ...primary,
+              bubbles: true,
+              cancelable: true
+            });
+            const started = performance.now();
+            engine.dispatchEvent(shortcut);
+            waitForSearch(started);
+          };
+          const waitForSearch = (started) => {
+            const search = surface.querySelector('.terminal-search');
+            const input = search?.querySelector('[aria-label="Find in terminal"]');
+            if (input instanceof HTMLInputElement) {
+              const setter = Object.getOwnPropertyDescriptor(
+                HTMLInputElement.prototype,
+                'value'
+              )?.set;
+              setter?.call(input, 'capacity-retained-fill-119999');
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              const waitForResult = () => {
+                const status = search.querySelector('.terminal-search-status')
+                  ?.textContent?.trim();
+                const current = engine.__hvirTerminalPerformance;
+                const delivery = surface.querySelector('.terminal-container')
+                  ?.__hvirTerminalDelivery;
+                if (status === '1 of 1' && delivery && !delivery.pending) {
+                  if (
+                    current.retainedRows <= 0 ||
+                    current.retainedRows >= ${emittedRows} ||
+                    delivery.receivedBytes !== delivery.deliveredBytes ||
+                    document.querySelectorAll('.terminal-search').length !== 1 ||
+                    document.querySelectorAll('.terminal-surface').length !== 12
+                  ) {
+                    return reject(new Error(
+                      'capacity search lost bounded ownership: ' + JSON.stringify({
+                        retainedRows: current.retainedRows,
+                        delivery
+                      })
+                    ));
+                  }
+                  search.querySelector(
+                    'button[aria-label="Close terminal search"]'
+                  )?.click();
+                  return resolve({
+                    durationMs: performance.now() - started,
+                    retainedRows: current.retainedRows
+                  });
+                }
+                if (Date.now() > deadline) {
+                  return reject(new Error(
+                    'capacity search did not settle at retained cap: ' +
+                    JSON.stringify({ status, current, delivery })
+                  ));
+                }
+                setTimeout(waitForResult, 20);
+              };
+              return waitForResult();
+            }
+            if (Date.now() > deadline) {
+              return reject(new Error('capacity terminal search did not open'));
+            }
+            setTimeout(() => waitForSearch(started), 20);
+          };
+          waitForCap();
+        })
+      `),
+      'capacity terminal search timed out',
+      65_000,
+    )) as TerminalSearchCapacityReport
+  } finally {
+    supervisor.write(terminal.id, terminal.ownerId, '\n')
+  }
 }
 
 export async function measureAdditionalTerminalReadiness(
@@ -246,6 +671,7 @@ export async function measureAdditionalTerminalReadiness(
       throw new Error(`${label} terminal ${index + 1} identity was not registered`)
 
     const input = `${label}${String.fromCharCode(97 + index)}`
+    const awaitingInputMarker = `ready-awaiting-input:${input}`
     const marker = `ready-input:${input}`
     let output = ''
     const detach = supervisor.attach(terminal.id, terminal.ownerId, {
@@ -257,9 +683,12 @@ export async function measureAdditionalTerminalReadiness(
       supervisor.write(
         terminal.id,
         terminal.ownerId,
-        `stty -echo; IFS= read -r hvir_input; stty echo; printf '\\r\\nready-input:%s\\r\\n' "$hvir_input"\n`,
+        `stty -echo; printf '\\r\\nready-awaiting-input:%s\\r\\n' ${JSON.stringify(input)}; IFS= read -r hvir_input; stty echo; printf '\\r\\nready-input:%s\\r\\n' "$hvir_input"\n`,
       )
-      await delay(150)
+      await waitFor(
+        () => output.includes(awaitingInputMarker),
+        `${label} terminal ${index + 1} did not become input-ready: ${JSON.stringify(output)}`,
+      )
       await win.webContents.executeJavaScript(`
         (() => {
           const sessionId = ${JSON.stringify(terminal.id)};
@@ -323,6 +752,7 @@ export function verifyTerminalActivity(
   let deliveryCallbacks = 0
   let terminalWrites = 0
   let peakBufferedBytes = 0
+  let synchronizedPanes = 0
 
   for (const current of after) {
     const previous = beforeById.get(current.sessionId)
@@ -338,6 +768,28 @@ export function verifyTerminalActivity(
     deliveryCallbacks += deliveryDelta
     terminalWrites += parsedDelta
     peakBufferedBytes = Math.max(peakBufferedBytes, current.delivery.peakBufferedBytes)
+    if (current.synchronizedOutput) synchronizedPanes += 1
+    if (current.synchronizedOutputRecoveries !== previous.synchronizedOutputRecoveries) {
+      throw new Error(
+        `terminal ${current.sessionId} unexpectedly recovered synchronized output`,
+      )
+    }
+    if (
+      current.semanticRegionLimit <= 0 ||
+      current.semanticRegions < 0 ||
+      current.semanticRegions > current.semanticRegionLimit
+    ) {
+      throw new Error(
+        `terminal ${current.sessionId} exceeded its semantic-region cap: ` +
+          `${current.semanticRegions}/${current.semanticRegionLimit}`,
+      )
+    }
+    if (current.semanticRegions !== current.semanticRegionLimit) {
+      throw new Error(
+        `terminal ${current.sessionId} did not exercise its semantic-region cap: ` +
+          `${current.semanticRegions}/${current.semanticRegionLimit}`,
+      )
+    }
     if (
       current.delivery.bufferedBytes > 64 * 1024 ||
       current.delivery.peakBufferedBytes > 64 * 1024
@@ -368,6 +820,11 @@ export function verifyTerminalActivity(
       `terminal output was not coalesced: events=${nativeDataEvents} deliveries=${deliveryCallbacks}`,
     )
   }
+  if (synchronizedPanes !== 9) {
+    throw new Error(
+      `capacity synchronized-output topology was ${synchronizedPanes}/9 panes`,
+    )
+  }
   return {
     hiddenPanes: after.filter((sample) => !sample.visible).length,
     hiddenParsedWrites,
@@ -377,6 +834,7 @@ export function verifyTerminalActivity(
     deliveryCallbacks,
     terminalWrites,
     peakBufferedBytes,
+    synchronizedPanes,
   }
 }
 

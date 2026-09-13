@@ -238,10 +238,17 @@ interface MockTerminalEventHandlers extends TerminalEventHandlers {
 }
 
 class FakeHvirApi implements HvirApi {
+  rendererReady(): void {}
+  resolveTerminalClipboardFilePaste(): string | undefined {
+    return undefined
+  }
+  readonly externalFiles = {
+    acquireDropped: () =>
+      Promise.reject(new Error('external files are not used by terminal tests')),
+  }
   readonly diagnostics = {
+    processSandboxed: true,
     recordRenderContainment: vi.fn(),
-    recordResponsivenessObservation: vi.fn(),
-    flushResponsivenessObservations: vi.fn(),
   }
   private readonly callbacks = new Map<IpcEventChannel, Set<(payload: unknown) => void>>()
   private readonly subscriptions = new Map<IpcEventChannel, number>()

@@ -1,4 +1,4 @@
-import type { TerminalColorTheme } from './terminal-pane'
+import type { StartPtyResponse } from '../../../shared'
 
 export type TerminalRecoveryFailure = {
   readonly kind: 'resume-unavailable'
@@ -12,26 +12,37 @@ export interface TerminalRuntimeSnapshot {
   readonly recoveryFailure?: TerminalRecoveryFailure
 }
 
-export function resumeUnavailableStatus(reason: 'artifact-missing'): string {
-  switch (reason) {
-    case 'artifact-missing':
-      return 'Resume unavailable · session data is missing'
-  }
+export function terminalRecoveryFailureEquals(
+  left: TerminalRecoveryFailure | undefined,
+  right: TerminalRecoveryFailure | undefined,
+): boolean {
+  return left?.kind === right?.kind && left?.reason === right?.reason
 }
 
-export function baseTerminalTheme(): TerminalColorTheme {
-  return {
-    background: '#111318',
-    foreground: '#d8dee9',
-    cursor: '#d8dee9',
-    selectionBackground: '#39445a',
-    black: '#20242c',
-    red: '#e06c75',
-    green: '#98c379',
-    yellow: '#e5c07b',
-    blue: '#61afef',
-    magenta: '#c678dd',
-    cyan: '#56b6c2',
-    white: '#d8dee9',
+export function terminalStartFailureSnapshot(
+  current: TerminalRuntimeSnapshot,
+  status: string,
+  recoveryFailure?: TerminalRecoveryFailure,
+): TerminalRuntimeSnapshot {
+  return { ...current, status, exited: true, recoveryFailure }
+}
+
+export function pendingForkExitStatus(exitCode: number): string {
+  return `The sibling terminal exited before its conversation was identified (${exitCode}).`
+}
+
+export function terminalUnavailablePresentation(
+  result: Exclude<StartPtyResponse, { outcome: 'started' }>,
+): Readonly<{ status: string; recoveryFailure?: TerminalRecoveryFailure }> {
+  switch (result.outcome) {
+    case 'launch-unavailable':
+      return { status: 'Launch unavailable · session recovery baseline could not be read' }
+    case 'resume-unavailable':
+      return {
+        status: 'Resume unavailable · session data is missing',
+        recoveryFailure: { kind: 'resume-unavailable', reason: result.reason },
+      }
+    case 'fork-unavailable':
+      return { status: 'Fork unavailable · source conversation data is missing' }
   }
 }

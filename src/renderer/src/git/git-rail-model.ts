@@ -161,7 +161,6 @@ export function gitRailReducer(model: GitRailModel, action: GitRailAction): GitR
     case 'branch-requested':
       return {
         ...model,
-        branchModel: undefined,
         branchError: undefined,
         branchRequestId: action.requestId,
       }
@@ -212,13 +211,7 @@ export function gitRailReducer(model: GitRailModel, action: GitRailAction): GitR
     case 'history-requested':
       return {
         ...model,
-        commits: action.append ? model.commits : [],
-        hasMore: action.append ? model.hasMore : false,
-        historyCursor: action.append ? model.historyCursor : undefined,
-        historyRepositoryState: action.append
-          ? model.historyRepositoryState
-          : undefined,
-        historyInitialLoading: !action.append,
+        historyInitialLoading: !action.append && model.commits.length === 0,
         historyError: undefined,
         historyRequestId: action.requestId,
       }
@@ -241,8 +234,6 @@ export function gitRailReducer(model: GitRailModel, action: GitRailAction): GitR
       if (action.requestId !== model.historyRequestId) return model
       return {
         ...model,
-        hasMore: action.append ? model.hasMore : false,
-        historyCursor: action.append ? model.historyCursor : undefined,
         historyInitialLoading: false,
         historyError: action.error,
       }
@@ -305,11 +296,7 @@ export function gitRailSyncState({
       ? 'Reconnect before switching branches'
       : hasDirtyViewerTabs
         ? 'Save or close unsaved viewer tabs before switching'
-        : !model.changes
-          ? 'Checking working tree…'
-          : model.changes.workingTree.length > 0
-            ? 'Commit or stash working tree changes before switching'
-            : undefined
+        : undefined
   const fetchBlockedReason =
     connectionState !== 'connected'
       ? 'Reconnect before fetching'
@@ -323,7 +310,6 @@ export function gitRailSyncState({
     hasAlternativeBranch: model.branchModel?.branches.some((branch) => !branch.current),
     pullBlockReason: gitPullBlockReason({
       model: model.branchModel,
-      changes: model.changes,
       connectionState,
       hasDirtyViewerTabs,
     }),

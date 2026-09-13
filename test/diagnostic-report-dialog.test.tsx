@@ -113,7 +113,7 @@ function reportState(withScreenshot = false): DiagnosticReportState {
   return {
     artifact: {
       report: {
-        version: 1,
+        version: 3,
         reportId: REPORT_ID,
         notice: DIAGNOSTIC_REPORT_NOTICE,
         createdAt: '2026-07-22T12:00:00.000Z',
@@ -124,13 +124,22 @@ function reportState(withScreenshot = false): DiagnosticReportState {
           platform: 'linux',
           architecture: 'x64',
           mode: 'packaged',
+          buildChannel: 'release',
         },
         renderer: {
           ownerId: 7,
           ownerGeneration: 3,
           surface: 'workbench-health',
         },
-        diagnostics: { schemaVersion: 1, events: [], dropped: [] },
+        diagnostics: {
+          schemaVersion: 2,
+          scopes: {
+            currentLifetime: { availability: 'included', eventCount: 0 },
+            precedingLifetime: { availability: 'unavailable', eventCount: 0 },
+          },
+          events: [],
+          dropped: [],
+        },
         health: { version: 1, evidence: 'durable', items: [], dropped: 0 },
       },
       ...(withScreenshot

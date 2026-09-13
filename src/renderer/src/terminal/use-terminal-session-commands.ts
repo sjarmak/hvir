@@ -1,18 +1,21 @@
-import { useState, type RefObject } from 'react'
+import type { RefObject } from 'react'
 
+import { hostPathEquals } from '../../../shared'
 import type {
   HarnessProfile,
   HarnessProfileId,
   HarnessProfileProbe,
   HarnessProviderDescriptor,
   HostPath,
+  TerminalIdentityStatus,
 } from '../../../shared'
-import { profileRiskAcknowledged } from './terminal-profile-recovery'
 import { profileProbe } from './terminal-probe-policy'
+import { terminalForkAvailability } from './terminal-fork-policy'
 import type { FreshTerminalStart } from './terminal-runtime-options'
 import type { TerminalRuntimeRegistry } from './terminal-runtime-registry'
 import {
   createTerminalSession,
+  createTerminalForkSession,
   nextTerminalSplitPane,
   terminalWorkspaceSplit,
   type TerminalWorkspaceAction,
@@ -33,6 +36,7 @@ export function useTerminalSessionCommands({
   focusAttention,
   forgetAttention,
   runtimes,
+  onError,
 }: {
   readonly available: boolean
   readonly workspaceRoot: HostPath
@@ -47,13 +51,11 @@ export function useTerminalSessionCommands({
   readonly focusAttention: (id: string) => void
   readonly forgetAttention: (id: string) => void
   readonly runtimes: TerminalRuntimeRegistry
+  readonly onError: (message: string) => void
 }) {
-  const [pendingRiskProfile, setPendingRiskProfile] = useState<HarnessProfile>()
-
   const launch = (
     profile: HarnessProfile,
     provider: HarnessProviderDescriptor,
-    riskAcknowledged: boolean,
     initialInput?: string,
   ): string => {
     const current = modelRef.current
@@ -64,7 +66,6 @@ export function useTerminalSessionCommands({
       provider,
       workspaceRoot,
       pane,
-      riskAcknowledged,
       profileProbe(probes, profile)?.capabilities,
       initialInput,
     )
@@ -80,26 +81,152 @@ export function useTerminalSessionCommands({
       ? providers.find((candidate) => candidate.id === profile.providerId)
       : undefined
     if (!provider || !profile) return
-    const acknowledged = profileRiskAcknowledged(profile)
-    if (acknowledged) launch(profile, provider, acknowledged)
-    else {
-      setPendingRiskProfile(profile)
-      closeLaunchMenu()
+    launch(profile, provider)
+  }
+
+  const failForkStart = (id: string, reason: string): void => {
+    const fork = modelRef.current.sessions.find(
+      (session) => session.id === id && session.forkRequest,
+    )
+    if (!fork?.forkRequest) return
+    runtimes.disposeSession(id)
+    void window.hvir
+      .invoke('terminal:forget', { root: workspaceRoot, id })
+      .catch(() => undefined)
+    send({
+      type: 'session-fork-failed',
+      sourceId: fork.forkRequest.sourceSessionId,
+      id,
+    })
+    onError(`Conversation fork failed: ${reason}`)
+  }
+
+  const acceptForkIdentity = (
+    id: string,
+    harnessSessionId: string | undefined,
+    identityStatus: TerminalIdentityStatus,
+    identityDiverged?: true,
+  ): void => {
+    const fork = modelRef.current.sessions.find(
+      (session) => session.id === id && session.forkRequest,
+    )
+    if (!fork?.forkRequest) {
+      const pendingChild = modelRef.current.sessions.find(
+        (session) => session.forkRequest?.sourceSessionId === id,
+      )
+      if (
+        pendingChild?.forkRequest &&
+        (identityDiverged ||
+          identityStatus !== 'identified' ||
+          harnessSessionId !== pendingChild.forkRequest.parentHarnessSessionId)
+      ) {
+        failForkStart(
+          pendingChild.id,
+          'The source conversation identity changed while its sibling was starting.',
+        )
+      }
+      return
     }
+    const source = modelRef.current.sessions.find(
+      (session) => session.id === fork.forkRequest?.sourceSessionId,
+    )
+    const provider = source
+      ? providers.find((candidate) => candidate.id === source.providerId)
+      : undefined
+    if (
+      !source ||
+      !provider ||
+      !source.forkPending ||
+      source.harnessSessionId !== fork.forkRequest.parentHarnessSessionId ||
+      source.providerId !== fork.providerId ||
+      source.profileId !== fork.profileId ||
+      source.launchRevision !== fork.launchRevision ||
+      !hostPathEquals(source.cwd, fork.cwd) ||
+      !terminalForkAvailability(
+        { ...source, forkPending: undefined },
+        provider,
+        runtimes.isSessionLive(source.id),
+      ).available
+    ) {
+      failForkStart(
+        id,
+        'The source terminal changed or exited before the fork completed.',
+      )
+      return
+    }
+    if (identityDiverged) {
+      failForkStart(id, 'The sibling conversation identity diverged during launch.')
+      return
+    }
+    if (identityStatus === 'discovering') return
+    if (
+      identityStatus !== 'identified' ||
+      !harnessSessionId ||
+      harnessSessionId === fork.forkRequest.parentHarnessSessionId
+    ) {
+      failForkStart(id, 'The sibling conversation could not be identified exactly.')
+      return
+    }
+    send({
+      type: 'session-fork-succeeded',
+      sourceId: fork.forkRequest.sourceSessionId,
+      session: {
+        ...fork,
+        harnessSessionId,
+        identityStatus,
+        forkRequest: undefined,
+      },
+    })
   }
 
   return {
-    pendingRiskProfile,
-    cancelRisk: () => setPendingRiskProfile(undefined),
-    launchAcknowledged: (profile: HarnessProfile, provider: HarnessProviderDescriptor) =>
-      launch(profile, provider, true),
     add,
+    fork: (sourceId: string) => {
+      const source = modelRef.current.sessions.find((session) => session.id === sourceId)
+      const provider = source
+        ? providers.find((candidate) => candidate.id === source.providerId)
+        : undefined
+      if (!source || !provider) return
+      const availability = terminalForkAvailability(
+        source,
+        provider,
+        available && runtimes.isSessionLive(source.id),
+      )
+      if (!availability.available) return
+      const fork = createTerminalForkSession(crypto.randomUUID(), source)
+      if (!fork) return
+      send({ type: 'session-fork-requested', sourceId, session: fork })
+    },
+    acceptForkIdentity,
+    failForkStart,
+    handleExit: (id: string, exitCode: number) => {
+      const pendingChild = modelRef.current.sessions.find(
+        (session) => session.forkRequest?.sourceSessionId === id,
+      )
+      if (pendingChild) {
+        failForkStart(
+          pendingChild.id,
+          `The source terminal exited before the fork completed (${exitCode}).`,
+        )
+      }
+    },
+    startDefault: () => {
+      if (
+        !available ||
+        modelRef.current.sessions.length > 0 ||
+        !defaultProvider ||
+        !defaultProfile
+      ) {
+        return
+      }
+      launch(defaultProfile, defaultProvider)
+    },
     // Open a bare shell running an attach command (e.g. `gc session attach
     // <worker>`) when the Beads panel requests one; returns the new session id,
     // or undefined when the workspace has no default harness to launch.
     launchAttach: (command: string): string | undefined =>
       available && defaultProvider && defaultProfile
-        ? launch(defaultProfile, defaultProvider, true, command)
+        ? launch(defaultProfile, defaultProvider, command)
         : undefined,
     acceptFreshStart: (id: string, started: FreshTerminalStart) => {
       const session = modelRef.current.sessions.find((candidate) => candidate.id === id)
@@ -124,9 +251,9 @@ export function useTerminalSessionCommands({
       focusAttention(id)
       send({ type: 'session-focused', id })
     },
-    resumeAll: () => send({ type: 'dormant-sessions-start-requested' }),
     split: () => {
       if (!available || !defaultProvider || !defaultProfile) return
+      const current = modelRef.current
       send({
         type: 'session-added',
         session: createTerminalSession(
@@ -134,13 +261,27 @@ export function useTerminalSessionCommands({
           defaultProfile,
           defaultProvider,
           workspaceRoot,
-          nextTerminalSplitPane(modelRef.current),
+          current.sessions.length === 0 ? 'primary' : nextTerminalSplitPane(current),
         ),
       })
     },
     moveToOtherPane: (id: string) => send({ type: 'session-moved', id }),
     close: (id: string) => {
       forgetAttention(id)
+      const session = modelRef.current.sessions.find((candidate) => candidate.id === id)
+      if (session?.forkRequest) {
+        failForkStart(id, 'The pending sibling was closed before launch completed.')
+        return
+      }
+      const pendingChild = modelRef.current.sessions.find(
+        (candidate) => candidate.forkRequest?.sourceSessionId === id,
+      )
+      if (pendingChild) {
+        failForkStart(
+          pendingChild.id,
+          'The source terminal was closed before the fork completed.',
+        )
+      }
       const pendingReplacementId = runtimes.disposeSession(id)
       if (pendingReplacementId) {
         void window.hvir

@@ -9,14 +9,19 @@ import {
   isWorkbenchHealthSnapshot,
   type WorkbenchHealthSnapshot,
 } from './workbench-health'
+import {
+  isApplicationBuildChannel,
+  type ApplicationBuildChannel,
+} from './application-build-channel'
 
 export type {
   DiagnosticReportEvent,
   DiagnosticReportEventKind,
+  DiagnosticReportLifetimeScope,
   DiagnosticReportOwner,
 } from './diagnostic-report-event'
 
-export const DIAGNOSTIC_REPORT_VERSION = 1
+export const DIAGNOSTIC_REPORT_VERSION = 3
 export const DIAGNOSTIC_REPORT_RETENTION_HOURS = 24
 export const MAX_DIAGNOSTIC_REPORT_EVENTS = 256
 export const MAX_DIAGNOSTIC_REPORT_DROPPED_COUNTS = 64
@@ -55,6 +60,7 @@ export interface DiagnosticReport {
     readonly platform: 'linux' | 'macos' | 'windows' | 'other'
     readonly architecture: 'arm64' | 'x64' | 'other'
     readonly mode: 'packaged' | 'development'
+    readonly buildChannel: ApplicationBuildChannel
   }
   readonly renderer: {
     readonly ownerId: number
@@ -62,7 +68,17 @@ export interface DiagnosticReport {
     readonly surface: 'workbench-health'
   }
   readonly diagnostics: {
-    readonly schemaVersion: 1
+    readonly schemaVersion: 2
+    readonly scopes: {
+      readonly currentLifetime: {
+        readonly availability: 'included'
+        readonly eventCount: number
+      }
+      readonly precedingLifetime: {
+        readonly availability: 'included' | 'partial' | 'unavailable'
+        readonly eventCount: number
+      }
+    }
     readonly events: readonly DiagnosticReportEvent[]
     readonly dropped: readonly DiagnosticReportDroppedCount[]
   }
@@ -99,6 +115,7 @@ export type DiagnosticReportFailure =
   | 'capture-failed'
   | 'action-unavailable'
   | 'storage-unavailable'
+  | 'evidence-changed'
   | 'report-too-large'
 
 export type DiagnosticReportStateResult =
@@ -249,13 +266,15 @@ function isApplication(value: unknown): value is DiagnosticReport['application']
       'platform',
       'architecture',
       'mode',
+      'buildChannel',
     ]) &&
     isVersion(value.version) &&
     isVersion(value.electronVersion) &&
     isVersion(value.chromeVersion) &&
     ['linux', 'macos', 'windows', 'other'].includes(String(value.platform)) &&
     ['arm64', 'x64', 'other'].includes(String(value.architecture)) &&
-    (value.mode === 'packaged' || value.mode === 'development')
+    (value.mode === 'packaged' || value.mode === 'development') &&
+    isApplicationBuildChannel(value.buildChannel)
   )
 }
 
@@ -270,16 +289,57 @@ function isRenderer(value: unknown): value is DiagnosticReport['renderer'] {
 }
 
 function isDiagnostics(value: unknown): value is DiagnosticReport['diagnostics'] {
-  return (
+  if (
     isRecord(value) &&
-    exactKeys(value, ['schemaVersion', 'events', 'dropped']) &&
-    value.schemaVersion === 1 &&
+    exactKeys(value, ['schemaVersion', 'scopes', 'events', 'dropped']) &&
+    value.schemaVersion === 2 &&
+    isDiagnosticScopes(value.scopes) &&
     Array.isArray(value.events) &&
     value.events.length <= MAX_DIAGNOSTIC_REPORT_EVENTS &&
     value.events.every(isDiagnosticReportEvent) &&
     Array.isArray(value.dropped) &&
     value.dropped.length <= MAX_DIAGNOSTIC_REPORT_DROPPED_COUNTS &&
     value.dropped.every(isDroppedCount)
+  ) {
+    const currentEvents = value.events.filter(
+      (event) => event.scope === 'current-lifetime',
+    ).length
+    const precedingEvents = value.events.length - currentEvents
+    return (
+      value.scopes.currentLifetime.eventCount === currentEvents &&
+      value.scopes.precedingLifetime.eventCount === precedingEvents &&
+      (value.scopes.precedingLifetime.availability === 'included'
+        ? precedingEvents > 0
+        : value.scopes.precedingLifetime.availability === 'unavailable'
+          ? precedingEvents === 0
+          : true)
+    )
+  }
+  return false
+}
+
+function isDiagnosticScopes(
+  value: unknown,
+): value is DiagnosticReport['diagnostics']['scopes'] {
+  if (
+    !isRecord(value) ||
+    !exactKeys(value, ['currentLifetime', 'precedingLifetime']) ||
+    !isRecord(value.currentLifetime) ||
+    !exactKeys(value.currentLifetime, ['availability', 'eventCount']) ||
+    value.currentLifetime.availability !== 'included' ||
+    !isSafeCount(value.currentLifetime.eventCount) ||
+    !isRecord(value.precedingLifetime) ||
+    !exactKeys(value.precedingLifetime, ['availability', 'eventCount']) ||
+    !['included', 'partial', 'unavailable'].includes(
+      String(value.precedingLifetime.availability),
+    ) ||
+    !isSafeCount(value.precedingLifetime.eventCount)
+  ) {
+    return false
+  }
+  return (
+    value.currentLifetime.eventCount <= MAX_DIAGNOSTIC_REPORT_EVENTS &&
+    value.precedingLifetime.eventCount <= MAX_DIAGNOSTIC_REPORT_EVENTS
   )
 }
 
@@ -371,6 +431,7 @@ function isReportFailure(value: unknown): value is DiagnosticReportFailure {
     'capture-failed',
     'action-unavailable',
     'storage-unavailable',
+    'evidence-changed',
     'report-too-large',
   ].includes(String(value))
 }

@@ -1,7 +1,3 @@
-import { AsyncLocalStorage } from 'node:async_hooks'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
-
 import {
   asHostId,
   basenameHostPath,
@@ -9,25 +5,20 @@ import {
   hostPath,
   localPath,
   type HostPath,
-  type BrowseHostResponse,
-  type ConnectedHost,
-  type ProjectHostOption,
   type ProjectState,
   type RegisteredProjectState,
-  type SshPromptRequest,
   type WorktreeDiscovery,
+  type WorkspaceActivityResult,
+  type WorkspaceActivitySnapshot,
   type WorkspaceState,
 } from '../shared'
+import type { Disposer, ProjectHost } from './project-host/project-host'
 import {
-  LocalHost,
-  SshHost,
-  parseSshConfig,
-  type ProjectHost,
-  type SshAliasConfig,
-  type SshAuthPrompter,
-  type SshPrompt,
-} from './project-host'
-import type { RendererOwner } from './renderer-resource-scopes'
+  comparableWorkspaceActivity,
+  validActivitySnapshot,
+  workspaceActivityChanged,
+  workspaceActivitySnapshot,
+} from './workspace-activity'
 
 export interface ActiveProject {
   readonly host: ProjectHost
@@ -36,7 +27,18 @@ export interface ActiveProject {
   readonly workspaceId: string
 }
 
-type WorkspaceRecord = WorkspaceState
+/** ProjectRegistry's consumer-owned view of the live host catalog. */
+export interface ProjectRegistryHostCatalog {
+  readonly local: ProjectHost
+  hostById(hostId: string): ProjectHost | undefined
+  materializeHost(hostId: string): Promise<ProjectHost>
+  onHostStateChange(listener: () => void): Disposer
+}
+
+type WorkspaceRecord = WorkspaceState & {
+  readonly activityBaseline?: WorkspaceActivitySnapshot
+  readonly latestActivity?: WorkspaceActivitySnapshot
+}
 
 interface ProjectRecord {
   readonly id: string
@@ -48,7 +50,7 @@ interface ProjectRecord {
 }
 
 interface StoredProjectRegistry {
-  readonly version: 2
+  readonly version: 3
   readonly activeProjectId: string
   readonly projects: readonly {
     readonly hostId: string
@@ -61,84 +63,77 @@ interface StoredProjectRegistry {
       readonly head?: string
       readonly branch?: string
       readonly main: boolean
+      readonly closed: boolean
       readonly missing: boolean
       readonly prunableReason?: string
       readonly repository: boolean
       readonly changedFiles: number
       readonly newlyDiscovered?: boolean
+      readonly activityBaseline?: Omit<WorkspaceActivitySnapshot, 'root'>
     }[]
   }[]
 }
 
-const PROJECT_REGISTRY_VERSION = 2
+const PROJECT_REGISTRY_VERSION = 3
+const PREVIOUS_PROJECT_REGISTRY_VERSION = 2
 const LEGACY_PROJECT_REGISTRY_VERSION = 1
 const MAX_PROJECTS = 100
 const MAX_WORKSPACES = 1_000
 
 export class ProjectRegistry {
-  private readonly hosts = new Map<string, ProjectHost>()
   private activeProject: ActiveProject
   private pendingWrite: Promise<void> = Promise.resolve()
+  private stateRevision = 0
+  private readonly stopHostState: Disposer
+  private readonly stateListeners = new Set<() => void>()
 
   private constructor(
-    private readonly local: LocalHost,
+    private readonly hostCatalog: ProjectRegistryHostCatalog,
     initialRoot: HostPath,
-    private readonly aliases: readonly SshAliasConfig[],
-    private readonly prompter: SshAuthPrompter,
-    private readonly trust: HostTrustStore,
     private readonly file: HostPath,
     private readonly projects: ProjectRecord[],
     private activeProjectId: string,
     private readonly onState: (state: ProjectState) => void,
   ) {
-    this.hosts.set(local.hostId, local)
     const initialProject = projects[0] ?? createProject(initialRoot)
     if (projects.length === 0) projects.push(initialProject)
     const initialWorkspace = initialProject.workspaces[0]!
     this.activeProject = {
-      host: local,
+      host: hostCatalog.local,
       root: initialWorkspace.root,
       projectId: initialProject.id,
       workspaceId: initialWorkspace.id,
     }
+    this.stopHostState = hostCatalog.onHostStateChange(() => this.publishState())
   }
 
   static async create(
     initialRoot: HostPath,
-    prompter: SshAuthPrompter,
-    trustFile: string,
+    hostCatalog: ProjectRegistryHostCatalog,
     registryFile: string,
     onState: (state: ProjectState) => void,
   ): Promise<ProjectRegistry>
   static async create(
     initialRoot: HostPath | undefined,
-    prompter: SshAuthPrompter,
-    trustFile: string,
+    hostCatalog: ProjectRegistryHostCatalog,
     registryFile: string,
     onState: (state: ProjectState) => void,
     selectInitialRoot: () => Promise<HostPath | undefined>,
   ): Promise<ProjectRegistry | undefined>
   static async create(
     initialRoot: HostPath | undefined,
-    prompter: SshAuthPrompter,
-    trustFile: string,
+    hostCatalog: ProjectRegistryHostCatalog,
     registryFile: string,
     onState: (state: ProjectState) => void,
     selectInitialRoot?: () => Promise<HostPath | undefined>,
   ): Promise<ProjectRegistry | undefined> {
-    const local = new LocalHost()
-    await local.connect()
-    const aliases = await loadSshAliases(local)
-    const trust = await HostTrustStore.load(local, localPath(trustFile))
+    const local = hostCatalog.local
     const file = localPath(registryFile)
     const stored = await loadProjects(local, file)
     let canonicalRoot = initialRoot ? await local.realpath(initialRoot) : undefined
     if (!canonicalRoot && !stored?.projects.length) {
       const selected = await selectInitialRoot?.()
-      if (!selected) {
-        await local.dispose()
-        return undefined
-      }
+      if (!selected) return undefined
       canonicalRoot = await local.realpath(selected)
     }
     const projects = stored?.projects.length ? stored.projects : []
@@ -160,29 +155,31 @@ export class ProjectRegistry {
         hostPathEquals(workspace.root, canonicalRoot),
       )
       if (selectedWorkspace && !selectedWorkspace.missing) {
-        selectedProject.activeWorkspaceId = selectedWorkspace.id
+        const selectedIndex = selectedProject.workspaces.indexOf(selectedWorkspace)
+        const opened = openWorkspaceRecord(selectedWorkspace)
+        selectedProject.workspaces[selectedIndex] = opened
+        selectedProject.activeWorkspaceId = opened.id
       }
       activeProjectId = selectedProject.id
     }
     const fallbackRoot = canonicalRoot ?? projects[0]?.registeredRoot
-    if (!fallbackRoot || !activeProjectId) {
-      await local.dispose()
-      return undefined
-    }
+    if (!fallbackRoot || !activeProjectId) return undefined
     const registry = new ProjectRegistry(
-      local,
+      hostCatalog,
       fallbackRoot,
-      aliases,
-      prompter,
-      trust,
       file,
       projects,
       activeProjectId,
       onState,
     )
-    await registry.restoreActive()
-    if (!stored || canonicalRoot) await registry.persist()
-    return registry
+    try {
+      await registry.restoreActive()
+      if (!stored || canonicalRoot) await registry.persist()
+      return registry
+    } catch (error) {
+      await registry.dispose()
+      throw error
+    }
   }
 
   get active(): ActiveProject {
@@ -192,6 +189,7 @@ export class ProjectRegistry {
   state(): ProjectState {
     const activeHost = this.activeProject.host
     return {
+      revision: this.stateRevision,
       root: this.activeProject.root,
       connectionState: activeHost.connectionState,
       watchTier: activeHost.watchTier,
@@ -206,11 +204,19 @@ export class ProjectRegistry {
     return project ? this.rendererProject(project) : undefined
   }
 
+  observe(listener: () => void): Disposer {
+    this.stateListeners.add(listener)
+    return () => {
+      this.stateListeners.delete(listener)
+    }
+  }
+
   /** Resolve only exact persisted workspace roots; no live host is required. */
   registeredWorkspaceRoot(candidate: HostPath): HostPath | undefined {
     return this.projects
       .flatMap((project) => project.workspaces)
-      .find((workspace) => hostPathEquals(workspace.root, candidate))?.root
+      .find((workspace) => !workspace.closed && hostPathEquals(workspace.root, candidate))
+      ?.root
   }
 
   authorityForPath(hostId: string, path: string): ActiveProject | undefined {
@@ -230,7 +236,7 @@ export class ProjectRegistry {
       (left, right) => right.root.path.length - left.root.path.length,
     )[0]
     if (!match) return undefined
-    const host = this.hosts.get(hostId)
+    const host = this.hostCatalog.hostById(hostId)
     if (!host) return undefined
     const workspace =
       match.workspace ??
@@ -244,106 +250,6 @@ export class ProjectRegistry {
       root: match.root,
       projectId: match.project.id,
       workspaceId: workspace.id,
-    }
-  }
-
-  listHosts(): readonly ProjectHostOption[] {
-    return [
-      hostOption(this.local, 'Local', 'local'),
-      ...this.aliases.map((config) => {
-        const host = this.hosts.get(config.alias)
-        return host
-          ? hostOption(host, config.alias, 'ssh')
-          : {
-              hostId: config.alias,
-              label: config.alias,
-              kind: 'ssh' as const,
-              connectionState: 'disconnected' as const,
-              watchTier: 'polling' as const,
-            }
-      }),
-    ]
-  }
-
-  hostById(hostId: string): ProjectHost | undefined {
-    return this.hosts.get(hostId)
-  }
-
-  connectedHosts(): readonly ProjectHost[] {
-    return [...this.hosts.values()].filter(
-      ({ connectionState }) => connectionState === 'connected',
-    )
-  }
-
-  async connectHost(hostId: string): Promise<ConnectedHost> {
-    const host = await this.host(hostId)
-    await host.connect()
-    let suggestedPath =
-      this.activeProject.host.hostId === host.hostId ? this.activeProject.root.path : '/'
-    if (host.hostId === this.local.hostId) {
-      suggestedPath =
-        this.activeProject.host.hostId === host.hostId
-          ? this.activeProject.root.path
-          : homedir()
-    } else {
-      const pwd = await host.exec('pwd', [])
-      if (pwd.code === 0 && pwd.stdout.trim().startsWith('/')) {
-        suggestedPath = pwd.stdout.trim()
-      }
-    }
-    return {
-      host: hostOption(
-        host,
-        hostId === this.local.hostId ? 'Local' : hostId,
-        hostId === this.local.hostId ? 'local' : 'ssh',
-      ),
-      suggestedPath,
-    }
-  }
-
-  async disconnectHost(hostId: string): Promise<ProjectHostOption> {
-    if (hostId === this.local.hostId) throw new Error('The local host cannot disconnect')
-    const host = this.hosts.get(hostId)
-    if (!host) throw new Error(`SSH host is not connected: ${hostId}`)
-    if ('cancelHost' in this.prompter) {
-      ;(this.prompter as SshAuthPrompter & { cancelHost(id: string): void }).cancelHost(
-        hostId,
-      )
-    }
-    await host.dispose()
-    this.emitState()
-    return hostOption(host, hostId, 'ssh')
-  }
-
-  async disconnectSshHosts(): Promise<void> {
-    await Promise.all(
-      [...this.hosts.values()]
-        .filter((host) => host.hostId !== this.local.hostId)
-        .map((host) => host.dispose()),
-    )
-  }
-
-  async browseHost(hostId: string, rawPath: string): Promise<BrowseHostResponse> {
-    const host = this.hosts.get(hostId)
-    if (!host || host.connectionState !== 'connected') {
-      throw new Error(`Connect to ${hostId} before browsing folders`)
-    }
-    if (!rawPath.startsWith('/')) throw new Error('Folder path must be absolute')
-    try {
-      const path = await host.realpath(hostPath(asHostId(hostId), rawPath))
-      const stat = await host.stat(path)
-      if (stat.type !== 'dir') throw new Error(`Not a directory: ${rawPath}`)
-      const directories = (await host.readdir(path))
-        .filter((entry) => entry.type === 'dir')
-        .sort((left, right) => left.name.localeCompare(right.name))
-      return { path, directories }
-    } catch (reason) {
-      const code = (reason as { code?: unknown } | undefined)?.code
-      if (code === 2 || code === 'ENOENT')
-        throw new Error(`Folder not found: ${rawPath}`, { cause: reason })
-      if (code === 3 || code === 'EACCES')
-        throw new Error(`Cannot access folder: ${rawPath}`, { cause: reason })
-      throw reason
     }
   }
 
@@ -362,9 +268,14 @@ export class ProjectRegistry {
       project = createProject(root)
       this.projects.push(project)
     }
-    const workspace =
+    let workspace =
       project.workspaces.find((candidate) => hostPathEquals(candidate.root, root)) ??
       project.workspaces[0]!
+    if (workspace.closed) {
+      const reopened = openWorkspaceRecord(workspace)
+      project.workspaces[project.workspaces.indexOf(workspace)] = reopened
+      workspace = reopened
+    }
     project.activeWorkspaceId = workspace.id
     this.activeProjectId = project.id
     this.activeProject = {
@@ -374,8 +285,7 @@ export class ProjectRegistry {
       workspaceId: workspace.id,
     }
     await this.persist()
-    this.emitState()
-    return this.state()
+    return this.publishState()
   }
 
   async activate(
@@ -389,6 +299,7 @@ export class ProjectRegistry {
     )
     if (!project || !workspace) throw new Error('Unknown project workspace')
     if (workspace.missing) throw new Error('This worktree is no longer present')
+    if (workspace.closed) throw new Error('Reopen this workspace before activating it')
     const host = await this.host(project.registeredRoot.hostId)
     if (host.connectionState !== 'connected') {
       throw new Error(`Connect to ${host.hostId} before opening this workspace`)
@@ -425,8 +336,7 @@ export class ProjectRegistry {
       this.activeProject = previousActive
       throw error
     }
-    if (options.emit !== false) this.emitState()
-    return this.state()
+    return this.publishState(options.emit !== false)
   }
 
   async acknowledgeWorkspace(
@@ -452,8 +362,7 @@ export class ProjectRegistry {
       )
       throw error
     }
-    this.emitState()
-    return this.state()
+    return this.publishState()
   }
 
   async reconcileWorktrees(
@@ -483,6 +392,9 @@ export class ProjectRegistry {
         head: discovered.head,
         branch: discovered.branch,
         main: hostPathEquals(discovered.root, project.registeredRoot),
+        closed:
+          existing?.closed === true &&
+          !(existing.missing && discovered.prunable !== true),
         missing: discovered.prunable === true,
         ...(discovered.prunable === true
           ? {
@@ -495,6 +407,13 @@ export class ProjectRegistry {
         newlyDiscovered:
           existing?.newlyDiscovered ??
           (baselineEstablished && discovered.prunable !== true),
+        ...(existing?.closed === true &&
+        !(existing.missing && discovered.prunable !== true)
+          ? { activityBaseline: existing.activityBaseline }
+          : {}),
+        ...(!existing?.closed && discovery.repository && existing?.latestActivity
+          ? { latestActivity: existing.latestActivity }
+          : {}),
       }
       if (existing) project.workspaces[project.workspaces.indexOf(existing)] = record
       else project.workspaces.push(record)
@@ -511,7 +430,8 @@ export class ProjectRegistry {
       !project.workspaces.some((workspace) => workspace.id === project.activeWorkspaceId)
     ) {
       project.activeWorkspaceId =
-        project.workspaces.find((workspace) => !workspace.missing)?.id ?? ''
+        project.workspaces.find((workspace) => !workspace.missing && !workspace.closed)
+          ?.id ?? ''
     }
     if (
       baselineEstablished === project.discoveryBaselineEstablished &&
@@ -520,28 +440,130 @@ export class ProjectRegistry {
       return this.state()
     }
     await this.persist()
-    this.emitState()
-    return this.state()
+    return this.publishState()
   }
 
-  async updateChangedCounts(
+  async updateWorkspaceActivity(
     projectId: string,
-    counts: ReadonlyMap<string, number>,
+    activity: ReadonlyMap<string, WorkspaceActivityResult>,
   ): Promise<ProjectState> {
     const project = this.projects.find((candidate) => candidate.id === projectId)
     if (!project) throw new Error('Unknown project')
-    const changed = project.workspaces.some(
-      (workspace) =>
-        counts.has(workspace.id) && counts.get(workspace.id) !== workspace.changedFiles,
-    )
-    if (!changed) return this.state()
-    project.workspaces = project.workspaces.map((workspace) => ({
-      ...workspace,
-      changedFiles: counts.get(workspace.id) ?? workspace.changedFiles,
-    }))
+    const before = workspaceSignature(project.workspaces)
+    project.workspaces = project.workspaces.map((workspace) => {
+      const result = activity.get(workspace.id)
+      if (!result) return workspace
+      const current = workspaceActivitySnapshot(
+        workspace.root,
+        workspace.head,
+        workspace.branch,
+        result.status,
+      )
+      if (!workspace.closed) {
+        const comparable =
+          current && comparableWorkspaceActivity(current, current) ? current : undefined
+        return {
+          ...workspace,
+          changedFiles: result.changedFiles,
+          ...(comparable ? { latestActivity: comparable } : {}),
+        }
+      }
+      if (!current || !comparableWorkspaceActivity(current, current)) {
+        return { ...workspace, changedFiles: result.changedFiles }
+      }
+      if (!workspace.activityBaseline) {
+        return {
+          ...workspace,
+          changedFiles: result.changedFiles,
+          activityBaseline: current,
+        }
+      }
+      if (workspaceActivityChanged(workspace.activityBaseline, current)) {
+        return {
+          ...workspace,
+          closed: false,
+          changedFiles: result.changedFiles,
+          activityBaseline: undefined,
+          latestActivity: current,
+        }
+      }
+      return { ...workspace, changedFiles: result.changedFiles }
+    })
+    if (before === workspaceSignature(project.workspaces)) return this.state()
     await this.persist()
-    this.emitState()
-    return this.state()
+    return this.publishState()
+  }
+
+  async closeWorkspace(projectId: string, id: string): Promise<ProjectState> {
+    const project = this.projects.find((candidate) => candidate.id === projectId)
+    const workspace = project?.workspaces.find((candidate) => candidate.id === id)
+    if (!project || !workspace) throw new Error('Unknown project workspace')
+    if (this.activeProjectId === projectId && this.activeProject.workspaceId === id) {
+      throw new Error('Select another workspace before closing this one')
+    }
+    if (workspace.missing) throw new Error('Only present workspaces can be closed')
+    if (workspace.closed) return this.state()
+    const baseline =
+      workspace.latestActivity &&
+      comparableWorkspaceActivity(workspace.latestActivity, workspace.latestActivity)
+        ? workspace.latestActivity
+        : undefined
+    const index = project.workspaces.indexOf(workspace)
+    project.workspaces[index] = {
+      ...workspace,
+      closed: true,
+      activityBaseline: baseline,
+      latestActivity: undefined,
+      newlyDiscovered: false,
+    }
+    try {
+      await this.persist()
+    } catch (error) {
+      project.workspaces[index] = workspace
+      throw error
+    }
+    return this.publishState()
+  }
+
+  async reopenWorkspace(projectId: string, id: string): Promise<ProjectState> {
+    const project = this.projects.find((candidate) => candidate.id === projectId)
+    const workspace = project?.workspaces.find((candidate) => candidate.id === id)
+    if (!project || !workspace) throw new Error('Unknown project workspace')
+    if (!workspace.closed) return this.activate(projectId, id)
+    if (workspace.missing) throw new Error('This worktree is no longer present')
+    const index = project.workspaces.indexOf(workspace)
+    project.workspaces[index] = openWorkspaceRecord(workspace)
+    try {
+      return await this.activate(projectId, id)
+    } catch (error) {
+      project.workspaces[index] = workspace
+      throw error
+    }
+  }
+
+  async restoreWorkspaceAfterFailedClose(
+    projectId: string,
+    id: string,
+  ): Promise<ProjectState> {
+    const project = this.projects.find((candidate) => candidate.id === projectId)
+    const workspace = project?.workspaces.find((candidate) => candidate.id === id)
+    if (!project || !workspace) throw new Error('Unknown project workspace')
+    if (!workspace.closed) return this.state()
+    const index = project.workspaces.indexOf(workspace)
+    const reopened = openWorkspaceRecord(workspace)
+    project.workspaces[index] = {
+      ...reopened,
+      ...(workspace.activityBaseline
+        ? { latestActivity: workspace.activityBaseline }
+        : {}),
+    }
+    try {
+      await this.persist()
+    } catch (error) {
+      project.workspaces[index] = workspace
+      throw error
+    }
+    return this.publishState()
   }
 
   async closeProject(projectId: string): Promise<ProjectState> {
@@ -555,9 +577,12 @@ export class ProjectRegistry {
       const project = remaining[Math.min(index, remaining.length - 1)]!
       const workspace =
         project.workspaces.find(
-          (candidate) => candidate.id === project.activeWorkspaceId && !candidate.missing,
+          (candidate) =>
+            candidate.id === project.activeWorkspaceId &&
+            !candidate.missing &&
+            !candidate.closed,
         ) ??
-        project.workspaces.find((candidate) => !candidate.missing) ??
+        project.workspaces.find((candidate) => !candidate.missing && !candidate.closed) ??
         project.workspaces[0]!
       const host = await this.host(project.registeredRoot.hostId)
       this.activeProjectId = project.id
@@ -572,8 +597,7 @@ export class ProjectRegistry {
 
     this.projects.splice(index, 1)
     await this.persist()
-    this.emitState()
-    return this.state()
+    return this.publishState()
   }
 
   async dismissWorkspace(projectId: string, id: string): Promise<ProjectState> {
@@ -581,21 +605,50 @@ export class ProjectRegistry {
     const workspace = project?.workspaces.find((candidate) => candidate.id === id)
     if (!project || !workspace) throw new Error('Unknown project workspace')
     if (!workspace.missing) throw new Error('Only removed worktrees can be dismissed')
-    project.workspaces = project.workspaces.filter((candidate) => candidate.id !== id)
+    const previousWorkspaces = project.workspaces
+    const previousWorkspaceId = project.activeWorkspaceId
+    const previousActive = this.activeProject
+    let remaining = project.workspaces.filter((candidate) => candidate.id !== id)
+    let next: WorkspaceRecord | undefined
     if (project.activeWorkspaceId === id) {
-      const next = project.workspaces.find((candidate) => !candidate.missing)
+      next = remaining.find((candidate) => !candidate.missing && !candidate.closed)
+      if (!next) {
+        const closed = remaining.find((candidate) => !candidate.missing)
+        if (closed) {
+          const reopened = openWorkspaceRecord(closed)
+          next = reopened
+          remaining = remaining.map((candidate) =>
+            candidate.id === closed.id ? reopened : candidate,
+          )
+        }
+      }
       if (!next) throw new Error('A project must keep one workspace')
       project.activeWorkspaceId = next.id
-      if (project.id === this.activeProjectId) await this.activate(project.id, next.id)
+      if (project.id === this.activeProjectId) {
+        this.activeProject = {
+          host: previousActive.host,
+          root: next.root,
+          projectId: project.id,
+          workspaceId: next.id,
+        }
+      }
     }
-    await this.persist()
-    this.emitState()
-    return this.state()
+    project.workspaces = remaining
+    try {
+      await this.persist()
+    } catch (error) {
+      project.workspaces = previousWorkspaces
+      project.activeWorkspaceId = previousWorkspaceId
+      this.activeProject = previousActive
+      throw error
+    }
+    return this.publishState()
   }
 
   async dispose(): Promise<void> {
+    await this.stopHostState()
+    this.stateListeners.clear()
     await this.pendingWrite
-    await Promise.all([...this.hosts.values()].map((host) => host.dispose()))
   }
 
   private async restoreActive(): Promise<void> {
@@ -604,9 +657,12 @@ export class ProjectRegistry {
       this.projects[0]!
     const workspace =
       project.workspaces.find(
-        (candidate) => candidate.id === project.activeWorkspaceId && !candidate.missing,
+        (candidate) =>
+          candidate.id === project.activeWorkspaceId &&
+          !candidate.missing &&
+          !candidate.closed,
       ) ??
-      project.workspaces.find((candidate) => !candidate.missing) ??
+      project.workspaces.find((candidate) => !candidate.missing && !candidate.closed) ??
       project.workspaces[0]!
     const host = await this.host(project.registeredRoot.hostId)
     this.activeProjectId = project.id
@@ -620,7 +676,7 @@ export class ProjectRegistry {
   }
 
   private rendererProject(project: ProjectRecord): RegisteredProjectState {
-    const host = this.hosts.get(project.registeredRoot.hostId)
+    const host = this.hostCatalog.hostById(project.registeredRoot.hostId)
     return {
       id: project.id,
       registeredRoot: project.registeredRoot,
@@ -628,12 +684,21 @@ export class ProjectRegistry {
       connectionState: host?.connectionState ?? 'disconnected',
       watchTier: host?.watchTier ?? 'polling',
       activeWorkspaceId: project.activeWorkspaceId,
-      workspaces: project.workspaces,
+      workspaces: project.workspaces.map(
+        ({ activityBaseline: _baseline, latestActivity: _latest, ...workspace }) =>
+          workspace,
+      ),
     }
   }
 
-  private emitState(): void {
-    this.onState(this.state())
+  private publishState(emit = true): ProjectState {
+    this.stateRevision += 1
+    const state = this.state()
+    if (emit) {
+      this.onState(state)
+      for (const listener of this.stateListeners) listener()
+    }
+    return state
   }
 
   private persist(): Promise<void> {
@@ -655,15 +720,19 @@ export class ProjectRegistry {
             head: workspace.head,
             branch: workspace.branch,
             main: workspace.main,
+            closed: workspace.closed,
             missing: workspace.missing,
             prunableReason: workspace.prunableReason,
             repository: workspace.repository,
             changedFiles: workspace.changedFiles,
             newlyDiscovered: workspace.newlyDiscovered,
+            activityBaseline: workspace.activityBaseline
+              ? storedActivity(workspace.activityBaseline)
+              : undefined,
           })),
         })),
       }
-      await this.local.writeFile(this.file, JSON.stringify(stored, null, 2))
+      await this.hostCatalog.local.writeFile(this.file, JSON.stringify(stored, null, 2))
     }
     const next = this.pendingWrite.then(write, write)
     this.pendingWrite = next.catch(() => undefined)
@@ -671,225 +740,7 @@ export class ProjectRegistry {
   }
 
   private async host(hostId: string): Promise<ProjectHost> {
-    const existing = this.hosts.get(hostId)
-    if (existing) return existing
-    const config = this.aliases.find((candidate) => candidate.alias === hostId)
-    if (!config) throw new Error(`Unknown SSH host alias: ${hostId}`)
-    const identities = await Promise.all(
-      identityFileCandidates(config).map(async (path) => {
-        try {
-          return { path, privateKey: await this.local.readFile(localPath(path)) }
-        } catch {
-          return undefined
-        }
-      }),
-    )
-    const host = new SshHost({
-      config,
-      identities: identities.filter((identity) => identity !== undefined),
-      agentSocket: process.env['SSH_AUTH_SOCK'],
-      prompter: this.prompter,
-      trustedHostKey: () => this.trust.fingerprint(config.alias),
-      rememberHostKey: (fingerprint) => this.trust.remember(config.alias, fingerprint),
-    })
-    host.onConnectionState(() => {
-      this.emitState()
-    })
-    this.hosts.set(hostId, host)
-    return host
-  }
-}
-
-const DEFAULT_IDENTITY_NAMES = [
-  'id_rsa',
-  'id_ecdsa',
-  'id_ecdsa_sk',
-  'id_ed25519',
-  'id_ed25519_sk',
-  'id_xmss',
-  'id_dsa',
-] as const
-
-/** OpenSSH's conventional identity set applies when no IdentityFile is configured. */
-export function identityFileCandidates(
-  config: SshAliasConfig,
-  home = homedir(),
-): readonly string[] {
-  if (config.identityFiles.length) return [...new Set(config.identityFiles)]
-  return DEFAULT_IDENTITY_NAMES.map((name) => join(home, '.ssh', name))
-}
-
-export class RendererSshPrompter implements SshAuthPrompter {
-  private nextId = 0
-  private readonly ownerContext = new AsyncLocalStorage<RendererOwner>()
-  private readonly activeOwners = new Map<number, RendererOwner>()
-  private readonly pending = new Map<
-    number,
-    {
-      readonly hostId: string
-      readonly request: SshPrompt
-      owner: RendererOwner
-      presented: boolean
-      readonly resolve: (answers: readonly string[] | undefined) => void
-    }
-  >()
-
-  constructor(
-    private readonly emit: (owner: RendererOwner, prompt: SshPromptRequest) => void,
-    private readonly emitCancel: (owner: RendererOwner, hostId: string) => void = () =>
-      undefined,
-  ) {}
-
-  runForOwner<T>(owner: RendererOwner, operation: () => T): T {
-    return this.ownerContext.run(owner, operation)
-  }
-
-  activateOwner(owner: RendererOwner): void {
-    this.activeOwners.set(owner.id, owner)
-    for (const [id, pending] of this.pending) {
-      if (pending.owner.id !== owner.id || pending.presented) continue
-      pending.owner = owner
-      pending.presented = true
-      this.emit(owner, { id, ...pending.request })
-    }
-  }
-
-  revokeOwner(owner: RendererOwner): void {
-    const active = this.activeOwners.get(owner.id)
-    if (active?.generation === owner.generation) this.activeOwners.delete(owner.id)
-    for (const pending of this.pending.values()) {
-      if (!sameRendererOwner(pending.owner, owner)) continue
-      pending.presented = false
-    }
-  }
-
-  prompt(request: SshPrompt): Promise<readonly string[] | undefined> {
-    const contextualOwner = this.ownerContext.getStore()
-    const activeOwner = contextualOwner
-      ? this.activeOwners.get(contextualOwner.id)
-      : this.activeOwners.values().next().value
-    const owner = activeOwner ?? contextualOwner
-    if (!owner) return Promise.resolve(undefined)
-    const id = ++this.nextId
-    return new Promise((resolve) => {
-      const presented = activeOwner !== undefined
-      this.pending.set(id, {
-        hostId: request.hostId,
-        request,
-        owner,
-        presented,
-        resolve,
-      })
-      if (presented) this.emit(owner, { id, ...request })
-    })
-  }
-
-  respond(owner: RendererOwner, id: number, answers?: readonly string[]): void {
-    const pending = this.pending.get(id)
-    const activeOwner = this.activeOwners.get(owner.id)
-    if (
-      !pending ||
-      !pending.presented ||
-      !sameRendererOwner(pending.owner, owner) ||
-      !activeOwner ||
-      !sameRendererOwner(activeOwner, owner)
-    ) {
-      return
-    }
-    this.pending.delete(id)
-    pending.resolve(answers)
-  }
-
-  cancelAll(): void {
-    const presentations = new Map<string, RendererOwner>()
-    for (const pending of this.pending.values()) {
-      presentations.set(pending.hostId, pending.owner)
-    }
-    for (const pending of this.pending.values()) pending.resolve(undefined)
-    this.pending.clear()
-    for (const [hostId, owner] of presentations) this.emitCancel(owner, hostId)
-  }
-
-  cancelHost(hostId: string): void {
-    const owners = new Map<string, RendererOwner>()
-    for (const [id, pending] of this.pending) {
-      if (pending.hostId !== hostId) continue
-      owners.set(`${pending.owner.id}:${pending.owner.generation}`, pending.owner)
-      pending.resolve(undefined)
-      this.pending.delete(id)
-    }
-    for (const owner of owners.values()) this.emitCancel(owner, hostId)
-  }
-}
-
-function sameRendererOwner(left: RendererOwner, right: RendererOwner): boolean {
-  return left.id === right.id && left.generation === right.generation
-}
-
-class HostTrustStore {
-  private constructor(
-    private readonly host: LocalHost,
-    private readonly file: HostPath,
-    private readonly fingerprints: Record<string, string>,
-  ) {}
-
-  static async load(host: LocalHost, file: HostPath): Promise<HostTrustStore> {
-    try {
-      const parsed: unknown = JSON.parse(await host.readTextFile(file))
-      const fingerprints: Record<string, string> = {}
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        for (const [alias, fingerprint] of Object.entries(parsed)) {
-          if (
-            /^[^\s]{1,255}$/.test(alias) &&
-            typeof fingerprint === 'string' &&
-            /^SHA256:[A-Za-z0-9+/]{20,}$/.test(fingerprint)
-          ) {
-            fingerprints[alias] = fingerprint
-          }
-        }
-      }
-      return new HostTrustStore(host, file, fingerprints)
-    } catch {
-      return new HostTrustStore(host, file, {})
-    }
-  }
-
-  fingerprint(alias: string): string | undefined {
-    return this.fingerprints[alias]
-  }
-
-  async remember(alias: string, fingerprint: string): Promise<void> {
-    if (!/^SHA256:[A-Za-z0-9+/]{20,}$/.test(fingerprint)) {
-      throw new Error('Invalid SSH host-key fingerprint')
-    }
-    this.fingerprints[alias] = fingerprint
-    await this.host.writeFile(this.file, JSON.stringify(this.fingerprints, null, 2))
-  }
-}
-
-async function loadSshAliases(host: LocalHost): Promise<readonly SshAliasConfig[]> {
-  const home = homedir()
-  try {
-    return parseSshConfig(
-      await host.readTextFile(localPath(join(home, '.ssh/config'))),
-      home,
-    )
-  } catch {
-    return []
-  }
-}
-
-function hostOption(
-  host: ProjectHost,
-  label: string,
-  kind: 'local' | 'ssh',
-): ProjectHostOption {
-  return {
-    hostId: host.hostId,
-    label,
-    kind,
-    connectionState: host.connectionState,
-    watchTier: host.watchTier,
+    return this.hostCatalog.materializeHost(hostId)
   }
 }
 
@@ -907,6 +758,7 @@ function createProject(root: HostPath): ProjectRecord {
     root,
     name: basenameHostPath(root) || root.path,
     main: true,
+    closed: false,
     missing: false,
     repository: false,
     changedFiles: 0,
@@ -921,8 +773,20 @@ function createProject(root: HostPath): ProjectRecord {
   }
 }
 
+function openWorkspaceRecord(workspace: WorkspaceRecord): WorkspaceRecord {
+  return {
+    ...workspace,
+    closed: false,
+    missing: false,
+    prunableReason: undefined,
+    activityBaseline: undefined,
+    latestActivity: undefined,
+  }
+}
+
 function compareWorkspaces(left: WorkspaceRecord, right: WorkspaceRecord): number {
   if (left.main !== right.main) return left.main ? -1 : 1
+  if (left.closed !== right.closed) return left.closed ? 1 : -1
   if (left.missing !== right.missing) return left.missing ? 1 : -1
   return (
     left.name.localeCompare(right.name) || left.root.path.localeCompare(right.root.path)
@@ -941,28 +805,50 @@ function workspaceSignature(workspaces: readonly WorkspaceRecord[]): string {
         head,
         branch,
         main,
+        closed,
         missing,
         prunableReason,
         repository,
         changedFiles,
         newlyDiscovered,
+        activityBaseline,
       }) => ({
         id,
         head,
         branch,
         main,
+        closed,
         missing,
         prunableReason,
         repository,
         changedFiles,
         newlyDiscovered,
+        activityBaseline,
       }),
     ),
   )
 }
 
+function storedActivity(
+  activity: WorkspaceActivitySnapshot,
+): Omit<WorkspaceActivitySnapshot, 'root'> {
+  const { root: _root, ...stored } = activity
+  return stored
+}
+
+function restoredActivity(
+  root: HostPath,
+  value: unknown,
+): WorkspaceActivitySnapshot | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const activity = { root, ...value } as WorkspaceActivitySnapshot
+  return validActivitySnapshot(activity) && !activity.statusTruncated
+    ? activity
+    : undefined
+}
+
 async function loadProjects(
-  host: LocalHost,
+  host: ProjectHost,
   file: HostPath,
 ): Promise<{ activeProjectId: string; projects: ProjectRecord[] } | undefined> {
   try {
@@ -971,6 +857,7 @@ async function loadProjects(
     const stored = value as Record<string, unknown>
     if (
       (stored['version'] !== PROJECT_REGISTRY_VERSION &&
+        stored['version'] !== PREVIOUS_PROJECT_REGISTRY_VERSION &&
         stored['version'] !== LEGACY_PROJECT_REGISTRY_VERSION) ||
       !Array.isArray(stored['projects']) ||
       stored['projects'].length === 0 ||
@@ -1025,6 +912,8 @@ async function loadProjects(
             ? workspace['head']
             : undefined
         const missing = workspace['missing'] === true
+        const closed =
+          stored['version'] === PROJECT_REGISTRY_VERSION && workspace['closed'] === true
         const prunableReason =
           missing &&
           typeof workspace['prunableReason'] === 'string' &&
@@ -1032,6 +921,9 @@ async function loadProjects(
           workspace['prunableReason'].length <= 1_024
             ? workspace['prunableReason']
             : undefined
+        const activityBaseline = closed
+          ? restoredActivity(workspaceRoot, workspace['activityBaseline'])
+          : undefined
         workspaces.push({
           id: workspaceId(workspaceRoot),
           root: workspaceRoot,
@@ -1040,6 +932,7 @@ async function loadProjects(
           ...(branch ? { branch } : {}),
           ...(prunableReason ? { prunableReason } : {}),
           main: workspace['main'] === true,
+          closed,
           missing,
           repository: workspace['repository'] === true,
           changedFiles:
@@ -1049,20 +942,40 @@ async function loadProjects(
               ? workspace['changedFiles']
               : 0,
           newlyDiscovered: workspace['newlyDiscovered'] === true,
+          ...(activityBaseline ? { activityBaseline } : {}),
         })
         workspaceCount++
       }
       if (workspaces.length === 0) workspaces.push(createProject(root).workspaces[0]!)
+      if (!workspaces.some((workspace) => !workspace.missing && !workspace.closed)) {
+        const fallback = workspaces.find((workspace) => !workspace.missing)
+        if (fallback) {
+          const index = workspaces.indexOf(fallback)
+          workspaces[index] = {
+            ...fallback,
+            closed: false,
+            activityBaseline: undefined,
+          }
+        }
+      }
       const activeWorkspacePath = item['activeWorkspacePath']
       const activeWorkspace =
         typeof activeWorkspacePath === 'string'
-          ? workspaces.find((workspace) => workspace.root.path === activeWorkspacePath)
+          ? workspaces.find(
+              (workspace) =>
+                workspace.root.path === activeWorkspacePath &&
+                !workspace.missing &&
+                !workspace.closed,
+            )
           : undefined
       projects.push({
         id: projectId(root),
         registeredRoot: root,
         displayName,
-        activeWorkspaceId: activeWorkspace?.id ?? workspaces[0]!.id,
+        activeWorkspaceId:
+          activeWorkspace?.id ??
+          workspaces.find((workspace) => !workspace.missing && !workspace.closed)?.id ??
+          workspaces[0]!.id,
         discoveryBaselineEstablished:
           discoveryBaselineEstablished ||
           (stored['version'] === LEGACY_PROJECT_REGISTRY_VERSION &&

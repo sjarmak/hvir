@@ -47,6 +47,8 @@ describe('TerminalSessionRegistry', () => {
 
   it('persists an exact discovered identity with its rail position and title', async () => {
     const root = localPath('/tmp/project')
+    const listener = vi.fn()
+    const release = registry.observe(listener)
     await registry.recordSpawn({
       id: SESSION_ID,
       providerId: CODEX_PROVIDER_ID,
@@ -98,6 +100,11 @@ describe('TerminalSessionRegistry', () => {
         attention: 'bell',
       }),
     ])
+    expect(listener).toHaveBeenCalled()
+    expect(registry.observationSnapshot()).toEqual([
+      expect.objectContaining({ id: SESSION_ID, workspaceRoot: root }),
+    ])
+    await release()
   })
 
   it.each([
@@ -274,7 +281,7 @@ describe('TerminalSessionRegistry', () => {
 
   it('reconciles identity discovery that wins the spawn-persistence race', async () => {
     const root = localPath('/tmp/project')
-    await registry.recordIdentity(SESSION_ID, HARNESS_ID)
+    const identityAccepted = registry.recordIdentity(SESSION_ID, HARNESS_ID)
     await registry.recordSpawn({
       id: SESSION_ID,
       providerId: CODEX_PROVIDER_ID,
@@ -286,6 +293,7 @@ describe('TerminalSessionRegistry', () => {
       position: 0,
       active: true,
     })
+    await expect(identityAccepted).resolves.toBe(true)
 
     expect(registry.list(root)).toEqual([
       expect.objectContaining({
@@ -295,10 +303,63 @@ describe('TerminalSessionRegistry', () => {
     ])
   })
 
+  it('rejects a pending identity that differs from the spawn identity', async () => {
+    const root = localPath('/tmp/project')
+    const spawnHarnessId = '019ab123-4567-7890-abcd-ef0123456790'
+    const identityAccepted = registry.recordIdentity(SESSION_ID, HARNESS_ID)
+
+    await registry.recordSpawn({
+      id: SESSION_ID,
+      providerId: CODEX_PROVIDER_ID,
+      profileId: CODEX_PROFILE_ID,
+      launchRevision: 1,
+      harnessSessionId: spawnHarnessId,
+      workspaceRoot: root,
+      cwd: root,
+      title: 'Codex · project',
+      position: 0,
+      active: true,
+    })
+
+    await expect(identityAccepted).resolves.toBe(false)
+    expect(registry.get(SESSION_ID)?.harnessSessionId).toBe(spawnHarnessId)
+  })
+
+  it('retains a failed spawn write so later identity registration can recover', async () => {
+    const root = localPath('/tmp/project')
+    const identityAccepted = registry.recordIdentity(SESSION_ID, HARNESS_ID)
+    vi.spyOn(host, 'writeFile').mockRejectedValueOnce(new Error('spawn write failed'))
+
+    await expect(
+      registry.recordSpawn({
+        id: SESSION_ID,
+        providerId: CODEX_PROVIDER_ID,
+        profileId: CODEX_PROFILE_ID,
+        launchRevision: 1,
+        workspaceRoot: root,
+        cwd: root,
+        title: 'Codex · project',
+        position: 0,
+        active: true,
+      }),
+    ).rejects.toThrow('spawn write failed')
+
+    await expect(identityAccepted).resolves.toBe(false)
+    expect(registry.get(SESSION_ID)).toMatchObject({
+      id: SESSION_ID,
+      harnessSessionId: undefined,
+    })
+    await expect(registry.recordIdentity(SESSION_ID, HARNESS_ID)).resolves.toBe(true)
+
+    const restored = await TerminalSessionRegistry.load(host, file)
+    expect(restored.get(SESSION_ID)?.harnessSessionId).toBe(HARNESS_ID)
+  })
+
   it('does not resurrect a session closed while spawn persistence is pending', async () => {
     const root = localPath('/tmp/project')
-    await registry.recordIdentity(SESSION_ID, HARNESS_ID)
+    const identityAccepted = registry.recordIdentity(SESSION_ID, HARNESS_ID)
     await registry.forget(root, SESSION_ID)
+    await expect(identityAccepted).resolves.toBe(false)
     await registry.recordSpawn({
       id: SESSION_ID,
       providerId: CODEX_PROVIDER_ID,
@@ -351,9 +412,55 @@ describe('TerminalSessionRegistry', () => {
         cwd: root,
       }),
     ).toBe(false)
-
     await registry.forget(root, SESSION_ID)
     expect(registry.list(root)).toEqual([])
+  })
+
+  it('authorizes renderer reattachment for an exact stored terminal identity', async () => {
+    const root = localPath('/tmp/project')
+    await registry.recordSpawn({
+      id: SESSION_ID,
+      providerId: SHELL_PROVIDER_ID,
+      profileId: SHELL_PROFILE_ID,
+      launchRevision: 1,
+      workspaceRoot: root,
+      cwd: root,
+      title: 'Shell',
+      position: 0,
+      active: true,
+    })
+
+    expect(
+      registry.authorizeReattach({
+        id: SESSION_ID,
+        providerId: SHELL_PROVIDER_ID,
+        profileId: SHELL_PROFILE_ID,
+        launchRevision: 1,
+        workspaceRoot: root,
+        cwd: root,
+      }),
+    ).toBe(true)
+    expect(
+      registry.authorizeReattach({
+        id: SESSION_ID,
+        providerId: SHELL_PROVIDER_ID,
+        profileId: SHELL_PROFILE_ID,
+        launchRevision: 2,
+        workspaceRoot: root,
+        cwd: root,
+      }),
+    ).toBe(false)
+    expect(
+      registry.authorizeReattach({
+        id: SESSION_ID,
+        providerId: SHELL_PROVIDER_ID,
+        profileId: SHELL_PROFILE_ID,
+        launchRevision: 1,
+        harnessSessionId: HARNESS_ID,
+        workspaceRoot: root,
+        cwd: root,
+      }),
+    ).toBe(false)
   })
 
   it('atomically replaces a retained recovery record with new identities', async () => {
@@ -442,7 +549,7 @@ describe('TerminalSessionRegistry', () => {
       position: 0,
       active: true,
     })
-    await registry.recordIdentity(replacementId, replacementHarnessId)
+    const identityAccepted = registry.recordIdentity(replacementId, replacementHarnessId)
 
     await registry.recordReplacement({
       replacedId: SESSION_ID,
@@ -458,6 +565,7 @@ describe('TerminalSessionRegistry', () => {
         active: true,
       },
     })
+    await expect(identityAccepted).resolves.toBe(true)
 
     expect(registry.list(root)).toEqual([
       expect.objectContaining({
@@ -465,6 +573,45 @@ describe('TerminalSessionRegistry', () => {
         harnessSessionId: replacementHarnessId,
       }),
     ])
+  })
+
+  it('rejects a pending identity that differs from the replacement identity', async () => {
+    const root = localPath('/tmp/project')
+    const replacementId = 'terminal-2'
+    const pendingHarnessId = '019ab123-4567-7890-abcd-ef0123456790'
+    const replacementHarnessId = '019ab123-4567-7890-abcd-ef0123456791'
+    await registry.recordSpawn({
+      id: SESSION_ID,
+      providerId: CODEX_PROVIDER_ID,
+      profileId: CODEX_PROFILE_ID,
+      launchRevision: 1,
+      harnessSessionId: HARNESS_ID,
+      workspaceRoot: root,
+      cwd: root,
+      title: 'Codex · project',
+      position: 0,
+      active: true,
+    })
+    const identityAccepted = registry.recordIdentity(replacementId, pendingHarnessId)
+
+    await registry.recordReplacement({
+      replacedId: SESSION_ID,
+      spawn: {
+        id: replacementId,
+        providerId: CODEX_PROVIDER_ID,
+        profileId: CODEX_PROFILE_ID,
+        launchRevision: 1,
+        harnessSessionId: replacementHarnessId,
+        workspaceRoot: root,
+        cwd: root,
+        title: 'Codex · project',
+        position: 0,
+        active: true,
+      },
+    })
+
+    await expect(identityAccepted).resolves.toBe(false)
+    expect(registry.get(replacementId)?.harnessSessionId).toBe(replacementHarnessId)
   })
 
   it('rolls a replacement back when its durable commit fails', async () => {
@@ -636,33 +783,48 @@ describe('TerminalSessionRegistry', () => {
 
   it('rebinds recovery only within the same provider and revision', async () => {
     const root = localPath('/tmp/project')
+    const cwd = localPath('/tmp/project/worktree')
     const alternate = asHarnessProfileId('claude-bypass')
     await registry.recordSpawn({
       id: SESSION_ID,
       providerId: CLAUDE_PROVIDER_ID,
       profileId: CLAUDE_PROFILE_ID,
       launchRevision: 1,
+      artifactIdentity: 'old-artifact-identity',
       harnessSessionId: HARNESS_ID,
       workspaceRoot: root,
-      cwd: root,
+      cwd,
       title: 'Claude Code · project',
       position: 0,
       active: true,
     })
+    await registry.updateLayout(root, [
+      {
+        id: SESSION_ID,
+        title: 'Retained Claude',
+        position: 3,
+        active: false,
+        attention: 'bell',
+      },
+    ])
 
     const rebound = await registry.rebindProfile({
       id: SESSION_ID,
       providerId: CLAUDE_PROVIDER_ID,
       profileId: alternate,
       launchRevision: 4,
-      riskAcknowledgedRevision: 4,
       workspaceRoot: root,
     })
     expect(rebound).toMatchObject({
       profileId: alternate,
       launchRevision: 4,
-      riskAcknowledgedRevision: 4,
       harnessSessionId: HARNESS_ID,
+      artifactIdentity: undefined,
+      cwd,
+      title: 'Retained Claude',
+      position: 3,
+      active: false,
+      attention: 'bell',
     })
     expect(
       registry.authorizeResume({
@@ -672,7 +834,7 @@ describe('TerminalSessionRegistry', () => {
         launchRevision: 4,
         harnessSessionId: HARNESS_ID,
         workspaceRoot: root,
-        cwd: root,
+        cwd,
       }),
     ).toBe(true)
     await expect(
@@ -684,6 +846,48 @@ describe('TerminalSessionRegistry', () => {
         workspaceRoot: root,
       }),
     ).rejects.toThrow(/same provider/)
+  })
+
+  it('rolls a profile rebind back when persistence fails', async () => {
+    const root = localPath('/tmp/project')
+    await registry.recordSpawn({
+      id: SESSION_ID,
+      providerId: CLAUDE_PROVIDER_ID,
+      profileId: CLAUDE_PROFILE_ID,
+      launchRevision: 1,
+      artifactIdentity: 'retained-artifact-identity',
+      harnessSessionId: HARNESS_ID,
+      workspaceRoot: root,
+      cwd: root,
+      title: 'Retained Claude',
+      position: 0,
+      active: true,
+    })
+    const original = registry.list(root)[0]
+    vi.spyOn(host, 'writeFile').mockRejectedValueOnce(new Error('disk unavailable'))
+
+    await expect(
+      registry.rebindProfile({
+        id: SESSION_ID,
+        providerId: CLAUDE_PROVIDER_ID,
+        profileId: asHarnessProfileId('claude-current'),
+        launchRevision: 5,
+        workspaceRoot: root,
+      }),
+    ).rejects.toThrow('disk unavailable')
+
+    expect(registry.list(root)).toEqual([original])
+    expect(
+      registry.authorizeResume({
+        id: SESSION_ID,
+        providerId: CLAUDE_PROVIDER_ID,
+        profileId: CLAUDE_PROFILE_ID,
+        launchRevision: 1,
+        harnessSessionId: HARNESS_ID,
+        workspaceRoot: root,
+        cwd: root,
+      }),
+    ).toBe(true)
   })
 
   it('migrates v1 adapter records to current profile records without changing identity', async () => {
@@ -795,44 +999,44 @@ describe('TerminalSessionRegistry', () => {
       stored: { attention: 'output' },
       expected: { recoverySkipCount: 0, attention: 'working' },
     },
-  ])('migrates v5 $label into the combined registry schema', async ({
-    stored,
-    expected,
-  }) => {
-    const root = localPath('/tmp/project')
-    await host.writeFile(
-      file,
-      JSON.stringify({
-        version: 5,
-        sessions: [
-          {
-            id: SESSION_ID,
-            providerId: 'codex',
-            profileId: 'codex-default',
-            launchRevision: 1,
-            harnessSessionId: HARNESS_ID,
-            hostId: root.hostId,
-            workspaceRoot: root,
-            cwd: root,
-            title: 'Codex · project',
-            position: 0,
-            active: true,
-            updatedAt: 42,
-            ...stored,
-          },
-        ],
-      }),
-    )
+  ])(
+    'migrates v5 $label into the combined registry schema',
+    async ({ stored, expected }) => {
+      const root = localPath('/tmp/project')
+      await host.writeFile(
+        file,
+        JSON.stringify({
+          version: 5,
+          sessions: [
+            {
+              id: SESSION_ID,
+              providerId: 'codex',
+              profileId: 'codex-default',
+              launchRevision: 1,
+              harnessSessionId: HARNESS_ID,
+              hostId: root.hostId,
+              workspaceRoot: root,
+              cwd: root,
+              title: 'Codex · project',
+              position: 0,
+              active: true,
+              updatedAt: 42,
+              ...stored,
+            },
+          ],
+        }),
+      )
 
-    const migrated = await TerminalSessionRegistry.load(host, file)
-    expect(migrated.list(root)[0]).toEqual(expect.objectContaining(expected))
-    expect(JSON.parse(await host.readTextFile(file))).toEqual(
-      expect.objectContaining({
-        version: 6,
-        sessions: [expect.objectContaining(expected)],
-      }),
-    )
-  })
+      const migrated = await TerminalSessionRegistry.load(host, file)
+      expect(migrated.list(root)[0]).toEqual(expect.objectContaining(expected))
+      expect(JSON.parse(await host.readTextFile(file))).toEqual(
+        expect.objectContaining({
+          version: 6,
+          sessions: [expect.objectContaining(expected)],
+        }),
+      )
+    },
+  )
 
   it('preserves a syntactically valid provider record unknown to this build', async () => {
     const root = localPath('/tmp/project')
@@ -921,7 +1125,7 @@ describe('TerminalSessionRegistry', () => {
     expect(JSON.stringify(events)).not.toMatch(/secret|TOKEN|EACCES/)
   })
 
-  it('reports persistence failure without letting diagnostics replace the error', async () => {
+  it('reports both the failed write and failed compensating write', async () => {
     const events: unknown[] = []
     const missing = Object.assign(new Error('missing'), { code: 'ENOENT' })
     const failingHost = {
@@ -948,7 +1152,32 @@ describe('TerminalSessionRegistry', () => {
         active: true,
       }),
     ).rejects.toThrow('TOKEN=hvir-private')
-    expect(events).toEqual([{ kind: 'persist-failed' }])
+    expect(events).toEqual([{ kind: 'persist-failed' }, { kind: 'persist-failed' }])
+  })
+
+  it('rolls back a discovered identity when its durable write fails', async () => {
+    const root = localPath('/tmp/project')
+    await registry.recordSpawn({
+      id: SESSION_ID,
+      providerId: CODEX_PROVIDER_ID,
+      profileId: CODEX_PROFILE_ID,
+      launchRevision: 1,
+      workspaceRoot: root,
+      cwd: root,
+      title: 'Codex',
+      position: 0,
+      active: true,
+    })
+    vi.spyOn(host, 'writeFile').mockRejectedValueOnce(new Error('identity write failed'))
+
+    await expect(registry.recordIdentity(SESSION_ID, HARNESS_ID)).rejects.toThrow(
+      'identity write failed',
+    )
+    expect(registry.get(SESSION_ID)?.harnessSessionId).toBeUndefined()
+    await registry.flush()
+
+    const restored = await TerminalSessionRegistry.load(host, file)
+    expect(restored.get(SESSION_ID)?.harnessSessionId).toBeUndefined()
   })
 
   it('ignores a failing session-registry diagnostics observer', async () => {

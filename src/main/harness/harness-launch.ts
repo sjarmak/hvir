@@ -6,17 +6,18 @@ import {
   type HarnessEnvironmentBinding,
   type HarnessPathBinding,
   type HarnessProfile,
+  type HarnessLaunchMode,
   type HostPath,
 } from '../../shared'
 import type { ProjectHost } from '../project-host'
 import type { HarnessProfileStoreContract } from './harness-profile-store'
-import {
-  harnessProvider,
-  type HarnessLaunchContext,
-  type HarnessLaunchSpec,
-  type HarnessProvider,
-  type HarnessArtifactContext,
-} from './harness-provider'
+import { harnessProvider } from './bundled-harness-providers'
+import type {
+  HarnessLaunchContext,
+  HarnessLaunchSpec,
+  HarnessProvider,
+  HarnessArtifactContext,
+} from './harness-provider-contract'
 
 const PROTECTED_ENVIRONMENT = new Set(['TERM', 'COLORTERM', 'TERM_PROGRAM'])
 
@@ -37,7 +38,7 @@ export interface ResolveHarnessLaunchRequest {
   readonly workspaceRoot: HostPath
   readonly host: ProjectHost
   readonly store: HarnessProfileStoreContract
-  readonly mode: 'fresh' | 'resume'
+  readonly mode: HarnessLaunchMode
   readonly context: HarnessLaunchContext
 }
 
@@ -87,7 +88,9 @@ export async function resolveHarnessLaunch(
   const base =
     request.mode === 'resume'
       ? provider.resume(request.context)
-      : provider.launch(request.context)
+      : request.mode === 'fork'
+        ? resolveFork(provider, request.context)
+        : provider.launch(request.context)
   const executable = await resolveExecutable(
     profile,
     base.file,
@@ -128,7 +131,7 @@ export async function resolveHarnessLaunch(
 
 export function commandPreview(
   resolved: ResolvedHarnessLaunch,
-  mode: 'fresh' | 'resume',
+  mode: HarnessLaunchMode,
 ): HarnessCommandPreview {
   const environment = resolved.previewEnvironment
   const prefix = environment
@@ -147,9 +150,21 @@ export function commandPreview(
     args: resolved.spec.args,
     environment,
     command: prefix ? `${prefix} ${invocation}` : invocation,
-    risk: resolved.profile.risk,
     artifactIdentity: resolved.artifactIdentity,
   }
+}
+
+function resolveFork(
+  provider: HarnessProvider,
+  context: HarnessLaunchContext,
+): HarnessLaunchSpec {
+  if (context.effectiveCapabilities?.exactFork !== true || !provider.fork) {
+    throw new Error(`Harness provider '${provider.manifest.id}' cannot fork this launch`)
+  }
+  if (!context.parentSessionId) {
+    throw new Error('Harness fork requires an exact parent session id')
+  }
+  return provider.fork(context)
 }
 
 async function resolvePathBindings(

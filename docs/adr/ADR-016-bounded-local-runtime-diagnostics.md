@@ -1,5 +1,8 @@
 # ADR-016: Bounded local runtime diagnostics
 
+> Lifecycle: Partially superseded
+> Superseded by: [ADR-025](ADR-025-remove-renderer-responsiveness-diagnostic.md) | partial | Responsiveness episode candidate and its opt-in renderer diagnostic experiment.
+
 ## Context
 
 hvir already contains several distinct fault surfaces. React contains render failures, the

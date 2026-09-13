@@ -6,9 +6,11 @@ import {
   type ProjectState,
   type ProjectWatchInterestsResponse,
   type RegisteredProjectState,
+  type WorkspaceActivityResult,
   type WorktreeDiscovery,
 } from '../shared'
 import type { ProjectHost } from './project-host'
+import type { WorkspaceRemovalPort } from './workspace-removal-coordinator'
 import {
   canonicalProjectWatchInterests,
   type ProjectWatchCallbacks,
@@ -29,15 +31,18 @@ export interface WorkspaceRegistryPort {
     projectId: string,
     discovery: WorktreeDiscovery,
   ): Promise<ProjectState>
-  updateChangedCounts(
+  updateWorkspaceActivity(
     projectId: string,
-    counts: ReadonlyMap<string, number>,
+    activity: ReadonlyMap<string, WorkspaceActivityResult>,
   ): Promise<ProjectState>
 }
 
 export interface WorkspaceDiscoveryPort {
   discover(root: HostPath): Promise<WorktreeDiscovery>
-  changedFileCount(root: HostPath, relatedRoots: readonly HostPath[]): Promise<number>
+  workspaceActivity(
+    root: HostPath,
+    relatedRoots: readonly HostPath[],
+  ): Promise<WorkspaceActivityResult>
 }
 
 export interface WorkspaceWatchPort {
@@ -49,6 +54,7 @@ export interface WorkspaceWatchPort {
 export interface WorkspaceCoordinatorOptions {
   readonly registry: WorkspaceRegistryPort
   readonly discovery: WorkspaceDiscoveryPort
+  readonly removal: WorkspaceRemovalPort
   readonly emitWatch: (event: IpcEventPayload<'project:watch'>) => void
   readonly createWatch: (
     target: ProjectWatchTarget,
@@ -58,12 +64,23 @@ export interface WorkspaceCoordinatorOptions {
   readonly onError?: (message: string, error: unknown) => void
 }
 
+type RefreshMode = 'full' | 'passive'
+
+interface RefreshRecord {
+  readonly generation: number
+  readonly mode: RefreshMode
+  readonly promise: Promise<ProjectState>
+}
+
 /** Owns watch replacement, refresh deduplication, polling, and transition serialization. */
 export class WorkspaceCoordinator {
-  private readonly refreshes = new Map<string, Promise<ProjectState>>()
+  private readonly refreshes = new Map<string, RefreshRecord>()
+  private readonly inFlightRefreshes = new Set<Promise<ProjectState>>()
+  private readonly inFlightRemovals = new Map<string, Set<Promise<void>>>()
   private readonly exclusiveOperations = new Map<string, Promise<ProjectState>>()
   private readonly refreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly projectGenerations = new Map<string, number>()
+  private readonly suspendedPassiveActivity = new Map<string, Set<string>>()
   private watch?: WorkspaceWatchPort
   private watchGeneration = 0
   private watchInterestCache: ProjectWatchInterestCache = new Map()
@@ -83,18 +100,21 @@ export class WorkspaceCoordinator {
   }
 
   refresh(projectId: string): Promise<ProjectState> {
+    return this.requestRefresh(projectId, 'full')
+  }
+
+  private requestRefresh(projectId: string, mode: RefreshMode): Promise<ProjectState> {
     const exclusive = this.exclusiveOperations.get(projectId)
     if (exclusive) return exclusive
     const existing = this.refreshes.get(projectId)
-    if (existing) return existing
     const generation = this.projectGeneration(projectId)
-    const refresh = this.refreshProject(projectId, generation)
-    this.refreshes.set(projectId, refresh)
-    void refresh.then(
-      () => this.releaseRefresh(projectId, refresh),
-      () => this.releaseRefresh(projectId, refresh),
+    if (existing?.generation === generation) {
+      if (mode === 'passive' || existing.mode === 'full') return existing.promise
+      return this.upgradeRefresh(projectId, existing, generation)
+    }
+    return this.registerRefresh(projectId, generation, mode, () =>
+      this.refreshProject(projectId, generation, mode),
     )
-    return refresh
   }
 
   scheduleRefresh(projectId: string, delayMs = 350): void {
@@ -211,17 +231,25 @@ export class WorkspaceCoordinator {
     this.refreshTimers.delete(projectId)
   }
 
-  async settleProject(projectId: string): Promise<void> {
+  async settleProject(
+    projectId: string,
+    obsoleteRefresh: 'wait' | 'skip' = 'wait',
+  ): Promise<void> {
     const refresh = this.refreshes.get(projectId)
     const exclusive = this.exclusiveOperations.get(projectId)
-    await refresh?.catch(() => undefined)
+    const obsolete = refresh?.generation !== this.projectGeneration(projectId)
+    if (refresh && !(obsolete && obsoleteRefresh === 'skip')) {
+      await refresh.promise.catch(() => undefined)
+    }
+    const removals = this.inFlightRemovals.get(projectId)
+    if (removals) await Promise.allSettled(removals)
     await exclusive?.catch(() => undefined)
   }
 
   async settle(): Promise<void> {
     await Promise.allSettled([
       this.operationTail,
-      ...this.refreshes.values(),
+      ...this.inFlightRefreshes,
       ...this.exclusiveOperations.values(),
     ])
   }
@@ -249,6 +277,7 @@ export class WorkspaceCoordinator {
   private async refreshProject(
     projectId: string,
     generation: number,
+    mode: RefreshMode,
   ): Promise<ProjectState> {
     const project = this.options.registry.projectById(projectId)
     if (!project) throw new Error('Unknown project')
@@ -259,23 +288,73 @@ export class WorkspaceCoordinator {
     if (!this.isCurrent(projectId, generation) || !discovery.repository) {
       return this.options.registry.state()
     }
+    const missing =
+      this.options.registry
+        .projectById(projectId)
+        ?.workspaces.filter((workspace) => workspace.missing) ?? []
+    const removedActiveId = missing.find(
+      (workspace) =>
+        this.options.registry.active.projectId === projectId &&
+        this.options.registry.active.workspaceId === workspace.id,
+    )?.id
+    if (missing.length > 0) {
+      await this.trackRemoval(
+        projectId,
+        this.removeMissingWorkspaces(projectId, missing, removedActiveId),
+      )
+    }
+    if (!this.isCurrent(projectId, generation)) {
+      return this.options.registry.state()
+    }
     const refreshed = this.options.registry.projectById(projectId)
     if (!refreshed) return this.options.registry.state()
     const present = refreshed.workspaces.filter((workspace) => !workspace.missing)
     const relatedRoots = present.map((workspace) => workspace.root)
-    const counts = new Map<string, number>()
-    for (let index = 0; index < present.length; index += 3) {
+    const previous = new Map(
+      project.workspaces.map((workspace) => [
+        workspace.id,
+        { head: workspace.head, branch: workspace.branch },
+      ]),
+    )
+    const suspended = this.suspendedFor(projectId)
+    const presentIds = new Set(present.map((workspace) => workspace.id))
+    for (const workspaceId of suspended) {
+      if (!presentIds.has(workspaceId)) suspended.delete(workspaceId)
+    }
+    const targets =
+      mode === 'full'
+        ? present
+        : present.filter((workspace) => {
+            if (!workspace.closed) return false
+            const prior = previous.get(workspace.id)
+            if (
+              prior &&
+              (prior.head !== workspace.head || prior.branch !== workspace.branch)
+            ) {
+              suspended.delete(workspace.id)
+            }
+            return !suspended.has(workspace.id)
+          })
+    const activity = new Map<string, WorkspaceActivityResult>()
+    for (let index = 0; index < targets.length; index += 3) {
       await Promise.all(
-        present.slice(index, index + 3).map(async (workspace) => {
-          counts.set(
-            workspace.id,
-            await this.options.discovery.changedFileCount(workspace.root, relatedRoots),
+        targets.slice(index, index + 3).map(async (workspace) => {
+          const result = await this.options.discovery.workspaceActivity(
+            workspace.root,
+            relatedRoots,
           )
+          activity.set(workspace.id, result)
         }),
       )
       if (!this.isCurrent(projectId, generation)) return this.options.registry.state()
     }
-    return this.options.registry.updateChangedCounts(projectId, counts)
+    if (activity.size === 0) return this.options.registry.state()
+    const state = await this.options.registry.updateWorkspaceActivity(projectId, activity)
+    for (const [workspaceId, result] of activity) {
+      if (result.changedFiles > 0) suspended.add(workspaceId)
+      else suspended.delete(workspaceId)
+    }
+    return state
   }
 
   private poll(): void {
@@ -287,7 +366,7 @@ export class WorkspaceCoordinator {
       ) {
         continue
       }
-      void this.refresh(project.id).catch((error) =>
+      void this.requestRefresh(project.id, 'passive').catch((error) =>
         this.report(`[workspace] periodic refresh failed for ${project.id}`, error),
       )
     }
@@ -301,8 +380,94 @@ export class WorkspaceCoordinator {
     return !this.disposed && generation === this.projectGeneration(projectId)
   }
 
-  private releaseRefresh(projectId: string, refresh: Promise<ProjectState>): void {
+  private registerRefresh(
+    projectId: string,
+    generation: number,
+    mode: RefreshMode,
+    operation: () => Promise<ProjectState>,
+  ): Promise<ProjectState> {
+    const promise = operation()
+    const record = { generation, mode, promise }
+    this.refreshes.set(projectId, record)
+    this.inFlightRefreshes.add(promise)
+    void promise.then(
+      () => this.releaseRefresh(projectId, record),
+      () => this.releaseRefresh(projectId, record),
+    )
+    return promise
+  }
+
+  private upgradeRefresh(
+    projectId: string,
+    existing: RefreshRecord,
+    generation: number,
+  ): Promise<ProjectState> {
+    return this.registerRefresh(projectId, generation, 'full', () =>
+      existing.promise.then(
+        () =>
+          this.isCurrent(projectId, generation)
+            ? this.refreshProject(projectId, generation, 'full')
+            : this.options.registry.state(),
+        () =>
+          this.isCurrent(projectId, generation)
+            ? this.refreshProject(projectId, generation, 'full')
+            : this.options.registry.state(),
+      ),
+    )
+  }
+
+  private releaseRefresh(projectId: string, refresh: RefreshRecord): void {
+    this.inFlightRefreshes.delete(refresh.promise)
     if (this.refreshes.get(projectId) === refresh) this.refreshes.delete(projectId)
+  }
+
+  private suspendedFor(projectId: string): Set<string> {
+    let suspended = this.suspendedPassiveActivity.get(projectId)
+    if (!suspended) {
+      suspended = new Set()
+      this.suspendedPassiveActivity.set(projectId, suspended)
+    }
+    return suspended
+  }
+
+  private async removeMissingWorkspaces(
+    projectId: string,
+    workspaces: readonly { readonly id: string }[],
+    removedActiveId: string | undefined,
+  ): Promise<void> {
+    for (const workspace of workspaces) {
+      try {
+        await this.options.removal.removeMissingWorkspace(projectId, workspace.id)
+      } catch (error) {
+        this.report(
+          `[workspace] missing workspace removal failed for ${projectId}`,
+          error,
+        )
+      }
+    }
+    if (removedActiveId && this.options.registry.active.workspaceId !== removedActiveId) {
+      await this.replaceWatch(this.options.registry.active)
+    }
+  }
+
+  private trackRemoval(projectId: string, removal: Promise<void>): Promise<void> {
+    let removals = this.inFlightRemovals.get(projectId)
+    if (!removals) {
+      removals = new Set()
+      this.inFlightRemovals.set(projectId, removals)
+    }
+    removals.add(removal)
+    void removal.then(
+      () => this.releaseRemoval(projectId, removal),
+      () => this.releaseRemoval(projectId, removal),
+    )
+    return removal
+  }
+
+  private releaseRemoval(projectId: string, removal: Promise<void>): void {
+    const removals = this.inFlightRemovals.get(projectId)
+    removals?.delete(removal)
+    if (removals?.size === 0) this.inFlightRemovals.delete(projectId)
   }
 
   private releaseExclusive(projectId: string, result: Promise<ProjectState>): void {

@@ -1,9 +1,25 @@
-import { hostPath, repositoryImageMimeType } from '../../../shared'
+import { authorizeDocumentRead } from '../../viewer/document-read-authority'
+import {
+  MAX_EXTERNAL_FILE_SOURCES,
+  LOCAL_HOST_ID,
+  hostPath,
+  hostPathEquals,
+  repositoryImageMimeType,
+} from '../../../shared'
 import type { IpcRegistrar } from '../authority-router'
 import type { IpcDeps } from '../deps'
 import { operationResult } from '../operation-result'
 
-type FilesystemIpcDeps = Pick<IpcDeps, 'getProject'>
+type FilesystemIpcDeps = Pick<
+  IpcDeps,
+  | 'getProject'
+  | 'getProjectState'
+  | 'getHost'
+  | 'filenameSearch'
+  | 'projectFiles'
+  | 'revealLocalEntry'
+  | 'rendererResources'
+>
 
 export function registerFilesystemIpc(ipc: IpcRegistrar, deps: FilesystemIpcDeps): void {
   ipc.handle('fs:readdir', (req) =>
@@ -16,6 +32,50 @@ export function registerFilesystemIpc(ipc: IpcRegistrar, deps: FilesystemIpcDeps
     }),
   )
 
+  ipc.handle('fs:filename-search', (req, context) =>
+    operationResult(async () => {
+      const project = deps.getProject()
+      if (!hostPathEquals(req.root, project.root)) {
+        throw new Error('Filename search root is not the active workspace')
+      }
+      const canonicalRoot = ipc.authority.projectPath(
+        req.root,
+        project.root,
+        project.host,
+        { returnCanonical: true },
+      )
+      const owner = context.owner()
+      const state = deps.getProjectState()
+      const activeProject = state.projects.find(
+        (candidate) => candidate.id === state.activeProjectId,
+      )
+      const activeWorkspace = activeProject?.workspaces.find(
+        (candidate) => candidate.id === state.activeWorkspaceId,
+      )
+      deps.rendererResources.register(
+        owner,
+        { lifetime: 'renderer', type: 'filename-search' },
+        () => deps.filenameSearch.revoke(owner),
+        { duplicate: 'reuse' },
+      )
+      return deps.filenameSearch.search({
+        owner,
+        host: project.host,
+        root: req.root,
+        canonicalRoot,
+        query: req.query,
+        includeIgnored: req.includeIgnored,
+        gitIgnoreAvailable: activeWorkspace?.repository === true,
+        refreshVersion: req.refreshVersion,
+        requestId: req.requestId,
+      })
+    }),
+  )
+
+  ipc.handleSend('fs:filename-search-cancel', ({ requestId }, context) => {
+    deps.filenameSearch.cancel(context.owner(), requestId)
+  })
+
   ipc.handle('fs:resolve-entry', (req) =>
     operationResult(async () => {
       const { root, host } = deps.getProject()
@@ -27,23 +87,59 @@ export function registerFilesystemIpc(ipc: IpcRegistrar, deps: FilesystemIpcDeps
     }),
   )
 
-  ipc.handle('fs:read', (req) =>
+  ipc.handle('fs:reveal-entry', (req, context) =>
     operationResult(async () => {
-      const { root, host } = deps.getProject()
-      const canonical = await ipc.authority.projectPath(req.path, root, host, {
-        returnCanonical: true,
-      })
+      context.owner()
+      const workspaceRoot = ipc.authority.workspaceRoot(
+        ipc.authority.reconstructHostPath(req.workspaceRoot),
+      )
+      if (workspaceRoot.hostId !== LOCAL_HOST_ID) {
+        throw new Error('Only local workspace entries can be revealed')
+      }
+      const workspace = deps
+        .getProjectState()
+        .projects.flatMap((project) => project.workspaces)
+        .find((candidate) => hostPathEquals(candidate.root, workspaceRoot))
+      if (!workspace || workspace.closed || workspace.missing) {
+        throw new Error('Workspace is no longer available')
+      }
+      const host = deps.getHost(LOCAL_HOST_ID)
+      if (!host) throw new Error('The local project host is unavailable')
+      const path = await ipc.authority.projectPath(
+        ipc.authority.reconstructHostPath(req.path),
+        workspaceRoot,
+        host,
+      )
+      const stat = await host.stat(path)
+      if (!['file', 'dir', 'symlink'].includes(stat.type)) {
+        throw new Error('Only files, folders, and symbolic links can be revealed')
+      }
+      deps.revealLocalEntry(path)
+    }),
+  )
+
+  ipc.handle('fs:read', (req, context) =>
+    operationResult(async () => {
+      context.owner()
+      const access = await authorizeDocumentRead(ipc.authority, req)
+      const { path: canonical, host } = access
       const path = hostPath(canonical.hostId, req.path.path)
       const stat = await host.stat(canonical)
       if (stat.type !== 'file') throw new Error(`Not a regular file: ${path.path}`)
       if (stat.size > 64 * 1024 * 1024) {
         throw new Error('Files larger than 64 MiB are not opened by the viewer spike')
       }
-      const data = await host.readFile(canonical, { pollingInterest: true })
+      const data = await host.readFile(canonical, { pollingInterest: !access.external })
+      if (data.byteLength > 64 * 1024 * 1024)
+        throw new Error('Files larger than 64 MiB are not opened by the viewer')
       const sample = data.subarray(0, Math.min(data.length, 8192))
       const binary = sample.includes(0)
+      access.assertCurrent()
+      context.owner()
       return {
         path,
+        resolvedPath: canonical,
+        ...(access.external ? { externalWorkspaceRoot: access.root } : {}),
         content: binary ? '' : data.toString('utf8'),
         size: stat.size,
         mtimeMs: stat.mtimeMs,
@@ -52,12 +148,11 @@ export function registerFilesystemIpc(ipc: IpcRegistrar, deps: FilesystemIpcDeps
     }),
   )
 
-  ipc.handle('fs:read-asset', (req) =>
+  ipc.handle('fs:read-asset', (req, context) =>
     operationResult(async () => {
-      const { root, host } = deps.getProject()
-      const canonical = await ipc.authority.projectPath(req.path, root, host, {
-        returnCanonical: true,
-      })
+      context.owner()
+      const access = await authorizeDocumentRead(ipc.authority, req, 'asset')
+      const { path: canonical, host } = access
       const path = hostPath(canonical.hostId, req.path.path)
       const mimeType = repositoryImageMimeType(path.path)
       if (!mimeType) throw new Error('Only repository image assets can be previewed')
@@ -66,10 +161,12 @@ export function registerFilesystemIpc(ipc: IpcRegistrar, deps: FilesystemIpcDeps
       if (stat.size > 16 * 1024 * 1024) {
         throw new Error('Repository images larger than 16 MiB are not previewed')
       }
-      const data = await host.readFile(canonical, { pollingInterest: true })
+      const data = await host.readFile(canonical, { pollingInterest: !access.external })
       if (data.byteLength > 16 * 1024 * 1024) {
         throw new Error('Repository images larger than 16 MiB are not previewed')
       }
+      access.assertCurrent()
+      context.owner()
       return {
         path,
         data: new Uint8Array(data),
@@ -111,4 +208,179 @@ export function registerFilesystemIpc(ipc: IpcRegistrar, deps: FilesystemIpcDeps
       return { path, size: written.size, mtimeMs: written.mtimeMs }
     }),
   )
+
+  ipc.handle('fs:create-entry', (req, context) =>
+    operationResult(async () => {
+      const workspaceRoot = ipc.authority.workspaceRoot(
+        ipc.authority.reconstructHostPath(req.workspaceRoot),
+      )
+      const destinationDirectory = ipc.authority.reconstructHostPath(
+        req.destinationDirectory,
+      )
+      return deps.projectFiles.create({
+        owner: context.owner(),
+        workspaceRoot,
+        destinationDirectory,
+        name: req.name,
+        kind: req.kind,
+      })
+    }),
+  )
+
+  ipc.handle('fs:acquire-clipboard-files', (_req, context) =>
+    operationResult(() => deps.projectFiles.acquireClipboard(context.owner())),
+  )
+
+  ipc.handle('fs:acquire-dropped-files', (req, context) =>
+    operationResult(() =>
+      deps.projectFiles.acquireDropped(context.owner(), droppedPaths(req.paths)),
+    ),
+  )
+
+  ipc.handle('fs:copy-external', (req, context) =>
+    operationResult(async () => {
+      const workspaceRoot = ipc.authority.workspaceRoot(
+        ipc.authority.reconstructHostPath(req.workspaceRoot),
+      )
+      const destinationDirectory = ipc.authority.reconstructHostPath(
+        req.destinationDirectory,
+      )
+      return deps.projectFiles.copyExternal({
+        owner: context.owner(),
+        workspaceRoot,
+        destinationDirectory,
+        grantId: req.grantId,
+        grantGeneration: req.grantGeneration,
+        publish: (progress) => context.sender.send('fs:project-file-operation', progress),
+      })
+    }),
+  )
+
+  ipc.handle('fs:external-move-disclosure', (_req, context) =>
+    operationResult(() =>
+      Promise.resolve(deps.projectFiles.discloseExternalMove(context.owner())),
+    ),
+  )
+
+  ipc.handle('fs:acquire-external-move-files', (req, context) =>
+    operationResult(() =>
+      deps.projectFiles.acquireExternalMove(context.owner(), req.selection),
+    ),
+  )
+
+  ipc.handle('fs:release-external-move-grant', (req, context) =>
+    operationResult(() =>
+      Promise.resolve(
+        deps.projectFiles.releaseExternalMove(
+          context.owner(),
+          req.grantId,
+          req.grantGeneration,
+        ),
+      ),
+    ),
+  )
+
+  ipc.handle('fs:move-external', (req, context) =>
+    operationResult(async () => {
+      const workspaceRoot = ipc.authority.workspaceRoot(
+        ipc.authority.reconstructHostPath(req.workspaceRoot),
+      )
+      const destinationDirectory = ipc.authority.reconstructHostPath(
+        req.destinationDirectory,
+      )
+      return deps.projectFiles.moveExternal({
+        owner: context.owner(),
+        workspaceRoot,
+        destinationDirectory,
+        grantId: req.grantId,
+        grantGeneration: req.grantGeneration,
+        publish: (progress) => context.sender.send('fs:project-file-operation', progress),
+      })
+    }),
+  )
+
+  ipc.handle('fs:organize-entry', (req, context) =>
+    operationResult(async () => {
+      const workspaceRoot = ipc.authority.workspaceRoot(
+        ipc.authority.reconstructHostPath(req.workspaceRoot),
+      )
+      const source = ipc.authority.reconstructHostPath(req.source)
+      const request =
+        req.action === 'rename'
+          ? { action: req.action, workspaceRoot, source, name: req.name }
+          : req.action === 'move'
+            ? {
+                action: req.action,
+                workspaceRoot,
+                source,
+                destinationDirectory: ipc.authority.reconstructHostPath(
+                  req.destinationDirectory,
+                ),
+              }
+            : req.action === 'duplicate'
+              ? {
+                  action: req.action,
+                  workspaceRoot,
+                  source,
+                  destinationDirectory: ipc.authority.reconstructHostPath(
+                    req.destinationDirectory,
+                  ),
+                  name: req.name,
+                }
+              : (() => {
+                  throw new Error('Invalid project entry action')
+                })()
+      return deps.projectFiles.organize({
+        owner: context.owner(),
+        request,
+        publish: (progress) => context.sender.send('fs:project-file-operation', progress),
+      })
+    }),
+  )
+
+  ipc.handle('fs:deletion-disclosure', (req, context) =>
+    operationResult(async () => {
+      const workspaceRoot = ipc.authority.workspaceRoot(
+        ipc.authority.reconstructHostPath(req.workspaceRoot),
+      )
+      const source = ipc.authority.reconstructHostPath(req.source)
+      return deps.projectFiles.discloseDeletion(context.owner(), workspaceRoot, source)
+    }),
+  )
+
+  ipc.handle('fs:delete-entry', (req, context) =>
+    operationResult(async () => {
+      const workspaceRoot = ipc.authority.workspaceRoot(
+        ipc.authority.reconstructHostPath(req.workspaceRoot),
+      )
+      const source = ipc.authority.reconstructHostPath(req.source)
+      return deps.projectFiles.delete({
+        owner: context.owner(),
+        request: {
+          workspaceRoot,
+          source,
+          confirmedRecovery: req.confirmedRecovery,
+        },
+        publish: (progress) => context.sender.send('fs:project-file-operation', progress),
+      })
+    }),
+  )
+
+  ipc.handle('fs:cancel-file-operation', (req, context) =>
+    operationResult(() =>
+      Promise.resolve(
+        deps.projectFiles.cancel(context.owner(), req.operationId, req.generation),
+      ),
+    ),
+  )
+}
+
+function droppedPaths(value: unknown): readonly string[] {
+  if (!Array.isArray(value) || value.length > MAX_EXTERNAL_FILE_SOURCES) {
+    throw new Error('Invalid dropped file list')
+  }
+  return value.map((path) => {
+    if (typeof path !== 'string') throw new Error('Invalid dropped file path')
+    return path
+  })
 }

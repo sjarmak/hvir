@@ -1,4 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useSyncExternalStore,
+} from 'react'
 
 import type { TerminalRuntimeOptions } from './terminal-runtime-options'
 import { TerminalRuntimeRegistry } from './terminal-runtime-registry'
@@ -8,31 +14,34 @@ export type TerminalPaneControllerOptions = TerminalRuntimeOptions
 export function useTerminalPaneController(
   options: TerminalPaneControllerOptions,
   runtimes: TerminalRuntimeRegistry,
+  presented: boolean,
 ) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const presentationRef = useRef(options.presentation)
-  presentationRef.current = options.presentation
   const runtimeRef = useRef<ReturnType<TerminalRuntimeRegistry['acquire']> | undefined>(
     undefined,
   )
   runtimeRef.current ??= runtimes.acquire(options)
   const runtime = runtimeRef.current
+  const interactions = runtime.interactions
   runtime.update(options)
   const snapshot = useSyncExternalStore(
     runtime.subscribe,
     runtime.snapshot,
     runtime.snapshot,
   )
+  const paneEventSnapshot = useSyncExternalStore(
+    interactions.paneEvents.subscribe,
+    interactions.paneEvents.snapshot,
+    interactions.paneEvents.snapshot,
+  )
 
   useEffect(() => {
+    if (!presented) return
     const container = containerRef.current
     if (!container) return
-    // Passive detach/attach ordering can overlap when a retained runtime moves
-    // between workspace-owned React containers. Reassert the new owner's
-    // current presentation after the old owner has detached.
-    runtime.attach(container, presentationRef.current)
+    runtime.attach(container)
     return () => runtime.detach(container)
-  }, [runtime])
+  }, [presented, runtime])
 
   useLayoutEffect(
     () => runtime.synchronizeLifecycle(),
@@ -45,15 +54,24 @@ export function useTerminalPaneController(
     return () => window.cancelAnimationFrame(frame)
   }, [options.active, runtime])
 
+  const getContextMenuTarget = useCallback(
+    () => interactions.contextMenuTarget(),
+    [interactions],
+  )
+
   return {
     workspaceRoot: options.workspaceRoot,
+    live: runtime.live,
     containerRef,
     ...snapshot,
+    ...paneEventSnapshot,
     restart: () => runtime.restart(),
     startFresh: () => runtime.startFresh(),
-    focus: () => {
-      runtime.focus()
-      options.onFocus()
-    },
+    previousSemanticRegion: () => interactions.navigate('previous'),
+    nextSemanticRegion: () => interactions.navigate('next'),
+    searchController: interactions.search,
+    openSearch: () => interactions.search.open(),
+    getContextMenuTarget,
+    focus: () => runtime.focus(),
   }
 }

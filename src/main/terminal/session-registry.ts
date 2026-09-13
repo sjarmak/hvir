@@ -12,7 +12,7 @@ import {
   type TerminalLayoutEntry,
   type TerminalRecoverySession,
 } from '../../shared'
-import type { ProjectHost } from '../project-host'
+import type { Disposer, ProjectHost } from '../project-host'
 import { harnessProvider } from '../harness/harness-provider'
 import type { HarnessRecoveryProfileReference } from '../harness/harness-profile-store'
 
@@ -32,7 +32,6 @@ interface StoredTerminalSession {
   readonly profileId: HarnessProfileId
   readonly launchRevision: number
   readonly recoverySkipCount: 0 | 1
-  readonly riskAcknowledgedRevision?: number
   readonly artifactIdentity?: string
   readonly harnessSessionId?: string
   readonly hostId: string
@@ -55,7 +54,6 @@ export interface RecordTerminalSpawn {
   readonly providerId: HarnessProviderId
   readonly profileId: HarnessProfileId
   readonly launchRevision: number
-  readonly riskAcknowledgedRevision?: number
   readonly artifactIdentity?: string
   readonly harnessSessionId?: string
   readonly workspaceRoot: HostPath
@@ -71,6 +69,27 @@ export interface AuthorizeTerminalResume {
   readonly profileId: HarnessProfileId
   readonly launchRevision: number
   readonly harnessSessionId: string
+  readonly workspaceRoot: HostPath
+  readonly cwd: HostPath
+}
+
+export interface AuthorizeTerminalFork {
+  readonly sourceId: string
+  readonly childId: string
+  readonly providerId: HarnessProviderId
+  readonly profileId: HarnessProfileId
+  readonly launchRevision: number
+  readonly parentHarnessSessionId: string
+  readonly workspaceRoot: HostPath
+  readonly cwd: HostPath
+}
+
+export interface AuthorizeTerminalReattach {
+  readonly id: string
+  readonly providerId: HarnessProviderId
+  readonly profileId: HarnessProfileId
+  readonly launchRevision: number
+  readonly harnessSessionId?: string
   readonly workspaceRoot: HostPath
   readonly cwd: HostPath
 }
@@ -95,7 +114,6 @@ export interface RebindTerminalProfile {
   readonly providerId: HarnessProviderId
   readonly profileId: HarnessProfileId
   readonly launchRevision: number
-  readonly riskAcknowledgedRevision?: number
   readonly workspaceRoot: HostPath
 }
 
@@ -109,8 +127,16 @@ export interface OwnedTerminalSession extends TerminalRecoverySession {
   readonly workspaceRoot: HostPath
 }
 
+interface PendingIdentityRegistration {
+  readonly harnessSessionId: string
+  readonly acceptance: Promise<boolean>
+  readonly resolve: (accepted: boolean) => void
+}
+
 export interface TerminalSessionStore {
   list(workspaceRoot: HostPath): readonly TerminalRecoverySession[]
+  /** Exact persisted presentation for one terminal; liveness remains PTY-owned. */
+  get(id: string): OwnedTerminalSession | undefined
   recordRecoveryDecision(
     workspaceRoot: HostPath,
     decision: {
@@ -120,16 +146,25 @@ export interface TerminalSessionStore {
   ): Promise<void>
   recordSpawn(spawn: RecordTerminalSpawn): Promise<void>
   recordReplacement(replacement: RecordTerminalReplacement): Promise<void>
-  recordIdentity(id: string, harnessSessionId: string): Promise<void>
+  recordIdentity(id: string, harnessSessionId: string): Promise<boolean>
+  cancelIdentityRegistration(id: string): void
   updateLayout(
     workspaceRoot: HostPath,
     layout: readonly TerminalLayoutEntry[],
   ): Promise<void>
   forget(workspaceRoot: HostPath, id: string): Promise<void>
   rebindProfile(request: RebindTerminalProfile): Promise<TerminalRecoverySession>
+  authorizeReattach(request: AuthorizeTerminalReattach): boolean
   authorizeResume(request: AuthorizeTerminalResume): boolean
+  authorizeFork(request: AuthorizeTerminalFork): boolean
   authorizeReplacement(request: AuthorizeTerminalReplacement): boolean
   flush(): Promise<void>
+}
+
+/** Main-internal read-only observation seam; sensitive fields never cross IPC directly. */
+export interface TerminalSessionObservationSource {
+  observationSnapshot(): readonly OwnedTerminalSession[]
+  observe(listener: () => void): Disposer
 }
 
 export interface TerminalMoveSessionStore {
@@ -147,8 +182,9 @@ export type TerminalSessionRegistryDiagnostic =
 export class TerminalSessionRegistry implements TerminalSessionStore {
   private readonly sessions = new Map<string, StoredTerminalSession>()
   private readonly forgotten = new Set<string>()
-  private readonly pendingIdentities = new Map<string, string>()
+  private readonly pendingIdentities = new Map<string, PendingIdentityRegistration>()
   private pendingWrite: Promise<void> = Promise.resolve()
+  private readonly observationListeners = new Set<() => void>()
 
   private constructor(
     private readonly host: ProjectHost,
@@ -202,12 +238,12 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
                   : value['version'] === LEGACY_ATTENTION_OR_SKIP_FILE_VERSION
                     ? parseAttentionOrSkipStoredSession(session)
                     : value['version'] === LEGACY_PROFILE_FILE_VERSION ||
-                      value['version'] === LEGACY_WORKSPACE_FILE_VERSION
-                    ? parsePreSkipStoredSession(session)
-                    : parseLegacyStoredSession(
-                        session,
-                        value['version'] === LEGACY_ADAPTER_FILE_VERSION,
-                      ),
+                        value['version'] === LEGACY_WORKSPACE_FILE_VERSION
+                      ? parsePreSkipStoredSession(session)
+                      : parseLegacyStoredSession(
+                          session,
+                          value['version'] === LEGACY_ADAPTER_FILE_VERSION,
+                        ),
               )
               .filter((session): session is StoredTerminalSession => Boolean(session))
             sessions = parsed
@@ -256,6 +292,17 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
   get(id: string): OwnedTerminalSession | undefined {
     const session = this.sessions.get(id)
     return session ? { ...session } : undefined
+  }
+
+  observationSnapshot(): readonly OwnedTerminalSession[] {
+    return [...this.sessions.values()].map((session) => ({ ...session }))
+  }
+
+  observe(listener: () => void): Disposer {
+    this.observationListeners.add(listener)
+    return () => {
+      this.observationListeners.delete(listener)
+    }
   }
 
   profileReferences(): readonly HarnessRecoveryProfileReference[] {
@@ -322,6 +369,7 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
     if (previous.size === 0) return
     try {
       await this.persist()
+      this.publishObservation()
     } catch (error) {
       for (const [id, prior] of previous) {
         const attempted = applied.get(id)
@@ -338,23 +386,24 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
     }
   }
 
-  recordSpawn(spawn: RecordTerminalSpawn): Promise<void> {
+  async recordSpawn(spawn: RecordTerminalSpawn): Promise<void> {
+    const pendingIdentity = this.pendingIdentities.get(spawn.id)
     if (this.forgotten.has(spawn.id)) {
       this.pendingIdentities.delete(spawn.id)
+      pendingIdentity?.resolve(false)
       return Promise.resolve()
     }
-    const harnessSessionId =
-      spawn.harnessSessionId ?? this.pendingIdentities.get(spawn.id)
-    const retainedAttention = this.sessions.get(spawn.id)?.attention
+    const harnessSessionId = spawn.harnessSessionId ?? pendingIdentity?.harnessSessionId
+    const previous = this.sessions.get(spawn.id)
+    const retainedAttention = previous?.attention
     this.pendingIdentities.delete(spawn.id)
     const now = Date.now()
-    this.sessions.set(spawn.id, {
+    const recorded: StoredTerminalSession = {
       id: spawn.id,
       providerId: spawn.providerId,
       profileId: spawn.profileId,
       launchRevision: spawn.launchRevision,
       recoverySkipCount: 0,
-      riskAcknowledgedRevision: spawn.riskAcknowledgedRevision,
       artifactIdentity: spawn.artifactIdentity,
       harnessSessionId,
       hostId: spawn.cwd.hostId,
@@ -365,8 +414,28 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
       active: spawn.active,
       attention: retainedAttention,
       updatedAt: now,
-    })
-    return this.persist()
+    }
+    this.sessions.set(spawn.id, recorded)
+    try {
+      await this.persist()
+      this.publishObservation()
+      pendingIdentity?.resolve(
+        recorded.harnessSessionId === pendingIdentity.harnessSessionId,
+      )
+    } catch (error) {
+      if (this.sessions.get(spawn.id) === recorded) {
+        this.sessions.set(spawn.id, {
+          ...recorded,
+          harnessSessionId:
+            recorded.harnessSessionId === pendingIdentity?.harnessSessionId
+              ? spawn.harnessSessionId
+              : recorded.harnessSessionId,
+        })
+      }
+      pendingIdentity?.resolve(false)
+      await this.persist().catch(() => undefined)
+      throw error
+    }
   }
 
   async recordReplacement({
@@ -388,14 +457,13 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
     }
     const replaced = this.sessions.get(replacedId)!
     const pendingIdentity = this.pendingIdentities.get(spawn.id)
-    const harnessSessionId = spawn.harnessSessionId ?? pendingIdentity
+    const harnessSessionId = spawn.harnessSessionId ?? pendingIdentity?.harnessSessionId
     const replacement: StoredTerminalSession = {
       id: spawn.id,
       providerId: spawn.providerId,
       profileId: spawn.profileId,
       launchRevision: spawn.launchRevision,
       recoverySkipCount: 0,
-      riskAcknowledgedRevision: spawn.riskAcknowledgedRevision,
       artifactIdentity: spawn.artifactIdentity,
       harnessSessionId,
       hostId: spawn.cwd.hostId,
@@ -415,7 +483,12 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
       if (this.forgotten.has(spawn.id)) {
         throw new Error('Terminal replacement was cancelled')
       }
+      pendingIdentity?.resolve(
+        replacement.harnessSessionId === pendingIdentity.harnessSessionId,
+      )
+      this.publishObservation()
     } catch (error) {
+      pendingIdentity?.resolve(false)
       if (this.forgotten.has(spawn.id)) throw error
       this.sessions.delete(spawn.id)
       this.sessions.set(replacedId, replaced)
@@ -428,29 +501,63 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
     }
   }
 
-  recordIdentity(id: string, harnessSessionId: string): Promise<void> {
+  async recordIdentity(id: string, harnessSessionId: string): Promise<boolean> {
     if (
       this.forgotten.has(id) ||
       !TERMINAL_ID.test(id) ||
       !isHarnessSessionId(harnessSessionId)
     ) {
-      return Promise.resolve()
+      return false
     }
     const current = this.sessions.get(id)
     if (!current) {
+      const existing = this.pendingIdentities.get(id)
+      if (existing?.harnessSessionId === harnessSessionId) return existing.acceptance
+      existing?.resolve(false)
       if (this.pendingIdentities.size >= MAX_SESSIONS) {
         const oldest = this.pendingIdentities.keys().next().value
-        if (oldest !== undefined) this.pendingIdentities.delete(oldest)
+        if (oldest !== undefined) {
+          this.pendingIdentities.get(oldest)?.resolve(false)
+          this.pendingIdentities.delete(oldest)
+        }
       }
-      this.pendingIdentities.set(id, harnessSessionId)
-      return Promise.resolve()
+      let resolve = (_accepted: boolean): void => undefined
+      const acceptance = new Promise<boolean>((accept) => {
+        resolve = accept
+      })
+      this.pendingIdentities.set(id, { harnessSessionId, acceptance, resolve })
+      return acceptance
     }
-    this.sessions.set(id, {
+    const recorded: StoredTerminalSession = {
       ...current,
       harnessSessionId,
       updatedAt: Date.now(),
-    })
-    return this.persist()
+    }
+    this.sessions.set(id, recorded)
+    try {
+      await this.persist()
+      this.publishObservation()
+      return true
+    } catch (error) {
+      const retained = this.sessions.get(id)
+      if (retained === recorded) {
+        this.sessions.set(id, current)
+      } else if (retained?.harnessSessionId === harnessSessionId) {
+        this.sessions.set(id, {
+          ...retained,
+          harnessSessionId: current.harnessSessionId,
+        })
+      }
+      await this.persist().catch(() => undefined)
+      throw error
+    }
+  }
+
+  cancelIdentityRegistration(id: string): void {
+    const pending = this.pendingIdentities.get(id)
+    if (!pending) return
+    this.pendingIdentities.delete(id)
+    pending.resolve(false)
   }
 
   updateLayout(
@@ -472,7 +579,9 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
       this.sessions.set(item.id, next)
       changed = true
     }
-    return changed ? this.persist() : Promise.resolve()
+    return changed
+      ? this.persist().then(() => this.publishObservation())
+      : Promise.resolve()
   }
 
   forget(workspaceRoot: HostPath, id: string): Promise<void> {
@@ -481,10 +590,10 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
       return Promise.resolve()
     }
     this.forgotten.add(id)
-    this.pendingIdentities.delete(id)
+    this.cancelIdentityRegistration(id)
     if (!current) return Promise.resolve()
     this.sessions.delete(id)
-    return this.persist()
+    return this.persist().then(() => this.publishObservation())
   }
 
   async move(request: MoveTerminalSession): Promise<TerminalRecoverySession> {
@@ -503,6 +612,7 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
     this.sessions.set(request.id, updated)
     try {
       await this.persist()
+      this.publishObservation()
     } catch (error) {
       if (this.sessions.get(request.id) === updated)
         this.sessions.set(request.id, current)
@@ -524,17 +634,53 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
       ...current,
       profileId: request.profileId,
       launchRevision: request.launchRevision,
-      riskAcknowledgedRevision: request.riskAcknowledgedRevision,
       artifactIdentity: undefined,
       updatedAt: Date.now(),
     }
     this.sessions.set(request.id, updated)
-    await this.persist()
+    try {
+      await this.persist()
+      this.publishObservation()
+    } catch (error) {
+      if (this.sessions.get(request.id) === updated) {
+        this.sessions.set(request.id, current)
+      }
+      throw error
+    }
     const { workspaceRoot: _workspaceRoot, ...result } = updated
     return result
   }
 
   authorizeResume(request: AuthorizeTerminalResume): boolean {
+    const stored = this.sessions.get(request.id)
+    return Boolean(
+      stored &&
+      stored.providerId === request.providerId &&
+      stored.profileId === request.profileId &&
+      stored.launchRevision === request.launchRevision &&
+      stored.harnessSessionId === request.harnessSessionId &&
+      hostPathEquals(stored.workspaceRoot, request.workspaceRoot) &&
+      hostPathEquals(stored.cwd, request.cwd),
+    )
+  }
+
+  authorizeFork(request: AuthorizeTerminalFork): boolean {
+    const stored = this.sessions.get(request.sourceId)
+    return Boolean(
+      request.sourceId !== request.childId &&
+      !this.sessions.has(request.childId) &&
+      !this.forgotten.has(request.childId) &&
+      stored &&
+      stored.providerId === request.providerId &&
+      stored.profileId === request.profileId &&
+      stored.launchRevision === request.launchRevision &&
+      stored.harnessSessionId === request.parentHarnessSessionId &&
+      hostPathEquals(stored.workspaceRoot, request.workspaceRoot) &&
+      hostPathEquals(stored.cwd, request.cwd),
+    )
+  }
+
+  authorizeReattach(request: AuthorizeTerminalReattach): boolean {
     const stored = this.sessions.get(request.id)
     return Boolean(
       stored &&
@@ -581,6 +727,10 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
     this.pendingWrite = write
     return write
   }
+
+  private publishObservation(): void {
+    for (const listener of this.observationListeners) listener()
+  }
 }
 
 function reportDiagnostic(
@@ -610,7 +760,6 @@ function parseStoredSession(value: unknown): StoredTerminalSession | undefined {
   const profileId = value['profileId']
   const launchRevision = value['launchRevision']
   const recoverySkipCount = value['recoverySkipCount']
-  const riskAcknowledgedRevision = value['riskAcknowledgedRevision']
   const artifactIdentity = value['artifactIdentity']
   const harnessSessionId = value['harnessSessionId']
   const hostId = value['hostId']
@@ -632,10 +781,6 @@ function parseStoredSession(value: unknown): StoredTerminalSession | undefined {
     !Number.isSafeInteger(launchRevision) ||
     launchRevision <= 0 ||
     (recoverySkipCount !== 0 && recoverySkipCount !== 1) ||
-    (riskAcknowledgedRevision !== undefined &&
-      (typeof riskAcknowledgedRevision !== 'number' ||
-        !Number.isSafeInteger(riskAcknowledgedRevision) ||
-        riskAcknowledgedRevision <= 0)) ||
     (artifactIdentity !== undefined &&
       (typeof artifactIdentity !== 'string' ||
         !/^[a-f0-9]{24}$/.test(artifactIdentity))) ||
@@ -666,7 +811,6 @@ function parseStoredSession(value: unknown): StoredTerminalSession | undefined {
     profileId: asHarnessProfileId(profileId),
     launchRevision,
     recoverySkipCount,
-    riskAcknowledgedRevision,
     artifactIdentity,
     harnessSessionId,
     hostId,

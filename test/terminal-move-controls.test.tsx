@@ -40,6 +40,8 @@ describe('terminal workspace move controls', () => {
         <TerminalRail
           label="main"
           visible
+          compact={false}
+          onCompact={vi.fn()}
           terminalTheme="app"
           recoveryReady
           available
@@ -47,7 +49,6 @@ describe('terminal workspace move controls', () => {
           moveMenuOpen
           moveTargets={[target]}
           launchMenuEntries={[]}
-          checkingHiddenProfiles={false}
           split={false}
           sessions={[session()]}
           activeId="terminal-1"
@@ -63,7 +64,6 @@ describe('terminal workspace move controls', () => {
           onAddHarness={vi.fn()}
           onRefreshProbes={vi.fn()}
           onOpenHarnessSettings={vi.fn()}
-          onResumeAll={vi.fn()}
           onFocusSession={vi.fn()}
           onMoveSession={vi.fn()}
           onCloseSession={vi.fn()}
@@ -89,16 +89,59 @@ describe('terminal workspace move controls', () => {
     ].find((button) => button.textContent?.includes('Dismiss new-worktree'))
     act(() => dismiss?.click())
     expect(onDismissNewTargets).toHaveBeenCalledOnce()
+
+    act(() => {
+      root.render(
+        <TerminalRail
+          label="main"
+          visible
+          compact={false}
+          onCompact={vi.fn()}
+          terminalTheme="app"
+          recoveryReady
+          available
+          menuOpen={false}
+          moveMenuOpen
+          moveTargets={[{ ...target, newlyDiscovered: false }]}
+          launchMenuEntries={[]}
+          split={false}
+          sessions={[session()]}
+          activeId="terminal-1"
+          providers={[]}
+          profiles={[]}
+          onSplit={vi.fn()}
+          onOpenSettings={vi.fn()}
+          onToggleMenu={vi.fn()}
+          onToggleMoveMenu={vi.fn()}
+          onPlanMove={onPlanMove}
+          onDismissNewTargets={onDismissNewTargets}
+          onAddSession={vi.fn()}
+          onAddHarness={vi.fn()}
+          onRefreshProbes={vi.fn()}
+          onOpenHarnessSettings={vi.fn()}
+          onFocusSession={vi.fn()}
+          onMoveSession={vi.fn()}
+          onCloseSession={vi.fn()}
+        />,
+      )
+    })
+    expect(host.querySelector('.terminal-workspace-move-button')).not.toBeNull()
+    expect(host.querySelector('.terminal-new-worktree-badge')).toBeNull()
+    expect(host.querySelector('.terminal-move-menu')?.textContent).toContain(
+      '/repo-feature',
+    )
   })
 
-  it('offers a counted bulk action while keeping dormant rows distinct', () => {
-    const onResumeAll = vi.fn()
+  it('keeps dormant rows selectable without offering a bulk-start action', () => {
+    const onFocusSession = vi.fn()
     const dormant = { ...session(), dormant: true, status: 'Ready to start' }
     act(() => {
       root.render(
         <TerminalRail
           label="main"
           visible
+          compact={false}
+          onCompact={vi.fn()}
           terminalTheme="app"
           recoveryReady
           available
@@ -106,7 +149,6 @@ describe('terminal workspace move controls', () => {
           moveMenuOpen={false}
           moveTargets={[]}
           launchMenuEntries={[]}
-          checkingHiddenProfiles={false}
           split={false}
           sessions={[dormant]}
           activeId={dormant.id}
@@ -122,21 +164,21 @@ describe('terminal workspace move controls', () => {
           onAddHarness={vi.fn()}
           onRefreshProbes={vi.fn()}
           onOpenHarnessSettings={vi.fn()}
-          onResumeAll={onResumeAll}
-          onFocusSession={vi.fn()}
+          onFocusSession={onFocusSession}
           onMoveSession={vi.fn()}
           onCloseSession={vi.fn()}
         />,
       )
     })
 
-    const resumeAll = host.querySelector<HTMLButtonElement>(
-      '.terminal-resume-all-button',
-    )
-    expect(resumeAll?.textContent).toContain('Resume all now · 1')
     expect(host.querySelector('.terminal-list-row.dormant')).not.toBeNull()
-    act(() => resumeAll?.click())
-    expect(onResumeAll).toHaveBeenCalledOnce()
+    expect(host.querySelector('.terminal-resume-all-button')).toBeNull()
+    act(() => {
+      host
+        .querySelector<HTMLButtonElement>('[data-terminal-session="terminal-1"]')
+        ?.click()
+    })
+    expect(onFocusSession).toHaveBeenCalledWith('terminal-1')
   })
 
   it('shows exact move consequences and traps keyboard focus in confirmation', () => {
@@ -242,7 +284,6 @@ function session(): TerminalSession {
     providerId: asHarnessProviderId('codex'),
     profileId: asHarnessProfileId('codex-default'),
     launchRevision: 1,
-    riskAcknowledged: false,
     capabilities: {
       sessionIdentity: 'discovered',
       exactResume: true,
@@ -265,6 +306,7 @@ function targetWorkspace(): WorkspaceState {
     name: 'feature',
     branch: 'feature',
     main: false,
+    closed: false,
     missing: false,
     repository: true,
     changedFiles: 0,

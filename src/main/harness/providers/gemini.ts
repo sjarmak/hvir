@@ -1,14 +1,11 @@
-import {
-  asHarnessProfileId,
-  asHarnessProviderId,
-  type HarnessLaunchRisk,
-} from '../../../shared'
-import type { HarnessProvider, HarnessRiskInput } from '../harness-provider'
+import { asHarnessProfileId, asHarnessProviderId } from '../../../shared'
+import type { HarnessProvider } from '../harness-provider-contract'
 
 export const geminiProvider: HarnessProvider = {
   manifest: {
     id: asHarnessProviderId('gemini-cli'),
     displayName: 'Gemini CLI',
+    sessionKind: 'agent',
     contextPresentation: 'none',
   },
   profile: {
@@ -25,7 +22,6 @@ export const geminiProvider: HarnessProvider = {
     artifactExecutable: false,
     artifactPathBindings: [],
     applyArgs: (_mode, providerArgs, profileArgs) => [...providerArgs, ...profileArgs],
-    classifyRisk: classifyGeminiRisk,
   },
   supportsResume: false,
   sessionIdentity: 'none',
@@ -34,29 +30,6 @@ export const geminiProvider: HarnessProvider = {
   resume(ctx) {
     return this.launch(ctx)
   },
-}
-
-function classifyGeminiRisk(input: HarnessRiskInput): HarnessLaunchRisk {
-  if (input.executableOverridden || input.environment.length > 0) return 'unclassified'
-  let unclassified = false
-  for (let index = 0; index < input.args.length; index++) {
-    const token = input.args[index] ?? ''
-    if (token === '--yolo' || token === '-y') return 'elevated'
-    if (token === '--approval-mode') {
-      const mode = input.args[++index]
-      if (mode === 'yolo' || mode === 'auto_edit') return 'elevated'
-      unclassified = true
-      continue
-    }
-    if (token.startsWith('--approval-mode=')) {
-      const mode = token.slice('--approval-mode='.length)
-      if (mode === 'yolo' || mode === 'auto_edit') return 'elevated'
-      unclassified = true
-      continue
-    }
-    unclassified = true
-  }
-  return unclassified ? 'unclassified' : 'standard'
 }
 
 function versionProbe(): HarnessProvider['probe'] {

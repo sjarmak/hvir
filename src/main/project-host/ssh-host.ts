@@ -15,27 +15,33 @@ import {
   type Stat,
   type WatchEvent,
 } from '../../shared'
-import type {
-  Disposer,
-  ExecOptions,
-  ExecStreamHandle,
-  ProjectHost,
-  PtyProcess,
-  ReadFileOptions,
-  SpawnPtyOptions,
-  WatchOptions,
-  WriteFileOptions,
+import {
+  assertLoopbackEndpoint,
+  MAX_EXEC_STREAM_WRITE_BYTES,
+  PtyWriteIndeterminateError,
+  type Disposer,
+  type ExecOptions,
+  type ExecStreamHandle,
+  type ProjectHost,
+  type ProjectFileTransferPort,
+  type PtyProcess,
+  type ReadFileOptions,
+  type SpawnPtyOptions,
+  type WatchOptions,
+  type WriteFileOptions,
 } from './project-host'
-import { assertLoopbackEndpoint, MAX_EXEC_STREAM_WRITE_BYTES } from './project-host'
+import type { SshPrompt } from './ssh-auth'
+import { closeSshClient, startSshAuthentication } from './ssh-client-lifecycle'
+import { execDeadline, ExecTimeoutError } from './exec-timeout'
+import { ExecSlots } from './ssh-exec-slots'
 import {
   recoverBufferedExecStatus,
   remoteBufferedCommand,
   remoteCommand,
 } from './ssh-remote-command'
-import type { SshAliasConfig } from './ssh-config'
-import { execDeadline, ExecTimeoutError } from './exec-timeout'
-import { ExecSlots } from './ssh-exec-slots'
 import { SshFileAccess } from './ssh-file-access'
+import type { SshHostOptions } from './ssh-host-options'
+import { SshIdentityGeneration } from './ssh-identity-source'
 import {
   SshTransportPool,
   type SshTransportDiagnostic,
@@ -52,65 +58,21 @@ export {
   type SshTransportDiagnostic,
 } from './ssh-transport-pool'
 
-export interface SshIdentity {
-  readonly path: string
-  readonly privateKey: Buffer | string
-}
-export interface SshPrompt {
-  readonly hostId: string
-  readonly kind:
-    'password' | 'passphrase' | 'keyboard-interactive' | 'host-key' | 'host-key-changed'
-  readonly title: string
-  readonly instructions?: string
-  readonly fingerprint?: string
-  readonly previousFingerprint?: string
-  readonly prompts: readonly { readonly text: string; readonly echo: boolean }[]
-}
-export interface SshAuthPrompter {
-  prompt(request: SshPrompt): Promise<readonly string[] | undefined>
-}
-export interface SshHostOptions {
-  readonly config: SshAliasConfig
-  readonly identities?: readonly SshIdentity[]
-  readonly agentSocket?: string
-  readonly prompter: SshAuthPrompter
-  readonly pollIntervalMs?: number
-  /** Slower snapshot safety net when inotify stays alive but emits no usable events. */
-  readonly watchdogIntervalMs?: number
-  /** Lightweight cache/tree refresh cadence, independent of recursive snapshots. */
-  readonly refreshPulseIntervalMs?: number
-  /** Idle delay between bounded recursive safety-scan cycles. */
-  readonly slowScanIntervalMs?: number
-  /** Maximum adaptive idle delay between unchanged safety-scan cycles. */
-  readonly maxSlowScanIntervalMs?: number
-  /** Maximum directories enumerated in one polling tick. */
-  readonly pollDirectoryBatchSize?: number
-  /** Local window for catching multiple writes hidden by SFTP's second-level mtime. */
-  readonly fingerprintObservationWindowMs?: number
-  /**
-   * Maximum short-lived buffered exec channels. Long-lived PTY, watcher, and
-   * telemetry channels plus SFTP share the control transport budget. The
-   * default admits bounded parallel Git/filesystem reads while pool admission
-   * still protects every transport's reserved capacity.
-   */
-  readonly maxConcurrentExecs?: number
-  readonly trustedHostKey?: () => string | undefined
-  readonly rememberHostKey?: (fingerprint: string) => Promise<void>
-  /** Test seam for transport lifecycle races; production always constructs ssh2.Client. */
-  readonly clientFactory?: () => Client
-}
-
 export const SSH_MAX_KEYBOARD_INTERACTIVE_ROUNDS = 4
+export const SSH_PTY_WRITE_CONFIRM_TIMEOUT_MS = 5_000
 
 interface SshCredentialAttempt {
   password?: string
   readonly passphrases: Map<string, string>
+  readonly identityGeneration: SshIdentityGeneration
 }
 
 let nextRemotePid = -1
 
 export class SshHost implements ProjectHost {
   readonly hostId: HostId
+  readonly fileDeletion = { capability: 'permanent' } as const
+  readonly fileTransfer: ProjectFileTransferPort
   private state: HostConnectionState = 'disconnected'
   private tier: HostWatchTier = 'polling'
   private client?: Client
@@ -125,10 +87,12 @@ export class SshHost implements ProjectHost {
   private resolvedShell?: string
   private readonly listeners = new Set<(state: HostConnectionState) => void>()
   private readonly pendingClients = new Set<Client>()
+  private readonly credentialAttempts = new Set<SshCredentialAttempt>()
   private promptTail: Promise<void> = Promise.resolve()
   private cachedPassword?: string
   private readonly cachedPassphrases = new Map<string, string>()
   private acceptedHostFingerprint?: string
+  private promptAbort?: AbortController
   private poolGrowthPromptBlocked = false
   private lifecycleAbort = new AbortController()
   private readonly execSlots: ExecSlots
@@ -150,6 +114,18 @@ export class SshHost implements ProjectHost {
       },
       options,
     )
+    this.fileTransfer = {
+      readFileChunks: (path, streamOptions) =>
+        this.files.readFileChunks(path, streamOptions),
+      writeFileChunksExclusive: (path, chunks, streamOptions) =>
+        this.files.writeFileChunksExclusive(path, chunks, streamOptions),
+      setMetadata: (path, metadataOptions) =>
+        this.files.setProjectFileMetadata(path, metadataOptions),
+      renameNoReplace: (source, destination, streamOptions) =>
+        this.files.renameProjectFileNoReplace(source, destination, streamOptions),
+      removeDirectory: (path, removeOptions) =>
+        this.files.removeDirectory(path, removeOptions),
+    }
     this.watches = new SshWatchService(
       {
         hostId: this.hostId,
@@ -211,6 +187,7 @@ export class SshHost implements ProjectHost {
   async dispose(): Promise<void> {
     this.disposed = true
     this.lifecycleAbort.abort()
+    this.promptAbort?.abort()
     this.clientGeneration++
     this.cancelConnecting?.(new Error('SSH connection cancelled'))
     this.cancelConnecting = undefined
@@ -235,6 +212,8 @@ export class SshHost implements ProjectHost {
     this.poolGrowthPromptBlocked = false
     this.setState('disconnected')
     await Promise.all([...clients].map((client) => closeSshClient(client)))
+    for (const attempt of this.credentialAttempts) attempt.identityGeneration.release()
+    this.credentialAttempts.clear()
   }
 
   async defaultShell(): Promise<string> {
@@ -563,6 +542,46 @@ export class SshHost implements ProjectHost {
       onData: (cb) => subscribe(data, cb),
       onExit: (cb) => subscribe(exits, cb),
       write: (v) => channel.write(v),
+      writeConfirmed: (value) => {
+        if (exited) return Promise.reject(new Error('SSH PTY already exited'))
+        return new Promise<void>((resolve, reject) => {
+          let settled = false
+          let timer: ReturnType<typeof setTimeout> | undefined
+          let stopExit: Disposer = () => undefined
+          const finish = (error?: Error): void => {
+            if (settled) return
+            settled = true
+            if (timer) clearTimeout(timer)
+            timer = undefined
+            void stopExit()
+            if (error) reject(error)
+            else resolve()
+          }
+          stopExit = subscribe(exits, () =>
+            finish(
+              new PtyWriteIndeterminateError(
+                'SSH PTY exited before write completion',
+              ),
+            ),
+          )
+          timer = setTimeout(
+            () =>
+              finish(
+                new PtyWriteIndeterminateError(
+                  'SSH PTY write completion timed out',
+                ),
+              ),
+            SSH_PTY_WRITE_CONFIRM_TIMEOUT_MS,
+          )
+          try {
+            channel.write(value, (error?: Error | null) =>
+              finish(error ?? undefined),
+            )
+          } catch (error) {
+            finish(asError(error))
+          }
+        })
+      },
       resize: (cols, rows) => channel.setWindow(rows, cols, 0, 0),
       kill: () => channel.close(),
     }
@@ -570,13 +589,10 @@ export class SshHost implements ProjectHost {
   async readFile(path: HostPath, opts: ReadFileOptions = {}): Promise<Buffer> {
     return this.files.readFile(path, opts)
   }
-  async readTextFile(
-    path: HostPath,
-    encoding: BufferEncoding = 'utf8',
-    opts: ReadFileOptions = {},
-  ): Promise<string> {
-    return this.files.readTextFile(path, encoding, opts)
-  }
+  readonly readTextFile: ProjectHost['readTextFile'] = (...args) =>
+    this.files.readTextFile(...args)
+  readonly readTextFilePrefix: ProjectHost['readTextFilePrefix'] = (...args) =>
+    this.files.readTextFilePrefix(...args)
   async writeFile(
     path: HostPath,
     value: Uint8Array | string,
@@ -584,6 +600,11 @@ export class SshHost implements ProjectHost {
   ): Promise<void> {
     return this.files.writeFile(path, value, opts)
   }
+  readonly createFileExclusive: ProjectHost['createFileExclusive'] = (...args) =>
+    this.files.createFileExclusive(...args)
+  readonly createDirectoryExclusive: ProjectHost['createDirectoryExclusive'] = (
+    ...args
+  ) => this.files.createDirectoryExclusive(...args)
   readonly removeFile: ProjectHost['removeFile'] = (...args) =>
     this.files.removeFile(...args)
   async readdir(path: HostPath): Promise<DirEntry[]> {
@@ -605,6 +626,9 @@ export class SshHost implements ProjectHost {
 
   private async open(): Promise<void> {
     this.promptedDuringConnect = false
+    this.promptAbort?.abort()
+    const promptAbort = new AbortController()
+    this.promptAbort = promptAbort
     const client = this.options.clientFactory?.() ?? new Client()
     this.pendingClients.add(client)
     const generation = ++this.clientGeneration
@@ -622,57 +646,36 @@ export class SshHost implements ProjectHost {
     }
     const credentialAttempt = this.createCredentialAttempt()
     const config = this.connectConfig(
+      credentialAttempt,
       'primary',
       undefined,
       () =>
         !this.disposed && this.client === client && this.clientGeneration === generation,
-      credentialAttempt,
+      AbortSignal.any([this.lifecycleAbort.signal, promptAbort.signal]),
     )
-    await new Promise<void>((resolve, reject) => {
-      let ready = false
-      let settled = false
-      const finish = (error?: Error): void => {
-        if (settled) return
-        settled = true
-        if (error) reject(error)
-        else resolve()
-      }
-      this.cancelConnecting = (error) => finish(error)
-      client.once('ready', () => {
-        ready = true
+    const authentication = startSshAuthentication(client, config, {
+      closedBeforeReadyError: 'SSH connection closed before authentication completed',
+      releaseCredentials: () => this.releaseCredentialAttempt(credentialAttempt),
+      onReady: () => {
         this.rememberSuccessfulCredentials(credentialAttempt)
         // A fresh successful primary authentication is the explicit lifecycle
         // boundary that permits pool growth after a cancelled prompted attempt.
         this.poolGrowthPromptBlocked = false
-        finish()
-      })
-      // ssh2 reports agent socket/signing failures through Client's `error`
-      // event and then intentionally continues the auth ladder. Keep a
-      // persistent listener so those errors neither reject open() nor consume
-      // the only listener before a later fatal error.
-      client.on('error', (error) => {
-        if (!ready && isRecoverableAuthenticationError(error)) return
-        if (!ready) finish(error)
-      })
-      client.on('close', () => {
+      },
+      onClose: (authenticated) => {
         this.transportPool.retireClient(client)
         const current = this.client === client && this.clientGeneration === generation
         if (current) {
           this.client = undefined
           this.files.advanceGeneration()
         }
-        if (!ready) {
-          finish(new Error('SSH connection closed before authentication completed'))
-          return
-        }
-        if (current && !this.disposed) this.scheduleReconnect()
-      })
-      try {
-        client.connect(config)
-      } catch (reason) {
-        finish(asError(reason))
-      }
-    }).finally(() => {
+        if (authenticated && current && !this.disposed) this.scheduleReconnect()
+      },
+    })
+    this.cancelConnecting = authentication.cancel
+    await authentication.completion.finally(() => {
+      promptAbort.abort()
+      if (this.promptAbort === promptAbort) this.promptAbort = undefined
       this.pendingClients.delete(client)
       this.cancelConnecting = undefined
     })
@@ -705,12 +708,13 @@ export class SshHost implements ProjectHost {
   }
 
   private connectConfig(
+    credentialAttempt: SshCredentialAttempt,
     purpose: 'primary' | 'pool' = 'primary',
     markPrompt?: () => void,
     isActive: () => boolean = () => !this.disposed,
-    credentialAttempt: SshCredentialAttempt = this.createCredentialAttempt(),
+    promptSignal: AbortSignal = this.lifecycleAbort.signal,
   ): ConnectConfig {
-    const { config, agentSocket, identities = [], prompter } = this.options
+    const { config, agentSocket, prompter } = this.options
     const attempted = new Set<string>()
     let password: string | undefined
     let authenticationCancelled = false
@@ -725,7 +729,9 @@ export class SshHost implements ProjectHost {
               title: `Additional SSH capacity — ${request.title}`,
             }
           : request
-      const answers = await this.serializedPrompt(() => prompter.prompt(presentedRequest))
+      const answers = await this.serializedPrompt(() =>
+        prompter.prompt(presentedRequest, promptSignal),
+      )
       if (!isActive()) {
         authenticationCancelled = true
         return undefined
@@ -755,7 +761,7 @@ export class SshHost implements ProjectHost {
           .digest('base64')
           .replace(/=+$/, '')}`
         const trustedFingerprint =
-          this.acceptedHostFingerprint ?? this.options.trustedHostKey?.()
+          this.acceptedHostFingerprint ?? this.options.trust.trustedHostKey()
         if (trustedFingerprint === fingerprint) {
           verify(true)
           return
@@ -775,11 +781,17 @@ export class SshHost implements ProjectHost {
         })
           .then(async (a) => {
             const trusted = a?.[0]?.toLowerCase() === 'yes'
-            if (trusted) {
-              this.acceptedHostFingerprint = fingerprint
-              await this.options.rememberHostKey?.(fingerprint)
+            if (!trusted || !isActive()) {
+              verify(false)
+              return
             }
-            verify(trusted)
+            await this.options.trust.rememberHostKey(fingerprint)
+            if (!isActive()) {
+              verify(false)
+              return
+            }
+            this.acceptedHostFingerprint = fingerprint
+            verify(true)
           })
           .catch(() => verify(false))
         // This verifier is callback-only: returning a boolean would make
@@ -802,9 +814,11 @@ export class SshHost implements ProjectHost {
             attempted.add('agent')
             return { type: 'agent', username: config.user, agent: agentSocket }
           }
-          const identity = identities.find((v) => !attempted.has(v.path))
-          if (identity && available.has('publickey')) {
-            attempted.add(identity.path)
+          const identity = available.has('publickey')
+            ? await credentialAttempt.identityGeneration.next()
+            : undefined
+          if (authenticationCancelled || !isActive()) return false
+          if (identity) {
             let passphrase: string | undefined
             const parsed = utils.parseKey(identity.privateKey)
             if (parsed instanceof Error && /encrypted|passphrase/i.test(parsed.message))
@@ -945,7 +959,17 @@ export class SshHost implements ProjectHost {
   }
 
   private createCredentialAttempt(): SshCredentialAttempt {
-    return { passphrases: new Map() }
+    const attempt = {
+      passphrases: new Map<string, string>(),
+      identityGeneration: new SshIdentityGeneration(this.options.identitySource),
+    }
+    this.credentialAttempts.add(attempt)
+    return attempt
+  }
+
+  private releaseCredentialAttempt(attempt: SshCredentialAttempt): void {
+    attempt.identityGeneration.release()
+    this.credentialAttempts.delete(attempt)
   }
 
   private rememberSuccessfulCredentials(attempt: SshCredentialAttempt): void {
@@ -958,49 +982,34 @@ export class SshHost implements ProjectHost {
   private async openAuxiliaryTransport(_role: SshTransportRole): Promise<Client> {
     const client = this.options.clientFactory?.() ?? new Client()
     this.pendingClients.add(client)
-    let ready = false
     let closed = false
     let prompted = false
+    const promptAbort = new AbortController()
     const credentialAttempt = this.createCredentialAttempt()
     const config = this.connectConfig(
+      credentialAttempt,
       'pool',
       () => {
         prompted = true
       },
       () => !this.disposed && !closed,
-      credentialAttempt,
+      AbortSignal.any([this.lifecycleAbort.signal, promptAbort.signal]),
     )
     try {
-      await new Promise<void>((resolve, reject) => {
-        let settled = false
-        const finish = (error?: Error): void => {
-          if (settled) return
-          settled = true
-          if (error) reject(error)
-          else resolve()
-        }
-        client.once('ready', () => {
-          ready = true
+      const authentication = startSshAuthentication(client, config, {
+        closedBeforeReadyError:
+          'SSH pool transport closed before authentication completed',
+        releaseCredentials: () => this.releaseCredentialAttempt(credentialAttempt),
+        onReady: () => {
           this.rememberSuccessfulCredentials(credentialAttempt)
-          finish()
-        })
-        client.on('error', (error) => {
-          if (!ready && isRecoverableAuthenticationError(error)) return
-          if (!ready) finish(error)
-        })
-        client.on('close', () => {
+        },
+        onClose: () => {
           closed = true
+          promptAbort.abort()
           this.transportPool.retireClient(client)
-          if (!ready) {
-            finish(new Error('SSH pool transport closed before authentication completed'))
-          }
-        })
-        try {
-          client.connect(config)
-        } catch (error) {
-          finish(asError(error))
-        }
+        },
       })
+      await authentication.completion
       if (this.disposed || closed) {
         throw new Error('SSH pool transport closed before it became available')
       }
@@ -1016,6 +1025,8 @@ export class SshHost implements ProjectHost {
       }
       throw error
     } finally {
+      promptAbort.abort()
+      this.releaseCredentialAttempt(credentialAttempt)
       this.pendingClients.delete(client)
     }
   }
@@ -1065,13 +1076,6 @@ export class SshHost implements ProjectHost {
   }
 }
 
-function isRecoverableAuthenticationError(error: Error): boolean {
-  const level = (error as Error & { level?: string }).level
-  return (
-    level === 'agent' ||
-    (level === 'client-authentication' && /\bsign(?:ing|ature)?\b/i.test(error.message))
-  )
-}
 function subscribe<T>(set: Set<(v: T) => void>, cb: (v: T) => void): Disposer {
   set.add(cb)
   return () => {
@@ -1080,31 +1084,6 @@ function subscribe<T>(set: Set<(v: T) => void>, cb: (v: T) => void): Disposer {
 }
 function asError(value: unknown): Error {
   return value instanceof Error ? value : new Error(String(value))
-}
-function closeSshClient(client: Client): Promise<void> {
-  return new Promise<void>((resolve) => {
-    let settled = false
-    const finish = (): void => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      client.removeListener('close', finish)
-      resolve()
-    }
-    const timer = setTimeout(() => {
-      try {
-        client.destroy()
-      } finally {
-        finish()
-      }
-    }, 1_000)
-    client.once('close', finish)
-    try {
-      client.end()
-    } catch {
-      finish()
-    }
-  })
 }
 function abortError(): Error {
   return new DOMException('The operation was aborted', 'AbortError')

@@ -8,6 +8,7 @@ import type {
   GitHistoryPage,
   HostPath,
   WorktreeDiscovery,
+  WorkspaceActivityResult,
 } from '../../shared'
 import { GitBranchCapability } from './git-branches'
 import { GitCommandContext, type GitHostPort } from './git-command-context'
@@ -33,11 +34,7 @@ export class GitEngine {
     const context = new GitCommandContext(host, projectRoot)
     this.worktreeCapability = new GitWorktreeCapability(context)
     this.statusCapability = new GitStatusCapability(context)
-    this.branchCapability = new GitBranchCapability(
-      context,
-      this.worktreeCapability,
-      this.statusCapability,
-    )
+    this.branchCapability = new GitBranchCapability(context, this.worktreeCapability)
     this.diffCapability = new GitDiffCapability(context)
     this.historyCapability = new GitHistoryCapability(context)
     this.detailCapability = new GitDetailCapability(context)
@@ -51,11 +48,11 @@ export class GitEngine {
     return this.worktreeCapability.prune(projectRoot)
   }
 
-  changedFileCount(
+  workspaceActivity(
     workspaceRoot: HostPath,
     relatedWorktreeRoots: readonly HostPath[] = [],
-  ): Promise<number> {
-    return this.statusCapability.changedFileCount(workspaceRoot, relatedWorktreeRoots)
+  ): Promise<WorkspaceActivityResult> {
+    return this.statusCapability.workspaceActivity(workspaceRoot, relatedWorktreeRoots)
   }
 
   branches(workspaceRoot: HostPath): Promise<GitBranchModel> {
@@ -68,17 +65,17 @@ export class GitEngine {
 
   pullFastForward(
     workspaceRoot: HostPath,
-    relatedWorktreeRoots: readonly HostPath[] = [],
+    _relatedWorktreeRoots: readonly HostPath[] = [],
   ): Promise<void> {
-    return this.branchCapability.pullFastForward(workspaceRoot, relatedWorktreeRoots)
+    return this.branchCapability.pullFastForward(workspaceRoot)
   }
 
   switchBranch(
     workspaceRoot: HostPath,
     branch: string,
-    relatedWorktreeRoots: readonly HostPath[] = [],
+    _relatedWorktreeRoots: readonly HostPath[] = [],
   ): Promise<void> {
-    return this.branchCapability.switchBranch(workspaceRoot, branch, relatedWorktreeRoots)
+    return this.branchCapability.switchBranch(workspaceRoot, branch)
   }
 
   diffInputs(
@@ -106,6 +103,9 @@ export class GitEngine {
     names: readonly string[],
   ): Promise<{ readonly ignoredNames: readonly string[] }> {
     return this.statusCapability.ignoredEntries(projectRoot, directory, names)
+  }
+  ignoredPaths(projectRoot: HostPath, paths: readonly string[]) {
+    return this.statusCapability.ignoredPaths(projectRoot, paths)
   }
 
   history(

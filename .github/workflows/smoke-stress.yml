@@ -1,0 +1,90 @@
+name: Electron smoke stress
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: Focused scenario to repeat
+        required: true
+        default: pty-native
+        type: choice
+        options:
+          - pty-native
+          - document-review
+          - viewer-content
+          - viewer-position
+          - git-workflow
+          - renderer-recovery
+          - renderer-authority
+          - web-pane
+      repeat:
+        description: Fixed attempt count (not retries)
+        required: true
+        default: '20'
+        type: choice
+        options:
+          - '5'
+          - '10'
+          - '20'
+          - '50'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-stress-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  stress:
+    name: ${{ matrix.name }} · ${{ inputs.scenario }} × ${{ inputs.repeat }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-24.04
+          - macos-15
+        include:
+          - os: ubuntu-24.04
+            name: Linux x64
+          - os: macos-15
+            name: macOS ARM64
+    env:
+      HVIR_SMOKE_SCENARIO: ${{ inputs.scenario }}
+      HVIR_SMOKE_REPEAT: ${{ inputs.repeat }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Linux stress attempts
+        if: runner.os == 'Linux'
+        env:
+          HVIR_SMOKE_ARTIFACT_DIR: ${{ runner.temp }}/hvir-smoke-artifacts
+        run: xvfb-run -a npm run smoke:scenario
+
+      - name: Run macOS ARM64 stress attempts
+        if: runner.os == 'macOS'
+        env:
+          HVIR_SMOKE_ARTIFACT_DIR: ${{ runner.temp }}/hvir-smoke-artifacts
+        run: npm run smoke:scenario
+
+      - name: Upload bounded failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-failure-${{ matrix.os }}-${{ inputs.scenario }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hvir-smoke-artifacts
+          if-no-files-found: ignore
+          retention-days: 7

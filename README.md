@@ -1,132 +1,88 @@
 # hvir (H-veer)
 
-**H**arness · **V**iew · **I**nteract · **R**espond
+**h**arness · **v**iew · **i**nteract · **r**espond
 
-A lightweight, view-first workbench for agentic development: a polished code and Git
-explorer wrapped around the terminals where Claude Code, Codex, and your shell do the
-work.
+**For those who like to stay in the loop.**
 
-![hvir dark theme with compact project, viewer, and terminal controls](docs/screenshots/workbench-dark.png)
+hvir is a lightweight code and Git explorer wrapped around the terminals where
+Claude Code, Codex, and your shell do the work. Follow your sessions, explore the
+codebase, and review what your agents changed, all in one window.
+
+![hvir showing the file tree, a working Codex session, and live terminal status](docs/screenshots/workbench-agents.png)
 
 ## Why hvir?
 
-hvir is not an IDE and not an editor. It serves one workflow: _“I hand work to agents
-frequently, but I want to stay in the loop.”_ tmux is too hands-off for exploring a
-codebase and its history; a full IDE is more than this workflow needs. hvir sits between
-them.
+Hand work to your agents, then read the code, inspect their changes, and respond when
+they need you. hvir is built around viewing and reviewing, with your terminals always
+close at hand.
 
-- Local and SSH projects are peers, with discovered Git worktrees as warm workspaces.
-- Files, rendered Markdown, source, diffs, blame, Changes, History, and the commit graph
-  are first-class viewing surfaces.
-- Existing clean local branches can be explored from a bounded branch selector; advanced
-  Git operations stay in the terminal.
-- Multiple shell, Claude Code, and Codex sessions split, recover, resume, and report
-  attention without a daemon.
-- Compact tabs and floating Rendered/Source/Diff controls keep the viewer focused on
-  content instead of chrome.
-- Dark/light themes, viewer and terminal splits, three-state pane controls, and
-  configurable core shortcuts keep the workbench fluid.
-- Heavy filesystem, Git, rendering, watching, and telemetry work stays off the render
-  thread.
+- **Review what changed.** Explore working-tree and branch-point diffs, blame, history,
+  and the commit graph.
+- **Read what your agents produce.** View source, rendered Markdown, and interactive
+  HTML beside the terminal that produced it.
+- **Keep up with your sessions.** See which agents need attention, split terminals,
+  and resume your Claude Code and Codex conversations when you return.
+- **Work across projects.** Open local and SSH projects, with Git worktrees
+  automatically discovered as workspaces.
+
+## Sessions across every workspace
+
+Sessions brings together the agents and shells you've opened in hvir across projects
+and worktrees. See what's working and what needs you, choose **Interact** to jump into
+a live terminal, then return to its workspace to explore the code.
+
+[![hvir showing ten agent and shell sessions grouped by project and worktree, with session status, context usage, and live terminal controls](docs/screenshots/sessions-overview.png)](docs/screenshots/sessions-overview.png)
 
 ## Install
 
-Install hvir from npm, then launch it from any directory:
+Install hvir from its latest GitHub Release, then launch it from any directory:
 
 ```sh
-npm install -g hvir-workbench
-hvir
+curl -fsSL https://github.com/jarmak-personal/hvir/releases/latest/download/install.sh | bash
+hvir .
 ```
 
-Pass a local project folder to open it directly (`hvir .`). The npm launcher supports
-Linux x64, Linux arm64, and Apple-silicon macOS. Its first launch visibly prepares the
-native application in the user cache and does not write to the npm prefix or require
-elevation. Native installers are deliberately not another supported release path; see
-[docs/packaging.md](docs/packaging.md).
+The installer selects and verifies the release's native package for Linux x64, Linux arm64,
+or Apple-silicon macOS before invoking the platform installation step.
 
-hvir expects the system `git` binary. Claude Code and Codex launch options use those CLIs
+Want to manage the installation yourself? [Follow these steps.](docs/manual-installation.md)
+
+hvir does expect the system `git` binary. Claude Code and Codex launch options use those CLIs
 from the selected host's login-shell environment; plain shells work without either.
 
-## Runtime diagnostics
+## One window, many views
 
-Packaged hvir keeps content-free startup, shutdown, PTY, session-registry, and host-control
-events in `runtime-diagnostics.jsonl` under Electron's local user-data directory. That is
-normally `~/Library/Application Support/hvir` on macOS and
-`$XDG_CONFIG_HOME/hvir` (or `~/.config/hvir`) on Linux. Older segments use
-`runtime-diagnostics.1.jsonl` through `.3.jsonl`; each file is limited to 1 MiB and material
-older than seven days is removed. Local and SSH projects share this one local journal, and
-hvir never records terminal contents, prompts, credentials, environment values, or project
-paths there.
+Give the terminal room while an agent works, then open a diff, read a document, or
+explore an HTML page it created. Split viewers and terminals to keep related work
+side by side.
 
-## Feedback and project tracking
+| | |
+| --- | --- |
+| **Rendered documentation** | **Branch-point diff** |
+| [![hvir rendering the project README beside its file tree](docs/screenshots/rendered-markdown.png)](docs/screenshots/rendered-markdown.png) | [![hvir comparing a branch-point diff with the Git changes rail](docs/screenshots/branch-point-diff.png)](docs/screenshots/branch-point-diff.png) |
+| [![hvir with a Codex terminal maximized across the workbench](docs/screenshots/terminal-focus.png)](docs/screenshots/terminal-focus.png) | [![hvir rendering an interactive HTML page above its originating agent terminal](docs/screenshots/live-html-viewer.png)](docs/screenshots/live-html-viewer.png) |
+| **Terminal focus** | **Live HTML beside the harness** |
 
-Public questions and problem reports belong in the
-[Q&A Discussions](https://github.com/jarmak-personal/hvir/discussions/categories/q-a), while
-proposals belong in [Ideas](https://github.com/jarmak-personal/hvir/discussions/categories/ideas).
-GitHub Issues remain the canonical maintainer planning tracker. New, reopened, or unlocked
-issue and pull-request conversations are locked automatically; repository collaborators can
-still comment for the create, review, and feedback workflow.
+## Feedback and contributions
 
-Conversation locking does not make an external pull-request title or body trusted input. Agent
-workflows should continue to use the trust-boundary guidance in [CONTRIBUTING.md](CONTRIBUTING.md).
+Found a bug, have an idea, or want to share how you use hvir? Start in
+[GitHub Discussions](https://github.com/jarmak-personal/hvir/discussions).
+
+Public contributions happen through discussion. Maintainers author issues and own
+implementation; outside issues and pull requests aren't accepted. See the
+[contributor guide](CONTRIBUTING.md) for the contribution model and workflow.
 
 ## Development
 
-Development requires Node 24 or newer; release CI uses Node 24.
-
-Start with the [contributor guide](CONTRIBUTING.md). Substantive implementation is discussed in
-a governing issue before code or a pull request; the repository also includes optional,
-contributor-only agent skills for creating and implementing issues.
+To run from source, install Node 24 or newer:
 
 ```sh
 npm ci
-npm run verify
-npm run smoke
-npm run smoke:capacity
-npm run performance:capacity  # controlled machine only
 npm run dev
 ```
 
-`npm ci` downloads Electron and rebuilds native dependencies for Electron's ABI. On a
-headless Linux machine, run the Electron smoke under `xvfb-run`. The full Phase 8 release
-check is:
-
-```sh
-npm run gauntlet
-```
-
-Contributors can opt into the repository's pre-push hook:
-
-```sh
-npm run hooks:install
-```
-
-The hook runs `npm run smoke` using the machine's installed Electron platform and
-architecture. Headless Linux uses `xvfb-run` when available. CI reports verification,
-Electron correctness, deterministic capacity contracts, and machine-dependent performance
-evidence without enforcing quantitative budgets on a hosted runner. `npm run gauntlet` remains
-the combined controlled-machine release gate. Use `git push --no-verify` when a deliberate local
-bypass is needed.
-
-Build the npm payload for the current supported platform with the matching
-`pack:npm:*` script. See the
-[performance gauntlet](docs/phase8-performance-gauntlet.md) and
-[packaging guide](docs/packaging.md) for release acceptance.
-
-## Project documents
-
-| Document | Purpose |
-| --- | --- |
-| [Design and ADR index](docs/design.md) | Product philosophy, hard boundaries, architecture, and decision index |
-| [Architecture decisions](docs/adr/README.md) | Canonical decision-only ADR records and template |
-| [Historical implementation plan](docs/plan/00-overview.md) | Frozen early implementation context; active work lives in GitHub issues |
-| [Contributor guide](CONTRIBUTING.md) | Issue-first workflow, architecture discipline, and verification |
-| [GitHub project management](docs/project-management.md) | Canonical labels, normalized planning records, and Project automation commands |
-| [AGENTS.md](AGENTS.md) | Repository rules for AI collaborators |
-| [CLAUDE.md](CLAUDE.md) | Claude entrypoint for the shared repository instructions |
-
-The deliberate boundary remains: hvir may surface rich read-only information and permit
-a minor edit-and-save, but it does not grow into an IDE.
+See the [contributor guide](CONTRIBUTING.md) for verification and development workflows,
+and [design and architecture](docs/design.md) for the product philosophy and decisions.
 
 ## License
 

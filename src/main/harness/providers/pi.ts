@@ -1,14 +1,11 @@
-import {
-  asHarnessProfileId,
-  asHarnessProviderId,
-  type HarnessLaunchRisk,
-} from '../../../shared'
-import type { HarnessProvider, HarnessRiskInput } from '../harness-provider'
+import { asHarnessProfileId, asHarnessProviderId } from '../../../shared'
+import type { HarnessProvider } from '../harness-provider-contract'
 
 export const piProvider: HarnessProvider = {
   manifest: {
     id: asHarnessProviderId('pi'),
     displayName: 'Pi',
+    sessionKind: 'agent',
     contextPresentation: 'none',
   },
   profile: {
@@ -28,7 +25,6 @@ export const piProvider: HarnessProvider = {
     artifactExecutable: false,
     artifactPathBindings: [],
     applyArgs: (_mode, providerArgs, profileArgs) => [...providerArgs, ...profileArgs],
-    classifyRisk: classifyPiRisk,
   },
   supportsResume: false,
   sessionIdentity: 'none',
@@ -37,14 +33,6 @@ export const piProvider: HarnessProvider = {
   resume(ctx) {
     return this.launch(ctx)
   },
-}
-
-function classifyPiRisk(input: HarnessRiskInput): HarnessLaunchRisk {
-  return input.args.length === 0 &&
-    input.environment.length === 0 &&
-    !input.executableOverridden
-    ? 'standard'
-    : 'unclassified'
 }
 
 function versionProbe(): HarnessProvider['probe'] {

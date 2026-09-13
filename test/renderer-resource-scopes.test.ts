@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { RendererResourceScopes } from '../src/main/renderer-resource-scopes'
 import { localPath } from '../src/shared'
+import { createRendererResourceFixture } from './fixtures/renderer-resource-fixture'
 
 const firstRoot = localPath('/project/first')
 const secondRoot = localPath('/project/second')
 
 describe('RendererResourceScopes', () => {
   it('isolates owners and rolls generations before asynchronous cleanup', async () => {
-    const scopes = new RendererResourceScopes()
+    const scopes = createRendererResourceFixture().scopes
     const first = scopes.activateOwner(10)
     const other = scopes.activateOwner(20)
     let finishCleanup: (() => void) | undefined
@@ -34,7 +34,7 @@ describe('RendererResourceScopes', () => {
   })
 
   it('rejects registrations and late completions from revoked generations', async () => {
-    const scopes = new RendererResourceScopes()
+    const scopes = createRendererResourceFixture().scopes
     const stale = scopes.activateOwner(10)
     await scopes.rolloverOwner(10).cleanup
 
@@ -47,8 +47,76 @@ describe('RendererResourceScopes', () => {
     ).toThrow('has been revoked')
   })
 
+  it('blocks IPC between rollover and the replacement document commit', () => {
+    const scopes = createRendererResourceFixture().scopes
+    scopes.activateOwner(10)
+    const replacement = scopes.rolloverOwner(10).owner
+
+    expect(() => scopes.currentIpcOwner(10)).toThrow('is not ready for IPC')
+    scopes.resumeOwnerIpc(replacement)
+    expect(scopes.currentIpcOwner(10)).toEqual(replacement)
+    expect(() =>
+      scopes.resumeOwnerIpc({ ...replacement, generation: replacement.generation - 1 }),
+    ).toThrow('has been revoked')
+  })
+
+  it('transfers an opted-in resource to the next renderer generation', async () => {
+    const scopes = createRendererResourceFixture().scopes
+    const first = scopes.activateOwner(10)
+    const dispose = vi.fn()
+    const rollover = vi.fn(() => true)
+    const qualifier = {
+      lifetime: 'workspace' as const,
+      type: 'pty-session' as const,
+      root: firstRoot,
+      id: 'terminal-1',
+    }
+    scopes.register(first, qualifier, dispose, { rollover })
+
+    const transition = scopes.rolloverOwner(first.id)
+
+    expect(rollover).toHaveBeenCalledWith(transition.owner)
+    expect(scopes.hasTransferredResource(first, qualifier)).toBe(false)
+    expect(scopes.hasTransferredResource(transition.owner, qualifier)).toBe(true)
+    expect(scopes.claimTransferredResource(transition.owner, qualifier)).toBeDefined()
+    expect(scopes.hasTransferredResource(transition.owner, qualifier)).toBe(false)
+    expect(dispose).not.toHaveBeenCalled()
+    await transition.cleanup
+    await scopes.revokeOwner(transition.owner.id)
+    expect(dispose).toHaveBeenCalledOnce()
+  })
+
+  it('disposes resources that decline or fail renderer rollover', async () => {
+    const scopes = createRendererResourceFixture().scopes
+    const owner = scopes.activateOwner(10)
+    const declined = vi.fn()
+    const failed = vi.fn()
+    scopes.register(
+      owner,
+      { lifetime: 'workspace', type: 'pty-session', root: firstRoot, id: 'declined' },
+      declined,
+      { rollover: () => false },
+    )
+    scopes.register(
+      owner,
+      { lifetime: 'workspace', type: 'pty-session', root: firstRoot, id: 'failed' },
+      failed,
+      {
+        rollover: () => {
+          throw new Error('transfer failed')
+        },
+      },
+    )
+
+    const transition = scopes.rolloverOwner(owner.id)
+
+    await expect(transition.cleanup).rejects.toThrow('Renderer resource cleanup failed')
+    expect(failed).toHaveBeenCalledOnce()
+    expect(declined).toHaveBeenCalledOnce()
+  })
+
   it('bulk-revokes one workspace without flattening renderer resources', async () => {
-    const scopes = new RendererResourceScopes()
+    const scopes = createRendererResourceFixture().scopes
     const owner = scopes.activateOwner(10)
     const first = vi.fn()
     const second = vi.fn()
@@ -76,7 +144,7 @@ describe('RendererResourceScopes', () => {
   })
 
   it('reassigns a workspace resource without disposing its live capability', async () => {
-    const scopes = new RendererResourceScopes()
+    const scopes = createRendererResourceFixture().scopes
     const owner = scopes.activateOwner(10)
     const dispose = vi.fn()
     scopes.register(
@@ -115,7 +183,7 @@ describe('RendererResourceScopes', () => {
 
   it('tears down in reverse registration order and stays idempotent', async () => {
     const calls: string[] = []
-    const scopes = new RendererResourceScopes()
+    const scopes = createRendererResourceFixture().scopes
     const owner = scopes.activateOwner(10)
     scopes.register(owner, { lifetime: 'renderer', type: 'attention' }, () => {
       calls.push('first')
@@ -135,7 +203,7 @@ describe('RendererResourceScopes', () => {
   })
 
   it('rejects accidental duplicate registrations', () => {
-    const scopes = new RendererResourceScopes()
+    const scopes = createRendererResourceFixture().scopes
     const owner = scopes.activateOwner(10)
     scopes.register(owner, { lifetime: 'renderer', type: 'attention' }, vi.fn())
 
@@ -145,7 +213,7 @@ describe('RendererResourceScopes', () => {
   })
 
   it('reuses an explicitly equivalent idempotent registration', async () => {
-    const scopes = new RendererResourceScopes()
+    const scopes = createRendererResourceFixture().scopes
     const owner = scopes.activateOwner(10)
     const dispose = vi.fn()
     const duplicateDispose = vi.fn()
@@ -169,7 +237,7 @@ describe('RendererResourceScopes', () => {
 
   it('uses collision-proof tuple keys for host paths and resource ids', async () => {
     const calls: string[] = []
-    const scopes = new RendererResourceScopes()
+    const scopes = createRendererResourceFixture().scopes
     const owner = scopes.activateOwner(10)
     scopes.register(
       owner,

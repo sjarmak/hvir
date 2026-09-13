@@ -13,6 +13,7 @@ import {
   type HarnessLaunchMenuState,
 } from './harness-launch-menu'
 import { TerminalContextMeter } from './TerminalContextMeter'
+import { TerminalRailCompact } from './TerminalRailCompact'
 import type { TerminalSession } from './terminal-workspace-model'
 import { useTerminalLaunchMenuLayout } from './use-terminal-launch-menu-layout'
 
@@ -25,6 +26,8 @@ export interface TerminalLaunchMenuEntry {
 export function TerminalRail({
   label,
   visible,
+  compact,
+  onCompact,
   terminalTheme,
   recoveryReady,
   available,
@@ -32,7 +35,6 @@ export function TerminalRail({
   moveMenuOpen,
   moveTargets,
   launchMenuEntries,
-  checkingHiddenProfiles,
   split,
   sessions,
   activeId,
@@ -48,13 +50,14 @@ export function TerminalRail({
   onAddHarness,
   onRefreshProbes,
   onOpenHarnessSettings,
-  onResumeAll,
   onFocusSession,
   onMoveSession,
   onCloseSession,
 }: {
   readonly label: string
   readonly visible: boolean
+  readonly compact: boolean
+  readonly onCompact: (compact: boolean) => void
   readonly terminalTheme: string
   readonly recoveryReady: boolean
   readonly available: boolean
@@ -62,7 +65,6 @@ export function TerminalRail({
   readonly moveMenuOpen: boolean
   readonly moveTargets: readonly WorkspaceState[]
   readonly launchMenuEntries: readonly TerminalLaunchMenuEntry[]
-  readonly checkingHiddenProfiles: boolean
   readonly split: boolean
   readonly sessions: readonly TerminalSession[]
   readonly activeId?: string
@@ -78,14 +80,17 @@ export function TerminalRail({
   readonly onAddHarness: () => void
   readonly onRefreshProbes: () => void
   readonly onOpenHarnessSettings: () => void
-  readonly onResumeAll: () => void
   readonly onFocusSession: (id: string) => void
   readonly onMoveSession: (id: string) => void
   readonly onCloseSession: (id: string) => void
 }): ReactElement {
   const { menuRef: launchMenuRef, menuStyle: launchMenuStyle } =
     useTerminalLaunchMenuLayout(menuOpen)
-  const dormantCount = sessions.filter((session) => session.dormant).length
+  const applyCompact = (next: boolean): void => {
+    if (next && menuOpen) onToggleMenu()
+    if (next && moveMenuOpen) onToggleMoveMenu()
+    onCompact(next)
+  }
 
   return (
     <aside
@@ -95,21 +100,20 @@ export function TerminalRail({
       data-diagnostic-capture="terminal"
       hidden={!visible}
     >
-      <header className="terminal-rail-header">
+      <header className="terminal-rail-header" hidden={compact}>
         <span>Terminals</span>
         <div className="terminal-header-actions">
-          {dormantCount > 0 ? (
-            <button
-              type="button"
-              className="terminal-resume-all-button"
-              aria-label={`Resume all now, start ${dormantCount} dormant ${dormantCount === 1 ? 'terminal' : 'terminals'}`}
-              title={`Start ${dormantCount} dormant ${dormantCount === 1 ? 'terminal' : 'terminals'} with bounded per-host concurrency`}
-              disabled={!recoveryReady || !available}
-              onClick={onResumeAll}
-            >
-              Resume all now · {dormantCount}
-            </button>
-          ) : null}
+          <button
+            type="button"
+            className="terminal-icon-button terminal-rail-collapse"
+            aria-label="Collapse terminal rail"
+            title="Collapse terminal rail"
+            onClick={() => applyCompact(true)}
+          >
+            <svg aria-hidden="true" viewBox="0 0 16 16">
+              <path d="M4.5 3 9 8l-4.5 5M8.5 3 13 8l-4.5 5" />
+            </svg>
+          </button>
           <div className="terminal-move-control">
             <button
               type="button"
@@ -204,8 +208,7 @@ export function TerminalRail({
                 role="menu"
                 style={launchMenuStyle}
               >
-                {launchMenuEntries.flatMap(({ profile, provider, state }) => {
-                  if (!state.visible) return []
+                {launchMenuEntries.map(({ profile, provider, state }) => {
                   const capability = compactHarnessCapabilityLabel(
                     provider?.default === true,
                     state.probe?.capabilities ?? provider?.capabilities,
@@ -215,33 +218,24 @@ export function TerminalRail({
                       ? provider.displayName
                       : undefined,
                     capability,
-                    state.checking ? 'Checking…' : undefined,
+                    profile.builtIn ? undefined : launchAvailabilityLabel(state),
                   ].filter((value): value is string => Boolean(value))
                   return (
                     <button
                       key={profile.id}
                       type="button"
                       role="menuitem"
-                      title={launchMenuDescription(profile, provider, state.probe)}
+                      data-harness-availability={state.availability}
+                      title={launchMenuDescription(profile, provider, state)}
                       onClick={() => onAddSession(profile)}
                     >
                       <span>
                         <strong>{profile.displayName}</strong>
-                        {profile.risk === 'standard' ? null : (
-                          <em className={`harness-risk ${profile.risk}`}>
-                            {riskLabel(profile.risk)}
-                          </em>
-                        )}
                       </span>
                       {details.length > 0 ? <small>{details.join(' · ')}</small> : null}
                     </button>
                   )
                 })}
-                {checkingHiddenProfiles ? (
-                  <div className="terminal-new-menu-checking" role="status">
-                    Checking configured harnesses…
-                  </div>
-                ) : null}
                 <div className="terminal-new-menu-actions">
                   <button type="button" role="menuitem" onClick={onAddHarness}>
                     Add a harness…
@@ -258,7 +252,7 @@ export function TerminalRail({
           </div>
         </div>
       </header>
-      <div className="terminal-list" role="list">
+      <div className="terminal-list" role="list" hidden={compact}>
         {sessions.map((session) => {
           const provider = providerDescriptor(providers, session.providerId)
           const contextPresentation = provider?.capabilities.contextPresentation
@@ -278,11 +272,7 @@ export function TerminalRail({
                 <span className="terminal-list-copy">
                   <span className="terminal-list-title">{session.title}</span>
                   <span className="terminal-list-meta">
-                    <span
-                      className={`terminal-list-profile${profileRiskClass(profiles, session.profileId)}`}
-                      title={profileRiskTitle(profiles, session.profileId)}
-                      aria-label={profileRiskAriaLabel(profiles, session.profileId)}
-                    >
+                    <span className="terminal-list-profile">
                       {profileDisplayName(profiles, session.profileId)}
                     </span>{' '}
                     · {session.status}
@@ -293,6 +283,7 @@ export function TerminalRail({
                     <TerminalContextMeter
                       telemetry={session.telemetry}
                       countOnly={contextPresentation === 'count'}
+                      pressurePolicy={provider?.capabilities.contextPressure}
                     />
                   ) : null}
                 </span>
@@ -330,6 +321,13 @@ export function TerminalRail({
           )
         })}
       </div>
+      <TerminalRailCompact
+        hidden={!compact}
+        sessions={sessions}
+        activeId={activeId}
+        onFocusSession={onFocusSession}
+        onRestore={() => applyCompact(false)}
+      />
     </aside>
   )
 }
@@ -348,49 +346,12 @@ function profileDisplayName(
   return profiles.find((profile) => profile.id === id)?.displayName ?? `Missing (${id})`
 }
 
-function profileRiskClass(
-  profiles: readonly HarnessProfile[],
-  id: TerminalSession['profileId'],
-): string {
-  const risk = profiles.find((profile) => profile.id === id)?.risk
-  return risk && risk !== 'standard' ? ` ${risk}` : ''
-}
-
-function profileRiskTitle(
-  profiles: readonly HarnessProfile[],
-  id: TerminalSession['profileId'],
-): string | undefined {
-  const risk = profiles.find((profile) => profile.id === id)?.risk
-  return risk === 'elevated'
-    ? 'Elevated permissions'
-    : risk === 'unclassified'
-      ? 'Unclassified permissions'
-      : undefined
-}
-
-function profileRiskAriaLabel(
-  profiles: readonly HarnessProfile[],
-  id: TerminalSession['profileId'],
-): string {
-  const name = profileDisplayName(profiles, id)
-  const risk = profileRiskTitle(profiles, id)
-  return risk ? `${name}, ${risk.toLowerCase()}` : name
-}
-
 function identityLabel(status: TerminalSession['identityStatus']): string {
   if (status === 'discovering') return ' · resume pending'
   if (status === 'ambiguous' || status === 'unavailable') {
     return ' · resume unavailable'
   }
   return ''
-}
-
-function riskLabel(risk: HarnessProfile['risk']): string {
-  return risk === 'elevated'
-    ? 'Elevated'
-    : risk === 'unclassified'
-      ? 'Unclassified'
-      : 'Standard'
 }
 
 function probeLabel(probe: HarnessProfileProbe | undefined): string {
@@ -422,19 +383,34 @@ function probeLabel(probe: HarnessProfileProbe | undefined): string {
 function launchMenuDescription(
   profile: HarnessProfile,
   provider: HarnessProviderDescriptor | undefined,
-  probe: HarnessProfileProbe | undefined,
+  state: HarnessLaunchMenuState,
 ): string {
   const capability = compactHarnessCapabilityLabel(
     provider?.default === true,
-    probe?.capabilities ?? provider?.capabilities,
+    state.probe?.capabilities ?? provider?.capabilities,
   )
   return [
     profile.displayName,
     provider?.displayName ?? profile.providerId,
     capability,
-    probe ? probeLabel(probe) : undefined,
-    probe?.detail,
+    profile.builtIn ? undefined : launchAvailabilityLabel(state),
+    state.probe?.detail,
   ]
     .filter((value): value is string => Boolean(value))
     .join(' · ')
+}
+
+function launchAvailabilityLabel(state: HarnessLaunchMenuState): string {
+  switch (state.availability) {
+    case 'unchecked':
+      return 'Unchecked'
+    case 'checking':
+      return 'Checking…'
+    case 'available':
+      return state.probe?.version ? `Available · ${state.probe.version}` : 'Available'
+    case 'stale':
+      return `Stale · ${probeLabel(state.probe)}`
+    case 'failed':
+      return `Failed · ${probeLabel(state.probe)}`
+  }
 }

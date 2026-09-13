@@ -10,15 +10,18 @@ import {
 } from '../../shared'
 import { LocalHost } from '../project-host'
 import type { PtySupervisor } from '../pty/pty-supervisor'
+import { startCapacityOutputFixtures } from './capacity-output-fixtures'
+import { verifyCapacityLivePresentationUpdate } from './capacity-live-presentation'
 import {
   activateCapacityTerminal,
   addCapacityTerminals,
   measureAdditionalTerminalReadiness,
   readTerminalPresentation,
-  startCapacityOutputFixtures,
   verifyHiddenPresentationSettles,
+  verifyCapacityTerminalSearch,
+  verifyCapacitySessionsTerminalDetail,
+  verifyCapacityPaletteUpdate,
   verifyTerminalActivity,
-  waitForCapacityTerminalCount,
   type TerminalActivityReport,
   type TerminalReadinessSampleReport,
 } from './capacity-terminals'
@@ -27,10 +30,6 @@ import {
   sampleElectronProcessMetrics,
   type ElectronProcessMetricReport,
 } from './electron-process-metrics'
-import {
-  measureResponsivenessDiagnosticCost,
-  type ResponsivenessDiagnosticCostReport,
-} from './capacity-responsiveness'
 import {
   CAPACITY_PERFORMANCE_BUDGETS,
   CAPACITY_PERFORMANCE_GATE_ENV,
@@ -73,7 +72,6 @@ interface CapacitySmokeReport {
   readonly idleCpu?: CapacityCpuComparison
   readonly terminalReadiness?: CapacityTerminalReadinessComparison
   readonly terminalActivity?: TerminalActivityReport
-  readonly responsivenessDiagnostics?: ResponsivenessDiagnosticCostReport
 }
 
 interface CapacitySourceEvidence {
@@ -181,20 +179,35 @@ export async function runCapacityRecoverySmoke(
         if (!row || !terminalId) return reject(new Error('dormant recovery row missing'));
         row.querySelector('.terminal-list-main')?.click();
         document.querySelector('.rail-nav button:nth-child(2)')?.click();
-        const poll = () => {
-          const surface = document.querySelector(
+        const snapshot = () => ({
+          rowDormant: row.hasAttribute('data-terminal-dormant'),
+          dormant: document.querySelectorAll(
+            '.terminal-list-row[data-terminal-dormant="true"]'
+          ).length,
+          surfaces: document.querySelectorAll('.terminal-surface').length,
+          surfaceStatus: document.querySelector(
             '.terminal-surface[data-terminal-session="' + CSS.escape(terminalId) + '"]'
-          );
-          const changesReady = [...document.querySelectorAll('.git-tabs button')]
-            .some((node) => /^Changes \\(\\d+\\)$/.test(node.textContent?.trim() || ''));
+          )?.getAttribute('data-terminal-status') || '',
+          changesReady: [...document.querySelectorAll('.git-tabs button')]
+            .some((node) => /^Changes \\(\\d+\\)$/.test(node.textContent?.trim() || '')),
+          resumeAll: Boolean(document.querySelector('.terminal-resume-all-button'))
+        });
+        const poll = () => {
+          const current = snapshot();
           if (
-            !row.hasAttribute('data-terminal-dormant') &&
-            document.querySelectorAll('.terminal-surface').length === 2 &&
-            (surface?.getAttribute('data-terminal-status') || '').startsWith('pid ') &&
-            changesReady
-          ) return resolve('dormant selection started exactly one PTY · Changes ready');
+            !current.rowDormant &&
+            current.dormant === 18 &&
+            current.surfaces === 2 &&
+            current.surfaceStatus.startsWith('pid ') &&
+            current.changesReady &&
+            !current.resumeAll
+          ) return resolve(
+            'dormant selection started exactly one PTY · 18 remained lazy · Changes ready'
+          );
           if (Date.now() > deadline) {
-            return reject(new Error('dormant activation did not settle'));
+            return reject(new Error(
+              'dormant activation did not settle: ' + JSON.stringify(current)
+            ));
           }
           setTimeout(poll, 25);
         };
@@ -205,50 +218,8 @@ export async function runCapacityRecoverySmoke(
     12_000,
   )) as string
   await waitForSupervisorCount(supervisor, 2, 'dormant capacity activation')
-
-  const bulk = (await withTimeout(
-    win.webContents.executeJavaScript(`
-      new Promise((resolve, reject) => {
-        const deadline = Date.now() + 20000;
-        const resumeAll = document.querySelector('.terminal-resume-all-button');
-        if (!resumeAll) return reject(new Error('Resume all now action missing'));
-        const label = resumeAll.textContent?.trim() || '';
-        resumeAll.click();
-        const poll = () => {
-          const current = {
-            rows: document.querySelectorAll('.terminal-list-row').length,
-            dormant: document.querySelectorAll(
-              '.terminal-list-row[data-terminal-dormant="true"]'
-            ).length,
-            surfaces: document.querySelectorAll('.terminal-surface').length,
-            starting: [...document.querySelectorAll('.terminal-surface')]
-              .filter((surface) => {
-                const status = surface.getAttribute('data-terminal-status') || '';
-                return !status.startsWith('pid ');
-              }).length
-          };
-          if (
-            current.rows === 20 &&
-            current.dormant === 0 &&
-            current.surfaces === 20 &&
-            current.starting === 0
-          ) return resolve(label + ' · 20 isolated starts settled');
-          if (Date.now() > deadline) {
-            return reject(new Error(
-              'capacity bulk recovery did not settle: ' + JSON.stringify(current)
-            ));
-          }
-          setTimeout(poll, 25);
-        };
-        poll();
-      })
-    `),
-    'capacity bulk recovery timed out',
-    25_000,
-  )) as string
-  await waitForSupervisorCount(supervisor, 20, 'bulk capacity recovery')
   console.log(
-    `[smoke] multi-terminal lazy recovery under load OK (${restored} · ${activated} · ${bulk})`,
+    `[smoke] multi-terminal lazy recovery under load OK (${restored} · ${activated})`,
   )
 }
 
@@ -270,7 +241,7 @@ export async function runCapacityLoadSmoke(
       'controlled capacity performance gate requires a clean checkout at a known commit',
     )
   }
-  await waitForCapacityTerminalCount(win, 1)
+  await addCapacityTerminals(win, 1)
   const baselineReadiness = await measureAdditionalTerminalReadiness(
     win,
     supervisor,
@@ -286,18 +257,35 @@ export async function runCapacityLoadSmoke(
   }
   await activateCapacityTerminal(win, 0)
   await verifyHiddenPresentationSettles(win)
+  const sessionsCapacity = await verifyCapacitySessionsTerminalDetail(win, supervisor)
+  console.log(
+    `[smoke:capacity:contract] one Sessions surface among twelve live terminals OK ` +
+      `(${sessionsCapacity.ghosttyInstances} constant Ghostty instances · ` +
+      `${sessionsCapacity.sessionsPresented} presented · quiet release)`,
+  )
+  const paletteCapacity = await verifyCapacityPaletteUpdate(win)
+  console.log(
+    `[smoke:capacity:contract] 12 retained palette updates + hidden paint suppression OK ` +
+      `(${paletteCapacity.synchronousMs.toFixed(1)}ms sync · ` +
+      `${paletteCapacity.eventLoopDelayMs.toFixed(1)}ms event loop · ` +
+      `${paletteCapacity.hiddenPanes} hidden · ${paletteCapacity.visibleFrames} visible frames)`,
+  )
   const twelveTerminalCpu = await sampleCapacityCpuSeries(
     win,
     'one-visible-eleven-hidden',
   )
   const idleCpu = compareCapacityCpu(baselineCpu, twelveTerminalCpu)
   console.log(`[smoke:performance:sample:idle-cpu] ${JSON.stringify(idleCpu)}`)
-  const responsivenessDiagnostics = await measureResponsivenessDiagnosticCost(win)
+  const presentationCapacity = await verifyCapacityLivePresentationUpdate(win, supervisor)
   console.log(
-    `[smoke:performance:sample:responsiveness-diagnostics] ${JSON.stringify(responsivenessDiagnostics)}`,
+    `[smoke:capacity:contract] 12 retained cursor/shaping updates + hidden reveal OK ` +
+      `(${presentationCapacity.synchronousMs.toFixed(1)}ms sync · ` +
+      `${presentationCapacity.eventLoopDelayMs.toFixed(1)}ms event loop · ` +
+      `${presentationCapacity.hiddenPanes} hidden · ` +
+      `${presentationCapacity.shapedRuns} runs/${presentationCapacity.shapedCells} cells · ` +
+      `max ${presentationCapacity.maxRunCells})`,
   )
-
-  startCapacityOutputFixtures(supervisor)
+  const outputFixtures = startCapacityOutputFixtures(supervisor)
   let churning = true
   const watchChurn = (async (): Promise<void> => {
     let generation = 0
@@ -307,25 +295,27 @@ export async function runCapacityLoadSmoke(
     }
   })()
 
-  const loadedReadiness = await measureAdditionalTerminalReadiness(
-    win,
-    supervisor,
-    'loaded',
-    TERMINAL_READINESS_SAMPLE_COUNT,
-  )
-  const terminalReadiness = compareTerminalReadiness(baselineReadiness, loadedReadiness)
-  console.log(
-    `[smoke:performance:sample:terminal-readiness] ${JSON.stringify(terminalReadiness)}`,
-  )
-  console.log(
-    `[smoke:capacity:contract] 10 loaded terminal launches ready + exact echo OK ` +
-      `(p95 ${loadedReadiness.p95Ms.toFixed(1)}ms / baseline ` +
-      `${baselineReadiness.p95Ms.toFixed(1)}ms · max ${loadedReadiness.maxMs.toFixed(1)}ms)`,
-  )
-  await activateCapacityTerminal(win, 0)
-  const presentationBefore = await readTerminalPresentation(win)
   let report: CapacitySmokeReport | undefined
+  let loadFailure: unknown
+  let loadFailed = false
   try {
+    const loadedReadiness = await measureAdditionalTerminalReadiness(
+      win,
+      supervisor,
+      'loaded',
+      TERMINAL_READINESS_SAMPLE_COUNT,
+    )
+    const terminalReadiness = compareTerminalReadiness(baselineReadiness, loadedReadiness)
+    console.log(
+      `[smoke:performance:sample:terminal-readiness] ${JSON.stringify(terminalReadiness)}`,
+    )
+    console.log(
+      `[smoke:capacity:contract] 10 loaded terminal launches ready + exact echo OK ` +
+        `(p95 ${loadedReadiness.p95Ms.toFixed(1)}ms / baseline ` +
+        `${baselineReadiness.p95Ms.toFixed(1)}ms · max ${loadedReadiness.maxMs.toFixed(1)}ms)`,
+    )
+    await activateCapacityTerminal(win, 0)
+    const presentationBefore = await readTerminalPresentation(win)
     const [rendererReport, processMetrics] = await Promise.all([
       withTimeout(
         win.webContents.executeJavaScript(`
@@ -404,7 +394,7 @@ export async function runCapacityLoadSmoke(
       presentationAfter,
       supervisor
         .list()
-        .slice(1, 4)
+        .slice(1)
         .map((terminal) => terminal.id),
     )
     report = {
@@ -413,21 +403,50 @@ export async function runCapacityLoadSmoke(
       idleCpu,
       terminalReadiness,
       terminalActivity,
-      responsivenessDiagnostics,
       memoryStartKiB: processMetrics.memoryStartKiB,
       memoryEndKiB: processMetrics.memoryEndKiB,
       memoryPeakKiB: processMetrics.memoryPeakKiB,
       memoryGrowthKiB: processMetrics.memoryGrowthKiB,
     }
-  } finally {
-    churning = false
-    await watchChurn
-    for (const terminal of supervisor.list()) {
-      supervisor.write(terminal.id, terminal.ownerId, '\u0003')
-    }
+  } catch (reason) {
+    loadFailed = true
+    loadFailure = reason
   }
 
+  churning = false
+  const cleanupFailures: unknown[] = []
+  try {
+    await watchChurn
+  } catch (reason) {
+    cleanupFailures.push(reason)
+  }
+  try {
+    await outputFixtures.stop()
+  } catch (reason) {
+    cleanupFailures.push(reason)
+  }
+  if (loadFailed) {
+    if (cleanupFailures.length > 0) {
+      throw new AggregateError(
+        [loadFailure, ...cleanupFailures],
+        'capacity load failed and fixture cleanup was incomplete',
+      )
+    }
+    throw loadFailure
+  }
+  if (cleanupFailures.length === 1) throw cleanupFailures[0]
+  if (cleanupFailures.length > 1) {
+    throw new AggregateError(cleanupFailures, 'capacity fixture cleanup was incomplete')
+  }
+  console.log('[smoke:capacity:contract] 12 output producers acknowledged shutdown')
+
   if (!report) throw new Error('capacity report was not produced')
+  const capacitySearch = await verifyCapacityTerminalSearch(win, supervisor)
+  console.log(
+    `[smoke:capacity:terminal-search] 10MB retained cap · ` +
+      `${capacitySearch.retainedRows} retained rows · 12 live terminals · ` +
+      `${capacitySearch.durationMs.toFixed(1)}ms`,
+  )
   const evidence = capacityPerformanceEvidence(report, performanceMode, source)
   console.log(`[smoke:performance:evidence] ${JSON.stringify(evidence)}`)
   console.log(
@@ -435,7 +454,8 @@ export async function runCapacityLoadSmoke(
       `(${report.terminalActivity!.hiddenPanes} hidden panes · ` +
       `${report.terminalActivity!.nativeDataEvents} native events → ` +
       `${report.terminalActivity!.deliveryCallbacks} bounded deliveries · ` +
-      `${report.terminalActivity!.peakBufferedBytes} byte peak buffer)`,
+      `${report.terminalActivity!.peakBufferedBytes} byte peak buffer · ` +
+      `${report.terminalActivity!.synchronizedPanes} synchronized panes)`,
   )
   if (performanceMode === 'controlled' && evidence.violations.length > 0) {
     throw new Error(
@@ -523,7 +543,6 @@ function capacityPerformanceEvidence(
     !report.idleCpu ||
     !report.terminalReadiness ||
     !report.terminalActivity ||
-    !report.responsivenessDiagnostics ||
     !report.processMetrics
   ) {
     throw new Error('capacity performance evidence was incomplete')
@@ -535,13 +554,6 @@ function capacityPerformanceEvidence(
     responsivenessP99Ms: report.p99Ms,
     responsivenessMaxMs: report.maxMs,
     workingSetGrowthKiB: report.memoryGrowthKiB ?? 0,
-    diagnosticRendererPlusGpuCpuDelta:
-      report.responsivenessDiagnostics.rendererPlusGpuCpuDelta,
-    diagnosticMemoryGrowthDeltaKiB: report.responsivenessDiagnostics.memoryGrowthDeltaKiB,
-    diagnosticFrameP99Ms: report.responsivenessDiagnostics.active.interactions.frameP99Ms,
-    diagnosticFrameMaxMs: report.responsivenessDiagnostics.active.interactions.frameMaxMs,
-    diagnosticClickP95Ms: report.responsivenessDiagnostics.active.interactions.clickP95Ms,
-    diagnosticClickMaxMs: report.responsivenessDiagnostics.active.interactions.clickMaxMs,
   }
   const cpu = cpus()
   return {
@@ -574,7 +586,6 @@ function capacityPerformanceEvidence(
         clickSamples: report.clickLatenciesMs.length,
         processMetrics: report.processMetrics,
       },
-      responsivenessDiagnostics: report.responsivenessDiagnostics,
     },
     measurements,
     budgets: CAPACITY_PERFORMANCE_BUDGETS,

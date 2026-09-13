@@ -12,9 +12,9 @@ import { join } from 'node:path'
 import { utilityProcess, type UtilityProcess } from 'electron'
 
 import type {
-  ExecResult,
   WorkerHostCall,
   WorkerHostResult,
+  WorkerHostValue,
   WorkerOperation,
   WorkerRequest,
   WorkerResponse,
@@ -46,7 +46,7 @@ export function workerPath(entryFile: string): string {
 export function createWorkerClient<P extends ProtocolShape<P>>(
   entryPath: string,
   serviceName?: string,
-  onHostCall?: (call: WorkerHostCall) => Promise<ExecResult | string>,
+  onHostCall?: (call: WorkerHostCall) => Promise<WorkerHostValue>,
 ): WorkerClient<P> {
   const proc: UtilityProcess = utilityProcess.fork(entryPath, [], {
     serviceName: serviceName ?? 'hvir-worker',

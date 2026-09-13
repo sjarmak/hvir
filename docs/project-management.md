@@ -135,13 +135,142 @@ repository/Project access, schema drift, archived/missing mutation intent, Graph
 exhausted bounded retries exit 1 with an actionable diagnostic.
 
 The planning-record and kind commands share the same bounded GitHub request, pagination,
-canonical Project lookup, schema-validation, item-lookup, and token-redaction mechanics. Each
-command remains one process per consumer operation; lookup and mutation steps are not separate
-runner jobs.
+repository-owned canonical Project configuration, schema-validation, item-lookup, and
+token-redaction mechanics. Per-issue operations resolve membership through the issue's own
+Project-items connection and match the stored canonical Project ID. A bulk kind reconciliation
+still enumerates the complete canonical Project because the Project membership is its input.
+Each command remains one process per consumer operation; lookup and mutation steps are not
+separate runner jobs.
 
 Both commands use `HVIR_REPO_TOKEN`, `HVIR_PROJECT_TOKEN`, `HVIR_REPOSITORY`,
 `HVIR_PROJECT_OWNER`, and `HVIR_PROJECT_NUMBER` as documented above. Credentials are read only
 from the environment and are never accepted as command-line values.
+
+### Contributor status
+
+Read the three compact facts; use an exact PR selector when known:
+
+```sh
+HVIR_REPO_TOKEN="$(gh auth token)" HVIR_PROJECT_TOKEN="$(gh auth token)" \
+npm run --silent project:status -- --issue 757 --pr 758
+```
+
+Add `--json` only for detailed structured facts. Status reports Tokens, Project, and Acceptance
+independently. Missing Project credentials or token evidence does not suppress repository facts.
+Ambiguous relationships and stale checks remain explicit. For a selected child PR, the existing
+strict `Completes-child` parser and native parent/epic base prove the relationship; a PR selector
+alone is not issue acceptance. A deleted epic branch may leave historical integration unproven.
+
+### Session token capture
+
+The canonical Project has three numeric token fields:
+
+- **Planning tokens:** observed drafting, refinement, and planning-review usage.
+- **Implementation tokens:** all observed non-planning usage, including testing, code review,
+  corrections, coordination, and acceptance work.
+- **Total tokens:** all recorded usage, including contributions whose phase is unknown.
+
+Planning handoffs must request capture or report the explicit reason it is unavailable. For
+one issue, plan and apply:
+
+```sh
+HVIR_REPO_TOKEN="$(gh auth token)" HVIR_PROJECT_TOKEN="$(gh auth token)" \
+npm run --silent project:status -- --issue 776 --capture codex --phase planning
+
+HVIR_REPO_TOKEN="$(gh auth token)" HVIR_PROJECT_TOKEN="$(gh auth token)" \
+npm run --silent project:status -- --issue 776 --capture codex --phase planning --apply
+```
+
+For issues produced together, add `--issues 776,777` once and select one of those issues with
+`--issue`. The tool divides the newly observed integer count equally; ascending issue numbers
+receive rounding remainders. A 1,000-token session gives two issues 500 each. Repeated captures
+allocate only new usage. End the planning session at the issue-creation handoff, including a
+batch. If the session continues and produces another issue, the later issue receives the new
+counter difference; existing allocations remain unchanged.
+
+For non-planning work, use `--phase implementation`. Such capture remains optional. If the
+session mixes planning and implementation without a reliable split, use `--phase unknown`:
+the total survives and both phase fields remain empty. Never infer a whole session's phase
+from its latest activity. Missing provider counters remain unknown, not zero. A fully
+attributed total equals Planning tokens plus Implementation tokens.
+
+Codex uses the exact current `CODEX_THREAD_ID`; Claude requires `HVIR_USAGE_SESSION_ID` and
+`--capture claude-code`. `HVIR_USAGE_CWD` privately identifies the launch directory when it differs
+from the worktree. Never substitute a coordinator's identity for a delegate. Unavailable counters
+or unpublished issue identities produce a reason rather than fabricated records or a recovery task.
+
+Private assignment and immutable allocation intervals live under the application user's
+`.local/state/hvir/contributor-tokens` with private permissions. Tooling commits each interval
+before publishing any shares; uncertain appends replay the same opaque contribution identities.
+Concurrent allocation claims fail visibly and can be retried. Counter decreases fail closed.
+Keep this private state for recapture; cross-machine deduplication recovery is unsupported.
+No provider identity, transcript, artifact path, or private lookup digest is published.
+
+Unedited closed-schema receipts authored by the repository owner provide public token evidence.
+V3 receipts record allocated phase contributions; V2 cumulative receipts remain readable with
+unknown phases, and later observations exclude their already recorded range. Migration evidence
+preserves historical contributions and exact covered receipt maxima. Later captures add only
+uncovered counts. An epic aggregates its own contributions and every native direct child's once;
+never add child Project rows to an already aggregated epic row. Unrecorded work stays unknown.
+
+### Historical token migration
+
+The migration replaces the retired rename-only command. It inventories all Project items using
+both archived states, without excluding closed issues. It preserves original measurement values
+in durable migration receipts before changing fields. Lifecycle tokens is the authoritative
+historical rollup: never add its component phases to it. Recoverable non-planning counts combine
+implementation, review, and coordination evidence. Trusted V1 counter records provide additional
+recovery, with exact supersession and additive-counter semantics. Missing splits remain unknown;
+individually known historical phase values can be retained when the other phase is missing.
+
+Use the verified tooling at deployment, with old token writers quiescent. Capture and retain the
+original evidence file, then inspect the offline dry run:
+
+```sh
+HVIR_REPO_TOKEN="$(gh auth token)" HVIR_PROJECT_TOKEN="$(gh auth token)" \
+npm run --silent project:migrate-tokens -- --snapshot > token-migration-evidence.json
+
+npm run --silent project:migrate-tokens < token-migration-evidence.json
+```
+
+The plan lists transfers, unresolved discrepancies, field renames, and exact deletion IDs/names.
+It makes no writes. Historical/receipt overlap is never guessed. Where evidence cannot prove
+ownership or a split, the snapshot's `corrections` array accepts an explicit migration exception:
+
+```json
+{
+  "issue": 776,
+  "totals": { "planning": null, "implementation": null, "tokens": 1050 },
+  "evidence": "Cite the original field/receipt evidence and explain the overlap correction."
+}
+```
+
+Correction totals are the issue's reconciled **own** baseline, including the snapshot's covered
+receipts. For an epic they exclude all direct-child contributions. Missing values are `null`.
+Do not edit original source values or receipt histories to make a discrepancy disappear. Repeat
+the dry run after documenting corrections. Preserve the original evidence for retries and review.
+
+Once the complete plan reconciles, apply transfers; source comparison is recomputed against
+GitHub, and changed membership, relationships, fields, or values fail visibly:
+
+```sh
+HVIR_REPO_TOKEN="$(gh auth token)" HVIR_PROJECT_TOKEN="$(gh auth token)" \
+npm run --silent project:migrate-tokens -- --apply < token-migration-evidence.json
+```
+
+After reviewing the exact deletion targets and successful reconciliation, repeat with `--delete`:
+
+```sh
+HVIR_REPO_TOKEN="$(gh auth token)" HVIR_PROJECT_TOKEN="$(gh auth token)" \
+npm run --silent project:migrate-tokens -- --apply --delete < token-migration-evidence.json
+```
+
+The tool rechecks durable evidence and replacement values before deleting only the named retired
+fields. Planning tokens and Implementation tokens retain their existing numeric field IDs;
+Recorded tokens becomes Total tokens. Kind, Status, and native fields remain. No new numeric fields
+are provisioned. Interrupted transfers and deletions retry against the same saved evidence without
+adding totals twice. Preserve evidence even after deletion. Current capture refuses an unmigrated
+schema rather than overwriting legacy phase fields. Run `project:audit` after deployment.
 
 ### Delivery context
 
@@ -166,6 +295,80 @@ The report omits bodies, comments, credentials, internal IDs, and raw API respon
 When invoked from the primary checkout or deterministic sibling issue worktree, the command
 infers the primary root without running Git. Set `HVIR_PRIMARY_ROOT` only for a nonstandard local
 layout.
+
+### Issue startup
+
+Plan and apply the complete ordinary or epic-child implementation setup through one command:
+
+```sh
+npm run issue:start -- --issue 168
+npm run issue:start -- --issue 168 --apply
+npm run issue:start -- --issue 168 --json
+```
+
+Every mode first runs `git fetch --prune origin`, then reads fresh delivery context and local Git
+state. That ref refresh is planning mode's only mutation. Planning prints the worktree cleanup,
+selection, and dependency operations it would perform without changing any local branch,
+worktree, dependency tree, or Project value. Apply recomputes the plan rather than applying a
+stored result.
+
+Ordinary issues start at current `origin/main`. Direct epic children start at the one current
+`origin/epic/<parent>-<slug>` ref selected by delivery context. A missing or ambiguous epic branch
+is a conflict; this command never creates or pushes an epic branch. The selected local branch is
+`agent/issue-N`, and its path is the deterministic sibling
+`<primary-repository>-worktrees/issue-N`.
+
+Cleanup is limited to exact workflow-owned issue branches and sibling paths. It preserves the
+invoking worktree, locked or prunable registrations, tracked or untracked changes, unrecognized
+ignored content, live or unproven upstreams, incomplete PR evidence, nonmatching merged heads,
+and branches with open PRs. Eligible cleanup uses exact `git worktree remove` and compare-and-
+delete `git update-ref` operations without force or recursive filesystem deletion. Retained
+unrelated state is reported and does not block startup unless it collides with the selected branch
+or path.
+
+Apply creates or reuses the exact selected worktree, then runs `npm ci` with streamed output,
+interrupt handling, and a 15-minute timeout. Failed network, installer, native-rebuild, timeout,
+or other npm outcomes retain the worktree for an in-place retry. The report lists operations that
+already completed; it never rolls back by deleting uncertain state.
+
+Human output is the default. JSON reports only bounded issue and delivery identity, selected HEAD,
+dependency state, operations, retained state, conflicts, and operational failures. It excludes
+issue and PR prose, credentials, internal GitHub IDs, and raw API responses. Exit code 0 means a
+successful plan, apply, or idempotent reuse; 2 means a safe-delivery conflict; and 1 means an
+operational or partial-apply failure. After successful setup, apply sets the selected issue's
+Status to In Progress through the existing Status owner. Dry runs and failed setup do not mutate
+Status; startup never changes Project membership or Kind.
+
+### Final pull-request acceptance
+
+`hvir-merge-pr` treats the maintainer's explicit invocation as merge approval and requests
+GitHub's protected merge directly:
+
+```sh
+gh pr merge 190 --merge --auto
+```
+
+The command never uses `--admin`. The `main` ruleset, required checks, review requirements, base
+freshness, and GitHub mergeability remain authoritative. Repository tooling does not duplicate
+those policies in a second dry-run merge coordinator.
+
+After GitHub records the merge, the skill resolves one same-repository native closing issue and
+uses the existing focused interfaces to converge Project state:
+
+```sh
+HVIR_REPO_TOKEN="$(gh auth token)" \
+HVIR_PROJECT_TOKEN="$(gh auth token)" \
+npm run project:record -- --issue 85 --ensure-project --status Done --apply
+
+HVIR_REPO_TOKEN="$(gh auth token)" \
+HVIR_PROJECT_TOKEN="$(gh auth token)" \
+npm run --silent project:status -- --issue 85 --pr <pr>
+```
+
+These operations report existing facts and create no merge-phase usage. A failed Project write does not roll back a successful merge and is retried through
+only the focused owner that failed. Epic-child pull requests remain integrated by
+`hvir-implement-epic`, while ordinary and cumulative root-epic pull requests share this final
+acceptance path.
 
 ## Pull request relationships and Status
 
@@ -265,12 +468,29 @@ gh project field-create 1 \
   --single-select-options 'Epic,Feature,Bug,Refactor,Docs,Maintenance,Enhancement'
 ```
 
-Runtime automation does not create or silently repair schema. A missing field, wrong field type,
-or renamed/missing option is an actionable failure so schema drift is reviewed deliberately.
-The planning-record command also expects the canonical Project's `Status` single-select field to
+Runtime automation does not create or silently repair schema. The canonical Project ID, field
+IDs, and single-select option IDs are stable, non-secret deployment identity stored in
+`scripts/project-management/canonical-project-config.ts`. Update that public contract deliberately
+after provisioning or an intentional schema change, then audit it against GitHub:
+
+```sh
+HVIR_PROJECT_TOKEN="$(gh auth token)" npm run project:audit
+```
+
+The named audit compares the configured owner and Project number, Project ID, field ID/name/type,
+and exact option ID/name sets. Drift produces an actionable, content-free diagnostic. Ordinary
+projection and reconciliation use the stored IDs instead of rediscovering the full schema on
+every invocation. Repository, owner, or Project-number environment overrides cannot silently
+reuse the canonical IDs for another target; a mismatch fails closed.
+
+The planning-record command expects the canonical Project's `Status` single-select field to
 contain `Todo`, `In Progress`, and `Done`; it does not create or rename those options.
 Duplicate items for one repository issue fail both planning-record and kind commands visibly
 rather than allowing an arbitrary item to win.
+
+The three token fields reuse existing configured IDs through the reviewed historical migration
+above. Do not create replacement fields or run the retired rename-only command. Kind and Status
+owners validate only their own planning contract; token migration does not change their authority.
 
 ## Actions authentication and usage
 

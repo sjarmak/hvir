@@ -1,5 +1,8 @@
 # ADR-003: Terminal is a swappable pane, not the foundation
 
+> Lifecycle: Partially superseded
+> Superseded by: [ADR-045](ADR-045-explicit-outside-project-viewing.md) | partial | Terminal file-link location restriction to the active workspace.
+
 ## Context
 
 The terminal is central to hvir's workflow, but Ghostty's native embedding API is still a

@@ -1,3 +1,4 @@
+import { externalWorkspaceRoot, nextDocumentMode } from './external-document-tabs'
 import {
   defaultViewMode,
   type DiffBase,
@@ -14,19 +15,13 @@ import type {
   ViewerTab,
 } from './tab-state'
 import { viewerTabId } from './viewer-workspace-persistence'
-import { initialViewerPosition, nextViewerMode } from './viewer-position'
+import { initialViewerPosition } from './viewer-position'
+import { rebindViewerPath } from './viewer-path-rebind'
+import { isCurrentViewerRead } from './viewer-read-policy'
+import * as documentRefresh from './viewer-document-refresh'
 
-export interface ViewerWorkspaceModel {
-  readonly root?: HostPath
-  readonly generation: number
-  readonly tabs: readonly ViewerTab[]
-  readonly activeId?: string
-  readonly activePane: ViewerPaneId
-  readonly activeByPane: Readonly<Record<ViewerPaneId, string | undefined>>
-  readonly split: boolean
-  readonly restored: boolean
-  readonly readGenerations: Readonly<Record<string, number>>
-}
+import type { ViewerWorkspaceModel } from './viewer-workspace-state'
+export type { ViewerWorkspaceModel } from './viewer-workspace-state'
 
 export interface ViewerOpenRequest {
   readonly path: HostPath
@@ -68,6 +63,7 @@ export type ViewerWorkspaceAction =
   | { readonly type: 'navigation-handled'; readonly id: string; readonly serial: number }
   | { readonly type: 'reload-requested'; readonly id: string }
   | { readonly type: 'watch-conflict'; readonly id: string }
+  | documentRefresh.Action
   | {
       readonly type: 'read-started'
       readonly id: string
@@ -100,6 +96,11 @@ export type ViewerWorkspaceAction =
   | { readonly type: 'move'; readonly id: string; readonly pane: ViewerPaneId }
   | { readonly type: 'split-opened' }
   | { readonly type: 'split-closed' }
+  | {
+      readonly type: 'rebind-path'
+      readonly source: HostPath
+      readonly destination: HostPath
+    }
 
 export const initialViewerWorkspaceModel: ViewerWorkspaceModel = {
   generation: 0,
@@ -154,6 +155,7 @@ export function viewerWorkspaceReducer(
         : openNewTab(model.tabs, {
             id,
             path: action.request.path,
+            externalWorkspaceRoot: externalWorkspaceRoot(model.root, action.request.path),
             pane,
             pinned: action.request.pinned,
             mode: action.request.position
@@ -196,14 +198,15 @@ export function viewerWorkspaceReducer(
     case 'set-mode':
       return mapTab(model, action.id, (tab) => ({
         ...tab,
-        mode: action.mode,
+        mode:
+          tab.externalWorkspaceRoot && action.mode === 'diff' ? tab.mode : action.mode,
         position: action.position ?? tab.position,
       }))
     case 'cycle-active-mode':
       return model.activeId
         ? mapTab(model, model.activeId, (tab) => ({
             ...tab,
-            mode: nextViewerMode(tab.mode),
+            mode: nextDocumentMode(tab),
           }))
         : model
     case 'set-diff-base':
@@ -213,7 +216,7 @@ export function viewerWorkspaceReducer(
       }))
     case 'set-content':
       return mapTab(model, action.id, (tab) =>
-        tab.file
+        tab.file && !tab.externalWorkspaceRoot
           ? {
               ...tab,
               pinned: true,
@@ -245,6 +248,8 @@ export function viewerWorkspaceReducer(
       }))
     case 'watch-conflict':
       return mapTab(model, action.id, (tab) => ({ ...tab, conflict: true }))
+    case 'document-refresh':
+      return mapTab(model, action.id, (tab) => documentRefresh.apply(tab, action.update))
     case 'read-started':
       if (action.workspaceGeneration !== model.generation) return model
       return {
@@ -259,20 +264,28 @@ export function viewerWorkspaceReducer(
         },
       }
     case 'read-succeeded':
-      if (!currentRead(model, action)) return model
+      if (!isCurrentViewerRead(model, action)) return model
       return mapTab(model, action.id, (tab) =>
         tab.dirty
           ? tab
           : {
               ...tab,
               file: action.file,
+              externalWorkspaceRoot: action.file.resolvedPath
+                ? action.file.externalWorkspaceRoot
+                : tab.externalWorkspaceRoot,
+              mode:
+                (action.file.externalWorkspaceRoot || tab.externalWorkspaceRoot) &&
+                tab.mode === 'diff'
+                  ? 'source'
+                  : tab.mode,
               loading: false,
               error: undefined,
               conflict: false,
             },
       )
     case 'read-failed':
-      if (!currentRead(model, action)) return model
+      if (!isCurrentViewerRead(model, action)) return model
       return mapTab(model, action.id, (tab) =>
         tab.dirty
           ? tab
@@ -339,6 +352,8 @@ export function viewerWorkspaceReducer(
         },
       }
     }
+    case 'rebind-path':
+      return rebindViewerPath(model, action.source, action.destination)
   }
 }
 
@@ -479,18 +494,4 @@ function reorderTabs(
   if (!dragged) return tabs
   next.splice(to, 0, dragged)
   return next
-}
-
-function currentRead(
-  model: ViewerWorkspaceModel,
-  action: {
-    readonly id: string
-    readonly workspaceGeneration: number
-    readonly readGeneration: number
-  },
-): boolean {
-  return (
-    action.workspaceGeneration === model.generation &&
-    model.readGenerations[action.id] === action.readGeneration
-  )
 }

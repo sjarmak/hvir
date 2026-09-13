@@ -1,5 +1,9 @@
 # ADR-019: Working output is not actionable attention
 
+> Lifecycle: Partially superseded
+> Supersedes: [ADR-009](ADR-009-hierarchical-attention.md) | partial | Classifying ongoing post-submission output as actionable new-output attention.
+> Superseded by: [ADR-034](ADR-034-project-name-working-presentation.md) | partial | Working presentation being confined to the terminal row.
+
 ## Context
 
 ADR-009 established provider-independent terminal attention from generic input, output, idle,

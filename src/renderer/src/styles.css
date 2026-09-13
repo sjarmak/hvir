@@ -3,13 +3,19 @@
  * shared by multiple feature surfaces. */
 @import './styles/base.css';
 @import './styles/projects.css';
+@import './styles/provider-context.css';
+@import './styles/sessions-overview.css';
+@import './styles/sessions-collection.css';
+@import './styles/sessions-terminal-detail.css';
 @import './styles/health.css';
 @import './styles/diagnostic-report.css';
 @import './styles/shell.css';
 @import './styles/viewer-tabs.css';
+@import './styles/viewer-find.css';
 @import './styles/terminal-shell.css';
 @import './styles/terminal-move.css';
 @import './styles/settings.css';
+@import './styles/terminal-theme-gallery.css';
 @import './styles/harness-settings.css';
 @import './styles/composer-submit.css';
 @import './styles/terminal-list.css';
@@ -20,7 +26,16 @@
 @import './styles/git-graph.css';
 @import './styles/git-inspector.css';
 @import './styles/dialogs.css';
+@import './styles/workspace-catalog.css';
 @import './styles/tree.css';
+@import './styles/context-menu.css';
+@import './styles/file-operations.css';
+@import './styles/path-copy.css';
+@import './styles/terminal-context-menu.css';
 @import './styles/viewer-content.css';
+@import './styles/document-review.css';
+@import './styles/viewer-workload.css';
 @import './styles/terminal-pane.css';
+@import './styles/terminal-search.css';
 @import './styles/web-pane.css';
+@import './styles/scrollbars.css';

@@ -1,11 +1,15 @@
 import {
   basenameHostPath,
+  boundTextWorkload,
   dirnameHostPath,
   hostPath,
   GIT_CHANGE_DISPLAY_LIMIT,
+  measureTextWorkload,
   type ExecResult,
   type HostId,
   type HostPath,
+  type Stat,
+  type TextWorkload,
 } from '../../shared'
 import type { ExecOptions } from '../project-host'
 
@@ -13,10 +17,21 @@ const GIT_STATUS_MAX_BUFFER = 20 * 1024 * 1024
 const GIT_STATUS_MAX_RECORDS = (GIT_CHANGE_DISPLAY_LIMIT + 1) * 2
 
 /** The exact host operations used by the off-thread Git engine. */
+export interface GitExecOptions extends ExecOptions {
+  /** Permit one exact read-only Git command to persist refreshed index stat data. */
+  readonly allowIndexRefresh?: true
+}
+
 export interface GitHostPort {
   readonly hostId: HostId
-  exec(command: string, args: readonly string[], opts?: ExecOptions): Promise<ExecResult>
+  exec(
+    command: string,
+    args: readonly string[],
+    opts?: GitExecOptions,
+  ): Promise<ExecResult>
   readTextFile(path: HostPath): Promise<string>
+  readTextFilePrefix(path: HostPath, maxBytes: number): Promise<TextWorkload>
+  stat(path: HostPath): Promise<Stat>
 }
 
 export interface GitProjectContext {
@@ -47,12 +62,15 @@ export class GitCommandContext {
   readOnly(
     root: HostPath,
     args: readonly string[],
-    opts: ExecOptions = {},
+    opts: GitExecOptions = {},
   ): Promise<ExecResult> {
     this.assertHost(root)
+    const { allowIndexRefresh, ...hostOptions } = opts
     return this.host.exec('git', ['-C', root.path, ...args], {
-      ...opts,
-      env: { ...opts.env, GIT_OPTIONAL_LOCKS: '0' },
+      ...hostOptions,
+      ...(allowIndexRefresh
+        ? { allowIndexRefresh: true }
+        : { env: { ...hostOptions.env, GIT_OPTIONAL_LOCKS: '0' } }),
     })
   }
 
@@ -83,11 +101,13 @@ export class GitCommandContext {
   async boundedStatus(
     root: HostPath,
     args: readonly string[],
+    options: { readonly allowIndexRefresh?: true } = {},
   ): Promise<{ readonly output: string; readonly truncated: boolean }> {
     const result = await this.readOnly(root, args, {
       maxBuffer: GIT_STATUS_MAX_BUFFER,
       allowTruncatedOutput: true,
       maxStdoutNulRecords: GIT_STATUS_MAX_RECORDS,
+      ...options,
     })
     if (!result.outputTruncated && result.code !== 0) {
       throw gitError(args, result.stderr, result.code)
@@ -175,10 +195,19 @@ export class GitCommandContext {
     )
   }
 
-  async showOrEmpty(root: HostPath, revision: string): Promise<string> {
-    const result = await this.readOnly(root, ['show', revision])
-    if (result.code === 0) return result.stdout
-    if (result.code === 128) return ''
+  async boundedShowOrEmpty(
+    root: HostPath,
+    revision: string,
+    maxBytes: number,
+  ): Promise<TextWorkload> {
+    const result = await this.readOnly(root, ['show', revision], {
+      maxBuffer: maxBytes + 1,
+      allowTruncatedOutput: true,
+    })
+    if (result.code === 0 || result.outputTruncated) {
+      return boundTextWorkload(result.stdout, maxBytes, result.outputTruncated !== true)
+    }
+    if (result.code === 128) return measureTextWorkload('')
     throw gitError(['show', revision], result.stderr, result.code)
   }
 
@@ -186,9 +215,10 @@ export class GitCommandContext {
     path: HostPath,
     commandRoot: HostPath,
     relativePath: string,
-  ): Promise<string> {
+    maxBytes: number,
+  ): Promise<TextWorkload> {
     try {
-      return await this.host.readTextFile(path)
+      return await this.host.readTextFilePrefix(path, maxBytes)
     } catch (reason) {
       const trackedDeletion = await this.readOnly(commandRoot, [
         'ls-files',
@@ -197,7 +227,9 @@ export class GitCommandContext {
         '--',
         relativePath,
       ])
-      if (trackedDeletion.code === 0 && trackedDeletion.stdout.trim()) return ''
+      if (trackedDeletion.code === 0 && trackedDeletion.stdout.trim()) {
+        return measureTextWorkload('')
+      }
       throw reason
     }
   }

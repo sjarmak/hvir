@@ -11,8 +11,6 @@ export type HarnessProfileId = string & {
   readonly [harnessProfileIdBrand]: 'HarnessProfileId'
 }
 
-export type HarnessLaunchRisk = 'standard' | 'elevated' | 'unclassified'
-
 export type HarnessProfileScope =
   | { readonly kind: 'global' }
   | { readonly kind: 'project'; readonly projectRoot: HostPath }
@@ -78,9 +76,6 @@ export interface HarnessProfile extends HarnessProfileInput {
   readonly metadataRevision: number
   readonly providerContractVersion: number
   readonly builtIn: boolean
-  readonly risk: HarnessLaunchRisk
-  /** Explicit launch-menu acknowledgment, valid only for this launch revision. */
-  readonly riskAcknowledgedRevision?: number
 }
 
 export interface HarnessCommandPreviewEnvironment {
@@ -90,16 +85,18 @@ export interface HarnessCommandPreviewEnvironment {
   readonly redacted: boolean
 }
 
+/** Exhaustive provider-owned ways hvir may start a harness conversation. */
+export type HarnessLaunchMode = 'fresh' | 'resume' | 'fork'
+
 export interface HarnessCommandPreview {
   readonly profileId: HarnessProfileId
   readonly launchRevision: number
   readonly providerId: HarnessProviderId
-  readonly mode: 'fresh' | 'resume'
+  readonly mode: HarnessLaunchMode
   readonly executable: string
   readonly args: readonly string[]
   readonly environment: readonly HarnessCommandPreviewEnvironment[]
   readonly command: string
-  readonly risk: HarnessLaunchRisk
   readonly artifactIdentity: string
 }
 

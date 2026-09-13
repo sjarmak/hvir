@@ -36,6 +36,7 @@ function createFixture(settings: FixtureOptions = {}) {
     name: 'main',
     branch: 'main',
     main: true,
+    closed: false,
     missing: false,
     repository: true,
     changedFiles: 0,
@@ -46,12 +47,14 @@ function createFixture(settings: FixtureOptions = {}) {
     name: 'feature',
     branch: 'feature',
     main: false,
+    closed: false,
     missing: settings.targetMissing === true,
     repository: true,
     changedFiles: 0,
     newlyDiscovered: true,
   }
   let state: ProjectState = {
+    revision: 0,
     root: SOURCE_ROOT,
     connectionState: 'connected',
     watchTier: 'native',

@@ -6,7 +6,13 @@ import {
   shouldPublishDiffPosition,
   usesUnsavedContent,
 } from '../src/renderer/src/viewer/diff-policy'
-import { INVOKE_CHANNELS } from '../src/shared'
+import { restoreCodePosition } from '../src/renderer/src/viewer/code-scroll-anchor'
+import {
+  INVOKE_CHANNELS,
+  MAX_EXTERNAL_FILE_SOURCES,
+  PRELOAD_ONLY_INVOKE_CHANNELS,
+  RENDERER_INVOKE_CHANNELS,
+} from '../src/shared'
 
 describe('renderer diff policy', () => {
   it('uses a dirty buffer only for live-file comparisons', () => {
@@ -27,6 +33,48 @@ describe('renderer diff policy', () => {
   })
 })
 
+describe('CodeMirror scroll restoration', () => {
+  it('measures the captured line before applying exact or cross-mode offsets', () => {
+    let request:
+      | {
+          readonly read: (view: {
+            readonly lineBlockAt: () => { readonly top: number }
+            readonly documentPadding: { readonly top: number }
+          }) => unknown
+          readonly write: (value: never) => void
+        }
+      | undefined
+    const view = {
+      state: { doc: { lines: 20, line: () => ({ from: 120 }) } },
+      requestMeasure: (next: typeof request) => (request = next),
+    }
+    const root = { scrollTop: 0 }
+    const measured = {
+      lineBlockAt: () => ({ top: 700 }),
+      documentPadding: { top: 8 },
+    }
+
+    restoreCodePosition(
+      view as never,
+      root as never,
+      { mode: 'source', line: 13, scrollTop: 320 },
+      'source',
+    )
+    expect(root.scrollTop).toBe(0)
+    request?.write(request.read(measured) as never)
+    expect(root.scrollTop).toBe(320)
+
+    restoreCodePosition(
+      view as never,
+      root as never,
+      { mode: 'source', line: 13, scrollTop: 320 },
+      'diff',
+    )
+    request?.write(request.read(measured) as never)
+    expect(root.scrollTop).toBe(708)
+  })
+})
+
 describe('renderer filesystem contract', () => {
   it('exposes typed target-resolution and Git-decoration operations', () => {
     expect(INVOKE_CHANNELS).toContain('fs:resolve-entry')
@@ -36,8 +84,25 @@ describe('renderer filesystem contract', () => {
     expect(INVOKE_CHANNELS).toContain('git:pull')
     expect(INVOKE_CHANNELS).toContain('git:switch-branch')
     expect(INVOKE_CHANNELS).toContain('harness:catalog')
+    expect(INVOKE_CHANNELS).toContain('harness:probe-snapshot')
     expect(INVOKE_CHANNELS).toContain('harness:probe-templates')
     expect(INVOKE_CHANNELS).toContain('harness:profile-materialize')
+  })
+
+  it('keeps raw dropped paths behind the preload-only invoke surface', () => {
+    expect(INVOKE_CHANNELS).toContain('fs:acquire-dropped-files')
+    expect(PRELOAD_ONLY_INVOKE_CHANNELS).toEqual(['fs:acquire-dropped-files'])
+    expect(RENDERER_INVOKE_CHANNELS).not.toContain('fs:acquire-dropped-files')
+    const preload = readFileSync(join(process.cwd(), 'src/preload/index.ts'), 'utf8')
+    const filesystemIpc = readFileSync(
+      join(process.cwd(), 'src/main/ipc/features/filesystem.ts'),
+      'utf8',
+    )
+    expect(preload).toContain('webUtils.getPathForFile(file)')
+    expect(preload).toContain('files.length > MAX_EXTERNAL_FILE_SOURCES')
+    expect(preload).toContain("ipcRenderer.invoke('fs:acquire-dropped-files', { paths })")
+    expect(filesystemIpc).toContain('value.length > MAX_EXTERNAL_FILE_SOURCES')
+    expect(MAX_EXTERNAL_FILE_SOURCES).toBe(256)
   })
 
   it('keeps the Harnesses editor wide and the add flow keyboard-addressable', () => {
@@ -61,7 +126,6 @@ describe('renderer filesystem contract', () => {
     expect(dialogs).toContain('checking || busy || alreadyConfigured')
     expect(dialogs).toContain("event.key === 'Escape'")
     expect(dialogs).toContain("event.key !== 'Tab'")
-    expect(styles).toMatch(/\.terminal-list-profile\.elevated\s*\{[^}]*#d8b36f/s)
   })
 
   it('captures form values before scheduling profile state updates', () => {

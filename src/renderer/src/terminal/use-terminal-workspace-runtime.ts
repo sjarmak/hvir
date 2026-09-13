@@ -1,11 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
 
 import type {
   ProjectState,
   RegisteredProjectState,
   WorkspaceState,
 } from '../../../shared'
-import { TerminalRuntimeRegistry } from './terminal-runtime-registry'
+import { TerminalWorkspaceRuntimeOwner } from './terminal-workspace-runtime-owner'
+import { useNewWorktreeMoveBadge } from './use-new-worktree-move-badge'
 import { useTerminalWorkspaceTransfer } from './use-terminal-workspace-transfer'
 
 export function useTerminalWorkspaceRuntime({
@@ -24,29 +25,62 @@ export function useTerminalWorkspaceRuntime({
   ) => Promise<void>
   readonly onError: (message: string) => void
 }) {
-  const runtimes = useRef(new TerminalRuntimeRegistry()).current
+  const owner = useRef(new TerminalWorkspaceRuntimeOwner()).current
+  const materializedWorkspaceIds = useSyncExternalStore(
+    owner.subscribe,
+    owner.snapshot,
+    owner.snapshot,
+  )
+  const eligibleWorkspaceIds = useRef<ReadonlySet<string>>(new Set())
+  eligibleWorkspaceIds.current = new Set(
+    projectState?.projects.flatMap((project) =>
+      project.workspaces
+        .filter((workspace) => !workspace.closed)
+        .map((workspace) => workspace.id),
+    ) ?? [],
+  )
   const transfer = useTerminalWorkspaceTransfer({
+    owner,
+    canMaterialize: (workspaceId) => eligibleWorkspaceIds.current.has(workspaceId),
     acceptProjectState,
     forgetWebViews,
     onError,
   })
+  useNewWorktreeMoveBadge({ projectState, acknowledgeWorkspaces, onError })
 
-  useEffect(() => () => runtimes.dispose(), [runtimes])
   useEffect(() => {
-    runtimes.disposeMissingWorkspaces(
+    const dispose = (): void => owner.disposeForRendererRollover()
+    window.addEventListener('pagehide', dispose, { once: true })
+    return () => window.removeEventListener('pagehide', dispose)
+  }, [owner])
+  useEffect(() => {
+    owner.pruneWorkspaces(eligibleWorkspaceIds.current)
+    owner.runtimes.disposeMissingWorkspaces(
       projectState?.projects.flatMap((project) =>
-        project.workspaces.map((workspace) => workspace.root),
+        project.workspaces
+          .filter((workspace) => !workspace.closed)
+          .map((workspace) => workspace.root),
       ) ?? [],
     )
-  }, [projectState, runtimes])
+  }, [owner, projectState])
 
   return {
+    materializedWorkspaceIds,
+    sessionsObservation: owner.sessionsObservation,
+    sessionsSurface: owner.sessionsSurface,
+    focusProjectedSession: owner.focusProjectedSession.bind(owner),
+    openTerminalSearch: () => owner.runtimes.openSearch(),
     moveProps: (project: RegisteredProjectState, workspace: WorkspaceState) => ({
-      runtimes,
+      runtimes: owner.runtimes,
       moveTargets: project.workspaces.filter(
-        (target) => target.id !== workspace.id && !target.missing,
+        (target) => target.id !== workspace.id && !target.missing && !target.closed,
       ),
+      onMaterializationChange: owner.retainWorkspace,
+      onSessionsSource: owner.registerSessionsSource,
+      onSessionsChanged: owner.sessionsChanged,
       onController: transfer.register,
+      onPrepareMoveTarget: transfer.prepare,
+      onReleaseMoveTarget: transfer.release,
       onTerminalMoved: transfer.complete,
       onAcknowledgeMoveTargets: (workspaceIds: readonly string[]) =>
         acknowledgeWorkspaces(project.id, workspaceIds),

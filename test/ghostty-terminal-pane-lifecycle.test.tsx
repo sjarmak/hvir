@@ -5,202 +5,23 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createGhosttyTerminalPane } from '../src/renderer/src/terminal/ghostty-terminal-pane'
+import { terminalThemeForAppearance } from '../src/renderer/src/terminal/terminal-palette'
 import { TerminalView } from '../src/renderer/src/terminal/TerminalView'
 import type { TerminalRuntimeOptions } from '../src/renderer/src/terminal/terminal-runtime-options'
 import { TerminalRuntimeRegistry } from '../src/renderer/src/terminal/terminal-runtime-registry'
-import { asHarnessProfileId, localPath } from '../src/shared'
+import type { TerminalEvent } from '../src/renderer/src/terminal/terminal-pane'
+import {
+  asSessionsPtyHandle,
+  asSessionsTerminalHandle,
+  asSessionsWorkspaceRuntimeId,
+} from '../src/shared'
+import { ghosttyLifecycleRuntimeOptions as runtimeOptions } from './fixtures/ghostty-lifecycle-runtime-options'
+import { ghosttyState, ghosttyWebMock } from './fixtures/ghostty-terminal-pane-mock'
 
-const ghosttyState = vi.hoisted(() => ({
-  instances: [] as Array<{
-    readonly cursorBlinkValues: boolean[]
-    readonly presentationPausedValues: boolean[]
-    readonly writes: string[]
-    cursorBlinkResets: number
-    emitData(data: string): void
-    emitCustomKey(event: {
-      readonly code: string
-      readonly ctrlKey: boolean
-      readonly altKey: boolean
-      readonly metaKey: boolean
-      readonly shiftKey: boolean
-    }): boolean
-    renders: number
-    disposed: boolean
-  }>,
-}))
-
-vi.mock('ghostty-web', () => {
-  class MockTerminal {
-    readonly options: { theme?: unknown; cursorBlink?: boolean }
-    readonly buffer = { active: { getLine: () => undefined } }
-    readonly wasmTerm = {}
-    readonly viewportY = 0
-    cols = 80
-    rows = 24
-    element?: HTMLElement
-    renderer?: {
-      clear(): void
-      getCanvas(): HTMLCanvasElement
-      getMetrics(): { width: number; height: number }
-      render(): void
-      setTheme(theme: unknown): void
-    }
-    private canvas?: HTMLCanvasElement
-    private textarea?: HTMLTextAreaElement
-    private readonly state: (typeof ghosttyState.instances)[number]
-    private presentationPaused = false
-
-    constructor(options: { theme?: unknown; cursorBlink?: boolean }) {
-      this.state = {
-        cursorBlinkValues: [Boolean(options.cursorBlink)],
-        presentationPausedValues: [],
-        writes: [],
-        cursorBlinkResets: 0,
-        emitData: () => undefined,
-        emitCustomKey: () => false,
-        renders: 0,
-        disposed: false,
-      }
-      ghosttyState.instances.push(this.state)
-      this.options = new Proxy(
-        { ...options },
-        {
-          set: (target, property, value) => {
-            Reflect.set(target, property, value)
-            if (property === 'cursorBlink') {
-              this.state.cursorBlinkValues.push(Boolean(value))
-            }
-            return true
-          },
-        },
-      )
-    }
-
-    attachCustomKeyEventHandler(
-      callback: (event: {
-        readonly code: string
-        readonly ctrlKey: boolean
-        readonly altKey: boolean
-        readonly metaKey: boolean
-        readonly shiftKey: boolean
-      }) => boolean,
-    ): void {
-      this.state.emitCustomKey = callback
-    }
-
-    attachCustomWheelEventHandler(): void {}
-
-    onData(callback: (data: string) => void): { dispose(): void } {
-      this.state.emitData = callback
-      return {
-        dispose: () => {
-          this.state.emitData = () => undefined
-        },
-      }
-    }
-
-    onResize(): { dispose(): void } {
-      return { dispose: () => undefined }
-    }
-
-    onTitleChange(): { dispose(): void } {
-      return { dispose: () => undefined }
-    }
-
-    open(element: HTMLElement): void {
-      this.element = element
-      element.setAttribute('contenteditable', 'true')
-      this.canvas = document.createElement('canvas')
-      this.textarea = document.createElement('textarea')
-      element.append(this.canvas, this.textarea)
-      this.renderer = {
-        clear: () => undefined,
-        getCanvas: () => this.canvas!,
-        getMetrics: () => ({ width: 8, height: 16 }),
-        render: () => {
-          this.state.renders += 1
-        },
-        setTheme: () => undefined,
-      }
-    }
-
-    registerLinkProvider(): void {}
-
-    getViewportY(): number {
-      return 0
-    }
-
-    getScrollbackLength(): number {
-      return 0
-    }
-
-    scrollToLine(): void {}
-
-    requestRender(): void {
-      if (!this.presentationPaused) this.state.renders += 1
-    }
-
-    setRenderPaused(paused: boolean): void {
-      if (paused === this.presentationPaused) return
-      this.presentationPaused = paused
-      this.state.presentationPausedValues.push(paused)
-      if (!paused) this.requestRender()
-    }
-
-    resetCursorBlink(): void {
-      if (!this.options.cursorBlink || this.state.disposed) return
-      this.state.cursorBlinkResets += 1
-    }
-
-    getRenderStats(): {
-      parsedWrites: number
-      renderRequests: number
-      renderFrames: number
-      fullRenderFrames: number
-      paused: boolean
-      pendingFrame: boolean
-      cursorVisible: boolean
-    } {
-      return {
-        parsedWrites: this.state.writes.length,
-        renderRequests: this.state.renders,
-        renderFrames: this.state.renders,
-        fullRenderFrames: this.state.renders,
-        paused: this.presentationPaused,
-        pendingFrame: false,
-        cursorVisible: true,
-      }
-    }
-
-    write(data: string): void {
-      this.state.writes.push(data)
-    }
-
-    resize(cols: number, rows: number): void {
-      this.cols = cols
-      this.rows = rows
-    }
-
-    focus(): void {}
-
-    dispose(): void {
-      this.state.disposed = true
-      this.canvas?.remove()
-      this.textarea?.remove()
-      this.element?.removeAttribute('contenteditable')
-      this.canvas = undefined
-      this.textarea = undefined
-      this.element = undefined
-      this.renderer = undefined
-    }
-  }
-
-  return {
-    init: vi.fn(() => Promise.resolve()),
-    Terminal: MockTerminal,
-  }
+vi.mock('ghostty-web', async () => {
+  const { ghosttyWebMock } = await import('./fixtures/ghostty-terminal-pane-mock')
+  return ghosttyWebMock
 })
-
 describe('GhosttyTerminalPane lifecycle', () => {
   beforeEach(() => {
     ghosttyState.instances.splice(0)
@@ -212,43 +33,121 @@ describe('GhosttyTerminalPane lifecycle', () => {
       },
     )
   })
-
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     Reflect.deleteProperty(window, 'hvir')
     document.body.replaceChildren()
   })
-
   it('moves and disposes only its adapter-owned surface', async () => {
     const firstContainer = document.createElement('div')
     const secondContainer = document.createElement('div')
     document.body.append(firstContainer, secondContainer)
-    const pane = await createGhosttyTerminalPane(theme(), {
+    const pane = await createGhosttyTerminalPane(theme(), typography(), {
+      cursorDefaults: cursorDefaults(),
+      ligatures: true,
       modifiedKeyProtocol: 'modify-other-keys',
       metaEnterAliasesControl: true,
       composerSubmitMode: 'enter',
     })
-
+    expect(ghosttyWebMock.init).toHaveBeenCalledOnce()
+    const wasmUrl = ghosttyWebMock.init.mock.calls[0]?.[0]?.wasmUrl
+    expect(typeof wasmUrl).toBe('string')
+    expect(String(wasmUrl)).toContain('ghostty-vt.wasm')
     pane.mount(firstContainer)
     const surface = firstContainer.querySelector('.terminal-engine-host')
     expect(surface).toBeInstanceOf(HTMLDivElement)
     expect(surface?.getAttribute('contenteditable')).toBe('true')
-
     pane.reparent(secondContainer)
     expect(firstContainer.isConnected).toBe(true)
     expect(firstContainer.childElementCount).toBe(0)
     expect(secondContainer.firstElementChild).toBe(surface)
-
     pane.dispose()
     expect(secondContainer.isConnected).toBe(true)
     expect(secondContainer.childElementCount).toBe(0)
   })
-
-  it('stops hidden cursor work and restores a current repaint on reveal', async () => {
+  it('configures an exact byte budget and reports the engine limit', async () => {
     const container = document.createElement('div')
     document.body.append(container)
-    const pane = await createGhosttyTerminalPane(theme(), {
+    const pane = await createGhosttyTerminalPane(theme(), typography(), {
+      cursorDefaults: cursorDefaults(),
+      ligatures: true,
+      modifiedKeyProtocol: 'modify-other-keys',
+      metaEnterAliasesControl: true,
+      composerSubmitMode: 'enter',
+    })
+    const state = ghosttyState.instances[0]!
+
+    expect(state.scrollbackBytes).toBe(10_000_000)
+    expect(state.scrollbackLines).toBeUndefined()
+
+    pane.mount(container)
+    state.scrollbackByteLimit = 9_000_000
+    const surface = container.querySelector<HTMLElement>('.terminal-engine-host')!
+    const performance = Reflect.get(surface, '__hvirTerminalPerformance') as {
+      readonly retainedByteLimit: number
+    }
+
+    expect(performance.retainedByteLimit).toBe(9_000_000)
+    pane.dispose()
+    expect(
+      (
+        Reflect.get(surface, '__hvirTerminalPerformance') as {
+          readonly retainedByteLimit: number
+        }
+      ).retainedByteLimit,
+    ).toBe(0)
+  })
+  it('writes output once without taking ownership of the engine viewport', async () => {
+    const pane = await createGhosttyTerminalPane(theme(), typography(), {
+      cursorDefaults: cursorDefaults(),
+      ligatures: true,
+      modifiedKeyProtocol: 'modify-other-keys',
+      metaEnterAliasesControl: true,
+      composerSubmitMode: 'enter',
+    })
+    const state = ghosttyState.instances[0]!
+
+    pane.write('agent output')
+
+    expect(state.writes).toEqual(['agent output'])
+    expect(state.scrollToLineCalls).toEqual([])
+    pane.dispose()
+  })
+  it('uses only structured parser events and releases their source on disposal', async () => {
+    const pane = await createGhosttyTerminalPane(theme(), typography(), {
+      cursorDefaults: cursorDefaults(),
+      ligatures: true,
+      modifiedKeyProtocol: 'modify-other-keys',
+      metaEnterAliasesControl: true,
+      composerSubmitMode: 'enter',
+    })
+    const events: TerminalEvent[] = []
+    pane.events.onEvent((event) => events.push(event))
+    pane.setPresentation('hidden')
+    pane.mount(document.createElement('div'))
+    const state = ghosttyState.instances[0]!
+    state.emitTerminalEvent({ type: 'title', title: 'Structured' })
+    state.emitTerminalEvent({
+      type: 'notification',
+      source: 'osc-9',
+      title: '',
+      body: '',
+    })
+    state.emitTerminalEvent({ type: 'bell' })
+    pane.write('\u001b]2;Raw duplicate\u0007')
+    expect(events.map((event) => event.type)).toEqual(['title', 'notification', 'bell'])
+    pane.dispose()
+    state.emitTerminalEvent({ type: 'bell' })
+    expect(events).toHaveLength(3)
+  })
+  it('stops hidden cursor work and restores a current repaint on reveal', async () => {
+    const container = document.createElement('div')
+    const nextContainer = document.createElement('div')
+    document.body.append(container, nextContainer)
+    const pane = await createGhosttyTerminalPane(theme(), typography(), {
+      cursorDefaults: cursorDefaults(),
+      ligatures: true,
       modifiedKeyProtocol: 'modify-other-keys',
       metaEnterAliasesControl: true,
       composerSubmitMode: 'enter',
@@ -257,18 +156,65 @@ describe('GhosttyTerminalPane lifecycle', () => {
 
     pane.setPresentation('hidden')
     pane.mount(container)
+    const canvas = container.querySelector('canvas')
     pane.write('\u001b]0;Hidden output\u0007buffered')
+    const surface = container.querySelector<HTMLElement>('.terminal-engine-host')!
+    Object.defineProperties(surface, {
+      clientWidth: { configurable: true, value: 780 },
+      clientHeight: { configurable: true, value: 360 },
+    })
     const hiddenRenderCount = state.renders
+    const hiddenResizeCount = state.resizes.length
+    const { cursorText, ...lightTheme } = terminalThemeForAppearance('light')
 
-    expect(state.cursorBlinkValues).toEqual([true, false])
+    pane.reparent(nextContainer)
+    pane.setTheme(terminalThemeForAppearance('light'))
+    pane.setTypography({ fontFamily: 'Deferred Mono', fontSize: 18 })
+    pane.setCursorDefaults({ shape: 'hollow-block', blink: 'steady' })
+    pane.setLigatures(false)
+    await settleTerminalFit()
+
+    expect(state.cursorBlinkValues).toEqual(['terminal', false])
+    expect(state.cursorStyleValues).toEqual(['block', 'block_hollow'])
+    expect(state.fontLigatureValues).toEqual([true, false])
     expect(state.presentationPausedValues).toEqual([true])
     expect(state.writes).toContain('\u001b]0;Hidden output\u0007buffered')
+    expect(state.themes.at(-1)).toEqual({ ...lightTheme, cursorAccent: cursorText })
+    expect(state.rendererThemeWrites).toBe(0)
+    expect(state.renders).toBe(hiddenRenderCount)
+    expect(state.resizes).toHaveLength(hiddenResizeCount)
+    expect(nextContainer.firstElementChild).toBe(surface)
+
+    pane.setPresentation('visible')
+    expect(canvas?.style.visibility).toBe('hidden')
+    await settleTerminalFit()
+
+    expect(state.cursorBlinkValues).toEqual(['terminal', false])
+    expect(state.cursorStyleValues).toEqual(['block', 'block_hollow'])
+    expect(state.fontLigatureValues).toEqual([true, false])
+    expect(state.presentationPausedValues).toEqual([true, false])
+    expect(state.renders).toBeGreaterThan(hiddenRenderCount)
+    expect(state.resizes).toEqual([{ cols: 72, rows: 16 }])
+    expect(nextContainer.querySelector('canvas')).toBe(canvas)
+    expect(canvas?.style.visibility).toBe('')
+
+    pane.setPresentation('hidden')
+    const retainedRenderCount = state.renders
+    const retainedResizeCount = state.resizes.length
+    expect(canvas?.style.visibility).toBe('hidden')
 
     pane.setPresentation('visible')
 
-    expect(state.cursorBlinkValues).toEqual([true, false, true])
-    expect(state.presentationPausedValues).toEqual([true, false])
-    expect(state.renders).toBeGreaterThan(hiddenRenderCount)
+    expect(canvas?.style.visibility).toBe('')
+    expect(state.presentationPausedValues).toEqual([true, false, true])
+    expect(state.renders).toBe(retainedRenderCount)
+    expect(state.resizes).toHaveLength(retainedResizeCount)
+
+    await settleTerminalFit()
+
+    expect(state.presentationPausedValues).toEqual([true, false, true, false])
+    expect(state.renders).toBeGreaterThan(retainedRenderCount)
+    expect(state.resizes).toHaveLength(retainedResizeCount)
 
     pane.setPresentation('hidden')
     pane.dispose()
@@ -282,15 +228,20 @@ describe('GhosttyTerminalPane lifecycle', () => {
   it('resets cursor blinking for ordinary and adapter-owned input only while visible', async () => {
     const container = document.createElement('div')
     document.body.append(container)
-    const pane = await createGhosttyTerminalPane(theme(), {
+    const pane = await createGhosttyTerminalPane(theme(), typography(), {
+      cursorDefaults: cursorDefaults(),
+      ligatures: true,
       modifiedKeyProtocol: 'modify-other-keys',
       metaEnterAliasesControl: true,
       composerSubmitMode: 'enter',
     })
     const state = ghosttyState.instances[0]!
     const input = vi.fn()
+    const clipboardPaste = vi.fn()
     pane.events.onData(input)
+    pane.events.onClipboardPaste(clipboardPaste)
     pane.mount(container)
+    await settleTerminalFit()
 
     state.emitData('a')
     const customHandled = state.emitCustomKey({
@@ -302,15 +253,17 @@ describe('GhosttyTerminalPane lifecycle', () => {
     })
 
     expect(customHandled).toBe(true)
-    expect(input.mock.calls).toEqual([['a'], ['\x16']])
+    expect(input.mock.calls).toEqual([['a', 'user']])
+    expect(clipboardPaste).toHaveBeenCalledExactlyOnceWith('\x16')
     expect(state.cursorBlinkResets).toBe(2)
 
     pane.setPresentation('hidden')
     state.emitData('b')
-    expect(input).toHaveBeenLastCalledWith('b')
+    expect(input).toHaveBeenLastCalledWith('b', 'user')
     expect(state.cursorBlinkResets).toBe(2)
 
     pane.setPresentation('visible')
+    await settleTerminalFit()
     state.emitData('c')
     expect(state.cursorBlinkResets).toBe(3)
 
@@ -320,6 +273,28 @@ describe('GhosttyTerminalPane lifecycle', () => {
     expect(state.cursorBlinkResets).toBe(3)
   })
 
+  it('supplies the preload file-path capability only to ghostty paste ownership', async () => {
+    const resolved = '/home/user/project/requirements.txt'
+    const resolveTerminalClipboardFilePaste = vi.fn(() => resolved)
+    Object.defineProperty(window, 'hvir', {
+      configurable: true,
+      value: { resolveTerminalClipboardFilePaste },
+    })
+    const pane = await createGhosttyTerminalPane(theme(), typography(), {
+      cursorDefaults: cursorDefaults(),
+      ligatures: true,
+      modifiedKeyProtocol: 'none',
+      metaEnterAliasesControl: false,
+      composerSubmitMode: 'enter',
+    })
+    const file = { name: 'requirements.txt' } as File
+
+    expect(ghosttyState.instances[0]!.resolveClipboardFilePaste(file)).toBe(resolved)
+    expect(resolveTerminalClipboardFilePaste).toHaveBeenCalledExactlyOnceWith(file)
+
+    pane.dispose()
+  })
+
   it('follows React presentation independently from keyboard focus', async () => {
     const invoke = vi.fn(() =>
       Promise.resolve({
@@ -327,6 +302,7 @@ describe('GhosttyTerminalPane lifecycle', () => {
         id: 'terminal-1',
         pid: 4321,
         resumed: false,
+        reattached: false,
         harnessSessionId: undefined,
         identityStatus: 'unsupported' as const,
         capabilities: {
@@ -366,7 +342,7 @@ describe('GhosttyTerminalPane lifecycle', () => {
       await vi.waitFor(() => expect(invoke).toHaveBeenCalledOnce())
     })
     const state = ghosttyState.instances[0]!
-    expect(state.cursorBlinkValues).toEqual([true, false])
+    expect(state.cursorBlinkValues).toEqual(['terminal'])
 
     act(() => {
       root.render(
@@ -380,7 +356,7 @@ describe('GhosttyTerminalPane lifecycle', () => {
         />,
       )
     })
-    expect(state.cursorBlinkValues).toEqual([true, false, true])
+    expect(state.cursorBlinkValues).toEqual(['terminal'])
 
     act(() => {
       root.render(
@@ -394,9 +370,182 @@ describe('GhosttyTerminalPane lifecycle', () => {
         />,
       )
     })
-    expect(state.cursorBlinkValues).toEqual([true, false, true, false])
+    expect(state.cursorBlinkValues).toEqual(['terminal'])
     expect(invoke).toHaveBeenCalledOnce()
     expect(send).not.toHaveBeenCalledWith('pty:kill', expect.anything())
+
+    act(() => {
+      root.unmount()
+      registry.dispose()
+    })
+  })
+
+  it('reflows a retained pane and propagates its new grid without clearing output', async () => {
+    const invoke = vi.fn(() =>
+      Promise.resolve({
+        outcome: 'started' as const,
+        id: 'terminal-1',
+        pid: 4321,
+        resumed: false,
+        reattached: false,
+        harnessSessionId: undefined,
+        identityStatus: 'unsupported' as const,
+        capabilities: {
+          sessionIdentity: 'none' as const,
+          exactResume: false,
+          contextPresentation: 'none' as const,
+        },
+      }),
+    )
+    const send = vi.fn()
+    Object.defineProperty(window, 'hvir', {
+      configurable: true,
+      value: {
+        invoke,
+        send,
+        on: vi.fn(() => () => undefined),
+      },
+    })
+    const registry = new TerminalRuntimeRegistry()
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    const render = (fontSize: number) => (
+      <TerminalView
+        {...runtimeOptions()}
+        typography={{ fontFamily: 'Example Mono, monospace', fontSize }}
+        slot="primary"
+        visible
+        themeOverride="app"
+        runtimes={registry}
+      />
+    )
+
+    act(() => root.render(render(13)))
+    await act(async () => {
+      await vi.waitFor(() => expect(invoke).toHaveBeenCalledOnce())
+    })
+    const state = ghosttyState.instances[0]!
+    const surface = host.querySelector<HTMLElement>('.terminal-engine-host')!
+    const canvas = surface.querySelector('canvas')
+    Object.defineProperties(surface, {
+      clientWidth: { configurable: true, value: 800 },
+      clientHeight: { configurable: true, value: 320 },
+    })
+    state.writes.push('retained history')
+
+    act(() => root.render(render(18)))
+    await act(async () => {
+      await settleTerminalFit(180)
+    })
+
+    expect(host.querySelector('.terminal-engine-host')).toBe(surface)
+    expect(surface.querySelector('canvas')).toBe(canvas)
+    expect(state.disposed).toBe(false)
+    expect(state.writes).toContain('retained history')
+    expect(state.fontFamilies).toEqual(['Example Mono, monospace'])
+    expect(state.fontSizes).toEqual([13, 18])
+    expect(state.resizes.at(-1)).toEqual({ cols: 74, rows: 14 })
+    expect(send).toHaveBeenCalledWith('pty:resize', {
+      id: 'terminal-1',
+      cols: 74,
+      rows: 14,
+    })
+    expect(send).not.toHaveBeenCalledWith('pty:kill', expect.anything())
+
+    act(() => {
+      root.unmount()
+      registry.dispose()
+    })
+  })
+
+  it('retains a live pane and output route while its workspace view is absent', async () => {
+    let emitData: ((event: { id: string; data: string }) => void) | undefined
+    const invoke = vi.fn(() =>
+      Promise.resolve({
+        outcome: 'started' as const,
+        id: 'terminal-1',
+        pid: 4321,
+        resumed: false,
+        reattached: false,
+        harnessSessionId: undefined,
+        identityStatus: 'unsupported' as const,
+        capabilities: {
+          sessionIdentity: 'none' as const,
+          exactResume: false,
+          contextPresentation: 'none' as const,
+        },
+      }),
+    )
+    const send = vi.fn()
+    Object.defineProperty(window, 'hvir', {
+      configurable: true,
+      value: {
+        invoke,
+        send,
+        on: vi.fn((channel: string, listener: typeof emitData) => {
+          if (channel === 'pty:data') emitData = listener
+          return () => undefined
+        }),
+      },
+    })
+    const registry = new TerminalRuntimeRegistry()
+    const host = document.createElement('div')
+    document.body.append(host)
+    const root = createRoot(host)
+    const render = (
+      presented: boolean,
+      connectionState: TerminalRuntimeOptions['connectionState'] = 'connected',
+    ) => (
+      <TerminalView
+        {...runtimeOptions()}
+        active={presented}
+        slot="primary"
+        presented={presented}
+        visible={presented}
+        connectionState={connectionState}
+        themeOverride="app"
+        runtimes={registry}
+      />
+    )
+
+    act(() => root.render(render(true)))
+    await act(async () => {
+      await vi.waitFor(() => expect(invoke).toHaveBeenCalledOnce())
+    })
+    const state = ghosttyState.instances[0]!
+    const surface = host.querySelector('.terminal-engine-host')
+
+    act(() => root.render(render(false)))
+    expect(host.querySelector('.terminal-panel')).toBeNull()
+    expect(state.disposed).toBe(false)
+    expect(send).not.toHaveBeenCalledWith('pty:kill', expect.anything())
+
+    act(() => {
+      emitData?.({ id: 'terminal-1', data: 'background output' })
+    })
+    await vi.waitFor(() => expect(state.writes).toContain('background output'))
+
+    act(() => root.render(render(false, 'disconnected')))
+    expect(state.disposed).toBe(true)
+    expect(send).not.toHaveBeenCalledWith('pty:kill', expect.anything())
+
+    act(() => root.render(render(false, 'connected')))
+    await act(async () => {
+      await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(2))
+    })
+    const reconnected = ghosttyState.instances[1]!
+    act(() => {
+      emitData?.({ id: 'terminal-1', data: 'reconnected background output' })
+    })
+    await vi.waitFor(() =>
+      expect(reconnected.writes).toContain('reconnected background output'),
+    )
+
+    act(() => root.render(render(true)))
+    expect(host.querySelector('.terminal-engine-host')).not.toBe(surface)
+    expect(ghosttyState.instances).toHaveLength(2)
+    expect(invoke).toHaveBeenCalledTimes(2)
 
     act(() => {
       root.unmount()
@@ -411,6 +560,7 @@ describe('GhosttyTerminalPane lifecycle', () => {
         id: 'terminal-1',
         pid: 4321,
         resumed: false,
+        reattached: false,
         harnessSessionId: undefined,
         identityStatus: 'unsupported' as const,
         capabilities: {
@@ -564,13 +714,14 @@ describe('GhosttyTerminalPane lifecycle', () => {
     Reflect.deleteProperty(window, 'hvir')
   })
 
-  it('reasserts visible presentation after a retained runtime changes React owners', async () => {
+  it('hands a retained runtime between React owners while hidden', async () => {
     const invoke = vi.fn(() =>
       Promise.resolve({
         outcome: 'started' as const,
         id: 'terminal-1',
         pid: 4321,
         resumed: false,
+        reattached: false,
         harnessSessionId: undefined,
         identityStatus: 'unsupported' as const,
         capabilities: {
@@ -610,17 +761,225 @@ describe('GhosttyTerminalPane lifecycle', () => {
     const state = ghosttyState.instances[0]!
 
     await act(async () => {
+      await settleTerminalFit()
       root.render(renderOwner('target'))
       await Promise.resolve()
     })
+    await settleTerminalFit()
 
-    expect(state.presentationPausedValues).toEqual([true, false])
+    expect(state.presentationPausedValues).toEqual([true, false, true, false])
     expect(host.querySelectorAll('.terminal-engine-host')).toHaveLength(1)
 
     act(() => {
       root.unmount()
       registry.dispose()
     })
+  })
+
+  it('orders retained attachment, detachment, and focus through the current owner', async () => {
+    const invoke = vi.fn(() =>
+      Promise.resolve({
+        outcome: 'started' as const,
+        id: 'terminal-1',
+        pid: 4321,
+        resumed: false,
+        reattached: false,
+        harnessSessionId: undefined,
+        identityStatus: 'unsupported' as const,
+        capabilities: {
+          sessionIdentity: 'none' as const,
+          exactResume: false,
+          contextPresentation: 'none' as const,
+        },
+      }),
+    )
+    Object.defineProperty(window, 'hvir', {
+      configurable: true,
+      value: {
+        invoke,
+        send: vi.fn(),
+        on: vi.fn(() => () => undefined),
+      },
+    })
+    const registry = new TerminalRuntimeRegistry()
+    const options = runtimeOptions()
+    const runtime = registry.acquire(options)
+    const first = document.createElement('div')
+    const second = document.createElement('div')
+    const third = document.createElement('div')
+    document.body.append(first, second, third)
+
+    runtime.attach(first)
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledOnce())
+    await settleTerminalFit()
+    const state = ghosttyState.instances[0]!
+    const surface = first.querySelector('.terminal-engine-host')
+    expect(state.presentationPausedValues).toEqual([true, false])
+    expect(deliveryPresentation(first)).toBe('visible')
+
+    // New-owner attachment may run before stale old-owner cleanup.
+    runtime.attach(second)
+    runtime.detach(first)
+    await settleTerminalFit()
+    expect(second.querySelector('.terminal-engine-host')).toBe(surface)
+    expect(state.presentationPausedValues).toEqual([true, false, true, false])
+    expect(deliveryPresentation(second)).toBe('visible')
+
+    runtime.attach(second)
+    runtime.detach(first)
+    expect(state.presentationPausedValues).toEqual([true, false, true, false])
+
+    // Old-owner cleanup may also run before the replacement attaches.
+    runtime.detach(second)
+    runtime.detach(second)
+    const focusCallsWhileAttached = state.focusCalls
+    const focusEventsWhileAttached = vi.mocked(options.onFocus).mock.calls.length
+    runtime.focus()
+    runtime.synchronizeLifecycle()
+    expect(state.presentationPausedValues).toEqual([true, false, true, false, true])
+    expect(deliveryPresentation(second)).toBe('hidden')
+    expect(state.focusCalls).toBe(focusCallsWhileAttached)
+    expect(options.onFocus).toHaveBeenCalledTimes(focusEventsWhileAttached)
+
+    runtime.attach(third)
+    await settleTerminalFit()
+    expect(third.querySelector('.terminal-engine-host')).toBe(surface)
+    expect(state.presentationPausedValues).toEqual([
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+    ])
+    expect(deliveryPresentation(third)).toBe('visible')
+
+    registry.dispose()
+  })
+
+  it('borrows the one actual pane for Sessions and gates input, resize, focus, and restoration by its lease', async () => {
+    vi.useFakeTimers()
+    const invoke = vi.fn(() =>
+      Promise.resolve({
+        outcome: 'started' as const,
+        id: 'terminal-1',
+        instanceId: 'instance-1',
+        pid: 4321,
+        resumed: false,
+        reattached: false,
+        harnessSessionId: undefined,
+        identityStatus: 'unsupported' as const,
+        capabilities: {
+          sessionIdentity: 'none' as const,
+          exactResume: false,
+          contextPresentation: 'none' as const,
+        },
+      }),
+    )
+    const send = vi.fn()
+    const events = new Map<string, (event: never) => void>()
+    Object.defineProperty(window, 'hvir', {
+      configurable: true,
+      value: {
+        invoke,
+        send,
+        on: vi.fn((channel: string, listener: (event: never) => void) => {
+          events.set(channel, listener)
+          return () => events.delete(channel)
+        }),
+      },
+    })
+    const registry = new TerminalRuntimeRegistry()
+    const options = runtimeOptions()
+    const runtime = registry.acquire(options)
+    const workspace = document.createElement('div')
+    const detail = document.createElement('div')
+    document.body.append(workspace, detail)
+    runtime.attach(workspace)
+    await vi.runAllTimersAsync()
+    await Promise.resolve()
+    const state = ghosttyState.instances[0]!
+    const surface = workspace.querySelector('.terminal-engine-host')
+    const acquisition = registry.acquireSessionsSurface(sessionsSurfaceRequest(4))
+
+    expect(acquisition.outcome).toBe('acquired')
+    if (acquisition.outcome !== 'acquired') throw new Error('Expected surface lease')
+    const lease = acquisition.lease
+    expect(registry.acquireSessionsSurface(sessionsSurfaceRequest(4))).toEqual({
+      outcome: 'unavailable',
+      reason: 'lease-conflict',
+    })
+    const focusCountBeforeDetail = vi.mocked(options.onFocus).mock.calls.length
+    expect(lease.attach(detail)).toBe(true)
+    expect(detail.querySelector('.terminal-engine-host')).toBe(surface)
+    expect(document.querySelectorAll('.terminal-engine-host')).toHaveLength(1)
+    expect(options.onFocus).toHaveBeenCalledTimes(focusCountBeforeDetail)
+    runtime.focus()
+    expect(options.onFocus).toHaveBeenCalledTimes(focusCountBeforeDetail)
+
+    state.emitData('direct input')
+    state.emitResize({ cols: 100, rows: 31 })
+    await vi.advanceTimersByTimeAsync(75)
+    expect(send).toHaveBeenCalledWith('pty:write', {
+      id: 'terminal-1',
+      data: 'direct input',
+    })
+    expect(send).toHaveBeenCalledWith('pty:resize', {
+      id: 'terminal-1',
+      cols: 100,
+      rows: 31,
+    })
+    expect(lease.focus(detail)).toBe(true)
+    expect(options.onFocus).toHaveBeenCalledTimes(focusCountBeforeDetail + 1)
+
+    send.mockClear()
+    vi.mocked(options.onInput).mockClear()
+    state.emitResize({ cols: 102, rows: 33 })
+    lease.setVisible(detail, false)
+    await vi.advanceTimersByTimeAsync(75)
+    state.emitData('hidden input')
+    state.emitResize({ cols: 101, rows: 32 })
+    await vi.advanceTimersByTimeAsync(75)
+    expect(send).not.toHaveBeenCalled()
+    expect(options.onInput).not.toHaveBeenCalled()
+
+    events.get('pty:data')?.({ id: 'terminal-1', data: '\x1b[6n' } as never)
+    await vi.advanceTimersByTimeAsync(40)
+    expect(send).toHaveBeenCalledExactlyOnceWith('pty:write', {
+      id: 'terminal-1',
+      data: '\x1b[1;1R',
+    })
+    expect(options.onInput).not.toHaveBeenCalled()
+
+    lease.release()
+    expect(workspace.querySelector('.terminal-engine-host')).toBe(surface)
+    expect(invoke).toHaveBeenCalledOnce()
+    expect(lease.focus(detail)).toBe(false)
+    const successorResult = registry.acquireSessionsSurface(sessionsSurfaceRequest(5))
+    if (successorResult.outcome !== 'acquired') throw new Error('Expected successor')
+    const successor = successorResult.lease
+    const disconnected = vi.fn()
+    successor.subscribe(disconnected)
+    successor.attach(detail)
+    runtime.update({ ...options, connectionState: 'connecting' })
+    runtime.synchronizeLifecycle()
+    expect(disconnected).toHaveBeenCalledExactlyOnceWith('connection-unavailable')
+    expect(successor.focus(detail)).toBe(false)
+
+    runtime.update(options)
+    runtime.synchronizeLifecycle()
+    const finalResult = registry.acquireSessionsSurface(sessionsSurfaceRequest(6))
+    if (finalResult.outcome !== 'acquired') throw new Error('Expected final lease')
+    const finalLease = finalResult.lease
+    const revoked = vi.fn()
+    finalLease.subscribe(revoked)
+    finalLease.attach(detail)
+    expect(invoke).toHaveBeenCalledOnce()
+    registry.dispose()
+    expect(send).toHaveBeenCalledWith('pty:kill', { id: 'terminal-1' })
+    expect(revoked).toHaveBeenCalledExactlyOnceWith('owner-disposed')
+    expect(finalLease.focus(detail)).toBe(false)
+    vi.useRealTimers()
   })
 
   it('starts fresh once and keeps React ownership through the identity handoff', async () => {
@@ -636,6 +995,7 @@ describe('GhosttyTerminalPane lifecycle', () => {
         id: 'd33b09dd-bf6a-4fab-b198-446017d5f8c9',
         pid: 4321,
         resumed: false,
+        reattached: false,
         harnessSessionId: 'd33b09dd-bf6a-4fab-b198-446017d5f8c9',
         identityStatus: 'identified' as const,
         capabilities: {
@@ -709,6 +1069,7 @@ describe('GhosttyTerminalPane lifecycle', () => {
         id: 'terminal-1',
         pid: 4321,
         resumed: true,
+        reattached: false,
         harnessSessionId: '05ea41ff-026f-4ab6-b930-64eb3b497806',
         identityStatus: 'identified' as const,
         capabilities: {
@@ -802,54 +1163,33 @@ describe('GhosttyTerminalPane lifecycle', () => {
   })
 })
 
-function theme() {
+function sessionsSurfaceRequest(projectionRevision: number) {
   return {
-    background: '#111318',
-    foreground: '#d8dee9',
-    cursor: '#d8dee9',
-    selectionBackground: '#39445a',
-    black: '#20242c',
-    red: '#e06c75',
-    green: '#98c379',
-    yellow: '#e5c07b',
-    blue: '#61afef',
-    magenta: '#c678dd',
-    cyan: '#56b6c2',
-    white: '#d8dee9',
+    handle: asSessionsTerminalHandle('terminal-1'),
+    workspaceRuntimeId: asSessionsWorkspaceRuntimeId('workspace-runtime'),
+    livePty: {
+      handle: asSessionsPtyHandle('instance-1'),
+      rendererOwnerId: 7,
+      rendererGeneration: 2,
+    },
+    demandGeneration: 1,
+    projectionRevision,
+    sourceRevision: 8,
   }
 }
 
-function runtimeOptions(): TerminalRuntimeOptions {
-  return {
-    sessionId: 'terminal-1',
-    profileId: asHarnessProfileId('claude-code-default'),
-    launchRevision: 2,
-    riskAcknowledged: false,
-    supportsResume: true,
-    fallbackTitle: 'Claude Code · repo',
-    harnessSessionId: '05ea41ff-026f-4ab6-b930-64eb3b497806',
-    resumeOnStart: true,
-    startMode: 'interactive',
-    position: 0,
-    active: true,
-    presentation: 'visible',
-    modifiedKeyProtocol: 'modify-other-keys',
-    metaEnterAliasesControl: true,
-    composerSubmitMode: 'enter',
-    cwd: localPath('/repo'),
-    workspaceRoot: localPath('/repo'),
-    connectionState: 'connected',
-    onTitle: vi.fn(),
-    onStatus: vi.fn(),
-    onTelemetry: vi.fn(),
-    onIdentity: vi.fn(),
-    onStarted: vi.fn(),
-    onFreshStarted: vi.fn(),
-    onCapabilities: vi.fn(),
-    onInput: vi.fn(),
-    onOutput: vi.fn(),
-    onBell: vi.fn(),
-    onFocus: vi.fn(),
-    onLink: vi.fn(),
-  }
+const theme = () => terminalThemeForAppearance('dark')
+const typography = () => ({ fontFamily: 'ui-monospace, monospace', fontSize: 13 })
+const cursorDefaults = () => ({ shape: 'block', blink: 'terminal' }) as const
+
+function settleTerminalFit(delay = 100): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, delay))
+}
+
+function deliveryPresentation(container: HTMLElement): 'visible' | 'hidden' | undefined {
+  return (
+    container as HTMLElement & {
+      readonly __hvirTerminalDelivery?: { readonly presentation: 'visible' | 'hidden' }
+    }
+  ).__hvirTerminalDelivery?.presentation
 }

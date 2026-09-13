@@ -8,7 +8,14 @@ import type {
   HostPath,
   TerminalIdentityStatus,
 } from '../../../shared'
-import type { TerminalLinkActivation, TerminalPresentation } from './terminal-pane'
+import type {
+  TerminalColorTheme,
+  TerminalCursorDefaults,
+  TerminalLinkActivation,
+  TerminalPresentation,
+  TerminalTypography,
+} from './terminal-pane'
+import type { TerminalForkRequest } from './terminal-workspace-model'
 
 export interface FreshTerminalStart {
   readonly sessionId: string
@@ -22,10 +29,10 @@ export interface TerminalRuntimeOptions {
   readonly sessionId: string
   readonly profileId: HarnessProfileId
   readonly launchRevision: number
-  readonly riskAcknowledged: boolean
   readonly supportsResume: boolean
   readonly fallbackTitle: string
   readonly harnessSessionId?: string
+  readonly forkRequest?: TerminalForkRequest
   readonly resumeOnStart: boolean
   readonly startMode: 'interactive' | 'bulk'
   /** Command typed into the shell once, right after first launch (e.g. `gc session attach …`). */
@@ -36,6 +43,10 @@ export interface TerminalRuntimeOptions {
   readonly modifiedKeyProtocol: HarnessModifiedKeyProtocol
   readonly metaEnterAliasesControl: boolean
   readonly composerSubmitMode: ComposerSubmitMode
+  readonly theme: TerminalColorTheme
+  readonly typography: TerminalTypography
+  readonly cursorDefaults: TerminalCursorDefaults
+  readonly ligatures: boolean
   readonly cwd: HostPath
   readonly workspaceRoot: HostPath
   readonly connectionState: HostConnectionState
@@ -45,7 +56,10 @@ export interface TerminalRuntimeOptions {
   readonly onIdentity: (
     harnessSessionId: string | undefined,
     status: TerminalIdentityStatus,
+    identityDiverged?: true,
   ) => void
+  readonly onStartFailed?: (reason: string) => void
+  readonly onExit?: (exitCode: number) => void
   readonly onStarted: () => void
   readonly onFreshStarted: (started: FreshTerminalStart) => void
   readonly onCapabilities: (capabilities: HarnessProviderCapabilities) => void

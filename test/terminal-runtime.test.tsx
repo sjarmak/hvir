@@ -1,6 +1,9 @@
+// @vitest-environment happy-dom
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { TerminalRuntimeOptions } from '../src/renderer/src/terminal/terminal-runtime-options'
+import { terminalThemeForAppearance } from '../src/renderer/src/terminal/terminal-palette'
 import { TerminalRuntimeRegistry } from '../src/renderer/src/terminal/terminal-runtime-registry'
 import type { TerminalPane } from '../src/renderer/src/terminal/terminal-pane'
 import {
@@ -12,8 +15,8 @@ import {
 } from '../src/shared'
 
 const paneFactory = vi.hoisted(() => vi.fn())
-vi.mock('../src/renderer/src/terminal/ghostty-terminal-pane', () => ({
-  createGhosttyTerminalPane: paneFactory,
+vi.mock('../src/renderer/src/terminal/terminal-pane-factory', () => ({
+  createTerminalRuntimePane: paneFactory,
 }))
 
 function fakePane(): TerminalPane {
@@ -25,26 +28,43 @@ function fakePane(): TerminalPane {
     write: vi.fn(),
     resize: vi.fn(),
     setTheme: vi.fn(),
+    setTypography: vi.fn(),
+    setCursorDefaults: vi.fn(),
+    setLigatures: vi.fn(),
     setPresentation: vi.fn(),
     redraw: vi.fn(),
+    resolveEventProvenance: vi.fn(() => undefined),
+    activeEventScreen: vi.fn(() => 'primary' as const),
+    revealEventLocation: vi.fn(() => false),
+    searchRetainedBuffer: vi.fn(() => Promise.reject(new Error('unsupported'))),
+    cancelRetainedBufferSearch: vi.fn(),
+    captureRetainedBufferBoundary: vi.fn(() => undefined),
+    extractRetainedBufferRange: vi.fn(() => Promise.resolve('')),
+    cancelRetainedBufferExtraction: vi.fn(),
+    hasSelection: vi.fn(() => false),
+    getSelection: vi.fn(() => ''),
+    paste: vi.fn(),
+    selectAll: vi.fn(),
+    clear: vi.fn(),
     focus: vi.fn(),
     events: {
       onData: vi.fn(() => noopDisposer),
-      onTitle: vi.fn(() => noopDisposer),
-      onBell: vi.fn(() => noopDisposer),
-      onOsc: vi.fn(() => noopDisposer),
+      onClipboardPaste: vi.fn(() => noopDisposer),
+      onEvent: vi.fn(() => noopDisposer),
       onResize: vi.fn(() => noopDisposer),
       onLink: vi.fn(() => noopDisposer),
     },
-  }
+  } as unknown as TerminalPane
 }
 
 function startResponse(): StartPtyResponse {
   return {
     outcome: 'started',
     id: 'terminal-1',
+    instanceId: 'terminal-1-instance',
     pid: 42,
     resumed: false,
+    reattached: false,
     identityStatus: 'none',
     capabilities: {
       sessionIdentity: 'none',
@@ -62,7 +82,6 @@ function options(
     sessionId: 'terminal-1',
     profileId: asHarnessProfileId('codex-default'),
     launchRevision: 1,
-    riskAcknowledged: false,
     supportsResume: true,
     fallbackTitle: 'Codex · repo',
     harnessSessionId: '019ab123-4567-7890-abcd-ef0123456789',
@@ -74,6 +93,10 @@ function options(
     modifiedKeyProtocol: 'csi-u',
     metaEnterAliasesControl: false,
     composerSubmitMode: 'enter',
+    theme: terminalThemeForAppearance('dark'),
+    typography: { fontFamily: 'ui-monospace, monospace', fontSize: 13 },
+    cursorDefaults: { shape: 'block', blink: 'terminal' },
+    ligatures: true,
     cwd: localPath('/repo'),
     workspaceRoot,
     connectionState,
@@ -122,6 +145,22 @@ describe('TerminalRuntimeRegistry', () => {
     expect(runtimeOptions.onStatus).toHaveBeenCalledWith('disconnected')
     expect(runtimeOptions.onTelemetry).toHaveBeenCalledWith(undefined)
   })
+
+  it('selects an attached terminal while its pane is unavailable', () => {
+    const runtimeOptions = options(localPath('/repo'), 'disconnected')
+    const runtime = new TerminalRuntimeRegistry().acquire(runtimeOptions)
+    const container = document.createElement('div')
+
+    runtime.attach(container)
+    runtime.focus()
+
+    expect(runtimeOptions.onFocus).toHaveBeenCalledOnce()
+
+    runtime.detach(container)
+    runtime.focus()
+
+    expect(runtimeOptions.onFocus).toHaveBeenCalledOnce()
+  })
 })
 
 describe('TerminalRuntime initial input', () => {
@@ -169,7 +208,7 @@ describe('TerminalRuntime initial input', () => {
       initialInput: 'gc session attach worker',
     })
 
-    runtime.attach({} as unknown as HTMLElement)
+    runtime.attach(document.createElement('div'))
 
     await vi.waitFor(() =>
       expect(ptyWrites(send)).toEqual([
@@ -186,7 +225,7 @@ describe('TerminalRuntime initial input', () => {
       initialInput: 'gc session attach worker',
     })
 
-    runtime.attach({} as unknown as HTMLElement)
+    runtime.attach(document.createElement('div'))
     await vi.waitFor(() => expect(ptyWrites(send)).toHaveLength(1))
 
     // A manual restart is only offered once the session has exited.
@@ -204,7 +243,7 @@ describe('TerminalRuntime initial input', () => {
     const { send, invoke } = stubHvir()
     const runtime = new TerminalRuntimeRegistry().acquire(options(localPath('/repo')))
 
-    runtime.attach({} as unknown as HTMLElement)
+    runtime.attach(document.createElement('div'))
     await vi.waitFor(() =>
       expect(invoke).toHaveBeenCalledWith('pty:start', expect.anything()),
     )

@@ -1,5 +1,4 @@
 import { isDiagnosticOpaqueId } from './diagnostics'
-import { RENDERER_RESPONSIVENESS_MAX_DROPPED } from './renderer-responsiveness'
 
 export type DiagnosticReportEventKind =
   | 'application-starting'
@@ -20,7 +19,6 @@ export type DiagnosticReportEventKind =
   | 'renderer-process-exited'
   | 'renderer-unresponsive'
   | 'workbench-health-recovered'
-  | 'renderer-responsiveness-episode'
 
 export type DiagnosticReportOwner =
   | 'application'
@@ -29,11 +27,13 @@ export type DiagnosticReportOwner =
   | 'project-coordinator'
   | 'ipc-authority-router'
   | 'renderer-error-boundary'
-  | 'renderer-responsiveness'
   | 'window-manager'
 
+export type DiagnosticReportLifetimeScope = 'preceding-lifetime' | 'current-lifetime'
+
 interface DiagnosticReportEventBase {
-  readonly kind: Exclude<DiagnosticReportEventKind, 'renderer-responsiveness-episode'>
+  readonly scope: DiagnosticReportLifetimeScope
+  readonly kind: DiagnosticReportEventKind
   readonly owner: DiagnosticReportOwner
   readonly ownerGeneration: number
   readonly severity: 'info' | 'warning' | 'error'
@@ -41,26 +41,7 @@ interface DiagnosticReportEventBase {
   readonly correlation: string
 }
 
-export type DiagnosticReportEvent =
-  | DiagnosticReportEventBase
-  | {
-      readonly kind: 'renderer-responsiveness-episode'
-      readonly owner: 'renderer-responsiveness'
-      readonly ownerGeneration: number
-      readonly severity: 'info'
-      readonly occurredAt: string
-      readonly correlation: string
-      readonly sessionId: string
-      readonly count: number
-      readonly drop: number
-      readonly timing: '100-199ms' | '200-499ms' | '500ms-or-more'
-      readonly classification: 'input-paint-delay' | 'unattributed'
-      readonly confounder: 'none' | 'runtime-or-environment'
-      readonly firstAt: string
-      readonly lastAt: string
-      readonly resolution:
-        'window-rollover' | 'user-stop' | 'timeout' | 'backgrounded' | 'api-unavailable'
-    }
+export type DiagnosticReportEvent = DiagnosticReportEventBase
 
 export const DIAGNOSTIC_REPORT_OWNERS: readonly DiagnosticReportOwner[] = [
   'application',
@@ -69,13 +50,13 @@ export const DIAGNOSTIC_REPORT_OWNERS: readonly DiagnosticReportOwner[] = [
   'project-coordinator',
   'ipc-authority-router',
   'renderer-error-boundary',
-  'renderer-responsiveness',
   'window-manager',
 ]
 
 export function isDiagnosticReportEvent(value: unknown): value is DiagnosticReportEvent {
   if (!isRecord(value)) return false
   const common =
+    REPORT_EVENT_SCOPES.includes(value.scope as DiagnosticReportLifetimeScope) &&
     REPORT_EVENT_KINDS.includes(value.kind as DiagnosticReportEventKind) &&
     DIAGNOSTIC_REPORT_OWNERS.includes(value.owner as DiagnosticReportOwner) &&
     isPositiveSafeInteger(value.ownerGeneration) &&
@@ -83,57 +64,15 @@ export function isDiagnosticReportEvent(value: unknown): value is DiagnosticRepo
     isIsoTime(value.occurredAt) &&
     isDiagnosticOpaqueId(value.correlation)
   if (!common) return false
-  if (value.kind !== 'renderer-responsiveness-episode') {
-    return exactKeys(value, [
-      'kind',
-      'owner',
-      'ownerGeneration',
-      'severity',
-      'occurredAt',
-      'correlation',
-    ])
-  }
-  return (
-    exactKeys(value, [
-      'kind',
-      'owner',
-      'ownerGeneration',
-      'severity',
-      'occurredAt',
-      'correlation',
-      'sessionId',
-      'count',
-      'drop',
-      'timing',
-      'classification',
-      'confounder',
-      'firstAt',
-      'lastAt',
-      'resolution',
-    ]) &&
-    value.owner === 'renderer-responsiveness' &&
-    value.severity === 'info' &&
-    isDiagnosticOpaqueId(value.sessionId) &&
-    isPositiveSafeInteger(value.count) &&
-    isSafeCount(value.drop) &&
-    value.drop <= RENDERER_RESPONSIVENESS_MAX_DROPPED &&
-    ['100-199ms', '200-499ms', '500ms-or-more'].includes(String(value.timing)) &&
-    ['input-paint-delay', 'unattributed'].includes(String(value.classification)) &&
-    ['none', 'runtime-or-environment'].includes(String(value.confounder)) &&
-    isIsoTime(value.firstAt) &&
-    isIsoTime(value.lastAt) &&
-    Date.parse(String(value.firstAt)) <= Date.parse(String(value.lastAt)) &&
-    [
-      'window-rollover',
-      'user-stop',
-      'timeout',
-      'backgrounded',
-      'api-unavailable',
-    ].includes(String(value.resolution)) &&
-    (value.classification === 'input-paint-delay'
-      ? value.confounder === 'none'
-      : value.confounder === 'runtime-or-environment')
-  )
+  return exactKeys(value, [
+    'scope',
+    'kind',
+    'owner',
+    'ownerGeneration',
+    'severity',
+    'occurredAt',
+    'correlation',
+  ])
 }
 
 function isIsoTime(value: unknown): value is string {
@@ -178,5 +117,9 @@ const REPORT_EVENT_KINDS: readonly DiagnosticReportEventKind[] = [
   'renderer-process-exited',
   'renderer-unresponsive',
   'workbench-health-recovered',
-  'renderer-responsiveness-episode',
+]
+
+const REPORT_EVENT_SCOPES: readonly DiagnosticReportLifetimeScope[] = [
+  'preceding-lifetime',
+  'current-lifetime',
 ]

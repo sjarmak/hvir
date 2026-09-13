@@ -16,20 +16,16 @@ export interface ProjectSessionModel {
   readonly generation: number
 }
 
-/** Feature-neutral attention input supplied by harness/terminal surfaces. */
+/** Provider-neutral terminal signal input supplied by terminal workspace owners. */
 export interface WorkspaceAttentionRollup {
   readonly actionable: number
+  readonly working: number
 }
 
 export type WorkspaceAttentionRollups = Readonly<Record<string, WorkspaceAttentionRollup>>
 
 export type ProjectSessionAction =
   | { readonly type: 'transition-started'; readonly generation: number }
-  | {
-      readonly type: 'transition-project'
-      readonly generation: number
-      readonly state: ProjectState
-    }
   | {
       readonly type: 'transition-connection'
       readonly generation: number
@@ -69,9 +65,6 @@ export function projectSessionReducer(
         busy: true,
         error: undefined,
       }
-    case 'transition-project':
-      if (action.generation !== model.generation) return model
-      return applyProjectState(model, action.state)
     case 'transition-connection':
       if (action.generation !== model.generation) return model
       return {
@@ -134,7 +127,9 @@ export function selectRelativeWorkspace(
 ): { readonly projectId: string; readonly workspaceId: string } | undefined {
   const state = model.projectState
   const project = selectActiveProject(model)
-  const available = project?.workspaces.filter((workspace) => !workspace.missing) ?? []
+  const available =
+    project?.workspaces.filter((workspace) => !workspace.missing && !workspace.closed) ??
+    []
   if (!state || !project || available.length < 2) return undefined
   const currentIndex = available.findIndex(
     (workspace) => workspace.id === state.activeWorkspaceId,

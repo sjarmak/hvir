@@ -11,8 +11,14 @@ updates:
     commit-message:
       prefix: deps
     ignore:
+      # A dedicated provenance-validating workflow owns this immutable release artifact.
+      - dependency-name: 'ghostty-web'
       # Keep Node types aligned with the Node major embedded by Electron.
       - dependency-name: '@types/node'
+        update-types:
+          - version-update:semver-major
+      # Keep plist on its CommonJS-compatible v3 line while main dependencies are externalized.
+      - dependency-name: plist
         update-types:
           - version-update:semver-major
       # Revisit these when their named upstream tool supports the next major.
@@ -26,26 +32,29 @@ updates:
         update-types:
           - version-update:semver-major
     groups:
-      npm-minor-and-patch:
+      npm-minor-and-patch-updates:
         applies-to: version-updates
         patterns:
           - '*'
         update-types:
           - minor
           - patch
+      npm-security-updates:
+        applies-to: security-updates
+        patterns:
+          - '*'
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: daily
       time: '09:00'
       timezone: America/New_York
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 10
     commit-message:
-      prefix: ci
+      prefix: deps
     groups:
-      actions-minor-and-patch:
+      github-actions-minor-and-patch-updates:
         applies-to: version-updates
         patterns:
           - '*'

@@ -1,0 +1,294 @@
+import { readFileSync, statSync } from 'node:fs'
+
+import { describe, expect, it } from 'vitest'
+import { parse } from 'yaml'
+
+const builder = parse(
+  readFileSync(new URL('../electron-builder.yml', import.meta.url), 'utf8'),
+) as Record<string, Record<string, unknown>>
+const packageJson = JSON.parse(
+  readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+) as { scripts: Record<string, string> }
+const preinstallUrl = new URL('../build/pkg-scripts/preinstall', import.meta.url)
+const preinstall = readFileSync(preinstallUrl, 'utf8')
+const postinstallUrl = new URL('../build/pkg-scripts/postinstall', import.meta.url)
+const postinstall = readFileSync(postinstallUrl, 'utf8')
+const nativeCommand = readFileSync(
+  new URL('../build/native/hvir-command', import.meta.url),
+  'utf8',
+)
+const installedSmokeUrl = new URL(
+  '../scripts/run-macos-package-smoke.sh',
+  import.meta.url,
+)
+const installedSmoke = readFileSync(installedSmokeUrl, 'utf8')
+const packagedRuntimeInspection = readFileSync(
+  new URL('../scripts/inspect-packaged-runtime.mts', import.meta.url),
+  'utf8',
+)
+const installedStartupProbe = readFileSync(
+  new URL('../scripts/installed-startup-probe.mts', import.meta.url),
+  'utf8',
+)
+const ciSource = readFileSync(
+  new URL('../.github/workflows/ci.yml', import.meta.url),
+  'utf8',
+)
+const ci = parse(ciSource) as {
+  jobs: Record<
+    string,
+    {
+      name: string
+      'runs-on': string
+      env: Record<string, string>
+      secrets?: string
+      steps: Array<{ name: string; run?: string }>
+    }
+  >
+}
+const releaseSource = readFileSync(
+  new URL('../.github/workflows/release.yml', import.meta.url),
+  'utf8',
+)
+const signedWorkflowSource = readFileSync(
+  new URL('../.github/workflows/macos-package-release.yml', import.meta.url),
+  'utf8',
+)
+const signedWorkflow = parse(signedWorkflowSource) as {
+  on: {
+    workflow_call: {
+      inputs: Record<
+        string,
+        { default?: boolean; required: boolean; type: 'boolean' | 'string' }
+      >
+      secrets: Record<string, { required: boolean }>
+    }
+  }
+  jobs: Record<
+    string,
+    {
+      environment: string
+      steps: Array<{
+        env?: Record<string, string>
+        name: string
+        run?: string
+        uses?: string
+        with?: Record<string, unknown>
+      }>
+    }
+  >
+}
+
+describe('macOS native package contract', () => {
+  it('builds one non-relocatable Apple-silicon package with atomic bundle upgrades', () => {
+    expect(builder.mac?.target).toEqual(['pkg'])
+    expect(builder.mac?.icon).toBe('build/icon-macos.icns')
+    expect(builder.mac).not.toHaveProperty('identity')
+    expect(builder.mac?.hardenedRuntime).toBe(true)
+    expect(builder.mac?.entitlements).toBe('build/entitlements.mac.plist')
+    expect(builder.mac?.entitlementsInherit).toBe('build/entitlements.mac.inherit.plist')
+    expect(builder.pkg).toMatchObject({
+      artifactName: 'hvir-${version}-macos-${arch}.${ext}',
+      scripts: 'pkg-scripts',
+      installLocation: '/Applications',
+      allowAnywhere: false,
+      allowCurrentUserHome: false,
+      allowRootDirectory: true,
+      isRelocatable: false,
+      isVersionChecked: true,
+      hasStrictIdentifier: true,
+      overwriteAction: 'upgrade',
+    })
+    expect(packageJson.scripts['pack:mac:arm64']).toContain(
+      'electron-builder --mac pkg --arm64',
+    )
+    expect(packageJson.scripts['pack:mac:arm64:signed']).toContain(
+      '--config.forceCodeSigning=true',
+    )
+  })
+
+  it('installs an owned command and exact removal inventory transactionally', () => {
+    expect(statSync(preinstallUrl).mode & 0o111).not.toBe(0)
+    expect(preinstall).toContain('hvir-native-package-command-v1')
+    expect(preinstall).toContain('hvir-native-package-inventory-v1')
+    expect(preinstall).toContain('preflight refused unowned command')
+    expect(preinstall).toContain('preflight refused unowned inventory')
+    expect(statSync(postinstallUrl).mode & 0o111).not.toBe(0)
+    expect(postinstall).toContain('application="$volume_root/Applications/hvir.app"')
+    expect(postinstall).toContain('command="$command_dir/hvir"')
+    expect(postinstall).toContain('inventory="$inventory_dir/package-inventory-v1.txt"')
+    expect(postinstall).toContain('hvir-native-package-command-v1')
+    expect(postinstall).toContain('hvir-native-package-inventory-v1')
+    expect(nativeCommand).toContain(
+      "application='/Applications/hvir.app/Contents/MacOS/hvir'",
+    )
+    expect(nativeCommand).toContain('exec "$application" "$@"')
+    expect(postinstall).toContain('/bin/cp -- "$command_source" "$transaction/hvir"')
+    expect(postinstall).toContain('refusing to replace an unowned hvir command')
+    expect(postinstall).toContain('/bin/mv -- "$transaction/hvir" "$command"')
+    expect(postinstall).toContain('hvir package configuration failed while $stage')
+    expect(postinstall).not.toMatch(
+      /Library\/Preferences|Application Support\/hvir\/settings/,
+    )
+  })
+
+  it('accepts install, failed update retention, package runtime structure, startup, and removal', () => {
+    expect(statSync(installedSmokeUrl).mode & 0o111).not.toBe(0)
+    expect(installedSmoke).toContain("GITHUB_ACTIONS:-}\" != 'true'")
+    expect(installedSmoke).toContain('pkgutil --check-signature')
+    expect(installedSmoke).toContain('xcrun stapler validate')
+    expect(installedSmoke).toContain('spctl --assess --type exec')
+    expect(installedSmoke).toContain('spctl --assess --type install')
+    expect(installedSmoke).toContain('"$old_installer" | tee "$install_log"')
+    expect(installedSmoke).toContain('--version 0.0.0')
+    expect(installedSmoke).toContain(
+      'Postinstall-rejected package update unexpectedly succeeded.',
+    )
+    expect(installedSmoke).toContain(
+      'sudo /usr/bin/install -o root -g wheel -m 0755 "$unowned_command" "$command"',
+    )
+    expect(installedSmoke).toContain('"$current_installer" | tee "$install_log"')
+    expect(installedSmoke).toContain('assert_installer_output "$install_log"')
+    expect(installedSmoke).toContain(
+      'Successful installer output exposed implementation diagnostics.',
+    )
+    expect(installedSmoke).toContain('run_installed_startup retained-after-failed-update')
+    expect(installedSmoke).toContain('assert_packaged_runtime')
+    expect(installedSmoke).toContain('--native-platform darwin')
+    expect(installedSmoke).toContain('run_installed_startup current')
+    expect(installedSmoke).not.toContain('run_installed_smoke')
+    expect(installedSmoke).toContain('"$current_installer" --uninstall --purge')
+    expect(installedSmoke).toContain('scripts/render-native-installer.mjs')
+    expect(installedSmoke).toContain('HVIR_FAKE_NPM_PREFIX="$legacy_prefix"')
+    expect(installedSmoke).toContain('test ! -e "$legacy_launcher"')
+    expect(installedSmoke).toContain(
+      'PATH="$legacy_prefix/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"',
+    )
+    expect(installedSmoke).toContain(
+      "PATH='/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'",
+    )
+    expect(installedSmoke).toContain("PATH='/usr/bin:/bin:/usr/sbin:/sbin'")
+    expect(installedSmoke).toContain('otool -L "$executable"')
+    expect(installedSmoke).toContain('find "$application" -type f -name \'*.node\'')
+    expect(installedSmoke).toContain("-path '*/prebuilds/darwin-arm64/*'")
+    expect(installedSmoke).toContain('Installed native module is not an arm64 Mach-O:')
+    expect(installedSmoke).toContain(
+      'codesign --verify --strict --verbose=2 "$packaged_pty"',
+    )
+    expect(installedSmoke).toContain("grep -Eq 'flags=.*runtime'")
+    expect(installedSmoke).toContain('com.apple.security.cs.allow-jit')
+    expect(installedSmoke).toContain('pkgutil --files "$receipt" |')
+    expect(installedSmoke).toContain('cmp build/icon-macos.icns "$installed_icon"')
+    expect(installedSmoke).toContain("grep -Fx 'hvir.app/Contents/MacOS/hvir' >/dev/null")
+    expect(installedSmoke).not.toContain('pkgutil --files "$receipt" | grep -Fq')
+    expect(installedSmoke).toContain('test -d "$project_root/.git"')
+    expect(installedSmoke).not.toMatch(/open -a|Installer\.app|\/usr\/bin\/open/)
+    expect(packagedRuntimeInspection).toContain("'/out/main/echo-worker.js'")
+    expect(packagedRuntimeInspection).toContain("'/out/main/git-worker.js'")
+    expect(packagedRuntimeInspection).toContain("'HVIR_SMOKE'")
+    expect(installedStartupProbe).toContain("process.command.includes('--type=renderer')")
+    expect(installedStartupProbe).toContain("HVIR_SMOKE: '1'")
+  })
+
+  it('keeps credentials out of CI and gates signing behind the protected merged source', () => {
+    expect(ci.jobs['native-macos-package']).toBeUndefined()
+    expect(ci.jobs['signed-macos-epic-acceptance']).toBeUndefined()
+    expect(ciSource).not.toMatch(/MACOS_(APPLICATION|INSTALLER|NOTARY|TEAM)/)
+    expect(releaseSource).toContain(
+      'uses: ./.github/workflows/macos-package-release.yml',
+    )
+    expect(releaseSource).toContain('source_sha: ${{ needs.prepare.outputs.sha }}')
+    expect(releaseSource).toContain('allow_merged_source: true')
+    expect(releaseSource).toContain('secrets: inherit')
+
+    expect(Object.keys(signedWorkflow.on)).toEqual(['workflow_call'])
+    const workflowCall = signedWorkflow.on.workflow_call
+    expect(Object.keys(workflowCall.inputs)).toEqual([
+      'source_sha',
+      'allow_merged_source',
+    ])
+    expect(workflowCall.inputs).toMatchObject({
+      source_sha: { required: true, type: 'string' },
+      allow_merged_source: {
+        required: false,
+        default: false,
+        type: 'boolean',
+      },
+    })
+    expect(Object.keys(workflowCall.secrets)).toEqual([
+      'MACOS_APPLICATION_CERTIFICATE',
+      'MACOS_APPLICATION_CERTIFICATE_PASSWORD',
+      'MACOS_INSTALLER_CERTIFICATE',
+      'MACOS_INSTALLER_CERTIFICATE_PASSWORD',
+      'MACOS_NOTARY_KEY',
+      'MACOS_NOTARY_KEY_ID',
+      'MACOS_NOTARY_ISSUER_ID',
+      'MACOS_TEAM_ID',
+    ])
+    for (const secret of Object.values(workflowCall.secrets)) {
+      expect(secret.required).toBe(false)
+    }
+    const signed = signedWorkflow.jobs['signed-package']
+    if (!signed) throw new Error('Missing signed-package release job')
+    expect(signed.environment).toBe('native-release-signing')
+    const sourceGuard = signed.steps.find(
+      (step) => step.name === 'Require an exact protected merged source',
+    )
+    expect(sourceGuard?.env).toEqual({
+      ALLOW_MERGED_SOURCE: '${{ inputs.allow_merged_source }}',
+      REF_TYPE: '${{ github.ref_type }}',
+      SOURCE_SHA: '${{ inputs.source_sha }}',
+    })
+    expect(sourceGuard?.run).toContain('[ "$REF_TYPE" != branch ]')
+    expect(sourceGuard?.run).toContain('[ "$ALLOW_MERGED_SOURCE" != true ]')
+    expect(sourceGuard?.run).toContain('^[0-9a-f]{40}$')
+    expect(
+      signed.steps.find((step) => step.name === 'Check out trusted source')?.with,
+    ).toEqual({
+      ref: '${{ inputs.source_sha }}',
+      'fetch-depth': 0,
+    })
+    const containment = signed.steps.find(
+      (step) => step.name === 'Confirm the protected branch contains the exact source',
+    )
+    expect(containment?.env).toEqual({
+      SOURCE_BRANCH: '${{ github.ref_name }}',
+      SOURCE_SHA: '${{ inputs.source_sha }}',
+    })
+    expect(containment?.run).toContain('git fetch origin "refs/heads/$SOURCE_BRANCH"')
+    expect(containment?.run).toContain('[ "$(git rev-parse HEAD)" != "$SOURCE_SHA" ]')
+    expect(containment?.run).toContain(
+      'git merge-base --is-ancestor "$SOURCE_SHA" "$branch_sha"',
+    )
+    expect(signedWorkflowSource).toContain('MACOS_APPLICATION_CERTIFICATE')
+    expect(signedWorkflowSource).toContain('MACOS_INSTALLER_CERTIFICATE')
+    expect(signedWorkflowSource).toContain('MACOS_NOTARY_KEY')
+    expect(signedWorkflowSource).toContain(
+      'Require protected signing credentials',
+    )
+    expect(signedWorkflowSource).toContain('xcrun stapler staple "$package"')
+    const acceptanceIndex = signed.steps.findIndex(
+      (step) => step.name === 'Install, update, launch, and remove signed package',
+    )
+    const digestIndex = signed.steps.findIndex(
+      (step) => step.name === 'Give the accepted artifact its public release name',
+    )
+    const uploadIndex = signed.steps.findIndex(
+      (step) => step.name === 'Retain accepted package for release assembly',
+    )
+    expect(digestIndex).toBeGreaterThan(acceptanceIndex)
+    expect(uploadIndex).toBeGreaterThan(digestIndex)
+    expect(signed.steps[digestIndex]?.run).toContain('shasum -a 256 --check')
+    expect(signed.steps[uploadIndex]).toMatchObject({
+      uses: 'actions/upload-artifact@v7',
+      with: {
+        name: 'release-macos-arm64',
+        path:
+          'dist/hvir-*-darwin-arm64.pkg\n' +
+          'dist/hvir-*-darwin-arm64.pkg.sha256\n',
+        'if-no-files-found': 'error',
+        'retention-days': 1,
+      },
+    })
+  })
+})

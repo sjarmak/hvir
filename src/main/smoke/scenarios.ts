@@ -1,13 +1,16 @@
-import { runSmoke, type ElectronSmokeDependencies } from '.'
+import { runSmoke } from '.'
+import type { ElectronSmokeDependencies } from './bootstrap-contract'
 import { runNativePtySmoke } from './native-pty'
+import { SmokeInterruptionCheckpoint } from './interruption-checkpoint'
 import {
   parseElectronSmokeScenario,
+  type ElectronSmokeMode,
   type ElectronSmokeScenario,
 } from './scenario-selection.mts'
 
 export type ElectronSmokeScenarioDependencies = Omit<
   ElectronSmokeDependencies,
-  'mode'
+  'mode' | 'interruptionCheckpoint'
 > & {
   readonly scenario: string | undefined
 }
@@ -17,27 +20,28 @@ export async function runElectronSmokeScenario(
 ): Promise<number> {
   const { scenario: requestedScenario, ...rendererDependencies } = dependencies
   const scenario = parseElectronSmokeScenario(requestedScenario)
-  if (scenario === 'pty-native') {
-    return runNativePtySmoke(rendererDependencies.projectRoot)
-  }
+  const interruptionCheckpoint = SmokeInterruptionCheckpoint.fromEnvironment()
+  try {
+    if (scenario === 'pty-native') {
+      return await runNativePtySmoke(
+        rendererDependencies.projectRoot,
+        interruptionCheckpoint,
+      )
+    }
 
-  rendererDependencies.htmlPreviews.register()
-  return runSmoke({
-    ...rendererDependencies,
-    mode: rendererMode(scenario),
-  })
+    rendererDependencies.htmlPreviews.register()
+    return await runSmoke({
+      ...rendererDependencies,
+      interruptionCheckpoint,
+      mode: rendererMode(scenario),
+    })
+  } finally {
+    interruptionCheckpoint.dispose()
+  }
 }
 
 function rendererMode(
   scenario: Exclude<ElectronSmokeScenario, 'pty-native'>,
-):
-  | 'workflow'
-  | 'viewer-position'
-  | 'platform-contracts'
-  | 'terminal-presentation'
-  | 'capacity' {
-  if (scenario === 'capacity') return 'capacity'
-  if (scenario === 'platform-contracts') return 'platform-contracts'
-  if (scenario === 'terminal-presentation') return 'terminal-presentation'
-  return scenario === 'viewer-position' ? 'viewer-position' : 'workflow'
+): ElectronSmokeMode {
+  return scenario === 'diagnostic-report-restart' ? 'platform-contracts' : scenario
 }

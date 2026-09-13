@@ -37,7 +37,7 @@ export function createTerminalMoveSmokeHarness({
   readonly supervisor: PtySupervisor
   readonly resources: RendererResourceScopes
   readonly webPanes: WebPaneRouteRegistry
-  readonly onState: (state: ProjectState) => void
+  readonly onState: (state: ProjectState) => ProjectState
 }): TerminalMoveSmokeHarness {
   const baseline = sourceState()
   const sourceProject = baseline.projects[0]!
@@ -90,7 +90,7 @@ export function createTerminalMoveSmokeHarness({
         (candidate) => candidate.id === workspaceId,
       )
       if (!workspace) return Promise.reject(new Error('Unknown smoke move workspace'))
-      state = {
+      state = onState({
         ...state,
         root: workspace.root,
         activeWorkspaceId: workspace.id,
@@ -103,8 +103,7 @@ export function createTerminalMoveSmokeHarness({
               : candidate,
           ),
         })),
-      }
-      onState(state)
+      })
       return Promise.resolve(state)
     },
   }
@@ -126,7 +125,7 @@ export function createTerminalMoveSmokeHarness({
     sourceRoot: sourceWorkspace.root,
     targetRoot,
     introduceTarget: () => {
-      state = {
+      state = onState({
         ...sourceState(),
         projects: [
           {
@@ -139,6 +138,7 @@ export function createTerminalMoveSmokeHarness({
                 name: 'smoke-move-target',
                 branch: 'smoke/move-target',
                 main: false,
+                closed: false,
                 missing: false,
                 repository: true,
                 changedFiles: 0,
@@ -147,13 +147,11 @@ export function createTerminalMoveSmokeHarness({
             ],
           },
         ],
-      }
-      onState(state)
+      })
       return state
     },
     reset: () => {
-      state = sourceState()
-      onState(state)
+      state = onState(sourceState())
       return state
     },
   }
@@ -209,7 +207,10 @@ export async function verifyTerminalMoveSmoke({
     harness.sourceRoot,
   )
   emitState(harness.reset())
-  return `same pid ${terminal.pid} · same canvas/surface · ${originalCount} supervised`
+  return (
+    `unopened target materialized on demand · same pid ${terminal.pid} · ` +
+    `same canvas/surface · ${originalCount} supervised`
+  )
 }
 
 async function runMoveInteraction(
@@ -221,7 +222,6 @@ async function runMoveInteraction(
 ): Promise<void> {
   const result: unknown = await win.webContents.executeJavaScript(`
     new Promise((resolve) => {
-      const deadline = Date.now() + 8000;
       const fail = (reason, details = {}) => resolve({ ok: false, reason, ...details });
       if (!window.__hvirSmokeMoveCanvas) {
         window.__hvirSmokeMoveContainer = document.querySelector(
@@ -233,16 +233,22 @@ async function runMoveInteraction(
         window.__hvirSmokeMoveCanvas = window.__hvirSmokeMoveSurface?.querySelector('canvas');
       }
       const poll = () => {
+        if (
+          ${expectNew} &&
+          [...document.querySelectorAll('[aria-label]')].some(
+            (element) => element.getAttribute('aria-label') === ${JSON.stringify(targetDeckLabel)}
+          )
+        ) {
+          return fail('unopened terminal move target was materialized before user action');
+        }
         const visibleRail = document.querySelector('.terminal-rail:not([hidden])');
         const title = visibleRail?.querySelector('.terminal-list-title')?.textContent?.trim();
         if (${JSON.stringify(waitForTitle)} && title !== ${JSON.stringify(waitForTitle)}) {
-          if (Date.now() <= deadline) return setTimeout(poll, 25);
-          return fail('moved terminal output title missing', { title });
+          return setTimeout(poll, 25)
         }
         const move = visibleRail?.querySelector('.terminal-workspace-move-button');
         if (!(move instanceof HTMLButtonElement) || move.disabled) {
-          if (Date.now() <= deadline) return setTimeout(poll, 25);
-          return fail('move-terminal control unavailable');
+          return setTimeout(poll, 25)
         }
         if (${expectNew} && !move.getAttribute('aria-label')?.includes('new worktree')) {
           return fail('new-worktree move indicator missing');
@@ -257,8 +263,7 @@ async function runMoveInteraction(
           target.click();
           return waitForDialog();
         }
-        if (Date.now() <= deadline) return setTimeout(waitForTarget, 25);
-        fail('terminal move target missing');
+        return setTimeout(waitForTarget, 25)
       };
       const waitForDialog = () => {
         const dialog = document.querySelector('.terminal-move-dialog');
@@ -268,8 +273,7 @@ async function runMoveInteraction(
           confirm.click();
           return waitForMove();
         }
-        if (Date.now() <= deadline) return setTimeout(waitForDialog, 25);
-        fail('terminal move confirmation missing exact terminal');
+        return setTimeout(waitForDialog, 25)
       };
       const waitForMove = () => {
         const deck = document.querySelector('.terminal-deck:not([hidden])');
@@ -288,16 +292,7 @@ async function runMoveInteraction(
           !window.__hvirSmokeMoveContainer?.isConnected &&
           rows.length === 1
         ) return resolve(true);
-        if (Date.now() <= deadline) return setTimeout(waitForMove, 25);
-        fail('terminal did not reparent one adapter surface into the new React container', {
-          deckLabel: deck?.getAttribute('aria-label'),
-          sameCanvas: canvas === window.__hvirSmokeMoveCanvas,
-          sameSurface: surface === window.__hvirSmokeMoveSurface,
-          surfaceOwnedByContainer: surface?.parentElement === container,
-          replacedContainer: container !== window.__hvirSmokeMoveContainer,
-          oldContainerConnected: window.__hvirSmokeMoveContainer?.isConnected,
-          rowCount: rows.length,
-        });
+        return setTimeout(waitForMove, 25)
       };
       poll();
     })

@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 
-import type {
-  GitChanges,
-  HostConnectionState,
-  HostPath,
-} from '../../../shared'
+import type { GitChanges, HostConnectionState, HostPath } from '../../../shared'
 import {
   gitAutoFetchDelay,
   gitChangeCountLabel,
@@ -49,6 +45,8 @@ export function useGitRailController(options: GitRailControllerOptions) {
   const optionsRef = useRef(options)
   const syncCoordinator = useRef(new GitSyncCoordinator())
   const changesControl = useRef({ running: false, queued: false })
+  const branchControl = useRef({ running: false, queued: false })
+  const historyControl = useRef({ running: false, queued: false })
   const historyLoading = useRef(false)
   const branchRequestId = useRef(0)
   const historyRequestId = useRef(0)
@@ -102,16 +100,73 @@ export function useGitRailController(options: GitRailControllerOptions) {
     })()
   }, [send])
 
+  const requestBranches = useCallback((): void => {
+    const control = branchControl.current
+    control.queued = true
+    if (control.running) return
+    control.running = true
+    void (async () => {
+      try {
+        while (control.queued) {
+          control.queued = false
+          const current = optionsRef.current
+          if (current.connectionState !== 'connected') continue
+          const generation = syncCoordinator.current.generation()
+          const requestRoot = current.root
+          const requestKey = hostPathKey(requestRoot)
+          const requestId = ++branchRequestId.current
+          send({ type: 'branch-requested', generation, requestId })
+          try {
+            const branchModel = await window.hvir.invoke('git:branches', {
+              root: requestRoot,
+            })
+            const latest = optionsRef.current
+            if (
+              syncCoordinator.current.generation() !== generation ||
+              hostPathKey(latest.root) !== requestKey ||
+              latest.connectionState !== 'connected'
+            ) {
+              continue
+            }
+            send({ type: 'branch-loaded', generation, requestId, model: branchModel })
+          } catch (reason) {
+            const latest = optionsRef.current
+            if (
+              syncCoordinator.current.generation() !== generation ||
+              hostPathKey(latest.root) !== requestKey
+            ) {
+              continue
+            }
+            send({
+              type: 'branch-failed',
+              generation,
+              requestId,
+              error: errorMessage(reason),
+            })
+          }
+        }
+      } finally {
+        control.running = false
+      }
+    })()
+  }, [send])
+
   useEffect(() => {
     const changesOwner = changesControl.current
+    const branchOwner = branchControl.current
+    const historyOwner = historyControl.current
     const syncOwner = syncCoordinator.current
     changesOwner.queued = false
+    branchOwner.queued = false
+    historyOwner.queued = false
     historyLoading.current = false
     const generation = syncOwner.reset()
     send({ type: 'context-reset', generation })
     onChanges(undefined)
     return () => {
       changesOwner.queued = false
+      branchOwner.queued = false
+      historyOwner.queued = false
       historyLoading.current = false
       syncOwner.reset()
     }
@@ -131,76 +186,97 @@ export function useGitRailController(options: GitRailControllerOptions) {
 
   useEffect(() => {
     if (connectionState !== 'connected') return
-    const generation = syncCoordinator.current.generation()
-    const requestId = ++branchRequestId.current
-    send({ type: 'branch-requested', generation, requestId })
-    void window.hvir.invoke('git:branches', { root }).then(
-      (branchModel) => {
-        if (syncCoordinator.current.generation() !== generation) return
-        send({ type: 'branch-loaded', generation, requestId, model: branchModel })
-      },
-      (reason: unknown) => {
-        if (syncCoordinator.current.generation() !== generation) return
-        send({
-          type: 'branch-failed',
-          generation,
-          requestId,
-          error: errorMessage(reason),
-        })
-      },
-    )
+    requestBranches()
   }, [
     connectionState,
     historyRefreshVersion,
     model.branchRefreshVersion,
-    root,
-    send,
+    requestBranches,
+    root.hostId,
+    root.path,
   ])
+
+  const requestHistory = useCallback((): void => {
+    const control = historyControl.current
+    control.queued = true
+    if (control.running) return
+    control.running = true
+    historyLoading.current = true
+    void (async () => {
+      try {
+        while (control.queued) {
+          control.queued = false
+          const current = optionsRef.current
+          if (
+            modelRef.current.view !== 'history' ||
+            current.connectionState !== 'connected' ||
+            current.historyPaused
+          ) {
+            continue
+          }
+          const generation = syncCoordinator.current.generation()
+          const requestRoot = current.root
+          const requestKey = hostPathKey(requestRoot)
+          const requestId = ++historyRequestId.current
+          send({ type: 'history-requested', generation, requestId, append: false })
+          try {
+            const page = await window.hvir.invoke('git:history', {
+              root: requestRoot,
+              limit: 50,
+            })
+            const latest = optionsRef.current
+            if (
+              syncCoordinator.current.generation() !== generation ||
+              hostPathKey(latest.root) !== requestKey ||
+              latest.connectionState !== 'connected'
+            ) {
+              continue
+            }
+            send({
+              type: 'history-loaded',
+              generation,
+              requestId,
+              append: false,
+              page,
+            })
+          } catch (reason) {
+            const latest = optionsRef.current
+            if (
+              control.queued ||
+              syncCoordinator.current.generation() !== generation ||
+              hostPathKey(latest.root) !== requestKey
+            ) {
+              continue
+            }
+            send({
+              type: 'history-failed',
+              generation,
+              requestId,
+              append: false,
+              error: errorMessage(reason),
+            })
+          }
+        }
+      } finally {
+        control.running = false
+        historyLoading.current = false
+      }
+    })()
+  }, [send])
 
   useEffect(() => {
     if (model.view !== 'history' || connectionState !== 'connected' || historyPaused) {
       return
     }
-    const generation = syncCoordinator.current.generation()
-    const requestId = ++historyRequestId.current
-    historyLoading.current = true
-    send({ type: 'history-requested', generation, requestId, append: false })
-    void window.hvir.invoke('git:history', { root, limit: 50 }).then(
-      (page) => {
-        if (syncCoordinator.current.generation() !== generation) return
-        send({
-          type: 'history-loaded',
-          generation,
-          requestId,
-          append: false,
-          page,
-        })
-      },
-      (reason: unknown) => {
-        if (syncCoordinator.current.generation() !== generation) return
-        send({
-          type: 'history-failed',
-          generation,
-          requestId,
-          append: false,
-          error: errorMessage(reason),
-        })
-      },
-    ).finally(() => {
-      if (
-        syncCoordinator.current.generation() === generation &&
-        modelRef.current.historyRequestId === requestId
-      ) {
-        historyLoading.current = false
-      }
-    })
+    requestHistory()
   }, [
     connectionState,
     historyPaused,
     historyRefreshVersion,
     model.view,
-    root,
-    send,
+    requestHistory,
+    root.hostId,
+    root.path,
   ])
 
   const loadMoreHistory = useCallback((): void => {

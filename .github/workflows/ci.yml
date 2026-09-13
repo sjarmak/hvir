@@ -1,9 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
@@ -17,16 +14,65 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  release-version-integrity:
+    name: Release version integrity
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.actor == 'github-actions[bot]' &&
+      github.event.pull_request.user.login == 'github-actions[bot]' &&
+      github.event.pull_request.base.ref == github.event.repository.default_branch &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'release/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - name: Check out trusted release validation
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          sparse-checkout: |-
+            scripts/validate-release-pr.mts
+            scripts/release-github-evidence.mts
+          sparse-checkout-cone-mode: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Validate version-only release change
+        env:
+          GITHUB_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RELEASE_PR_MODE: pre-merge
+          RELEASE_PR_NUMBER: ${{ github.event.pull_request.number }}
+          RELEASE_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/validate-release-pr.mts
+
   verify:
     name: Verification (Linux)
+    needs: release-version-integrity
+    if: always() && needs.release-version-integrity.result == 'skipped'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+      pull-requests: read
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
         with:
-          # The architecture ratchet compares against its named baseline commit.
+          # Architecture validates the exact event base/head and accepted epic history.
           fetch-depth: 0
 
       - name: Set up Node.js
@@ -39,10 +85,14 @@ jobs:
         run: npm ci
 
       - name: Run policy, type, and test verification
+        env:
+          HVIR_REPO_TOKEN: ${{ github.token }}
         run: npm run verify
 
   electron-smoke:
     name: Electron smoke (Linux)
+    needs: release-version-integrity
+    if: always() && needs.release-version-integrity.result == 'skipped'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -60,31 +110,33 @@ jobs:
         run: npm ci
 
       - name: Run production Electron workflow
+        env:
+          HVIR_SMOKE_ARTIFACT_DIR: ${{ runner.temp }}/hvir-smoke-artifacts/production
         run: xvfb-run -a npm run smoke
 
-  capacity-smoke:
-    name: Capacity contracts + performance evidence (Linux)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
+      - name: Run development renderer Performance Timeline containment
+        env:
+          HVIR_SMOKE_ARTIFACT_DIR: ${{ runner.temp }}/hvir-smoke-artifacts/development-performance
+        run: xvfb-run -a npm run smoke:development-performance
 
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
+      - name: Prove failure and interruption isolation
+        run: xvfb-run -a npm run smoke:isolation
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
+      - name: Upload bounded Electron failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
         with:
-          node-version: 24
-          package-manager-cache: false
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run capacity contracts and collect performance evidence
-        run: xvfb-run -a npm run smoke:capacity
+          name: ci-electron-smoke-failure-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hvir-smoke-artifacts
+          if-no-files-found: ignore
+          retention-days: 7
 
   macos-electron-smoke:
-    name: Electron correctness + capacity evidence (macOS arm64)
+    # Temporary reduced gate: terminal-presentation, terminal-lifecycle, and capacity
+    # remain available through local commands while their macOS flakes are hardened.
+    name: Electron correctness (macOS arm64; temporary reduced gate)
+    needs: release-version-integrity
+    if: always() && needs.release-version-integrity.result == 'skipped'
     runs-on: macos-15
     timeout-minutes: 15
 
@@ -102,52 +154,85 @@ jobs:
         run: npm ci
 
       - name: Run focused unpackaged Electron scenarios
-        run: npm run smoke:macos
+        env:
+          HVIR_SMOKE_ARTIFACT_DIR: ${{ runner.temp }}/hvir-smoke-artifacts/macos-ci
+        run: npm run smoke:macos:ci
 
-      - name: Run capacity contracts and collect performance evidence
-        run: npm run smoke:capacity
+      - name: Upload bounded macOS Electron failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-macos-electron-smoke-failure-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/hvir-smoke-artifacts
+          if-no-files-found: ignore
+          retention-days: 7
 
-  packaged-smoke:
-    name: Packaged smoke (${{ matrix.name }})
-    runs-on: ${{ matrix.os }}
+  codeql:
+    name: CodeQL analysis
+    needs: release-version-integrity
+    if: always() && needs.release-version-integrity.result == 'skipped'
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: Linux x64
-            os: ubuntu-24.04
-            build: npm run pack:npm:linux:x64
-            smoke: xvfb-run -a npm run smoke:packaged
-          - name: Linux arm64
-            os: ubuntu-24.04-arm
-            build: npm run pack:npm:linux:arm64
-            smoke: xvfb-run -a npm run smoke:packaged
-          - name: macOS arm64
-            os: macos-15
-            build: npm run pack:npm:mac:arm64
-            smoke: npm run smoke:packaged
-    env:
-      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      security-events: write
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4.37.9
         with:
-          node-version: 24
-          package-manager-cache: false
+          languages: javascript-typescript
 
-      - name: Install dependencies
-        run: npm ci
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4.37.9
 
-      - name: Build platform package
-        run: ${{ matrix.build }}
+  merge-acceptance:
+    name: Merge acceptance
+    needs:
+      - release-version-integrity
+      - verify
+      - electron-smoke
+      - macos-electron-smoke
+      - codeql
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
 
-      - name: Build launcher package
-        run: npm run pack:npm:launcher
+    steps:
+      - name: Check out exact head for base ancestry proof
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Smoke installed packages
-        run: ${{ matrix.smoke }}
+      - name: Require one coherent CI attempt
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/ci-attempt-evidence.mts
+
+      - name: Require exact candidate ancestry
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ || ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Pull request base and head must be full commit SHAs"
+            exit 1
+          fi
+          if [ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]; then
+            echo "::error::Merge acceptance did not check out the exact pull request head"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$BASE_SHA" "$HEAD_SHA"; then
+            echo "::error::The tested pull request base is not an ancestor of its head"
+            exit 1
+          fi

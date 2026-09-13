@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useReducer, useRef } from 'react'
-
+import { viewerReadRequest, retainWorkspaceDocuments } from './external-document-tabs'
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import {
   hostPathEquals,
   unwrapOperation,
@@ -23,6 +23,8 @@ import {
   viewerWorkspaceReducer,
   type ViewerWorkspaceAction,
 } from './viewer-workspace-model'
+import { useViewerPathLifecycle } from './use-viewer-path-lifecycle'
+import { collectViewerWatchPaths } from './viewer-document-refresh'
 import {
   sameViewerWorkspace,
   selectActiveTab,
@@ -34,14 +36,12 @@ import {
   restoreViewerTabs,
   viewerStorageKey,
   viewerTabId,
-  type RestoredViewerTabs,
 } from './viewer-workspace-persistence'
-
+import { ViewerCommandTargets, type ViewerCommandTarget } from './viewer-command-targets'
+import { RetainedViewerWorkspaceCache } from './retained-viewer-workspace-cache'
 interface UseViewerWorkspaceOptions {
   readonly onActivateFile: () => void
 }
-
-type WarmViewerWorkspace = RestoredViewerTabs
 
 export function useViewerWorkspace(options: UseViewerWorkspaceOptions) {
   const [model, dispatch] = useReducer(
@@ -50,10 +50,12 @@ export function useViewerWorkspace(options: UseViewerWorkspaceOptions) {
   )
   const modelRef = useRef(model)
   const optionsRef = useRef(options)
-  const warmWorkspaces = useRef(new Map<string, WarmViewerWorkspace>())
+  const warmWorkspaces = useRef(new RetainedViewerWorkspaceCache())
   const workspaceGeneration = useRef(0)
+  const readLifetime = useRef(0)
   const readGenerations = useRef(new Map<string, number>())
   const navigationSerial = useRef(0)
+  const commandTargets = useRef(new ViewerCommandTargets())
   const pendingPositions = useRef(new Map<string, ViewerDocumentPosition>())
   const scrollFrame = useRef<number | undefined>(undefined)
   const discardDirtyOnUnload = useRef(false)
@@ -79,6 +81,7 @@ export function useViewerWorkspace(options: UseViewerWorkspaceOptions) {
 
   const loadFileAt = useCallback(
     (path: HostPath, generation = modelRef.current.generation): void => {
+      const lifetime = readLifetime.current
       const id = viewerTabId(path)
       const readGeneration = (readGenerations.current.get(id) ?? 0) + 1
       readGenerations.current.set(id, readGeneration)
@@ -89,10 +92,11 @@ export function useViewerWorkspace(options: UseViewerWorkspaceOptions) {
         readGeneration,
       })
       void window.hvir
-        .invoke('fs:read', { path })
+        .invoke('fs:read', viewerReadRequest(path, modelRef.current.root))
         .then(unwrapOperation)
         .then(
           (file) =>
+            lifetime === readLifetime.current &&
             send({
               type: 'read-succeeded',
               id,
@@ -101,6 +105,7 @@ export function useViewerWorkspace(options: UseViewerWorkspaceOptions) {
               file,
             }),
           (reason: unknown) =>
+            lifetime === readLifetime.current &&
             send({
               type: 'read-failed',
               id,
@@ -114,19 +119,26 @@ export function useViewerWorkspace(options: UseViewerWorkspaceOptions) {
   )
 
   const switchWorkspace = useCallback(
-    (root: HostPath): void => {
+    (root: HostPath, connected = true): void => {
+      if (!connected) {
+        readLifetime.current += 1
+        for (const tab of modelRef.current.tabs) {
+          if (tab.externalWorkspaceRoot || (tab.loading && !tab.file))
+            send({ type: 'close', id: tab.id })
+        }
+      }
       flushPendingPositions()
       const current = modelRef.current
       if (sameViewerWorkspace(current, root)) return
       if (current.root) {
         persistViewerTabs(current.root, current.tabs, current.activeId)
         warmWorkspaces.current.set(viewerStorageKey(current.root), {
-          tabs: current.tabs,
+          tabs: retainWorkspaceDocuments(current.tabs),
           activeId: current.activeId,
         })
       }
       const restored =
-        warmWorkspaces.current.get(viewerStorageKey(root)) ?? restoreViewerTabs(root)
+        warmWorkspaces.current.take(viewerStorageKey(root)) ?? restoreViewerTabs(root)
       const generation = (workspaceGeneration.current += 1)
       send({
         type: 'workspace-activated',
@@ -229,6 +241,20 @@ export function useViewerWorkspace(options: UseViewerWorkspaceOptions) {
     send({ type: 'cycle-active-mode' })
   }, [flushPendingPositions, send])
 
+  const registerViewerCommandTarget = useCallback(
+    (tabId: string, target: ViewerCommandTarget): (() => void) =>
+      commandTargets.current.register(tabId, target),
+    [],
+  )
+
+  const requestGoToLine = useCallback((): void => {
+    commandTargets.current.goToLine(modelRef.current.activeId)
+  }, [])
+
+  const requestFindInFile = useCallback((): void => {
+    commandTargets.current.findInFile(modelRef.current.activeId)
+  }, [])
+
   const navigationHandled = useCallback(
     (id: string, serial: number): void =>
       send({ type: 'navigation-handled', id, serial }),
@@ -260,7 +286,8 @@ export function useViewerWorkspace(options: UseViewerWorkspaceOptions) {
   const saveTab = useCallback(
     (id: string): void => {
       const tab = modelRef.current.tabs.find((candidate) => candidate.id === id)
-      if (!tab?.file || tab.file.binary || tab.conflict) return
+      if (!tab?.file || tab.file.binary || tab.conflict || tab.externalWorkspaceRoot)
+        return
       const savedContent = tab.file.content
       send({ type: 'save-started', id })
       void window.hvir
@@ -281,21 +308,61 @@ export function useViewerWorkspace(options: UseViewerWorkspaceOptions) {
 
   const handleWatchEvent = useCallback(
     (event: WatchEvent): void => {
-      const tab = modelRef.current.tabs.find((candidate) =>
-        hostPathEquals(candidate.path, event.path),
-      )
-      if (!tab) return
-      if (tab.dirty) send({ type: 'watch-conflict', id: tab.id })
-      else loadFileAt(tab.path)
+      if (event.synthetic === 'refresh') return
+      for (const tab of modelRef.current.tabs) {
+        if (tab.externalWorkspaceRoot) continue
+        if (hostPathEquals(tab.path, event.path)) {
+          if (tab.dirty) {
+            send({ type: 'watch-conflict', id: tab.id })
+          } else {
+            send({
+              type: 'document-refresh',
+              id: tab.id,
+              update: { type: 'watch-event', path: event.path },
+            })
+            loadFileAt(tab.path)
+          }
+          continue
+        }
+        if (tab.renderedDependencies?.some((path) => hostPathEquals(path, event.path))) {
+          send({
+            type: 'document-refresh',
+            id: tab.id,
+            update: { type: 'watch-event', path: event.path },
+          })
+        }
+      }
     },
     [loadFileAt, send],
   )
+
+  const setRenderedDependencies = useCallback(
+    (id: string, paths: readonly HostPath[]): void => {
+      send({
+        type: 'document-refresh',
+        id,
+        update: { type: 'rendered-dependencies', paths },
+      })
+    },
+    [send],
+  )
+
+  const watchPaths = useMemo(() => collectViewerWatchPaths(model.tabs), [model.tabs])
 
   const reloadCleanFiles = useCallback((): void => {
     for (const tab of modelRef.current.tabs) {
       if (!tab.dirty) loadFileAt(tab.path)
     }
   }, [loadFileAt])
+
+  const { canRebindPath, rebindPath, reviewPathRemoval, closeCleanPath } =
+    useViewerPathLifecycle({
+      modelRef,
+      pendingPositions,
+      readGenerations,
+      send,
+      closeTab,
+    })
 
   const focusPane = useCallback(
     (pane: ViewerPaneId, id?: string): void => {
@@ -381,6 +448,7 @@ export function useViewerWorkspace(options: UseViewerWorkspaceOptions) {
     window.addEventListener('pagehide', flushPersistence)
     window.addEventListener('beforeunload', protectDirtyBuffers)
     return () => {
+      readLifetime.current += 1
       window.removeEventListener('pagehide', flushPersistence)
       window.removeEventListener('beforeunload', protectDirtyBuffers)
       if (scrollFrame.current !== undefined) {
@@ -406,6 +474,11 @@ export function useViewerWorkspace(options: UseViewerWorkspaceOptions) {
     pinTab,
     setMode,
     cycleActiveMode,
+    viewerCommands: {
+      register: registerViewerCommandTarget,
+      findInFile: requestFindInFile,
+      goToLine: requestGoToLine,
+    },
     setDiffBase,
     setContent,
     navigationHandled,
@@ -413,7 +486,14 @@ export function useViewerWorkspace(options: UseViewerWorkspaceOptions) {
     reloadTab,
     saveTab,
     handleWatchEvent,
+    setRenderedDependencies,
+    openWatchPaths: watchPaths.openPaths,
+    renderedWatchPaths: watchPaths.dependencyPaths,
     reloadCleanFiles,
+    canRebindPath,
+    rebindPath,
+    reviewPathRemoval,
+    closeCleanPath,
     focusPane,
     getActivePane,
     openSplit,

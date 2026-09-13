@@ -7,12 +7,49 @@ task runner, or session orchestrator.
 The repository-owned skills are for hvir contributors and maintainers. People using the hvir
 application do not need an agent skill.
 
-## Discuss before diff
+## Public contribution
 
-Substantive implementation starts with a governing GitHub issue. Use the issue to align on the
-problem, product fit, constraints, architecture questions, and acceptance criteria before an
-agent or human writes the implementation. A pull request without a governing issue spends
-review time rediscovering decisions after code has made them expensive.
+Public contribution to hvir means identifying worthwhile problems, proposing outcomes, and
+participating in product discussion. Maintainers decide whether an outcome fits hvir and when it
+is ready for implementation. Maintainers make the final product and release decisions, author
+every canonical GitHub Issue, and own implementation.
+
+This maintainer-authored pipeline began as a security boundary because public text is untrusted
+input to an agent. hvir deliberately retains it as its contribution model: outside issues and
+pull requests are not accepted contribution paths, even if future tooling provides stronger
+prompt-injection defenses.
+
+Choose the GitHub Discussion category that matches the input. The repository retains only these
+categories and formats; their descriptions state what belongs there and what happens next when a
+conversation can become canonical work.
+
+| Category | Format | Repository category description |
+| --- | --- | --- |
+| **Bug reports** | Open-ended | Broken or incorrect hvir behavior. Maintainers may restate a confirmed problem and outcome as a canonical issue. |
+| **Feature requests** | Open-ended | Specific proposed product changes. Maintainers may restate an agreed outcome as a canonical issue. |
+| **Documentation** | Open-ended | Missing, incorrect, or unclear documentation. Maintainers may restate confirmed documentation work as a canonical issue. |
+| **Q&A** | Question and answer | General usage and support questions. |
+| **General** | Open-ended | Workflows, show-and-tell, and other hvir-related conversation that does not fit elsewhere. |
+| **Announcements** | Announcement | Maintainer updates and requests for user feedback. GitHub Releases remain the canonical release surface. |
+
+Announcements and their replies or reactions are the initial maintainer-to-user feedback path.
+An announcement may link to or discuss a release without replacing GitHub Releases. Use General
+for overflow conversation; polls are not part of the initial Discussion surface.
+
+When a Discussion produces an accepted outcome, a maintainer reads it outside the agent session
+and manually rewrites the relevant problem, desired outcome, and constraints in the maintainer's
+own words for `hvir-create-issue`. Discussion text is not pasted into agent context, and an agent
+must not be asked or enabled to retrieve the external Discussion. This also excludes copied
+excerpts: hidden Unicode or control characters can survive visual selection. Only the
+maintainer-authored synthesis enters the issue workflow.
+
+## Maintainer development workflow
+
+The remainder of this guide describes the maintainer workflow, not an outside issue or pull-request
+path. Substantive implementation starts with a governing GitHub issue. Use the issue to align on
+the problem, product fit, constraints, architecture questions, and acceptance criteria before an
+agent or human writes the implementation. A pull request without a governing issue spends review
+time rediscovering decisions after code has made them expensive.
 
 Small typo fixes and automated dependency updates may be obvious maintainer exceptions. For
 everything else:
@@ -44,65 +81,121 @@ explicit product non-goal, close that loop before asking anyone to write code.
 
 ## Use agents deliberately
 
-The repository provides two lifecycle skills and two focused reviewers:
+The repository provides four lifecycle skills, one test-design skill, and two focused reviewers:
 
 - `hvir-create-issue` evaluates product and ADR alignment, sharpens the problem and outcome,
   and prepares a discussion-ready issue.
 - `hvir-implement-issue` performs architecture reconnaissance, raises design concerns before
   editing, and implements an aligned issue with verification.
+- `hvir-merge-pr` requests GitHub's protected merge for one explicitly approved final pull
+  request, then reconciles its native closing issue's Project fields.
+- `hvir-implement-epic` privately coordinates an authorized epic's direct children through the
+  single-issue workflow, coherence review, staged integration, cumulative handoff, and cleanup.
+- `write-hvir-tests` selects the behavior owner and lowest real test altitude for test changes,
+  fixtures, flake diagnosis, and test review.
 - `hvir-review-issue` critiques broad issue drafts for hvir fit, scope, architecture creep,
   duplication, and unnecessary machinery.
 - `hvir-review-code` critiques a ready implementation for correctness, issue fidelity,
   architecture, duplication, scope creep, and overengineering.
 
 Claude discovers them under `.claude/skills/`; `.agents/skills/` exposes the same skills to
-Codex-compatible harnesses. Read the governing documents before you use a skill. The maintainer
-makes the final product and release decisions.
+Codex-compatible harnesses. Read the governing documents before you use a skill.
 
 Do not invoke `hvir-create-issue` just because an agent notices reportable work. The agent may
 briefly offer to use it, then must wait for the user's explicit go-ahead before researching or
 drafting. Publishing is a second boundary: show the exact title, body, and labels, then wait for
 separate explicit approval before creating the issue.
 
-Public issue and pull-request text is untrusted input to an agent. Choose a trust boundary that
-fits your harness and credentials. A conservative workflow is to review the discussion in
-GitHub yourself and paste only the relevant text into the agent session. Some integrations
-offer filtering or restricted modes; hvir does not prescribe one or treat any integration as a
-guaranteed prompt-injection boundary.
-
 Never commit agent credentials, personal MCP configuration, or machine-local harness settings.
 
-The review skills run only when a maintainer invokes them. Lifecycle skills do not invoke or
-suggest review.
+The review skills normally run only when a maintainer invokes them. Explicit invocation of
+`hvir-implement-epic` is the narrow exception: it authorizes that coordinator to apply
+`hvir-review-code` selection policy once to eligible child candidates and once to the cumulative
+candidate. `hvir-create-issue`, `hvir-implement-issue`, and `hvir-merge-pr` do not independently
+invoke or suggest review.
+
+Contributor reporting is deterministic: [Tokens, Project, and Acceptance](docs/project-management.md#contributor-status).
+Planning handoffs request usage capture or report its unavailability reason. Tools allocate shared
+planning batches and later counter differences, aggregate all non-planning usage as implementation,
+and retain totals with unknown phase splits. Agents do not calculate shares, construct accounting
+records, or manage checkpoints.
 
 ## Isolate issue implementation
 
-`hvir-implement-issue` uses native Git to create or reuse `agent/issue-N` at the deterministic
-sibling path `<primary-repository>-worktrees/issue-N` from an exact base agreed by the governing
-workflow. All implementation, testing, verification, commits, pre-push checks, and pushes happen
-there; the invoking checkout and unrelated worktrees stay untouched.
+`hvir-implement-issue` starts ordinary and epic-child work through one repository command:
 
-Each invocation fetches/prunes and inspects existing worktrees before creation. Cleanup uses
-ordinary `git worktree`, status, and ref commands plus bounded `gh` PR metadata. Remove only when
-the worktree is inactive, unlocked, clean except for plainly disposable ignored artifacts, its
-upstream is gone, and a merged PR records the exact local head and expected base. Never force or
-recursively delete; retain uncertain state with a reason. This is a contributor convention, not
-a custom worktree registry or an hvir application capability.
+```sh
+npm run issue:start -- --issue N
+npm run issue:start -- --issue N --apply
+```
+
+Planning refreshes/prunes remote-tracking refs and prints the complete setup without changing a
+local branch, worktree, dependency tree, or Project value. Apply recomputes the current plan,
+creates or reuses `agent/issue-N` at `<primary-repository>-worktrees/issue-N` from the exact
+resolved start ref, and runs locked dependency preparation there. All implementation, testing,
+verification, commits, pre-push checks, and pushes then happen in that selected worktree; the
+invoking checkout and unrelated worktrees stay untouched. Successful authorized setup sets the
+selected issue In Progress through its existing Status owner; dry-run and failed setup do not.
+
+The command composes the read-only delivery context with ordinary native Git status, worktree,
+and ref operations plus bounded content-free PR evidence. Cleanup requires an inactive, unlocked
+worktree; clean tracked and untracked state; only plainly disposable ignored artifacts; a gone
+upstream; no open PR; and a merged PR that records the exact local head and that issue's expected
+delivery base.
+It never forces a Git operation or recursively deletes a worktree. Uncertain state is retained
+with a reason and does not block an unrelated selected issue unless its branch or path collides.
+This is a contributor convention, not a custom worktree registry or an hvir application
+capability.
 
 This lifecycle belongs only to repository contributor tooling. The hvir application continues
 to discover worktrees without creating, moving, repairing, merging, or removing them.
 
+## Accept final delivery
+
+`hvir-implement-issue` ends after it has verified, committed, pushed, audited, and handed off one
+ordinary candidate pull request. It does not infer acceptance or merge authority. When the
+maintainer accepts that pull request, invoke `hvir-merge-pr`. An explicit pull-request number wins;
+when it is omitted, the skill may reuse one only when the latest verified lifecycle handoff in
+the active interaction identifies exactly one final candidate. It never searches repository state
+for an arbitrary open pull request. Missing or ambiguous candidates require the number from the
+maintainer.
+
+The invocation itself is approval. The skill calls `gh pr merge <pr> --merge --auto` and never
+uses `--admin`. GitHub's ruleset, required checks, review state, base freshness, and mergeability
+remain authoritative. Auto-merge allows a candidate to wait for those requirements without a
+second maintainer turn or a repository-owned dry-run classifier.
+
+After GitHub records the merge, the skill reads the native closing relationship and converges the
+one issue through the existing `project:record` owner, then reads `project:status`. A strict-base refresh
+or changed final head does not prevent that post-merge Project reconciliation. The skill creates
+no merge-phase measurement and infers no review usage. A Project failure never rolls back a
+successful merge; retry only the failed focused reconciliation operation.
+
+Ordinary and cumulative root-epic pull requests use the same final-acceptance path. Epic-child
+pull requests remain integrated only by the epic coordinator. Branch and worktree cleanup is not
+merge admission and may be performed later by its existing lifecycle owner under explicit
+maintainer authority.
+
 ## Stage epic delivery
 
-An authorized open `kind:epic` uses one `epic/N-slug` integration branch from current `main`.
-Keep its history append-only. Start each direct child's issue worktree at the current epic branch.
-Continue to use `main` for ordinary issues.
+Use `hvir-implement-epic` as the top-level workflow for an authorized open `kind:epic`. Its root
+agent remains the private coordinator: it builds the child dependency/ownership graph, schedules
+only independent work concurrently, reviews coherence, integrates child pull requests one at a
+time, and prepares the cumulative maintainer handoff. It delegates every child implementation
+through `hvir-implement-issue`; it does not define a second implementation workflow or put its
+scheduling and reasoning record on GitHub.
 
-Use `npm run issue:context -- --issue N` to resolve the native parent, exact base, deterministic
-issue branch and worktree, planning state, related open PRs, and conflicts. Add `--json` when an
-agent needs the structured record. Reuse one unambiguous epic branch. Creating the first branch
-requires authorization for the epic and its intended child set. Retain state and report a blocker
-when metadata, refs, or worktrees conflict.
+The coordinator owns one `epic/N-slug` integration branch from current `main` and keeps its
+history append-only. Each direct child's issue worktree starts at the current epic branch.
+Ordinary issues continue to use `main`.
+
+`hvir-implement-issue` uses `npm run issue:start -- --issue N` to plan a child's native parent,
+exact base, deterministic issue branch and worktree, planning state, related open PRs, cleanup,
+and dependency preparation. Add `--json` when an agent needs the structured record; pass
+`--apply` only after reviewing the plan. `issue:context` remains available for read-only delivery
+diagnosis. The epic coordinator creates or reuses the one unambiguous epic branch before child
+startup; `issue:start` never creates or pushes it. Retain state and report a blocker when
+metadata, refs, or worktrees conflict.
 
 An epic-child PR targets the exact epic branch and names its direct child once:
 
@@ -116,15 +209,19 @@ for partial work that does not complete an issue. Required CI and CodeQL checks 
 targets. Trusted automation uses default-branch code, treats PR text as data, and advances the
 eligible child and parent records to `In Progress`.
 
-After the required checks pass, merge the focused child PR into the epic branch. Trusted
-automation revalidates its base and native parent, then closes the direct child and converges
-Project Status to `Done`. Failed or ambiguous validation keeps the child open. Reopen the child for
-a correction and use another focused completing PR. No intermediate Project Status is used.
+The child workflow stops after preparing its focused pull request and compact handoff. The epic
+coordinator validates the exact candidate, base, relationship, parent, reviews, and required
+checks before merging one child at a time. Trusted automation revalidates the base and native
+parent, then closes the direct child and converges Project Status to `Done`. Failed or ambiguous
+validation keeps the child open. Reopen the child for an in-scope correction and return it through
+`hvir-implement-issue`. No intermediate Project Status is used.
 
-After every intended child closes, merge current `main` into the epic branch. Verify the complete
-`main...epic` candidate. Open one final PR to `main` with `Closes #<epic>`. The maintainer owns
-cumulative acceptance and the final merge. Clean the epic branch and worktree after final merge
-and exact safety checks. Retain uncertain state for maintainer action.
+After every authorized child closes, the coordinator merges current `main` into the epic branch,
+verifies and externally reviews the complete `main...epic` candidate, passes the pre-push gate,
+and opens one final PR to `main` with `Closes #<epic>`. The maintainer accepts that exact candidate
+through `hvir-merge-pr`, which requests GitHub's protected merge and reconciles the root Project
+fields. Optional epic branch and worktree cleanup remains a later coordinator operation and never
+blocks acceptance. Retain uncertain cleanup state for maintainer action.
 
 ## Develop locally
 
@@ -133,9 +230,12 @@ Development requires Node 24 or newer; release CI uses Node 24.
 ```sh
 npm ci
 npm run verify
+npm run test:mutation    # opt-in pure-policy mutation evidence
 npm run smoke
 npm run smoke:macos        # matching Apple-silicon Mac
+npm run smoke:macos:ci     # temporary reduced hosted macOS subset
 npm run smoke:capacity     # contracts + machine-dependent evidence
+npm run smoke:development-performance  # development-only timeline containment
 npm run performance:capacity  # controlled-machine quantitative gate
 npm run dev
 ```
@@ -143,40 +243,210 @@ npm run dev
 `npm ci` downloads Electron and rebuilds native dependencies for Electron's ABI. On headless
 Linux, run Electron smoke tests under `xvfb-run`. Install the optional pre-push smoke hook with:
 
+On macOS, raw `npm run dev` and unsigned `npm run build:dir` are not the LAN SSH acceptance
+identity. Use the
+[signed macOS SSH coexistence workflow](docs/macos-ssh-acceptance.md), which fails closed when
+its protected Developer ID signing inputs are unavailable.
+
 ```sh
 npm run hooks:install
 ```
 
-`npm run smoke` runs the focused `pty-native` and `viewer-position` groups plus the transitional
-`legacy-workflow` group in separate Electron processes with fresh project and user-data roots,
-then reports a result for every scheduled group. Select one group locally with
-`HVIR_SMOKE_SCENARIO=<name> npm run smoke`; the complete name set is `pty-native`,
-`viewer-position`, `platform-contracts`, `terminal-presentation`, `legacy-workflow`, and
-`capacity`. `npm run smoke:macos` runs the focused PTY, viewer, platform-contract, and terminal
-presentation correctness groups. `npm run smoke:capacity` selects the capacity group: terminal
+`npm run test:mutation` runs StrykerJS through the existing Vitest runner against the bounded
+pure-policy modules listed in `stryker.config.json`; the initial scope is
+`src/main/git/git-parsers.ts`. Its plain-text report gives the mutation score and identifies every
+surviving mutant by file, line, mutator, and applied source change. Mutation testing measures
+whether the tests constrain implementation behavior. It does not establish that the tests assert
+the intended behavior.
+
+This command is opt-in evidence: it stays outside `npm run verify` and pull-request CI, has no
+blocking score threshold, and uses only Node and the locally installed test dependencies. It does
+not launch Electron, require a display, or access the network.
+
+`npm run smoke` runs the focused `pty-native`, `viewer-position`, `viewer-content`,
+`git-workflow`, `workspace-remote`, `web-pane`, `renderer-authority`, `renderer-recovery`,
+`sessions-projection`, `document-review`, `terminal-presentation`, and `terminal-lifecycle` groups plus the focused
+`native-host-worker`, `workbench-health`, `platform-contracts`, `terminal-theme`,
+`terminal-move`, `workbench-layout`, `terminal-split`, `app-settings`, and `harness-profiles` groups in separate Electron processes with fresh project and user-data roots, then
+reports a result for every scheduled group. Direct single-process invocations require
+`HVIR_SMOKE_SCENARIO`; missing and invalid names fail with a selection diagnostic. Select one group locally with
+`npm run smoke:scenario -- <name>`; the complete name set is `pty-native`, `viewer-position`, `viewer-content`,
+`git-workflow`, `workspace-remote`, `web-pane`, `renderer-authority`, `platform-contracts`,
+`diagnostic-report-restart`, `renderer-recovery`, `sessions-projection`, `document-review`, `development-performance`,
+`terminal-presentation`, `terminal-lifecycle`, `native-host-worker`, `workbench-health`,
+`terminal-theme`, `terminal-move`, `workbench-layout`, `terminal-split`, `app-settings`,
+`harness-profiles`, and `capacity`. The
+development-performance group starts a development renderer and is run separately with `npm run
+smoke:development-performance`; the restart scenario is reserved for the packaged multi-launch
+fixture. `npm run smoke:macos` runs the focused PTY, viewer, Git, workspace/remote, web-pane,
+renderer-authority, platform-contract, renderer-recovery, terminal-presentation, and
+document-review, terminal-presentation, and terminal-lifecycle correctness groups.
+
+Viewer and Git evidence follows the same ownership rule. `viewer-position` proves CodeMirror
+virtualization, source/rendered/diff anchors, remounts, pending and empty diffs, scoped commands,
+and find behavior. `viewer-content` proves ProjectHost reads and saves, worker-backed Shiki/JSON/CSV
+rendering, bounded large-file paint, external reload, and Chromium HTML isolation. `git-workflow`
+proves the real system-Git path for diff bases, changes, paged history, graph detail, dirty branch
+refresh, sync controls, and blame. View-mode, navigation, anchor, Git parsing, graph, mutation, and
+sync policy remain in their direct Vitest suites. Each focused process retains a bounded semantic
+snapshot for timeout diagnosis.
+
+Workspace, remote, web-pane, and renderer authority evidence follows the same split.
+`workspace-remote` proves independently runnable project/workspace transitions, contained local
+browse failures, missing-workspace suppression, synthetic SSH presentation, host-key trust,
+host-qualified project registration, and close cleanup. Deterministic `ProjectHost` local/SSH,
+reconnect, watcher, and late-completion policy remains in direct Vitest suites and never requires a
+real SSH host. `web-pane` starts its own authorized terminal source and proves guest isolation,
+authenticated routing, blocked navigation, ordinary input, full-page controls, workspace
+hide/restore without reload, bounded redacted diagnostics, reserved close, and route cleanup.
+`renderer-authority` owns real renderer reload/destruction revocation for routes and HTML previews;
+it does not depend on a terminal scenario. Each focused process records a bounded semantic
+snapshot when readiness fails.
+
+`document-review` proves the production renderer/preload/IPC/store workflow, one shared
+rendered/source Markdown anchor, tab/project/reload/restart durability, exact delivery preview,
+provider framing through a real node-pty capture process, immutable destination authority, and
+renderer/PTY cleanup. Exact revalidation branches, bounds, provider eligibility, deterministic
+SSH transport behavior, and late-completion policy remain in their direct owning suites; the
+opt-in real-host command retains the SSH server contract.
+
+Terminal evidence remains split by its real owner. `pty-native` proves production-composed Custom
+profile launch, output, termination event, and cleanup through Electron's node-pty ABI without a
+window. `terminal-presentation` proves Ghostty startup, input, selection, split/focus, attention,
+profile-menu, settings, and canvas behavior. `terminal-lifecycle` proves disconnect/reconnect
+remount, recovery selection with same-process reattachment, renderer generations, and
+webContents-destruction cleanup. Profile policy, recovery planning, split policy, and attention
+policy remain in their direct Vitest suites.
+The pre-push hook uses that full command on macOS. As a temporary containment while the observed
+macOS presentation-readiness and native PTY teardown flakes are hardened, hosted macOS CI runs
+`npm run smoke:macos:ci`, which omits terminal presentation and terminal lifecycle, and does not
+run capacity. The workspace/remote, web-pane, and renderer-authority groups remain in that hosted
+gate. Capacity remains a controlled-machine release-readiness command rather than a hosted merge
+gate; both omitted macOS paths remain directly runnable locally and are not treated as allowed
+failures.
+`npm run smoke:capacity`
+selects the capacity group: terminal
 topology, presentation, delivery, exact input, cleanup, and recovery contracts remain blocking,
-while CPU, latency, and working-set measurements are labeled evidence. CI invokes this command
-separately on Linux and macOS. `npm run performance:capacity` runs the same contracts and samples
+while CPU, latency, and working-set measurements are labeled evidence. `npm run
+performance:capacity` runs the same contracts and samples
 but enforces the quantitative budgets on a controlled machine. These commands use the same
 aggregate launcher, so a failing group does not prevent reporting its scheduled siblings.
+Each aggregate attempt is bounded: ordinary scenario processes receive three minutes, while the
+capacity process receives ten minutes for its six 30-second CPU samples plus setup and teardown.
 
 For a bounded local stress run, set `HVIR_SMOKE_REPEAT` to an integer from 1 through 100. For
-example, `HVIR_SMOKE_SCENARIO=pty-native HVIR_SMOKE_REPEAT=20 npm run smoke` schedules 20
+example, `HVIR_SMOKE_SCENARIO=pty-native HVIR_SMOKE_REPEAT=20 npm run smoke:scenario` schedules 20
 iterations of that group. Each iteration launches a fresh Electron process with fresh project and
 user-data roots. Iterations are fixed stress evidence, not retries: every scheduled iteration runs,
 and any failed iteration makes the aggregate command fail. Pull-request jobs omit the variable and
-therefore run one iteration.
+therefore run one iteration. Aggregate output includes every attempt and its duration.
 
-Packaged smoke is a distribution boundary, not a second product workflow. On a matching supported
-host, build the platform tarball and launcher, then run `npm run smoke:packaged`. It installs the
-exact versioned tarballs into a clean prefix and proves launcher selection, executable architecture,
-application/worker/native-PTY loading, preview-protocol handling, and retained platform geometry.
-Ordinary behavior remains in the unpackaged groups.
+The `Electron smoke stress` workflow accepts one bounded scenario/count through manual dispatch on
+Linux x64 and macOS ARM64. It has no schedule: normal exact-SHA CI and release evidence is already
+the recurring signal, while repetition is reserved for a suspected boundary that needs targeted
+diagnosis. It is stress evidence, not a reliability-percentage claim, pull-request gate, or retry
+loop. On failure, the launcher writes one JSON artifact per failed attempt when
+`HVIR_SMOKE_ARTIFACT_DIR` is set. The
+closed artifact contains the scenario and iteration, expected outcome, duration, process exit,
+last safe semantic phase, named unmet condition, owned-resource counts/flags, and reviewed
+log-event booleans. The launcher repeats that closed evidence in the job summary and preserves
+the original scenario condition if subsequent cleanup also fails. It never
+retains raw logs, environment values, terminal transcripts, source/diff/file bodies, requests,
+cookies, headers, form values, console contents, or screenshots.
+
+Use `npm run smoke:isolation` for the real-process interruption proof. It stops focused PTY,
+Git/renderer-watch, and web-route scenarios at controlled owner checkpoints, exercises a
+scenario failure, graceful `SIGHUP`/`SIGINT`/`SIGTERM`, and process-group `SIGKILL`, then runs all
+three clean successors in parallel. Graceful paths must report reverse-order disposal and dead
+process groups. The force-killed path
+claims no in-process cleanup: its uniquely named temporary root must carry the exact hvir
+ownership marker, remain inert, never be reused by a successor, and pass marker-and-parent
+validation before bounded removal. The command records only closed resource counts, generation,
+route/port state, process outcome, and cleanup names; it does not capture terminal, file, web, or
+environment content.
+Deferred PTY-spawn and renderer-generation tests remain at their domain seams to prove that late
+completion after revocation fails closed and cannot recreate disposed authority.
+
+Real SSH server behavior is an opt-in acceptance boundary, not a pull-request dependency. Run
+`npm run acceptance:ssh:real-host` only with an explicit target:
+
+- `HVIR_REAL_SSH_HOST`, `HVIR_REAL_SSH_PORT`, and `HVIR_REAL_SSH_USER` identify the target;
+- `HVIR_REAL_SSH_HOST_KEY` is the exact trusted `SHA256:` fingerprint;
+- `HVIR_REAL_SSH_ROOT_PARENT` is an existing absolute directory reserved for disposable runs; and
+- exactly one of `HVIR_REAL_SSH_PRIVATE_KEY` or `HVIR_REAL_SSH_IDENTITY_FILE` supplies the key.
+  `HVIR_REAL_SSH_PASSPHRASE` is optional for an encrypted key.
+
+The command never reads ambient SSH config, agents, default hosts, passwords, or trust stores. It
+exits with status 2 and reports `unavailable` when all target settings are absent; a partial or
+invalid configuration fails. One logical `SshHost` then exercises exec, SFTP, real watch/poll,
+supervised PTY plus provider observation, direct loopback streaming, pooled transport capacity,
+and explicit disconnect/reconnect. Every remote file stays under a fresh host-qualified project
+root. The target must provide POSIX `sh`, SFTP, and `python3`; Python runs only one bounded
+in-memory loopback server and is not installed or retained by hvir. Cleanup requires the exact
+per-run ownership marker before removing that root, stops all streams/PTYs/watches, disconnects
+transports, and installs no remote service. `SIGHUP`, `SIGINT`, and `SIGTERM` enter that same
+bounded cleanup path instead of exiting around it. Failure output and
+the optional `HVIR_REAL_SSH_ARTIFACT_DIR` artifact contain only the closed phase and failure
+reason, connection/watch state, resource counts/flags, transport counts, and duration—never
+target configuration, credentials, fingerprints, paths, terminal output, or remote file contents.
+
+The monthly/manual `Real-host SSH acceptance` workflow reads the same values from the protected
+`real-host-ssh` environment. With no configured target its acceptance job is visibly skipped; a
+partially configured target fails the availability job. This leaves deterministic `SshHost` and
+transport tests as the first pull-request evidence while keeping mutable infrastructure outside
+the universal gate.
+
+Native package acceptance is the distribution boundary, not a second product workflow. On a
+disposable matching host, build the native package and run `npm run smoke:linux:installed` or
+`npm run smoke:macos:installed` with the guarded environment documented in
+[`docs/packaging.md`](docs/packaging.md). These checks exercise installer-owned install, update,
+ordinary launch, `hvir .`, migration, uninstall, reinstall, and purge behavior. They inspect the
+actual package for production worker entrypoints and the matching native PTY payload but do not
+execute either from the installed artifact. Real worker round trips and native PTY lifecycle stay
+in the matching-target unpackaged Electron groups.
 
 Use `npm run gauntlet` for the full release gate on a controlled machine; it includes
 `performance:capacity`. Packaging and performance work has additional acceptance guidance in
 [`docs/packaging.md`](docs/packaging.md) and
 [`docs/phase8-performance-gauntlet.md`](docs/phase8-performance-gauntlet.md).
+
+## Maintain the ghostty-web compatibility pin
+
+The `Update ghostty-web compatibility artifact` workflow checks the public compatibility fork
+daily and by manual dispatch. It accepts only the newest immutable, published, non-prerelease
+`hvir-v<package-version>-<revision>` release with exactly one package tarball, checksum, and
+provenance record. Before changing a branch it verifies the release tag and source commit, every
+asset digest, the tarball checksum, provenance and package identity, npm lock integrity, a clean
+`npm ci`, and the existing terminal-runtime contract.
+
+Candidate installation and runtime checks run in an unprivileged preparation job that has no App
+credentials. A fresh publication job receives the short-lived App token, rechecks the exact base
+commit and pull-request state, independently revalidates the public immutable release, verifies
+the hashes and exact transformation of the fixed four-file candidate bundle, and publishes it
+without installing dependencies or executing candidate code.
+
+The workflow rebuilds `automation/ghostty-web-update` from current `main` and maintains at most
+one marked pull request. A newer release advances that same branch and pull request; closing an
+unwanted update suppresses that release until a newer one appears. Generated pull requests are
+the documented automated-dependency exception: they intentionally have no governing issue or
+closing relationship, never merge automatically, and pass through the ordinary pull-request,
+planning, verification, CodeQL, Electron, aggregate, branch-protection, and maintainer-review
+gates. Native
+packaging and assembly remain release-candidate gates.
+
+Repository administration must provide a dedicated GitHub App installed only on hvir. Grant the
+App repository metadata read, contents write, and pull-request write permissions only. Do not
+grant Actions, administration, secrets, environments, issue, or direct default-branch authority.
+Create a `ghostty-web-updates` environment restricted to `main`, put the App client ID in the
+`HVIR_GHOSTTY_WEB_APP_CLIENT_ID` environment variable, and put its private key in the
+`HVIR_GHOSTTY_WEB_APP_PRIVATE_KEY` environment secret. The workflow requests only the two write
+permissions from the short-lived installation token and revokes it at job cleanup.
+
+After provisioning or rotation, manually dispatch the workflow from `main`. When the fork's
+newest release is already pinned, a successful run must report a no-op without creating or
+changing a pull request. Missing credentials, malformed or transient release evidence, multiple
+owned pull requests, an incompatible artifact, or any candidate check fails closed without
+changing `main`.
 
 ## Protect the architecture
 
@@ -190,11 +460,94 @@ coordination belongs in a named coordinator with narrow ports. Resource ownershi
 must be explicit, late async completion must be rejected after revocation, and paths remain
 host-qualified through `ProjectHost`.
 
-Run `npm run architecture:report` before and after structural work. The hotspot budgets are
-blocking non-growth ratchets and review signals, not targets and not a substitute for judging
-ownership. Extract responsibilities rather than moving arbitrary blocks into smaller files.
+Source budgets and dependency constraints protect different properties; passing either does
+not establish sound ownership. [ADR-040](docs/adr/ADR-040-complete-source-budgets-and-dependency-policy.md)
+owns the accepted policy. The [budget guide](docs/architecture-budgets.md) explains the
+informational comfort target, default and stricter limits, transitional ratchets, durable
+ceilings, generated treatment, and separate policy authorization. The
+[dependency guide](docs/architecture-dependencies.md) explains runtime cycles, erased type
+relationships, and the existing direction checks. Extract responsibilities along ownership
+boundaries.
+
+Run `npm run architecture:report` before and after structural work to inspect both controls.
+The report is provisional; `npm run architecture:check` enforces the accepted policy and is
+part of `npm run verify`. Use the credential and delivery-context instructions in the budget
+guide for enforcing commands.
+
+### Record architecture constraints when structure changes
+
+An issue records architecture constraints before implementation when its outcome creates or
+changes a capability owner, public seam, dependency direction, or exceptional budget. Use the
+actual structural effect: a new file under an unchanged owner does not trigger this requirement,
+and a bug label does not exempt an authority-boundary change. Localized bugs, maintenance,
+tests, and documentation need no additional architecture section when their structure is unchanged.
+
+For triggered work, record these facts together in an Architecture constraints section or link
+to their exact accepted location without duplicating them:
+
+- Current owner and intended ownership change.
+- Public seam and affected state, authority, or disposal boundary.
+- Permitted and forbidden dependency directions, including relevant type-only imports.
+- Existing enforcement that covers the boundary, or the focused direction check to add.
+- Governing source-budget classification and any separately accepted exception required.
+- Focused acceptance evidence for the constraint and the behavior that must remain stable.
+
+Reuse an existing rule that already protects the boundary. If a new automated direction rule
+would express no meaningful invariant, explain why and name the focused ownership evidence
+instead. That explanation cannot waive an existing blocking rule. Assess any new static
+component's ownership under the dependency guide, including components that require erased edges.
+
+`hvir-create-issue` records proposed constraints during authorized drafting.
+`hvir-review-issue` assesses the owner, directions, enforcement, budget classification, and
+evidence when its existing selection and invocation rules apply. Review does not set a private
+budget or authorize a relaxation through accepted prose. New or increased exceptional budgets
+and other policy relaxations use the separately accepted policy-only path in the budget guide.
+
+An epic records common constraints; each structural child records the focused constraints for
+its changed boundaries and may reference the accepted epic constraints. This adds no mandatory
+independent review to direct children. `hvir-implement-issue` checks the accepted constraints
+against reconnaissance and final evidence. Missing constraints or a different owner, direction,
+or required exception return to issue alignment before the affected implementation proceeds.
+Alignment does not authorize automatic issue publication, a new reviewer loop, or an
+implementing agent's own policy relaxation. Preserve the separate drafting and publication
+approvals above. Durable decisions belong in ADRs; implementation evidence belongs in issues
+and pull requests.
+
+### Worked examples
+
+1. **Localized fix.** A Git parser corrects an empty-result case through its existing command
+   contract. The owner and dependency directions stay unchanged. Record the bug and a direct
+   parser regression test; no additional architecture section is needed.
+2. **New file, unchanged owner.** A viewer moves a private formatting function to another file
+   under the same capability, with the same dependencies and no new public or disposal seam.
+   File creation alone adds no architecture section or custom budget. The source receives its
+   governing classification through the existing inventory and budget check.
+3. **Structural change, existing rule.** A feature IPC registrar delegates sibling-feature
+   coordination to a named application coordinator with narrow ports. Record the old and new
+   owners, preserved IPC authority/disposal, allowed registrar-to-coordinator direction, and
+   forbidden sibling registrar imports, including type-only imports. Reuse the existing IPC
+   direction rules consumed by the architecture check. Name the governing budget classifications
+   and focused coordinator/IPC tests that prove behavior and late-completion rejection.
+4. **New seam, focused check.** A viewer adds a pure selection policy consumed by an effect hook.
+   Record that the hook retains subscription/disposal authority and the policy owns only selection.
+   Permit hook-to-policy imports; forbid policy-to-React/preload imports, including type-only
+   references. If existing rules do not cover the new seam, require a focused rule in the existing
+   direction-policy owner and a fixture proving forbidden imports fail. Record the ordinary
+   budget classification, direct selection tests, and hook cleanup evidence.
+5. **Exceptional budget.** A coherent owner needs to exceed its accepted ceiling. Record the
+   exact path, owner, preserved seam and directions, existing direction enforcement, proposed
+   budget classification, and focused behavior evidence. Link the required separate policy-only
+   proposal with the rationale and reconsideration condition required by ADR-040. Review of the
+   consuming issue does not grant that budget. The consuming implementation waits for independent
+   policy acceptance and then verifies against that accepted policy; splitting policy and source
+   into commits in one consuming PR does not supply authorization.
 
 ## Verify at the owning seam
+
+Use the repository-owned
+[`write-hvir-tests`](.claude/skills/write-hvir-tests/SKILL.md) skill when designing, changing,
+diagnosing, or reviewing tests. It contains the procedural workflow and stable behavior-altitude
+matrix; this section keeps only the concise contributor rule.
 
 Tests should match the behavior's real boundary:
 

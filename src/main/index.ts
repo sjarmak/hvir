@@ -1,8 +1,4 @@
-/** Electron main-process entry and current application composition root. */
-
-import { join } from 'node:path'
-import { app, BrowserWindow, dialog, protocol, shell } from 'electron'
-
+import { app, BrowserWindow, dialog, shell } from 'electron'
 import { registerIpcHandlers } from './ipc'
 import { createProjectCommands } from './ipc/project-commands'
 import { GitMutationCoordinator } from './git/mutation-coordinator'
@@ -10,7 +6,10 @@ import { GitMutationAuthorization } from './git/mutation-authorization'
 import { GitWorkerHostRouter } from './git/worker-host-router'
 import { HtmlPreviewProtocol } from './html-preview-protocol'
 import { createWorkerClient, workerPath, type WorkerClient } from './worker-host'
-import { ProjectRegistry, RendererSshPrompter } from './project-registry'
+import { electronTrash, ProjectHostCatalog, RendererSshPrompter } from './project-host'
+import { ProjectFolderPickerCoordinator as FolderPicker } from './project-folder-picker'
+import { electronReveal } from './project-host/electron-project-reveal'
+import { ProjectRegistry } from './project-registry'
 import { ProjectCoordinator } from './project-coordinator'
 import { PtySupervisor } from './pty/pty-supervisor'
 import { AttentionBadge } from './attention-badge'
@@ -18,36 +17,40 @@ import { ownBeadsService } from './beads/beads-owner'
 import { ownGasCityService } from './gascity/gascity-owner'
 import { HarnessProfileStore } from './harness/harness-profile-store'
 import { HarnessProbeManager } from './harness/harness-probe'
+import { harnessProviders } from './harness/harness-provider'
+import { createElectronRemoteImagePasteCoordinator } from './harness/electron-clipboard-image'
 import { ProjectWatchController } from './project-watch'
 import { WorkspaceCoordinator } from './workspace-coordinator'
+import { createWorkspaceCleanup } from './workspace-cleanup'
+import { WorkspaceRemovalCoordinator } from './workspace-removal-coordinator'
 import { TerminalSessionRegistry } from './terminal/session-registry'
 import { TerminalWorkspaceMoveCoordinator } from './terminal/terminal-workspace-move-coordinator'
+import { installTerminalIdentityPublication } from './terminal/terminal-identity-publication'
 import { RendererResourceScopes, type RendererOwner } from './renderer-resource-scopes'
+import { createRendererPresentationInstaller } from './renderer-presentation-resources'
 import { createElectronWindowManager } from './window/electron-window-manager'
 import { WorkbenchRuntime } from './workbench-runtime'
 import { RuntimeDiagnostics } from './diagnostics/runtime-diagnostics'
 import { createDiagnosticReportCoordinator } from './diagnostics/diagnostic-report-coordinator'
 import { RendererEventPublisher } from './renderer-event-publisher'
+import { createFilenameSearchCoordinator } from './filename-search'
+import { createProjectFileOperationCoordinator } from './project-file-operations'
+import type { DocumentReviewRuntime } from './document-review'
+import { installApplicationDocumentReviewRuntime } from './document-review/document-review-application'
+import { installApplicationSessionsObservation } from './sessions/sessions-observation-application'
+import { applicationRuntime, applicationUserDataPath } from './application-runtime'
 import {
-  GIT_CHANGED_FILE_COUNT_TYPE,
+  GIT_WORKSPACE_ACTIVITY_TYPE,
   GIT_FETCH_TYPE,
   GIT_PRUNE_WORKTREES_TYPE,
   GIT_PULL_TYPE,
   GIT_SWITCH_BRANCH_TYPE,
   GIT_WORKTREES_TYPE,
   localPath,
-  LOCAL_HOST_ID,
   type EchoWorkerProtocol,
   type GitWorkerProtocol,
-  HTML_PREVIEW_SCHEME,
 } from '../shared'
-
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: HTML_PREVIEW_SCHEME,
-    privileges: { standard: true, secure: true, bypassCSP: false },
-  },
-])
+HtmlPreviewProtocol.registerScheme()
 function createWorkbenchEntry(): void {
   const runtime = new WorkbenchRuntime({
     start: startup,
@@ -72,21 +75,16 @@ function createWorkbenchEntry(): void {
   )
   const rendererEvents = new RendererEventPublisher(rendererScopes)
   const diagnostics = RuntimeDiagnostics.create(
-    app.getPath('userData'),
-    app.isPackaged || process.env['HVIR_SMOKE'] === '1',
+    applicationRuntime.userDataRoot,
+    app.isPackaged || __HVIR_SMOKE_BUILD__,
     (state) => rendererEvents.toWindows('workbench-health:state', state),
-    !app.isPackaged,
   )
   const diagnosticReports = runtime.own(
     'Diagnostic reports',
-    createDiagnosticReportCoordinator(diagnostics, rendererScopes),
+    createDiagnosticReportCoordinator(diagnostics, rendererScopes, applicationRuntime),
     (reports) => reports.dispose(),
   )
-  const diagnosticIpc = {
-    reports: diagnosticReports,
-    responsiveness: diagnostics,
-    evidence: diagnostics,
-  }
+  const diagnosticIpc = { reports: diagnosticReports, evidence: diagnostics }
   diagnostics.recordApplication('application-starting')
   const gitMutationAuthorizations = runtime.own(
     'Git mutation authorizations',
@@ -100,26 +98,16 @@ function createWorkbenchEntry(): void {
   let ptySupervisor: PtySupervisor | null = null
   let terminalSessionRegistry: TerminalSessionRegistry | null = null
   let harnessProfileStore: HarnessProfileStore | null = null
+  let documentReview: DocumentReviewRuntime | null = null
   let attentionBadge: AttentionBadge | null = null
   let workspaceCoordinator: WorkspaceCoordinator | null = null
-  let projectCoordinator: ProjectCoordinator | null = null
-  const installRendererPresentation = (owner: RendererOwner): RendererOwner => {
-    rendererScopes.register(owner, { lifetime: 'renderer', type: 'attention' }, () =>
-      attentionBadge?.remove(owner.id, owner.generation),
-    )
-    rendererScopes.register(
-      owner,
-      { lifetime: 'renderer', type: 'ssh-prompt-presentation' },
-      () => sshPrompter?.revokeOwner(owner),
-    )
-    rendererScopes.register(
-      owner,
-      { lifetime: 'renderer', type: 'diagnostic-report' },
-      () => diagnosticReports.revoke(owner),
-    )
-    return owner
-  }
-
+  let hostCatalog: ProjectHostCatalog | null = null
+  const installRendererPresentation = createRendererPresentationInstaller({
+    scopes: rendererScopes,
+    reports: diagnosticReports,
+    attention: () => attentionBadge,
+    sshPrompter: () => sshPrompter,
+  })
   const windowManager = runtime.own(
     'Electron window manager',
     createElectronWindowManager({
@@ -141,9 +129,11 @@ function createWorkbenchEntry(): void {
           .catch((error) => console.error('[renderer] owner cleanup failed', error))
       },
       isRendererCurrent: (owner) => rendererScopes.isCurrent(owner),
+      resumeRendererIpc: (owner) => rendererScopes.resumeOwnerIpc(owner),
       setOwnerFocused: (owner, focused) =>
         attentionBadge?.setFocused(owner.id, focused, owner.generation),
       startRendererDiagnostics: (owner) => diagnostics.startRenderer(owner),
+      rendererReady: (owner) => diagnostics.rendererReady(owner),
       recordWindowHealth: (event) => diagnostics.recordWindowHealth(event),
       onLastWindowClosed: () => {
         void runtime
@@ -156,8 +146,7 @@ function createWorkbenchEntry(): void {
     }),
     (manager) => manager.dispose(),
   )
-  const webPaneRoutes = windowManager.routes
-  const createWindow = windowManager.createWindow
+  const { routes: webPaneRoutes, createWindow } = windowManager
   async function startup(): Promise<void> {
     htmlPreviews.register()
     const emit = rendererEvents.toWindows
@@ -170,12 +159,20 @@ function createWorkbenchEntry(): void {
       ),
       (prompter) => prompter.cancelAll(),
     )
+    hostCatalog = runtime.own(
+      'project host catalog',
+      await ProjectHostCatalog.create({
+        prompter: sshPrompter,
+        trustFile: localPath(applicationUserDataPath('known-hosts.json')),
+        trashItem: electronTrash(shell),
+      }),
+      (catalog) => catalog.dispose(),
+    )
     const requestedProjectRoot = projectRootArgument()
     const registry = await ProjectRegistry.create(
       requestedProjectRoot ? localPath(requestedProjectRoot) : undefined,
-      sshPrompter,
-      join(app.getPath('userData'), 'known-hosts.json'),
-      join(app.getPath('userData'), 'projects.json'),
+      hostCatalog,
+      applicationUserDataPath('projects.json'),
       (state) => emit('project:state', state),
       async () => {
         const selection = await dialog.showOpenDialog({
@@ -188,20 +185,13 @@ function createWorkbenchEntry(): void {
           : localPath(selection.filePaths[0])
       },
     )
-    if (!registry) {
-      app.quit()
-      return
-    }
-    projectRegistry = runtime.own('project registry', registry, (ownedRegistry) =>
-      ownedRegistry.dispose(),
-    )
-    const metadataHost = projectRegistry.hostById(LOCAL_HOST_ID)
-    if (!metadataHost) throw new Error('Local metadata host is unavailable')
+    if (!registry) return app.quit()
+    projectRegistry = runtime.own('project registry', registry, (item) => item.dispose())
     terminalSessionRegistry = runtime.own(
       'terminal session registry',
       await TerminalSessionRegistry.load(
-        metadataHost,
-        localPath(join(app.getPath('userData'), 'terminal-sessions.json')),
+        hostCatalog.local,
+        localPath(applicationUserDataPath('terminal-sessions.json')),
         (event) => diagnostics.recordSessionRegistry(event),
       ),
       (sessions) => sessions.flush(),
@@ -209,8 +199,8 @@ function createWorkbenchEntry(): void {
     harnessProfileStore = runtime.own(
       'harness profile store',
       await HarnessProfileStore.load(
-        metadataHost,
-        localPath(join(app.getPath('userData'), 'harness-profiles.json')),
+        hostCatalog.local,
+        localPath(applicationUserDataPath('harness-profiles.json')),
       ),
       (profiles) => profiles.flush(),
     )
@@ -237,18 +227,74 @@ function createWorkbenchEntry(): void {
       ),
       (worker) => worker.dispose(),
     )
+    const filenameSearch = runtime.own(
+      'filename search',
+      createFilenameSearchCoordinator(gitWorker),
+      (search) => search.dispose(),
+    )
+    const projectFiles = runtime.own(
+      'project file operations',
+      createProjectFileOperationCoordinator(registry, hostCatalog, rendererScopes),
+      (operations) => operations.dispose(),
+    )
+    ptySupervisor = runtime.own(
+      'PTY supervisor',
+      new PtySupervisor({
+        onDiagnostic: (event) => diagnostics.recordPty(event),
+        registerSessionIdentity: (terminalId, harnessSessionId) =>
+          terminalSessionRegistry!.recordIdentity(terminalId, harnessSessionId),
+        cancelSessionIdentityRegistration: (terminalId) =>
+          terminalSessionRegistry!.cancelIdentityRegistration(terminalId),
+      }),
+      (supervisor) => supervisor.disposeAllAndWait(),
+    )
+    const sessionsPorts = installApplicationSessionsObservation(
+      runtime,
+      projectRegistry,
+      hostCatalog,
+      terminalSessionRegistry,
+      ptySupervisor,
+      rendererEvents,
+    )
+    documentReview = await installApplicationDocumentReviewRuntime(
+      runtime,
+      hostCatalog.local,
+      rendererScopes,
+      ptySupervisor,
+      terminalSessionRegistry,
+      harnessProviders,
+      harnessProfileStore,
+    )
+    const remoteImagePaste = runtime.own(
+      'remote image paste coordinator',
+      createElectronRemoteImagePasteCoordinator({
+        ptys: ptySupervisor,
+        resources: rendererScopes,
+        getHost: (hostId) => hostCatalog?.hostById(hostId),
+      }),
+      (coordinator) => coordinator.dispose(),
+    )
+    const workspaceCleanup = createWorkspaceCleanup({
+      ptys: ptySupervisor,
+      resources: rendererScopes,
+      sessions: terminalSessionRegistry,
+      webPanes: webPaneRoutes,
+      releaseHtmlPreviews: (root) => htmlPreviews.releaseWorkspace(root),
+    })
+    const removal = new WorkspaceRemovalCoordinator(projectRegistry, workspaceCleanup)
     workspaceCoordinator = runtime.own(
       'workspace coordinator',
       new WorkspaceCoordinator({
         registry: projectRegistry,
         discovery: {
           discover: (root) => gitWorker!.request(GIT_WORKTREES_TYPE, { root }),
-          changedFileCount: (root, relatedWorktreeRoots) =>
-            gitWorker!.request(GIT_CHANGED_FILE_COUNT_TYPE, {
+          workspaceActivity: (root, relatedWorktreeRoots) =>
+            gitWorker!.request(GIT_WORKSPACE_ACTIVITY_TYPE, {
               root,
               relatedWorktreeRoots,
             }),
         },
+        removal,
         emitWatch: (event) => emit('project:watch', event),
         createWatch: (target, callbacks) => new ProjectWatchController(target, callbacks),
         shouldPoll: () =>
@@ -257,20 +303,12 @@ function createWorkbenchEntry(): void {
       }),
       (coordinator) => coordinator.dispose(),
     )
-    projectCoordinator = new ProjectCoordinator({
+    const projects = new ProjectCoordinator({
       registry: projectRegistry,
+      hosts: hostCatalog,
       workspaces: workspaceCoordinator,
-      cleanup: {
-        revokeWorkspace: (root) => rendererScopes.revokeWorkspace(root),
-        closeWorkspace: (root) => webPaneRoutes.closeWorkspace(root),
-        forgetWorkspaceSessions: async (root) => {
-          await Promise.all(
-            terminalSessionRegistry!
-              .list(root)
-              .map((session) => terminalSessionRegistry!.forget(root, session.id)),
-          )
-        },
-      },
+      cleanup: workspaceCleanup,
+      removal,
       onError: (message, error) => console.error(message, error),
       onHostControlDiagnostic: (event) => diagnostics.recordHostControl(event),
     })
@@ -290,25 +328,9 @@ function createWorkbenchEntry(): void {
       },
       workspaces: workspaceCoordinator,
       authorizations: gitMutationAuthorizations,
-      cleanup: {
-        forgetWorkspaceSessions: async (root) => {
-          await Promise.all(
-            terminalSessionRegistry!
-              .list(root)
-              .map((session) => terminalSessionRegistry!.forget(root, session.id)),
-          )
-        },
-        revokeWorkspace: (root) => rendererScopes.revokeWorkspace(root),
-        closeWorkspace: (root) => webPaneRoutes.closeWorkspace(root),
-        clearHtmlPreviews: () => htmlPreviews.clear(),
-      },
+      removal,
       onError: (message, error) => console.error(message, error),
     })
-    ptySupervisor = runtime.own(
-      'PTY supervisor',
-      new PtySupervisor({ onDiagnostic: (event) => diagnostics.recordPty(event) }),
-      (supervisor) => supervisor.disposeAllAndWait(),
-    )
     const terminalMoves = new TerminalWorkspaceMoveCoordinator({
       projects: projectRegistry,
       workspaces: workspaceCoordinator,
@@ -326,31 +348,13 @@ function createWorkbenchEntry(): void {
       }),
       (badge) => badge.clear(),
     )
-    ptySupervisor.onSessionIdentity((info) => {
-      if (info.identityStatus === 'identified' && info.harnessSessionId) {
-        void terminalSessionRegistry
-          ?.recordIdentity(info.id, info.harnessSessionId)
-          .catch((error) =>
-            console.error('[terminal] identity persistence failed', error),
-          )
-      }
-      rendererEvents.toRenderer(
-        { id: info.ownerId, generation: info.ownerGeneration },
-        'pty:identity',
-        {
-          id: info.id,
-          harnessSessionId: info.harnessSessionId,
-          identityStatus: info.identityStatus,
-        },
-      )
-    })
-
+    installTerminalIdentityPublication(runtime, ptySupervisor, rendererEvents)
     const withSshPresentation = <T>(owner: RendererOwner, operation: () => T): T => {
       if (!sshPrompter) throw new Error('SSH prompting is unavailable')
       return sshPrompter.runForOwner(owner, operation)
     }
     const projectCommands = createProjectCommands({
-      projects: projectCoordinator,
+      projects,
       workspaces: workspaceCoordinator,
       git: gitMutations,
       withSshPresentation,
@@ -366,21 +370,25 @@ function createWorkbenchEntry(): void {
       registerIpcHandlers({
         echoWorker,
         gitWorker,
-        getProject,
-        getHost: (hostId) => projectRegistry?.hostById(hostId),
-        connectedHosts: () => projectRegistry?.connectedHosts() ?? [],
-        getRegisteredWorkspaceRoot: (root) =>
-          projectRegistry?.registeredWorkspaceRoot(root),
-        getProjectState: () => {
-          if (!projectRegistry) throw new Error('Project registry is unavailable')
-          return projectRegistry.state()
-        },
-        listHosts: () => projectRegistry?.listHosts() ?? [],
+        filenameSearch,
+        projectFiles,
+        projectFolderPicker: new FolderPicker(hostCatalog, projects, rendererScopes),
+        documentReview: documentReview.coordinator,
+        documentReviewDelivery: documentReview.delivery,
+        getProject: () => registry.active,
+        getHost: (hostId) => hostCatalog?.hostById(hostId),
+        connectedHosts: () => hostCatalog?.connectedHosts() ?? [],
+        getRegisteredWorkspaceRoot: (root) => registry.registeredWorkspaceRoot(root),
+        revealLocalEntry: electronReveal(shell),
+        getProjectState: () => registry.state(),
+        listHosts: () => hostCatalog?.listHosts() ?? [],
         ...projectCommands,
         respondSshPrompt: (owner, id, answers) =>
           sshPrompter?.respond(owner, id, answers),
         rendererResources: rendererScopes,
-        rendererReady: (owner) => sshPrompter?.activateOwner(owner),
+        rendererReady: (owner, reportedGeneration) =>
+          windowManager.rendererReady(owner, reportedGeneration) &&
+          sshPrompter?.activateOwner(owner),
         getWorkbenchHealth: () => diagnostics.healthSnapshot(),
         acknowledgeWorkbenchHealth: (id) => diagnostics.acknowledgeHealth(id),
         diagnostics: diagnosticIpc,
@@ -389,9 +397,12 @@ function createWorkbenchEntry(): void {
           diagnostics.recordRenderContainment(owner, batch),
         ptySupervisor,
         terminalSessions: terminalSessionRegistry,
+        sessionsObservation: sessionsPorts.observation,
+        sessionsUsage: sessionsPorts.usage,
         terminalMoves,
         harnessProfiles: harnessProfileStore,
         harnessProbes: harnessProbeManager,
+        remoteImagePaste,
         beads: beadsService,
         gascity: gasCityService,
         updateAttention: (owner, count) =>
@@ -407,9 +418,7 @@ function createWorkbenchEntry(): void {
       }),
       (router) => router.dispose(),
     )
-    // Paint the workbench before background watch and Git discovery can touch a
-    // slow or unexpectedly broad directory.
-    createWindow()
+    createWindow() // Paint before background watch and Git discovery touches a slow directory.
     if (projectRegistry.active.host.connectionState === 'connected') {
       void workspaceCoordinator
         .replaceWatch(projectRegistry.active)
@@ -418,7 +427,6 @@ function createWorkbenchEntry(): void {
     }
     workspaceCoordinator.startPolling()
   }
-
   function reopenWorkbench(): void {
     if (!projectRegistry || BrowserWindow.getAllWindows().length > 0) return
     if (projectRegistry.active.host.connectionState === 'connected') {
@@ -428,16 +436,14 @@ function createWorkbenchEntry(): void {
     }
     createWindow()
   }
-
   function projectRootArgument(): string | undefined {
     const fromFlag = process.argv.find((arg) => arg.startsWith('--project-root='))
     return fromFlag?.slice('--project-root='.length) || process.env.HVIR_PROJECT_ROOT
   }
-
   void app
     .whenReady()
     .then(async () => {
-      if (process.env['HVIR_SMOKE']) {
+      if (__HVIR_SMOKE_BUILD__ && process.env['HVIR_SMOKE']) {
         const { runElectronSmokeScenario } = await import('./smoke/scenarios')
         const code = await runElectronSmokeScenario({
           scenario: process.env['HVIR_SMOKE_SCENARIO'],
@@ -447,7 +453,9 @@ function createWorkbenchEntry(): void {
           htmlPreviews,
           rendererResources: rendererScopes,
           diagnostics: diagnosticIpc,
+          runtimeDiagnostics: diagnostics,
           webPaneRoutes,
+          rendererReady: windowManager.rendererReady,
           updateWebPaneBindings: windowManager.updateWebPaneBindings,
           updateWebPaneFullPage: windowManager.updateWebPaneFullPage,
           openExternal: (url) => shell.openExternal(url),
@@ -464,17 +472,13 @@ function createWorkbenchEntry(): void {
       console.error('HVIR_STARTUP_FAIL', error)
       app.exit(1)
     })
-
   app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') app.quit()
+    if (!__HVIR_SMOKE_BUILD__ && process.platform !== 'darwin') app.quit()
   })
-
   app.on('activate', () => {
-    void runtime
-      .reopen()
-      .catch((error) => console.error('[window] failed to reopen workbench', error))
+    if (__HVIR_SMOKE_BUILD__ && process.env['HVIR_SMOKE']) return
+    void runtime.reopen().catch((error) => console.error('[window] reopen failed', error))
   })
-
   app.on('before-quit', (event) => {
     if (runtime.isShutdown) return
     event.preventDefault()
@@ -492,7 +496,6 @@ function createWorkbenchEntry(): void {
         app.quit()
       })
   })
-
   async function suspendWorkbenchSessions(): Promise<void> {
     await workspaceCoordinator?.stopWatch()
     await workspaceCoordinator?.settle()
@@ -511,9 +514,9 @@ function createWorkbenchEntry(): void {
     sshPrompter?.cancelAll()
     await terminalSessionRegistry?.flush()
     await harnessProfileStore?.flush()
-    await projectRegistry?.disconnectSshHosts()
+    await documentReview?.flush()
+    await hostCatalog?.disconnectSshHosts()
   }
-
   async function shutdown(): Promise<void> {
     workspaceCoordinator?.stopPolling()
     await workspaceCoordinator
@@ -522,5 +525,4 @@ function createWorkbenchEntry(): void {
     await workspaceCoordinator?.settle()
   }
 }
-
 createWorkbenchEntry()

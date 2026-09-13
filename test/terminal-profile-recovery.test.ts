@@ -5,12 +5,17 @@ import {
   providerTemplateProfiles,
 } from '../src/main/harness/harness-profile-store'
 import {
-  autoRecoverableProfile,
-  profileRiskAcknowledged,
+  defaultRecoveryRebindProfile,
   probeAllowsAutoRestore,
   recoverableProfile,
 } from '../src/renderer/src/terminal/terminal-profile-recovery'
-import { asHostId, hostPath, type TerminalRecoverySession } from '../src/shared'
+import {
+  asHarnessProfileId,
+  asHostId,
+  hostPath,
+  type HarnessProfile,
+  type TerminalRecoverySession,
+} from '../src/shared'
 
 describe('profile-bound terminal recovery', () => {
   const root = hostPath(asHostId('recovery-host'), '/project')
@@ -64,27 +69,40 @@ describe('profile-bound terminal recovery', () => {
     ).toBeUndefined()
   })
 
-  it('requires a current acknowledgment for elevated and unclassified restore', () => {
-    const risky = { ...profile, builtIn: false, risk: 'elevated' as const }
-    expect(autoRecoverableProfile([risky], record)).toBeUndefined()
-    expect(
-      autoRecoverableProfile([risky], {
-        ...record,
-        riskAcknowledgedRevision: record.launchRevision,
-      }),
-    ).toBeDefined()
-    const profileAcknowledged = {
-      ...risky,
-      riskAcknowledgedRevision: risky.launchRevision,
+  it('defaults review to the retained profile identity without choosing by array order', () => {
+    const alternative = {
+      ...profile,
+      id: asHarnessProfileId('claude-code-alternative'),
+      displayName: 'Alternative Claude',
     }
-    expect(profileRiskAcknowledged(profileAcknowledged)).toBe(true)
-    expect(autoRecoverableProfile([profileAcknowledged], record)).toBeDefined()
+    const current = {
+      ...profile,
+      displayName: 'Retained Claude',
+      launchRevision: record.launchRevision + 1,
+    }
+
+    expect(defaultRecoveryRebindProfile([alternative, current], record)).toBe(current)
     expect(
-      profileRiskAcknowledged({
-        ...profileAcknowledged,
-        launchRevision: profileAcknowledged.launchRevision + 1,
+      defaultRecoveryRebindProfile([alternative], {
+        ...record,
+        profileId: asHarnessProfileId('removed-profile'),
       }),
-    ).toBe(false)
+    ).toBeUndefined()
+  })
+
+  it('ignores obsolete risk metadata when evaluating exact automatic recovery', () => {
+    const legacyProfile = {
+      ...profile,
+      builtIn: false,
+      risk: 'elevated',
+      riskAcknowledgedRevision: undefined,
+    } as unknown as HarnessProfile
+    const legacyRecord = {
+      ...record,
+      riskAcknowledgedRevision: undefined,
+    } as unknown as TerminalRecoverySession
+
+    expect(recoverableProfile([legacyProfile], legacyRecord)).toBe(legacyProfile)
   })
 
   it('requires a successful probe for unattended restore', () => {

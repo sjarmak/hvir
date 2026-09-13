@@ -12,13 +12,19 @@ interface UseProjectWatchInterestsOptions {
   readonly connected: boolean
   readonly missing?: boolean
   readonly openPaths: readonly HostPath[]
+  readonly reviewPaths?: readonly HostPath[]
+  readonly dependencyPaths: readonly HostPath[]
 }
+
+const NO_REVIEW_PATHS: readonly HostPath[] = []
 
 export function useProjectWatchInterests({
   root,
   connected,
   missing,
   openPaths,
+  reviewPaths = NO_REVIEW_PATHS,
+  dependencyPaths,
 }: UseProjectWatchInterestsOptions) {
   const expandedPaths = useRef(new Map<string, HostPath>())
   const scope = root ? hostPathKey(root) : undefined
@@ -53,6 +59,15 @@ export function useProjectWatchInterests({
       const parent = dirnameHostPath(path)
       unique.set(hostPathKey(parent), parent)
     }
+    // User-authored review drafts stay live even when their files are not open.
+    for (const path of reviewPaths) {
+      const parent = dirnameHostPath(path)
+      unique.set(hostPathKey(parent), parent)
+    }
+    for (const path of dependencyPaths) {
+      const parent = dirnameHostPath(path)
+      unique.set(hostPathKey(parent), parent)
+    }
     for (const path of expandedPaths.current.values()) {
       unique.set(hostPathKey(path), path)
     }
@@ -72,7 +87,7 @@ export function useProjectWatchInterests({
     return () => {
       cancelled = true
     }
-  }, [connected, missing, openPaths, root, version])
+  }, [connected, dependencyPaths, missing, openPaths, reviewPaths, root, version])
 
   return { limited, updateExpandedPath }
 }

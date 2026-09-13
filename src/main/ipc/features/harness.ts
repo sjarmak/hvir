@@ -19,6 +19,17 @@ export function registerHarnessIpc(ipc: IpcRegistrar, deps: HarnessIpcDeps): voi
     const workspaceRoot = ipc.authority.workspaceRoot(req.root)
     return deps.harnessProfiles.list(ipc.authority.projectRoot(workspaceRoot))
   })
+  ipc.handle('harness:probe-snapshot', (req) => {
+    const workspaceRoot = ipc.authority.workspaceRoot(req.root)
+    const projectRoot = ipc.authority.projectRoot(workspaceRoot)
+    const { host } = deps.getProject()
+    return deps.harnessProbes.snapshotProfiles({
+      host,
+      projectRoot,
+      workspaceRoot,
+      profiles: deps.harnessProfiles.list(projectRoot),
+    })
+  })
   ipc.handle('harness:probe-profiles', async (req) => {
     const root = ipc.authority.workspaceRoot(req.root)
     const projectRoot = ipc.authority.projectRoot(root)
@@ -78,19 +89,6 @@ export function registerHarnessIpc(ipc: IpcRegistrar, deps: HarnessIpcDeps): voi
   })
   ipc.handle('harness:profile-duplicate', (req) => deps.harnessProfiles.duplicate(req.id))
   ipc.handle('harness:profile-delete', (req) => deps.harnessProfiles.delete(req.id))
-  ipc.handle('harness:acknowledge-risk', (req) => {
-    const workspaceRoot = ipc.authority.workspaceRoot(req.root)
-    const projectRoot = ipc.authority.projectRoot(workspaceRoot)
-    const profile = deps.harnessProfiles.get(req.id)
-    if (!profile) throw new Error(`Unknown harness profile '${req.id}'`)
-    if (
-      profile.scope.kind === 'project' &&
-      !hostPathEquals(profile.scope.projectRoot, projectRoot)
-    ) {
-      throw new Error('Harness profile is scoped to another project')
-    }
-    return deps.harnessProfiles.acknowledgeRisk(req.id, req.launchRevision)
-  })
   ipc.handle('harness:preview', async (req) => {
     const root = ipc.authority.workspaceRoot(req.root)
     const projectRoot = ipc.authority.projectRoot(root)

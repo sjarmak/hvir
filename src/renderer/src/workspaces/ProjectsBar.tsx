@@ -2,22 +2,28 @@ import { useEffect, useRef, useState, type ReactElement } from 'react'
 
 import {
   displayHostPath,
-  GIT_CHANGE_DISPLAY_LIMIT,
   type ProjectState,
   type RegisteredProjectState,
   type HostWatchTier,
   type WorkspaceState,
+  type WorkspaceClosePlan,
 } from '../../../shared'
 import { RemoteConnectionBadge } from './ConnectionStatus'
 import { connectionStateLabel } from './connection-status'
 import type { WorkspaceAttentionRollups } from './project-session-model'
 import {
   aggregateActionableWorkspaceAttention,
+  aggregateWorkingWorkspaceTerminals,
   workspaceActionableAttention,
 } from './workspace-attention'
 import type { AppTheme } from '../theme'
 import { ConfirmationDialog } from '../workbench/ConfirmationDialog'
+import {
+  closeOnMiddleClick,
+  guardMiddleClickClosePointerDown,
+} from '../workbench/middle-click-close'
 import { WorkbenchHealthControl } from '../health/WorkbenchHealthControl'
+import { ClosedWorktreesDialog, CloseWorkspaceDialog } from './WorkspaceCatalogDialogs'
 
 interface ProjectsBarProps {
   readonly state: ProjectState
@@ -29,6 +35,17 @@ interface ProjectsBarProps {
   readonly onCloseProject: (projectId: string) => void
   readonly onPrune: (projectId: string) => void
   readonly onDismiss: (projectId: string, workspaceId: string) => void
+  readonly onPlanCloseWorkspace: (
+    projectId: string,
+    workspaceId: string,
+  ) => Promise<WorkspaceClosePlan | undefined>
+  readonly onCloseWorkspace: (
+    projectId: string,
+    workspaceId: string,
+    plan: WorkspaceClosePlan,
+    terminateTerminals: boolean,
+  ) => void
+  readonly onReopenWorkspace: (projectId: string, workspaceId: string) => void
   readonly watchTier: HostWatchTier
   readonly statusError?: string
   readonly onChangeConnection: () => void
@@ -37,19 +54,8 @@ interface ProjectsBarProps {
   readonly theme: AppTheme
   readonly onTheme: (theme: AppTheme) => void
   readonly onSettings: () => void
-}
-
-function changeCountLabel(count: number): string {
-  return count > GIT_CHANGE_DISPLAY_LIMIT
-    ? `${GIT_CHANGE_DISPLAY_LIMIT.toLocaleString()}+`
-    : count.toLocaleString()
-}
-
-function projectChangeCountLabel(workspaces: readonly WorkspaceState[]): string {
-  const counts = workspaces.map((workspace) => workspace.changedFiles)
-  const total = counts.reduce((sum, count) => sum + count, 0)
-  const limited = counts.filter((count) => count > GIT_CHANGE_DISPLAY_LIMIT).length
-  return limited > 0 ? `${(total - limited).toLocaleString()}+` : total.toLocaleString()
+  readonly sessionsActive: boolean
+  readonly onSessions: () => void
 }
 
 export function ProjectsBar({
@@ -62,6 +68,9 @@ export function ProjectsBar({
   onCloseProject,
   onPrune,
   onDismiss,
+  onPlanCloseWorkspace,
+  onCloseWorkspace,
+  onReopenWorkspace,
   watchTier,
   statusError,
   onChangeConnection,
@@ -70,9 +79,18 @@ export function ProjectsBar({
   theme,
   onTheme,
   onSettings,
+  sessionsActive,
+  onSessions,
 }: ProjectsBarProps): ReactElement {
   const [pruneProjectId, setPruneProjectId] = useState<string>()
   const [closeProjectId, setCloseProjectId] = useState<string>()
+  const [catalogProjectId, setCatalogProjectId] = useState<string>()
+  const [planningWorkspaceId, setPlanningWorkspaceId] = useState<string>()
+  const [closeWorkspaceRequest, setCloseWorkspaceRequest] = useState<{
+    readonly projectId: string
+    readonly workspaceId: string
+    readonly plan: WorkspaceClosePlan
+  }>()
   const [connectionMenu, setConnectionMenu] = useState<{
     readonly projectId: string
     readonly left: number
@@ -86,13 +104,30 @@ export function ProjectsBar({
     activeProject?.workspaces.filter(
       (workspace) => workspace.prunableReason !== undefined,
     ) ?? []
+  const openWorkspaces =
+    activeProject?.workspaces.filter((workspace) => !workspace.closed) ?? []
+  const closedWorkspaces =
+    activeProject?.workspaces.filter((workspace) => workspace.closed) ?? []
   // A single-checkout project has nothing to switch between; reclaim the row.
   // Errors and prune prompts still force the bar because it is their only home.
   const showWorkspacesBar =
     activeProject !== undefined &&
-    (activeProject.workspaces.length > 1 || Boolean(statusError) || prunable.length > 0)
+    (openWorkspaces.length > 1 ||
+      closedWorkspaces.length > 0 ||
+      Boolean(statusError) ||
+      prunable.length > 0)
   const pruneProject = state.projects.find((project) => project.id === pruneProjectId)
   const closeProject = state.projects.find((project) => project.id === closeProjectId)
+  const catalogProject = state.projects.find((project) => project.id === catalogProjectId)
+  const catalogWorkspaces =
+    catalogProject?.workspaces.filter((workspace) => workspace.closed) ?? []
+  const closeWorkspace = closeWorkspaceRequest
+    ? state.projects
+        .find((project) => project.id === closeWorkspaceRequest.projectId)
+        ?.workspaces.find(
+          (workspace) => workspace.id === closeWorkspaceRequest.workspaceId,
+        )
+    : undefined
   const pruneTargets =
     pruneProject?.workspaces.filter(
       (workspace) => workspace.prunableReason !== undefined,
@@ -105,6 +140,14 @@ export function ProjectsBar({
     )
   }, [state.activeProjectId])
   useEffect(() => {
+    setCatalogProjectId((current) =>
+      current === state.activeProjectId ? current : undefined,
+    )
+    setCloseWorkspaceRequest((current) =>
+      current?.projectId === state.activeProjectId ? current : undefined,
+    )
+  }, [state.activeProjectId])
+  useEffect(() => {
     if (!connectionMenu) return
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') setConnectionMenu(undefined)
@@ -113,6 +156,29 @@ export function ProjectsBar({
     connectionMenuRef.current?.focus()
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [connectionMenu])
+  const canCloseWorkspace = (workspace: WorkspaceState): boolean =>
+    !busy &&
+    !workspace.missing &&
+    workspace.id !== state.activeWorkspaceId &&
+    planningWorkspaceId !== workspace.id
+  const requestWorkspaceClose = (projectId: string, workspace: WorkspaceState): void => {
+    if (!canCloseWorkspace(workspace)) return
+    setPlanningWorkspaceId(workspace.id)
+    void onPlanCloseWorkspace(projectId, workspace.id)
+      .then((plan) => {
+        if (!plan) return
+        if (plan.terminalCount > 0) {
+          setCloseWorkspaceRequest({
+            projectId,
+            workspaceId: workspace.id,
+            plan,
+          })
+        } else {
+          onCloseWorkspace(projectId, workspace.id, plan, false)
+        }
+      })
+      .finally(() => setPlanningWorkspaceId(undefined))
+  }
   return (
     <>
       <header className="projects-shell">
@@ -121,52 +187,50 @@ export function ProjectsBar({
           aria-label="Projects"
           data-diagnostic-capture="project-navigation"
         >
+          <button
+            type="button"
+            className={`sessions-destination${sessionsActive ? ' active' : ''}`}
+            aria-current={sessionsActive ? 'page' : undefined}
+            onClick={onSessions}
+          >
+            Sessions
+          </button>
           {state.projects.map((project) => {
-            const active = project.id === state.activeProjectId
+            const active = !sessionsActive && project.id === state.activeProjectId
             const remote = project.registeredRoot.hostId !== 'local'
-            const presentWorkspaces = project.workspaces.filter(
-              (workspace) => !workspace.missing,
-            )
-            const changed = presentWorkspaces.reduce(
-              (total, workspace) => total + workspace.changedFiles,
-              0,
-            )
-            const changedLabel = projectChangeCountLabel(presentWorkspaces)
+            const workspaceIds = project.workspaces.map((workspace) => workspace.id)
             const actionable = aggregateActionableWorkspaceAttention(
-              project.workspaces.map((workspace) => workspace.id),
+              workspaceIds,
               rollups,
             )
+            const working = aggregateWorkingWorkspaceTerminals(workspaceIds, rollups)
+            const showWorking = working > 0 && actionable === 0
+            const title = projectTabTitle(project, working)
             const target = activeWorkspace(project)
             return (
               <div
                 className={`project-tab${active ? ' active' : ''}`}
                 key={project.id}
-                title={`${project.registeredRoot.path} · ${project.connectionState}`}
+                title={title}
               >
                 <button
                   type="button"
                   className="project-tab-main"
                   aria-current={active ? 'page' : undefined}
+                  aria-label={projectTabLabel(project, actionable, working)}
                   disabled={busy || !target}
                   onClick={() => target && onSwitch(project.id, target.id)}
-                  title={`${project.registeredRoot.path} · ${project.connectionState}`}
+                  title={title}
                 >
-                  <strong>{project.displayName}</strong>
+                  <strong className={showWorking ? 'project-name-working' : undefined}>
+                    {project.displayName}
+                  </strong>
                   {remote && !active ? (
                     <RemoteConnectionBadge
                       state={project.connectionState}
                       hostLabel={`ssh:${project.registeredRoot.hostId}`}
+                      compact
                     />
-                  ) : null}
-                  {changed > 0 ? (
-                    <span
-                      className="project-change-count"
-                      aria-label={`${changedLabel} changed files`}
-                      title={`${changedLabel} changed files`}
-                    >
-                      <span aria-hidden="true">Δ </span>
-                      {changedLabel}
-                    </span>
                   ) : null}
                   {actionable > 0 ? <AttentionCount count={actionable} /> : null}
                 </button>
@@ -177,7 +241,7 @@ export function ProjectsBar({
                     disabled={busy}
                     aria-haspopup="dialog"
                     aria-expanded={connectionMenu?.projectId === project.id}
-                    aria-label={`Connection controls for ssh:${project.registeredRoot.hostId}`}
+                    aria-label={`Connection controls for ssh:${project.registeredRoot.hostId} · ${connectionStateLabel(project.connectionState)}`}
                     title="Connection controls"
                     onClick={(event) => {
                       if (connectionMenu?.projectId === project.id) {
@@ -195,6 +259,7 @@ export function ProjectsBar({
                     <RemoteConnectionBadge
                       state={project.connectionState}
                       hostLabel={`ssh:${project.registeredRoot.hostId}`}
+                      compact
                     />
                     <span className="project-connection-chevron" aria-hidden="true">
                       ▾
@@ -249,17 +314,28 @@ export function ProjectsBar({
           </button>
           <span className="projects-bar-spacer" />
         </nav>
-        {activeProject && showWorkspacesBar ? (
+        {activeProject && showWorkspacesBar && !sessionsActive ? (
           <nav
             className="workspaces-bar"
             aria-label="Workspaces"
             data-diagnostic-capture="project-navigation"
           >
-            {activeProject.workspaces.map((workspace) => (
+            {openWorkspaces.map((workspace) => (
               <div
-                className={`workspace-tab${workspace.id === state.activeWorkspaceId ? ' active' : ''}${workspace.missing ? ' missing' : ''}`}
+                className={`workspace-tab${!sessionsActive && workspace.id === state.activeWorkspaceId ? ' active' : ''}${workspace.missing ? ' missing' : ''}`}
                 key={workspace.id}
                 title={workspaceStatusTitle(workspace)}
+                onMouseDown={(event) => {
+                  if (canCloseWorkspace(workspace)) {
+                    guardMiddleClickClosePointerDown(event)
+                  }
+                }}
+                onAuxClick={(event) => {
+                  if (!canCloseWorkspace(workspace)) return
+                  closeOnMiddleClick(event, () =>
+                    requestWorkspaceClose(activeProject.id, workspace),
+                  )
+                }}
               >
                 <button
                   type="button"
@@ -270,23 +346,28 @@ export function ProjectsBar({
                   <span>{workspace.name}</span>
                   {workspace.main ? <small>project root</small> : null}
                   {workspace.prunableReason ? <small>prunable</small> : null}
-                  {workspace.changedFiles > 0 ? (
-                    <b
-                      className="workspace-change-count"
-                      aria-label={`${changeCountLabel(workspace.changedFiles)} changed files`}
-                      title={`${changeCountLabel(workspace.changedFiles)} changed files`}
-                    >
-                      <span aria-hidden="true">Δ </span>
-                      {changeCountLabel(workspace.changedFiles)}
-                    </b>
-                  ) : null}
                   {workspaceActionableAttention(workspace.id, rollups) > 0 ? (
                     <AttentionCount
                       count={workspaceActionableAttention(workspace.id, rollups)}
                     />
                   ) : null}
                 </button>
-                {workspace.missing && !workspace.prunableReason ? (
+                {!workspace.missing ? (
+                  <button
+                    type="button"
+                    className="workspace-close"
+                    disabled={!canCloseWorkspace(workspace)}
+                    onClick={() => requestWorkspaceClose(activeProject.id, workspace)}
+                    aria-label={`Close workspace ${workspace.name}`}
+                    title={
+                      workspace.id === state.activeWorkspaceId
+                        ? 'Select another workspace before closing this one'
+                        : `Close workspace ${workspace.name}`
+                    }
+                  >
+                    <span aria-hidden="true">×</span>
+                  </button>
+                ) : !workspace.prunableReason ? (
                   <button
                     type="button"
                     className="workspace-dismiss"
@@ -315,6 +396,16 @@ export function ProjectsBar({
                   title="Remove Git's stale worktree administrative records"
                 >
                   Prune {prunable.length}
+                </button>
+              ) : null}
+              {closedWorkspaces.length > 0 ? (
+                <button
+                  type="button"
+                  className="workspaces-catalog"
+                  disabled={busy}
+                  onClick={() => setCatalogProjectId(activeProject.id)}
+                >
+                  Worktrees {closedWorkspaces.length}
                 </button>
               ) : null}
               <button
@@ -416,6 +507,36 @@ export function ProjectsBar({
           }}
         />
       ) : null}
+      {catalogProject && catalogWorkspaces.length > 0 ? (
+        <ClosedWorktreesDialog
+          project={catalogProject}
+          workspaces={catalogWorkspaces}
+          busy={busy}
+          onCancel={() => setCatalogProjectId(undefined)}
+          onReopen={(workspaceId) => {
+            setCatalogProjectId(undefined)
+            onReopenWorkspace(catalogProject.id, workspaceId)
+          }}
+          onDismiss={(workspaceId) => onDismiss(catalogProject.id, workspaceId)}
+        />
+      ) : null}
+      {closeWorkspace && closeWorkspaceRequest ? (
+        <CloseWorkspaceDialog
+          workspace={closeWorkspace}
+          plan={closeWorkspaceRequest.plan}
+          busy={busy}
+          onCancel={() => setCloseWorkspaceRequest(undefined)}
+          onConfirm={() => {
+            setCloseWorkspaceRequest(undefined)
+            onCloseWorkspace(
+              closeWorkspaceRequest.projectId,
+              closeWorkspaceRequest.workspaceId,
+              closeWorkspaceRequest.plan,
+              true,
+            )
+          }}
+        />
+      ) : null}
     </>
   )
 }
@@ -460,13 +581,48 @@ function CloseProjectDialog({
 }
 
 function AttentionCount({ count }: { readonly count: number }): ReactElement {
-  const label = `${count} terminal${count === 1 ? '' : 's'} needing attention`
+  const label = actionableTerminalLabel(count)
   return (
     <span className="terminal-attention-count" aria-label={label} title={label}>
       <span aria-hidden="true">!</span>
       {count}
     </span>
   )
+}
+
+function projectTabTitle(project: RegisteredProjectState, working: number): string {
+  return [
+    project.registeredRoot.path,
+    project.connectionState,
+    working > 0 ? workingTerminalLabel(working) : undefined,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(' · ')
+}
+
+function projectTabLabel(
+  project: RegisteredProjectState,
+  actionable: number,
+  working: number,
+): string {
+  const remote = project.registeredRoot.hostId !== 'local'
+  return [
+    project.displayName,
+    remote ? `ssh:${project.registeredRoot.hostId}` : undefined,
+    remote ? connectionStateLabel(project.connectionState) : undefined,
+    actionable > 0 ? actionableTerminalLabel(actionable) : undefined,
+    working > 0 ? workingTerminalLabel(working) : undefined,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(' · ')
+}
+
+function actionableTerminalLabel(count: number): string {
+  return `${count} terminal${count === 1 ? '' : 's'} needing attention`
+}
+
+function workingTerminalLabel(count: number): string {
+  return `${count} terminal${count === 1 ? '' : 's'} working`
 }
 
 function PruneWorktreesDialog({
@@ -542,7 +698,10 @@ function watchTierLabel(watchTier: HostWatchTier): string {
 function activeWorkspace(project: RegisteredProjectState) {
   return (
     project.workspaces.find(
-      (workspace) => workspace.id === project.activeWorkspaceId && !workspace.missing,
-    ) ?? project.workspaces.find((workspace) => !workspace.missing)
+      (workspace) =>
+        workspace.id === project.activeWorkspaceId &&
+        !workspace.missing &&
+        !workspace.closed,
+    ) ?? project.workspaces.find((workspace) => !workspace.missing && !workspace.closed)
   )
 }

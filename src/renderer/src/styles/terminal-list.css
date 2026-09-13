@@ -1,5 +1,6 @@
 .terminal-list {
   min-height: 0;
+  flex: 1;
   overflow: auto;
   background: linear-gradient(to right, var(--border-subtle) 1px, transparent 1px);
 }
@@ -18,9 +19,7 @@
 }
 
 .terminal-list-row.dormant {
-  background:
-    linear-gradient(90deg, rgb(83 119 156 / 16%), transparent 56%),
-    #12151a;
+  background: linear-gradient(90deg, rgb(83 119 156 / 16%), transparent 56%), #12151a;
 }
 
 .terminal-list-row.dormant .terminal-list-title {
@@ -67,7 +66,7 @@
   padding: 2px 5px;
   border: 1px solid currentColor;
   border-radius: 3px;
-  font-size: 7px;
+  font-size: calc(7px * var(--hvir-interface-scale));
   font-weight: 750;
   letter-spacing: 0.03em;
   line-height: 1;
@@ -106,81 +105,13 @@
 
 .terminal-list-title {
   color: #d3d8df;
-  font-size: 10px;
+  font-size: calc(10px * var(--hvir-interface-scale));
   font-weight: 600;
 }
 
 .terminal-list-meta {
   color: #77818f;
-  font-size: 9px;
-}
-
-.terminal-list-profile.elevated {
-  color: #d8b36f;
-}
-
-.terminal-list-profile.unclassified {
-  color: #bf91ce;
-}
-
-.terminal-context {
-  width: 100%;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 36px;
-  align-items: center;
-  gap: 6px;
-  margin-top: 2px;
-  color: #7f8996;
-  font-size: 9px;
-  font-variant-numeric: tabular-nums;
-}
-
-.terminal-context.count-display {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.terminal-context-track {
-  height: 3px;
-  overflow: hidden;
-  border-radius: 2px;
-  background: #303641;
-}
-
-.terminal-context-fill {
-  height: 100%;
-  display: block;
-  border-radius: inherit;
-  background: #7f93aa;
-}
-
-.terminal-context.count-only .terminal-context-track {
-  opacity: 0.45;
-}
-
-.terminal-context.warning {
-  color: #d4a84f;
-}
-
-.terminal-context.warning .terminal-context-fill {
-  background: #d4a84f;
-}
-
-.terminal-context.unavailable {
-  color: #dc6b78;
-}
-
-.terminal-context.critical {
-  color: #dc6b78;
-}
-
-.terminal-context.critical .terminal-context-fill {
-  background: #dc6b78;
-}
-
-.terminal-context-value {
-  text-align: right;
-  white-space: nowrap;
+  font-size: calc(9px * var(--hvir-interface-scale));
 }
 
 .terminal-close-button {
@@ -188,7 +119,7 @@
   flex: 0 0 26px;
   margin-right: 4px;
   opacity: 0;
-  font-size: 15px;
+  font-size: calc(15px * var(--hvir-interface-scale));
 }
 
 .terminal-list-row:hover .terminal-close-button,
@@ -218,5 +149,5 @@
   border-radius: 3px;
   background: #191e25;
   color: #bfc6cf;
-  font-size: 10px;
+  font-size: calc(10px * var(--hvir-interface-scale));
 }

@@ -1,0 +1,674 @@
+import { verifyLiveReloadScroll } from './viewer-live-reload'
+import type { SmokeFailureCheckpoint } from './failure-evidence.mts'
+import type { BrowserWindow } from 'electron'
+
+import { HTML_PREVIEW_SCHEME, type HostPath } from '../../shared'
+import type { ProjectHost } from '../project-host'
+import {
+  verifyExternalDocuments,
+  type ExternalDocumentProjectState,
+} from './external-documents'
+import type { PtySupervisor } from '../pty/pty-supervisor'
+import { verifyFilenameSearch } from './filename-search'
+
+/** Exercise real renderer, worker, CodeMirror, and Chromium viewer contracts in isolation. */
+export async function verifyViewerContent(options: {
+  readonly checkpoint: (checkpoint: SmokeFailureCheckpoint) => void
+  readonly win: BrowserWindow
+  readonly supervisor: PtySupervisor
+  readonly projectState: ExternalDocumentProjectState
+  readonly host: ProjectHost
+  readonly liveReloadPath: HostPath
+  readonly largeJsonPath: HostPath
+  readonly largeTextPath: HostPath
+  readonly liveReloadBefore: string
+}): Promise<string> {
+  const { win, host, liveReloadPath, largeJsonPath, largeTextPath, liveReloadBefore } =
+    options
+  try {
+    // Establish real Chromium keyboard modality before moving focus to the
+    // active tab. Programmatic focus alone does not guarantee :focus-visible.
+    win.focus()
+    win.webContents.focus()
+    win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Tab' })
+    win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Tab' })
+    const viewerStatus = (await win.webContents.executeJavaScript(`
+        new Promise((resolve, reject) => {
+          const poll = () => {
+            const file = [...document.querySelectorAll('.file-row')]
+              .find((node) =>
+                node.querySelector('.tree-file-name')?.textContent?.trim() === 'AGENTS.md'
+              );
+            if (!file) {
+              return setTimeout(poll, 50);
+            }
+            file.click();
+            const waitForRender = () => {
+              const rendered = document.querySelector('.markdown-body');
+              const activeMode = document.querySelector('.mode-control button.active')?.textContent || '';
+              if (activeMode.trim() !== 'rendered') {
+                const renderedMode = [...document.querySelectorAll('.mode-control button')]
+                  .find((node) => node.textContent?.trim() === 'rendered');
+                renderedMode?.click();
+              }
+              if (rendered && activeMode.trim() === 'rendered') {
+                const source = [...document.querySelectorAll('.mode-control button')]
+                  .find((node) => node.textContent?.trim() === 'source');
+                if (!source) return reject(new Error('source mode control missing'));
+                source.click();
+                const waitForSource = () => {
+                  const status = document.querySelector('.source-meta')?.textContent || '';
+                  if (document.querySelector('.cm-editor') && status.includes('markdown')) {
+                    const tab = document.querySelector('.viewer-tab.active .tab-main');
+                    tab?.focus({ focusVisible: true });
+                    if (!tab || getComputedStyle(tab).boxShadow === 'none') {
+                      return reject(new Error('viewer tab focus ring is missing'));
+                    }
+                    return resolve('rendered→source · ' + status + ' · tab focus ring');
+                  }
+                  setTimeout(waitForSource, 50);
+                };
+                waitForSource();
+                return;
+              }
+              setTimeout(waitForRender, 50);
+            };
+            waitForRender();
+          };
+          poll();
+        })
+      `)) as string
+    console.log(`[smoke] ProjectHost tree + CodeMirror/Shiki worker OK (${viewerStatus})`)
+    const filenameSearchStatus = await verifyFilenameSearch(win)
+    console.log(`[smoke] filename search OK (${filenameSearchStatus})`)
+
+    const renderedFixture = (await win.webContents.executeJavaScript(`
+        new Promise((resolve, reject) => {
+          const findBySuffix = (suffix) => [...document.querySelectorAll('.tree-row')]
+            .find((node) => node.getAttribute('title')?.endsWith(suffix));
+          const openWhenReady = (suffix, next) => {
+            const node = findBySuffix(suffix);
+            if (node) {
+              const closedDirectory = node.classList.contains('directory-row') &&
+                node.querySelector('.tree-chevron')?.textContent?.trim() === '›';
+              if (!node.classList.contains('directory-row') || closedDirectory) node.click();
+              next();
+            }  else {
+              setTimeout(() => openWhenReady(suffix, next), 50);
+            }
+          };
+          openWhenReady('/test', () =>
+            openWhenReady('/test/fixtures', () =>
+              openWhenReady('/test/fixtures/rendered.md', () => {
+                const waitForRendered = () => {
+                  const tasks = document.querySelectorAll('.task-list-item-checkbox');
+                  const image = document.querySelector('img[alt="Repository image fixture"]');
+                  const toml = [...document.querySelectorAll('.markdown-body pre.shiki')]
+                    .find((node) => node.textContent?.includes('[language_catalog_fixture]'));
+                  const mermaidDiagrams = document.querySelectorAll('.mermaid-diagram svg');
+                  if (mermaidDiagrams.length === 1 &&
+                      document.querySelector('.markdown-body .shiki') &&
+                      toml?.querySelector('span') &&
+                      image?.getAttribute('src')?.startsWith('blob:') &&
+                      image.complete && image.naturalWidth > 0 &&
+                      tasks.length === 4 &&
+                      document.querySelectorAll('.task-list-item-checkbox:checked').length === 1) {
+                    if (document.querySelectorAll('.task-list-item-checkbox.inapplicable').length !== 1) {
+                      return reject(new Error('GitLab inapplicable task did not render'));
+                    }
+                    const renderedTab = [...document.querySelectorAll('.viewer-tab')]
+                      .find((node) => node.querySelector('.tab-name')?.textContent?.trim() === 'rendered.md');
+                    renderedTab?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+                    const body = document.querySelector('.markdown-body');
+                    body?.dispatchEvent(new Event('scroll', { bubbles: true }));
+                    if (document.querySelectorAll('.mermaid-diagram svg').length !== 1) {
+                      return reject(new Error('scroll destroyed the canonical Mermaid diagram'));
+                    }
+                    return openWhenReady('/test/fixtures/rendered-mmd.md', () => {
+                      const waitForMmd = () => {
+                        const activeTitle = document.querySelector('.viewer-tab.active .tab-name')?.textContent?.trim();
+                        if (activeTitle === 'rendered-mmd.md' &&
+                            document.querySelectorAll('.mermaid-diagram svg').length === 1) {
+                          return resolve('lazy TOML Shiki + canonical Mermaid + mmd alias + ProjectHost image + task lists + stable scroll');
+                        }
+                        setTimeout(waitForMmd, 50);
+                      };
+                      waitForMmd();
+                    });
+                  }
+
+                  setTimeout(waitForRendered, 50);
+                };
+                waitForRendered();
+              })
+            )
+          );
+        })
+      `)) as string
+    console.log(`[smoke] rendered Markdown fixture OK (${renderedFixture})`)
+
+    const extendedSourceStatus = (await win.webContents.executeJavaScript(`
+        new Promise((resolve, reject) => {
+          const fixtures = [
+            { suffix: '/test/fixtures/Dockerfile.dev', name: 'Dockerfile.dev', language: 'docker' },
+            { suffix: '/test/fixtures/highlight.toml', name: 'highlight.toml', language: 'toml' },
+          ];
+          const results = [];
+          const open = (index) => {
+            const fixture = fixtures[index];
+            if (!fixture) return resolve(results.join(' · '));
+            const row = [...document.querySelectorAll('.tree-row')]
+              .find((node) => node.getAttribute('title')?.endsWith(fixture.suffix));
+            if (!row) {
+              return setTimeout(() => open(index), 50);
+            }
+            row.click();
+            const waitForHighlight = () => {
+              const active = document.querySelector('.viewer-tab.active .tab-name')?.textContent?.trim();
+              const status = document.querySelector('.source-meta')?.textContent || '';
+              const colored = document.querySelector('.cm-content [style*="color"]');
+              if (active === fixture.name && status.includes(fixture.language) && colored) {
+                results.push(fixture.name + ':' + fixture.language);
+                return open(index + 1);
+              }
+
+              setTimeout(waitForHighlight, 50);
+            };
+            waitForHighlight();
+          };
+          open(0);
+        })
+      `)) as string
+    console.log(`[smoke] lazy source grammar workers OK (${extendedSourceStatus})`)
+
+    const richerViewerStatus = (await win.webContents.executeJavaScript(`
+        new Promise((resolve, reject) => {
+          const findBySuffix = (suffix) => [...document.querySelectorAll('.tree-row')]
+            .find((node) => node.getAttribute('title')?.endsWith(suffix));
+          const openWhenReady = (suffix, next) => {
+            const node = findBySuffix(suffix);
+            if (node) {
+              node.click();
+              next();
+            }  else {
+              setTimeout(() => openWhenReady(suffix, next), 50);
+            }
+          };
+          openWhenReady('/test/fixtures/rendered.csv', () => {
+            const waitForCsv = () => {
+              const cells = [...document.querySelectorAll('.csv-view td')]
+                .map((node) => node.textContent || '');
+              if (cells.includes('Ada Lovelace') && cells.includes('compiler pioneer')) {
+                openWhenReady('/test/fixtures/rendered-image.svg', () => {
+                  const waitForImage = () => {
+                    const image = document.querySelector('.image-view img');
+                    if (image?.getAttribute('src')?.startsWith('blob:') && image.complete) {
+                      return resolve('worker CSV table + repository image view');
+                    }
+                    setTimeout(waitForImage, 50);
+                  };
+                  waitForImage();
+                });
+                return;
+              }
+              setTimeout(waitForCsv, 50);
+            };
+            waitForCsv();
+          });
+        })
+      `)) as string
+    console.log(`[smoke] richer rendered views OK (${richerViewerStatus})`)
+
+    const stablePngSource = (await win.webContents.executeJavaScript(`
+        new Promise((resolve, reject) => {
+          const findBySuffix = (suffix) => [...document.querySelectorAll('.tree-row')]
+            .find((node) => node.getAttribute('title')?.endsWith(suffix));
+          const openWhenReady = (suffix, next) => {
+            const node = findBySuffix(suffix);
+            if (node) {
+              const closedDirectory = node.classList.contains('directory-row') &&
+                node.querySelector('.tree-chevron')?.textContent?.trim() === '›';
+              if (!node.classList.contains('directory-row') || closedDirectory) node.click();
+              next();
+            }  else {
+              setTimeout(() => openWhenReady(suffix, next), 50);
+            }
+          };
+          openWhenReady('/build', () =>
+            openWhenReady('/build/icons-linux', () =>
+              openWhenReady('/build/icons-linux/64x64.png', () => {
+                const waitForImage = () => {
+                  const image = document.querySelector('.image-view img');
+                  const source = image?.getAttribute('src') || '';
+                  const activeTitle = document.querySelector('.viewer-tab.active .tab-name')?.textContent?.trim();
+                  if (activeTitle === '64x64.png' && image?.getAttribute('alt') === '64x64.png' &&
+                      image.complete && image.naturalWidth > 0 && source.startsWith('blob:')) {
+                    const probe = { image, source, changed: false, reason: '', observer: undefined };
+                    probe.observer = new MutationObserver((mutations) => {
+                      if (!image.isConnected || document.querySelector('.image-view img') !== image) {
+                        probe.changed = true;
+                        probe.reason = 'image replaced or disconnected';
+                        return;
+                      }
+                      if (mutations.some((mutation) =>
+                        mutation.type === 'attributes' && mutation.target === image &&
+                        mutation.attributeName === 'src'
+                      )) {
+                        probe.changed = true;
+                        probe.reason = 'source attribute changed';
+                      }
+                    });
+                    probe.observer.observe(document.querySelector('.viewer-body'), {
+                      attributes: true,
+                      attributeFilter: ['src'],
+                      childList: true,
+                      subtree: true,
+                    });
+                    globalThis.__hvirPngStabilityProbe = probe;
+                    const split = document.querySelector('[aria-label="Split viewer right"]');
+                    if (!split) return reject(new Error('PNG stability split control missing'));
+                    split.click();
+                    let openedLiveReload = false;
+                    const waitForLiveReload = () => {
+                      const current = document.querySelector('.image-view img');
+                      if (probe.changed || current !== image || current?.getAttribute('src') !== source) {
+                        return reject(new Error('repository PNG changed while opening watch witness'));
+                      }
+                      const secondary = document.querySelector('[data-viewer-pane="secondary"]');
+                      const liveReloadFile = [...document.querySelectorAll('.file-row')]
+                        .find((node) => node.getAttribute('title') === ${JSON.stringify(liveReloadPath.path)});
+                      if (secondary && liveReloadFile && !openedLiveReload) {
+                        secondary.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+                        openedLiveReload = true;
+                        return setTimeout(() => {
+                          liveReloadFile.click();
+                          waitForLiveReload();
+                        }, 50);
+                      }
+                      const activePath = secondary?.querySelector('.viewer-tab.active .tab-main')
+                        ?.getAttribute('title');
+                      const sourceContent = secondary?.querySelector('.cm-content')?.textContent || '';
+                      if (activePath === ${JSON.stringify(liveReloadPath.path)} &&
+                          sourceContent.includes('line 0')) {
+                        return resolve(source);
+                      }
+
+                      setTimeout(waitForLiveReload, 50);
+                    };
+                    return waitForLiveReload();
+                  }
+                  setTimeout(waitForImage, 50);
+                };
+                waitForImage();
+              })
+            )
+          );
+        })
+      `)) as string
+    await host.writeFile(
+      liveReloadPath,
+      liveReloadBefore.replace('line 0\n', 'line 0 unrelated PNG stability marker\n'),
+    )
+    const pngStability = (await win.webContents.executeJavaScript(`
+        new Promise((resolve) => {
+          const finish = (result) => {
+            const probe = globalThis.__hvirPngStabilityProbe;
+            probe?.observer?.disconnect();
+            delete globalThis.__hvirPngStabilityProbe;
+            const secondary = document.querySelector('[data-viewer-pane="secondary"]');
+            const witnessTab = [...(secondary?.querySelectorAll('.viewer-tab') || [])]
+              .find((node) => node.querySelector('.tab-main')?.getAttribute('title') ===
+                ${JSON.stringify(liveReloadPath.path)});
+            const close = witnessTab?.querySelector('.tab-close') ||
+              secondary?.querySelector('[aria-label="Close secondary viewer"]');
+            close?.click();
+            const closeDeadline = Date.now() + 5000;
+            const resolveWhenClosed = () => {
+              if (!document.querySelector('[data-viewer-pane="secondary"]')) {
+                return resolve(result);
+              }
+              if (Date.now() > closeDeadline) {
+                return resolve({
+                  ...result,
+                  stable: false,
+                  reason: (result.reason ? result.reason + '; ' : '') +
+                    'watch witness pane did not close',
+                });
+              }
+              setTimeout(resolveWhenClosed, 25);
+            };
+            resolveWhenClosed();
+          };
+          const poll = () => {
+            const probe = globalThis.__hvirPngStabilityProbe;
+            if (!probe) return finish({ stable: false, processed: false, reason: 'probe missing' });
+            const current = document.querySelector('.image-view img');
+            const stable = !probe.changed && current === probe.image &&
+              current?.getAttribute('src') === probe.source &&
+              current.complete && current.naturalWidth > 0;
+            if (!stable) {
+              return finish({
+                stable: false,
+                processed: false,
+                sourceUnchanged: current?.getAttribute('src') === ${JSON.stringify(stablePngSource)},
+                reason: probe.reason || 'repository PNG changed before watch witness refreshed',
+              });
+            }
+            const secondary = document.querySelector('[data-viewer-pane="secondary"]');
+            const content = secondary?.querySelector('.cm-content')?.textContent || '';
+            if (content.includes('unrelated PNG stability marker')) {
+              return finish({
+                stable: true,
+                processed: true,
+                sourceUnchanged: current.getAttribute('src') === ${JSON.stringify(stablePngSource)},
+                reason: '',
+              });
+            }
+
+            setTimeout(poll, 50);
+          };
+          poll();
+        })
+      `)) as {
+      stable: boolean
+      processed: boolean
+      sourceUnchanged?: boolean
+      reason?: string
+    }
+    if (
+      !pngStability.stable ||
+      !pngStability.processed ||
+      !pngStability.sourceUnchanged
+    ) {
+      throw new Error(
+        `unrelated watch scope evidence failed: ${JSON.stringify(pngStability)}`,
+      )
+    }
+    await host.writeFile(liveReloadPath, liveReloadBefore)
+    console.log(
+      '[smoke] renderer processed unrelated watch while repository PNG stayed mounted and visible',
+    )
+
+    const renderedLinkStatus = (await win.webContents.executeJavaScript(`
+        new Promise((resolve, reject) => {
+          const link = (text) => [...document.querySelectorAll('.markdown-body a')]
+            .find((node) => node.textContent?.trim() === text);
+          let missingActivated = false;
+          const renderedTab = [...document.querySelectorAll('.viewer-tab')]
+            .find((node) => node.querySelector('.tab-name')?.textContent?.trim() === 'rendered.md');
+          renderedTab?.querySelector('.tab-main')?.click();
+          const waitForYaml = () => {
+            const title = document.querySelector('.viewer-tab.active .tab-name')?.textContent || '';
+            const keys = [...document.querySelectorAll('.json-key')]
+              .map((node) => node.textContent || '');
+            const fixturesOpen = [...document.querySelectorAll('.directory-row')]
+              .some((node) => node.getAttribute('title')?.endsWith('/test/fixtures') &&
+                node.querySelector('.tree-chevron')?.textContent?.trim() === '⌄');
+            if (title.includes('rendered.yml') && keys.some((key) => key.includes('name')) && fixturesOpen) {
+              return resolve('internal tab · YAML tree · tree preserved · ' + location.protocol);
+            }
+
+            setTimeout(waitForYaml, 50);
+          };
+          const waitForContainedError = () => {
+            if (document.querySelector('.viewer-empty.error')) {
+              const renderedTab = [...document.querySelectorAll('.viewer-tab')]
+                .find((node) => node.querySelector('.tab-name')?.textContent?.trim() === 'rendered.md');
+              renderedTab?.querySelector('.tab-main')?.click();
+              const waitForOriginal = () => {
+                const yaml = link('Open the YAML fixture');
+                if (yaml) {
+                  yaml.click();
+                  return waitForYaml();
+                }
+                setTimeout(waitForOriginal, 50);
+              };
+              return waitForOriginal();
+            }
+            const missing = missingActivated ? undefined : link('Missing target');
+            if (missing && !missingActivated) {
+              missingActivated = true;
+              missing.click();
+              return setTimeout(waitForContainedError, 50);
+            }
+
+            setTimeout(waitForContainedError, 50);
+          };
+          waitForContainedError();
+        })
+      `)) as string
+    console.log(`[smoke] rendered link routing + YAML OK (${renderedLinkStatus})`)
+
+    const sandboxPolicy = (await win.webContents.executeJavaScript(`
+        new Promise((resolve, reject) => {
+          const findBySuffix = (suffix) => [...document.querySelectorAll('.tree-row')]
+            .find((node) => node.getAttribute('title')?.endsWith(suffix));
+          const openWhenReady = (suffix, next) => {
+            const node = findBySuffix(suffix);
+            if (node) {
+              const closedDirectory = node.classList.contains('directory-row') &&
+                node.querySelector('.tree-chevron')?.textContent?.trim() === '›';
+              if (!node.classList.contains('directory-row') || closedDirectory) node.click();
+              next();
+            }  else {
+              setTimeout(() => openWhenReady(suffix, next), 50);
+            }
+          };
+          openWhenReady('/test', () =>
+            openWhenReady('/test/fixtures', () =>
+              openWhenReady('/test/fixtures/html-sandbox-attack.html', () => {
+                const waitForFrame = () => {
+                  const frame = document.querySelector('.html-preview');
+                  if (frame) return resolve(frame.getAttribute('sandbox') || '');
+                  setTimeout(waitForFrame, 50);
+                };
+                waitForFrame();
+              })
+            )
+          );
+        })
+      `)) as string
+    if (sandboxPolicy !== 'allow-scripts') {
+      throw new Error(`unsafe HTML sandbox policy: ${sandboxPolicy}`)
+    }
+    const iframe = await (async () => {
+      for (;;) {
+        const frame = win.webContents.mainFrame.frames.find((candidate) =>
+          candidate.url.startsWith(`${HTML_PREVIEW_SCHEME}://document/`),
+        )
+        if (frame) return frame
+        await new Promise<void>((resolve) => setTimeout(resolve, 25))
+      }
+    })()
+    const sandboxProbe = await (async (): Promise<{
+      ran?: string
+      node?: string
+      navigation?: string
+      popup?: string
+      preHead?: string
+    }> => {
+      for (;;) {
+        const probe = (await iframe.executeJavaScript(`({
+            ran: document.body?.dataset.ran,
+            node: document.body?.dataset.node,
+            navigation: document.body?.dataset.navigation,
+            popup: document.body?.dataset.popup,
+            preHead: globalThis.preHeadRan
+          })`)) as {
+          ran?: string
+          node?: string
+          navigation?: string
+          popup?: string
+          preHead?: string
+        }
+        if (probe.ran) return probe
+        await new Promise<void>((resolve) => setTimeout(resolve, 50))
+      }
+    })()
+    if (
+      iframe.origin !== 'null' ||
+      sandboxProbe.ran !== 'yes' ||
+      sandboxProbe.node !== 'blocked' ||
+      sandboxProbe.navigation !== 'blocked' ||
+      sandboxProbe.popup !== 'blocked' ||
+      sandboxProbe.preHead !== 'yes'
+    ) {
+      throw new Error(
+        `HTML sandbox escape probe failed (${iframe.origin} ${JSON.stringify(sandboxProbe)})`,
+      )
+    }
+    console.log('[smoke] sandboxed HTML blocked node, navigation, and popups')
+
+    const jsonStatus = (await win.webContents.executeJavaScript(`
+        new Promise((resolve, reject) => {
+          const open = () => {
+            const file = [...document.querySelectorAll('.file-row')]
+              .find((node) => node.getAttribute('title') === ${JSON.stringify(largeJsonPath.path)});
+            if (!file) {
+              return setTimeout(open, 50);
+            }
+            file.click();
+            const waitForTree = () => {
+              const summary = document.querySelector('.json-tree summary')?.textContent || '';
+              const renderedNodes = document.querySelectorAll('.json-tree details').length;
+              if (summary.includes('[50000]') && renderedNodes > 1) {
+                if (renderedNodes > 205) return reject(new Error('JSON tree rendered eagerly: ' + renderedNodes));
+                return resolve(renderedNodes + ' nodes for 50000 entries');
+              }
+              setTimeout(waitForTree, 50);
+            };
+            waitForTree();
+          };
+          open();
+        })
+      `)) as string
+    console.log(`[smoke] worker-backed lazy JSON OK (${jsonStatus})`)
+
+    const largeFileStatus = (await win.webContents.executeJavaScript(`
+        new Promise((resolve, reject) => {
+          const open = () => {
+            const file = [...document.querySelectorAll('.file-row')]
+              .find((node) => node.getAttribute('title') === ${JSON.stringify(largeTextPath.path)});
+            if (!file) {
+              return setTimeout(open, 50);
+            }
+            const started = performance.now();
+            file.click();
+            requestAnimationFrame(() => {
+              const firstFrameMs = Math.round(performance.now() - started);
+              const waitForPreview = () => {
+                const preview = document.querySelector('.large-file-preview');
+                const meta = document.querySelector('.source-meta')?.textContent || '';
+                if (preview && meta.includes('preview')) {
+                  return resolve(meta + ' · first-frame evidence ' + firstFrameMs + 'ms');
+                }
+                setTimeout(waitForPreview, 50);
+              };
+              waitForPreview();
+            });
+          };
+          open();
+        })
+      `)) as string
+    console.log(`[smoke] bounded large-file view OK (${largeFileStatus})`)
+
+    const { before: scrollBefore, after: scrollAfter } = await verifyLiveReloadScroll({
+      win,
+      host,
+      path: liveReloadPath,
+      contents: liveReloadBefore,
+      checkpoint: options.checkpoint,
+    })
+    console.log(`[smoke] clean tab live-reload preserved scroll (${scrollAfter}px)`)
+
+    await win.webContents.executeJavaScript(`
+      [...document.querySelectorAll('[data-viewer-pane]')].find(node =>
+        node.querySelector('.viewer-tab.active .tab-main')?.getAttribute('title') === ${JSON.stringify(liveReloadPath.path)})?.querySelector('.cm-content')?.focus();
+    `)
+    await win.webContents.insertText('saved marker\n')
+    await win.webContents.executeJavaScript(`
+        new Promise((resolve, reject) => {
+          const poll = () => {
+            if (document.querySelector('.viewer-tab.active .tab-status')?.textContent?.includes('●')) {
+              return resolve(true);
+            }
+            setTimeout(poll, 25);
+          };
+          poll();
+        })
+      `)
+    const saveModifier = process.platform === 'darwin' ? 'meta' : 'control'
+    win.webContents.sendInputEvent({
+      type: 'keyDown',
+      keyCode: 'S',
+      modifiers: [saveModifier],
+    })
+    win.webContents.sendInputEvent({
+      type: 'keyUp',
+      keyCode: 'S',
+      modifiers: [saveModifier],
+    })
+    await (async (): Promise<void> => {
+      for (;;) {
+        if ((await host.readTextFile(liveReloadPath)).includes('saved marker')) return
+        await new Promise<void>((resolve) => setTimeout(resolve, 25))
+      }
+    })()
+    console.log('[smoke] source edit + Ctrl+S save OK')
+    await verifyExternalDocuments(win, host, options.supervisor, options.projectState)
+
+    const result = [
+      viewerStatus,
+      filenameSearchStatus,
+      renderedFixture,
+      richerViewerStatus,
+      'stable PNG watch scope',
+      renderedLinkStatus,
+      'HTML sandboxed',
+      jsonStatus,
+      largeFileStatus,
+      `reload ${scrollBefore}→${scrollAfter}px`,
+      'minor save',
+    ].join(' · ')
+    console.log(`[smoke] viewer content OK (${result})`)
+    console.log('HVIR_SMOKE_OK')
+    return result
+  } catch (error) {
+    let state: unknown = { unavailable: true }
+    try {
+      state = await readViewerContentState(win)
+    } catch {
+      // Preserve the original failure when the renderer is no longer inspectable.
+    }
+    throw new Error(
+      `Viewer content failed: ${
+        error instanceof Error ? error.message : String(error)
+      }; state=${JSON.stringify(state)}`,
+      { cause: error },
+    )
+  }
+}
+
+function readViewerContentState(win: BrowserWindow): Promise<unknown> {
+  return win.webContents.executeJavaScript(`
+    (() => {
+      const text = (selector) =>
+        document.querySelector(selector)?.textContent?.trim().slice(0, 240);
+      return {
+        activePath: document.querySelector('.viewer-tab.active .tab-main')
+          ?.getAttribute('title'),
+        activeMode: document.querySelector('.mode-control button.active')
+          ?.textContent?.trim(),
+        sourceStatus: text('.source-meta'),
+        rendered: Boolean(document.querySelector('.markdown-body')),
+        codeMirror: Boolean(document.querySelector('.cm-editor')),
+        mergeView: Boolean(document.querySelector('.cm-mergeView')),
+        htmlPreview: Boolean(document.querySelector('.html-preview')),
+        jsonNodes: document.querySelectorAll('.json-tree details').length,
+        largePreview: Boolean(document.querySelector('.large-file-preview')),
+        dirty: text('.viewer-tab.active .tab-status'),
+        treeRows: document.querySelectorAll('.file-row').length
+      };
+    })()
+  `) as Promise<unknown>
+}

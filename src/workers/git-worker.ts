@@ -4,10 +4,11 @@ import {
   GIT_CHANGES_TYPE,
   GIT_HISTORY_TYPE,
   GIT_IGNORED_ENTRIES_TYPE,
+  GIT_IGNORED_PATHS_TYPE,
   GIT_COMMIT_DETAIL_TYPE,
   GIT_WORKTREES_TYPE,
   GIT_PRUNE_WORKTREES_TYPE,
-  GIT_CHANGED_FILE_COUNT_TYPE,
+  GIT_WORKSPACE_ACTIVITY_TYPE,
   GIT_BRANCHES_TYPE,
   GIT_FETCH_TYPE,
   GIT_PULL_TYPE,
@@ -23,8 +24,9 @@ import {
   type WorkerHostCallInput,
   type WorkerHostResult,
   type HostId,
+  type Stat,
 } from '../shared'
-import type { GitHostPort } from '../main/git/git-command-context'
+import type { GitExecOptions, GitHostPort } from '../main/git/git-command-context'
 import { GitEngine } from '../main/git/git-engine'
 
 interface ParentPort {
@@ -84,8 +86,8 @@ async function handle(request: WorkerRequest): Promise<void> {
       result = await engine.switchBranch(root, raw['branch'], relatedWorktreeRoots)
     } else if (request.type === GIT_PRUNE_WORKTREES_TYPE) {
       result = await engine.pruneWorktrees(root)
-    } else if (request.type === GIT_CHANGED_FILE_COUNT_TYPE) {
-      result = await engine.changedFileCount(root, relatedWorktreeRoots)
+    } else if (request.type === GIT_WORKSPACE_ACTIVITY_TYPE) {
+      result = await engine.workspaceActivity(root, relatedWorktreeRoots)
     } else if (request.type === GIT_DIFF_INPUTS_TYPE && isPayload(request.payload)) {
       const path = decodePath(request.payload.path)
       assertProjectPath(path, root)
@@ -108,6 +110,8 @@ async function handle(request: WorkerRequest): Promise<void> {
         directory,
         raw['names'] as readonly string[],
       )
+    } else if (request.type === GIT_IGNORED_PATHS_TYPE && Array.isArray(raw['paths'])) {
+      result = await engine.ignoredPaths(root, raw['paths'] as readonly string[])
     } else if (request.type === GIT_HISTORY_TYPE) {
       const path = isRawPath(raw['path']) ? decodePath(raw['path']) : undefined
       if (path) assertProjectPath(path, root)
@@ -153,7 +157,7 @@ class ProxyGitHost implements GitHostPort {
   exec(
     command: string,
     args: readonly string[],
-    opts: import('../main/project-host').ExecOptions = {},
+    opts: GitExecOptions = {},
   ): Promise<import('../shared').ExecResult> {
     return hostCall({
       operation: 'exec',
@@ -165,6 +169,7 @@ class ProxyGitHost implements GitHostPort {
       maxBuffer: opts.maxBuffer,
       allowTruncatedOutput: opts.allowTruncatedOutput,
       maxStdoutNulRecords: opts.maxStdoutNulRecords,
+      ...(opts.allowIndexRefresh ? { allowIndexRefresh: true } : {}),
     }) as Promise<import('../shared').ExecResult>
   }
   readTextFile(path: HostPath): Promise<string> {
@@ -173,6 +178,24 @@ class ProxyGitHost implements GitHostPort {
       hostId: this.hostId,
       path,
     }) as Promise<string>
+  }
+  readTextFilePrefix(
+    path: HostPath,
+    maxBytes: number,
+  ): Promise<import('../shared').TextWorkload> {
+    return hostCall({
+      operation: 'readTextFilePrefix',
+      hostId: this.hostId,
+      path,
+      maxBytes,
+    }) as Promise<import('../shared').TextWorkload>
+  }
+  stat(path: HostPath): Promise<Stat> {
+    return hostCall({
+      operation: 'stat',
+      hostId: this.hostId,
+      path,
+    }) as Promise<Stat>
   }
 }
 

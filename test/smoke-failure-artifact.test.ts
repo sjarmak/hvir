@@ -1,0 +1,338 @@
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
+
+import {
+  SmokeAttemptEvidenceCollector,
+  formatSmokeFailureEvidence,
+  createSmokeFailureArtifact,
+  writeSmokeFailureArtifact,
+} from '../scripts/smoke-failure-artifact.mts'
+import { reportSmokeFailureEvidence } from '../src/main/smoke/failure-evidence.mts'
+
+describe('bounded smoke failure evidence', () => {
+  it('retains the failed condition when cleanup fails later and renders only closed evidence', () => {
+    const collector = new SmokeAttemptEvidenceCollector()
+    const owners = {
+      windowCount: 1,
+      ptyCount: 2,
+      watcherActive: true,
+      rendererOwnerActive: true,
+      rendererGeneration: 2,
+    }
+    const emit = (
+      phase: 'scenario-active' | 'cleanup',
+      checkpoint: 'document-review: capture-pty-ready' | null,
+      cleanupResource: 'supervised terminals' | null,
+    ) =>
+      collector.observe(
+        'stderr',
+        '[smoke:failure-evidence] ' +
+          JSON.stringify({ schema: 1, phase, checkpoint, cleanupResource, owners }) +
+          '\n',
+      )
+    emit('scenario-active', 'document-review: capture-pty-ready', null)
+    collector.observe('stderr', 'HVIR_SMOKE_FAIL /private/review.txt\n')
+    emit('cleanup', null, 'supervised terminals')
+    collector.observe('stderr', 'HVIR_SMOKE_CLEANUP_FAIL secret\n')
+    const snapshot = collector.evidence().snapshot
+    expect(snapshot?.checkpoint).toBe('document-review: capture-pty-ready')
+    expect(collector.evidence().logs.cleanupFailure).toBe(true)
+    expect(formatSmokeFailureEvidence(snapshot)).toBe(
+      'condition=document-review: capture-pty-ready · phase=scenario-active · windows=1 · PTYs=2 · watch=true · renderer=true · generation=2',
+    )
+    expect(() =>
+      formatSmokeFailureEvidence({
+        ...snapshot!,
+        checkpoint: '/private/review',
+      } as never),
+    ).toThrow()
+  })
+
+  it('recognizes the success sentinel across stdout chunk boundaries', () => {
+    const collector = new SmokeAttemptEvidenceCollector()
+    collector.observe('stdout', 'HVIR_SM')
+    collector.observe('stdout', 'OKE_OK\n')
+
+    expect(collector.evidence().logs.successSentinel).toBe(true)
+  })
+
+  it('retains only the closed semantic, resource, process, and log-event schema', () => {
+    const collector = new SmokeAttemptEvidenceCollector()
+    collector.observe('stdout', 'terminal output TOKEN=do-not-retain\n')
+    collector.observe(
+      'stderr',
+      '[smoke:failure-evidence] ' +
+        JSON.stringify({
+          schema: 1,
+          phase: 'renderer-ready',
+          checkpoint: null,
+          cleanupResource: null,
+          owners: {
+            windowCount: 1,
+            ptyCount: 0,
+            watcherActive: true,
+            rendererOwnerActive: true,
+            rendererGeneration: 3,
+          },
+        }) +
+        '\n',
+    )
+    collector.observe(
+      'stderr',
+      '[smoke:failure-evidence] ' +
+        JSON.stringify({
+          schema: 1,
+          phase: 'scenario-active',
+          checkpoint: 'renderer-recovery-reload-awaiting',
+          cleanupResource: null,
+          owners: {
+            windowCount: 1,
+            ptyCount: 2,
+            watcherActive: true,
+            rendererOwnerActive: true,
+            rendererGeneration: 3,
+          },
+        }) +
+        '\nHVIR_SMOKE_FAIL Error: /secret/file\n',
+    )
+    collector.observe('stderr', 'HVIR_SMOKE_CLEANUP_FAIL Error: cookie=value\n')
+    collector.finish()
+
+    const artifact = createSmokeFailureArtifact({
+      scenario: 'web-pane',
+      iteration: 2,
+      repetitionCount: 20,
+      durationMs: 1234.7,
+      exitCode: 1,
+      signal: null,
+      spawnError: false,
+      collector,
+    })
+
+    expect(artifact).toEqual({
+      schema: 2,
+      scenario: 'web-pane',
+      iteration: 2,
+      repetitionCount: 20,
+      durationMs: 1235,
+      expectedOutcome: 'exit-zero-with-success-sentinel',
+      outcome: 'process-failure',
+      process: { exitCode: 1, signal: null, spawnError: false },
+      semanticSnapshot: {
+        schema: 1,
+        phase: 'scenario-active',
+        checkpoint: 'renderer-recovery-reload-awaiting',
+        cleanupResource: null,
+        owners: {
+          windowCount: 1,
+          ptyCount: 2,
+          watcherActive: true,
+          rendererOwnerActive: true,
+          rendererGeneration: 3,
+        },
+      },
+      applicationLogs: {
+        successSentinel: false,
+        failureSentinel: true,
+        startupFailure: false,
+        cleanupFailure: true,
+        evidenceRejected: false,
+      },
+    })
+    expect(JSON.stringify(artifact)).not.toMatch(
+      /TOKEN|do-not-retain|secret|cookie|terminal output/,
+    )
+  })
+
+  it('rejects unreviewed semantic fields before they can enter an artifact', () => {
+    const collector = new SmokeAttemptEvidenceCollector()
+    collector.observe(
+      'stderr',
+      '[smoke:failure-evidence] ' +
+        JSON.stringify({
+          schema: 1,
+          phase: 'scenario-active',
+          checkpoint: null,
+          cleanupResource: null,
+          owners: {
+            windowCount: 1,
+            ptyCount: 0,
+            watcherActive: true,
+            rendererOwnerActive: false,
+            rendererGeneration: null,
+          },
+          rawLog: 'not allowed',
+        }) +
+        '\n',
+    )
+
+    const artifact = createSmokeFailureArtifact({
+      scenario: 'web-pane',
+      iteration: 1,
+      repetitionCount: 1,
+      durationMs: 200,
+      exitCode: 3,
+      signal: null,
+      spawnError: false,
+      collector,
+    })
+
+    expect(artifact).toMatchObject({
+      process: { exitCode: 3, signal: null, spawnError: false },
+      semanticSnapshot: null,
+      applicationLogs: {
+        successSentinel: false,
+        failureSentinel: false,
+        startupFailure: false,
+        cleanupFailure: false,
+        evidenceRejected: true,
+      },
+    })
+  })
+
+  it('retains a failed cleanup owner without retaining its output', () => {
+    const collector = new SmokeAttemptEvidenceCollector()
+    collector.observe(
+      'stderr',
+      '[smoke:failure-evidence] ' +
+        JSON.stringify({
+          schema: 1,
+          phase: 'cleanup',
+          checkpoint: null,
+          cleanupResource: 'project watch',
+          owners: {
+            windowCount: 0,
+            ptyCount: 0,
+            watcherActive: true,
+            rendererOwnerActive: false,
+            rendererGeneration: null,
+          },
+        }) +
+        '\nHVIR_SMOKE_CLEANUP_FAIL Error: /private/project\n',
+    )
+
+    const artifact = createSmokeFailureArtifact({
+      scenario: 'renderer-authority',
+      iteration: 1,
+      repetitionCount: 20,
+      durationMs: 10_200,
+      exitCode: 1,
+      signal: null,
+      spawnError: false,
+      collector,
+    })
+
+    expect(artifact.semanticSnapshot).toMatchObject({
+      phase: 'cleanup',
+      cleanupResource: 'project watch',
+      owners: { windowCount: 0, watcherActive: true },
+    })
+    expect(JSON.stringify(artifact)).not.toContain('/private/project')
+  })
+
+  it('writes a bounded per-attempt artifact only to the requested directory', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'hvir-smoke-artifacts-'))
+    onTestFinished(() => rm(directory, { recursive: true, force: true }))
+    const collector = new SmokeAttemptEvidenceCollector()
+    collector.observe('stderr', 'HVIR_STARTUP_FAIL Error\n')
+    collector.finish()
+    const artifact = createSmokeFailureArtifact({
+      scenario: 'pty-native',
+      iteration: 1,
+      repetitionCount: 5,
+      durationMs: 20,
+      exitCode: null,
+      signal: 'SIGTERM',
+      spawnError: false,
+      collector,
+    })
+
+    const path = await writeSmokeFailureArtifact(directory, artifact)
+
+    expect(path).toBe(join(directory, 'pty-native-iteration-1-of-5.json'))
+    expect(JSON.parse(await readFile(path!, 'utf8'))).toEqual(artifact)
+  })
+
+  it('rejects fields outside the reviewed artifact schema', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'hvir-smoke-artifacts-'))
+    onTestFinished(() => rm(directory, { recursive: true, force: true }))
+    const collector = new SmokeAttemptEvidenceCollector()
+    const artifact = {
+      ...createSmokeFailureArtifact({
+        scenario: 'pty-native',
+        iteration: 1,
+        repetitionCount: 1,
+        durationMs: 20,
+        exitCode: 1,
+        signal: null,
+        spawnError: false,
+        collector,
+      }),
+      rawOutput: 'not allowed',
+    }
+
+    await expect(writeSmokeFailureArtifact(directory, artifact)).rejects.toThrow(
+      'contained unreviewed fields',
+    )
+  })
+
+  it('drops failure evidence when the inherited output sink is unavailable', () => {
+    const unavailableSink = vi.fn(() => {
+      const error = new Error('pipe closed') as NodeJS.ErrnoException
+      error.code = 'EPIPE'
+      throw error
+    })
+
+    expect(() =>
+      reportSmokeFailureEvidence(
+        'scenario-active',
+        {
+          windowCount: 1,
+          ptyCount: 0,
+          watcherActive: true,
+          rendererOwnerActive: true,
+          rendererGeneration: 1,
+        },
+        null,
+        null,
+        unavailableSink,
+      ),
+    ).not.toThrow()
+    expect(unavailableSink).toHaveBeenCalledOnce()
+  })
+
+  it('contains every asynchronous inherited output sink error', () => {
+    let errorListener: ((error: NodeJS.ErrnoException) => void) | undefined
+    const onSpy = vi
+      .spyOn(process.stderr, 'on')
+      .mockImplementation(
+        (event: string, listener: (error: NodeJS.ErrnoException) => void) => {
+          if (event === 'error') errorListener = listener
+          return process.stderr
+        },
+      )
+    const writeSpy = vi.spyOn(process.stderr, 'write').mockReturnValue(true)
+    onTestFinished(() => {
+      onSpy.mockRestore()
+      writeSpy.mockRestore()
+    })
+
+    reportSmokeFailureEvidence('scenario-active', {
+      windowCount: 1,
+      ptyCount: 0,
+      watcherActive: true,
+      rendererOwnerActive: true,
+      rendererGeneration: 1,
+    })
+
+    expect(errorListener).toBeDefined()
+    for (const code of ['EPIPE', 'EIO']) {
+      const error = new Error('stderr unavailable') as NodeJS.ErrnoException
+      error.code = code
+      expect(() => errorListener?.(error)).not.toThrow()
+    }
+  })
+})

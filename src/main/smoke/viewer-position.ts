@@ -1,20 +1,330 @@
 import type { BrowserWindow } from 'electron'
 
-import type { HostPath } from '../../shared'
+import {
+  basenameHostPath,
+  dirnameHostPath,
+  joinHostPath,
+  type HostPath,
+} from '../../shared'
+import type { ProjectHost } from '../project-host'
+import type { SmokeFailureCheckpoint } from './failure-evidence.mts'
+import { verifyViewerFind } from './viewer-find'
+import {
+  collectViewerPositionFailureState,
+  runViewerPositionOperation,
+} from './viewer-position-operation'
 
-/** Retains keyboard routing and rendered-to-code position coverage in the legacy workflow. */
+export async function verifyFocusedViewer(
+  win: BrowserWindow,
+  host: ProjectHost,
+  sourcePath: HostPath,
+  renderedPath: HostPath,
+  invalidateGit: () => void,
+  checkpoint: (checkpoint: SmokeFailureCheckpoint) => void,
+): Promise<string> {
+  try {
+    const virtualized = await runViewerPositionOperation({
+      awaiting: 'viewer-position-virtualization-awaiting',
+      ready: 'viewer-position-virtualization-ready',
+      checkpoint,
+      execute: () => verifySourceDiffPosition(win, sourcePath),
+    })
+    const commands = await runViewerPositionOperation({
+      awaiting: 'viewer-position-commands-awaiting',
+      ready: 'viewer-position-commands-ready',
+      checkpoint,
+      execute: () => verifyViewerPositions(win, renderedPath),
+    })
+    const root = dirnameHostPath(sourcePath)
+    const find = await runViewerPositionOperation({
+      awaiting: 'viewer-position-find-awaiting',
+      ready: 'viewer-position-find-ready',
+      checkpoint,
+      execute: () =>
+        verifyViewerFind(
+          win,
+          sourcePath,
+          joinHostPath(root, 'test/fixtures/rendered.md'),
+          joinHostPath(root, '.hvir-smoke-large.txt'),
+          joinHostPath(root, 'test/fixtures/viewer-find-collapsed.txt'),
+          joinHostPath(root, 'package.json'),
+        ),
+    })
+    const diffRefresh = await runViewerPositionOperation({
+      awaiting: 'viewer-position-refresh-index-awaiting',
+      ready: 'viewer-position-refresh-index-ready',
+      checkpoint,
+      execute: () => prepareDiffRefreshIndex(host, sourcePath),
+    })
+    const stableRefresh = await runViewerPositionOperation({
+      awaiting: 'viewer-position-refresh-awaiting',
+      ready: 'viewer-position-refresh-ready',
+      checkpoint,
+      execute: () =>
+        verifyDiffRefreshStability(win, sourcePath, invalidateGit, diffRefresh),
+    })
+    return `${virtualized} · ${commands} · ${find} · ${stableRefresh}`
+  } catch (error) {
+    const state = await collectViewerPositionFailureState(() =>
+      readViewerPositionState(win),
+    )
+    throw new Error(
+      `Viewer position failed: ${
+        error instanceof Error ? error.message : String(error)
+      }; state=${JSON.stringify(state)}`,
+      { cause: error },
+    )
+  }
+}
+
+async function verifyDiffRefreshStability(
+  win: BrowserWindow,
+  path: HostPath,
+  invalidateGit: () => void,
+  indexRefresh: DiffRefreshIndex,
+): Promise<string> {
+  const verification = win.webContents.executeJavaScript(`
+    (() => {
+      window.__hvirDiffRefreshReady = false;
+      window.__hvirDiffRefreshComplete = false;
+      return (async () => {
+        const waitFor = async (test, message) => {
+          for (;;) {
+            const value = test();
+            if (value) return value;
+            await new Promise((painted) => requestAnimationFrame(painted));
+          }
+        };
+        const modeButton = (mode) => [...document.querySelectorAll('.mode-control button')]
+          .find((node) => node.textContent?.trim() === mode);
+        const file = await waitFor(
+          () => [...document.querySelectorAll('.file-row')]
+            .find((node) => node.getAttribute('title') === ${JSON.stringify(path.path)}),
+          'diff refresh fixture missing'
+        );
+        file.click();
+        await waitFor(
+          () => document.querySelector('.viewer-tab.active .tab-main')
+            ?.getAttribute('title') === ${JSON.stringify(path.path)},
+          'diff refresh fixture did not activate'
+        );
+        modeButton('diff')?.click();
+        const baseSelect = await waitFor(
+          () => document.querySelector('[aria-label="Diff base"]'),
+          'diff base control missing'
+        );
+        baseSelect.value = 'working-tree';
+        baseSelect.dispatchEvent(new Event('change', { bubbles: true }));
+        const settled = await waitFor(
+          () => {
+            const merge = document.querySelector('.cm-mergeView');
+            const base = document.querySelector('.cm-editor.cm-merge-a .cm-content');
+            return merge && base?.textContent?.includes(
+              ${JSON.stringify(indexRefresh.initialMarker)}
+            ) ? merge : undefined;
+          },
+          'settled diff missing before refresh burst'
+        );
+        settled.dispatchEvent(new WheelEvent('wheel', { deltaY: 800, bubbles: true }));
+        settled.scrollTop = Math.min(
+          Math.max(0, settled.scrollHeight - settled.clientHeight),
+          800
+        );
+        settled.dispatchEvent(new Event('scroll'));
+        const scrollTop = settled.scrollTop;
+        let preparingObserved = false;
+        let replacementObserved = false;
+        let refreshObserved = false;
+        const inspect = () => {
+          const empty = document.querySelector('.viewer-empty');
+          if (empty?.textContent?.includes('Preparing diff')) preparingObserved = true;
+          if (!settled.isConnected || document.querySelector('.cm-mergeView') !== settled) {
+            replacementObserved = true;
+          }
+          const base = document.querySelector('.cm-editor.cm-merge-a .cm-content');
+          if (base?.textContent?.includes(${JSON.stringify(indexRefresh.nextMarker)})) {
+            refreshObserved = true;
+            window.__hvirDiffRefreshObserved = true;
+          }
+        };
+        const observer = new MutationObserver(inspect);
+        observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+        window.__hvirDiffRefreshReady = true;
+        while (!window.__hvirDiffRefreshComplete) {
+          inspect();
+          await new Promise((painted) => requestAnimationFrame(painted));
+        }
+        await new Promise((painted) => requestAnimationFrame(painted));
+        inspect();
+        observer.disconnect();
+        delete window.__hvirDiffRefreshReady;
+        delete window.__hvirDiffRefreshComplete;
+        delete window.__hvirDiffRefreshObserved;
+        if (preparingObserved) throw new Error('diff displayed Preparing diff during refresh');
+        if (replacementObserved) throw new Error('diff MergeView was replaced during refresh');
+        if (!refreshObserved) throw new Error('diff did not apply refreshed Git inputs');
+        if (Math.abs(settled.scrollTop - scrollTop) > 2) {
+          throw new Error('diff scroll position changed during refresh');
+        }
+        return 'metadata refresh burst applied Git inputs and retained diff at scroll ' +
+          Math.round(scrollTop);
+      })();
+    })()
+  `) as Promise<string>
+  let failure: unknown
+  void verification.catch((reason) => {
+    failure = reason
+  })
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (failure) {
+      throw failure instanceof Error
+        ? failure
+        : new Error('Diff refresh verifier failed', { cause: failure })
+    }
+    const ready = (await win.webContents.executeJavaScript(
+      'Boolean(window.__hvirDiffRefreshReady)',
+    )) as boolean
+    if (ready) break
+    if (attempt === 199) throw new Error('diff refresh verifier did not become ready')
+    await delay(25)
+  }
+  for (let invalidation = 0; invalidation < 5; invalidation += 1) {
+    if (invalidation === 0) await indexRefresh.advance()
+    invalidateGit()
+    await delay(300)
+  }
+  let refreshObserved = false
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (failure) break
+    refreshObserved = (await win.webContents.executeJavaScript(
+      'Boolean(window.__hvirDiffRefreshObserved)',
+    )) as boolean
+    if (refreshObserved) break
+    await delay(25)
+  }
+  await win.webContents.executeJavaScript('window.__hvirDiffRefreshComplete = true')
+  if (failure) {
+    throw failure instanceof Error
+      ? failure
+      : new Error('Diff refresh verifier failed', { cause: failure })
+  }
+  if (!refreshObserved)
+    throw new Error('diff refresh did not reach the visible merge view')
+  return verification
+}
+
+interface DiffRefreshIndex {
+  readonly initialMarker: string
+  readonly nextMarker: string
+  readonly advance: () => Promise<void>
+}
+
+async function prepareDiffRefreshIndex(
+  host: ProjectHost,
+  path: HostPath,
+): Promise<DiffRefreshIndex> {
+  const root = dirnameHostPath(path)
+  const source = await host.readTextFile(path)
+  const initialMarker = 'hvir index before refresh'
+  const nextMarker = 'hvir index after refresh!'
+  await writeIndexContent(
+    host,
+    root,
+    path,
+    diffRefreshIndexContent(source, initialMarker),
+  )
+  return {
+    initialMarker,
+    nextMarker,
+    advance: () =>
+      writeIndexContent(host, root, path, diffRefreshIndexContent(source, nextMarker)),
+  }
+}
+
+async function writeIndexContent(
+  host: ProjectHost,
+  root: HostPath,
+  path: HostPath,
+  content: string,
+): Promise<void> {
+  const object = await host.exec(
+    'git',
+    ['-C', root.path, 'hash-object', '-w', '--stdin'],
+    { input: content },
+  )
+  const hash = object.stdout.trim()
+  if (object.code !== 0 || !/^[a-f0-9]{40,64}$/.test(hash)) {
+    throw new Error('diff refresh fixture could not create an index object')
+  }
+  const update = await host.exec('git', [
+    '-C',
+    root.path,
+    'update-index',
+    '--add',
+    '--cacheinfo',
+    `100644,${hash},${basenameHostPath(path)}`,
+  ])
+  if (update.code !== 0) {
+    throw new Error('diff refresh fixture could not update the index')
+  }
+}
+
+function diffRefreshIndexContent(content: string, firstLine: string): string {
+  const lines = content.split('\n')
+  return lines
+    .map((line, index) => {
+      if (index === 0) return firstLine
+      if (index === lines.length - 1 && line === '') return ''
+      return `hvir index line ${index}`
+    })
+    .join('\n')
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
+function readViewerPositionState(win: BrowserWindow): Promise<unknown> {
+  return win.webContents.executeJavaScript(`
+    (() => ({
+      activePath: document.querySelector('.viewer-tab.active .tab-main')
+        ?.getAttribute('title'),
+      activeMode: document.querySelector('.mode-control button.active')
+        ?.textContent?.trim(),
+      source: Boolean(document.querySelector('.source-shell .cm-scroller')),
+      sourcePosition: (() => {
+        const root = document.querySelector('.source-shell .cm-scroller');
+        const marker = [...(root?.querySelectorAll('.cm-lineNumbers .cm-gutterElement') || [])]
+          .find((node) => node.getBoundingClientRect().bottom >
+            (root?.getBoundingClientRect().top || 0) + 1);
+        return root ? {
+          line: marker?.textContent?.trim(),
+          scroll: Math.round(root.scrollTop),
+          maxScroll: Math.round(root.scrollHeight - root.clientHeight)
+        } : undefined;
+      })(),
+      diff: Boolean(document.querySelector('.cm-mergeView')),
+      rendered: Boolean(document.querySelector('.markdown-body')),
+      emptyState: document.querySelector('.viewer-empty')?.textContent?.trim().slice(0, 240),
+      findStatus: document.querySelector('[aria-label="Find in file"] [role="status"]')
+        ?.textContent?.trim(),
+      split: Boolean(document.querySelector('[data-viewer-pane="secondary"]'))
+    }))()
+  `) as Promise<unknown>
+}
+
+/** Proves keyboard routing and rendered-to-code position coverage in the focused scenario. */
 export function verifyViewerPositions(
   win: BrowserWindow,
   path: HostPath,
+  includeEmptyDiff = true,
 ): Promise<string> {
   return win.webContents.executeJavaScript(`
     (async () => {
-      const deadline = Date.now() + 20000;
-      const waitFor = (test, message) => new Promise((resolve, reject) => {
+      const waitFor = (test) => new Promise((resolve) => {
         const poll = () => {
           const value = test();
           if (value) return resolve(value);
-          if (Date.now() > deadline) return reject(new Error(message));
           setTimeout(poll, 25);
         };
         poll();
@@ -23,9 +333,6 @@ export function verifyViewerPositions(
         .find((node) => node.textContent?.trim() === mode);
       const activeMode = () => document.querySelector('.mode-control button.active')
         ?.textContent?.trim();
-      const settle = () => new Promise((resolve) =>
-        requestAnimationFrame(() => requestAnimationFrame(resolve))
-      );
       const visibleCodeLine = (root, selector) => {
         const viewportTop = root.getBoundingClientRect().top;
         const marker = [...root.querySelectorAll(selector)]
@@ -46,18 +353,15 @@ export function verifyViewerPositions(
           .filter((anchor) => Number.isFinite(anchor.line) && anchor.top <= viewportTop)
           .sort((left, right) => right.top - left.top)[0]?.line;
       };
-      const terminal = document.querySelector('.terminal-panel');
       const before = activeMode();
       const mac = /Mac/.test(navigator.platform);
-      terminal?.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'M', ctrlKey: !mac, metaKey: mac, shiftKey: true, bubbles: true
-      }));
-      if (activeMode() !== before) throw new Error('terminal chord changed viewer mode');
       window.dispatchEvent(new KeyboardEvent('keydown', {
         key: 'M', ctrlKey: !mac, metaKey: mac, shiftKey: true, bubbles: true
       }));
-      await settle();
-      if (!activeMode() || activeMode() === before) throw new Error('mode chord did not cycle');
+      await waitFor(
+        () => activeMode() && activeMode() !== before ? activeMode() : undefined,
+        'mode chord did not cycle'
+      );
 
       const file = await waitFor(
         () => [...document.querySelectorAll('.file-row')]
@@ -65,6 +369,12 @@ export function verifyViewerPositions(
         'viewer position fixture missing'
       );
       file.click();
+      await waitFor(
+        () => document.querySelector('.viewer-tab.active .tab-main')
+          ?.getAttribute('title') === ${JSON.stringify(path.path)},
+        'viewer position fixture did not activate'
+      );
+      modeButton('rendered')?.click();
       const rendered = await waitFor(
         () => document.querySelector('.markdown-body'),
         'position fixture did not render'
@@ -76,7 +386,12 @@ export function verifyViewerPositions(
       );
       rendered.scrollTop += target.getBoundingClientRect().top - rendered.getBoundingClientRect().top;
       rendered.dispatchEvent(new Event('scroll'));
-      await settle();
+      await waitFor(() => {
+        const visible = visibleRenderedLine(rendered);
+        return visible !== undefined && Math.abs(visible - targetLine) <= 4
+          ? visible
+          : undefined;
+      }, 'rendered source anchor did not become visible');
 
       const transitions = [];
       const changeMode = async (from, to) => {
@@ -136,54 +451,215 @@ export function verifyViewerPositions(
       await changeMode('diff', 'rendered');
       await changeMode('rendered', 'source');
 
-      const cleanFile = await waitFor(
-        () => [...document.querySelectorAll('.file-row')]
-          .find((node) => node.getAttribute('title')?.endsWith('/package.json')),
-        'clean diff fixture missing'
+      modeButton('rendered')?.click();
+      await waitFor(() => activeMode() === 'rendered', 'go-to-line fixture did not render');
+      window.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'g', ctrlKey: true, bubbles: true
+      }));
+      const coordinate = await waitFor(
+        () => document.querySelector('[aria-label="Go to line"] input'),
+        'Ctrl+G did not open go-to-line'
       );
-      cleanFile.click();
-      await waitFor(
-        () => document.querySelector('.viewer-tab.active .tab-name')?.textContent
-          ?.includes('package.json'),
-        'clean diff fixture did not open'
+      const coordinateSetter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        'value'
+      )?.set;
+      coordinateSetter?.call(coordinate, '121:3');
+      coordinate.dispatchEvent(new Event('input', { bubbles: true }));
+      coordinate.closest('form')?.dispatchEvent(
+        new Event('submit', { bubbles: true, cancelable: true })
       );
-      modeButton('source')?.click();
-      const cleanSource = await waitFor(
+      const goToSource = await waitFor(
         () => document.querySelector('.source-shell .cm-scroller'),
-        'clean diff source missing'
-      );
-      const cleanLine = await waitFor(() => {
-        cleanSource.scrollTop = Math.min(
-          cleanSource.scrollHeight - cleanSource.clientHeight,
-          cleanSource.clientHeight * 0.75
-        );
-        cleanSource.dispatchEvent(new Event('scroll'));
-        const line = visibleCodeLine(cleanSource, '.cm-lineNumbers .cm-gutterElement');
-        return line !== undefined && line > 1 ? line : undefined;
-      }, 'clean diff source did not scroll');
-      modeButton('diff')?.click();
-      const emptyDiff = await waitFor(
-        () => document.querySelector('.cm-mergeView'),
-        'empty diff did not render'
-      );
-      if (emptyDiff.querySelector('.cm-changedLine')) {
-        throw new Error('clean diff unexpectedly contained changes');
-      }
-      modeButton('source')?.click();
-      const restoredCleanSource = await waitFor(
-        () => document.querySelector('.source-shell .cm-scroller'),
-        'source missing after empty diff'
+        'go-to-line did not switch to source'
       );
       await waitFor(() => {
-        const line = visibleCodeLine(
-          restoredCleanSource,
-          '.cm-lineNumbers .cm-gutterElement'
-        );
-        return line !== undefined && Math.abs(line - cleanLine) <= 2 ? line : undefined;
-      }, 'empty diff reset the source position');
+        const bounds = goToSource.getBoundingClientRect();
+        const marker = [...goToSource.querySelectorAll('.cm-lineNumbers .cm-gutterElement')]
+          .find((node) => node.textContent?.trim() === '121');
+        if (!marker) return false;
+        const markerBounds = marker.getBoundingClientRect();
+        return markerBounds.bottom > bounds.top && markerBounds.top < bounds.bottom;
+      }, 'go-to-line did not scroll to the requested line');
+      await waitFor(() => {
+        const selection = window.getSelection();
+        const anchor = selection?.anchorNode;
+        const selectedLine = anchor instanceof Element
+          ? anchor.closest('.cm-line')
+          : anchor?.parentElement?.closest('.cm-line');
+        if (!selection || !anchor || !selectedLine) return false;
+        const marker = [...goToSource.querySelectorAll('.cm-lineNumbers .cm-gutterElement')]
+          .find((node) => node.textContent?.trim() === '121');
+        if (!marker || Math.abs(
+          marker.getBoundingClientRect().top - selectedLine.getBoundingClientRect().top
+        ) > 2) return false;
+        const range = document.createRange();
+        range.selectNodeContents(selectedLine);
+        range.setEnd(anchor, selection.anchorOffset);
+        return range.toString().length + 1 === 3;
+      }, 'go-to-line did not place the requested column');
 
-      return 'keyboard isolated · line ' + targetLine + ' · ' + transitions.join(', ') +
-        ' · empty diff preserved line ' + cleanLine;
+      let cleanLine;
+      if (${JSON.stringify(includeEmptyDiff)}) {
+        const cleanFile = await waitFor(
+          () => [...document.querySelectorAll('.file-row')]
+            .find((node) => node.getAttribute('title')?.endsWith('/package.json')),
+          'clean diff fixture missing'
+        );
+        cleanFile.click();
+        await waitFor(
+          () => document.querySelector('.viewer-tab.active .tab-name')?.textContent
+            ?.includes('package.json'),
+          'clean diff fixture did not open'
+        );
+        modeButton('source')?.click();
+        const cleanSource = await waitFor(
+          () => document.querySelector('.source-shell .cm-scroller'),
+          'clean diff source missing'
+        );
+        cleanLine = await waitFor(() => {
+          cleanSource.scrollTop = Math.min(
+            cleanSource.scrollHeight - cleanSource.clientHeight,
+            cleanSource.clientHeight * 0.75
+          );
+          cleanSource.dispatchEvent(new Event('scroll'));
+          const line = visibleCodeLine(cleanSource, '.cm-lineNumbers .cm-gutterElement');
+          return line !== undefined && line > 1 ? line : undefined;
+        }, 'clean diff source did not scroll');
+        const cleanScroll = cleanSource.scrollTop;
+        modeButton('diff')?.click();
+        const emptyDiff = await waitFor(
+          () => document.querySelector('.cm-mergeView'),
+          'empty diff did not render'
+        );
+        if (emptyDiff.querySelector('.cm-changedLine')) {
+          throw new Error('clean diff unexpectedly contained changes');
+        }
+        modeButton('source')?.click();
+        const restoredCleanSource = await waitFor(
+          () => document.querySelector('.source-shell .cm-scroller'),
+          'source missing after empty diff'
+        );
+        await waitFor(() => {
+          const line = visibleCodeLine(
+            restoredCleanSource,
+            '.cm-lineNumbers .cm-gutterElement'
+          );
+          return line !== undefined && line > 1 &&
+            Math.abs(restoredCleanSource.scrollTop - cleanScroll) <= 2
+            ? line
+            : undefined;
+        }, 'empty diff reset the source position');
+      }
+
+      document.querySelector('[aria-label="Split viewer right"]')?.click();
+      const secondary = await waitFor(
+        () => document.querySelector('[data-viewer-pane="secondary"]'),
+        'secondary viewer did not open'
+      );
+      secondary.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      const secondaryFile = await waitFor(
+        () => [...document.querySelectorAll('.file-row')]
+          .find((node) => node.getAttribute('title')?.endsWith('/tsconfig.json')),
+        'secondary viewer fixture missing'
+      );
+      secondaryFile.click();
+      await waitFor(
+        () => secondary.querySelector('.viewer-tab.active .tab-name')?.textContent
+          ?.includes('tsconfig.json'),
+        'secondary viewer fixture did not open in the focused pane'
+      );
+      window.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'g', ctrlKey: true, bubbles: true
+      }));
+      const scopedControl = await waitFor(
+        () => secondary.querySelector('[aria-label="Go to line"]'),
+        'go-to-line did not target the focused secondary pane'
+      );
+      if (document.querySelectorAll('[aria-label="Go to line"]').length !== 1) {
+        throw new Error('go-to-line opened in more than one viewer pane');
+      }
+      scopedControl.querySelector('input')?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })
+      );
+      await waitFor(
+        () => !secondary.querySelector('[aria-label="Go to line"]'),
+        'go-to-line did not close on Escape'
+      );
+      const primary = document.querySelector('[data-viewer-pane="primary"]');
+      const divider = await waitFor(
+        () => document.querySelector('.viewer-split-resizer'),
+        'viewer split divider missing'
+      );
+      if (divider.getBoundingClientRect().width > 1.5) {
+        throw new Error('viewer split divider is wider than its hairline');
+      }
+      const widthBefore = primary?.getBoundingClientRect().width || 0;
+      divider.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'ArrowRight', bubbles: true
+      }));
+      await waitFor(
+        () => (primary?.getBoundingClientRect().width || 0) > widthBefore,
+        'viewer split did not resize from the keyboard'
+      );
+      const secondaryTab = secondary.querySelector('.viewer-tab');
+      const primaryStrip = primary?.querySelector('.tab-strip');
+      if (!secondaryTab || !primaryStrip) throw new Error('viewer drag fixtures missing');
+      const transfer = new DataTransfer();
+      secondaryTab.dispatchEvent(new DragEvent('dragstart', {
+        bubbles: true, dataTransfer: transfer
+      }));
+      primaryStrip.dispatchEvent(new DragEvent('dragover', {
+        bubbles: true, cancelable: true, dataTransfer: transfer
+      }));
+      primaryStrip.dispatchEvent(new DragEvent('drop', {
+        bubbles: true, cancelable: true, dataTransfer: transfer
+      }));
+      await waitFor(
+        () => secondary.querySelectorAll('.viewer-tab').length === 0 &&
+          [...primary.querySelectorAll('.viewer-tab')].some((tab) =>
+            tab.textContent?.includes('tsconfig.json')
+          ),
+        'viewer drag/drop did not move the tab to the primary pane'
+      );
+      const activeBeforeMiddle = primary.querySelector('.viewer-tab.active .tab-main')
+        ?.getAttribute('title');
+      const middleTarget = [...primary.querySelectorAll('.viewer-tab')]
+        .find((tab) => !tab.classList.contains('active'));
+      const middleTargetTitle = middleTarget?.querySelector('.tab-main')
+        ?.getAttribute('title');
+      if (!activeBeforeMiddle || !middleTarget || !middleTargetTitle) {
+        throw new Error('viewer middle-click fixtures missing');
+      }
+      const mouseDownHandled = !middleTarget.dispatchEvent(new MouseEvent('mousedown', {
+        button: 1, bubbles: true, cancelable: true
+      }));
+      const auxClickHandled = !middleTarget.dispatchEvent(new MouseEvent('auxclick', {
+        button: 1, bubbles: true, cancelable: true
+      }));
+      if (!mouseDownHandled || !auxClickHandled) {
+        throw new Error('viewer middle-click did not suppress auxiliary defaults');
+      }
+      await waitFor(
+        () => ![...primary.querySelectorAll('.viewer-tab .tab-main')]
+          .some((tab) => tab.getAttribute('title') === middleTargetTitle),
+        'viewer middle-click did not close its target'
+      );
+      if (primary.querySelector('.viewer-tab.active .tab-main')?.getAttribute('title') !==
+          activeBeforeMiddle) {
+        throw new Error('viewer middle-click activated the closing tab');
+      }
+      secondary.querySelector('[aria-label="Close secondary viewer"]')?.click();
+      await waitFor(
+        () => !document.querySelector('[data-viewer-pane="secondary"]'),
+        'empty secondary viewer did not close'
+      );
+      primary.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+
+      return 'mode command · line ' + targetLine + ' · ' + transitions.join(', ') +
+        ' · go-to 121:3 · split scoped + drag/drop + middle-close + keyboard divider' + (cleanLine === undefined
+          ? ''
+          : ' · empty diff preserved line ' + cleanLine);
     })()
   `) as Promise<string>
 }
@@ -195,7 +671,6 @@ export function verifySourceDiffPosition(
 ): Promise<string> {
   return win.webContents.executeJavaScript(`
     (async () => {
-      const deadline = Date.now() + 20000;
       const sourceSelector = '.source-shell .cm-scroller';
       const sourceGutter = '.cm-lineNumbers .cm-gutterElement';
       const diffSelector = '.cm-mergeView';
@@ -271,7 +746,6 @@ export function verifySourceDiffPosition(
           snapshot();
           const value = test();
           if (value) return value;
-          if (Date.now() > deadline) fail(message);
           await new Promise((painted) => requestAnimationFrame(painted));
         }
       };

@@ -11,9 +11,12 @@ import {
 import type { RendererOwner } from '../renderer-resource-scopes'
 import {
   DIAGNOSTIC_EVENT_BYTES,
-  type DiagnosticJournal,
+  type DiagnosticEvidenceWriter,
   type DiagnosticJournalStatus,
-} from './diagnostic-journal'
+  type DiagnosticDropReason,
+  type DiagnosticDroppedCount,
+  type DiagnosticRecentSnapshot,
+} from './diagnostic-evidence'
 import {
   diagnosticSource,
   materializeDiagnosticEvent,
@@ -30,29 +33,11 @@ const SOURCE_RATE_PER_SECOND = 4
 const SOURCE_RATE_BURST = 16
 const SATURATING_COUNT = Number.MAX_SAFE_INTEGER
 
-export type DiagnosticDropReason =
-  | 'invalid'
-  | 'rate'
-  | 'recent-capacity'
-  | 'renderer-session'
-  | 'renderer-invalid'
-  | 'renderer-queue'
-  | 'renderer-rate'
-  | 'renderer-unavailable'
-  | 'writer-queue'
-  | 'writer-storage'
-
-export interface DiagnosticDroppedCount {
-  readonly source: DiagnosticSource | 'diagnostic-writer'
-  readonly reason: DiagnosticDropReason
-  readonly count: number
-}
-
-export interface DiagnosticRecentSnapshot {
-  readonly version: 1
-  readonly events: readonly StoredDiagnosticEvent[]
-  readonly dropped: readonly DiagnosticDroppedCount[]
-}
+export type {
+  DiagnosticDropReason,
+  DiagnosticDroppedCount,
+  DiagnosticRecentSnapshot,
+} from './diagnostic-evidence'
 
 interface RecentEvent {
   readonly event: StoredDiagnosticEvent
@@ -66,7 +51,7 @@ interface RateState {
 }
 
 export interface DiagnosticIntakeOptions {
-  readonly writer?: Pick<DiagnosticJournal, 'record' | 'status'>
+  readonly writer?: DiagnosticEvidenceWriter
   readonly now?: () => number
   readonly correlation?: () => string
   readonly onAccepted?: (event: StoredDiagnosticEvent) => void
@@ -87,15 +72,18 @@ export class DiagnosticIntake {
     this.correlation = options.correlation ?? randomUUID
   }
 
-  record(event: RuntimeDiagnosticEvent): void {
-    this.admit(event, true)
+  record(event: RuntimeDiagnosticEvent): StoredDiagnosticEvent | undefined {
+    return this.admit(event, true)
   }
 
   recordTransient(event: RuntimeDiagnosticEvent): void {
     this.admit(event, false)
   }
 
-  private admit(event: RuntimeDiagnosticEvent, persist: boolean): void {
+  private admit(
+    event: RuntimeDiagnosticEvent,
+    persist: boolean,
+  ): StoredDiagnosticEvent | undefined {
     const context: DiagnosticEventContext = {
       occurredAtMs: this.now(),
       correlation: this.correlation(),
@@ -104,16 +92,16 @@ export class DiagnosticIntake {
     const source = diagnosticSource(event.kind)
     if (!stored) {
       this.incrementDropped(source, 'invalid')
-      return
+      return undefined
     }
     if (!this.takeRateToken(source, context.occurredAtMs)) {
       this.incrementDropped(source, 'rate')
-      return
+      return undefined
     }
     const line = serializeStoredDiagnosticEvent(stored)
     if (!line || Buffer.byteLength(line, 'utf8') > DIAGNOSTIC_EVENT_BYTES) {
       this.incrementDropped(source, 'invalid')
-      return
+      return undefined
     }
     if (persist) this.options.writer?.record(line)
     this.retain({
@@ -126,6 +114,7 @@ export class DiagnosticIntake {
     } catch {
       // Diagnostic consumers are droppable observers and never own feature behavior.
     }
+    return stored
   }
 
   startRenderer(owner: RendererOwner): RendererDiagnosticSession {
@@ -189,15 +178,6 @@ export class DiagnosticIntake {
     this.recentBytes = 0
     this.dropped.clear()
     this.rates.clear()
-  }
-
-  deleteResponsivenessSession(diagnosticSessionId: string): void {
-    for (let index = this.recent.length - 1; index >= 0; index--) {
-      const item = this.recent[index]
-      if (item?.event['sessionId'] !== diagnosticSessionId) continue
-      this.recent.splice(index, 1)
-      this.recentBytes -= item.bytes
-    }
   }
 
   private retain(recent: RecentEvent): void {

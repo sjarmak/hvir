@@ -21,7 +21,6 @@
   align-items: stretch;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
 }
 
 .projects-bar {
@@ -39,6 +38,7 @@
 .project-add,
 .workspace-tab > button,
 .workspaces-prune,
+.workspaces-catalog,
 .workspaces-refresh {
   border: 0;
   background: transparent;
@@ -134,7 +134,7 @@
 .project-connection-chevron {
   width: 9px;
   flex: 0 0 9px;
-  font-size: 7px;
+  font-size: calc(7px * var(--hvir-interface-scale));
 }
 
 .project-tab:hover {
@@ -158,36 +158,65 @@
 
 .project-tab strong {
   overflow: hidden;
-  font-size: 12px;
+  font-size: calc(12px * var(--hvir-interface-scale));
   font-weight: 620;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.project-change-count {
-  flex: 0 0 auto;
-  padding: 2px 5px;
-  border-radius: 8px;
-  background: #252c36;
-  color: #8fa6c2;
-  font-size: 8px;
-  font-weight: 600;
+.project-name-working {
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    #000 0 46%,
+    rgb(0 0 0 / 25%) 49% 51%,
+    #000 54% 100%
+  );
+  mask-image: linear-gradient(90deg, #000 0 46%, rgb(0 0 0 / 25%) 49% 51%, #000 54% 100%);
+  -webkit-mask-position: 100% 0;
+  mask-position: 100% 0;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  /* Six-second sweep followed by half a second with the full name steady. */
+  animation: project-name-working-sweep 6.5s linear infinite;
 }
 
-.project-change-count {
-  color: #d6b16e;
-  font-variant-numeric: tabular-nums;
+@keyframes project-name-working-sweep {
+  0% {
+    -webkit-mask-position: 100% 0;
+    mask-position: 100% 0;
+  }
+
+  92.3076923077%,
+  100% {
+    -webkit-mask-position: 0 0;
+    mask-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-name-working {
+    -webkit-mask-image: none;
+    mask-image: none;
+    animation: none;
+    text-decoration-line: underline;
+    text-decoration-style: dashed;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
 }
 
 .project-add {
   width: 34px;
   flex: 0 0 34px;
   border-bottom: 1px solid var(--border-strong);
-  font-size: 20px;
+  font-size: calc(20px * var(--hvir-interface-scale));
 }
 
 .project-add:hover,
 .workspaces-prune:hover,
+.workspaces-catalog:hover,
 .workspaces-refresh:hover,
 .workspace-tab > button:hover {
   background: #20262e;
@@ -195,7 +224,7 @@
 }
 
 .settings-toggle {
-  font-size: 12px;
+  font-size: calc(12px * var(--hvir-interface-scale));
 }
 
 .projects-bar-spacer {
@@ -245,7 +274,7 @@
   min-width: 0;
   overflow: hidden;
   color: #dce1e8;
-  font-size: 11px;
+  font-size: calc(11px * var(--hvir-interface-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -253,13 +282,13 @@
 .project-connection-menu header span,
 .project-connection-menu > small {
   color: #8792a1;
-  font-size: 9px;
+  font-size: calc(9px * var(--hvir-interface-scale));
 }
 
 .project-connection-menu p {
   margin: 0;
   color: #d76d76;
-  font-size: 9px;
+  font-size: calc(9px * var(--hvir-interface-scale));
   line-height: 1.35;
 }
 
@@ -275,7 +304,7 @@
   border-radius: 4px;
   background: #20252d;
   color: #b9c0ca;
-  font-size: 9px;
+  font-size: calc(9px * var(--hvir-interface-scale));
 }
 
 .project-connection-actions button:hover:not(:disabled) {
@@ -315,7 +344,7 @@
   gap: 6px;
   padding: 0 8px;
   border-radius: 3px;
-  font-size: 10px;
+  font-size: calc(10px * var(--hvir-interface-scale));
 }
 
 .workspace-tab > button span {
@@ -327,21 +356,11 @@
 
 .workspace-tab small {
   color: #687384;
-  font-size: 8px;
+  font-size: calc(8px * var(--hvir-interface-scale));
 }
 
-.workspace-change-count {
-  padding: 1px 4px;
-  border: 1px solid #594c32;
-  border-radius: 3px;
-  background: #211d16;
-  color: #d6b16e;
-  font-size: 9px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-}
-
-.workspace-dismiss {
+.workspace-dismiss,
+.workspace-close {
   width: 23px;
   padding: 0;
   border: 0;
@@ -350,9 +369,15 @@
   color: #a7adb7;
 }
 
-.workspace-dismiss:hover {
+.workspace-dismiss:hover,
+.workspace-close:hover:not(:disabled) {
   background: #563238;
   color: #f1c2c6;
+}
+
+.workspace-close:disabled {
+  cursor: default;
+  opacity: 0.38;
 }
 
 .workspaces-actions {
@@ -368,17 +393,18 @@
   overflow: hidden;
   padding: 0 6px;
   color: #d76d76;
-  font-size: 9px;
+  font-size: calc(9px * var(--hvir-interface-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .workspaces-prune,
+.workspaces-catalog,
 .workspaces-refresh {
   height: 24px;
   padding: 0 8px;
   border-radius: 3px;
-  font-size: 9px;
+  font-size: calc(9px * var(--hvir-interface-scale));
 }
 
 .workspaces-prune {
@@ -398,7 +424,57 @@
   border-radius: 8px;
   background: #2a2114;
   color: #efbd67;
-  font-size: 8px;
+  font-size: calc(8px * var(--hvir-interface-scale));
   font-weight: 750;
   font-variant-numeric: tabular-nums;
+}
+.close-project-dialog code,
+.close-workspace-dialog code {
+  overflow-wrap: anywhere;
+  padding: 9px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--surface-1);
+  color: var(--text);
+  font-size: calc(10px * var(--hvir-interface-scale));
+}
+
+.worktree-prune-list {
+  max-height: min(280px, 42vh);
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--surface-1);
+}
+
+.worktree-prune-list > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.worktree-prune-list > div:last-child {
+  border-bottom: 0;
+}
+
+.worktree-prune-list code,
+.worktree-prune-list small {
+  overflow-wrap: anywhere;
+}
+
+.worktree-prune-list code {
+  color: var(--text);
+  font-size: calc(10px * var(--hvir-interface-scale));
+}
+
+.worktree-prune-list small {
+  color: var(--text-muted);
+  font-size: calc(9px * var(--hvir-interface-scale));
+}
+
+.project-dialog .worktree-prune-warning {
+  color: var(--warning-text);
 }

@@ -10,7 +10,6 @@ import {
   type TerminalIdentityStatus,
 } from '../../../shared'
 import type { TerminalAttention } from './terminal-attention'
-import { profileRiskAcknowledged } from './terminal-profile-recovery'
 
 export type TerminalSplitPane = 'primary' | 'secondary'
 export type TerminalStartMode = 'interactive' | 'bulk'
@@ -29,12 +28,16 @@ export interface TerminalAttachRequest {
   readonly key?: string
 }
 
+export interface TerminalForkRequest {
+  readonly sourceSessionId: string
+  readonly parentHarnessSessionId: string
+}
+
 export interface TerminalSession {
   readonly id: string
   readonly providerId: HarnessProviderId
   readonly profileId: HarnessProfileId
   readonly launchRevision: number
-  readonly riskAcknowledged: boolean
   readonly capabilities: HarnessProviderCapabilities
   readonly fallbackTitle: string
   readonly title: string
@@ -43,6 +46,12 @@ export interface TerminalSession {
   readonly telemetry?: HarnessTelemetry
   readonly harnessSessionId?: string
   readonly identityStatus?: TerminalIdentityStatus
+  /** Sticky main-published fact; the registered provider identity is never relocated. */
+  readonly identityDiverged?: true
+  /** Present only while this hidden sibling is completing an exact fork launch. */
+  readonly forkRequest?: TerminalForkRequest
+  /** Prevents a second concurrent fork gesture from the same source. */
+  readonly forkPending?: true
   readonly resumeOnStart: boolean
   /** Command auto-typed into the shell on first launch (worker-attach terminals). */
   readonly initialInput?: string
@@ -69,22 +78,47 @@ export type TerminalWorkspaceAction =
       readonly type: 'sessions-replaced'
       readonly sessions: readonly TerminalSession[]
       readonly activeId?: string
-      readonly activeByPane?: Readonly<
-        Record<TerminalSplitPane, string | undefined>
-      >
+      readonly activeByPane?: Readonly<Record<TerminalSplitPane, string | undefined>>
     }
   | { readonly type: 'session-added'; readonly session: TerminalSession }
+  | {
+      readonly type: 'session-fork-requested'
+      readonly sourceId: string
+      readonly session: TerminalSession
+    }
+  | {
+      readonly type: 'session-fork-succeeded'
+      readonly sourceId: string
+      readonly session: TerminalSession
+    }
+  | {
+      readonly type: 'session-fork-failed'
+      readonly sourceId: string
+      readonly id: string
+    }
   | {
       readonly type: 'session-replaced'
       readonly id: string
       readonly session: TerminalSession
     }
   | { readonly type: 'session-focused'; readonly id: string }
+  | { readonly type: 'session-selected'; readonly id: string }
   | { readonly type: 'session-updated'; readonly session: TerminalSession }
   | { readonly type: 'session-closed'; readonly id: string }
   | { readonly type: 'session-moved'; readonly id: string }
-  | { readonly type: 'dormant-sessions-start-requested' }
   | { readonly type: 'primary-width-changed'; readonly width?: number }
+
+export function terminalWorkspaceActionAffectsSessionsProjection(
+  action: TerminalWorkspaceAction,
+): boolean {
+  return action.type !== 'primary-width-changed'
+}
+
+export function settledTerminalSessions(
+  sessions: readonly TerminalSession[],
+): readonly TerminalSession[] {
+  return sessions.filter((session) => !session.forkRequest)
+}
 
 export const initialTerminalWorkspaceModel: TerminalWorkspaceModel = {
   sessions: [],
@@ -100,12 +134,7 @@ export function terminalWorkspaceReducer(
     case 'reset':
       return { ...initialTerminalWorkspaceModel, primaryWidth: action.primaryWidth }
     case 'sessions-replaced':
-      return replaceSessions(
-        model,
-        action.sessions,
-        action.activeId,
-        action.activeByPane,
-      )
+      return replaceSessions(model, action.sessions, action.activeId, action.activeByPane)
     case 'session-added':
       return {
         ...model,
@@ -117,6 +146,12 @@ export function terminalWorkspaceReducer(
           [action.session.pane]: action.session.id,
         },
       }
+    case 'session-fork-requested':
+      return requestSessionFork(model, action.sourceId, action.session)
+    case 'session-fork-succeeded':
+      return settleSessionFork(model, action.sourceId, action.session)
+    case 'session-fork-failed':
+      return failSessionFork(model, action.sourceId, action.id)
     case 'session-replaced':
       return replaceSession(model, action.id, action.session)
     case 'session-focused': {
@@ -136,6 +171,16 @@ export function terminalWorkspaceReducer(
         activeByPane: { ...model.activeByPane, [session.pane]: session.id },
       }
     }
+    case 'session-selected': {
+      const session = model.sessions.find((candidate) => candidate.id === action.id)
+      if (!session) return model
+      return {
+        ...model,
+        activeId: session.id,
+        activePane: session.pane,
+        activeByPane: { ...model.activeByPane, [session.pane]: session.id },
+      }
+    }
     case 'session-updated': {
       const at = model.sessions.findIndex((session) => session.id === action.session.id)
       if (at < 0 || model.sessions[at] === action.session) return model
@@ -147,15 +192,34 @@ export function terminalWorkspaceReducer(
       return closeSession(model, action.id)
     case 'session-moved':
       return moveSession(model, action.id)
-    case 'dormant-sessions-start-requested':
-      return {
-        ...model,
-        sessions: model.sessions.map((session) =>
-          requestTerminalStart(session, 'bulk'),
-        ),
-      }
     case 'primary-width-changed':
       return { ...model, primaryWidth: action.width }
+  }
+}
+
+export function createTerminalForkSession(
+  id: string,
+  source: TerminalSession,
+): TerminalSession | undefined {
+  if (!source.harnessSessionId || source.identityStatus !== 'identified') return undefined
+  return {
+    ...source,
+    id,
+    title: source.fallbackTitle,
+    status: 'Forking conversation…',
+    attention: undefined,
+    telemetry: undefined,
+    harnessSessionId: undefined,
+    identityStatus: undefined,
+    identityDiverged: undefined,
+    forkRequest: {
+      sourceSessionId: source.id,
+      parentHarnessSessionId: source.harnessSessionId,
+    },
+    forkPending: undefined,
+    resumeOnStart: false,
+    dormant: false,
+    startMode: 'interactive',
   }
 }
 
@@ -165,7 +229,6 @@ export function createTerminalSession(
   provider: HarnessProviderDescriptor,
   cwd: HostPath,
   pane: TerminalSplitPane,
-  riskAcknowledged = false,
   capabilities: HarnessProviderCapabilities = provider.capabilities,
   initialInput?: string,
 ): TerminalSession {
@@ -175,7 +238,6 @@ export function createTerminalSession(
     providerId: provider.id,
     profileId: profile.id,
     launchRevision: profile.launchRevision,
-    riskAcknowledged: profileRiskAcknowledged(profile) || riskAcknowledged,
     capabilities,
     fallbackTitle,
     title: fallbackTitle,
@@ -235,9 +297,7 @@ function replaceSessions(
   model: TerminalWorkspaceModel,
   sessions: readonly TerminalSession[],
   requestedActiveId?: string,
-  requestedActiveByPane?: Readonly<
-    Record<TerminalSplitPane, string | undefined>
-  >,
+  requestedActiveByPane?: Readonly<Record<TerminalSplitPane, string | undefined>>,
 ): TerminalWorkspaceModel {
   const active =
     sessions.find((session) => session.id === requestedActiveId) ?? sessions[0]
@@ -246,8 +306,7 @@ function replaceSessions(
       sessions.find(
         (session) =>
           session.pane === 'primary' &&
-          session.id ===
-            (requestedActiveByPane?.primary ?? model.activeByPane.primary),
+          session.id === (requestedActiveByPane?.primary ?? model.activeByPane.primary),
       )?.id ?? sessions.find((session) => session.pane === 'primary')?.id,
     secondary:
       sessions.find(
@@ -264,6 +323,74 @@ function replaceSessions(
     activeId: active?.id,
     activePane: active?.pane ?? 'primary',
     activeByPane,
+  }
+}
+
+function requestSessionFork(
+  model: TerminalWorkspaceModel,
+  sourceId: string,
+  fork: TerminalSession,
+): TerminalWorkspaceModel {
+  const sourceIndex = model.sessions.findIndex((session) => session.id === sourceId)
+  const source = model.sessions[sourceIndex]
+  if (
+    sourceIndex < 0 ||
+    !source ||
+    source.forkPending ||
+    !fork.forkRequest ||
+    fork.forkRequest.sourceSessionId !== source.id ||
+    fork.pane !== source.pane ||
+    model.sessions.some((session) => session.id === fork.id)
+  ) {
+    return model
+  }
+  const sessions = [...model.sessions]
+  sessions[sourceIndex] = { ...source, forkPending: true }
+  sessions.splice(sourceIndex + 1, 0, fork)
+  return { ...model, sessions }
+}
+
+function settleSessionFork(
+  model: TerminalWorkspaceModel,
+  sourceId: string,
+  fork: TerminalSession,
+): TerminalWorkspaceModel {
+  const forkIndex = model.sessions.findIndex(
+    (session) =>
+      session.id === fork.id && session.forkRequest?.sourceSessionId === sourceId,
+  )
+  const source = model.sessions.find(
+    (session) => session.id === sourceId && session.forkPending,
+  )
+  if (forkIndex < 0 || fork.forkRequest || !source) return model
+  const sessions = model.sessions.map((session, index) =>
+    index === forkIndex
+      ? fork
+      : session.id === sourceId && session.forkPending
+        ? { ...session, forkPending: undefined }
+        : session,
+  )
+  return { ...model, sessions }
+}
+
+function failSessionFork(
+  model: TerminalWorkspaceModel,
+  sourceId: string,
+  id: string,
+): TerminalWorkspaceModel {
+  const fork = model.sessions.find(
+    (session) => session.id === id && session.forkRequest?.sourceSessionId === sourceId,
+  )
+  if (!fork) return model
+  return {
+    ...model,
+    sessions: model.sessions
+      .filter((session) => session.id !== id)
+      .map((session) =>
+        session.id === sourceId && session.forkPending
+          ? { ...session, forkPending: undefined }
+          : session,
+      ),
   }
 }
 
@@ -284,9 +411,7 @@ function closeSession(model: TerminalWorkspaceModel, id: string): TerminalWorksp
   }
   if (active?.dormant) {
     sessions = sessions.map((session) =>
-      session.id === active?.id
-        ? requestTerminalStart(session, 'interactive')
-        : session,
+      session.id === active?.id ? requestTerminalStart(session, 'interactive') : session,
     )
   }
   return {

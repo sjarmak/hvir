@@ -17,6 +17,8 @@ export function handleRenderedLinkClick(
   event.preventDefault()
   if (target.kind === 'file') {
     onOpenPath?.(target.path)
+  } else if (target.kind === 'blocked') {
+    window.alert('Cannot open document link: invalid path or another host')
   } else if (target.kind === 'external') {
     window.open(target.url, '_blank', 'noopener,noreferrer')
   } else if (target.kind === 'anchor') {

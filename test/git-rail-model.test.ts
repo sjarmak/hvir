@@ -51,6 +51,31 @@ describe('Git rail model', () => {
     expect(model.syncBusy).toBeUndefined()
   })
 
+  it('retains settled branch state during a current-context refresh', () => {
+    let model = reduce(initialGitRailModel, { type: 'context-reset', generation: 3 })
+    model = reduce(model, { type: 'branch-requested', generation: 3, requestId: 1 })
+    model = reduce(model, {
+      type: 'branch-loaded',
+      generation: 3,
+      requestId: 1,
+      model: branchModel('feature'),
+    })
+
+    const refreshing = reduce(model, {
+      type: 'branch-requested',
+      generation: 3,
+      requestId: 2,
+    })
+    expect(refreshing.branchModel).toBe(model.branchModel)
+    expect(refreshing.branchError).toBeUndefined()
+
+    const nextContext = reduce(refreshing, {
+      type: 'context-reset',
+      generation: 4,
+    })
+    expect(nextContext.branchModel).toBeUndefined()
+  })
+
   it('deduplicates paged history and ignores an older page completion', () => {
     let model = reduce(initialGitRailModel, { type: 'context-reset', generation: 4 })
     model = reduce(model, {
@@ -89,6 +114,48 @@ describe('Git rail model', () => {
       page: page([commit('b'), commit('c')]),
     })
     expect(model.commits.map(({ hash }) => hash)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('retains settled history during refresh and refresh failure', () => {
+    let model = reduce(initialGitRailModel, { type: 'context-reset', generation: 4 })
+    model = reduce(model, {
+      type: 'history-requested',
+      generation: 4,
+      requestId: 1,
+      append: false,
+    })
+    model = reduce(model, {
+      type: 'history-loaded',
+      generation: 4,
+      requestId: 1,
+      append: false,
+      page: page([commit('settled')], 'next'),
+    })
+
+    model = reduce(model, {
+      type: 'history-requested',
+      generation: 4,
+      requestId: 2,
+      append: false,
+    })
+    expect(model.commits.map(({ hash }) => hash)).toEqual(['settled'])
+    expect(model.historyCursor).toBe('next')
+    expect(model.historyInitialLoading).toBe(false)
+
+    model = reduce(model, {
+      type: 'history-failed',
+      generation: 4,
+      requestId: 2,
+      append: false,
+      error: 'refresh failed',
+    })
+    expect(model.commits.map(({ hash }) => hash)).toEqual(['settled'])
+    expect(model.historyCursor).toBe('next')
+    expect(model.historyError).toBe('refresh failed')
+
+    model = reduce(model, { type: 'context-reset', generation: 5 })
+    expect(model.commits).toEqual([])
+    expect(model.historyCursor).toBeUndefined()
   })
 
   it('makes mutation failure retryable while blocking failed automatic fetches', () => {
@@ -142,7 +209,7 @@ describe('Git rail model', () => {
 
     const model: GitRailModel = {
       ...initialGitRailModel,
-      changes: changes(),
+      changes: changes([working]),
       branchModel: branchModel('feature', 0, 2),
     }
     const sync = gitRailSyncState({
@@ -151,7 +218,15 @@ describe('Git rail model', () => {
       hasDirtyViewerTabs: false,
     })
     expect(sync.upstreamSummary).toContain('↓2 incoming')
+    expect(sync.branchBlockReason).toBeUndefined()
     expect(sync.pullBlockReason).toBeUndefined()
+    const unsaved = gitRailSyncState({
+      model,
+      connectionState: 'connected',
+      hasDirtyViewerTabs: true,
+    })
+    expect(unsaved.branchBlockReason).toContain('unsaved viewer tabs')
+    expect(unsaved.pullBlockReason).toContain('unsaved viewer tabs')
     expect(
       gitAutoFetchDelay({
         hidden: false,

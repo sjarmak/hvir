@@ -1,14 +1,21 @@
-import { useEffect, useRef, useState, type ReactElement, type RefObject } from 'react'
+import { ExternalDocumentWorkspace } from './external-document-context'
+import {
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactElement,
+  type RefObject,
+} from 'react'
 
 import {
   HTML_SANDBOX,
-  resolveRenderedLink,
   renderedFileType,
-  unwrapOperation,
   type CreateHtmlPreviewResponse,
   type HostPath,
 } from '../../../shared'
 import { renderMarkdown, resetMarkdownRenderer } from './markdown-client'
+import { DomFindTarget } from './dom-find-target'
 import { handleRenderedLinkClick } from './rendered-link-handler'
 import type {
   JsonNodeDescriptor,
@@ -18,9 +25,15 @@ import type {
 import { useAppTheme } from '../theme'
 import type { CsvTableData } from './csv-parser'
 import type { CsvWorkerResponse } from './csv-protocol'
-import type { ViewerDocumentPosition } from './tab-state'
+import type { ViewerDocumentPosition, ViewerDocumentRefresh } from './tab-state'
+import type { RegisterViewerFindTarget } from './viewer-find'
 import { captureRenderedPosition, restoreRenderedPosition } from './rendered-position'
 import { documentLineCount, type ViewerPositionCapture } from './viewer-position'
+import { RepositoryImageView } from './RepositoryImageView'
+import { MarkdownRepositoryImages } from './markdown-repository-images'
+import { bindRenderedDocumentReview } from '../document-review/document-review-rendered'
+import { useDocumentReviewInlineHostRegistration } from '../document-review/document-review-inline'
+import type { DocumentReviewDocumentProjection } from '../document-review/use-document-review-interaction'
 
 let jsonWorker: Worker | undefined
 let jsonRequestId = 0
@@ -60,7 +73,10 @@ interface RenderedViewProps {
   readonly onPosition: (position: ViewerDocumentPosition) => void
   readonly positionCapture: ViewerPositionCapture
   readonly onOpenPath: (path: HostPath) => void
-  readonly refreshVersion: number
+  readonly refresh?: ViewerDocumentRefresh
+  readonly onDependencies: (paths: readonly HostPath[]) => void
+  readonly registerFindTarget: RegisterViewerFindTarget
+  readonly documentReview?: DocumentReviewDocumentProjection
 }
 
 export function RenderedView({
@@ -70,13 +86,16 @@ export function RenderedView({
   onPosition,
   positionCapture,
   onOpenPath,
-  refreshVersion,
+  refresh,
+  onDependencies,
+  registerFindTarget,
+  documentReview,
 }: RenderedViewProps): ReactElement {
   const renderGeneration = useDevRendererGeneration()
   const theme = useAppTheme()
   const type = renderedFileType(path)
   if (type === 'image') {
-    return <RepositoryImageView path={path} refreshVersion={refreshVersion} />
+    return <RepositoryImageView path={path} refreshVersion={refresh?.version ?? 0} />
   }
   if (type === 'csv') {
     return (
@@ -86,6 +105,7 @@ export function RenderedView({
         onPosition={onPosition}
         positionCapture={positionCapture}
         renderGeneration={renderGeneration}
+        registerFindTarget={registerFindTarget}
       />
     )
   }
@@ -103,6 +123,7 @@ export function RenderedView({
         position={position}
         onPosition={onPosition}
         positionCapture={positionCapture}
+        registerFindTarget={registerFindTarget}
       />
     )
   }
@@ -112,6 +133,7 @@ export function RenderedView({
         content={content}
         renderGeneration={renderGeneration}
         theme={theme}
+        registerFindTarget={registerFindTarget}
       />
     )
   }
@@ -125,79 +147,15 @@ export function RenderedView({
         positionCapture={positionCapture}
         onOpenPath={onOpenPath}
         renderGeneration={renderGeneration}
-        refreshVersion={refreshVersion}
+        refresh={refresh}
+        onDependencies={onDependencies}
         theme={theme}
+        registerFindTarget={registerFindTarget}
+        documentReview={documentReview}
       />
     )
   }
   return <div className="viewer-empty">No rendered view for this file type</div>
-}
-
-function RepositoryImageView({
-  path,
-  refreshVersion,
-}: {
-  readonly path: HostPath
-  readonly refreshVersion: number
-}): ReactElement {
-  const [image, setImage] = useState<{
-    readonly url: string
-    readonly size: number
-    readonly mimeType: string
-  }>()
-  const [dimensions, setDimensions] = useState<string>()
-  const [error, setError] = useState<string>()
-
-  useEffect(() => {
-    let cancelled = false
-    let objectUrl: string | undefined
-    setImage(undefined)
-    setDimensions(undefined)
-    setError(undefined)
-    void window.hvir.invoke('fs:read-asset', { path }).then(
-      (result) => {
-        try {
-          const asset = unwrapOperation(result)
-          objectUrl = URL.createObjectURL(
-            new Blob([new Uint8Array(asset.data)], { type: asset.mimeType }),
-          )
-          if (cancelled) URL.revokeObjectURL(objectUrl)
-          else setImage({ url: objectUrl, size: asset.size, mimeType: asset.mimeType })
-        } catch (reason) {
-          if (!cancelled)
-            setError(reason instanceof Error ? reason.message : String(reason))
-        }
-      },
-      (reason: unknown) => {
-        if (!cancelled)
-          setError(reason instanceof Error ? reason.message : String(reason))
-      },
-    )
-    return () => {
-      cancelled = true
-      if (objectUrl) URL.revokeObjectURL(objectUrl)
-    }
-  }, [path, refreshVersion])
-
-  if (error) return <div className="viewer-empty error">Image unavailable: {error}</div>
-  if (!image) return <div className="viewer-empty">Loading image…</div>
-  return (
-    <figure className="rendered-scroll image-view">
-      <img
-        src={image.url}
-        alt={path.path.split('/').at(-1) ?? 'Repository image'}
-        onLoad={(event) => {
-          const element = event.currentTarget
-          setDimensions(`${element.naturalWidth} × ${element.naturalHeight}`)
-        }}
-      />
-      <figcaption>
-        <span>{dimensions ?? 'Image'}</span>
-        <span>{image.mimeType}</span>
-        <span>{formatAssetBytes(image.size)}</span>
-      </figcaption>
-    </figure>
-  )
 }
 
 function CsvView({
@@ -206,12 +164,14 @@ function CsvView({
   onPosition,
   positionCapture,
   renderGeneration,
+  registerFindTarget,
 }: {
   readonly content: string
   readonly position: ViewerDocumentPosition
   readonly onPosition: (position: ViewerDocumentPosition) => void
   readonly positionCapture: ViewerPositionCapture
   readonly renderGeneration: number
+  readonly registerFindTarget: RegisterViewerFindTarget
 }): ReactElement {
   const container = useRef<HTMLDivElement>(null)
   const [table, setTable] = useState<CsvTableData>()
@@ -236,6 +196,7 @@ function CsvView({
   }, [content, renderGeneration])
 
   useRenderedPosition(container, content, position, onPosition, positionCapture, table)
+  useRenderedFindTarget(container, table, registerFindTarget)
 
   if (error) return <div className="viewer-empty error">Invalid CSV: {error}</div>
   if (!table) return <div className="viewer-empty">Parsing CSV…</div>
@@ -294,6 +255,7 @@ function HtmlPreview({
   readonly content: string
   readonly renderGeneration: number
 }): ReactElement {
+  const workspaceRoot = useContext(ExternalDocumentWorkspace)
   const [preview, setPreview] = useState<CreateHtmlPreviewResponse>()
   const [error, setError] = useState<string>()
 
@@ -302,7 +264,7 @@ function HtmlPreview({
     let previewId: string | undefined
     setPreview(undefined)
     setError(undefined)
-    void window.hvir.invoke('html-preview:create', { path, content }).then(
+    void window.hvir.invoke('html-preview:create', { path, content, workspaceRoot }).then(
       (created) => {
         previewId = created.id
         if (cancelled) {
@@ -320,7 +282,7 @@ function HtmlPreview({
       cancelled = true
       if (previewId) window.hvir.send('html-preview:release', { id: previewId })
     }
-  }, [content, path, renderGeneration])
+  }, [content, path, renderGeneration, workspaceRoot])
 
   if (error) return <div className="viewer-empty error">{error}</div>
   if (!preview) return <div className="viewer-empty">Preparing HTML preview…</div>
@@ -343,15 +305,24 @@ function MarkdownView({
   positionCapture,
   onOpenPath,
   renderGeneration,
-  refreshVersion,
+  refresh,
+  onDependencies,
   theme,
+  registerFindTarget,
+  documentReview,
 }: RenderedViewProps & {
   readonly renderGeneration: number
   readonly theme: 'dark' | 'light'
 }): ReactElement {
   const container = useRef<HTMLDivElement>(null)
+  const registerReviewInlineHost = useDocumentReviewInlineHostRegistration()
+  const workspaceRoot = useContext(ExternalDocumentWorkspace)
+  const repositoryImages = useRef<MarkdownRepositoryImages>(undefined)
+  const refreshRef = useRef(refresh)
+  const appliedRefreshVersion = useRef(refresh?.version ?? 0)
   const [html, setHtml] = useState('')
   const [error, setError] = useState<string>()
+  refreshRef.current = refresh
 
   useEffect(() => {
     let cancelled = false
@@ -377,36 +348,60 @@ function MarkdownView({
   useEffect(() => {
     const root = container.current
     if (!root || !html) return
-    root.innerHTML = html
-  }, [html, refreshVersion])
-
-  useRenderedPosition(
-    container,
-    content,
-    position,
-    onPosition,
-    positionCapture,
-    html ? `${refreshVersion}:${html}` : undefined,
-  )
-
-  useEffect(() => {
-    const root = container.current
-    if (!root || !html) return
+    appliedRefreshVersion.current = refreshRef.current?.version ?? 0
     let cancelled = false
-    const objectUrls: string[] = []
-    for (const image of root.querySelectorAll<HTMLImageElement>('img[src]')) {
-      void hydrateRepositoryImage(path, image, () => cancelled).then((objectUrl) => {
-        if (!objectUrl) return
-        if (cancelled) URL.revokeObjectURL(objectUrl)
-        else objectUrls.push(objectUrl)
-      })
-    }
+    const images = new MarkdownRepositoryImages(path, workspaceRoot)
+    images.mount(root, html)
+    repositoryImages.current = images
+    onDependencies(images.hydrate(root))
     void renderMermaidNodes(root, () => cancelled, theme)
     return () => {
       cancelled = true
-      for (const objectUrl of objectUrls) URL.revokeObjectURL(objectUrl)
+      onDependencies([])
+      images.dispose()
+      if (repositoryImages.current === images) repositoryImages.current = undefined
     }
-  }, [html, path, refreshVersion, theme])
+  }, [html, onDependencies, path, theme, workspaceRoot])
+
+  useEffect(() => {
+    if (!refresh || refresh.version === appliedRefreshVersion.current) return
+    const root = container.current
+    if (!root || !html) return
+    for (const change of refresh.changes) {
+      if (change.version > appliedRefreshVersion.current) {
+        repositoryImages.current?.refresh(root, change.path)
+      }
+    }
+    appliedRefreshVersion.current = refresh.version
+  }, [html, path, refresh])
+
+  useEffect(() => {
+    const root = container.current
+    if (!root || !html || !documentReview) return
+    return bindRenderedDocumentReview(root, {
+      active: documentReview.active,
+      dirty: documentReview.dirty,
+      comments: documentReview.comments,
+      inlineRange: documentReview.inlineRange,
+      onInlineHost: registerReviewInlineHost,
+      onCapture: documentReview.onCapture,
+      onOpenComment: documentReview.onOpenComment,
+      onExit: documentReview.onExit,
+    })
+    // Rebind whenever the image/markup effect above replaces the document nodes,
+    // including a new canonical path object from a workspace reload.
+  }, [
+    documentReview,
+    html,
+    onDependencies,
+    path,
+    registerReviewInlineHost,
+    theme,
+    workspaceRoot,
+  ])
+
+  useRenderedPosition(container, content, position, onPosition, positionCapture, html)
+  useRenderedFindTarget(container, html || undefined, registerFindTarget)
 
   if (error) return <div className="viewer-empty error">{error}</div>
   if (!html) return <div className="viewer-empty">Rendering markdown…</div>
@@ -419,49 +414,16 @@ function MarkdownView({
   )
 }
 
-async function hydrateRepositoryImage(
-  documentPath: HostPath,
-  image: HTMLImageElement,
-  cancelled: () => boolean,
-): Promise<string | undefined> {
-  const source = image.getAttribute('src')
-  if (!source) return undefined
-  const target = resolveRenderedLink(documentPath, source)
-  if (target.kind !== 'file') return undefined
-  image.removeAttribute('src')
-  image.classList.add('markdown-image-loading')
-  try {
-    const asset = unwrapOperation(
-      await window.hvir.invoke('fs:read-asset', { path: target.path }),
-    )
-    if (cancelled()) return undefined
-    const objectUrl = URL.createObjectURL(
-      new Blob([new Uint8Array(asset.data)], { type: asset.mimeType }),
-    )
-    image.src = objectUrl
-    image.classList.remove('markdown-image-loading')
-    return objectUrl
-  } catch (reason) {
-    if (cancelled()) return undefined
-    const unavailable = document.createElement('span')
-    unavailable.className = 'markdown-image-unavailable'
-    unavailable.textContent = image.alt
-      ? `[Image unavailable: ${image.alt}]`
-      : '[Repository image unavailable]'
-    unavailable.title = reason instanceof Error ? reason.message : String(reason)
-    image.replaceWith(unavailable)
-    return undefined
-  }
-}
-
 function StandaloneMermaid({
   content,
   renderGeneration,
   theme,
+  registerFindTarget,
 }: {
   readonly content: string
   readonly renderGeneration: number
   readonly theme: 'dark' | 'light'
+  readonly registerFindTarget: RegisterViewerFindTarget
 }): ReactElement {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -482,6 +444,11 @@ function StandaloneMermaid({
       cancelled = true
     }
   }, [content, renderGeneration, theme])
+  useRenderedFindTarget(
+    ref,
+    `${content}:${renderGeneration}:${theme}`,
+    registerFindTarget,
+  )
   return <div className="rendered-scroll mermaid-standalone" ref={ref} />
 }
 
@@ -529,6 +496,7 @@ function StructuredDataView({
   position,
   onPosition,
   positionCapture,
+  registerFindTarget,
 }: {
   readonly content: string
   readonly format: 'json' | 'yaml'
@@ -536,6 +504,7 @@ function StructuredDataView({
   readonly position: ViewerDocumentPosition
   readonly onPosition: (position: ViewerDocumentPosition) => void
   readonly positionCapture: ViewerPositionCapture
+  readonly registerFindTarget: RegisterViewerFindTarget
 }): ReactElement {
   const container = useRef<HTMLDivElement>(null)
   const [document, setDocument] = useState<{
@@ -567,6 +536,7 @@ function StructuredDataView({
   }, [content, format, renderGeneration])
 
   useRenderedPosition(container, content, position, onPosition, positionCapture, document)
+  useRenderedFindTarget(container, document, registerFindTarget)
 
   if (error)
     return (
@@ -612,6 +582,23 @@ function useRenderedPosition(
   }, [container, lines, positionCapture, readyKey])
 }
 
+function useRenderedFindTarget(
+  container: RefObject<HTMLElement | null>,
+  readyKey: unknown,
+  registerFindTarget: RegisterViewerFindTarget,
+): void {
+  useEffect(() => {
+    const root = container.current
+    if (!root || readyKey === undefined) return
+    const target = new DomFindTarget(root)
+    const unregister = registerFindTarget(target)
+    return () => {
+      unregister()
+      target.dispose()
+    }
+  }, [container, readyKey, registerFindTarget])
+}
+
 /** Re-render active previews when their implementation changes during Vite dev HMR. */
 function useDevRendererGeneration(): number {
   const [generation, setGeneration] = useState(0)
@@ -626,7 +613,7 @@ function useDevRendererGeneration(): number {
       setGeneration((current) => current + 1)
     }
     hot.on('vite:afterUpdate', refresh)
-    return () => hot.off('vite:afterUpdate', refresh)
+    return () => hot.off?.('vite:afterUpdate', refresh)
   }, [])
   return generation
 }
@@ -764,10 +751,4 @@ function requestCsv(source: string): Promise<CsvTableData> {
     worker.addEventListener('error', onError)
     worker.postMessage({ id, source })
   })
-}
-
-function formatAssetBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
 }

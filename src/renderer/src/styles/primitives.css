@@ -28,6 +28,7 @@
 
 .pane-resizer:hover::after,
 .pane-resizer:focus-visible::after,
+.pane-resizer:has(:focus-visible)::after,
 .pane-resizer.dragging::after {
   opacity: 1;
 }
@@ -94,6 +95,11 @@
   cursor: row-resize;
 }
 
+/* Keep a deliberate full-width horizon only while both primary surfaces are visible. */
+.workbench:not(.terminal-focused):not(.terminal-collapsed) > .terminal-resizer {
+  background: var(--border-strong);
+}
+
 .terminal-resizer::before {
   inset: -3px 0;
   background:
@@ -130,7 +136,17 @@
   z-index: 3;
   top: 50%;
   left: 50%;
+  opacity: 0;
   transform: translate(-50%, -50%);
+  transition: opacity 100ms ease;
+}
+
+.pane-resizer:hover > :is(.terminal-mode-controls, .tree-collapse-toggle),
+.pane-resizer:focus-visible > :is(.terminal-mode-controls, .tree-collapse-toggle),
+.pane-resizer:has(:focus-visible)
+  > :is(.terminal-mode-controls, .tree-collapse-toggle),
+.pane-resizer.dragging > :is(.terminal-mode-controls, .tree-collapse-toggle) {
+  opacity: 1;
 }
 
 .terminal-mode-controls {
@@ -238,7 +254,7 @@ body.pane-resizing-row * {
   border-bottom: 1px solid #282d36;
   background: #181b21;
   color: #d9dce2;
-  font-size: 12px;
+  font-size: calc(12px * var(--hvir-interface-scale));
   font-weight: 600;
   letter-spacing: 0.01em;
   white-space: nowrap;
@@ -248,7 +264,7 @@ body.pane-resizing-row * {
   min-width: 0;
   overflow: hidden;
   color: #7f8898;
-  font-size: 11px;
+  font-size: calc(11px * var(--hvir-interface-scale));
   font-weight: 400;
   text-overflow: ellipsis;
 }

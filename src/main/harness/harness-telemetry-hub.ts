@@ -13,7 +13,14 @@ export const MAX_TELEMETRY_SUBSCRIPTIONS = 128
 export const MAX_TELEMETRY_RESOURCE_BYTES = 64 * 1024
 const MAX_TELEMETRY_FRAME_LENGTH = 256 * 1024
 const RESTART_DELAY_MS = 250
+const FOLLOWER_RESTART_DELAY_MS = 250
+const MAX_FOLLOWER_RESTARTS = 3
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** A provider accepted a healthy record that does not itself publish telemetry. */
+export const HEALTHY_HARNESS_TELEMETRY_RECORD = Symbol(
+  'healthy-harness-telemetry-record',
+)
 
 export interface HarnessTelemetrySubscription {
   readonly subscriptionId: string
@@ -21,10 +28,23 @@ export interface HarnessTelemetrySubscription {
   readonly resource: string
   readonly signal: AbortSignal
   readonly emit: (telemetry: HarnessTelemetry | undefined) => void
+  /** Usage consumers correlate out of band and must not publish provider session ids. */
+  readonly exposeSessionIdentity?: boolean
+  /** Provider-owned stateful parsing for this exact demanded session. */
+  readonly parse?: (
+    record: string,
+  ) => HarnessTelemetry | typeof HEALTHY_HARNESS_TELEMETRY_RECORD | null
+  /** Provider-owned lifecycle mapping that may retain a stale usage value. */
+  readonly followerHealth?: (
+    health: HarnessTelemetryFollowerHealth,
+  ) => HarnessTelemetry | undefined
 }
 
 interface LiveSubscription extends HarnessTelemetrySubscription {
   admittedGeneration?: number
+  followerRestartAttempts: number
+  followerRestartTimer?: ReturnType<typeof setTimeout>
+  suspended: boolean
 }
 
 export interface HarnessTelemetryHubOptions {
@@ -104,7 +124,11 @@ export class HarnessTelemetryHub {
       )
     }
     this.stopped = false
-    const live: LiveSubscription = { ...subscription }
+    const live: LiveSubscription = {
+      ...subscription,
+      followerRestartAttempts: 0,
+      suspended: false,
+    }
     this.subscriptions.set(subscription.subscriptionId, live)
     const abort = (): void => dispose()
     let disposed = false
@@ -113,6 +137,7 @@ export class HarnessTelemetryHub {
       disposed = true
       subscription.signal.removeEventListener('abort', abort)
       if (this.subscriptions.get(subscription.subscriptionId) !== live) return
+      if (live.followerRestartTimer) clearTimeout(live.followerRestartTimer)
       this.subscriptions.delete(subscription.subscriptionId)
       if (this.subscriptions.size === 0) {
         this.stop()
@@ -149,7 +174,13 @@ export class HarnessTelemetryHub {
     this.epoch = epoch
     this.stream = stream
     for (const subscription of this.subscriptions.values()) {
+      if (subscription.followerRestartTimer) {
+        clearTimeout(subscription.followerRestartTimer)
+        subscription.followerRestartTimer = undefined
+      }
       subscription.admittedGeneration = undefined
+      subscription.followerRestartAttempts = 0
+      subscription.suspended = false
     }
     const lines = new BoundedLineReader(
       (line) => this.acceptFrame(stream, line),
@@ -190,7 +221,13 @@ export class HarnessTelemetryHub {
     this.flushing = true
     this.reconcileRequested = false
     const generation = ++this.generation
-    const subscriptions = [...this.subscriptions.values()]
+    const liveSubscriptions = [...this.subscriptions.values()]
+    const subscriptions = liveSubscriptions.filter(
+      (subscription) => !subscription.suspended,
+    )
+    const excludedSubscriptions = liveSubscriptions.filter(
+      (subscription) => subscription.suspended,
+    )
     // Admit before writing: a newly-created remote follower can replay its
     // bounded history as soon as its S record arrives.
     for (const subscription of subscriptions) {
@@ -203,6 +240,9 @@ export class HarnessTelemetryHub {
         await stream.write(
           `S\t${generation}\t${subscription.subscriptionId}\t${subscription.sessionId}\t${resource || '-'}\n`,
         )
+      }
+      for (const subscription of excludedSubscriptions) {
+        this.scheduleFollowerRestart(subscription)
       }
     } catch (error) {
       this.failStream(stream, asError(error))
@@ -231,25 +271,66 @@ export class HarnessTelemetryHub {
       return
     }
     if (frame.kind === 'health') {
-      const telemetry = this.options.followerHealth?.(
-        subscription.sessionId,
-        frame.health,
-      )
+      const telemetry = this.mapFollowerHealth(subscription, frame.health)
       if (telemetry) subscription.emit(telemetry)
+      if (
+        frame.health.status === 'unavailable' &&
+        frame.health.reason === 'follower-exited'
+      ) {
+        this.recoverFollower(subscription)
+      }
       return
     }
-    const telemetry = this.options.parse(frame.record)
-    if (!telemetry) return
-    subscription.emit({
-      ...telemetry,
-      facets: {
-        ...telemetry.facets,
-        session: {
-          status: 'available',
-          value: { id: subscription.sessionId, state: 'active' },
-        },
-      },
-    })
+    const parsed = (subscription.parse ?? this.options.parse)(frame.record)
+    if (!parsed) return
+    subscription.followerRestartAttempts = 0
+    if (parsed === HEALTHY_HARNESS_TELEMETRY_RECORD) return
+    const telemetry = parsed
+    subscription.emit(
+      subscription.exposeSessionIdentity === false
+        ? telemetry
+        : {
+            ...telemetry,
+            facets: {
+              ...telemetry.facets,
+              session: {
+                status: 'available',
+                value: { id: subscription.sessionId, state: 'active' },
+              },
+            },
+          },
+    )
+  }
+
+  private recoverFollower(subscription: LiveSubscription): void {
+    if (subscription.suspended || subscription.followerRestartTimer) return
+    subscription.suspended = true
+    subscription.admittedGeneration = undefined
+    this.scheduleReconcile(0)
+  }
+
+  private scheduleFollowerRestart(subscription: LiveSubscription): void {
+    if (
+      this.stopped ||
+      this.subscriptions.get(subscription.subscriptionId) !== subscription ||
+      !subscription.suspended ||
+      subscription.followerRestartTimer ||
+      subscription.followerRestartAttempts >= MAX_FOLLOWER_RESTARTS
+    ) {
+      return
+    }
+    subscription.followerRestartAttempts += 1
+    subscription.followerRestartTimer = setTimeout(() => {
+      subscription.followerRestartTimer = undefined
+      if (
+        this.stopped ||
+        this.subscriptions.get(subscription.subscriptionId) !== subscription
+      ) {
+        return
+      }
+      subscription.suspended = false
+      this.scheduleReconcile(0)
+    }, FOLLOWER_RESTART_DELAY_MS * subscription.followerRestartAttempts)
   }
 
   private failStream(stream: ExecStreamHandle, error: Error): void {
@@ -259,12 +340,11 @@ export class HarnessTelemetryHub {
     stream.dispose()
     if (this.subscriptions.size === 0 || this.stopped) return
     for (const subscription of this.subscriptions.values()) {
-      subscription.emit(
-        this.options.followerHealth?.(subscription.sessionId, {
-          status: 'unavailable',
-          reason: 'helper-exited',
-        }),
-      )
+      const telemetry = this.mapFollowerHealth(subscription, {
+        status: 'unavailable',
+        reason: 'helper-exited',
+      })
+      if (telemetry || !subscription.followerHealth) subscription.emit(telemetry)
     }
     console.warn(`[harness:${this.options.providerId}] telemetry hub unavailable`, error)
     if (!this.restartTimer) {
@@ -273,6 +353,15 @@ export class HarnessTelemetryHub {
         this.ensureStream()
       }, RESTART_DELAY_MS)
     }
+  }
+
+  private mapFollowerHealth(
+    subscription: LiveSubscription,
+    health: HarnessTelemetryFollowerHealth,
+  ): HarnessTelemetry | undefined {
+    return subscription.followerHealth
+      ? subscription.followerHealth(health)
+      : this.options.followerHealth?.(subscription.sessionId, health)
   }
 
   private stop(): void {

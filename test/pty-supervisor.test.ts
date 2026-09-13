@@ -4,118 +4,64 @@ import type { Client } from 'ssh2'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  claudeCodeProvider,
   plainShellProvider,
-  type HarnessProvider,
-  type HarnessTelemetryContext,
 } from '../src/main/harness/harness-provider'
-import type {
-  ProjectHost,
-  PtyExit,
-  PtyProcess,
-  SpawnPtyOptions,
+import {
+  PtyWriteIndeterminateError,
+  type PtyExit,
+  type PtyProcess,
 } from '../src/main/project-host'
 import {
   PtySupervisor,
-  type ManagedPty,
   type PtySupervisorDiagnostic,
 } from '../src/main/pty/pty-supervisor'
-import { SshHost } from '../src/main/project-host'
+import { LOCAL_HOST_ID, asHostId, hostPath, localPath } from '../src/shared'
 import {
-  LOCAL_HOST_ID,
-  asHostId,
-  asHarnessProviderId,
-  contextStatusHarnessSnapshot,
-  hostPath,
-  localPath,
-} from '../src/shared'
+  createPtySupervisorFixture,
+  PTY_FIXTURE_OWNER_ID,
+  TestPtyProcess,
+} from './fixtures/pty-supervisor-fixture'
+import { createTestSshHost } from './ssh-host-test-fixture'
 
-const OWNER_ID = 17
-
-class FakePty implements PtyProcess {
-  readonly pid = 4242
-  readonly dataListeners = new Set<(data: string) => void>()
-  readonly exitListeners = new Set<(exit: PtyExit) => void>()
-  readonly write = vi.fn<(data: string) => void>()
-  readonly resize = vi.fn<(cols: number, rows: number) => void>()
-  readonly kill = vi.fn<(signal?: string) => void>()
-
-  onData(cb: (data: string) => void): () => void {
-    this.dataListeners.add(cb)
-    return () => this.dataListeners.delete(cb)
-  }
-
-  onExit(cb: (exit: PtyExit) => void): () => void {
-    this.exitListeners.add(cb)
-    return () => this.exitListeners.delete(cb)
-  }
-
-  emitData(data: string): void {
-    for (const cb of this.dataListeners) cb(data)
-  }
-
-  emitExit(exit: PtyExit): void {
-    for (const cb of [...this.exitListeners]) cb(exit)
-  }
-}
-
-function fixture(onDiagnostic?: (event: PtySupervisorDiagnostic) => void): {
-  supervisor: PtySupervisor
-  pty: FakePty
-  host: ProjectHost
-  provider: HarnessProvider
-  spawnPty: ReturnType<typeof vi.fn<(opts: SpawnPtyOptions) => Promise<PtyProcess>>>
-  defaultShell: ReturnType<typeof vi.fn<() => Promise<string>>>
-} {
-  const pty = new FakePty()
-  const spawnPty = vi.fn((_opts: SpawnPtyOptions): Promise<PtyProcess> =>
-    Promise.resolve(pty),
-  )
-  const defaultShell = vi.fn(() => Promise.resolve('/remote/bin/bash'))
-  const host = {
-    hostId: LOCAL_HOST_ID,
-    defaultShell,
-    spawnPty,
-  } as unknown as ProjectHost
-  const provider: HarnessProvider = {
-    manifest: {
-      id: asHarnessProviderId('test'),
-      displayName: 'Test',
-      contextPresentation: 'none',
-    },
-    profile: {
-      version: 1,
-      reservedArguments: [],
-      reservedEnvironmentKeys: [],
-      artifactEnvironmentKeys: [],
-      artifactExecutable: false,
-      artifactPathBindings: [],
-      applyArgs: (_mode, providerArgs, profileArgs) => [...providerArgs, ...profileArgs],
-      classifyRisk: () => 'standard',
-    },
-    supportsResume: true,
-    sessionIdentity: 'preassigned',
-    probe: {
-      parseVersion: () => undefined,
-      effectiveCapabilities: () => ({
-        sessionIdentity: 'preassigned',
-        exactResume: true,
-        contextPresentation: 'none',
-      }),
-    },
-    launch: () => ({ file: 'test-harness', args: ['launch'] }),
-    resume: () => ({ file: 'test-harness', args: ['resume'] }),
-  }
-  return {
-    supervisor: new PtySupervisor({ onDiagnostic }),
-    pty,
-    host,
-    provider,
-    spawnPty,
-    defaultShell,
-  }
-}
+const OWNER_ID = PTY_FIXTURE_OWNER_ID
+const FakePty = TestPtyProcess
+const fixture = createPtySupervisorFixture
 
 describe('PtySupervisor', () => {
+  it('publishes bounded lifecycle observations without subscribing to PTY output', async () => {
+    const { supervisor, pty, spawn } = fixture({ provider: plainShellProvider })
+    const listener = vi.fn()
+    const release = supervisor.observe(listener)
+
+    const info = await spawn({ sessionId: 'observed-shell' })
+    expect(listener).toHaveBeenCalledOnce()
+    expect(supervisor.observationSnapshot()).toEqual([{ info, telemetry: undefined }])
+    expect(pty.dataListeners.size).toBe(1)
+
+    pty.emitData('terminal content must not reach observation')
+    expect(listener).toHaveBeenCalledOnce()
+    pty.emitExit({ exitCode: 0, signal: undefined })
+    expect(listener).toHaveBeenCalledTimes(2)
+    expect(supervisor.observationSnapshot()).toEqual([])
+
+    await release()
+    expect(supervisor.observationSnapshot()).toEqual([])
+  })
+
+  it('publishes one observation when a live PTY lease is explicitly disposed', async () => {
+    const { supervisor, spawn } = fixture({ provider: plainShellProvider })
+    const listener = vi.fn()
+    const release = supervisor.observe(listener)
+
+    const info = await spawn({ sessionId: 'disposed-shell' })
+    supervisor.disposeSession(info.id, info.ownerId, info.ownerGeneration)
+
+    expect(listener).toHaveBeenCalledTimes(2)
+    expect(supervisor.observationSnapshot()).toEqual([])
+    await release()
+  })
+
   it('launches a plain shell resolved by the owning host', async () => {
     const { supervisor, host, spawnPty, defaultShell } = fixture()
     await supervisor.spawn({
@@ -130,7 +76,7 @@ describe('PtySupervisor', () => {
     expect(spawnPty).toHaveBeenCalledWith(
       expect.objectContaining({
         file: '/remote/bin/bash',
-        args: [],
+        args: ['-l'],
         env: {
           TERM: 'xterm-256color',
           COLORTERM: 'truecolor',
@@ -140,7 +86,25 @@ describe('PtySupervisor', () => {
     )
   })
 
-  it('launches harness commands through the interactive shell environment', async () => {
+  it('does not infer review insertion when effective launch capabilities are omitted', async () => {
+    const { supervisor, host } = fixture({ provider: claudeCodeProvider })
+    const info = await supervisor.spawn({
+      host,
+      provider: claudeCodeProvider,
+      cwd: localPath('/tmp/project'),
+      ownerId: OWNER_ID,
+      sessionId: 'no-effective-capabilities',
+    })
+
+    expect(info.capabilities).toMatchObject({
+      sessionIdentity: 'preassigned',
+      exactResume: true,
+      contextPresentation: 'pressure',
+    })
+    expect(info.capabilities).not.toHaveProperty('reviewInsertContractRevision')
+  })
+
+  it('launches harness commands through the login-interactive shell environment', async () => {
     const { supervisor, host, provider, spawnPty } = fixture()
     Object.assign(provider, {
       launch: () => ({
@@ -162,7 +126,7 @@ describe('PtySupervisor', () => {
     expect(spawnPty).toHaveBeenCalledWith(
       expect.objectContaining({
         file: '/remote/bin/bash',
-        args: ['-ic', `exec 'test-harness' 'launch' 'profile'"'"'s command'`],
+        args: ['-lic', `exec 'test-harness' 'launch' 'profile'"'"'s command'`],
         env: {
           TERM: 'xterm-256color',
           COLORTERM: 'truecolor',
@@ -223,26 +187,22 @@ describe('PtySupervisor', () => {
   })
 
   it('does not classify old terminal output as a launch failure', async () => {
-    let now = 1_000
-    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now)
-    const { supervisor, pty, host, provider } = fixture()
+    const ptyFixture = fixture()
+    const { supervisor, pty, host, provider } = ptyFixture
     const onClassifiedLaunchFailure = vi.fn()
-    try {
-      await supervisor.spawn({
-        host,
-        provider,
-        cwd: localPath('/tmp/project'),
-        ownerId: OWNER_ID,
-        sessionId: 'long-running-terminal',
-        onClassifiedLaunchFailure,
-      })
-      pty.emitData('earlier command output: unknown option\r\n')
-      now += 30_001
-      pty.emitExit({ exitCode: 2, signal: undefined })
-      expect(onClassifiedLaunchFailure).not.toHaveBeenCalled()
-    } finally {
-      clock.mockRestore()
-    }
+    ptyFixture.setNow(1_000)
+    await supervisor.spawn({
+      host,
+      provider,
+      cwd: localPath('/tmp/project'),
+      ownerId: OWNER_ID,
+      sessionId: 'long-running-terminal',
+      onClassifiedLaunchFailure,
+    })
+    pty.emitData('earlier command output: unknown option\r\n')
+    ptyFixture.advanceClock(30_001)
+    pty.emitExit({ exitCode: 2, signal: undefined })
+    expect(onClassifiedLaunchFailure).not.toHaveBeenCalled()
   })
 
   it('is the lifecycle and stream boundary for a spawned PTY', async () => {
@@ -285,6 +245,55 @@ describe('PtySupervisor', () => {
     supervisor.resize(info.id, OWNER_ID, 120, 40)
     expect(pty.write).toHaveBeenCalledWith('input')
     expect(pty.resize).toHaveBeenCalledWith(120, 40)
+  })
+
+  it('confirms exactly one complete write at the owned PTY boundary', async () => {
+    const { supervisor, pty, host, provider } = fixture()
+    const info = await supervisor.spawn({
+      host,
+      provider,
+      cwd: localPath('/tmp/project'),
+      ownerId: OWNER_ID,
+      ownerGeneration: 7,
+      sessionId: 'confirmed-write',
+    })
+
+    await supervisor.writeConfirmed(info.id, OWNER_ID, 'exact transport', 7)
+
+    expect(pty.writeConfirmed).toHaveBeenCalledExactlyOnceWith('exact transport')
+    expect(pty.write).not.toHaveBeenCalled()
+  })
+
+  it('rejects failed and exit-raced confirmed writes', async () => {
+    const failed = fixture()
+    const failedInfo = await failed.supervisor.spawn({
+      host: failed.host,
+      provider: failed.provider,
+      cwd: localPath('/tmp/project'),
+      ownerId: OWNER_ID,
+      sessionId: 'failed-confirmed-write',
+    })
+    failed.pty.writeConfirmed.mockRejectedValueOnce(new Error('transport refused'))
+    await expect(
+      failed.supervisor.writeConfirmed(failedInfo.id, OWNER_ID, 'payload'),
+    ).rejects.toThrow(/transport refused/)
+
+    const late = fixture()
+    let finish!: () => void
+    late.pty.writeConfirmed.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finish = resolve)),
+    )
+    const lateInfo = await late.supervisor.spawn({
+      host: late.host,
+      provider: late.provider,
+      cwd: localPath('/tmp/project'),
+      ownerId: OWNER_ID,
+      sessionId: 'late-confirmed-write',
+    })
+    const writing = late.supervisor.writeConfirmed(lateInfo.id, OWNER_ID, 'payload')
+    late.pty.emitExit({ exitCode: 255, signal: undefined })
+    finish()
+    await expect(writing).rejects.toBeInstanceOf(PtyWriteIndeterminateError)
   })
 
   it('replays bounded initial output in order on the first renderer attach', async () => {
@@ -688,7 +697,7 @@ describe('PtySupervisor', () => {
       end: vi.fn(() => primaryClient.emit('close')),
       destroy: vi.fn(() => primaryClient.emit('close')),
     })
-    const host = new SshHost({
+    const host = createTestSshHost({
       config: {
         alias: 'remote',
         hostname: 'remote.test',
@@ -754,447 +763,6 @@ describe('PtySupervisor', () => {
     expect(resumed.resumed).toBe(true)
     expect(spawnPty).toHaveBeenLastCalledWith(
       expect.objectContaining({ args: ['resume'] }),
-    )
-  })
-
-  it('publishes a session id discovered after launch', async () => {
-    const { supervisor, host, provider, spawnPty } = fixture()
-    let finishIdentification: ((sessionId: string) => void) | undefined
-    Object.assign(provider, {
-      sessionIdentity: 'discovered',
-      sessionDiscovery: {
-        snapshot: vi.fn(() => Promise.resolve(['before'])),
-        identify: vi.fn(
-          () =>
-            new Promise((resolve) => {
-              finishIdentification = (sessionId) =>
-                resolve({ status: 'identified', sessionId })
-            }),
-        ),
-      },
-    })
-    const onIdentity = vi.fn<(info: ManagedPty) => void>()
-    supervisor.onSessionIdentity(onIdentity)
-
-    const initial = await supervisor.spawn({
-      host,
-      provider,
-      cwd: localPath('/tmp/project'),
-      ownerId: OWNER_ID,
-      sessionId: 'terminal-id',
-    })
-    expect(initial).toMatchObject({
-      id: 'terminal-id',
-      identityStatus: 'discovering',
-      harnessSessionId: undefined,
-    })
-    expect(spawnPty).toHaveBeenCalledOnce()
-
-    finishIdentification?.('codex-session-id')
-    await vi.waitFor(() => expect(onIdentity).toHaveBeenCalledOnce())
-    expect(supervisor.get('terminal-id')).toMatchObject({
-      harnessSessionId: 'codex-session-id',
-      identityStatus: 'identified',
-    })
-  })
-
-  it('re-arms unavailable identity discovery on later terminal input', async () => {
-    const { supervisor, pty, host, provider } = fixture()
-    const snapshot = vi.fn(() => Promise.resolve(['pre-launch']))
-    const identify = vi
-      .fn()
-      .mockResolvedValueOnce({ status: 'unavailable' })
-      .mockResolvedValueOnce({
-        status: 'identified',
-        sessionId: 'codex-after-input',
-      })
-    Object.assign(provider, {
-      sessionIdentity: 'discovered',
-      sessionDiscovery: { snapshot, identify },
-    })
-    const onIdentity = vi.fn<(info: ManagedPty) => void>()
-    supervisor.onSessionIdentity(onIdentity)
-
-    const info = await supervisor.spawn({
-      host,
-      provider,
-      cwd: localPath('/tmp/project'),
-      ownerId: OWNER_ID,
-      sessionId: 'terminal-before-input',
-    })
-    await vi.waitFor(() =>
-      expect(onIdentity).toHaveBeenLastCalledWith(
-        expect.objectContaining({ identityStatus: 'unavailable' }),
-      ),
-    )
-
-    supervisor.write(info.id, OWNER_ID, 'first prompt')
-
-    await vi.waitFor(() =>
-      expect(supervisor.get(info.id)).toMatchObject({
-        harnessSessionId: 'codex-after-input',
-        identityStatus: 'identified',
-      }),
-    )
-    expect(pty.write).toHaveBeenCalledWith('first prompt')
-    expect(snapshot).toHaveBeenCalledOnce()
-    expect(identify).toHaveBeenCalledTimes(2)
-    expect(onIdentity.mock.calls.map(([value]) => value.identityStatus)).toEqual([
-      'unavailable',
-      'discovering',
-      'identified',
-    ])
-  })
-
-  it('does not let an input-triggered identity retry block a later PTY', async () => {
-    const firstPty = new FakePty()
-    const secondPty = new FakePty()
-    const { supervisor, host, provider, spawnPty } = fixture()
-    spawnPty.mockResolvedValueOnce(firstPty).mockResolvedValueOnce(secondPty)
-    let finishRetry: (() => void) | undefined
-    const identify = vi
-      .fn()
-      .mockResolvedValueOnce({ status: 'unavailable' })
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            finishRetry = () => resolve({ status: 'unavailable' })
-          }),
-      )
-      .mockResolvedValueOnce({ status: 'unavailable' })
-    Object.assign(provider, {
-      sessionIdentity: 'discovered',
-      sessionDiscovery: {
-        snapshot: () => Promise.resolve([]),
-        identify,
-      },
-    })
-
-    const first = await supervisor.spawn({
-      host,
-      provider,
-      cwd: localPath('/tmp/project'),
-      ownerId: OWNER_ID,
-      sessionId: 'retrying-terminal',
-    })
-    await vi.waitFor(() =>
-      expect(supervisor.get(first.id)?.identityStatus).toBe('unavailable'),
-    )
-    supervisor.write(first.id, OWNER_ID, 'start')
-    await vi.waitFor(() => expect(identify).toHaveBeenCalledTimes(2))
-
-    await supervisor.spawn({
-      host,
-      provider,
-      cwd: localPath('/tmp/project'),
-      ownerId: OWNER_ID,
-      sessionId: 'later-terminal',
-    })
-
-    expect(spawnPty).toHaveBeenCalledTimes(2)
-    await vi.waitFor(() => expect(identify).toHaveBeenCalledTimes(3))
-    finishRetry?.()
-  })
-
-  it('passes cwd and replays the latest provider telemetry across attachments', async () => {
-    const { supervisor, host, provider } = fixture()
-    const pending = contextStatusHarnessSnapshot({
-      providerId: asHarnessProviderId('test'),
-      provenance: 'test fixture',
-      sessionId: 'harness-session',
-      context: { status: 'pending', reason: 'Waiting for test telemetry' },
-    })
-    const unavailable = contextStatusHarnessSnapshot({
-      providerId: asHarnessProviderId('test'),
-      provenance: 'test fixture',
-      sessionId: 'harness-session',
-      context: { status: 'unavailable', reason: 'Test telemetry unavailable' },
-    })
-    const disposeTelemetry = vi.fn()
-    let emitTelemetry: HarnessTelemetryContext['emit'] | undefined
-    const observe = vi.fn((_host: ProjectHost, context: HarnessTelemetryContext) => {
-      emitTelemetry = context.emit
-      context.emit(pending)
-      return disposeTelemetry
-    })
-    Object.assign(provider, { telemetry: { observe } })
-
-    const info = await supervisor.spawn({
-      host,
-      provider,
-      cwd: localPath('/tmp/project'),
-      ownerId: OWNER_ID,
-      sessionId: 'telemetry-session',
-    })
-    const firstTelemetry = vi.fn()
-    const detach = supervisor.attach(info.id, OWNER_ID, {
-      onTelemetry: firstTelemetry,
-    })
-
-    await vi.waitFor(() => expect(firstTelemetry).toHaveBeenCalledWith(pending))
-    expect(observe.mock.calls[0]?.[1].cwd).toEqual(localPath('/tmp/project'))
-
-    void detach()
-    emitTelemetry?.(unavailable)
-    const reattachedTelemetry = vi.fn()
-    supervisor.attach(info.id, OWNER_ID, { onTelemetry: reattachedTelemetry })
-
-    expect(reattachedTelemetry).toHaveBeenCalledOnce()
-    expect(reattachedTelemetry).toHaveBeenCalledWith(unavailable)
-    supervisor.disposeOwner(OWNER_ID)
-    await vi.waitFor(() => expect(disposeTelemetry).toHaveBeenCalledOnce())
-  })
-
-  it('publishes and replays a fixed unavailable snapshot when observation rejects', async () => {
-    const { supervisor, host, provider } = fixture()
-    Object.assign(provider, {
-      telemetry: {
-        observe: () => Promise.reject(new Error('/private/remote/transcript failed')),
-      },
-    })
-    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const info = await supervisor.spawn({
-      host,
-      provider,
-      cwd: localPath('/tmp/project'),
-      ownerId: OWNER_ID,
-      sessionId: 'rejected-telemetry',
-    })
-    const firstTelemetry = vi.fn()
-    const detach = supervisor.attach(info.id, OWNER_ID, {
-      onTelemetry: firstTelemetry,
-    })
-
-    await vi.waitFor(() => expect(firstTelemetry).toHaveBeenCalledOnce())
-    expect(firstTelemetry.mock.calls[0]?.[0]).toMatchObject({
-      source: {
-        providerId: 'test',
-        provenance: 'Harness telemetry observer lifecycle',
-      },
-      facets: {
-        session: {
-          status: 'available',
-          value: { id: 'rejected-telemetry', state: 'active' },
-        },
-        context: {
-          status: 'unavailable',
-          reason: 'Harness telemetry observer unavailable',
-        },
-      },
-    })
-    expect(JSON.stringify(firstTelemetry.mock.calls[0]?.[0])).not.toContain('/private')
-
-    void detach()
-    const reattachedTelemetry = vi.fn()
-    supervisor.attach(info.id, OWNER_ID, { onTelemetry: reattachedTelemetry })
-    expect(reattachedTelemetry).toHaveBeenCalledWith(firstTelemetry.mock.calls[0]?.[0])
-    expect(warning).toHaveBeenCalledOnce()
-    warning.mockRestore()
-  })
-
-  it('retains identity subscriptions when only live sessions are disposed', async () => {
-    const firstPty = new FakePty()
-    const secondPty = new FakePty()
-    const { supervisor, host, provider, spawnPty } = fixture()
-    spawnPty.mockResolvedValueOnce(firstPty).mockResolvedValueOnce(secondPty)
-    Object.assign(provider, {
-      sessionIdentity: 'discovered',
-      sessionDiscovery: {
-        snapshot: vi.fn(() => Promise.resolve([])),
-        identify: vi
-          .fn()
-          .mockResolvedValueOnce({ status: 'identified', sessionId: 'harness-first' })
-          .mockResolvedValueOnce({ status: 'identified', sessionId: 'harness-second' }),
-      },
-    })
-    const onIdentity = vi.fn()
-    supervisor.onSessionIdentity(onIdentity)
-
-    await supervisor.spawn({
-      host,
-      provider,
-      cwd: localPath('/tmp/project'),
-      ownerId: OWNER_ID,
-      sessionId: 'first-after-project-open',
-    })
-    await vi.waitFor(() => expect(onIdentity).toHaveBeenCalledTimes(1))
-
-    supervisor.disposeSessions()
-    await supervisor.spawn({
-      host,
-      provider,
-      cwd: localPath('/tmp/project'),
-      ownerId: OWNER_ID,
-      sessionId: 'second-after-project-open',
-    })
-
-    await vi.waitFor(() => expect(onIdentity).toHaveBeenCalledTimes(2))
-    expect(onIdentity.mock.calls[1]?.[0]).toMatchObject({
-      id: 'second-after-project-open',
-      harnessSessionId: 'harness-second',
-    })
-  })
-
-  it('serializes discovery launches without blocking later PTYs on identity', async () => {
-    const firstPty = new FakePty()
-    const secondPty = new FakePty()
-    const { supervisor, host, provider, spawnPty } = fixture()
-    const order: string[] = []
-    let finishFirstSpawn: (() => void) | undefined
-    let releaseFirst: (() => void) | undefined
-    let identifyCount = 0
-    Object.assign(provider, {
-      sessionIdentity: 'discovered',
-      sessionDiscovery: {
-        snapshot: vi.fn(() => {
-          order.push('snapshot')
-          return Promise.resolve([])
-        }),
-        identify: vi.fn(() => {
-          identifyCount++
-          order.push('identify')
-          if (identifyCount === 1) {
-            return new Promise((resolve) => {
-              releaseFirst = () => resolve({ status: 'unavailable' })
-            })
-          }
-          return Promise.resolve({ status: 'unavailable' })
-        }),
-      },
-    })
-    spawnPty.mockImplementationOnce(() => {
-      order.push('spawn')
-      return new Promise((resolve) => {
-        finishFirstSpawn = () => resolve(firstPty)
-      })
-    })
-    spawnPty.mockImplementationOnce(() => {
-      order.push('spawn')
-      return Promise.resolve(secondPty)
-    })
-
-    const firstSpawn = supervisor.spawn({
-      host,
-      provider,
-      cwd: localPath('/tmp/project'),
-      ownerId: OWNER_ID,
-      sessionId: 'first-terminal',
-    })
-    await vi.waitFor(() => expect(order).toEqual(['snapshot', 'spawn']))
-    const secondSpawn = supervisor.spawn({
-      host,
-      provider,
-      cwd: localPath('/tmp/project'),
-      ownerId: OWNER_ID,
-      sessionId: 'second-terminal',
-    })
-    await Promise.resolve()
-    expect(order).toEqual(['snapshot', 'spawn'])
-
-    finishFirstSpawn?.()
-    await firstSpawn
-    await secondSpawn
-    await vi.waitFor(() => expect(identifyCount).toBe(2))
-    expect(order).toEqual([
-      'snapshot',
-      'spawn',
-      'identify',
-      'snapshot',
-      'spawn',
-      'identify',
-    ])
-    releaseFirst?.()
-  })
-
-  it('fails closed when discovered session identity is ambiguous', async () => {
-    const { supervisor, host, provider } = fixture()
-    Object.assign(provider, {
-      sessionIdentity: 'discovered',
-      sessionDiscovery: {
-        snapshot: () => Promise.resolve([]),
-        identify: () => Promise.resolve({ status: 'ambiguous' }),
-      },
-    })
-    const onIdentity = vi.fn()
-    supervisor.onSessionIdentity(onIdentity)
-
-    await supervisor.spawn({
-      host,
-      provider,
-      cwd: localPath('/tmp/project'),
-      ownerId: OWNER_ID,
-      sessionId: 'ambiguous-terminal',
-    })
-    await vi.waitFor(() => expect(onIdentity).toHaveBeenCalledOnce())
-    expect(supervisor.get('ambiguous-terminal')).toMatchObject({
-      identityStatus: 'ambiguous',
-      harnessSessionId: undefined,
-    })
-  })
-
-  it('still launches when the discovery snapshot is unavailable', async () => {
-    const { supervisor, host, provider, spawnPty } = fixture()
-    const identify = vi.fn()
-    Object.assign(provider, {
-      sessionIdentity: 'discovered',
-      sessionDiscovery: {
-        snapshot: () => Promise.reject(new Error('scan failed')),
-        identify,
-      },
-    })
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-
-    const info = await supervisor.spawn({
-      host,
-      provider,
-      cwd: localPath('/tmp/project'),
-      ownerId: OWNER_ID,
-      sessionId: 'snapshot-failed',
-    })
-
-    expect(spawnPty).toHaveBeenCalledOnce()
-    expect(info.identityStatus).toBe('unavailable')
-    expect(identify).not.toHaveBeenCalled()
-    warn.mockRestore()
-  })
-
-  it('requires an exact id to resume a discovered session', async () => {
-    const { supervisor, host, provider, spawnPty } = fixture()
-    Object.assign(provider, {
-      sessionIdentity: 'discovered',
-      resume: (ctx: { sessionId: string }) => ({
-        file: 'test-harness',
-        args: ['resume', ctx.sessionId],
-      }),
-    })
-
-    await expect(
-      supervisor.spawn({
-        host,
-        provider,
-        cwd: localPath('/tmp/project'),
-        ownerId: OWNER_ID,
-        sessionId: 'new-terminal-id',
-        resume: true,
-      }),
-    ).rejects.toThrow(/requires an exact session id/)
-
-    const resumed = await supervisor.spawn({
-      host,
-      provider,
-      cwd: localPath('/tmp/project'),
-      ownerId: OWNER_ID,
-      sessionId: 'new-terminal-id',
-      harnessSessionId: 'exact-harness-id',
-      resume: true,
-    })
-    expect(resumed).toMatchObject({
-      resumed: true,
-      harnessSessionId: 'exact-harness-id',
-      identityStatus: 'identified',
-    })
-    expect(spawnPty).toHaveBeenCalledWith(
-      expect.objectContaining({ args: ['resume', 'exact-harness-id'] }),
     )
   })
 })

@@ -1,4 +1,14 @@
-import { GIT_CHANGE_DISPLAY_LIMIT, type GitChanges, type HostPath } from '../../shared'
+import { createHash } from 'node:crypto'
+
+import {
+  GIT_CHANGE_DISPLAY_LIMIT,
+  WORKSPACE_ACTIVITY_FIELDS,
+  WORKSPACE_ACTIVITY_SCHEMA,
+  WORKSPACE_ACTIVITY_STATUS_LIMIT,
+  type GitChanges,
+  type HostPath,
+  type WorkspaceActivityResult,
+} from '../../shared'
 import { gitError, shortRef, type GitCommandContext } from './git-command-context'
 import {
   changedFile,
@@ -14,14 +24,15 @@ import {
   type GitFileStats,
   type ParsedStatus,
 } from './git-parsers'
+import { addUntrackedLineCounts } from './untracked-line-counts'
 
 export class GitStatusCapability {
   constructor(private readonly context: GitCommandContext) {}
 
-  async changedFileCount(
+  async workspaceActivity(
     workspaceRoot: HostPath,
     relatedWorktreeRoots: readonly HostPath[] = [],
-  ): Promise<number> {
+  ): Promise<WorkspaceActivityResult> {
     this.context.assertHost(workspaceRoot)
     const hasNestedWorktree = relatedWorktreeRoots.some((candidate) =>
       isNestedHostPath(candidate, workspaceRoot),
@@ -29,51 +40,33 @@ export class GitStatusCapability {
     const repositoryPrefix = hasNestedWorktree
       ? (await this.context.project(workspaceRoot))?.repositoryPrefix
       : ''
-    if (repositoryPrefix === undefined) return 0
-    const status = await this.context.boundedStatus(workspaceRoot, [
-      'status',
-      '--porcelain=v2',
-      '-z',
-      '--untracked-files=all',
-      '--',
-      '.',
-    ])
-    if (status.truncated) return GIT_CHANGE_DISPLAY_LIMIT + 1
-    const count = excludeNestedWorktrees(
-      parseStatus(
-        status.output,
-        hasNestedWorktree ? undefined : GIT_CHANGE_DISPLAY_LIMIT + 1,
-      ),
+    if (repositoryPrefix === undefined) return { changedFiles: 0 }
+    const status = await this.context.boundedStatus(
+      workspaceRoot,
+      ['status', '--porcelain=v2', '-z', '--untracked-files=all', '--', '.'],
+      { allowIndexRefresh: true },
+    )
+    const entries = excludeNestedWorktrees(
+      parseStatus(status.output),
       workspaceRoot,
       repositoryPrefix,
       relatedWorktreeRoots,
-    ).length
-    return Math.min(count, GIT_CHANGE_DISPLAY_LIMIT + 1)
-  }
-
-  async assertClean(
-    workspaceRoot: HostPath,
-    relatedWorktreeRoots: readonly HostPath[],
-    message: string,
-  ): Promise<void> {
-    const status = await this.context.boundedStatus(workspaceRoot, [
-      'status',
-      '--porcelain=v2',
-      '-z',
-      '--untracked-files=all',
-    ])
-    const context = await this.context.project(workspaceRoot)
-    if (!context) throw new Error('Not a Git repository')
-    if (
-      status.truncated ||
-      excludeNestedWorktrees(
-        parseStatus(status.output),
-        workspaceRoot,
-        context.repositoryPrefix,
-        relatedWorktreeRoots,
-      ).length > 0
-    ) {
-      throw new Error(message)
+    )
+    const statusTruncated =
+      status.truncated || entries.length > WORKSPACE_ACTIVITY_STATUS_LIMIT
+    const bounded = entries.slice(0, WORKSPACE_ACTIVITY_STATUS_LIMIT)
+    return {
+      changedFiles: statusTruncated
+        ? GIT_CHANGE_DISPLAY_LIMIT + 1
+        : Math.min(bounded.length, GIT_CHANGE_DISPLAY_LIMIT + 1),
+      status: {
+        schema: WORKSPACE_ACTIVITY_SCHEMA,
+        fields: WORKSPACE_ACTIVITY_FIELDS,
+        statusLimit: WORKSPACE_ACTIVITY_STATUS_LIMIT,
+        statusEntryCount: bounded.length,
+        statusTruncated,
+        statusDigest: digestStatusEntries(bounded),
+      },
     }
   }
 
@@ -161,7 +154,7 @@ export class GitStatusCapability {
             ]),
           ),
         )
-    await addUntrackedStats(
+    await addUntrackedLineCounts(
       commandRoot,
       repositoryPrefix,
       parsedStatus,
@@ -255,6 +248,27 @@ export class GitStatusCapability {
       relativeDirectory ? `${relativeDirectory}/${name}` : name,
     )
     const namesByPath = new Map(paths.map((path, index) => [path, names[index] ?? '']))
+    const { ignoredPaths } = await this.ignoredPaths(projectRoot, paths)
+    return {
+      ignoredNames: ignoredPaths
+        .map((path) => namesByPath.get(path))
+        .filter((name): name is string => Boolean(name)),
+    }
+  }
+
+  async ignoredPaths(
+    projectRoot: HostPath,
+    paths: readonly string[],
+  ): Promise<{ readonly ignoredPaths: readonly string[] }> {
+    this.context.assertHost(projectRoot)
+    if (paths.length === 0) return { ignoredPaths: [] }
+    if (paths.length > 512) throw new Error('Too many Git ignore paths')
+    if (
+      new Set(paths).size !== paths.length ||
+      paths.some((path) => !validGitPath(path))
+    ) {
+      throw new Error('Invalid Git ignore path')
+    }
     const batches: string[][] = []
     let batch: string[] = []
     let batchLength = 0
@@ -269,7 +283,7 @@ export class GitStatusCapability {
       batchLength += length
     }
     if (batch.length > 0) batches.push(batch)
-    const ignoredNames: string[] = []
+    const ignoredPaths: string[] = []
     for (const batch of batches) {
       const result = await this.context.readOnly(
         projectRoot,
@@ -277,60 +291,54 @@ export class GitStatusCapability {
         { input: `${batch.join('\0')}\0` },
       )
       if (result.code === 1) continue
-      if (/not a git repository/i.test(result.stderr)) return { ignoredNames: [] }
+      if (/not a git repository/i.test(result.stderr)) return { ignoredPaths: [] }
       if (result.code !== 0) {
         throw gitError(['check-ignore', '-z', '--stdin'], result.stderr, result.code)
       }
-      ignoredNames.push(
+      ignoredPaths.push(
         ...result.stdout
           .split('\0')
           .filter(Boolean)
-          .map((path) => namesByPath.get(path.replace(/^\.\//, '')))
-          .filter((name): name is string => Boolean(name)),
+          .map((path) => path.replace(/^\.\//, '')),
       )
     }
-    return { ignoredNames }
+    return { ignoredPaths }
   }
 }
 
-async function addUntrackedStats(
-  projectRoot: HostPath,
-  repositoryPrefix: string,
-  files: readonly ParsedStatus[],
-  stats: GitFileStats,
-  context: GitCommandContext,
-): Promise<void> {
-  const untracked = files.filter((file) => file.untracked && !stats.has(file.path))
-  for (let index = 0; index < untracked.length; index += 8) {
-    await Promise.all(
-      untracked.slice(index, index + 8).map(async (file) => {
-        const relativePath = repositoryPrefix
-          ? file.path.slice(repositoryPrefix.length)
-          : file.path
-        const result = await context.readOnly(projectRoot, [
-          'diff',
-          '--no-ext-diff',
-          '--no-textconv',
-          '--no-index',
-          '--numstat',
-          '-z',
-          '--',
-          '/dev/null',
-          relativePath,
-        ])
-        if (result.code !== 0 && result.code !== 1) return
-        if (!result.stdout) {
-          stats.set(file.path, { additions: 0, deletions: 0 })
-          return
-        }
-        const firstTab = result.stdout.indexOf('\t')
-        const secondTab = result.stdout.indexOf('\t', firstTab + 1)
-        if (firstTab < 0 || secondTab < 0) return
-        const added = result.stdout.slice(0, firstTab)
-        const deleted = result.stdout.slice(firstTab + 1, secondTab)
-        if (added === '-' || deleted === '-') return
-        stats.set(file.path, { additions: Number(added), deletions: Number(deleted) })
-      }),
-    )
+function validGitPath(path: string): boolean {
+  return (
+    typeof path === 'string' &&
+    path.length > 0 &&
+    path.length <= 4_096 &&
+    !path.startsWith('/') &&
+    !path.includes('\0') &&
+    path
+      .split('/')
+      .every((segment) => segment.length > 0 && segment !== '.' && segment !== '..')
+  )
+}
+
+function digestStatusEntries(entries: readonly ParsedStatus[]): string {
+  const digest = createHash('sha256')
+  const ordered = [...entries].sort((left, right) => {
+    if (left.path !== right.path) return left.path < right.path ? -1 : 1
+    const leftOriginal = left.originalPath ?? ''
+    const rightOriginal = right.originalPath ?? ''
+    return leftOriginal === rightOriginal ? 0 : leftOriginal < rightOriginal ? -1 : 1
+  })
+  for (const entry of ordered) {
+    digest.update(entry.statusCode)
+    digest.update('\0')
+    digest.update(entry.staged ? '1' : '0')
+    digest.update(entry.unstaged ? '1' : '0')
+    digest.update(entry.untracked ? '1' : '0')
+    digest.update(entry.conflicted ? '1' : '0')
+    digest.update('\0')
+    digest.update(entry.path)
+    digest.update('\0')
+    digest.update(entry.originalPath ?? '')
+    digest.update('\0')
   }
+  return digest.digest('hex')
 }

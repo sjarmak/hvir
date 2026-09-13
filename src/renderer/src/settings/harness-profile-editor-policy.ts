@@ -1,12 +1,13 @@
-import type {
-  HarnessCommandPreview,
-  HarnessPathGrant,
-  HarnessProfile,
-  HarnessProfileExecutable,
-  HarnessProfileInput,
-  HarnessProfileProbe,
-  HarnessProviderDescriptor,
-  HostPath,
+import {
+  isHarnessBindingName,
+  isHarnessEnvironmentName,
+  type HarnessPathGrant,
+  type HarnessProfile,
+  type HarnessProfileExecutable,
+  type HarnessProfileInput,
+  type HarnessProfileProbe,
+  type HarnessProviderDescriptor,
+  type HostPath,
 } from '../../../shared'
 
 export function replaceHarnessValue<T>(
@@ -36,25 +37,63 @@ export function applyPathBindingGrant(
   return {
     ...input,
     pathBindings: input.pathBindings.map((binding, candidate) =>
-      candidate === index
-        ? { ...binding, path: grant.path, grantId: grant.id }
-        : binding,
+      candidate === index ? { ...binding, path: grant.path, grantId: grant.id } : binding,
     ),
   }
 }
 
-export function harnessRiskLabel(value: HarnessProfile['risk']): string {
-  return value === 'standard'
-    ? 'Standard'
-    : value === 'elevated'
-      ? 'Elevated'
-      : 'Unclassified'
+export function harnessProfileBindingError(
+  input: Pick<HarnessProfileInput, 'args' | 'environment' | 'pathBindings'>,
+): string | undefined {
+  const environmentNames = new Set<string>()
+  for (const binding of input.environment) {
+    if (!isHarnessEnvironmentName(binding.name)) return 'Invalid environment binding'
+    if (binding.kind === 'reference' && !isHarnessEnvironmentName(binding.sourceName)) {
+      return `Invalid environment binding for '${binding.name}'`
+    }
+    if (environmentNames.has(binding.name)) {
+      return `Duplicate environment binding '${binding.name}'`
+    }
+    environmentNames.add(binding.name)
+  }
+
+  const pathNames = new Set<string>()
+  for (const binding of input.pathBindings) {
+    if (!isHarnessBindingName(binding.name)) return 'Invalid profile path binding'
+    if (pathNames.has(binding.name)) {
+      return `Duplicate path binding '${binding.name}'`
+    }
+    pathNames.add(binding.name)
+  }
+
+  for (const argument of input.args) {
+    for (const part of argument.parts) {
+      if (
+        part.kind === 'path' &&
+        part.source === 'binding' &&
+        (!part.binding || !pathNames.has(part.binding))
+      ) {
+        return `Unknown path binding '${part.binding ?? ''}'`
+      }
+    }
+  }
+  return undefined
 }
 
-export function previewRiskLabel(
-  previews: readonly HarnessCommandPreview[],
-): string {
-  return previews[0] ? harnessRiskLabel(previews[0].risk) : 'Pending validation'
+export function harnessProfilePreviewReadiness(
+  input: Pick<HarnessProfileInput, 'executable'>,
+): string | undefined {
+  if (input.executable.kind === 'command' && input.executable.command.trim() === '') {
+    return 'Enter an executable command to preview this profile.'
+  }
+  return undefined
+}
+
+export function shouldPreserveUnsavedHarnessDraftAfterRefresh(
+  draft: { readonly id?: HarnessProfile['id'] } | undefined,
+  selectedProfileId?: HarnessProfile['id'],
+): boolean {
+  return draft !== undefined && draft.id === undefined && selectedProfileId === undefined
 }
 
 export function findProfileProbe(

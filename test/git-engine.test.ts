@@ -14,7 +14,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { GitEngine, parseWorktreeList } from '../src/main/git/git-engine'
 import { LocalHost, type ExecOptions, type ProjectHost } from '../src/main/project-host'
-import { GIT_CHANGE_DISPLAY_LIMIT, LOCAL_HOST_ID, localPath } from '../src/shared'
+import {
+  DIFF_INPUT_BYTE_LIMIT,
+  GIT_CHANGE_DISPLAY_LIMIT,
+  LOCAL_HOST_ID,
+  localPath,
+} from '../src/shared'
 
 const cleanups: string[] = []
 
@@ -23,11 +28,16 @@ afterEach(async () => {
 })
 
 describe('GitEngine', () => {
-  it('models local branches and switches only from a clean available worktree', async () => {
+  it('lets Git preserve safe changes and refuse branch-switch collisions', async () => {
     const root = await repository()
     const linked = `${root}-occupied`
     cleanups.push(linked)
     git(root, ['branch', 'feature'])
+    git(root, ['switch', '-c', 'conflict'])
+    await writeFile(join(root, 'collision.txt'), 'target branch\n')
+    git(root, ['add', 'collision.txt'])
+    git(root, ['commit', '-m', 'add collision target'])
+    git(root, ['switch', 'main'])
     git(root, ['worktree', 'add', '-b', 'occupied', linked])
     const workspaceRoot = localPath(await realpath(root))
     const canonicalLinked = await realpath(linked)
@@ -60,9 +70,30 @@ describe('GitEngine', () => {
     await expect(engine.branches(workspaceRoot)).resolves.toEqual(
       expect.objectContaining({ current: 'feature' }),
     )
-    await writeFile(join(root, 'dirty.txt'), 'dirty\n')
-    await expect(engine.switchBranch(workspaceRoot, 'main')).rejects.toThrow(
-      'Working tree changed',
+    await writeFile(join(root, 'file.txt'), 'staged\n')
+    git(root, ['add', 'file.txt'])
+    await writeFile(join(root, 'file.txt'), 'staged\nunstaged\n')
+    await writeFile(join(root, 'draft.txt'), 'untracked\n')
+
+    await expect(engine.switchBranch(workspaceRoot, 'main')).resolves.toBeUndefined()
+
+    expect(await host.readTextFile(localPath(join(root, 'file.txt')))).toBe(
+      'staged\nunstaged\n',
+    )
+    expect(gitOutput(root, ['show', ':file.txt'])).toBe('staged\n')
+    expect(await host.readTextFile(localPath(join(root, 'draft.txt')))).toBe(
+      'untracked\n',
+    )
+
+    await writeFile(join(root, 'collision.txt'), 'local draft\n')
+    await expect(engine.switchBranch(workspaceRoot, 'conflict')).rejects.toThrow(
+      'would be overwritten',
+    )
+    await expect(engine.branches(workspaceRoot)).resolves.toEqual(
+      expect.objectContaining({ current: 'main' }),
+    )
+    expect(await host.readTextFile(localPath(join(root, 'collision.txt')))).toBe(
+      'local draft\n',
     )
     await expect(engine.switchBranch(workspaceRoot, 'missing')).rejects.toThrow(
       'no longer exists',
@@ -70,7 +101,7 @@ describe('GitEngine', () => {
     await host.dispose()
   })
 
-  it('models upstream and base drift, then permits only a clean fast-forward pull', async () => {
+  it('lets Git preserve safe changes and refuse fast-forward pull collisions', async () => {
     const root = await repository()
     const remote = await mkdtemp(join(tmpdir(), 'hvir-git-remote-'))
     const peerParent = await mkdtemp(join(tmpdir(), 'hvir-git-peer-'))
@@ -124,12 +155,44 @@ describe('GitEngine', () => {
     git(peer, ['commit', '-m', 'second incoming'])
     git(peer, ['push'])
     await engine.fetch(workspaceRoot)
-    await writeFile(join(root, 'dirty.txt'), 'dirty\n')
-    await expect(engine.pullFastForward(workspaceRoot)).rejects.toThrow(
-      'Working tree changed',
-    )
-    await rm(join(root, 'dirty.txt'))
+    await writeFile(join(root, 'file.txt'), 'staged\n')
+    git(root, ['add', 'file.txt'])
+    await writeFile(join(root, 'file.txt'), 'staged\nunstaged\n')
+    await writeFile(join(root, 'draft.txt'), 'untracked\n')
+
     await engine.pullFastForward(workspaceRoot)
+
+    expect(await host.readTextFile(localPath(join(root, 'second.txt')))).toBe('second\n')
+    expect(await host.readTextFile(localPath(join(root, 'file.txt')))).toBe(
+      'staged\nunstaged\n',
+    )
+    expect(gitOutput(root, ['show', ':file.txt'])).toBe('staged\n')
+    expect(await host.readTextFile(localPath(join(root, 'draft.txt')))).toBe(
+      'untracked\n',
+    )
+
+    git(root, ['reset', '--hard'])
+    await rm(join(root, 'draft.txt'))
+    git(peer, ['switch', 'feature'])
+    await writeFile(join(peer, 'file.txt'), 'remote collision\n')
+    git(peer, ['add', 'file.txt'])
+    git(peer, ['commit', '-m', 'remote collision'])
+    git(peer, ['push'])
+    await engine.fetch(workspaceRoot)
+    await writeFile(join(root, 'file.txt'), 'local collision\n')
+    const headBeforeCollision = gitOutput(root, ['rev-parse', 'HEAD'])
+
+    await expect(engine.pullFastForward(workspaceRoot)).rejects.toThrow(
+      'would be overwritten',
+    )
+
+    expect(gitOutput(root, ['rev-parse', 'HEAD'])).toBe(headBeforeCollision)
+    expect(await host.readTextFile(localPath(join(root, 'file.txt')))).toBe(
+      'local collision\n',
+    )
+    git(root, ['reset', '--hard'])
+    await engine.pullFastForward(workspaceRoot)
+
     await writeFile(join(root, 'local.txt'), 'local\n')
     git(root, ['add', 'local.txt'])
     git(root, ['commit', '-m', 'local outgoing'])
@@ -178,7 +241,25 @@ describe('GitEngine', () => {
       expect.objectContaining({ root: localPath(canonicalLinked), branch: 'feature' }),
     ])
     await writeFile(join(linked, 'dirty.txt'), 'dirty\n')
-    await expect(engine.changedFileCount(localPath(canonicalLinked))).resolves.toBe(1)
+    const firstActivity = await engine.workspaceActivity(localPath(canonicalLinked))
+    expect(firstActivity.changedFiles).toBe(1)
+    expect(firstActivity.status?.statusEntryCount).toBe(1)
+    expect(firstActivity.status?.statusTruncated).toBe(false)
+    expect(firstActivity.status?.statusDigest).toMatch(/^[0-9a-f]{64}$/)
+    expect(JSON.stringify(firstActivity)).not.toContain('dirty.txt')
+    await writeFile(join(linked, 'dirty.txt'), 'different content\n')
+    expect(
+      (await engine.workspaceActivity(localPath(canonicalLinked))).status?.statusDigest,
+    ).toBe(firstActivity.status?.statusDigest)
+    git(linked, ['add', 'dirty.txt'])
+    const stagedActivity = await engine.workspaceActivity(localPath(canonicalLinked))
+    expect(stagedActivity.status?.statusDigest).not.toBe(
+      firstActivity.status?.statusDigest,
+    )
+    await writeFile(join(linked, 'another.txt'), 'new path\n')
+    expect(
+      (await engine.workspaceActivity(localPath(canonicalLinked))).status?.statusDigest,
+    ).not.toBe(stagedActivity.status?.statusDigest)
     await rm(linked, { recursive: true })
     const prunable = await engine.worktrees(localPath(root))
     const stale = prunable.worktrees.find(
@@ -226,9 +307,10 @@ describe('GitEngine', () => {
       const exec = vi.spyOn(host, 'exec')
       const engine = new GitEngine(host, workspaceRoot)
 
-      await expect(engine.changedFileCount(workspaceRoot)).resolves.toBe(
-        GIT_CHANGE_DISPLAY_LIMIT + 1,
-      )
+      await expect(engine.workspaceActivity(workspaceRoot)).resolves.toMatchObject({
+        changedFiles: GIT_CHANGE_DISPLAY_LIMIT + 1,
+        status: { statusTruncated: true },
+      })
       const changes = await engine.changes(workspaceRoot)
 
       expect(changes.workingTreeLimited).toBe(true)
@@ -263,9 +345,10 @@ describe('GitEngine', () => {
     } as ProjectHost
     const engine = new GitEngine(host, workspaceRoot)
 
-    await expect(engine.changedFileCount(workspaceRoot)).resolves.toBe(
-      GIT_CHANGE_DISPLAY_LIMIT + 1,
-    )
+    await expect(engine.workspaceActivity(workspaceRoot)).resolves.toMatchObject({
+      changedFiles: GIT_CHANGE_DISPLAY_LIMIT + 1,
+      status: { statusTruncated: true },
+    })
     await expect(engine.changes(workspaceRoot)).resolves.toEqual(
       expect.objectContaining({
         workingTreeLimited: true,
@@ -302,7 +385,9 @@ describe('GitEngine', () => {
     expect(
       gitOutput(root, ['status', '--porcelain=v2', '--untracked-files=all']),
     ).toContain('test-worktree/')
-    await expect(engine.changedFileCount(workspaceRoot, related)).resolves.toBe(0)
+    await expect(engine.workspaceActivity(workspaceRoot, related)).resolves.toMatchObject(
+      { changedFiles: 0 },
+    )
     await expect(engine.changes(workspaceRoot, related)).resolves.toEqual(
       expect.objectContaining({ workingTree: [] }),
     )
@@ -470,11 +555,38 @@ describe('GitEngine', () => {
     const head = await engine.diffInputs(path, 'head')
     const branchPoint = await engine.diffInputs(path, 'branch-point')
 
-    expect(index.baseContent).toBe('feature\n')
-    expect(head.baseContent).toBe('feature\n')
-    expect(branchPoint.baseContent).toBe('base\n')
-    expect(branchPoint.currentContent).toBe('feature\n')
+    expect(index.baseInput.content).toBe('feature\n')
+    expect(head.baseInput.content).toBe('feature\n')
+    expect(branchPoint.baseInput.content).toBe('base\n')
+    expect(branchPoint.currentInput.content).toBe('feature\n')
     expect(branchPoint.currentLabel).toBe('HEAD')
+    await host.dispose()
+  })
+
+  it('bounds both Git and working-tree diff inputs and carries completeness', async () => {
+    const root = await repository()
+    const filename = join(root, 'large.txt')
+    await writeFile(filename, 'a'.repeat(DIFF_INPUT_BYTE_LIMIT + 1))
+    git(root, ['add', 'large.txt'])
+    git(root, ['commit', '-m', 'large base'])
+    await writeFile(filename, 'b'.repeat(DIFF_INPUT_BYTE_LIMIT + 1))
+    const host = new LocalHost()
+
+    const diff = await new GitEngine(host, localPath(root)).diffInputs(
+      localPath(filename),
+      'head',
+    )
+
+    expect(diff.baseInput).toMatchObject({
+      byteLength: DIFF_INPUT_BYTE_LIMIT,
+      complete: false,
+    })
+    expect(diff.currentInput).toMatchObject({
+      byteLength: DIFF_INPUT_BYTE_LIMIT,
+      complete: false,
+    })
+    expect(diff.baseInput.content).toHaveLength(DIFF_INPUT_BYTE_LIMIT)
+    expect(diff.currentInput.content).toHaveLength(DIFF_INPUT_BYTE_LIMIT)
     await host.dispose()
   })
 
@@ -495,8 +607,8 @@ describe('GitEngine', () => {
     const engine = new GitEngine(host)
     const result = await engine.diffInputs(localPath(join(link, 'file.txt')), 'head')
 
-    expect(result.baseContent).toBe('through link\n')
-    expect(result.currentContent).toBe('through link\n')
+    expect(result.baseInput.content).toBe('through link\n')
+    expect(result.currentInput.content).toBe('through link\n')
     await host.dispose()
   })
 
@@ -553,8 +665,14 @@ describe('GitEngine', () => {
       ]),
     ).resolves.toEqual({ ignoredNames: ['cache', 'scratch.tmp'] })
     await expect(
+      engine.ignoredPaths(localPath(root), ['src/cache', 'src/scratch.tmp', 'file.txt']),
+    ).resolves.toEqual({ ignoredPaths: ['src/cache', 'src/scratch.tmp'] })
+    await expect(
       engine.ignoredEntries(localPath(root), localPath(root), ['../outside']),
     ).rejects.toThrow('Invalid Git ignore entry name')
+    await expect(
+      engine.ignoredPaths(localPath(root), ['src/../outside']),
+    ).rejects.toThrow('Invalid Git ignore path')
     await host.dispose()
   })
 
@@ -587,8 +705,8 @@ describe('GitEngine', () => {
     expect(deleted?.path.path).toBe(filename)
     expect(deleted).toEqual(expect.objectContaining({ additions: 0, deletions: 1 }))
     const diff = await engine.diffInputs(localPath(filename), 'head')
-    expect(diff.baseContent).toBe('base\n')
-    expect(diff.currentContent).toBe('')
+    expect(diff.baseInput.content).toBe('base\n')
+    expect(diff.currentInput.content).toBe('')
     await host.dispose()
   })
 
@@ -608,19 +726,24 @@ describe('GitEngine', () => {
     expect(changes.workingTree).toEqual([
       expect.objectContaining({ path: localPath(filename), deletions: 1 }),
     ])
-    await expect(engine.diffInputs(localPath(filename), 'head')).resolves.toEqual(
-      expect.objectContaining({ baseContent: 'nested\n', currentContent: '' }),
-    )
+    const diff = await engine.diffInputs(localPath(filename), 'head')
+    expect(diff.baseInput).toMatchObject({ content: 'nested\n', complete: true })
+    expect(diff.currentInput).toMatchObject({ content: '', complete: true })
     await host.dispose()
   })
 
   it('expands untracked directories and reports their actual line counts', async () => {
     const root = await repository()
+    await writeFile(join(root, '.gitattributes'), 'newdir/*.txt -diff\n')
+    git(root, ['add', '.gitattributes'])
+    git(root, ['commit', '-m', 'mark fixtures binary for Git'])
     await mkdir(join(root, 'newdir'))
     await writeFile(join(root, 'newdir', 'one.txt'), 'one\ntwo\nthree\n')
     await writeFile(join(root, 'newdir', 'two.txt'), 'one\ntwo')
+    await writeFile(join(root, 'newdir', 'empty.txt'), '')
 
     const host = new LocalHost()
+    const exec = vi.spyOn(host, 'exec')
     const changes = await new GitEngine(host).changes(localPath(root))
 
     expect(changes.workingTree).toEqual(
@@ -635,26 +758,55 @@ describe('GitEngine', () => {
           untracked: true,
           additions: 2,
         }),
+        expect.objectContaining({
+          path: localPath(join(root, 'newdir', 'empty.txt')),
+          untracked: true,
+          additions: 0,
+        }),
       ]),
     )
     expect(changes.workingTree.some((file) => file.path.path.endsWith('/newdir/'))).toBe(
       false,
     )
+    expect(exec.mock.calls.some(([, args]) => args.includes('--no-index'))).toBe(false)
     await host.dispose()
   })
 
-  it('omits fabricated counts for a large untracked binary with an unusual path', async () => {
+  it('skips oversized untracked files before reading their content', async () => {
     const root = await repository()
-    const filename = join(root, 'large\tbinary.bin')
-    await writeFile(filename, Buffer.alloc(2 * 1024 * 1024))
+    const filename = join(root, 'oversized\tbinary.bin')
+    await writeFile(filename, Buffer.alloc(DIFF_INPUT_BYTE_LIMIT + 1))
 
     const host = new LocalHost()
+    const readTextFilePrefix = vi.spyOn(host, 'readTextFilePrefix')
     const changes = await new GitEngine(host).changes(localPath(root))
     const binary = changes.workingTree.find((file) => file.path.path === filename)
 
     expect(binary?.untracked).toBe(true)
     expect(binary?.additions).toBeUndefined()
     expect(binary?.deletions).toBeUndefined()
+    expect(readTextFilePrefix.mock.calls.some(([path]) => path.path === filename)).toBe(
+      false,
+    )
+    await host.dispose()
+  })
+
+  it('omits binary untracked counts after one bounded probe', async () => {
+    const root = await repository()
+    const filename = join(root, 'binary.bin')
+    await writeFile(filename, Buffer.alloc(128 * 1024))
+
+    const host = new LocalHost()
+    const readTextFilePrefix = vi.spyOn(host, 'readTextFilePrefix')
+    const changes = await new GitEngine(host).changes(localPath(root))
+    const binary = changes.workingTree.find((file) => file.path.path === filename)
+
+    expect(binary?.untracked).toBe(true)
+    expect(binary?.additions).toBeUndefined()
+    expect(binary?.deletions).toBeUndefined()
+    expect(
+      readTextFilePrefix.mock.calls.filter(([path]) => path.path === filename),
+    ).toEqual([[localPath(filename), 8_000]])
     await host.dispose()
   })
 
@@ -757,8 +909,8 @@ describe('GitEngine', () => {
       join(project, 'inside.txt'),
     ])
     const diff = await engine.diffInputs(localPath(join(project, 'inside.txt')), 'head')
-    expect(diff.baseContent).toBe('inside base\n')
-    expect(diff.currentContent).toBe('inside changed\n')
+    expect(diff.baseInput.content).toBe('inside base\n')
+    expect(diff.currentInput.content).toBe('inside changed\n')
     const history = await engine.history(localPath(project), 50)
     expect(history.commits.map((commit) => commit.subject)).toContain('nested base')
     await host.dispose()
@@ -807,7 +959,7 @@ describe('GitEngine', () => {
       'head',
       commit!.hash,
     )
-    expect(diff.currentContent).toBe('sha256\n')
+    expect(diff.currentInput.content).toBe('sha256\n')
     expect(await engine.blame(localPath(join(root, 'file.txt')))).toEqual([
       expect.objectContaining({ hash: commit!.hash, startLine: 1, lineCount: 1 }),
     ])
@@ -839,8 +991,8 @@ describe('GitEngine', () => {
       'head',
       commit!.hash,
     )
-    expect(diff.baseContent).toBe('base\n')
-    expect(diff.currentContent).toBe('second\n')
+    expect(diff.baseInput.content).toBe('base\n')
+    expect(diff.currentInput.content).toBe('second\n')
     await host.dispose()
   })
 
