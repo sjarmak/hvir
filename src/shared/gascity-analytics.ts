@@ -1,8 +1,9 @@
 /**
- * Overlay-only defaults (feat/beads-panel). The team slug, environment, dataset
- * and Omni origin below are Honeycomb/Omni UI path segments for Stephanie's
- * workspace, not secrets and not upstream hvir configuration; override or
- * disable through the environment. No API key is ever read here.
+ * Overlay-only defaults (feat/beads-panel). The team slug, environment, dataset,
+ * Omni origin, dashboard id and rig filter id below are Honeycomb/Omni UI path
+ * segments for Stephanie's workspace, not secrets and not upstream hvir
+ * configuration; override or disable through the environment. No API key is
+ * ever read here.
  *
  * One absence rule, applied to every variable: unset or blank means "use the
  * overlay default", so a fresh shell shows both surfaces; an explicit value that
@@ -43,6 +44,9 @@ export const HONEYCOMB_LINK_DEFAULTS: HoneycombLinkConfig = {
 }
 
 export const OMNI_DEFAULT_BASE_URL = 'https://sjarmak.omniapp.co'
+/** The "Factory Health by Rig" document and its UI-created rig filter; recreating either mints a new id. */
+export const OMNI_DEFAULT_DASHBOARD_ID = 'gas-city-factory-rig-health'
+export const OMNI_DEFAULT_RIG_FILTER_ID = 'QMdNGURu'
 
 /**
  * Mirrors gas-city's `_gc_seat_trace_safe_component` (bin/lib/gc-seat-tracing.sh):
@@ -97,9 +101,15 @@ function omniOrigin(value: string): string | undefined {
   return bare ? url.origin : undefined
 }
 
-function safeVar(env: Env, name: string): string | undefined {
+/** Unset or blank takes the default; `off` or an unsafe value drops the id. */
+function omniIdVar(
+  env: Env,
+  name: string,
+  fallback: string | undefined,
+): string | undefined {
   const value = readVar(env, name)
-  return value !== undefined && SAFE_COMPONENT.test(value) ? value : undefined
+  if (value === undefined) return fallback
+  return !isOff(value) && SAFE_COMPONENT.test(value) ? value : undefined
 }
 
 function omniFromEnv(env: Env): OmniLinkConfig | undefined {
@@ -107,8 +117,18 @@ function omniFromEnv(env: Env): OmniLinkConfig | undefined {
   if (isOff(raw)) return undefined
   const baseUrl = omniOrigin(raw ?? OMNI_DEFAULT_BASE_URL)
   if (baseUrl === undefined) return undefined
-  const dashboardId = safeVar(env, 'OMNI_DASHBOARD_ID')
-  const rigFilterId = safeVar(env, 'OMNI_RIG_FILTER_ID')
+  // The default ids name a document in the default workspace, so another origin gets none.
+  const workspaceDefault = baseUrl === OMNI_DEFAULT_BASE_URL
+  const dashboardId = omniIdVar(
+    env,
+    'OMNI_DASHBOARD_ID',
+    workspaceDefault ? OMNI_DEFAULT_DASHBOARD_ID : undefined,
+  )
+  const rigFilterId = omniIdVar(
+    env,
+    'OMNI_RIG_FILTER_ID',
+    workspaceDefault ? OMNI_DEFAULT_RIG_FILTER_ID : undefined,
+  )
   return {
     baseUrl,
     ...(dashboardId === undefined ? {} : { dashboardId }),

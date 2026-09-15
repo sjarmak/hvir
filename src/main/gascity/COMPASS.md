@@ -289,9 +289,12 @@ pack-stamped lead that a rig override suspended drops out, leaving the hand-defi
   ingest/boards-only with no Query Data API access. Because no analytics value is rendered,
   the read-time convention is met by each link stating its window (last 2h from the click)
   rather than a timestamp on a cached number.
-- **Omni rig filter is opt-in.** No mart carries a rig column and the dashboard/filter ids are
-  not recorded locally, so without `OMNI_DASHBOARD_ID` and `OMNI_RIG_FILTER_ID` the link lands
-  on the model home unfiltered.
+- **Omni rig filter defaults on.** `mart_factory_health.rig` backs the "Factory Health by Rig"
+  dashboard, and its ids are the overlay defaults `OMNI_DEFAULT_DASHBOARD_ID` /
+  `OMNI_DEFAULT_RIG_FILTER_ID` (recorded in gas-city-observability `omni/README.md`). They
+  apply only on the default Omni origin; `off` on either variable drops that id, and the link
+  then opens the dashboard unfiltered or the model home. Recreating the dashboard or its filter
+  in Omni mints new ids, so update the defaults when that happens.
 
 ## Failure modes seen here
 

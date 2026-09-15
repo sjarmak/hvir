@@ -483,7 +483,11 @@ describe('analyticsConfig', () => {
     const { host, exec } = stubHost({})
     expect(service(host).analyticsConfig()).toEqual({
       honeycomb: { team: 'steph.jarmak', environment: 'test', dataset: 'gas-city-agent' },
-      omni: { baseUrl: 'https://sjarmak.omniapp.co' },
+      omni: {
+        baseUrl: 'https://sjarmak.omniapp.co',
+        dashboardId: 'gas-city-factory-rig-health',
+        rigFilterId: 'QMdNGURu',
+      },
     })
     expect(exec).not.toHaveBeenCalled()
   })
