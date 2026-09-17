@@ -2,6 +2,7 @@ import type {
   BrowseHostResponse,
   ConnectedHost,
   EchoWorkerProtocol,
+  ExternalAttentionSnapshot,
   GitWorkerProtocol,
   HostPath,
   IpcEventChannel,
@@ -177,6 +178,11 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly systemClipboard?: SystemClipboardPort
   readonly beads: Pick<BeadsService, 'list' | 'probe' | 'watch' | 'unwatch'>
   readonly gascity: Pick<GasCityService, 'crew' | 'probe' | 'analyticsConfig'>
+  /**
+   * Attention external agent sessions are raising right now. Always available:
+   * the facts follow open projects, not the Sessions view (ADR-048).
+   */
+  readonly getExternalAttention: () => ExternalAttentionSnapshot
   readonly updateAttention: (owner: RendererOwner, count: number) => void
   readonly updateWebPaneBindings: (owner: RendererOwner, bindings: KeybindingMap) => void
   readonly updateWebPaneFullPage: (owner: RendererOwner, paneId?: string) => void

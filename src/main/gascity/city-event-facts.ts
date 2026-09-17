@@ -13,6 +13,7 @@
  */
 import type { HostId, HostPath } from '../../shared'
 import type { CityPendingEntry } from './generated-supervisor-api'
+import type { SupervisorAddressReason } from './supervisor-access'
 import type {
   SupervisorCityLifecycleEvent,
   SupervisorCityLifecycleType,
@@ -50,6 +51,14 @@ export interface CityPendingFact {
  */
 export type CityEventStreamState = 'opening' | 'live' | 'lost' | 'unavailable'
 
+/**
+ * Why a stream is not live. The supervisor's own vocabulary plus the clean end,
+ * so the reason stays a code every consumer can render: a stale attention badge
+ * has to say why it is stale (ADR-048), and free server text is not a reason a
+ * surface can be built on.
+ */
+export type CityEventStreamReason = SupervisorAddressReason | 'closed'
+
 /** One host's city events, with the freshness hvir can honestly claim for them. */
 export interface HostCityEvents {
   readonly hostId: HostId
@@ -57,7 +66,7 @@ export interface HostCityEvents {
   readonly cityRoot?: HostPath
   readonly stream: CityEventStreamState
   /** Why the stream is not live. Absent only while it is. */
-  readonly reason?: string
+  readonly reason?: CityEventStreamReason
   /** When a live stream last confirmed these facts. */
   readonly observedAt: number
   /** The supervisor sequence an explicit resume would continue from. */
@@ -104,17 +113,17 @@ export function liveHostCityEvents(facts: HostCityEvents, at: number): HostCityE
  */
 export function lostHostCityEvents(
   facts: HostCityEvents,
-  reason: string,
+  reason: CityEventStreamReason,
 ): HostCityEvents {
-  return { ...facts, stream: 'lost', reason: capped(reason) }
+  return { ...facts, stream: 'lost', reason }
 }
 
 /** A stream that never opened, with the reason it could not be. */
 export function unavailableHostCityEvents(
   facts: HostCityEvents,
-  reason: string,
+  reason: CityEventStreamReason,
 ): HostCityEvents {
-  return { ...facts, stream: 'unavailable', reason: capped(reason) }
+  return { ...facts, stream: 'unavailable', reason }
 }
 
 /**

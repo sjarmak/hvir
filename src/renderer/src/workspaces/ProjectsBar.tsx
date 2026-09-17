@@ -16,6 +16,14 @@ import {
   aggregateWorkingWorkspaceTerminals,
   workspaceActionableAttention,
 } from './workspace-attention'
+import {
+  aggregateExternalAttention,
+  externalAttentionLabel,
+  NO_EXTERNAL_ATTENTION,
+  workspaceExternalAttention,
+  type ExternalAttentionTotal,
+  type ExternalWorkspaceAttention,
+} from './external-attention'
 import type { AppTheme } from '../theme'
 import { ConfirmationDialog } from '../workbench/ConfirmationDialog'
 import {
@@ -28,6 +36,8 @@ import { ClosedWorktreesDialog, CloseWorkspaceDialog } from './WorkspaceCatalogD
 interface ProjectsBarProps {
   readonly state: ProjectState
   readonly rollups: WorkspaceAttentionRollups
+  /** Agents waiting on a person, by workspace. Absent is none. */
+  readonly external?: ExternalWorkspaceAttention
   readonly busy: boolean
   readonly onAdd: () => void
   readonly onSwitch: (projectId: string, workspaceId: string) => void
@@ -61,6 +71,7 @@ interface ProjectsBarProps {
 export function ProjectsBar({
   state,
   rollups,
+  external = NO_EXTERNAL_ATTENTION,
   busy,
   onAdd,
   onSwitch,
@@ -204,8 +215,9 @@ export function ProjectsBar({
               rollups,
             )
             const working = aggregateWorkingWorkspaceTerminals(workspaceIds, rollups)
-            const showWorking = working > 0 && actionable === 0
-            const title = projectTabTitle(project, working)
+            const waiting = aggregateExternalAttention(workspaceIds, external)
+            const showWorking = working > 0 && actionable === 0 && waiting.waiting === 0
+            const title = projectTabTitle(project, working, waiting)
             const target = activeWorkspace(project)
             return (
               <div
@@ -217,7 +229,7 @@ export function ProjectsBar({
                   type="button"
                   className="project-tab-main"
                   aria-current={active ? 'page' : undefined}
-                  aria-label={projectTabLabel(project, actionable, working)}
+                  aria-label={projectTabLabel(project, actionable, working, waiting)}
                   disabled={busy || !target}
                   onClick={() => target && onSwitch(project.id, target.id)}
                   title={title}
@@ -232,7 +244,9 @@ export function ProjectsBar({
                       compact
                     />
                   ) : null}
-                  {actionable > 0 ? <AttentionCount count={actionable} /> : null}
+                  {actionable > 0 || waiting.waiting > 0 ? (
+                    <AttentionCount count={actionable} waiting={waiting} />
+                  ) : null}
                 </button>
                 {remote && active ? (
                   <button
@@ -346,11 +360,10 @@ export function ProjectsBar({
                   <span>{workspace.name}</span>
                   {workspace.main ? <small>project root</small> : null}
                   {workspace.prunableReason ? <small>prunable</small> : null}
-                  {workspaceActionableAttention(workspace.id, rollups) > 0 ? (
-                    <AttentionCount
-                      count={workspaceActionableAttention(workspace.id, rollups)}
-                    />
-                  ) : null}
+                  <WorkspaceAttention
+                    actionable={workspaceActionableAttention(workspace.id, rollups)}
+                    waiting={workspaceExternalAttention(workspace.id, external)}
+                  />
                 </button>
                 {!workspace.missing ? (
                   <button
@@ -580,21 +593,64 @@ function CloseProjectDialog({
   )
 }
 
-function AttentionCount({ count }: { readonly count: number }): ReactElement {
-  const label = actionableTerminalLabel(count)
+/**
+ * One badge for both kinds of waiting, because a person reading it wants to
+ * know that something needs them, not which subsystem noticed. The label names
+ * both contributions, and a stale external count says so rather than being
+ * dropped or asserted (ADR-048).
+ */
+function AttentionCount({
+  count,
+  waiting = NO_EXTERNAL_WAITING,
+}: {
+  readonly count: number
+  readonly waiting?: ExternalAttentionTotal
+}): ReactElement {
+  const label = attentionLabel(count, waiting)
   return (
-    <span className="terminal-attention-count" aria-label={label} title={label}>
-      <span aria-hidden="true">!</span>
-      {count}
+    <span
+      className={`terminal-attention-count${waiting.stale ? ' stale' : ''}`}
+      aria-label={label}
+      title={label}
+    >
+      <span aria-hidden="true">{waiting.stale && count === 0 ? '?' : '!'}</span>
+      {count + waiting.waiting}
     </span>
   )
 }
 
-function projectTabTitle(project: RegisteredProjectState, working: number): string {
+function WorkspaceAttention({
+  actionable,
+  waiting,
+}: {
+  readonly actionable: number
+  readonly waiting: ExternalAttentionTotal
+}): ReactElement | null {
+  if (actionable === 0 && waiting.waiting === 0) return null
+  return <AttentionCount count={actionable} waiting={waiting} />
+}
+
+const NO_EXTERNAL_WAITING: ExternalAttentionTotal = { waiting: 0, stale: false }
+
+function attentionLabel(actionable: number, waiting: ExternalAttentionTotal): string {
+  return [
+    actionable > 0 ? actionableTerminalLabel(actionable) : undefined,
+    waiting.waiting > 0 ? externalAttentionLabel(waiting) : undefined,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(' · ')
+}
+
+function projectTabTitle(
+  project: RegisteredProjectState,
+  working: number,
+  waiting: ExternalAttentionTotal,
+): string {
   return [
     project.registeredRoot.path,
     project.connectionState,
     working > 0 ? workingTerminalLabel(working) : undefined,
+    waiting.waiting > 0 ? externalAttentionLabel(waiting) : undefined,
   ]
     .filter((part): part is string => Boolean(part))
     .join(' · ')
@@ -604,6 +660,7 @@ function projectTabLabel(
   project: RegisteredProjectState,
   actionable: number,
   working: number,
+  waiting: ExternalAttentionTotal,
 ): string {
   const remote = project.registeredRoot.hostId !== 'local'
   return [
@@ -612,6 +669,7 @@ function projectTabLabel(
     remote ? connectionStateLabel(project.connectionState) : undefined,
     actionable > 0 ? actionableTerminalLabel(actionable) : undefined,
     working > 0 ? workingTerminalLabel(working) : undefined,
+    waiting.waiting > 0 ? externalAttentionLabel(waiting) : undefined,
   ]
     .filter((part): part is string => Boolean(part))
     .join(' · ')

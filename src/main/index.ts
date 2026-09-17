@@ -15,6 +15,7 @@ import { PtySupervisor } from './pty/pty-supervisor'
 import { AttentionBadge } from './attention-badge'
 import { ownBeadsService } from './beads/beads-owner'
 import {
+  ownGasCityAttention,
   ownGasCityEventStreams,
   ownGasCityReader,
   ownGasCityService,
@@ -259,10 +260,17 @@ function createWorkbenchEntry(): void {
     const gasCitySupervisor = ownGasCitySupervisorAccess(hostCatalog)
     // Follows open projects, not any view: a blocked worker raises attention
     // with the Sessions list closed (ADR-048).
-    runtime.own(
+    const gasCityStreams = runtime.own(
       'Gas City event streams',
       ownGasCityEventStreams(gasCitySupervisor, gasCityReader, gasCityHosts),
       (streams) => streams.dispose(),
+    )
+    const gasCityAttention = runtime.own(
+      'Gas City attention rollup',
+      ownGasCityAttention(gasCitySupervisor, gasCityStreams, gasCityHosts, (snapshot) =>
+        rendererEvents.toWindows('gascity:attention-changed', snapshot),
+      ),
+      (attention) => attention.dispose(),
     )
     const sessionsPorts = installApplicationSessionsObservation(
       runtime,
@@ -408,6 +416,7 @@ function createWorkbenchEntry(): void {
           windowManager.rendererReady(owner, reportedGeneration) &&
           sshPrompter?.activateOwner(owner),
         getWorkbenchHealth: () => diagnostics.healthSnapshot(),
+        getExternalAttention: () => gasCityAttention.snapshot(),
         acknowledgeWorkbenchHealth: (id) => diagnostics.acknowledgeHealth(id),
         diagnostics: diagnosticIpc,
         recordIpcContractDiagnostic: (event) => diagnostics.recordIpcContract(event),

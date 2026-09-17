@@ -28,6 +28,7 @@ import {
   openingHostCityEvents,
   unavailableHostCityEvents,
   withdrawCityPending,
+  type CityEventStreamReason,
   type HostCityEvents,
 } from './city-event-facts'
 import type { SupervisorAccess, SupervisorSessionAddress } from './supervisor-access'
@@ -225,7 +226,7 @@ export class GasCityEventStreams {
         },
         onClose: (failure) => {
           if (!this.current(hostId, stream, generation)) return
-          this.fail(stream, failure?.reason ?? 'The city event stream closed')
+          this.fail(stream, failure?.reason ?? 'closed')
         },
       },
       stream.facts.cursor,
@@ -298,7 +299,7 @@ export class GasCityEventStreams {
    * Stops watching one host and says why. The facts stay; what changes is the
    * claim hvir makes about them. Nothing reopens until {@link resume}.
    */
-  private fail(stream: HostStream, reason: string): void {
+  private fail(stream: HostStream, reason: CityEventStreamReason): void {
     this.closeStream(stream)
     stream.generation += 1
     this.settle(stream, lostHostCityEvents(stream.facts, reason))

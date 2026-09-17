@@ -81,6 +81,7 @@ import { verifyWorkspaceRemoteWorkflow } from './workspace-remote'
 import { workspaceCloseSmokeCommands } from './workspace-close'
 import {
   asHostId,
+  EMPTY_EXTERNAL_ATTENTION,
   hostPath,
   joinHostPath,
   localPath,
@@ -451,6 +452,8 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
         items: [],
         dropped: 0,
       }),
+      // The smoke harness runs no gas city owner, so nothing is waiting.
+      getExternalAttention: () => EMPTY_EXTERNAL_ATTENTION,
       acknowledgeWorkbenchHealth: () => ({
         version: 1,
         evidence: 'memory-only',

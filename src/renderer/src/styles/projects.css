@@ -428,6 +428,14 @@
   font-weight: 750;
   font-variant-numeric: tabular-nums;
 }
+
+/* A count hvir is no longer watching: present, and visibly not asserted. */
+.terminal-attention-count.stale {
+  border-style: dashed;
+  border-color: #5c5245;
+  background: #23201b;
+  color: #b3a58c;
+}
 .close-project-dialog code,
 .close-workspace-dialog code {
   overflow-wrap: anywhere;

@@ -210,25 +210,24 @@ describe('host city event facts', () => {
       [pending('r1', 'gc-1')],
       21,
     )
-    const lost = lostHostCityEvents(live, 'The city event stream closed')
+    const lost = lostHostCityEvents(live, 'closed')
 
     expect(lost.lifecycle).toEqual(live.lifecycle)
     expect(lost.pending).toEqual(live.pending)
     expect(lost.cursor).toBe('41')
     expect(lost.stream).toBe('lost')
-    expect(lost.reason).toBe('The city event stream closed')
+    expect(lost.reason).toBe('closed')
     expect(hostCityEventsFresh(lost)).toBe(false)
   })
 
   it('separates a stream that never opened from one that stopped', () => {
-    const never = unavailableHostCityEvents(opened(), 'unreachable')
+    const never = unavailableHostCityEvents(opened(), 'city-unknown')
 
-    expect(never).toMatchObject({ stream: 'unavailable', reason: 'unreachable' })
-    expect(lostHostCityEvents(opened(), 'x'.repeat(400)).reason).toHaveLength(201)
+    expect(never).toMatchObject({ stream: 'unavailable', reason: 'city-unknown' })
   })
 
   it('drops the reason when a stream comes back, not before', () => {
-    const lost = lostHostCityEvents(opened(), 'transport closed')
+    const lost = lostHostCityEvents(opened(), 'timeout')
 
     expect(liveHostCityEvents(lost, 30)).toEqual({
       hostId: HOST,

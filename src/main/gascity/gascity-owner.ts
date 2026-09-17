@@ -1,5 +1,10 @@
-import type { HostPath, ProjectState } from '../../shared'
+import type { ExternalAttentionSnapshot, HostPath, ProjectState } from '../../shared'
 import type { Disposer, ProjectHost } from '../project-host'
+import {
+  GasCityAttention,
+  type CityAttentionStreams,
+  type CityAttentionWorkspaceTarget,
+} from './city-attention'
 import { GasCityEventStreams, type CityEventStreamHost } from './city-event-streams'
 import { GasCityReader, type GasCityTarget } from './gascity-reader'
 import { GasCityService } from './gascity-service'
@@ -140,4 +145,47 @@ export function ownGasCityEventStreams(
   })
   streams.start()
   return streams
+}
+
+/**
+ * The attention rollup over those streams.
+ *
+ * Its workspaces are the open, present workspaces of the registered projects,
+ * which is what makes a pending interaction land in the same workspace the
+ * projected row does. Like the streams, it follows open projects rather than a
+ * view: with Sessions closed a blocked worker still raises the project tab and
+ * the nav badge (ADR-048).
+ */
+export function ownGasCityAttention(
+  access: SupervisorAccess,
+  streams: CityAttentionStreams,
+  deps: GasCityHostDeps,
+  publish: (snapshot: ExternalAttentionSnapshot) => void,
+): GasCityAttention {
+  const attention = new GasCityAttention({
+    access,
+    streams,
+    publish,
+    workspaces: () => {
+      const targets: CityAttentionWorkspaceTarget[] = []
+      for (const project of deps.projects.state().projects) {
+        for (const workspace of project.workspaces) {
+          // A closed or missing workspace owns no runtime and shows no badge,
+          // so an interaction placed there would be attention nobody can see.
+          if (workspace.closed || workspace.missing) continue
+          targets.push({
+            workspaceId: workspace.id,
+            root: workspace.root,
+            projectRoot: project.registeredRoot,
+            projectKey: project.id,
+            main: workspace.main,
+          })
+        }
+      }
+      return targets
+    },
+    observeWorkspaces: (listener) => deps.projects.observe(listener),
+  })
+  attention.start()
+  return attention
 }

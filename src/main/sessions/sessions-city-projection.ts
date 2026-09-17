@@ -1,6 +1,5 @@
 import {
   asHarnessProviderId,
-  containsHostPath,
   isHarnessProviderId,
   sessionsProjectionDisplayTitle,
   type HarnessProviderId,
@@ -14,6 +13,10 @@ import {
   type SessionsWorkspaceProjection,
   type ExternalSessionAttachment,
 } from '../../shared'
+import {
+  placeCitySession,
+  type CityPlacementTarget,
+} from '../gascity/city-session-placement'
 import type { CitySessionFact, HostCitySessions } from '../gascity/gascity-city-sessions'
 import { externalSessionDigest } from '../terminal/external-session-attachment'
 import type {
@@ -116,9 +119,7 @@ export function projectCitySessions({
   )
   let sourceProviderUsed = false
   for (const city of cities) {
-    const placement = workspaces.filter(
-      (target) => target.root.hostId === city.root.hostId,
-    )
+    const placement = placementTargets(workspaces, city)
     if (placement.length === 0) continue
     for (const fact of city.sessions) {
       const target = externalTarget(fact, city)
@@ -142,7 +143,7 @@ export function projectCitySessions({
         continue
       }
       if (sessions.length >= capacity) break
-      const workspace = placeSession(fact, placement)
+      const workspace = placeCitySession(fact, placement)
       if (workspace === undefined) continue
       const handle = identities.externalSession(target)
       // Out of handles for this demand: drop the session rather than present
@@ -233,48 +234,22 @@ function attachedSession(
 }
 
 /**
- * Where a session belongs, strongest signal first: the workspace its working
- * directory is inside, then the main workspace of the project owning its rig,
- * then the main workspace of the project containing its working directory. A
- * session hvir can place in none of those belongs to work hvir does not track,
- * and showing it under an unrelated project would be worse than not showing it.
+ * The workspaces on this city's host, as placement candidates. Mapped once per
+ * city rather than per session: the rule is the same for every session in it.
  */
-function placeSession(
-  fact: CitySessionFact,
-  targets: readonly SessionsCityWorkspaceTarget[],
-): SessionsWorkspaceProjection | undefined {
-  const exact = deepest(targets, (target) => target.root, fact.workDir)
-  if (exact !== undefined) return exact.workspace
-  return mainWorkspace(targets, fact.rigRoot) ?? mainWorkspace(targets, fact.workDir)
-}
-
-function mainWorkspace(
-  targets: readonly SessionsCityWorkspaceTarget[],
-  path: HostPath | undefined,
-): SessionsWorkspaceProjection | undefined {
-  const owner = deepest(targets, (target) => target.projectRoot, path)
-  if (owner === undefined) return undefined
-  const main = targets.find(
-    (target) =>
-      target.workspace.projectId === owner.workspace.projectId && target.workspace.main,
-  )
-  return main?.workspace ?? owner.workspace
-}
-
-/** The innermost containing target, so a worktree beats the project holding it. */
-function deepest(
-  targets: readonly SessionsCityWorkspaceTarget[],
-  rootOf: (target: SessionsCityWorkspaceTarget) => HostPath,
-  path: HostPath | undefined,
-): SessionsCityWorkspaceTarget | undefined {
-  if (path === undefined) return undefined
-  let best: SessionsCityWorkspaceTarget | undefined
-  for (const target of targets) {
-    const root = rootOf(target)
-    if (!containsHostPath(root, path)) continue
-    if (best === undefined || root.path.length > rootOf(best).path.length) best = target
-  }
-  return best
+function placementTargets(
+  workspaces: readonly SessionsCityWorkspaceTarget[],
+  city: HostCitySessions,
+): readonly CityPlacementTarget<SessionsWorkspaceProjection>[] {
+  return workspaces
+    .filter((target) => target.root.hostId === city.root.hostId)
+    .map((target) => ({
+      root: target.root,
+      projectRoot: target.projectRoot,
+      projectKey: String(target.workspace.projectId),
+      main: target.workspace.main,
+      value: target.workspace,
+    }))
 }
 
 /**
