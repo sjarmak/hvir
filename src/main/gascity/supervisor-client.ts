@@ -385,9 +385,18 @@ export function gascitySupervisorClient(
 ): GascitySupervisorClient {
   return new GascitySupervisorClient({
     hostId: host.hostId,
-    connect: (endpoint) => host.connectLoopback(endpoint),
+    connect: gascitySupervisorConnect(host),
     env,
   })
+}
+
+/**
+ * The channel for one host, for a caller that holds its own clients. Same
+ * ownership rule: the loopback call itself stays in this module, so widening who
+ * may dial a supervisor remains a deliberate change here.
+ */
+export function gascitySupervisorConnect(host: ProjectHost): SupervisorConnect {
+  return (endpoint) => host.connectLoopback(endpoint)
 }
 
 /** The request line for every operation this client is allowed to send. */

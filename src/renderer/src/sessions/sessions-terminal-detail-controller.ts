@@ -187,7 +187,7 @@ export class SessionsTerminalDetailController {
       }
       this.authority = next
       if (this.current.status === 'ready') {
-        this.publish({ status: 'ready', context: detailContext(row) })
+        this.publish({ status: 'ready', context: sessionsDetailContext(row) })
       }
       return
     }
@@ -201,7 +201,7 @@ export class SessionsTerminalDetailController {
     this.authority = undefined
     this.pendingAuthority = authority
     const generation = this.requestGeneration
-    this.publish({ status: 'resolving', context: detailContext(authority.row) })
+    this.publish({ status: 'resolving', context: sessionsDetailContext(authority.row) })
     const request = resolutionRequest(authority)
     void this.resolution.resolve(request).then(
       (response) => this.acceptResolution(generation, authority, response),
@@ -227,7 +227,7 @@ export class SessionsTerminalDetailController {
     ) {
       this.publish({
         status: 'unavailable',
-        context: detailContext(authority.row),
+        context: sessionsDetailContext(authority.row),
         message: detailUnavailableMessage('stale-projection'),
       })
       return
@@ -238,7 +238,7 @@ export class SessionsTerminalDetailController {
     if (acquisition.outcome === 'unavailable') {
       this.publish({
         status: 'unavailable',
-        context: detailContext(authority.row),
+        context: sessionsDetailContext(authority.row),
         message: sessionsTerminalSurfaceUnavailableMessage(acquisition.reason),
       })
       return
@@ -263,7 +263,7 @@ export class SessionsTerminalDetailController {
     this.pendingAuthority = undefined
     this.publish({
       status: 'unavailable',
-      context: detailContext(authority.row),
+      context: sessionsDetailContext(authority.row),
       message: detailUnavailableMessage(reason),
     })
   }
@@ -292,7 +292,7 @@ export class SessionsTerminalDetailController {
     message: string,
   ): void {
     const context = row
-      ? detailContext(row)
+      ? sessionsDetailContext(row)
       : this.current.status === 'inactive'
         ? undefined
         : this.current.context
@@ -344,12 +344,12 @@ export class SessionsTerminalDetailController {
       this.authority = undefined
       this.publish({
         status: 'unavailable',
-        context: detailContext(authority.row),
+        context: sessionsDetailContext(authority.row),
         message: sessionsTerminalSurfaceUnavailableMessage('instance-mismatch'),
       })
       return
     }
-    this.publish({ status: 'ready', context: detailContext(authority.row) })
+    this.publish({ status: 'ready', context: sessionsDetailContext(authority.row) })
     this.scheduleFocus()
   }
 
@@ -472,7 +472,10 @@ function sameLivePty(
   )
 }
 
-function detailContext(row: SessionsProjectionRow): SessionsTerminalDetailContext {
+/** The header facts a detail pane shows, whichever detail it is. */
+export function sessionsDetailContext(
+  row: SessionsProjectionRow,
+): SessionsTerminalDetailContext {
   return {
     title: row.title,
     projectName: row.project.name,

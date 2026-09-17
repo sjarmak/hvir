@@ -21,6 +21,17 @@ export interface ExternalSessionAttachTarget {
 }
 
 /**
+ * How a launch names its attach.
+ *
+ * A surface that legitimately holds the foreign identifier sends it. A surface
+ * that may not hold it — the Sessions projection, where no foreign identifier
+ * crosses IPC at all (ADR-046) — sends a ticket main minted for that row, and
+ * main redeems it against the identifier it kept.
+ */
+export type ExternalSessionAttachRequest =
+  ExternalSessionAttachTarget | { readonly ticket: string }
+
+/**
  * The attach, as hvir records it: the source, plus a digest of the identifier.
  *
  * Equality over the digest joins the terminal to its session exactly, which is
@@ -59,6 +70,22 @@ export function isExternalSessionAttachTarget(
       const code = character.charCodeAt(0)
       return code <= 31 || code === 127
     })
+  )
+}
+
+export function isExternalSessionAttachTicketRequest(
+  value: unknown,
+): value is { readonly ticket: string } {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as { readonly ticket?: unknown }
+  return typeof candidate.ticket === 'string' && /^[a-f0-9]{32}$/.test(candidate.ticket)
+}
+
+export function isExternalSessionAttachRequest(
+  value: unknown,
+): value is ExternalSessionAttachRequest {
+  return (
+    isExternalSessionAttachTarget(value) || isExternalSessionAttachTicketRequest(value)
   )
 }
 

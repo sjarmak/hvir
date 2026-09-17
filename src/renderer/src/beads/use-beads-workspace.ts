@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 
 import type {
-  ExternalSessionAttachTarget,
+  ExternalSessionAttachRequest,
   HostConnectionState,
   HostPath,
+  SessionsAttachExternalTarget,
 } from '../../../shared'
 import type { TerminalAttachRequest } from '../terminal/terminal-workspace-model'
 import type { WorkbenchRailMode } from '../workbench/use-workbench-layout'
@@ -45,6 +46,15 @@ export interface BeadsWorkspace {
    * when no workspace is active, nothing can launch, or the command was refused.
    */
   readonly requestBeadAction: (request: BeadActionRequest) => Promise<boolean>
+  /**
+   * Attach a projected external session in the workspace main just switched to.
+   * The ticket names the session; only main can redeem it, because the renderer
+   * is never told which session a projected row is (ADR-046).
+   */
+  readonly requestExternalAttach: (
+    workspaceId: string,
+    target: SessionsAttachExternalTarget,
+  ) => Promise<boolean>
   /** The pending attach request for `workspaceId`, if it targets that workspace. */
   readonly attachRequestFor: (workspaceId: string) => TerminalAttachRequest | undefined
   /** Each workspace terminal reports whether it could launch an attach shell. */
@@ -97,10 +107,19 @@ export function useBeadsWorkspace(
   const requestCommand = (
     command: string,
     key?: string,
-    attaches?: ExternalSessionAttachTarget,
+    attaches?: ExternalSessionAttachRequest,
   ): Promise<boolean> => {
     const workspaceId = activeWorkspace?.id
     if (!workspaceId || launchable.get(workspaceId) !== true) return Promise.resolve(false)
+    return dispatchCommand(workspaceId, command, key, attaches)
+  }
+
+  const dispatchCommand = (
+    workspaceId: string,
+    command: string,
+    key?: string,
+    attaches?: ExternalSessionAttachRequest,
+  ): Promise<boolean> => {
     attachNonce.current += 1
     return new Promise((resolve) => {
       setAttachRequest({
@@ -115,6 +134,15 @@ export function useBeadsWorkspace(
       })
     })
   }
+
+  // The attach targets the workspace main just switched to, whose terminal may
+  // not have reported yet. The request waits with that workspace instead of
+  // being refused for not having answered in time; it is told either way.
+  const requestExternalAttach = (
+    workspaceId: string,
+    target: SessionsAttachExternalTarget,
+  ): Promise<boolean> =>
+    dispatchCommand(workspaceId, target.command, target.key, { ticket: target.ticket })
 
   const requestCrewAction = (
     action: GasCityAction,
@@ -168,6 +196,7 @@ export function useBeadsWorkspace(
     actionsAvailable,
     requestCrewAction,
     requestBeadAction,
+    requestExternalAttach,
     attachRequestFor,
     reportLaunchAvailability,
   }

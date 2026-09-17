@@ -33,6 +33,9 @@ import {
 
 const HARNESS_SESSION_ID = '05ea41ff-026f-4ab6-b930-64eb3b497806'
 
+/** A well-formed Sessions attach ticket; the registry decides what it means. */
+const TICKET = 'b'.repeat(32)
+
 describe('terminal exact-resume IPC', () => {
   it.each([
     ['local', 'fresh', LOCAL_HOST_ID, false],
@@ -801,6 +804,68 @@ describe('terminal exact-resume IPC', () => {
     expect(fixture.spawn).not.toHaveBeenCalled()
     expect(fixture.recordSpawn).not.toHaveBeenCalled()
   })
+
+  it('records the session a Sessions attach ticket stands for', async () => {
+    const fixture = resumeFixture(LOCAL_HOST_ID, 'available')
+
+    const result = await fixture.start(
+      {
+        ...fixture.request,
+        resume: false,
+        harnessSessionId: undefined,
+        externalAttach: { ticket: TICKET },
+      },
+      fixture.context,
+    )
+
+    expect(result).toMatchObject({ outcome: 'started' })
+    expect(fixture.redeemTicket).toHaveBeenCalledWith({ id: 7, generation: 1 }, TICKET)
+    // The renderer sent a ticket; what persists is the session main redeemed it
+    // for, so the join is exact without the identifier ever crossing IPC.
+    expect(fixture.recordSpawn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        externalAttach: { sourceId: 'gas-city', key: 'mem-worker-1' },
+      }),
+    )
+  })
+
+  it('refuses a launch whose attach ticket is not redeemable', async () => {
+    const fixture = resumeFixture(LOCAL_HOST_ID, 'available')
+
+    await expect(
+      fixture.start(
+        {
+          ...fixture.request,
+          resume: false,
+          harnessSessionId: undefined,
+          externalAttach: { ticket: 'c'.repeat(32) },
+        },
+        fixture.context,
+      ),
+    ).rejects.toThrow('Sessions attach ticket is not redeemable')
+
+    expect(fixture.spawn).not.toHaveBeenCalled()
+    expect(fixture.recordSpawn).not.toHaveBeenCalled()
+  })
+
+  it('rejects an attach that is neither a known source nor a ticket', async () => {
+    const fixture = resumeFixture(LOCAL_HOST_ID, 'available')
+
+    await expect(
+      fixture.start(
+        {
+          ...fixture.request,
+          resume: false,
+          harnessSessionId: undefined,
+          externalAttach: { sourceId: 'some-other-tool', key: 'x' } as never,
+        },
+        fixture.context,
+      ),
+    ).rejects.toThrow('Invalid PTY session metadata')
+
+    expect(fixture.redeemTicket).not.toHaveBeenCalled()
+    expect(fixture.spawn).not.toHaveBeenCalled()
+  })
 })
 
 function resumeFixture(
@@ -975,6 +1040,9 @@ function resumeFixture(
   const probeProfiles = vi.fn()
   const refreshProfile = vi.fn()
   const recordSuccessfulLaunch = vi.fn()
+  const redeemTicket = vi.fn((_owner: unknown, ticket: string) =>
+    ticket === TICKET ? { sourceId: 'gas-city' as const, key: 'mem-worker-1' } : undefined,
+  )
   const getHost = vi.fn((candidateHostId: string) =>
     candidateHostId === host.hostId ? host : undefined,
   )
@@ -1023,6 +1091,7 @@ function resumeFixture(
       plan: vi.fn(),
       move: vi.fn(),
     },
+    sessionsAttachTickets: { redeem: redeemTicket },
   } as unknown as Parameters<typeof registerTerminalIpc>[1]
   registerTerminalIpc(ipc, deps)
   const start = handlers.get('pty:start') as (
@@ -1098,6 +1167,7 @@ function resumeFixture(
     probeProfiles,
     refreshProfile,
     recordSuccessfulLaunch,
+    redeemTicket,
     effectiveLaunchCapabilities,
     send,
     start,

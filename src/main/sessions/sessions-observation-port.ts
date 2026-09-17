@@ -15,9 +15,11 @@ import {
   type SessionsObservationSnapshot,
   type SessionsOpenRequest,
   type SessionsObservedSession,
+  type SessionsAttachExternalRequest,
   type SessionsProjectionChange,
   type SessionsProviderProjection,
   type SessionsTerminalHandle,
+  type SessionsTranscriptRequest,
   type SessionsUsageDemandRequest,
   type SessionsUsageDemandTarget,
   type SessionsWorkspaceProjection,
@@ -41,6 +43,13 @@ import {
   resolveSessionsOpen,
   type SessionsResolvedOpen,
 } from './sessions-open-resolution'
+import {
+  currentSessionsExternalSession,
+  resolveSessionsExternalAttach,
+  resolveSessionsExternalSession,
+  type SessionsResolvedExternalAttach,
+  type SessionsResolvedExternalSession,
+} from './sessions-external-resolution'
 import { sessionsTelemetryFacts } from './sessions-telemetry-projection'
 
 export interface SessionsObservationProvider {
@@ -86,6 +95,10 @@ export interface SessionsResolvedUsageTarget extends SessionsUsageDemandTarget {
 }
 
 export type { SessionsResolvedOpen } from './sessions-open-resolution'
+export type {
+  SessionsResolvedExternalAttach,
+  SessionsResolvedExternalSession,
+} from './sessions-external-resolution'
 
 type ObservationBase = Omit<SessionsObservationSnapshot, 'demandGeneration' | 'revision'>
 
@@ -153,6 +166,61 @@ export class SessionsObservationPort {
     const lease = this.leases.get(ownerKey(owner))
     return resolveSessionsOpen({
       owner,
+      request,
+      activeDemandGeneration: lease?.demandGeneration,
+      sourceRevision: this.revision,
+      observation: this.current,
+      identities: this.identities,
+      projectState: this.options.projectState(),
+    })
+  }
+
+  /**
+   * What foreign session a row stands for, as the renderer's own projection had
+   * it. The identifier stays inside this answer: it is returned to main-side
+   * callers, never to the renderer that asked (ADR-046).
+   */
+  resolveExternalSession(
+    owner: RendererOwner,
+    request: Pick<
+      SessionsTranscriptRequest,
+      'handle' | 'projectionDemandGeneration' | 'sourceRevision'
+    >,
+  ): SessionsResolvedExternalSession {
+    const lease = this.leases.get(ownerKey(owner))
+    return resolveSessionsExternalSession({
+      request,
+      activeDemandGeneration: lease?.demandGeneration,
+      sourceRevision: this.revision,
+      observation: this.current,
+      identities: this.identities,
+    })
+  }
+
+  /**
+   * The same question for a subscription that already holds a lease, asked as
+   * the projection moves. Revision is not checked, because a live detail is
+   * reconciled against change rather than invalidated by it.
+   */
+  currentExternalSession(
+    owner: RendererOwner,
+    projectionDemandGeneration: number,
+    handle: SessionsTerminalHandle,
+  ): SessionsResolvedExternalSession {
+    const lease = this.leases.get(ownerKey(owner))
+    if (!lease || lease.demandGeneration !== projectionDemandGeneration) {
+      return { outcome: 'unavailable', reason: 'stale-projection' }
+    }
+    return currentSessionsExternalSession(handle, this.current, this.identities)
+  }
+
+  /** Where an attach for a projected row would land, and what it would attach to. */
+  resolveExternalAttach(
+    owner: RendererOwner,
+    request: SessionsAttachExternalRequest,
+  ): SessionsResolvedExternalAttach {
+    const lease = this.leases.get(ownerKey(owner))
+    return resolveSessionsExternalAttach({
       request,
       activeDemandGeneration: lease?.demandGeneration,
       sourceRevision: this.revision,

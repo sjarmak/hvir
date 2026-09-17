@@ -12,6 +12,7 @@ export function SessionsTerminalDetail({
   origin,
   onBack,
   onOpenWorkspace,
+  onShowTranscript,
 }: {
   readonly controller: SessionsTerminalDetailController
   readonly state: Exclude<SessionsTerminalDetailState, { readonly status: 'inactive' }>
@@ -23,6 +24,11 @@ export function SessionsTerminalDetail({
   }
   readonly onBack: () => void
   readonly onOpenWorkspace: () => void
+  /**
+   * Offered for a row another authority owns: the same session, read as the
+   * transcript its owner keeps, for a reader who does not want the terminal.
+   */
+  readonly onShowTranscript?: () => void
 }): ReactElement {
   const dialog = useRef<HTMLElement>(null)
   useModalKeyboard(dialog, onBack)
@@ -62,6 +68,11 @@ export function SessionsTerminalDetail({
             <button type="button" autoFocus onClick={onBack}>
               Close
             </button>
+            {onShowTranscript ? (
+              <button type="button" onClick={onShowTranscript}>
+                Show transcript
+              </button>
+            ) : null}
             <button type="button" onClick={onOpenWorkspace}>
               Go to workspace
             </button>

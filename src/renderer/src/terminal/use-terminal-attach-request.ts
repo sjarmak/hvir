@@ -1,6 +1,10 @@
 import { useEffect, useRef } from 'react'
 
-import type { ExternalSessionAttachTarget } from '../../../shared'
+import {
+  isExternalSessionAttachTicketRequest,
+  type ExternalSessionAttachRequest,
+  type ExternalSessionAttachTarget,
+} from '../../../shared'
 import {
   resolveTerminalAttach,
   type TerminalAttachRequest,
@@ -19,7 +23,7 @@ export interface TerminalAttachPorts {
    */
   readonly launch: (
     command: string,
-    externalAttach?: ExternalSessionAttachTarget,
+    externalAttach?: ExternalSessionAttachRequest,
   ) => string | undefined
   /** Which of this workspace's terminals main has recorded against `attach`. */
   readonly resolveAttached: (
@@ -62,9 +66,16 @@ export function useTerminalAttachRequest(
       // nothing is: fall back to this renderer's own memory, which is what
       // served the request before main recorded the attach at all. The cost of
       // being wrong here is one extra terminal, never a wrong join.
-      const attachedIds = request.attaches
-        ? await resolveAttached(request.attaches).catch(() => [])
-        : []
+      // A ticket names a session this renderer was never told, so there is
+      // nothing to look up: main resolves it at launch. Focus-or-launch for
+      // those requests falls back to the key, as it did before main recorded
+      // any attach at all.
+      const lookup =
+        request.attaches === undefined ||
+        isExternalSessionAttachTicketRequest(request.attaches)
+          ? undefined
+          : request.attaches
+      const attachedIds = lookup ? await resolveAttached(lookup).catch(() => []) : []
       if (cancelled) return
       const outcome = resolveTerminalAttach(
         request,

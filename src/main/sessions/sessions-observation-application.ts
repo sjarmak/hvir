@@ -14,17 +14,27 @@ import {
   type CitySessionsObservationSource,
 } from './sessions-observation-port'
 import { SessionsUsageObservationPort } from './sessions-usage-observation-port'
+import { SessionsTranscriptPort } from './sessions-transcript-port'
+import { SessionsAttachTicketRegistry } from './sessions-attach-tickets'
+import { GascitySupervisorAccess } from '../gascity/supervisor-access'
+import { gascitySupervisorConnect } from '../gascity/supervisor-client'
+import type { ProjectHost } from '../project-host/project-host'
 
 export interface ApplicationSessionsObservation {
   readonly observation: SessionsObservationPort
   readonly usage: SessionsUsageObservationPort
+  readonly transcripts: SessionsTranscriptPort
+  readonly attachTickets: SessionsAttachTicketRegistry
 }
 
 /** Feature-owned application composition for demand-scoped Sessions observation. */
 export function installApplicationSessionsObservation(
   runtime: Pick<WorkbenchRuntime, 'own'>,
   projects: { state(): ProjectState; observe(listener: () => void): Disposer },
-  hosts: { listHosts(): readonly ProjectHostOption[] },
+  hosts: {
+    listHosts(): readonly ProjectHostOption[]
+    connectedHosts(): readonly ProjectHost[]
+  },
   sessions: TerminalSessionObservationSource,
   ptys: PtyObservationSource & PtyUsageObservationSource,
   events: Pick<RendererEventPublisher, 'toRenderer'>,
@@ -67,5 +77,30 @@ export function installApplicationSessionsObservation(
     }),
     (port) => port.dispose(),
   )
-  return { observation, usage }
+  const supervisor = new GascitySupervisorAccess({
+    // Only a host hvir is already connected to. A projected row must never be
+    // the reason a connection is opened (ADR-046).
+    connectFor: (hostId) => {
+      const host = hosts.connectedHosts().find((candidate) => candidate.hostId === hostId)
+      return host === undefined ? undefined : gascitySupervisorConnect(host)
+    },
+  })
+  const transcripts = runtime.own(
+    'Sessions transcript port',
+    new SessionsTranscriptPort({
+      sessions: observation,
+      supervisor,
+      emit: (owner, change) =>
+        events.toRenderer(owner, 'sessions:transcript-changed', change),
+    }),
+    (port) => port.dispose(),
+  )
+  const attachTickets = runtime.own(
+    'Sessions attach tickets',
+    new SessionsAttachTicketRegistry(),
+    (registry) => {
+      registry.clear()
+    },
+  )
+  return { observation, usage, transcripts, attachTickets }
 }

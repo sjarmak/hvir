@@ -2,7 +2,7 @@ import type { RefObject } from 'react'
 
 import { hostPathEquals } from '../../../shared'
 import type {
-  ExternalSessionAttachTarget,
+  ExternalSessionAttachRequest,
   HarnessProfile,
   HarnessProfileId,
   HarnessProfileProbe,
@@ -58,7 +58,7 @@ export function useTerminalSessionCommands({
     profile: HarnessProfile,
     provider: HarnessProviderDescriptor,
     initialInput?: string,
-    externalAttach?: ExternalSessionAttachTarget,
+    externalAttach?: ExternalSessionAttachRequest,
   ): string => {
     const current = modelRef.current
     const pane = terminalWorkspaceSplit(current) ? current.activePane : 'primary'
@@ -229,7 +229,7 @@ export function useTerminalSessionCommands({
     // or undefined when the workspace has no default harness to launch.
     launchAttach: (
       command: string,
-      externalAttach?: ExternalSessionAttachTarget,
+      externalAttach?: ExternalSessionAttachRequest,
     ): string | undefined =>
       available && defaultProvider && defaultProfile
         ? launch(defaultProfile, defaultProvider, command, externalAttach)

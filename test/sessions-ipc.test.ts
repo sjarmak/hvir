@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { IpcRegistrar } from '../src/main/ipc/authority-router'
 import { registerSessionsIpc } from '../src/main/ipc/features/sessions'
-import type { SessionsResolvedOpen } from '../src/main/sessions/sessions-observation-port'
+import type {
+  SessionsResolvedExternalAttach,
+  SessionsResolvedOpen,
+} from '../src/main/sessions/sessions-observation-port'
 import { RendererResourceScopes } from '../src/main/renderer-resource-scopes'
 import {
   SESSIONS_PROJECTION_VERSION,
@@ -11,7 +14,9 @@ import {
   asSessionsTerminalHandle,
   asSessionsWorkspaceHandle,
   sessionsWorkspaceQualifier,
+  SESSIONS_TRANSCRIPT_VERSION,
   type SessionsObservationSnapshot,
+  type SessionsTranscriptSnapshot,
 } from '../src/shared'
 
 describe('Sessions IPC', () => {
@@ -220,6 +225,114 @@ describe('Sessions IPC', () => {
     expect(sessionsUsage.release).toHaveBeenCalledExactlyOnceWith(owner, 6)
     await scopes.dispose()
   })
+
+  it('holds one transcript demand per renderer and drops it with the owner', async () => {
+    const scopes = new RendererResourceScopes()
+    const owner = scopes.activateOwner(29)
+    const observation = { acquire: vi.fn(), snapshot: vi.fn(), release: vi.fn() }
+    const { invoke, sessionsTranscripts } = fixture(scopes, observation)
+    const context = { owner: () => owner }
+    const request = {
+      demandGeneration: 2,
+      projectionDemandGeneration: 4,
+      sourceRevision: 9,
+      handle: asSessionsTerminalHandle('sessions-external-0001'),
+    }
+
+    await expect(
+      invoke('sessions:transcript-observe', request, context),
+    ).resolves.toMatchObject({ demandGeneration: 2, revision: 1 })
+    expect(sessionsTranscripts.acquire).toHaveBeenCalledExactlyOnceWith(owner, request)
+    await expect(
+      invoke('sessions:transcript-snapshot', { demandGeneration: 2 }, context),
+    ).resolves.toMatchObject({ revision: 2 })
+    // Reconnecting is a request, not something the port did on its own.
+    await expect(
+      invoke('sessions:transcript-resume', { demandGeneration: 2 }, context),
+    ).resolves.toMatchObject({ revision: 3 })
+    expect(sessionsTranscripts.resume).toHaveBeenCalledExactlyOnceWith(owner, 2)
+
+    const rollover = scopes.rolloverOwner(owner.id)
+    await rollover.cleanup
+    expect(sessionsTranscripts.release).toHaveBeenCalledExactlyOnceWith(owner, 2)
+    await scopes.dispose()
+  })
+
+  it('answers an external Attach with a command and a ticket, never the identifier', async () => {
+    const scopes = new RendererResourceScopes()
+    const owner = scopes.activateOwner(31)
+    const qualifier = sessionsWorkspaceQualifier(3, 0, 0)
+    const resolveExternalAttach = vi.fn((): SessionsResolvedExternalAttach => ({
+      outcome: 'resolved',
+      projectId: 'project-real',
+      workspaceId: 'workspace-real',
+      handle: asSessionsTerminalHandle('sessions-external-0001'),
+      target: {
+        sourceId: 'gas-city',
+        hostId: 'local' as never,
+        key: 'gc-mem-worker-1',
+        attachTarget: 'mem-worker-1',
+      },
+      attachTarget: 'mem-worker-1',
+    }))
+    const observation = {
+      acquire: vi.fn(),
+      snapshot: vi.fn(),
+      release: vi.fn(),
+      resolveExternalAttach,
+    }
+    const switchWorkspace = vi.fn(() => Promise.resolve({ marker: 'switched' }))
+    const { invoke, sessionsAttachTickets } = fixture(
+      scopes,
+      observation,
+      switchWorkspace,
+    )
+    const request = {
+      demandGeneration: 4,
+      sourceRevision: 7,
+      handle: asSessionsTerminalHandle('sessions-external-0001'),
+      projectId: asSessionsProjectHandle('project-opaque'),
+      workspaceId: asSessionsWorkspaceHandle('workspace-opaque'),
+      workspaceQualifier: qualifier,
+    }
+
+    const attached = await invoke('sessions:attach-external', request, {
+      owner: () => owner,
+    })
+
+    expect(attached).toEqual({
+      outcome: 'attached',
+      state: { marker: 'switched' },
+      handle: 'sessions-external-0001',
+      target: {
+        command: "gc session attach 'mem-worker-1'",
+        key: 'gc:mem-worker-1',
+        ticket: 'a'.repeat(32),
+      },
+    })
+    // The command carries the source's published alias; the session identifier
+    // stays behind the ticket (ADR-046).
+    expect(JSON.stringify(attached)).not.toContain('gc-mem-worker-1')
+    expect(sessionsAttachTickets.mint).toHaveBeenCalledExactlyOnceWith(owner, {
+      sourceId: 'gas-city',
+      key: 'gc-mem-worker-1',
+    })
+    expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith(
+      'project-real',
+      'workspace-real',
+    )
+
+    resolveExternalAttach.mockReturnValueOnce({
+      outcome: 'unavailable',
+      reason: 'not-projected',
+    })
+    await expect(
+      invoke('sessions:attach-external', request, { owner: () => owner }),
+    ).resolves.toEqual({ outcome: 'unavailable', reason: 'not-projected' })
+    expect(switchWorkspace).toHaveBeenCalledOnce()
+    expect(sessionsAttachTickets.mint).toHaveBeenCalledOnce()
+    await scopes.dispose()
+  })
 })
 
 function fixture(
@@ -229,6 +342,7 @@ function fixture(
     snapshot: ReturnType<typeof vi.fn>
     release: ReturnType<typeof vi.fn>
     resolveOpen?: ReturnType<typeof vi.fn>
+    resolveExternalAttach?: ReturnType<typeof vi.fn>
   },
   switchWorkspace = vi.fn(),
 ) {
@@ -255,6 +369,19 @@ function fixture(
     })),
     release: vi.fn(() => true),
   }
+  const sessionsTranscripts = {
+    acquire: vi.fn((_owner, request: { demandGeneration: number }) =>
+      transcriptSnapshot(request.demandGeneration, 1),
+    ),
+    snapshot: vi.fn((_owner, demandGeneration: number) =>
+      transcriptSnapshot(demandGeneration, 2),
+    ),
+    resume: vi.fn((_owner, demandGeneration: number) =>
+      transcriptSnapshot(demandGeneration, 3),
+    ),
+    release: vi.fn(() => true),
+  }
+  const sessionsAttachTickets = { mint: vi.fn(() => 'a'.repeat(32)) }
   registerSessionsIpc(ipc, {
     rendererResources,
     sessionsObservation: {
@@ -262,17 +389,41 @@ function fixture(
       resolveOpen:
         sessionsObservation.resolveOpen ??
         vi.fn(() => ({ outcome: 'unavailable', reason: 'stale-projection' })),
+      resolveExternalAttach:
+        sessionsObservation.resolveExternalAttach ??
+        vi.fn(() => ({ outcome: 'unavailable', reason: 'stale-projection' })),
     },
     sessionsUsage,
+    sessionsTranscripts,
+    sessionsAttachTickets,
     switchWorkspace,
   } as never)
   return {
     sessionsUsage,
+    sessionsTranscripts,
+    sessionsAttachTickets,
     invoke: (channel: string, request: unknown, context: unknown) => {
       const handler = handlers.get(channel)
       if (!handler) throw new Error(`Missing handler ${channel}`)
       return Promise.resolve().then(() => handler(request as never, context as never))
     },
+  }
+}
+
+function transcriptSnapshot(
+  demandGeneration: number,
+  revision: number,
+): SessionsTranscriptSnapshot {
+  return {
+    version: SESSIONS_TRANSCRIPT_VERSION,
+    demandGeneration,
+    revision,
+    handle: asSessionsTerminalHandle('sessions-external-0001'),
+    status: 'ready',
+    stream: 'live',
+    turns: [],
+    older: false,
+    dropped: 0,
   }
 }
 

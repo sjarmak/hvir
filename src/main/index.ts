@@ -408,6 +408,8 @@ function createWorkbenchEntry(): void {
         terminalSessions: terminalSessionRegistry,
         sessionsObservation: sessionsPorts.observation,
         sessionsUsage: sessionsPorts.usage,
+        sessionsTranscripts: sessionsPorts.transcripts,
+        sessionsAttachTickets: sessionsPorts.attachTickets,
         terminalMoves,
         harnessProfiles: harnessProfileStore,
         harnessProbes: harnessProbeManager,

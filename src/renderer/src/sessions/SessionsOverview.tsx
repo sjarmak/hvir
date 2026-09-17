@@ -12,6 +12,8 @@ import {
 
 import type {
   ProjectState,
+  SessionsAttachExternalTarget,
+  SessionsAttachExternalUnavailableReason,
   SessionsLivePtyQualifier,
   SessionsOpenUnavailableReason,
   SessionsProjectionRow,
@@ -22,11 +24,16 @@ import { SessionsOverviewCard } from './SessionsOverviewCard'
 import { SessionsOverviewNotice } from './SessionsOverviewNotice'
 import { SessionsCollectionToolbar } from './SessionsCollectionToolbar'
 import { SessionsTerminalDetail } from './SessionsTerminalDetail'
+import { SessionsTranscriptDetail } from './SessionsTranscriptDetail'
 import {
   SessionsProjectionCoordinator,
   createSessionsMainObservationPort,
 } from './sessions-projection-coordinator'
 import type { SessionsRendererObservationPort } from './sessions-renderer-observation'
+import {
+  sessionsDetailContext,
+  type SessionsTerminalDetailContext,
+} from './sessions-terminal-detail-controller'
 import { sessionsTerminalOverlayOrigin } from './sessions-terminal-overlay'
 import {
   sessionsTerminalSurfaceEligible,
@@ -34,6 +41,7 @@ import {
 } from './sessions-terminal-surface'
 import { useSessionsForeground } from './use-sessions-foreground'
 import { useSessionsTerminalDetail } from './use-sessions-terminal-detail'
+import { useSessionsTranscript } from './use-sessions-transcript'
 import {
   DEFAULT_SESSIONS_OVERVIEW_POLICY,
   SESSIONS_OVERVIEW_PAGE_SIZE,
@@ -57,6 +65,15 @@ interface SessionsOverviewProps {
     livePty: SessionsLivePtyQualifier,
   ) => Promise<boolean>
   readonly onOpenFailed: (message: string) => void
+  /**
+   * Runs the attach command main composed for a projected row, in the workspace
+   * the attach switched to. The renderer never learns which foreign session the
+   * command names: it carries main's ticket and nothing else (ADR-046).
+   */
+  readonly onAttachExternal: (
+    workspaceId: string,
+    target: SessionsAttachExternalTarget,
+  ) => Promise<boolean>
 }
 
 export function SessionsOverview({
@@ -65,6 +82,7 @@ export function SessionsOverview({
   onOpened,
   onFocusOpened,
   onOpenFailed,
+  onAttachExternal,
 }: SessionsOverviewProps): ReactElement {
   const coordinator = useRef<SessionsProjectionCoordinator | undefined>(undefined)
   coordinator.current ??= new SessionsProjectionCoordinator(
@@ -83,12 +101,18 @@ export function SessionsOverview({
     snapshot,
     foreground,
   })
+  const { coordinator: transcripts, state: transcriptState } = useSessionsTranscript({
+    snapshot,
+    foreground,
+  })
   const [policy, setPolicy] = useState<SessionsOverviewPolicy>(
     DEFAULT_SESSIONS_OVERVIEW_POLICY,
   )
   const [selected, setSelected] = useState<SessionsTerminalHandle>()
   const [feedback, setFeedback] = useState<string>()
   const [opening, setOpening] = useState<SessionsTerminalHandle>()
+  const [transcript, setTranscript] = useState<SessionsTranscriptTarget>()
+  const [attaching, setAttaching] = useState<SessionsTerminalHandle>()
   const detailOrigin = useRef<ReturnType<typeof sessionsTerminalOverlayOrigin>>(undefined)
   const [pageIndex, setPageIndex] = useState(0)
   const previousOrder = useRef<readonly SessionsTerminalHandle[]>([])
@@ -96,6 +120,8 @@ export function SessionsOverview({
   const rowElements = useRef(new Map<SessionsTerminalHandle, HTMLElement>())
   const collectionControl = useRef<HTMLButtonElement>(null)
   const openGeneration = useRef(0)
+  // Either pane is a modal over the list, so the list is inert behind both.
+  const detailActive = detailState.status !== 'inactive' || transcript !== undefined
 
   useEffect(() => {
     if (!foreground) return
@@ -107,6 +133,8 @@ export function SessionsOverview({
     openGeneration.current += 1
     rowElements.current.clear()
     setOpening(undefined)
+    setAttaching(undefined)
+    setTranscript(undefined)
     detailOrigin.current = undefined
     setFeedback(undefined)
     pendingFocus.current = undefined
@@ -157,14 +185,23 @@ export function SessionsOverview({
     rowElements.current.get(handle)?.focus()
   }, [page.rows])
   useLayoutEffect(() => {
-    if (detailState.status !== 'inactive') return
+    if (detailActive) return
     const handle = pendingFocus.current
     if (!handle) return
     pendingFocus.current = undefined
     const row = rowElements.current.get(handle)
     if (row) row.focus()
     else collectionControl.current?.focus()
-  }, [detailState.status])
+  }, [detailActive])
+  useEffect(() => {
+    // The header is the row's, and the row keeps changing while the pane reads
+    // it. A row that leaves the projection keeps the header it had: what the
+    // pane reports then is main's own unavailable reason, not a blank dialog.
+    if (!transcript) return
+    const row = snapshot.rows.find((candidate) => candidate.handle === transcript.handle)
+    const next = row ? transcriptTarget(row) : undefined
+    if (next && !sameTranscriptTarget(next, transcript)) setTranscript(next)
+  }, [snapshot.rows, transcript])
 
   const updatePolicy = <K extends keyof SessionsOverviewPolicy>(
     key: K,
@@ -240,6 +277,123 @@ export function SessionsOverview({
     void open(row)
   }, [detail, open, source])
 
+  const openTranscript = useCallback(
+    (row: SessionsProjectionRow): void => {
+      const target = transcriptTarget(row)
+      if (!target) return
+      detailOrigin.current = sessionsTerminalOverlayOrigin(
+        rowElements.current.get(row.handle),
+      )
+      setFeedback(undefined)
+      setTranscript(target)
+      transcripts.open(row.handle, source.snapshot())
+    },
+    [source, transcripts],
+  )
+
+  const closeTranscript = useCallback((): void => {
+    pendingFocus.current = transcripts.selectedHandle()
+    transcripts.close()
+    setTranscript(undefined)
+    detailOrigin.current = undefined
+  }, [transcripts])
+
+  /** The row the terminal detail is showing, as a transcript. */
+  const showTranscript = useCallback((): void => {
+    const handle = detail.selectedHandle()
+    const row = handle
+      ? source.snapshot().rows.find((candidate) => candidate.handle === handle)
+      : undefined
+    const target = row ? transcriptTarget(row) : undefined
+    if (!target) {
+      pendingFocus.current = handle
+      detail.close()
+      setFeedback(openUnavailableMessage('session-unavailable'))
+      return
+    }
+    detail.close()
+    setTranscript(target)
+    transcripts.open(target.handle, source.snapshot())
+  }, [detail, source, transcripts])
+
+  /** The borrowed terminal for a row hvir already owns a live PTY for. */
+  const showTerminal = useCallback((): void => {
+    const handle = transcripts.selectedHandle()
+    const captured = source.snapshot()
+    const row = handle
+      ? captured.rows.find((candidate) => candidate.handle === handle)
+      : undefined
+    if (!row || !sessionsTerminalSurfaceEligible(row)) {
+      closeTranscript()
+      setFeedback(openUnavailableMessage('terminal-unavailable'))
+      return
+    }
+    transcripts.close()
+    setTranscript(undefined)
+    detail.open(row, captured, foreground)
+  }, [closeTranscript, detail, foreground, source, transcripts])
+
+  /**
+   * Hands the row to hvir's own terminal: main switches to the owning
+   * workspace, mints a ticket for the session, and the workspace runs the
+   * command that ticket stands for.
+   */
+  const attach = useCallback(async (): Promise<void> => {
+    const handle = transcripts.selectedHandle()
+    if (attaching !== undefined || handle === undefined) return
+    const captured = source.snapshot()
+    const row = captured.rows.find((candidate) => candidate.handle === handle)
+    if (!row) {
+      setFeedback(openUnavailableMessage('session-unavailable'))
+      return
+    }
+    const generation = (openGeneration.current += 1)
+    setAttaching(handle)
+    try {
+      const result = await window.hvir.invoke('sessions:attach-external', {
+        demandGeneration: captured.demandGeneration,
+        sourceRevision: captured.sourceRevision,
+        handle,
+        projectId: row.project.id,
+        workspaceId: row.workspace.id,
+        workspaceQualifier: row.workspace.qualifier,
+      })
+      if (generation !== openGeneration.current) return
+      if (result.outcome === 'unavailable') {
+        setFeedback(
+          attachUnavailableMessage(
+            source.snapshot().revision !== captured.revision
+              ? 'stale-projection'
+              : result.reason,
+          ),
+        )
+        return
+      }
+      closeTranscript()
+      onOpened(result.state)
+      const launched = await onAttachExternal(
+        result.state.activeWorkspaceId,
+        result.target,
+      )
+      if (!launched)
+        onOpenFailed('The attach command could not be started in that workspace')
+    } catch {
+      if (generation === openGeneration.current) {
+        setFeedback('This session could not be attached')
+      }
+    } finally {
+      if (generation === openGeneration.current) setAttaching(undefined)
+    }
+  }, [
+    attaching,
+    closeTranscript,
+    onAttachExternal,
+    onOpenFailed,
+    onOpened,
+    source,
+    transcripts,
+  ])
+
   const moveFocus = (
     event: ReactKeyboardEvent<HTMLElement>,
     row: SessionsProjectionRow,
@@ -279,7 +433,14 @@ export function SessionsOverview({
   }
 
   const policyLabel = sessionsOverviewPolicyLabel(policy)
-  const detailActive = detailState.status !== 'inactive'
+  const detailTranscriptOffered = useMemo(() => {
+    if (detailState.status === 'inactive') return false
+    const handle = detail.selectedHandle()
+    const row = handle
+      ? snapshot.rows.find((candidate) => candidate.handle === handle)
+      : undefined
+    return row?.origin.kind === 'external-agent'
+  }, [detail, detailState, snapshot.rows])
   return (
     <>
       <main
@@ -422,6 +583,9 @@ export function SessionsOverview({
                           {section.rows.map((row) => {
                             const isSelected = selected === row.handle
                             const liveTerminal = sessionsTerminalSurfaceEligible(row)
+                            // A row someone else's agent owns has a transcript
+                            // whether or not hvir holds a terminal for it.
+                            const external = row.origin.kind === 'external-agent'
                             const cardIdentity = sessionsOverviewCardIdentity(
                               row,
                               policy.group,
@@ -448,6 +612,7 @@ export function SessionsOverview({
                                   ) {
                                     event.preventDefault()
                                     if (liveTerminal) void open(row)
+                                    else if (external) openTranscript(row)
                                     return
                                   }
                                   moveFocus(event, row)
@@ -467,7 +632,9 @@ export function SessionsOverview({
                                             )
                                           detail.open(row, source.snapshot(), foreground)
                                         }
-                                      : undefined
+                                      : external
+                                        ? () => openTranscript(row)
+                                        : undefined
                                   }
                                 />
                               </article>
@@ -494,10 +661,78 @@ export function SessionsOverview({
             detailOrigin.current = undefined
           }}
           onOpenWorkspace={openDetailWorkspace}
+          onShowTranscript={detailTranscriptOffered ? showTranscript : undefined}
+        />
+      ) : null}
+      {transcript ? (
+        <SessionsTranscriptDetail
+          context={transcript.context}
+          sourceName={transcript.sourceName}
+          state={transcriptState}
+          origin={detailOrigin.current}
+          attaching={attaching === transcript.handle}
+          onBack={closeTranscript}
+          onResume={() => transcripts.resume()}
+          onAttach={() => void attach()}
+          onShowTerminal={transcript.live ? showTerminal : undefined}
         />
       ) : null}
     </>
   )
+}
+
+/** What a transcript pane shows in its header, and what it may offer. */
+interface SessionsTranscriptTarget {
+  readonly handle: SessionsTerminalHandle
+  /** The owning authority's own name, so the pane says whose session it is. */
+  readonly sourceName: string
+  readonly context: SessionsTerminalDetailContext
+  /** hvir owns a live terminal for the row, so the terminal is offered too. */
+  readonly live: boolean
+}
+
+/** Only a row another authority owns has a transcript hvir can read. */
+function transcriptTarget(
+  row: SessionsProjectionRow,
+): SessionsTranscriptTarget | undefined {
+  if (row.origin.kind !== 'external-agent') return undefined
+  return {
+    handle: row.handle,
+    sourceName: row.origin.sourceName,
+    context: sessionsDetailContext(row),
+    live: sessionsTerminalSurfaceEligible(row),
+  }
+}
+
+function sameTranscriptTarget(
+  left: SessionsTranscriptTarget,
+  right: SessionsTranscriptTarget,
+): boolean {
+  return (
+    left.handle === right.handle &&
+    left.sourceName === right.sourceName &&
+    left.live === right.live &&
+    left.context.title === right.context.title &&
+    left.context.projectName === right.context.projectName &&
+    left.context.workspaceName === right.context.workspaceName &&
+    left.context.hostLabel === right.context.hostLabel &&
+    left.context.providerName === right.context.providerName
+  )
+}
+
+function attachUnavailableMessage(
+  reason: SessionsAttachExternalUnavailableReason,
+): string {
+  switch (reason) {
+    case 'stale-projection':
+      return 'Sessions changed. Review the refreshed row before attaching it.'
+    case 'not-projected':
+      return 'This session is no longer listed here.'
+    case 'workspace-unavailable':
+      return 'The owning workspace is not available.'
+    case 'connection-unavailable':
+      return 'The host is disconnected. Reconnect from the workspace before attaching.'
+  }
 }
 
 function openUnavailableMessage(reason: SessionsOpenUnavailableReason): string {

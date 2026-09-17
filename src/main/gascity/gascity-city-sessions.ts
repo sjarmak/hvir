@@ -32,6 +32,12 @@ export interface CitySessionFact {
    */
   readonly sessionKey: string
   readonly label: string
+  /**
+   * How gc addresses this session in a `gc session <verb> <target>` command.
+   * An alias gc publishes for human use, which is why it may be carried into a
+   * command hvir runs; the session identifier itself may not.
+   */
+  readonly attachTarget: string
   readonly tier: GasCityCrewTier
   readonly poolName?: string
   readonly cityLead?: boolean
@@ -127,6 +133,7 @@ function fact(
   return {
     sessionKey: session.id,
     label: member.label,
+    attachTarget: member.target,
     tier: member.tier,
     state: session.state,
     activity: gasCitySessionActivity(session.state),

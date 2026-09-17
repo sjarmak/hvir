@@ -17,6 +17,7 @@ export type RendererResourceQualifier =
         | 'project-folder-picker'
         | 'sessions-observation'
         | 'sessions-usage-observation'
+        | 'sessions-transcript-observation'
     }
   | {
       readonly lifetime: 'workspace'

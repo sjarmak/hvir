@@ -1,10 +1,15 @@
 import type { IpcRegistrar } from '../authority-router'
 import type { IpcDeps } from '../deps'
-import { asSessionsWorkspaceRuntimeId } from '../../../shared'
+import { asSessionsWorkspaceRuntimeId, gasCityAttachCommand } from '../../../shared'
 
 type SessionsIpcDeps = Pick<
   IpcDeps,
-  'rendererResources' | 'sessionsObservation' | 'sessionsUsage' | 'switchWorkspace'
+  | 'rendererResources'
+  | 'sessionsObservation'
+  | 'sessionsUsage'
+  | 'sessionsTranscripts'
+  | 'sessionsAttachTickets'
+  | 'switchWorkspace'
 >
 
 export function registerSessionsIpc(ipc: IpcRegistrar, deps: SessionsIpcDeps): void {
@@ -97,6 +102,64 @@ export function registerSessionsIpc(ipc: IpcRegistrar, deps: SessionsIpcDeps): v
       workspaceQualifier: target.workspaceQualifier,
       workspaceRuntimeId: asSessionsWorkspaceRuntimeId(target.workspaceId),
       livePty: target.livePty,
+    }
+  })
+
+  ipc.handle('sessions:transcript-observe', (request, context) => {
+    const owner = context.owner()
+    deps.rendererResources.assertCurrent(owner)
+    const snapshot = deps.sessionsTranscripts.acquire(owner, request)
+    try {
+      deps.rendererResources.register(
+        owner,
+        { lifetime: 'renderer', type: 'sessions-transcript-observation' },
+        () => {
+          deps.sessionsTranscripts.release(owner, request.demandGeneration)
+        },
+        { duplicate: 'reuse' },
+      )
+      return snapshot
+    } catch (error) {
+      deps.sessionsTranscripts.release(owner, request.demandGeneration)
+      throw error
+    }
+  })
+
+  ipc.handle('sessions:transcript-snapshot', (request, context) =>
+    deps.sessionsTranscripts.snapshot(context.owner(), request.demandGeneration),
+  )
+
+  ipc.handle('sessions:transcript-resume', (request, context) => {
+    const owner = context.owner()
+    deps.rendererResources.assertCurrent(owner)
+    return deps.sessionsTranscripts.resume(owner, request.demandGeneration)
+  })
+
+  ipc.handle('sessions:transcript-release', async (request, context) => {
+    const owner = context.owner()
+    if (!deps.sessionsTranscripts.release(owner, request.demandGeneration)) return
+    await deps.rendererResources.disposeResource(owner, 'sessions-transcript-observation')
+  })
+
+  ipc.handle('sessions:attach-external', async (request, context) => {
+    const owner = context.owner()
+    deps.rendererResources.assertCurrent(owner)
+    const target = deps.sessionsObservation.resolveExternalAttach(owner, request)
+    if (target.outcome === 'unavailable') return target
+    // The command is the source's own published alias, and the ticket is what
+    // the launch will redeem: the session identifier stays on this side.
+    const command = gasCityAttachCommand(target.attachTarget)
+    const ticket = deps.sessionsAttachTickets.mint(owner, {
+      sourceId: target.target.sourceId,
+      key: target.target.key,
+    })
+    const state = await deps.switchWorkspace(target.projectId, target.workspaceId)
+    deps.rendererResources.assertCurrent(owner)
+    return {
+      outcome: 'attached' as const,
+      state,
+      handle: target.handle,
+      target: { ...command, ticket },
     }
   })
 }

@@ -652,6 +652,7 @@ export function App(): ReactElement {
         runtime={terminalWorkspaces}
         onOpened={(state) => (showTerminal(), accept(state), setDestination('workspace'))}
         onError={session.reportError}
+        onAttachExternal={beads.requestExternalAttach}
       />
       {overlays.projectPickerOpen ? (
         <SessionDialog

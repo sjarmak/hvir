@@ -9,7 +9,7 @@ import type {
   HostConnectionState,
   HostPath,
   TerminalIdentityStatus,
-  ExternalSessionAttachTarget,
+  ExternalSessionAttachRequest,
 } from '../../../shared'
 import type { TerminalThemeOverride } from '../settings/settings'
 import { useAppTheme, type AppTheme } from '../theme'
@@ -49,7 +49,7 @@ interface TerminalViewProps {
    * attach and the requesting surface named the session exactly. Recorded by
    * main at spawn, so the row it joins survives a reload (ADR-046).
    */
-  readonly externalAttach?: ExternalSessionAttachTarget
+  readonly externalAttach?: ExternalSessionAttachRequest
   readonly startMode: 'interactive' | 'bulk'
   readonly position: number
   readonly slot: 'primary' | 'secondary'

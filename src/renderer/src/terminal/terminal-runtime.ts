@@ -45,6 +45,9 @@ export class TerminalRuntime {
   // The initial command is typed exactly once — the first launch — never on a
   // reconnect or manual restart, which would re-run it unexpectedly.
   private initialInputSent = false
+  // The attach is declared to main exactly once, at the launch that performs
+  // it. Main holds the record afterwards; a ticket is spent when it redeems.
+  private attachDeclared = false
   private disconnected = false
   private appliedConnectionState: HostConnectionState
   private restartRequested = false
@@ -346,6 +349,7 @@ export class TerminalRuntime {
           this.terminalSize,
           this.currentSnapshot.title,
           resume,
+          !this.attachDeclared,
         ),
       )
       if (!this.isCurrent(generation)) {
@@ -361,6 +365,7 @@ export class TerminalRuntime {
       }
       this.started = true
       this.hasStarted = true
+      this.attachDeclared = true
       this.activePtyId = result.id
       this.activePtyInstanceId = result.instanceId
       this.interactions.bind(pane, result.id)

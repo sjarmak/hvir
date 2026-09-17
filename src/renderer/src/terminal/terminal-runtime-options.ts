@@ -7,7 +7,7 @@ import type {
   HostConnectionState,
   HostPath,
   TerminalIdentityStatus,
-  ExternalSessionAttachTarget,
+  ExternalSessionAttachRequest,
 } from '../../../shared'
 import type {
   TerminalColorTheme,
@@ -40,10 +40,11 @@ export interface TerminalRuntimeOptions {
   readonly initialInput?: string
   /**
    * The gc session this terminal attaches to, when hvir is performing the
-   * attach and the requesting surface named the session exactly. Recorded by
-   * main at spawn, so the row it joins survives a reload (ADR-046).
+   * attach and the requesting surface could name the session. Declared once, at
+   * the launch that performs the attach; main keeps the record afterwards, so a
+   * restart names nothing and keeps the join (ADR-046).
    */
-  readonly externalAttach?: ExternalSessionAttachTarget
+  readonly externalAttach?: ExternalSessionAttachRequest
   readonly position: number
   readonly active: boolean
   readonly presentation: TerminalPresentation

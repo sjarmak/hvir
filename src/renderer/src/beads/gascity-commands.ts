@@ -5,7 +5,13 @@
  * `handoff` stay the user's call, not ours.
  */
 
-import type { ExternalSessionAttachTarget } from '../../../shared'
+import {
+  gasCityAttachCommand,
+  shellQuoteArg,
+  type ExternalSessionAttachTarget,
+} from '../../../shared'
+
+export { shellQuoteArg }
 
 export const GAS_CITY_ACTIONS = ['attach', 'peek', 'reset', 'handoff'] as const
 
@@ -54,8 +60,7 @@ export function gasCityCommand(
   switch (action) {
     case 'attach':
       return {
-        command: `gc session attach ${quoted}`,
-        key: `gc:${target}`,
+        ...gasCityAttachCommand(target),
         ...(sessionId === undefined
           ? {}
           : { attaches: { sourceId: 'gas-city', key: sessionId } }),
@@ -69,13 +74,4 @@ export function gasCityCommand(
         command: `gc handoff --target ${quoted} ${shellQuoteArg(HANDOFF_SUBJECT)}`,
       }
   }
-}
-
-/**
- * POSIX single-quote a value so it is safe to splice into an interactive shell
- * command line. Session names are normally plain identifiers, but the value
- * flows into a shell, so quote defensively rather than trusting the input.
- */
-export function shellQuoteArg(value: string): string {
-  return `'${value.replaceAll("'", `'\\''`)}'`
 }

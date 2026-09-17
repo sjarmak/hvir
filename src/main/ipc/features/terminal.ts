@@ -1,4 +1,11 @@
-import { hostPathEquals, isExternalSessionAttachTarget } from '../../../shared'
+import {
+  hostPathEquals,
+  isExternalSessionAttachRequest,
+  isExternalSessionAttachTarget,
+  isExternalSessionAttachTicketRequest,
+  type ExternalSessionAttachRequest,
+  type ExternalSessionAttachTarget,
+} from '../../../shared'
 import { resolveHarnessLaunch } from '../../harness/harness-launch'
 import { harnessProvider, selectHarnessLaunch } from '../../harness/harness-provider'
 import {
@@ -15,6 +22,7 @@ import {
 } from '../../terminal/terminal-launch-admission'
 import { terminalStartedResponse } from '../../terminal/terminal-start-response'
 import { PtyStartUnavailableError } from '../../pty/pty-supervisor'
+import type { RendererOwner } from '../../renderer-resource-scopes'
 import type { IpcRegistrar } from '../authority-router'
 import type { IpcDeps } from '../deps'
 import { operationResult } from '../operation-result'
@@ -27,6 +35,7 @@ type TerminalIpcDeps = Pick<
   | 'rendererResources'
   | 'ptySupervisor'
   | 'terminalMoves'
+  | 'sessionsAttachTickets'
 >
 
 export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): void {
@@ -182,10 +191,18 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
         req.admission !== 'bulk') ||
       (req.resume !== undefined && typeof req.resume !== 'boolean') ||
       (req.externalAttach !== undefined &&
-        !isExternalSessionAttachTarget(req.externalAttach))
+        !isExternalSessionAttachRequest(req.externalAttach))
     ) {
       throw new Error('Invalid PTY session metadata')
     }
+    // A ticketed attach is redeemed here, before anything is spawned: the
+    // session it stands for is main's to resolve, and an unredeemable ticket is
+    // a refused launch rather than a terminal attached to nothing.
+    const externalAttach = redeemExternalAttach(
+      req.externalAttach,
+      owner,
+      deps.sessionsAttachTickets,
+    )
     if (
       profile.scope.kind === 'project' &&
       !hostPathEquals(profile.scope.projectRoot, projectRoot)
@@ -408,7 +425,7 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
       launchRevision: profile.launchRevision,
       artifactIdentity: resolved.artifactIdentity,
       harnessSessionId: managed.harnessSessionId,
-      externalAttach: req.externalAttach,
+      externalAttach,
       workspaceRoot: root,
       cwd,
       title: req.title,
@@ -507,4 +524,23 @@ function isUnknownRecord(value: unknown): value is Record<string, unknown> {
 function terminalDimension(value: number): number {
   if (!Number.isFinite(value)) return 80
   return Math.max(2, Math.min(1000, Math.floor(value)))
+}
+
+/**
+ * The foreign session a launch attaches to.
+ *
+ * A caller that holds the identifier sends it. A caller that does not — the
+ * Sessions projection, which is never told one (ADR-046) — sends a ticket, and
+ * the registry answers with the session it minted the ticket for, once.
+ */
+function redeemExternalAttach(
+  request: ExternalSessionAttachRequest | undefined,
+  owner: RendererOwner,
+  tickets: TerminalIpcDeps['sessionsAttachTickets'],
+): ExternalSessionAttachTarget | undefined {
+  if (request === undefined) return undefined
+  if (!isExternalSessionAttachTicketRequest(request)) return request
+  const redeemed = tickets.redeem(owner, request.ticket)
+  if (redeemed === undefined) throw new Error('Sessions attach ticket is not redeemable')
+  return redeemed
 }

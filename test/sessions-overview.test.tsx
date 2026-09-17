@@ -782,6 +782,7 @@ async function renderOverview(
         onOpened={vi.fn()}
         onFocusOpened={vi.fn(() => Promise.resolve(true))}
         onOpenFailed={vi.fn()}
+        onAttachExternal={vi.fn(() => Promise.resolve(true))}
         {...overrides}
       />
     )

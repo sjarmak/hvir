@@ -8,7 +8,7 @@ import {
   type HarnessTelemetry,
   type HostPath,
   type TerminalIdentityStatus,
-  type ExternalSessionAttachTarget,
+  type ExternalSessionAttachRequest,
 } from '../../../shared'
 import type { TerminalAttention } from './terminal-attention'
 
@@ -28,12 +28,14 @@ export interface TerminalAttachRequest {
    */
   readonly key?: string
   /**
-   * The session this request attaches to, named in the source's own namespace.
-   * Present only when the requesting surface knew the session exactly, which is
-   * what lets a terminal already showing it be recognized after a reload; the
-   * key above is the same-lifetime fallback for identities hvir cannot name.
+   * The session this request attaches to, named in the source's own namespace,
+   * or a ticket main will redeem for it when the requesting surface was never
+   * told the identifier (ADR-046). Present only when the surface could name the
+   * session at all, which is what lets a terminal already showing it be
+   * recognized after a reload; the key above is the same-lifetime fallback for
+   * identities hvir cannot name.
    */
-  readonly attaches?: ExternalSessionAttachTarget
+  readonly attaches?: ExternalSessionAttachRequest
   /**
    * Told whether the request was served: `true` when a shell launched or the
    * keyed terminal was focused, `false` when the workspace could not launch.
@@ -70,10 +72,11 @@ export interface TerminalSession {
   readonly initialInput?: string
   /**
    * The gc session this terminal attaches to, when hvir is performing the
-   * attach and the requesting surface named the session exactly. Recorded by
-   * main at spawn, so the row it joins survives a reload (ADR-046).
+   * attach and the requesting surface could name the session. Declared to main
+   * once, at the launch that performs the attach, and recorded there so the row
+   * it joins survives a reload (ADR-046).
    */
-  readonly externalAttach?: ExternalSessionAttachTarget
+  readonly externalAttach?: ExternalSessionAttachRequest
   /** Restored metadata exists, but no terminal engine or PTY has been allocated. */
   readonly dormant?: boolean
   /** Bulk starts alone use the main-owned per-host admission queue. */
@@ -250,7 +253,7 @@ export function createTerminalSession(
   pane: TerminalSplitPane,
   capabilities: HarnessProviderCapabilities = provider.capabilities,
   initialInput?: string,
-  externalAttach?: ExternalSessionAttachTarget,
+  externalAttach?: ExternalSessionAttachRequest,
 ): TerminalSession {
   const fallbackTitle = `${provider.displayName} · ${basenameHostPath(cwd)}`
   return {

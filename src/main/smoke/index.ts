@@ -42,6 +42,8 @@ import type { RendererResourceScopes } from '../renderer-resource-scopes'
 import { PtySupervisor } from '../pty/pty-supervisor'
 import { SessionsObservationPort } from '../sessions/sessions-observation-port'
 import { SessionsUsageObservationPort } from '../sessions/sessions-usage-observation-port'
+import { SessionsTranscriptPort } from '../sessions/sessions-transcript-port'
+import { SessionsAttachTicketRegistry } from '../sessions/sessions-attach-tickets'
 import { createWorkerClient, workerPath } from '../worker-host'
 import { createWorkspaceCleanup } from '../workspace-cleanup'
 import { SmokeCleanup } from './cleanup'
@@ -337,6 +339,31 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       },
     })
     cleanup.defer('Sessions usage observation', () => sessionsUsage.dispose())
+    const sessionsTranscripts = new SessionsTranscriptPort({
+      sessions: sessionsObservation,
+      // The smoke build runs no supervisor, so a detail reports that rather
+      // than presenting an empty transcript as if it were the session's.
+      supervisor: {
+        address: () => Promise.resolve({ ok: false, failure: { reason: 'disabled' } }),
+      },
+      emit: (owner, change) => {
+        if (
+          smokeWindow?.webContents.id === owner.id &&
+          rendererResources.isCurrent(owner)
+        ) {
+          sendRendererEvent(
+            smokeWindow.webContents,
+            'sessions:transcript-changed',
+            change,
+          )
+        }
+      },
+    })
+    cleanup.defer('Sessions transcript observation', () => sessionsTranscripts.dispose())
+    const sessionsAttachTickets = new SessionsAttachTicketRegistry()
+    cleanup.defer('Sessions attach tickets', () => {
+      sessionsAttachTickets.clear()
+    })
     const smokeBeads = new BeadsService({
       getProject: () => ({ host, root: smokeRoot }),
       emitChanged: (event) => emit('beads:changed', event),
@@ -437,6 +464,8 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       terminalSessions: smokeTerminalSessions,
       sessionsObservation,
       sessionsUsage,
+      sessionsTranscripts,
+      sessionsAttachTickets,
       terminalMoves: terminalMoveSmoke.coordinator,
       harnessProfiles: smokeHarnessProfiles,
       harnessProbes: harnessProbeManager,

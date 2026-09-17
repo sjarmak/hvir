@@ -2,6 +2,7 @@ import type { ReactElement } from 'react'
 
 import type {
   ProjectState,
+  SessionsAttachExternalTarget,
   SessionsLivePtyQualifier,
   SessionsTerminalHandle,
   SessionsWorkspaceQualifier,
@@ -25,11 +26,17 @@ export function SessionsApplicationDestination({
   runtime,
   onOpened,
   onError,
+  onAttachExternal,
 }: {
   readonly active: boolean
   readonly runtime: SessionsDestinationRuntime
   readonly onOpened: (state: ProjectState) => void
   readonly onError: (message: string) => void
+  /** Runs main's attach command in the workspace the attach switched to. */
+  readonly onAttachExternal: (
+    workspaceId: string,
+    target: SessionsAttachExternalTarget,
+  ) => Promise<boolean>
 }): ReactElement | null {
   if (!active) return null
   return (
@@ -39,6 +46,7 @@ export function SessionsApplicationDestination({
       onOpened={onOpened}
       onFocusOpened={runtime.focusProjectedSession}
       onOpenFailed={onError}
+      onAttachExternal={onAttachExternal}
     />
   )
 }

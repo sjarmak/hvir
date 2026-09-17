@@ -48,6 +48,68 @@ export function resolveSessionsOpen({
   ) {
     return { outcome: 'unavailable', reason: 'stale-projection' }
   }
+  const placed = resolveSessionsPlacement({
+    request,
+    observation,
+    identities,
+    projectState,
+  })
+  if (placed.outcome === 'unavailable') return placed
+  if (
+    placed.observed.lifecycle !== 'live' ||
+    !request.livePty ||
+    !sameLivePty(placed.observed.livePty, request.livePty) ||
+    request.livePty.rendererOwnerId !== owner.id ||
+    request.livePty.rendererGeneration !== owner.generation
+  ) {
+    return { outcome: 'unavailable', reason: 'terminal-unavailable' }
+  }
+  return {
+    outcome: 'resolved',
+    projectId: placed.projectId,
+    workspaceId: placed.workspaceId,
+    handle: request.handle,
+    workspaceQualifier: request.workspaceQualifier,
+    livePty: request.livePty,
+  }
+}
+
+/** What both a projection row and its workspace must satisfy before any action. */
+export type SessionsResolvedPlacement =
+  | {
+      readonly outcome: 'resolved'
+      readonly observed: SessionsObservedSession
+      readonly projectId: string
+      readonly workspaceId: string
+    }
+  | {
+      readonly outcome: 'unavailable'
+      readonly reason: Extract<
+        SessionsOpenUnavailableReason,
+        'session-unavailable' | 'workspace-unavailable' | 'connection-unavailable'
+      >
+    }
+
+/**
+ * The row is in the projection the renderer is looking at, its workspace is
+ * still open on a connected host, and both resolve to real ProjectState
+ * identities. Every Sessions action needs exactly this much before it may act;
+ * what each one needs beyond it is its own.
+ */
+export function resolveSessionsPlacement({
+  request,
+  observation,
+  identities,
+  projectState,
+}: {
+  readonly request: Pick<
+    SessionsOpenRequest,
+    'handle' | 'projectId' | 'workspaceId' | 'workspaceQualifier'
+  >
+  readonly observation: Omit<SessionsObservationSnapshot, 'demandGeneration' | 'revision'>
+  readonly identities: SessionsProjectionIdentityScope
+  readonly projectState: ProjectState
+}): SessionsResolvedPlacement {
   const observed = observation.sessions.find(
     (session) => session.handle === request.handle,
   )
@@ -66,15 +128,6 @@ export function resolveSessionsOpen({
   if (workspace.host.connectionState !== 'connected') {
     return { outcome: 'unavailable', reason: 'connection-unavailable' }
   }
-  if (
-    observed.lifecycle !== 'live' ||
-    !request.livePty ||
-    !sameLivePty(observed.livePty, request.livePty) ||
-    request.livePty.rendererOwnerId !== owner.id ||
-    request.livePty.rendererGeneration !== owner.generation
-  ) {
-    return { outcome: 'unavailable', reason: 'terminal-unavailable' }
-  }
   const projectRoot = identities.resolveProject(request.projectId)
   const workspaceRoot = identities.resolveWorkspace(request.workspaceId)
   const project = projectRoot
@@ -92,11 +145,9 @@ export function resolveSessionsOpen({
   }
   return {
     outcome: 'resolved',
+    observed,
     projectId: project.id,
     workspaceId: target.id,
-    handle: request.handle,
-    workspaceQualifier: request.workspaceQualifier,
-    livePty: request.livePty,
   }
 }
 

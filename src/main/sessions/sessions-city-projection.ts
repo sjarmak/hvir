@@ -16,7 +16,10 @@ import {
 } from '../../shared'
 import type { CitySessionFact, HostCitySessions } from '../gascity/gascity-city-sessions'
 import { externalSessionDigest } from '../terminal/external-session-attachment'
-import type { SessionsProjectionIdentityScope } from './sessions-projection-identities'
+import type {
+  SessionsExternalSessionTarget,
+  SessionsProjectionIdentityScope,
+} from './sessions-projection-identities'
 import { sessionsProjectionPercent } from './sessions-projection-values'
 
 /**
@@ -118,6 +121,7 @@ export function projectCitySessions({
     )
     if (placement.length === 0) continue
     for (const fact of city.sessions) {
+      const target = externalTarget(fact, city)
       const claimed = attachedByDigest.get(
         externalSessionDigest('gas-city', fact.sessionKey),
       )
@@ -127,6 +131,10 @@ export function projectCitySessions({
         // workspace placement for it beats anything inferred from gc's paths.
         const declared = declaredProvider(fact, providers)
         if (declared === undefined) sourceProviderUsed = true
+        // The row keeps hvir's own handle, so the session it stands for is
+        // recorded against that handle instead of minting a second one. A
+        // detail pane can then read the session behind the terminal.
+        identities.bindExternalSession(claimed.session.handle, target)
         merged.set(
           String(claimed.session.handle),
           attachedSession(claimed.session, fact, city, declared),
@@ -136,10 +144,7 @@ export function projectCitySessions({
       if (sessions.length >= capacity) break
       const workspace = placeSession(fact, placement)
       if (workspace === undefined) continue
-      const handle = identities.externalSession({
-        sourceId: 'gas-city',
-        key: fact.sessionKey,
-      })
+      const handle = identities.externalSession(target)
       // Out of handles for this demand: drop the session rather than present
       // one whose identifier hvir cannot keep to itself.
       if (handle === undefined) continue
@@ -172,6 +177,27 @@ export function projectCitySessions({
     sessions,
     merged,
     ...(sourceProviderUsed ? { provider: SESSIONS_GAS_CITY_PROVIDER } : {}),
+  }
+}
+
+/**
+ * What one projected row stands for, as main records it.
+ *
+ * The host is part of the identity, not context: two hosts run two supervisors,
+ * and one gc session identifier can name a different session on each. The
+ * attach target is gc's own alias, carried so an Attach can be composed without
+ * the session identifier leaving this process.
+ */
+function externalTarget(
+  fact: CitySessionFact,
+  city: HostCitySessions,
+): SessionsExternalSessionTarget {
+  return {
+    sourceId: 'gas-city',
+    hostId: city.root.hostId,
+    key: fact.sessionKey,
+    attachTarget: fact.attachTarget,
+    ...(city.cityRoot === undefined ? {} : { cityRoot: city.cityRoot }),
   }
 }
 

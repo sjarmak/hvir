@@ -7,7 +7,10 @@ import { type HarnessProfileId } from '../harness-profile'
 import { type ProjectState } from '../workspace-types'
 import { type OperationResult } from '../operation-result'
 import type { TerminalAttentionState } from '../terminal-attention'
-import type { ExternalSessionAttachTarget } from '../external-session'
+import type {
+  ExternalSessionAttachRequest,
+  ExternalSessionAttachTarget,
+} from '../external-session'
 
 export interface StartPtyRequest {
   readonly sessionId: string
@@ -39,10 +42,12 @@ export interface StartPtyRequest {
   /**
    * The foreign session this launch attaches to, when hvir is running the
    * attach itself and the requesting surface knew exactly which session it
-   * named. Main hashes it before recording it; the identifier itself is not
+   * named. A surface that was never told the identifier sends the ticket main
+   * minted for the row instead, and main redeems it here. Main hashes the
+   * resolved identifier before recording it; the identifier itself is not
    * persisted and never reaches Sessions.
    */
-  readonly externalAttach?: ExternalSessionAttachTarget
+  readonly externalAttach?: ExternalSessionAttachRequest
 }
 
 export type StartPtyResponse =
