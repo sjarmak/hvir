@@ -284,9 +284,11 @@ pack-stamped lead that a rig override suspended drops out, leaving the hand-defi
 - **Absence rule, applied uniformly:** unset or blank variable means the overlay default is
   shown; an explicit invalid value, or the literal `off`, hides that surface. `off` is spelled
   out because it would otherwise pass the path-segment rule and become a Honeycomb 404.
-- **No health strip.** No production main module performs outbound HTTP, ADR-013 keeps
-  network bytes out of renderer IPC, and gas-city documents `HONEYCOMB_API_KEY` as
-  ingest/boards-only with no Query Data API access. Because no analytics value is rendered,
+- **No health strip.** No production main module reaches an off-host network endpoint
+  (the one HTTP client, `supervisor-client.ts`, speaks only to a host-local loopback
+  address through `ProjectHost.connectLoopback`), ADR-013 keeps network bytes out of
+  renderer IPC, and gas-city documents `HONEYCOMB_API_KEY` as ingest/boards-only with no
+  Query Data API access. Because no analytics value is rendered,
   the read-time convention is met by each link stating its window (last 2h from the click)
   rather than a timestamp on a cached number.
 - **Omni rig filter defaults on.** `mart_factory_health.rig` backs the "Factory Health by Rig"
@@ -295,6 +297,36 @@ pack-stamped lead that a rig override suspended drops out, leaving the hand-defi
   apply only on the default Omni origin; `off` on either variable drops that id, and the link
   then opens the dashboard unfiltered or the model home. Recreating the dashboard or its filter
   in Omni mints new ids, so update the defaults when that happens.
+
+## The supervisor API, alongside the CLI
+
+The bridge above shells out to `gc`. ADR-047 adds a second, narrower road to the same
+service: the supervisor's loopback HTTP API, used only for what the CLI cannot give
+cheaply (a session transcript, a live event stream, pending interactions, respond and
+submit).
+
+- **Declared, not discovered.** `supervisor-endpoint.ts` holds gc's documented default
+  `127.0.0.1:8372`, one optional override per host
+  (`HVIR_GASCITY_SUPERVISOR_<HOST_ID>`, then `HVIR_GASCITY_SUPERVISOR`), and the same
+  absence rule as the analytics overlays: blank falls through, `off` hides the surface,
+  an unusable value degrades to a named `misconfigured` reason. Nothing scans ports.
+- **The host opens the channel, always.** `supervisor-transport.ts` speaks HTTP over the
+  `Duplex` that `ProjectHost.connectLoopback` returns, so a local supervisor and one
+  behind an SSH tunnel are the same code. It never calls `net.connect`, and it never
+  keeps a channel: every exit path destroys it. The response is timed with an owned
+  timer, not `request.setTimeout`, because an SSH channel is not a `Socket`.
+- **The service is unauthenticated and machine-wide.** `X-GC-Request` is presence-only
+  anti-CSRF, not an idempotency key, so a failed `respond` or `submit` is never retried
+  here. Reconnecting a dropped stream is the caller's decision; the client hands back the
+  cursor it reached.
+- **Structured only.** `format=structured` on every transcript and stream request, and
+  `include_thinking` is never sent. The generated types deliberately exclude the raw
+  branch, so a provider-shaped payload cannot be named, and an arriving `message` frame
+  is reported as unrecognized rather than parsed.
+- **Types are generated and pinned.** `npm run generate:gascity-supervisor-types` reads
+  the running supervisor's `openapi.json`, fails if a declared operation moved or was
+  renamed, and rewrites `generated-supervisor-{api,transcript,tools}.ts`. The digest of
+  the document it read is recorded in `GASCITY_SUPERVISOR_API_PROVENANCE`.
 
 ## Failure modes seen here
 

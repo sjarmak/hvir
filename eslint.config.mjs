@@ -474,6 +474,7 @@ export default tseslint.config(
       'scripts/require-release-ci-evidence.mts',
       'scripts/prepare-release-linux-package.mts',
       'scripts/validate-release-pr.mts',
+      'scripts/generate-gascity-supervisor-types.mts',
       'scripts/generate-terminal-theme-catalog.mts',
       'scripts/check-terminal-runtime.mts',
       'scripts/agent-work-checkpoint-store.mts',

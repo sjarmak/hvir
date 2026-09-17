@@ -5,8 +5,8 @@ Ben's upstream (`jarmak-personal/hvir`, remote `origin`). The overlay is merged
 with upstream only at upstream release tags, never at the tip of `main`.
 
 The overlay lives in `src/main/beads`, `src/main/gascity`, `src/renderer/src/beads`,
-`src/shared/ipc/*.ts` and `test/`. Six upstream files carry only wiring lines and
-are the usual conflict sites:
+`src/shared/ipc/*.ts`, `test/`, and `scripts/generate-gascity-supervisor-types.mts`.
+Six upstream files carry only wiring lines and are the usual conflict sites:
 
 - `src/renderer/src/App.tsx`
 - `src/main/index.ts`
@@ -14,6 +14,17 @@ are the usual conflict sites:
 - `src/main/ipc/deps.ts`
 - `src/shared/ipc.ts`
 - `src/main/smoke/index.ts`
+
+Three upstream policy files also carry overlay lines. They conflict rarely, but a
+lost hunk here fails a gate rather than a feature, so the loss is easy to
+misattribute:
+
+- `package.json` — the `generate:gascity-supervisor-types` script.
+- `eslint.config.mjs` — `scripts/generate-gascity-supervisor-types.mts` in the
+  contributor-tooling exemption list, which lets a generator read the filesystem.
+- `scripts/check-seams.sh` — rule 5 naming `src/main/gascity/supervisor-client.ts`
+  as the second `connectLoopback` owner. Take upstream's version and re-add the
+  overlay's owner; do not drop the rule to make the check pass.
 
 ## Running a sync
 
@@ -58,7 +69,10 @@ The script runs those same gates one at a time (logs under
 `.git/sync-upstream-tag/`) and prints a PASS/FAIL line per gate. `npm run verify`
 is not used because it includes `architecture:check`, which needs a GitHub token.
 The vitest gate passes when vitest exits 0, or when the only `FAIL` line is the
-known pre-existing `LocalHost > removes only the observed version of a file`; a
+known pre-existing `LocalHost > removes only the observed version of a file`
+(root cause and reproduction recorded in fork issue #10: the guard compares an
+exact `mtimeMs` against a `stat` result that can lose sub-millisecond precision,
+so it rejects a file nothing changed); a
 non-zero exit with any other `FAIL` line, or with no parseable `FAIL` line at all,
 is reported as FAIL. The known failure is printed under its own heading so it is not
 mistaken for an overlay regression.

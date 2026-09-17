@@ -44,11 +44,13 @@ hits=$(grep -rnE "['\"](plain-shell|claude-code|codex)['\"]" \
   | grep -v '^src/main/harness/' || true)
 report "bundled harness ids used only in src/main/harness/" "$hits"
 
-# 5. Raw loopback streams are transport for the main-owned pane proxy, never a
-# renderer, IPC, harness, or feature-level socket API.
+# 5. Raw loopback streams belong to the exact main-owned transport owners named
+# here, never a renderer, IPC, harness, or feature-level socket API. ADR-047 adds
+# the second owner: one client for a foreign supervisor's loopback API. Widening
+# this list is a decision, so a new caller has to change this line deliberately.
 hits=$(grep -rnE '\.connectLoopback\(' "$SRC" --include='*.ts' --include='*.tsx' --include='*.mts' \
-  | grep -v '^src/main/web-pane/loopback-http-proxy.ts' || true)
-report "host.connectLoopback() called only in the web-pane proxy" "$hits"
+  | grep -vE '^src/main/(web-pane/loopback-http-proxy|gascity/supervisor-client)\.ts' || true)
+report "host.connectLoopback() called only by its named transport owners" "$hits"
 
 # 6. ipcMain is a single transport choke point. Feature registrars receive the
 # narrow IpcRegistrar capability and cannot install handlers directly.

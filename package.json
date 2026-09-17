@@ -60,6 +60,7 @@
     "architecture:report": "node scripts/architecture-hotspots.mjs",
     "architecture:check": "node scripts/architecture-hotspots.mjs --enforce",
     "generate:terminal-themes": "node scripts/generate-terminal-theme-catalog.mts",
+    "generate:gascity-supervisor-types": "node scripts/generate-gascity-supervisor-types.mts && prettier --write src/main/gascity/generated-supervisor-*.ts",
     "update:ghostty-web": "node scripts/ghostty-web-update/cli.mts",
     "project:kind": "node scripts/project-management/sync-kind.ts",
     "project:audit": "node scripts/project-management/audit-canonical-project.ts",
