@@ -15,9 +15,11 @@ import { PtySupervisor } from './pty/pty-supervisor'
 import { AttentionBadge } from './attention-badge'
 import { ownBeadsService } from './beads/beads-owner'
 import {
+  ownGasCityEventStreams,
   ownGasCityReader,
   ownGasCityService,
   ownGasCitySessionsSource,
+  ownGasCitySupervisorAccess,
 } from './gascity/gascity-owner'
 import { HarnessProfileStore } from './harness/harness-profile-store'
 import { HarnessProbeManager } from './harness/harness-probe'
@@ -253,6 +255,15 @@ function createWorkbenchEntry(): void {
       (supervisor) => supervisor.disposeAllAndWait(),
     )
     const gasCityReader = ownGasCityReader()
+    const gasCityHosts = { projects: projectRegistry, hosts: hostCatalog }
+    const gasCitySupervisor = ownGasCitySupervisorAccess(hostCatalog)
+    // Follows open projects, not any view: a blocked worker raises attention
+    // with the Sessions list closed (ADR-048).
+    runtime.own(
+      'Gas City event streams',
+      ownGasCityEventStreams(gasCitySupervisor, gasCityReader, gasCityHosts),
+      (streams) => streams.dispose(),
+    )
     const sessionsPorts = installApplicationSessionsObservation(
       runtime,
       projectRegistry,
@@ -260,10 +271,8 @@ function createWorkbenchEntry(): void {
       terminalSessionRegistry,
       ptySupervisor,
       rendererEvents,
-      ownGasCitySessionsSource(gasCityReader, {
-        projects: projectRegistry,
-        hosts: hostCatalog,
-      }),
+      gasCitySupervisor,
+      ownGasCitySessionsSource(gasCityReader, gasCityHosts),
     )
     documentReview = await installApplicationDocumentReviewRuntime(
       runtime,

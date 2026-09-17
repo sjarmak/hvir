@@ -30,8 +30,11 @@ import {
 } from './supervisor-endpoint'
 import {
   SupervisorStreamDecoder,
+  supervisorCityStreamEvent,
   supervisorStreamEvent,
+  type SupervisorCityStreamEvent,
   type SupervisorStreamEvent,
+  type SupervisorStreamFrame,
 } from './supervisor-stream'
 import {
   supervisorRequest,
@@ -105,6 +108,12 @@ export interface SupervisorStreamSubscription {
 
 export interface SupervisorStreamSubscribers {
   readonly onEvent: (event: SupervisorStreamEvent) => void
+  /** Reports why the stream ended, unless `close` ended it. */
+  readonly onClose: (failure?: SupervisorUnavailable) => void
+}
+
+export interface SupervisorCityStreamSubscribers {
+  readonly onEvent: (event: SupervisorCityStreamEvent) => void
   /** Reports why the stream ended, unless `close` ended it. */
   readonly onClose: (failure?: SupervisorUnavailable) => void
 }
@@ -257,23 +266,63 @@ export class GascitySupervisorClient {
     subscribers: SupervisorStreamSubscribers,
     afterCursor?: string,
   ): Promise<SupervisorStreamSubscription> {
+    const query = queryString({ format: 'structured', after_cursor: afterCursor })
+    return await this.stream(
+      `${this.session(cityName, sessionId)}/stream${query}`,
+      supervisorStreamEvent,
+      subscribers,
+      afterCursor,
+    )
+  }
+
+  /**
+   * Opens the city event stream: one subscription for every session in the city,
+   * carrying lifecycle transitions and no message content. `afterSeq` resumes
+   * from a sequence the caller already saw, and omitting it starts at the current
+   * head, so a resume is explicit and a fresh subscription replays nothing
+   * (ADR-047).
+   */
+  async streamCity(
+    cityName: string,
+    subscribers: SupervisorCityStreamSubscribers,
+    afterSeq?: string,
+  ): Promise<SupervisorStreamSubscription> {
+    const query = queryString({ after_seq: afterSeq })
+    return await this.stream(
+      `${this.city(cityName)}/events/stream${query}`,
+      supervisorCityStreamEvent,
+      subscribers,
+      afterSeq,
+    )
+  }
+
+  /**
+   * One server-sent event subscription, whichever vocabulary names its frames.
+   * A non-200 answer is an error document rather than events, so nothing is
+   * decoded from it and the close carries the status.
+   */
+  private async stream<TEvent>(
+    path: string,
+    name: (frame: SupervisorStreamFrame) => TEvent,
+    subscribers: {
+      readonly onEvent: (event: TEvent) => void
+      readonly onClose: (failure?: SupervisorUnavailable) => void
+    },
+    afterCursor?: string,
+  ): Promise<SupervisorStreamSubscription> {
     const endpoint = this.endpoint()
     if (!endpoint.ok) {
       subscribers.onClose(endpoint.failure)
       return { close: () => {}, cursor: afterCursor }
     }
     const decoder = new SupervisorStreamDecoder()
-    const query = queryString({
-      format: 'structured',
-      after_cursor: afterCursor,
-    })
     let status: number | undefined
     const handle = await supervisorStream(
       this.connect,
       endpoint.value,
       {
         method: 'GET',
-        path: `${this.session(cityName, sessionId)}/stream${query}`,
+        path,
         headers: {
           accept: 'text/event-stream',
           ...(afterCursor === undefined ? {} : { 'Last-Event-ID': afterCursor }),
@@ -285,10 +334,8 @@ export class GascitySupervisorClient {
           status = code
         },
         onChunk: (chunk) => {
-          // A non-200 body is an error document, not events; the close reports it.
           if (status !== 200) return
-          for (const frame of decoder.push(chunk))
-            subscribers.onEvent(supervisorStreamEvent(frame))
+          for (const frame of decoder.push(chunk)) subscribers.onEvent(name(frame))
         },
         onClose: (transportFailure) => {
           if (status !== undefined && status !== 200) {
@@ -402,7 +449,12 @@ export function gascitySupervisorConnect(host: ProjectHost): SupervisorConnect {
 /** The request line for every operation this client is allowed to send. */
 export const SUPERVISOR_CLIENT_OPERATIONS = GASCITY_SUPERVISOR_OPERATIONS
 
-export type { CityInfo, CityPendingEntry, SupervisorStreamEvent }
+export type {
+  CityInfo,
+  CityPendingEntry,
+  SupervisorCityStreamEvent,
+  SupervisorStreamEvent,
+}
 
 function decode<T>(
   response: SupervisorHttpResponse,

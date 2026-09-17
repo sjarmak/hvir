@@ -15,6 +15,7 @@ import {
 } from '../src/main/gascity/supervisor-client'
 import type { ProjectHost } from '../src/main/project-host'
 import { GASCITY_SUPERVISOR_OPERATIONS } from '../src/main/gascity/generated-supervisor-api'
+import type { SupervisorCityStreamEvent } from '../src/main/gascity/supervisor-stream'
 import type { SupervisorConnect } from '../src/main/gascity/supervisor-transport'
 import { asHostId, type LoopbackEndpoint } from '../src/shared'
 
@@ -505,6 +506,70 @@ describe('gas city supervisor session stream', () => {
     expect(channels.live()).toBe(0)
   })
 
+  it('opens one city event stream and names only the events hvir reports', async () => {
+    let live: ServerResponse | undefined
+    const supervisor = await startSupervisor((_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      live = response
+      response.write(
+        'id: 41\nevent: event\ndata: {"seq":41,"type":"session.crashed","ts":"t","actor":"gc","session_id":"gc-1","payload":{"session_id":"gc-1","reason":"exit 1"}}\n\n',
+      )
+      response.write('event: heartbeat\ndata: {"timestamp":"t"}\n\n')
+      response.write(
+        'id: 43\nevent: event\ndata: {"seq":43,"type":"mail.sent","ts":"t","actor":"gc","payload":{}}\n\n',
+      )
+    })
+    const channels = channelSet('socket')
+    const events: SupervisorCityStreamEvent[] = []
+    const subscription = await clientFor(supervisor.port, channels).streamCity('mem', {
+      onEvent: (event) => events.push(event),
+      onClose: () => {},
+    })
+    await settled()
+
+    expect(supervisor.requests[0]?.url).toBe('/v0/city/mem/events/stream')
+    expect(events.map((event) => event.kind)).toEqual([
+      'lifecycle',
+      'heartbeat',
+      'unrecognized',
+    ])
+    const lifecycle = events[0]
+    expect(lifecycle?.kind === 'lifecycle' && lifecycle.data.type).toBe('session.crashed')
+    // An event type this build does not report says so, and names the type.
+    expect(events[2]).toEqual({
+      kind: 'unrecognized',
+      event: 'mail.sent',
+      reason: 'Event type is not reported',
+    })
+    expect(subscription.cursor).toBe('43')
+
+    subscription.close()
+    await settled()
+    expect(channels.live()).toBe(0)
+    live?.end()
+  })
+
+  it('resumes a city stream from a sequence, and never on its own', async () => {
+    const supervisor = await startSupervisor((_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/event-stream' })
+      response.write('event: heartbeat\ndata: {"timestamp":"t"}\n\n')
+    })
+    const channels = channelSet('tunnel')
+    const subscription = await clientFor(supervisor.port, channels).streamCity(
+      'mem',
+      { onEvent: () => {}, onClose: () => {} },
+      '5898675',
+    )
+    await settled()
+
+    expect(supervisor.requests[0]?.url).toBe(
+      '/v0/city/mem/events/stream?after_seq=5898675',
+    )
+    expect(supervisor.requests[0]?.headers['last-event-id']).toBe('5898675')
+    expect(supervisor.requests).toHaveLength(1)
+    subscription.close()
+  })
+
   it('reports a stream the supervisor ends, without holding the channel', async () => {
     const supervisor = await startSupervisor((_request, response) => {
       response.writeHead(200, { 'content-type': 'text/event-stream' })
@@ -558,6 +623,7 @@ describe('gas city supervisor client provenance', () => {
   it('exposes exactly the operations this epic declared', () => {
     expect(Object.keys(GASCITY_SUPERVISOR_OPERATIONS).sort()).toEqual([
       'cities',
+      'cityEvents',
       'cityPending',
       'health',
       'respond',

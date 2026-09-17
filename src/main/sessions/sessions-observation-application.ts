@@ -16,9 +16,7 @@ import {
 import { SessionsUsageObservationPort } from './sessions-usage-observation-port'
 import { SessionsTranscriptPort } from './sessions-transcript-port'
 import { SessionsAttachTicketRegistry } from './sessions-attach-tickets'
-import { GascitySupervisorAccess } from '../gascity/supervisor-access'
-import { gascitySupervisorConnect } from '../gascity/supervisor-client'
-import type { ProjectHost } from '../project-host/project-host'
+import type { SupervisorAccess } from '../gascity/supervisor-access'
 
 export interface ApplicationSessionsObservation {
   readonly observation: SessionsObservationPort
@@ -31,13 +29,12 @@ export interface ApplicationSessionsObservation {
 export function installApplicationSessionsObservation(
   runtime: Pick<WorkbenchRuntime, 'own'>,
   projects: { state(): ProjectState; observe(listener: () => void): Disposer },
-  hosts: {
-    listHosts(): readonly ProjectHostOption[]
-    connectedHosts(): readonly ProjectHost[]
-  },
+  hosts: { listHosts(): readonly ProjectHostOption[] },
   sessions: TerminalSessionObservationSource,
   ptys: PtyObservationSource & PtyUsageObservationSource,
   events: Pick<RendererEventPublisher, 'toRenderer'>,
+  /** The shared Gas City access; one client per host for every consumer. */
+  supervisor: SupervisorAccess,
   cities?: CitySessionsObservationSource,
 ): ApplicationSessionsObservation {
   const observation = runtime.own(
@@ -77,14 +74,6 @@ export function installApplicationSessionsObservation(
     }),
     (port) => port.dispose(),
   )
-  const supervisor = new GascitySupervisorAccess({
-    // Only a host hvir is already connected to. A projected row must never be
-    // the reason a connection is opened (ADR-046).
-    connectFor: (hostId) => {
-      const host = hosts.connectedHosts().find((candidate) => candidate.hostId === hostId)
-      return host === undefined ? undefined : gascitySupervisorConnect(host)
-    },
-  })
   const transcripts = runtime.own(
     'Sessions transcript port',
     new SessionsTranscriptPort({

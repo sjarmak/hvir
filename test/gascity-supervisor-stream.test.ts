@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  SUPERVISOR_CITY_LIFECYCLE_TYPES,
   SupervisorStreamDecoder,
+  supervisorCityStreamEvent,
   supervisorStreamEvent,
 } from '../src/main/gascity/supervisor-stream'
 
@@ -112,6 +114,84 @@ describe('gas city supervisor stream decoding', () => {
       kind: 'unrecognized',
       event: 'pending',
       reason: 'Payload omits request_id',
+    })
+  })
+})
+
+describe('gas city city-event stream decoding', () => {
+  it('names every lifecycle transition this build reports', () => {
+    for (const type of SUPERVISOR_CITY_LIFECYCLE_TYPES) {
+      const named = supervisorCityStreamEvent({
+        event: 'event',
+        data: JSON.stringify({ seq: 7, type, ts: 't', actor: 'gc', payload: {} }),
+      })
+      expect(named.kind).toBe('lifecycle')
+      expect(named.kind === 'lifecycle' && named.data.type).toBe(type)
+    }
+  })
+
+  it('names a keep-alive from the frame, not from a type', () => {
+    expect(
+      supervisorCityStreamEvent({
+        event: 'heartbeat',
+        data: JSON.stringify({ timestamp: 't' }),
+      }).kind,
+    ).toBe('heartbeat')
+    expect(supervisorCityStreamEvent({ event: 'heartbeat', data: '{}' })).toEqual({
+      kind: 'unrecognized',
+      event: 'heartbeat',
+      reason: 'Payload omits timestamp',
+    })
+  })
+
+  it('reports an event type it does not model, and says which one', () => {
+    // The city stream carries mail, beads, storage and workflow traffic. Naming
+    // the type is the point: it records what hvir declined to interpret.
+    expect(
+      supervisorCityStreamEvent({
+        event: 'event',
+        data: JSON.stringify({ seq: 9, type: 'beads.updated', ts: 't', payload: {} }),
+      }),
+    ).toEqual({
+      kind: 'unrecognized',
+      event: 'beads.updated',
+      reason: 'Event type is not reported',
+    })
+  })
+
+  it('reports a frame name outside the city vocabulary', () => {
+    expect(supervisorCityStreamEvent({ event: 'activity', data: '{}' })).toEqual({
+      kind: 'unrecognized',
+      event: 'activity',
+      reason: 'Event name is not declared by this build',
+    })
+  })
+
+  it('reports an unusable city payload without ending the stream', () => {
+    expect(supervisorCityStreamEvent({ event: 'event', data: 'not json' })).toEqual({
+      kind: 'unrecognized',
+      event: 'event',
+      reason: 'Payload is not JSON',
+    })
+    expect(supervisorCityStreamEvent({ event: 'event', data: '[]' })).toEqual({
+      kind: 'unrecognized',
+      event: 'event',
+      reason: 'Payload is not an object',
+    })
+    expect(supervisorCityStreamEvent({ event: 'event', data: '{"seq":1}' })).toEqual({
+      kind: 'unrecognized',
+      event: 'event',
+      reason: 'Payload omits type',
+    })
+    expect(
+      supervisorCityStreamEvent({
+        event: 'event',
+        data: JSON.stringify({ type: 'session.woke', ts: 't', payload: {} }),
+      }),
+    ).toEqual({
+      kind: 'unrecognized',
+      event: 'session.woke',
+      reason: 'Payload omits seq',
     })
   })
 })

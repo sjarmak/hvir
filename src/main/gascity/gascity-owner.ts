@@ -1,8 +1,23 @@
 import type { HostPath, ProjectState } from '../../shared'
 import type { Disposer, ProjectHost } from '../project-host'
+import { GasCityEventStreams, type CityEventStreamHost } from './city-event-streams'
 import { GasCityReader, type GasCityTarget } from './gascity-reader'
 import { GasCityService } from './gascity-service'
 import { GasCitySessionsSource } from './gascity-sessions-source'
+import { GascitySupervisorAccess, type SupervisorAccess } from './supervisor-access'
+import { gascitySupervisorConnect } from './supervisor-client'
+
+/** What the Gas City owners need to know about hvir's hosts and projects. */
+export interface GasCityHostDeps {
+  readonly projects: {
+    state(): ProjectState
+    observe(listener: () => void): Disposer
+  }
+  readonly hosts: {
+    connectedHosts(): readonly ProjectHost[]
+    onHostStateChange(listener: () => void): Disposer
+  }
+}
 
 /**
  * The one reader every Gas City surface reads through. Sharing it is what makes
@@ -35,16 +50,7 @@ export function ownGasCityService(
  */
 export function ownGasCitySessionsSource(
   reader: GasCityReader,
-  deps: {
-    readonly projects: {
-      state(): ProjectState
-      observe(listener: () => void): Disposer
-    }
-    readonly hosts: {
-      connectedHosts(): readonly ProjectHost[]
-      onHostStateChange(listener: () => void): Disposer
-    }
-  },
+  deps: GasCityHostDeps,
 ): GasCitySessionsSource {
   return new GasCitySessionsSource({
     reader,
@@ -70,4 +76,68 @@ export function ownGasCitySessionsSource(
       }
     },
   })
+}
+
+/**
+ * The one supervisor access every Gas City consumer speaks through, so a host
+ * has a single client and a single city-name cache however many surfaces are
+ * reading it.
+ *
+ * Only a host hvir is already connected to: a session hvir did not launch must
+ * never be the reason it dials out (ADR-046).
+ */
+export function ownGasCitySupervisorAccess(hosts: {
+  connectedHosts(): readonly ProjectHost[]
+}): GascitySupervisorAccess {
+  return new GascitySupervisorAccess({
+    connectFor: (hostId) => {
+      const host = hosts.connectedHosts().find((candidate) => candidate.hostId === hostId)
+      return host === undefined ? undefined : gascitySupervisorConnect(host)
+    },
+  })
+}
+
+/**
+ * The per-host city event streams, following open projects.
+ *
+ * The host set is every host with a registered project open, paired with the
+ * city root already known for one of its roots when a read has resolved one.
+ * The streams are not scoped to any view: a hidden or closed Sessions list
+ * changes nothing about them (ADR-048).
+ */
+export function ownGasCityEventStreams(
+  access: SupervisorAccess,
+  reader: GasCityReader,
+  deps: GasCityHostDeps,
+): GasCityEventStreams {
+  const streams = new GasCityEventStreams({
+    access,
+    hosts: () => {
+      const connected = new Set(deps.hosts.connectedHosts().map((host) => host.hostId))
+      const hosts = new Map<string, CityEventStreamHost>()
+      for (const project of deps.projects.state().projects) {
+        const { hostId } = project.registeredRoot
+        if (!connected.has(hostId)) continue
+        const cityRoot = reader.peekContext(project.registeredRoot)?.cityRoot
+        const held = hosts.get(hostId)
+        // One stream per host however many of its projects are open; a city root
+        // is only an improvement on the entry already there.
+        if (held !== undefined && (held.cityRoot !== undefined || cityRoot === undefined))
+          continue
+        hosts.set(hostId, { hostId, ...(cityRoot === undefined ? {} : { cityRoot }) })
+      }
+      return [...hosts.values()]
+    },
+    observeHosts: (listener) => {
+      const disposers = [
+        deps.projects.observe(listener),
+        deps.hosts.onHostStateChange(listener),
+      ]
+      return () => {
+        for (const dispose of disposers.reverse()) void dispose()
+      }
+    },
+  })
+  streams.start()
+  return streams
 }

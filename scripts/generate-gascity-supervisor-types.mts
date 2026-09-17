@@ -57,6 +57,12 @@ export const SUPERVISOR_OPERATIONS = [
     operationId: 'stream-session',
   },
   {
+    name: 'cityEvents',
+    method: 'GET',
+    path: '/v0/city/{cityName}/events/stream',
+    operationId: 'stream-events',
+  },
+  {
     name: 'respond',
     method: 'POST',
     path: '/v0/city/{cityName}/session/{id}/respond',
@@ -81,6 +87,14 @@ const EVENT_ROOTS = [
   'SessionActivityEvent',
   'SessionPendingClearedEvent',
   'HeartbeatEvent',
+  // The city event stream's declared vocabulary: the six session lifecycle
+  // transitions hvir reports, named one by one rather than taken as the union.
+  'TypedEventStreamEnvelopeSessionCrashed',
+  'TypedEventStreamEnvelopeSessionStopped',
+  'TypedEventStreamEnvelopeSessionSuspended',
+  'TypedEventStreamEnvelopeSessionWoke',
+  'TypedEventStreamEnvelopeSessionIdleKilled',
+  'TypedEventStreamEnvelopeSessionQuarantined',
 ]
 
 /**
@@ -93,6 +107,12 @@ const EXCLUDED_SCHEMAS = new Set([
   'SessionTranscriptRawResponse',
   'SessionRawMessageFrame',
   'SessionStreamRawMessageEvent',
+  // The city event stream's whole envelope union: ninety-odd variants covering
+  // mail, beads, storage, workflows, and supervisor administration. hvir reads
+  // the six session lifecycle variants named in EVENT_ROOTS and reports every
+  // other type as unrecognized, so generating the union would only make it
+  // expressible to consume an event this build has not decided to handle.
+  'TypedEventStreamEnvelope',
 ])
 
 const TOOL_PAYLOADS = new Set([

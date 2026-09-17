@@ -28,6 +28,7 @@ export const GASCITY_SUPERVISOR_API_PROVENANCE = {
     'sessionPending',
     'transcript',
     'sessionStream',
+    'cityEvents',
     'respond',
     'submit',
   ],
@@ -42,6 +43,7 @@ export const GASCITY_SUPERVISOR_OPERATIONS = {
   sessionPending: { method: 'GET', path: '/v0/city/{cityName}/session/{id}/pending' },
   transcript: { method: 'GET', path: '/v0/city/{cityName}/session/{id}/transcript' },
   sessionStream: { method: 'GET', path: '/v0/city/{cityName}/session/{id}/stream' },
+  cityEvents: { method: 'GET', path: '/v0/city/{cityName}/events/stream' },
   respond: { method: 'POST', path: '/v0/city/{cityName}/session/{id}/respond' },
   submit: { method: 'POST', path: '/v0/city/{cityName}/session/{id}/submit' },
 } as const
@@ -142,6 +144,8 @@ export interface ListBodySessionResponse {
   readonly total: number
 }
 
+export type NoPayload = Readonly<Record<string, unknown>>
+
 export interface PendingInteraction {
   readonly kind: string
   readonly metadata?: Readonly<Record<string, string>>
@@ -153,6 +157,15 @@ export interface PendingInteraction {
 export interface SessionActivityEvent {
   /** Session activity state: 'idle' or 'in-turn'. */
   readonly activity: string
+}
+
+export interface SessionLifecyclePayload {
+  /** Short human-readable reason. */
+  readonly reason?: string
+  /** Canonical session bead ID. Always present. */
+  readonly session_id: string
+  /** Session template name when known at the emission site. */
+  readonly template?: string
 }
 
 export interface SessionPendingClearedEvent {
@@ -313,4 +326,144 @@ export interface SupervisorStartup {
   readonly phases_completed?: readonly string[] | null
   /** True when the city is running. */
   readonly ready: boolean
+}
+
+export interface TypedEventStreamEnvelopeSessionCrashed {
+  readonly actor: string
+  readonly depends_on_step_ids?: readonly string[]
+  readonly message?: string
+  readonly payload: SessionLifecyclePayload
+  readonly run_id?: string
+  readonly run_store_ref?: string
+  readonly seq: number
+  readonly session_id?: string
+  readonly step_id?: string
+  readonly subject?: string
+  readonly subject_store_ref?: string
+  readonly ts: string
+  readonly type: 'session.crashed'
+  readonly workflow?: WorkflowEventProjection
+}
+
+export interface TypedEventStreamEnvelopeSessionIdleKilled {
+  readonly actor: string
+  readonly depends_on_step_ids?: readonly string[]
+  readonly message?: string
+  readonly payload: NoPayload
+  readonly run_id?: string
+  readonly run_store_ref?: string
+  readonly seq: number
+  readonly session_id?: string
+  readonly step_id?: string
+  readonly subject?: string
+  readonly subject_store_ref?: string
+  readonly ts: string
+  readonly type: 'session.idle_killed'
+  readonly workflow?: WorkflowEventProjection
+}
+
+export interface TypedEventStreamEnvelopeSessionQuarantined {
+  readonly actor: string
+  readonly depends_on_step_ids?: readonly string[]
+  readonly message?: string
+  readonly payload: NoPayload
+  readonly run_id?: string
+  readonly run_store_ref?: string
+  readonly seq: number
+  readonly session_id?: string
+  readonly step_id?: string
+  readonly subject?: string
+  readonly subject_store_ref?: string
+  readonly ts: string
+  readonly type: 'session.quarantined'
+  readonly workflow?: WorkflowEventProjection
+}
+
+export interface TypedEventStreamEnvelopeSessionStopped {
+  readonly actor: string
+  readonly depends_on_step_ids?: readonly string[]
+  readonly message?: string
+  readonly payload: SessionLifecyclePayload
+  readonly run_id?: string
+  readonly run_store_ref?: string
+  readonly seq: number
+  readonly session_id?: string
+  readonly step_id?: string
+  readonly subject?: string
+  readonly subject_store_ref?: string
+  readonly ts: string
+  readonly type: 'session.stopped'
+  readonly workflow?: WorkflowEventProjection
+}
+
+export interface TypedEventStreamEnvelopeSessionSuspended {
+  readonly actor: string
+  readonly depends_on_step_ids?: readonly string[]
+  readonly message?: string
+  readonly payload: NoPayload
+  readonly run_id?: string
+  readonly run_store_ref?: string
+  readonly seq: number
+  readonly session_id?: string
+  readonly step_id?: string
+  readonly subject?: string
+  readonly subject_store_ref?: string
+  readonly ts: string
+  readonly type: 'session.suspended'
+  readonly workflow?: WorkflowEventProjection
+}
+
+export interface TypedEventStreamEnvelopeSessionWoke {
+  readonly actor: string
+  readonly depends_on_step_ids?: readonly string[]
+  readonly message?: string
+  readonly payload: NoPayload
+  readonly run_id?: string
+  readonly run_store_ref?: string
+  readonly seq: number
+  readonly session_id?: string
+  readonly step_id?: string
+  readonly subject?: string
+  readonly subject_store_ref?: string
+  readonly ts: string
+  readonly type: 'session.woke'
+  readonly workflow?: WorkflowEventProjection
+}
+
+export interface WorkflowAttemptSummary {
+  readonly active_attempt: number
+  readonly attempt_count: number
+  readonly max_attempts?: number
+}
+
+export interface WorkflowBeadResponse {
+  readonly assignee?: string
+  readonly attempt?: number
+  readonly id: string
+  readonly kind: string
+  readonly logical_bead_id?: string
+  readonly metadata: Readonly<Record<string, string>>
+  readonly scope_ref?: string
+  readonly status: string
+  readonly step_ref?: string
+  readonly title: string
+}
+
+export interface WorkflowEventProjection {
+  readonly attempt_summary?: WorkflowAttemptSummary
+  readonly bead: WorkflowBeadResponse
+  readonly changed_fields: readonly string[] | null
+  readonly event_seq: number
+  readonly event_ts: string
+  readonly event_type: string
+  readonly logical_node_id: string
+  readonly requires_resync?: boolean
+  readonly root_bead_id: string
+  readonly root_store_ref: string
+  readonly scope_kind: string
+  readonly scope_ref: string
+  readonly type: string
+  readonly watch_generation: string
+  readonly workflow_id: string
+  readonly workflow_seq: number
 }
