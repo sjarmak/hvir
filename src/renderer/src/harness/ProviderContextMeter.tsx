@@ -25,21 +25,22 @@ export function ProviderContextMeter({
       ? contextFacet.value
       : undefined
   const contextStatus = contextFacet?.status
+  const usedTokens = context?.usedTokens
   const assumedWindowTokens =
     context?.windowTokens === undefined ? pressurePolicy?.assumedWindowTokens : undefined
   const presentationWindowTokens = context?.windowTokens ?? assumedWindowTokens
   const reportedPercent = countOnly
     ? undefined
     : (context?.usedPercent ??
-      (context && presentationWindowTokens
-        ? (context.usedTokens / presentationWindowTokens) * 100
+      (usedTokens !== undefined && presentationWindowTokens
+        ? (usedTokens / presentationWindowTokens) * 100
         : undefined))
   const percent =
     typeof reportedPercent === 'number' && Number.isFinite(reportedPercent)
       ? Math.min(100, Math.max(0, reportedPercent))
       : undefined
   const displayPercent = percent === undefined ? undefined : Math.floor(percent)
-  const hasCountOnly = context !== undefined && displayPercent === undefined
+  const hasCountOnly = usedTokens !== undefined && displayPercent === undefined
   const pressure = hasCountOnly
     ? 'count-only'
     : contextStatus === 'pending'
@@ -58,13 +59,12 @@ export function ProviderContextMeter({
       ? (contextFacet?.reason ?? 'Waiting for context telemetry')
       : contextStatus === 'unavailable'
         ? (contextFacet?.reason ?? 'Context telemetry unavailable')
-        : context && context.windowTokens !== undefined
-          ? `${formatTokenCount(context.usedTokens)} / ${formatTokenCount(context.windowTokens)} context used`
-          : context && assumedWindowTokens !== undefined
-            ? `${formatTokenCount(context.usedTokens)} / ${formatTokenCount(assumedWindowTokens)} context used (assumed capacity)`
-            : context
-              ? `${formatTokenCount(context.usedTokens)} current context tokens; limit unavailable`
-              : 'Context usage unavailable'
+        : usedLabel({
+            usedTokens,
+            windowTokens: context?.windowTokens,
+            assumedWindowTokens,
+            displayPercent,
+          })
 
   return (
     <span
@@ -95,13 +95,44 @@ export function ProviderContextMeter({
           : contextStatus === 'unavailable'
             ? '!'
             : hasCountOnly
-              ? formatTokenCount(context.usedTokens)
+              ? formatTokenCount(usedTokens)
               : displayPercent === undefined
                 ? '--'
                 : `${displayPercent}%`}
       </span>
     </span>
   )
+}
+
+/**
+ * What the meter claims to know. A source may report a token count, a window,
+ * both, or only a percentage, and each combination has its own honest sentence:
+ * saying "0 tokens" for a source that never counts them would be worse than
+ * saying nothing.
+ */
+function usedLabel({
+  usedTokens,
+  windowTokens,
+  assumedWindowTokens,
+  displayPercent,
+}: {
+  readonly usedTokens?: number
+  readonly windowTokens?: number
+  readonly assumedWindowTokens?: number
+  readonly displayPercent?: number
+}): string {
+  if (usedTokens === undefined) {
+    return displayPercent === undefined
+      ? 'Context usage unavailable'
+      : `${displayPercent}% of context used`
+  }
+  if (windowTokens !== undefined) {
+    return `${formatTokenCount(usedTokens)} / ${formatTokenCount(windowTokens)} context used`
+  }
+  if (assumedWindowTokens !== undefined) {
+    return `${formatTokenCount(usedTokens)} / ${formatTokenCount(assumedWindowTokens)} context used (assumed capacity)`
+  }
+  return `${formatTokenCount(usedTokens)} current context tokens; limit unavailable`
 }
 
 function formatTokenCount(value: number): string {

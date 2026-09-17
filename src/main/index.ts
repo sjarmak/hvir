@@ -14,7 +14,11 @@ import { ProjectCoordinator } from './project-coordinator'
 import { PtySupervisor } from './pty/pty-supervisor'
 import { AttentionBadge } from './attention-badge'
 import { ownBeadsService } from './beads/beads-owner'
-import { ownGasCityService } from './gascity/gascity-owner'
+import {
+  ownGasCityReader,
+  ownGasCityService,
+  ownGasCitySessionsSource,
+} from './gascity/gascity-owner'
 import { HarnessProfileStore } from './harness/harness-profile-store'
 import { HarnessProbeManager } from './harness/harness-probe'
 import { harnessProviders } from './harness/harness-provider'
@@ -248,6 +252,7 @@ function createWorkbenchEntry(): void {
       }),
       (supervisor) => supervisor.disposeAllAndWait(),
     )
+    const gasCityReader = ownGasCityReader()
     const sessionsPorts = installApplicationSessionsObservation(
       runtime,
       projectRegistry,
@@ -255,6 +260,10 @@ function createWorkbenchEntry(): void {
       terminalSessionRegistry,
       ptySupervisor,
       rendererEvents,
+      ownGasCitySessionsSource(gasCityReader, {
+        projects: projectRegistry,
+        hosts: hostCatalog,
+      }),
     )
     documentReview = await installApplicationDocumentReviewRuntime(
       runtime,
@@ -364,7 +373,7 @@ function createWorkbenchEntry(): void {
       return projectRegistry.active
     }
     const beadsService = ownBeadsService(runtime, getProject, emit)
-    const gasCityService = ownGasCityService(getProject)
+    const gasCityService = ownGasCityService(getProject, gasCityReader)
     runtime.own(
       'IPC authority router',
       registerIpcHandlers({

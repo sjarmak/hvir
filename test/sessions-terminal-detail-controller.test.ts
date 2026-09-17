@@ -16,6 +16,7 @@ import {
   asHarnessProviderId,
   asSessionsProjectHandle,
   asSessionsPtyHandle,
+  SESSIONS_HVIR_ORIGIN,
   asSessionsTerminalHandle,
   asSessionsWorkspaceHandle,
   asSessionsWorkspaceRuntimeId,
@@ -501,6 +502,7 @@ function row(id: string, pty: string): SessionsProjectionRow {
   const unsupported = { status: 'unsupported' as const }
   return {
     handle: asSessionsTerminalHandle(id),
+    origin: SESSIONS_HVIR_ORIGIN,
     project: { id: asSessionsProjectHandle('project-opaque'), name: 'Project' },
     workspace: {
       id: asSessionsWorkspaceHandle('workspace-opaque'),

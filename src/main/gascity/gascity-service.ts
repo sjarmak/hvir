@@ -1,10 +1,7 @@
 import {
-  dirnameHostPath,
-  hostPath,
+  analyticsConfigFromEnv,
   hostPathEquals,
   isHostPathShape,
-  joinHostPath,
-  analyticsConfigFromEnv,
   type GasCityAnalyticsConfig,
   type GasCityCrewRequest,
   type GasCityCrewResponse,
@@ -15,63 +12,23 @@ import {
   type HostPath,
 } from '../../shared'
 import type { ProjectHost } from '../project-host'
-import { isExecTimeout } from '../project-host/exec-timeout'
-import {
-  EMPTY_RESOLVED_CONFIG,
-  parseResolvedConfig,
-  type GasCityResolvedConfig,
-} from './gascity-config'
-import {
-  CONTEXT_TTL_MS,
-  GasCityContextCache,
-  isCityWorkspace,
-  type GasCityContext,
-} from './gascity-context'
+import { isCityWorkspace } from './gascity-context'
 import { deriveCrew } from './gascity-crew'
-import { HostReadCache, SESSION_TTL_MS } from './gascity-host-cache'
-import {
-  hasProjectedTierFields,
-  isRecord,
-  parseRigListOutput,
-  parseSessionListOutput,
-  rigForPath,
-  type GasCityRig,
-} from './gascity-parse'
-
-/** Resolved config for a large city is well under a megabyte; leave headroom. */
-const MAX_OUTPUT_BYTES = 16 * 1024 * 1024
-/** How far up from the workspace root to look for a city marker. */
-const MAX_CITY_WALK_DEPTH = 12
-/**
- * How long a single `gc` read may take before the crew gives up on it.
- *
- * On a real city `gc session list` runs about three seconds, so this is roughly
- * a 5x headroom over the slowest healthy read — long enough that a merely busy
- * city still loads, short enough that a wedged `gc` surfaces as an error inside
- * one poll instead of silently freezing the section forever. `gc` runs on the
- * one-slot background lane, so an unbounded read blocks every later poll too.
- */
-const GC_TIMEOUT_MS = 15_000
+import { hasProjectedTierFields } from './gascity-parse'
+import { GasCityReadError, GasCityReader, type GasCityTarget } from './gascity-reader'
 
 export interface GasCityServiceDeps {
   readonly getProject: () => { readonly host: ProjectHost; readonly root: HostPath }
-  /** Injectable for tests; defaults to `Date.now`. Drives both read caches. */
+  /** Injectable for tests; defaults to `Date.now`. Drives the read caches. */
   readonly now?: () => number
   /** Process environment for the non-secret analytics link configuration. */
   readonly env?: Readonly<Record<string, string | undefined>>
-}
-
-/** A gc read that failed, carrying the reason the panel should show. */
-class GasCityReadError extends Error {
-  constructor(readonly unavailable: GasCityUnavailable) {
-    super(unavailable.message)
-  }
-}
-
-interface GcResult {
-  readonly ok: boolean
-  readonly stdout: string
-  readonly unavailable?: GasCityUnavailable
+  /**
+   * The shared reader. Passing the one the Sessions projection also uses is
+   * what makes a global view cost no extra `gc` reads; without it the service
+   * reads on its own, which is right for tests and for the smoke fixture.
+   */
+  readonly reader?: GasCityReader
 }
 
 /**
@@ -79,63 +36,30 @@ interface GcResult {
  * `BeadsService`: every call goes through the `ProjectHost` seam, so the crew
  * view works for local and SSH projects alike wherever `gc` is installed.
  *
+ * The service owns the *authority* — the panel only ever asks about the active
+ * workspace — while {@link GasCityReader} owns the reads and their caches.
+ *
  * Phase 1 derives the crew tiering from `gc session list --json` plus the
  * resolved config. When gc itself starts projecting the tiering fields into the
  * session list, {@link hasProjectedTierFields} detects it and the config read is
  * skipped entirely.
  */
 export class GasCityService {
-  /**
-   * The city's shape, cached per workspace. Only the session list is re-read
-   * every poll; see `gascity-context.ts` for why the rest must not be.
-   */
-  private readonly contexts: GasCityContextCache
-  /**
-   * Every `gc` read, shared per host. All three are city-wide; see
-   * `gascity-host-cache.ts` for why the key is the host and not the city.
-   */
-  private readonly sessions: HostReadCache<readonly GasCitySession[]>
-  private readonly rigLists: HostReadCache<readonly GasCityRig[]>
-  private readonly configs: HostReadCache<GasCityResolvedConfig>
+  private readonly reader: GasCityReader
 
   constructor(private readonly deps: GasCityServiceDeps) {
-    const clock = deps.now === undefined ? {} : { now: deps.now }
-    this.contexts = new GasCityContextCache({
-      load: (root, withConfig) => this.loadContext(root, withConfig),
-      ...clock,
-    })
-    this.sessions = new HostReadCache({
-      load: (root) => this.loadSessions(root),
-      ttlMs: SESSION_TTL_MS,
-      ...clock,
-    })
-    this.rigLists = new HostReadCache({
-      load: (root) => this.loadRigs(root),
-      ttlMs: CONTEXT_TTL_MS,
-      ...clock,
-    })
-    this.configs = new HostReadCache({
-      load: (root) => this.loadConfig(root),
-      ttlMs: CONTEXT_TTL_MS,
-      ...clock,
-    })
-  }
-
-  /** The host-wide reads, for the operations that apply to all of them alike. */
-  private get hostReads(): readonly HostReadCache<unknown>[] {
-    return [this.sessions, this.rigLists, this.configs]
+    this.reader =
+      deps.reader ?? new GasCityReader(deps.now === undefined ? {} : { now: deps.now })
   }
 
   async crew(req: GasCityCrewRequest): Promise<GasCityCrewResponse> {
-    const { root } = this.activeProject(req.root)
-    if (req.refresh === true) {
-      this.contexts.invalidate(root)
-      for (const cache of this.hostReads) cache.invalidate()
-    }
+    const target = this.activeProject(req.root)
+    const { root } = target
+    if (req.refresh === true) this.reader.invalidate(root)
 
     let sessions: readonly GasCitySession[]
     try {
-      sessions = await this.sessions.get(root, this.contexts.peek(root)?.cityRoot)
+      sessions = await this.reader.sessions(target)
     } catch (reason) {
       return reason instanceof GasCityReadError
         ? reason.unavailable
@@ -148,11 +72,11 @@ export class GasCityService {
     // Best-effort enrichments: without them the crew degrades to "every session
     // in this directory is a worker", which is wrong but not misleading, and the
     // failure is logged rather than blanking the section.
-    const context = await this.contexts.get(root, tierSource === 'config')
+    const context = await this.reader.context(target, tierSource === 'config')
     // None of the host-wide reads could know their city; now that one is
     // resolved, say so, so a workspace in a different city on this host misses
     // rather than being served this one's crew.
-    for (const cache of this.hostReads) cache.attribute(root.hostId, context.cityRoot)
+    this.reader.attribute(root.hostId, context.cityRoot)
 
     return deriveCrew({
       sessions,
@@ -169,63 +93,11 @@ export class GasCityService {
   }
 
   /**
-   * One `gc session list` read, parsed. Throws rather than returning a failure
-   * shape so the cache evicts it: a transient gc failure must not pin an empty
-   * crew in place for the share window.
-   */
-  private async loadSessions(root: HostPath): Promise<readonly GasCitySession[]> {
-    const { host } = this.activeProject(root)
-    const listed = await this.run(host, root, ['session', 'list', '--json'])
-    if (!listed.ok) throw new GasCityReadError(listed.unavailable as GasCityUnavailable)
-    return parseSessionListOutput(listed.stdout, root.hostId)
-  }
-
-  /**
-   * The city's shape as this workspace sees it.
-   *
-   * Both `gc` reads here are city-wide and shared per host; what is left to do
-   * per workspace is the rig it maps to — a pure lookup in the shared rig list —
-   * and the marker stats that locate the city. A degraded read still yields a
-   * workers-only crew rather than a blank section, so a failure is swallowed
-   * here rather than in the cache, which must evict it.
-   */
-  private async loadContext(
-    root: HostPath,
-    withConfig: boolean,
-  ): Promise<GasCityContext> {
-    const { host } = this.activeProject(root)
-    const [rigs, config] = await Promise.all([
-      this.rigLists.get(root).catch(degradeTo<readonly GasCityRig[]>([], root, 'rig list')),
-      withConfig
-        ? this.configs.get(root).catch(degradeTo(EMPTY_RESOLVED_CONFIG, root, 'config show'))
-        : Promise.resolve(EMPTY_RESOLVED_CONFIG),
-    ])
-    const rigName = rigForPath(rigs, root.path)?.name
-    const { cityRoot, hqRigName } = await this.resolveCity(host, root, rigs)
-    return {
-      rigs,
-      config,
-      ...(rigName === undefined ? {} : { rigName }),
-      ...(cityRoot === undefined ? {} : { cityRoot }),
-      ...(hqRigName === undefined ? {} : { hqRigName }),
-    }
-  }
-
-  private async loadRigs(root: HostPath): Promise<readonly GasCityRig[]> {
-    const { host } = this.activeProject(root)
-    const result = await this.run(host, root, ['rig', 'list', '--json'])
-    if (!result.ok) throw new GasCityReadError(result.unavailable as GasCityUnavailable)
-    return parseRigListOutput(result.stdout)
-  }
-
-  /**
-   * Does this workspace sit inside a Gas City? A bounded walk up from the root
-   * looking for `city.toml` or `.gc` — no `gc` invocation, so it stays cheap
-   * enough to run on every workspace switch.
+   * Does this workspace sit inside a Gas City? Marker stats only, no `gc`
+   * invocation, so it stays cheap enough to run on every workspace switch.
    */
   async probe(requestedRoot: HostPath): Promise<GasCityProbeResponse> {
-    const { host, root } = this.activeProject(requestedRoot)
-    return { hasCity: await isInCity(host, root) }
+    return { hasCity: await this.reader.inCity(this.activeProject(requestedRoot)) }
   }
 
   /**
@@ -237,246 +109,16 @@ export class GasCityService {
   }
 
   /**
-   * Locate the city and its HQ rig.
-   *
-   * `gc rig list` reports the HQ rig — the city itself — alongside every
-   * registered rig, so the city is found by asking which listed rig root carries
-   * `city.toml`. That works for rigs registered *outside* the city directory,
-   * where walking up from the workspace never reaches the city at all and the
-   * mayor would otherwise vanish from the crew. The walk stays as the fallback
-   * for when the rig list is unavailable.
-   */
-  private async resolveCity(
-    host: ProjectHost,
-    root: HostPath,
-    rigs: readonly GasCityRig[],
-  ): Promise<{ readonly cityRoot?: HostPath; readonly hqRigName?: string }> {
-    // Stat every rig at once: a city has tens of rigs and these are round trips
-    // over SSH, so doing them in sequence is the difference between snappy and
-    // not on the first load.
-    const marked = await Promise.all(
-      rigs.map(async (rig) => {
-        const candidate = hostPath(root.hostId, rig.path)
-        return (await hasMarker(host, candidate, [CITY_ROOT_MARKER]))
-          ? { cityRoot: candidate, hqRigName: rig.name }
-          : undefined
-      }),
-    )
-    const found = marked.find((entry) => entry !== undefined)
-    if (found) return found
-    const walked = await findCityRoot(host, root)
-    return walked === undefined ? {} : { cityRoot: walked }
-  }
-
-  /**
-   * A failed read throws so the cache evicts it; output gc produced but hvir
-   * cannot parse is a real answer, cached as the empty config it amounts to.
-   */
-  private async loadConfig(root: HostPath): Promise<GasCityResolvedConfig> {
-    const { host } = this.activeProject(root)
-    const result = await this.run(host, root, ['config', 'show'])
-    if (!result.ok) throw new GasCityReadError(result.unavailable as GasCityUnavailable)
-    try {
-      return parseResolvedConfig(result.stdout)
-    } catch (reason) {
-      console.error('[gascity] resolved config unparseable; crew tiering degraded', reason)
-      return EMPTY_RESOLVED_CONFIG
-    }
-  }
-
-  /**
-   * `gc` is a user-installed CLI that commonly lives in `~/.local/bin`, which a
-   * non-login shell (SSH exec) or a GUI-launched app's minimal PATH does not
-   * include. Route through the host's login shell so it resolves the same way it
-   * does in an interactive terminal.
-   *
-   * The background lane is not an optimization, it is containment. On a real
-   * city `gc session list` takes about three seconds and `gc rig list` about the
-   * same, against tens of milliseconds for `bd` or `git status`. The host's
-   * buffered-exec budget is shared by every subsystem, so without a cap a crew
-   * poll on a 4-second timer holds most of it, and the git discovery a user is
-   * waiting on after a workspace switch queues behind gc. Capping gc at one slot
-   * makes a slow city cost the crew section its own latency and nothing else.
-   */
-  private async run(
-    host: ProjectHost,
-    root: HostPath,
-    args: readonly string[],
-  ): Promise<GcResult> {
-    let result
-    try {
-      result = await host.exec('gc', args, {
-        cwd: root,
-        maxBuffer: MAX_OUTPUT_BYTES,
-        loginShell: true,
-        lane: 'background',
-        timeout: GC_TIMEOUT_MS,
-      })
-    } catch (reason) {
-      const message = reason instanceof Error ? reason.message : String(reason)
-      logFailure(root, args, message)
-      // A timeout is its own diagnosis: gc is installed and the host is
-      // reachable, it just never answered. Saying so beats "error", which reads
-      // as a broken install and sends the user looking in the wrong place.
-      if (isExecTimeout(reason)) {
-        return {
-          ok: false,
-          stdout: '',
-          unavailable: {
-            available: false,
-            reason: 'error',
-            message: `gc ${args.join(' ')} did not respond within ${reason.timeoutMs / 1000}s.`,
-          },
-        }
-      }
-      return {
-        ok: false,
-        stdout: '',
-        unavailable: /ENOENT|not found/i.test(message)
-          ? { available: false, reason: 'gc-missing', message: 'The gc CLI is not installed on this host.' }
-          : { available: false, reason: 'error', message },
-      }
-    }
-    if (result.code !== 0) {
-      const stderr = result.stderr.trim()
-      logFailure(root, args, stderr)
-      return { ok: false, stdout: '', unavailable: classifyFailure(stderr) }
-    }
-    return { ok: true, stdout: result.stdout }
-  }
-
-  /**
    * The panel only ever asks about the active workspace; anything else is
    * rejected before a path reaches exec. The trusted registry root is used from
    * here on, never the renderer-supplied value.
    */
-  private activeProject(requested: HostPath): {
-    readonly host: ProjectHost
-    readonly root: HostPath
-  } {
+  private activeProject(requested: HostPath): GasCityTarget {
     const project = this.deps.getProject()
     if (!isHostPathShape(requested) || !hostPathEquals(requested, project.root)) {
       throw new Error('Gas City requests are limited to the active workspace root')
     }
     return project
-  }
-}
-
-/**
- * `city.toml` marks the city root and nothing else. `.gc` does **not**: gc
- * creates one inside every registered rig, so treating it as a city marker made
- * every rig workspace look like the orchestration workspace and showed the whole
- * city everywhere. Membership and identity are two different questions and need
- * two different markers.
- */
-const CITY_ROOT_MARKER = 'city.toml'
-const CITY_MEMBER_MARKERS = [CITY_ROOT_MARKER, '.gc'] as const
-
-/**
- * The root of the city enclosing `start`, by a bounded walk up. Whether that
- * root *is* the workspace is what separates the orchestration view from a rig
- * view, so this tests for `city.toml` alone.
- */
-async function findCityRoot(
-  host: ProjectHost,
-  start: HostPath,
-): Promise<HostPath | undefined> {
-  return walkUp(start, (directory) => hasMarker(host, directory, [CITY_ROOT_MARKER]))
-}
-
-/**
- * Is `start` inside a city at all? Broader than {@link findCityRoot}: a rig
- * registered with a city carries `.gc` even when the city root is somewhere the
- * walk cannot reach.
- */
-async function isInCity(host: ProjectHost, start: HostPath): Promise<boolean> {
-  return (
-    (await walkUp(start, (directory) => hasMarker(host, directory, CITY_MEMBER_MARKERS))) !==
-    undefined
-  )
-}
-
-async function walkUp(
-  start: HostPath,
-  test: (directory: HostPath) => Promise<boolean>,
-): Promise<HostPath | undefined> {
-  let current = start
-  for (let depth = 0; depth < MAX_CITY_WALK_DEPTH; depth += 1) {
-    if (await test(current)) return current
-    const parent = dirnameHostPath(current)
-    if (hostPathEquals(parent, current)) break
-    current = parent
-  }
-  return undefined
-}
-
-async function hasMarker(
-  host: ProjectHost,
-  directory: HostPath,
-  markers: readonly string[],
-): Promise<boolean> {
-  for (const marker of markers) {
-    try {
-      await host.stat(joinHostPath(directory, marker))
-      return true
-    } catch {
-      // Marker absent at this level; try the next marker, then the parent.
-    }
-  }
-  return false
-}
-
-/**
- * gc reports failures two ways: a one-line message, or (under `--json`) a
- * structured envelope whose `message` carries the same text. Both classify the
- * same, so the envelope is unwrapped first and the rest reads the message.
- *
- * A store gc never provisioned is the second "no city" signal. gc accepts a
- * stray `.gc/` as a city marker and only then fails on the first bd read, with
- * bd rejecting the `session` issue type that `gc init` would have registered.
- * That is a plain beads workspace, not a broken city, so it hides like one.
- */
-function classifyFailure(stderr: string): GasCityUnavailable {
-  const message = unwrapErrorEnvelope(stderr)
-  if (/not in a city directory|no city\.toml|invalid issue type "session"/i.test(message)) {
-    return {
-      available: false,
-      reason: 'no-city',
-      message: 'This workspace is not inside a Gas City.',
-    }
-  }
-  return {
-    available: false,
-    reason: 'error',
-    message: message === '' ? 'gc exited with a non-zero status.' : message,
-  }
-}
-
-function unwrapErrorEnvelope(stderr: string): string {
-  if (!stderr.startsWith('{')) return stderr
-  try {
-    const parsed: unknown = JSON.parse(stderr)
-    if (isRecord(parsed) && typeof parsed.message === 'string') return parsed.message
-  } catch {
-    // Not an envelope after all; the raw text is the best diagnosis available.
-  }
-  return stderr
-}
-
-/**
- * Fall back to `value` when an enrichment read fails. A partial crew beats a
- * blank section, so this is logged rather than surfaced — but it lives at the
- * call site, not in the cache, which has to evict the failure so the next
- * workspace on this host retries instead of inheriting it.
- */
-function degradeTo<T>(value: T, root: HostPath, read: string): (reason: unknown) => T {
-  return (reason) => {
-    console.error('[gascity] enrichment unavailable; crew degraded', {
-      root: root.path,
-      read,
-      detail: reason instanceof Error ? reason.message : String(reason),
-    })
-    return value
   }
 }
 
@@ -486,12 +128,4 @@ function failure(reason: GasCityUnavailable['reason'], cause: unknown): GasCityU
     reason,
     message: cause instanceof Error ? cause.message : String(cause),
   }
-}
-
-function logFailure(root: HostPath, args: readonly string[], detail: string): void {
-  console.error('[gascity] command failed', {
-    root: root.path,
-    args: args.join(' '),
-    detail,
-  })
 }

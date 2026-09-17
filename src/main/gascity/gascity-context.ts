@@ -1,5 +1,6 @@
 import { hostPathEquals, type HostPath } from '../../shared'
 import type { GasCityResolvedConfig } from './gascity-config'
+import type { HostReadTarget } from './gascity-host-cache'
 import type { GasCityRig } from './gascity-parse'
 
 /**
@@ -40,8 +41,8 @@ interface CacheEntry {
   resolved?: GasCityContext
 }
 
-export interface GasCityContextCacheOptions {
-  readonly load: (root: HostPath, withConfig: boolean) => Promise<GasCityContext>
+export interface GasCityContextCacheOptions<TTarget extends HostReadTarget> {
+  readonly load: (target: TTarget, withConfig: boolean) => Promise<GasCityContext>
   readonly ttlMs?: number
   /** Injectable for tests; defaults to `Date.now`. */
   readonly now?: () => number
@@ -53,18 +54,18 @@ export interface GasCityContextCacheOptions {
  * twice. A failed load is evicted rather than cached, so a transient `gc`
  * failure does not pin a degraded crew in place for the whole TTL.
  */
-export class GasCityContextCache {
+export class GasCityContextCache<TTarget extends HostReadTarget = HostReadTarget> {
   private readonly entries = new Map<string, CacheEntry>()
   private readonly ttlMs: number
   private readonly now: () => number
 
-  constructor(private readonly options: GasCityContextCacheOptions) {
+  constructor(private readonly options: GasCityContextCacheOptions<TTarget>) {
     this.ttlMs = options.ttlMs ?? CONTEXT_TTL_MS
     this.now = options.now ?? (() => Date.now())
   }
 
-  get(root: HostPath, withConfig: boolean): Promise<GasCityContext> {
-    const key = cacheKey(root, withConfig)
+  get(target: TTarget, withConfig: boolean): Promise<GasCityContext> {
+    const key = cacheKey(target.root, withConfig)
     const cached = this.entries.get(key)
     if (cached && this.now() - cached.loadedAt < this.ttlMs) {
       // Re-insert so eviction below is least-recently-*used*. A Map evicts in
@@ -75,7 +76,7 @@ export class GasCityContextCache {
       return cached.value
     }
 
-    const value = this.options.load(root, withConfig)
+    const value = this.options.load(target, withConfig)
     const entry: CacheEntry = { loadedAt: this.now(), value }
     this.entries.set(key, entry)
     void value.then(

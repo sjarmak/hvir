@@ -47,6 +47,33 @@ export type SessionsWorkspaceRuntimeId = string & {
   readonly [sessionsWorkspaceRuntimeIdBrand]: 'SessionsWorkspaceRuntimeId'
 }
 
+/**
+ * Foreign authorities Sessions may project a session from. Declared here, not
+ * discovered: ADR-046 enumerates the sources rather than letting a transport
+ * that happens to answer widen the view.
+ */
+export type SessionsExternalSourceId = 'gas-city'
+
+/**
+ * Which authority owns the session a row describes.
+ *
+ * Structured on purpose. A consumer must be able to tell an external agent
+ * session from an hvir terminal without reading a title, and projection code
+ * branches on this and on declared capability rather than on a provider name
+ * (ADR-046).
+ */
+export type SessionsOrigin =
+  | { readonly kind: 'hvir-terminal' }
+  | {
+      readonly kind: 'external-agent'
+      readonly sourceId: SessionsExternalSourceId
+      /** Display name of the owning authority; never an identifier of its own. */
+      readonly sourceName: string
+    }
+
+/** The origin of every session hvir launched itself. */
+export const SESSIONS_HVIR_ORIGIN: SessionsOrigin = { kind: 'hvir-terminal' }
+
 export type SessionsReasonCode =
   | 'not-materialized'
   | 'not-live'
@@ -104,7 +131,12 @@ export interface SessionsModelFact {
 }
 
 export interface SessionsContextFact {
-  readonly usedTokens: number
+  /**
+   * Absent when the source reports only a percentage. Some sources know how
+   * full a context is without knowing how many tokens that is, and a count
+   * assumed from a percentage would be a fact hvir invented.
+   */
+  readonly usedTokens?: number
   readonly windowTokens?: number
   readonly usedPercent?: number
 }
@@ -160,6 +192,7 @@ export interface SessionsLivePtyQualifier {
 export interface SessionsObservedSession {
   readonly handle: SessionsTerminalHandle
   readonly workspaceId: SessionsWorkspaceHandle
+  readonly origin: SessionsOrigin
   readonly providerId: HarnessProviderId
   readonly profile: SessionsFact<{ readonly id: HarnessProfileId }>
   readonly title: string
@@ -265,6 +298,7 @@ export type SessionsLifecycle =
 
 export interface SessionsProjectionRow {
   readonly handle: SessionsTerminalHandle
+  readonly origin: SessionsOrigin
   readonly project: { readonly id: SessionsProjectHandle; readonly name: string }
   readonly workspace: {
     readonly id: SessionsWorkspaceHandle

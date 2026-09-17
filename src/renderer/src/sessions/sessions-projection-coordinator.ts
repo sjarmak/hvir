@@ -1,5 +1,6 @@
 import {
   MAX_SESSIONS_PROJECTION_ROWS,
+  SESSIONS_HVIR_ORIGIN,
   SESSIONS_PROJECTION_VERSION,
   sessionsProjectionDisplayTitle,
   type HvirApi,
@@ -348,10 +349,14 @@ function projectRow(
   const telemetry =
     main?.telemetry ?? rendererOnlyTelemetry(provider?.telemetrySupported === true)
   const handle = main?.handle ?? renderer!.handle
+  // A renderer fact only ever describes a terminal hvir itself launched, so a
+  // row with no main observation is hvir's by construction.
+  const origin = main?.origin ?? SESSIONS_HVIR_ORIGIN
   const providerName =
     provider?.displayName ?? String(renderer?.providerId ?? main!.providerId)
   return {
     handle,
+    origin,
     project: { id: workspace.projectId, name: workspace.projectName },
     workspace: {
       id: workspace.workspaceId,
@@ -363,7 +368,11 @@ function projectRow(
     provider: {
       id: renderer?.providerId ?? main!.providerId,
       name: providerName,
-      kind: provider?.sessionKind ?? 'unknown',
+      // An unregistered provider leaves the kind unknown, except where the
+      // origin itself declares it: an external agent session is an agent
+      // session whether or not hvir has that harness registered.
+      kind:
+        provider?.sessionKind ?? (origin.kind === 'external-agent' ? 'agent' : 'unknown'),
       contextPressure: provider?.contextPressure,
     },
     profile: renderer
@@ -383,7 +392,9 @@ function projectRow(
     turn: telemetry.turn,
     telemetryFreshness: telemetry.freshness,
     usage:
-      provider?.usageSupported !== true
+      // hvir samples usage from an artifact a launch of its own left behind, so
+      // there is nothing to sample for a session another authority started.
+      origin.kind === 'external-agent' || provider?.usageSupported !== true
         ? { status: 'unsupported' }
         : workspace.host.connectionState !== 'connected'
           ? { status: 'unavailable', reason: 'connection-unavailable' }

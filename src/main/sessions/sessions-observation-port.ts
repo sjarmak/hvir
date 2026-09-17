@@ -7,6 +7,7 @@ import {
   asSessionsPtyHandle,
   asSessionsTerminalHandle,
   sessionsProjectionDisplayTitle,
+  SESSIONS_HVIR_ORIGIN,
   sessionsProjectionText,
   sessionsWorkspaceQualifier,
   type ProjectHostOption,
@@ -25,6 +26,11 @@ import type { Disposer } from '../project-host'
 import type { PtyObservationSource } from '../pty/pty-supervisor'
 import type { RendererOwner } from '../renderer-resource-scopes'
 import type { TerminalSessionObservationSource } from '../terminal/session-registry'
+import type { HostCitySessions } from '../gascity/gascity-city-sessions'
+import {
+  projectCitySessions,
+  type SessionsCityWorkspaceTarget,
+} from './sessions-city-projection'
 import {
   createSessionsProjectionIdentityScope,
   sessionsProjectionRootKey,
@@ -53,6 +59,18 @@ export interface SessionsObservationPortOptions {
   readonly ptys: PtyObservationSource
   readonly observeProjects: (listener: () => void) => Disposer
   readonly emit: (owner: RendererOwner, change: SessionsProjectionChange) => void
+  /**
+   * Sessions another authority started, projected alongside hvir's own. Demand
+   * scoped like every other source: it is subscribed when the first consumer
+   * arrives and dropped with the last one.
+   */
+  readonly cities?: CitySessionsObservationSource
+}
+
+/** The shape {@link GasCitySessionsSource} presents to the projection. */
+export interface CitySessionsObservationSource {
+  observationSnapshot(): readonly HostCitySessions[]
+  observe(listener: () => void): Disposer
 }
 
 interface DemandLease {
@@ -226,6 +244,7 @@ export class SessionsObservationPort {
       this.options.sessions.observe(this.sourceChanged),
       this.options.ptys.observe(this.sourceChanged),
       this.options.observeProjects(this.sourceChanged),
+      ...(this.options.cities ? [this.options.cities.observe(this.sourceChanged)] : []),
     ]
     this.rebuild(true)
   }
@@ -259,6 +278,7 @@ export class SessionsObservationPort {
       providers: this.options.providers(),
       sessions: this.options.sessions.observationSnapshot(),
       ptys: this.options.ptys.observationSnapshot(),
+      cities: this.options.cities?.observationSnapshot() ?? [],
       identities: this.identities,
     })
     const fingerprint = JSON.stringify(next)
@@ -282,6 +302,7 @@ export function assembleSessionsObservation({
   providers,
   sessions,
   ptys,
+  cities = [],
   identities = createSessionsProjectionIdentityScope(),
 }: {
   readonly projectState: ProjectState
@@ -289,6 +310,7 @@ export function assembleSessionsObservation({
   readonly providers: readonly SessionsObservationProvider[]
   readonly sessions: ReturnType<TerminalSessionObservationSource['observationSnapshot']>
   readonly ptys: ReturnType<PtyObservationSource['observationSnapshot']>
+  readonly cities?: readonly HostCitySessions[]
   readonly identities?: SessionsProjectionIdentityScope
 }): ObservationBase {
   const hostById = new Map(
@@ -310,6 +332,7 @@ export function assembleSessionsObservation({
   )
   const workspaceByRoot = new Map<string, SessionsWorkspaceProjection>()
   const workspaces: SessionsWorkspaceProjection[] = []
+  const placement: SessionsCityWorkspaceTarget[] = []
   let activeProject: SessionsObservationSnapshot['activeProject']
   projects: for (const [projectIndex, project] of projectState.projects.entries()) {
     const host = hostById.get(project.registeredRoot.hostId)
@@ -345,6 +368,11 @@ export function assembleSessionsObservation({
       }
       workspaces.push(projected)
       workspaceByRoot.set(key, projected)
+      placement.push({
+        root: workspace.root,
+        projectRoot: project.registeredRoot,
+        workspace: projected,
+      })
     }
   }
   workspaces.sort(
@@ -371,6 +399,7 @@ export function assembleSessionsObservation({
     observed.set(retained.id, {
       handle,
       workspaceId: workspace.workspaceId,
+      origin: SESSIONS_HVIR_ORIGIN,
       providerId: retained.providerId,
       profile: { status: 'available', value: { id: retained.profileId } },
       title: sessionsProjectionDisplayTitle(
@@ -411,6 +440,7 @@ export function assembleSessionsObservation({
     observed.set(pty.info.id, {
       handle: asSessionsTerminalHandle(pty.info.id),
       workspaceId: workspace.workspaceId,
+      origin: SESSIONS_HVIR_ORIGIN,
       providerId: pty.info.providerId,
       profile: pty.info.profileId
         ? { status: 'available', value: { id: pty.info.profileId } }
@@ -437,12 +467,28 @@ export function assembleSessionsObservation({
     })
   }
 
+  // hvir's own sessions first: a row hvir can act on is never displaced by one
+  // it can only describe.
+  const city = projectCitySessions({
+    cities,
+    workspaces: placement,
+    identities,
+    providers: providerById,
+    capacity: Math.max(0, MAX_SESSIONS_PROJECTION_ROWS - observed.size),
+  })
+  const allProviders =
+    city.provider === undefined
+      ? projectedProviders
+      : [...projectedProviders, city.provider]
+          .sort((left, right) => String(left.id).localeCompare(String(right.id)))
+          .slice(0, MAX_SESSIONS_PROJECTION_PROVIDERS)
+
   return {
     version: SESSIONS_PROJECTION_VERSION,
     ...(activeProject ? { activeProject } : {}),
     workspaces,
-    providers: projectedProviders,
-    sessions: [...observed.values()].sort((left, right) =>
+    providers: allProviders,
+    sessions: [...observed.values(), ...city.sessions].sort((left, right) =>
       String(left.handle).localeCompare(String(right.handle)),
     ),
   }

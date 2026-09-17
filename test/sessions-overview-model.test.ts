@@ -16,6 +16,7 @@ import {
   asHarnessProfileId,
   asHarnessProviderId,
   asSessionsProjectHandle,
+  SESSIONS_HVIR_ORIGIN,
   asSessionsTerminalHandle,
   asSessionsWorkspaceHandle,
   sessionsWorkspaceQualifier,
@@ -369,6 +370,7 @@ function row(
   const unavailable = { status: 'unsupported' as const }
   return {
     handle: asSessionsTerminalHandle(id),
+    origin: SESSIONS_HVIR_ORIGIN,
     project: {
       id: asSessionsProjectHandle(`project-${options.project ?? 'Project A'}`),
       name: options.project ?? 'Project A',

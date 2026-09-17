@@ -6,6 +6,7 @@ import type {
   GasCityCrew,
   GasCityCrewResponse,
 } from '../../../shared'
+import { gasCitySessionActivity } from '../../../shared'
 import { agentName, omniAnalyticsUrl, sessionTraceUrl, traceLinkTitle } from './analytics-links'
 import { buildCrewView, type CrewCard, type CrewGroup, type HeldBead } from './crew-model'
 import {
@@ -295,11 +296,12 @@ function scopeHint(scope: 'city' | 'rig'): string {
 /**
  * Collapse gc's state vocabulary onto the three the styling distinguishes.
  * Unknown states fall through to `other` rather than being coerced into one of
- * the known ones.
+ * the known ones. `not running` is this panel's own word for a dormant pinned
+ * identity, which is why it is read here and not in the shared activity rule.
  */
 function stateClass(state: string): string {
-  if (state === 'active' || state === 'running') return 'active'
-  if (state === 'suspended' || state === 'asleep') return 'idle'
+  const activity = gasCitySessionActivity(state)
+  if (activity !== 'unknown') return activity
   if (state === 'not running') return 'dormant'
   return 'other'
 }

@@ -11,6 +11,7 @@ import {
   asHarnessProviderId,
   asSessionsPtyHandle,
   asSessionsProjectHandle,
+  SESSIONS_HVIR_ORIGIN,
   asSessionsTerminalHandle,
   asSessionsWorkspaceHandle,
   sessionsWorkspaceQualifier,
@@ -359,6 +360,7 @@ function observationSnapshot(demandGeneration: number): SessionsObservationSnaps
       {
         handle: privateHandle,
         workspaceId: asSessionsWorkspaceHandle('opaque-workspace'),
+        origin: SESSIONS_HVIR_ORIGIN,
         providerId,
         profile: { status: 'available', value: { id: profileId } },
         title: 'Stored safe title',

@@ -15,8 +15,16 @@ interface CacheEntry<T> {
   city?: HostPath
 }
 
-export interface HostReadCacheOptions<T> {
-  readonly load: (root: HostPath) => Promise<T>
+/**
+ * What a cached read is made against. The root carries the host the entry is
+ * keyed by; a reader that also needs the host connection passes it alongside.
+ */
+export interface HostReadTarget {
+  readonly root: HostPath
+}
+
+export interface HostReadCacheOptions<T, TTarget extends HostReadTarget> {
+  readonly load: (target: TTarget) => Promise<T>
   readonly ttlMs: number
   /** Injectable for tests; defaults to `Date.now`. */
   readonly now?: () => number
@@ -44,16 +52,17 @@ export interface HostReadCacheOptions<T> {
  * A failed read is evicted rather than cached, so a transient `gc` failure
  * cannot pin degraded data in place for the whole window.
  */
-export class HostReadCache<T> {
+export class HostReadCache<T, TTarget extends HostReadTarget = HostReadTarget> {
   private readonly entries = new Map<HostId, CacheEntry<T>>()
   private readonly now: () => number
 
-  constructor(private readonly options: HostReadCacheOptions<T>) {
+  constructor(private readonly options: HostReadCacheOptions<T, TTarget>) {
     this.now = options.now ?? (() => Date.now())
   }
 
   /** `city` is the caller's expectation, when it already has one. */
-  get(root: HostPath, city?: HostPath): Promise<T> {
+  get(target: TTarget, city?: HostPath): Promise<T> {
+    const { root } = target
     const cached = this.entries.get(root.hostId)
     if (
       cached &&
@@ -63,7 +72,7 @@ export class HostReadCache<T> {
       return cached.value
     }
 
-    const value = this.options.load(root)
+    const value = this.options.load(target)
     const entry: CacheEntry<T> = {
       loadedAt: this.now(),
       value,

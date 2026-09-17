@@ -1,6 +1,18 @@
-import type { HostPath } from '../../shared'
-import type { ProjectHost } from '../project-host'
+import type { HostPath, ProjectState } from '../../shared'
+import type { Disposer, ProjectHost } from '../project-host'
+import { GasCityReader, type GasCityTarget } from './gascity-reader'
 import { GasCityService } from './gascity-service'
+import { GasCitySessionsSource } from './gascity-sessions-source'
+
+/**
+ * The one reader every Gas City surface reads through. Sharing it is what makes
+ * a second surface cost no second `gc` invocation: the crew panel's poll and
+ * the global sessions view hit the same cache, and whichever of them is
+ * refreshing keeps the other current.
+ */
+export function ownGasCityReader(): GasCityReader {
+  return new GasCityReader()
+}
 
 /**
  * Construct the GasCityService. It holds no watches or timers — the crew view
@@ -9,6 +21,53 @@ import { GasCityService } from './gascity-service'
  */
 export function ownGasCityService(
   getProject: () => { readonly host: ProjectHost; readonly root: HostPath },
+  reader: GasCityReader,
 ): GasCityService {
-  return new GasCityService({ getProject, env: process.env })
+  return new GasCityService({ getProject, env: process.env, reader })
+}
+
+/**
+ * The Gas City source behind the global sessions view.
+ *
+ * Its candidate roots are the registered project roots on hosts that are
+ * already connected. Nothing here connects a host or materializes one: a
+ * session hvir did not launch must never be the reason it dials out.
+ */
+export function ownGasCitySessionsSource(
+  reader: GasCityReader,
+  deps: {
+    readonly projects: {
+      state(): ProjectState
+      observe(listener: () => void): Disposer
+    }
+    readonly hosts: {
+      connectedHosts(): readonly ProjectHost[]
+      onHostStateChange(listener: () => void): Disposer
+    }
+  },
+): GasCitySessionsSource {
+  return new GasCitySessionsSource({
+    reader,
+    candidates: () => {
+      const connected = new Map(
+        deps.hosts.connectedHosts().map((host) => [host.hostId, host]),
+      )
+      const targets: GasCityTarget[] = []
+      for (const project of deps.projects.state().projects) {
+        const host = connected.get(project.registeredRoot.hostId)
+        if (host === undefined) continue
+        targets.push({ host, root: project.registeredRoot })
+      }
+      return targets
+    },
+    observeCandidates: (listener) => {
+      const disposers = [
+        deps.projects.observe(listener),
+        deps.hosts.onHostStateChange(listener),
+      ]
+      return () => {
+        for (const dispose of disposers.reverse()) void dispose()
+      }
+    },
+  })
 }

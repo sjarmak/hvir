@@ -27,9 +27,9 @@ describe('GasCityContextCache', () => {
     const load = vi.fn(() => Promise.resolve(context('mem')))
     const cache = new GasCityContextCache({ load, ttlMs: 1000, now: () => clock })
 
-    void cache.get(ROOT, true)
+    void cache.get({ root: ROOT }, true)
     clock = 900
-    void cache.get(ROOT, true)
+    void cache.get({ root: ROOT }, true)
     expect(load).toHaveBeenCalledTimes(1)
   })
 
@@ -38,9 +38,9 @@ describe('GasCityContextCache', () => {
     const load = vi.fn(() => Promise.resolve(context('mem')))
     const cache = new GasCityContextCache({ load, ttlMs: 1000, now: () => clock })
 
-    void cache.get(ROOT, true)
+    void cache.get({ root: ROOT }, true)
     clock = 1001
-    void cache.get(ROOT, true)
+    void cache.get({ root: ROOT }, true)
     expect(load).toHaveBeenCalledTimes(2)
   })
 
@@ -48,8 +48,8 @@ describe('GasCityContextCache', () => {
     const load = vi.fn(() => Promise.resolve(context('mem')))
     const cache = new GasCityContextCache({ load, now: () => 0 })
 
-    const first = cache.get(ROOT, true)
-    const second = cache.get(ROOT, true)
+    const first = cache.get({ root: ROOT }, true)
+    const second = cache.get({ root: ROOT }, true)
     expect(first).toBe(second)
     expect(load).toHaveBeenCalledTimes(1)
   })
@@ -61,8 +61,8 @@ describe('GasCityContextCache', () => {
       .mockResolvedValue(context('mem'))
     const cache = new GasCityContextCache({ load, ttlMs: 10_000, now: () => 0 })
 
-    await expect(cache.get(ROOT, true)).rejects.toThrow('gc exploded')
-    await expect(cache.get(ROOT, true)).resolves.toMatchObject({ rigName: 'mem' })
+    await expect(cache.get({ root: ROOT }, true)).rejects.toThrow('gc exploded')
+    await expect(cache.get({ root: ROOT }, true)).resolves.toMatchObject({ rigName: 'mem' })
     expect(load).toHaveBeenCalledTimes(2)
   })
 
@@ -70,8 +70,8 @@ describe('GasCityContextCache', () => {
     const load = vi.fn(() => Promise.resolve(context('mem')))
     const cache = new GasCityContextCache({ load, now: () => 0 })
 
-    void cache.get(ROOT, true)
-    void cache.get(ROOT, false)
+    void cache.get({ root: ROOT }, true)
+    void cache.get({ root: ROOT }, false)
     expect(load).toHaveBeenCalledTimes(2)
   })
 
@@ -80,7 +80,7 @@ describe('GasCityContextCache', () => {
     const cache = new GasCityContextCache({ load, ttlMs: 10_000, now: () => 0 })
 
     expect(cache.peek(ROOT)).toBeUndefined()
-    await cache.get(ROOT, true)
+    await cache.get({ root: ROOT }, true)
     expect(cache.peek(ROOT)).toMatchObject({ rigName: 'mem' })
     expect(load).toHaveBeenCalledTimes(1)
   })
@@ -91,7 +91,7 @@ describe('GasCityContextCache', () => {
     const load = vi.fn(() => new Promise<GasCityContext>((resolve) => (settle = resolve)))
     const cache = new GasCityContextCache({ load, ttlMs: 1000, now: () => clock })
 
-    const pending = cache.get(ROOT, true)
+    const pending = cache.get({ root: ROOT }, true)
     expect(cache.peek(ROOT)).toBeUndefined()
     settle(context('mem'))
     await pending
@@ -107,10 +107,10 @@ describe('GasCityContextCache', () => {
     const workspace = (n: number): ReturnType<typeof hostPath> =>
       hostPath(HOST, `/home/dev/city/rigs/w${n}`)
 
-    for (let n = 0; n < 8; n += 1) void cache.get(workspace(n), true)
-    void cache.get(workspace(0), true) // keep using the first one
-    void cache.get(workspace(8), true) // overflow: something must go
-    void cache.get(workspace(0), true)
+    for (let n = 0; n < 8; n += 1) void cache.get({ root: workspace(n) }, true)
+    void cache.get({ root: workspace(0) }, true) // keep using the first one
+    void cache.get({ root: workspace(8) }, true) // overflow: something must go
+    void cache.get({ root: workspace(0) }, true)
     // The workspace still in use survives; the one untouched longest does not.
     expect(load).toHaveBeenCalledTimes(9)
   })
@@ -119,9 +119,9 @@ describe('GasCityContextCache', () => {
     const load = vi.fn(() => Promise.resolve(context('mem')))
     const cache = new GasCityContextCache({ load, ttlMs: 10_000, now: () => 0 })
 
-    void cache.get(ROOT, true)
+    void cache.get({ root: ROOT }, true)
     cache.invalidate(ROOT)
-    void cache.get(ROOT, true)
+    void cache.get({ root: ROOT }, true)
     expect(load).toHaveBeenCalledTimes(2)
   })
 
@@ -130,10 +130,10 @@ describe('GasCityContextCache', () => {
     const cache = new GasCityContextCache({ load, ttlMs: 10_000, now: () => 0 })
     const other = hostPath(HOST, '/home/dev/city/rigs/aoa')
 
-    void cache.get(ROOT, true)
-    void cache.get(other, true)
+    void cache.get({ root: ROOT }, true)
+    void cache.get({ root: other }, true)
     cache.invalidate(ROOT)
-    void cache.get(other, true)
+    void cache.get({ root: other }, true)
     expect(load).toHaveBeenCalledTimes(2)
   })
 })

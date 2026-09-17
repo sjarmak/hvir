@@ -50,6 +50,20 @@ export interface GasCitySession {
  * identity that is not currently running — still rendered, with restart
  * affordances, because its absence is the interesting part.
  */
+/**
+ * How gc's lifecycle word reads. gc owns the vocabulary and may extend it, so
+ * an unrecognized word stays `unknown` instead of being coerced into activity
+ * or inactivity — two consumers group on this (the crew panel's styling and the
+ * Sessions projection's lifecycle), and they must not disagree about it.
+ */
+export type GasCitySessionActivity = 'active' | 'idle' | 'unknown'
+
+export function gasCitySessionActivity(state: string | undefined): GasCitySessionActivity {
+  if (state === 'active' || state === 'running') return 'active'
+  if (state === 'suspended' || state === 'asleep') return 'idle'
+  return 'unknown'
+}
+
 export interface GasCityCrewMember {
   /** Stable key for React lists and terminal binding; unique within a crew. */
   readonly key: string

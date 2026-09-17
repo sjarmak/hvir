@@ -146,9 +146,16 @@ function sessionLifecycleFact(row: SessionsProjectionRow): SessionsOverviewCardF
       ? row.connectionState === 'failed'
         ? 'Connection failed'
         : sentenceCase(row.connectionState)
-      : row.lifecycle === 'retained'
-        ? 'Inactive'
-        : sentenceCase(row.lifecycle)
+      : row.origin.kind === 'external-agent'
+        ? // hvir's lifecycle words describe terminals it launched. For a session
+          // another authority runs, the only two things hvir can say are that
+          // the source reports it running, and that hvir is not attached to it.
+          row.lifecycle === 'live'
+          ? 'Active'
+          : 'Not attached'
+        : row.lifecycle === 'retained'
+          ? 'Inactive'
+          : sentenceCase(row.lifecycle)
   return { label: 'Status', value, tone: 'available' }
 }
 

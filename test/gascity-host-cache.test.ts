@@ -25,8 +25,8 @@ describe('HostReadCache', () => {
     const load = vi.fn(() => read('mem-pl'))
     const shared = cache(load)
 
-    await shared.get(MEM, undefined)
-    await shared.get(AOA, undefined)
+    await shared.get({ root: MEM }, undefined)
+    await shared.get({ root: AOA }, undefined)
     expect(load).toHaveBeenCalledTimes(1)
   })
 
@@ -35,12 +35,12 @@ describe('HostReadCache', () => {
     const load = vi.fn(() => read('mem-pl'))
     const shared = cache(load, () => clock)
 
-    await shared.get(MEM, undefined)
+    await shared.get({ root: MEM }, undefined)
     clock = 2999
-    await shared.get(MEM, undefined)
+    await shared.get({ root: MEM }, undefined)
     expect(load).toHaveBeenCalledTimes(1)
     clock = 3001
-    await shared.get(MEM, undefined)
+    await shared.get({ root: MEM }, undefined)
     expect(load).toHaveBeenCalledTimes(2)
   })
 
@@ -48,7 +48,7 @@ describe('HostReadCache', () => {
     const load = vi.fn(() => read('mem-pl'))
     const shared = cache(load)
 
-    expect(shared.get(MEM, undefined)).toBe(shared.get(AOA, undefined))
+    expect(shared.get({ root: MEM }, undefined)).toBe(shared.get({ root: AOA }, undefined))
     expect(load).toHaveBeenCalledTimes(1)
   })
 
@@ -56,8 +56,8 @@ describe('HostReadCache', () => {
     const load = vi.fn(() => read('mem-pl'))
     const shared = cache(load)
 
-    await shared.get(MEM, CITY)
-    await shared.get(MEM, OTHER_CITY)
+    await shared.get({ root: MEM }, CITY)
+    await shared.get({ root: MEM }, OTHER_CITY)
     expect(load).toHaveBeenCalledTimes(2)
   })
 
@@ -67,12 +67,12 @@ describe('HostReadCache', () => {
 
     // The city is unknown at read time, so the second workspace shares it and
     // then discovers it belongs to another city.
-    await shared.get(MEM, undefined)
+    await shared.get({ root: MEM }, undefined)
     shared.attribute(HOST, CITY)
-    await shared.get(AOA, undefined)
+    await shared.get({ root: AOA }, undefined)
     expect(load).toHaveBeenCalledTimes(1)
     shared.attribute(HOST, OTHER_CITY)
-    await shared.get(AOA, undefined)
+    await shared.get({ root: AOA }, undefined)
     expect(load).toHaveBeenCalledTimes(2)
   })
 
@@ -80,9 +80,9 @@ describe('HostReadCache', () => {
     const load = vi.fn(() => read('mem-pl'))
     const shared = cache(load)
 
-    await shared.get(MEM, undefined)
+    await shared.get({ root: MEM }, undefined)
     shared.attribute(HOST, CITY)
-    await shared.get(AOA, CITY)
+    await shared.get({ root: AOA }, CITY)
     expect(load).toHaveBeenCalledTimes(1)
   })
 
@@ -98,8 +98,8 @@ describe('HostReadCache', () => {
       .mockResolvedValue(['mem-pl'])
     const shared = cache(load)
 
-    await expect(shared.get(MEM, undefined)).rejects.toThrow('gc exploded')
-    await expect(shared.get(MEM, undefined)).resolves.toHaveLength(1)
+    await expect(shared.get({ root: MEM }, undefined)).rejects.toThrow('gc exploded')
+    await expect(shared.get({ root: MEM }, undefined)).resolves.toHaveLength(1)
     expect(load).toHaveBeenCalledTimes(2)
   })
 
@@ -107,9 +107,9 @@ describe('HostReadCache', () => {
     const load = vi.fn(() => read('mem-pl'))
     const shared = cache(load)
 
-    await shared.get(MEM, undefined)
+    await shared.get({ root: MEM }, undefined)
     shared.invalidate()
-    await shared.get(MEM, undefined)
+    await shared.get({ root: MEM }, undefined)
     expect(load).toHaveBeenCalledTimes(2)
   })
 })

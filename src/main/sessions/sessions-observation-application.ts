@@ -9,7 +9,10 @@ import type {
 import type { RendererEventPublisher } from '../renderer-event-publisher'
 import type { TerminalSessionObservationSource } from '../terminal/session-registry'
 import type { WorkbenchRuntime } from '../workbench-runtime'
-import { SessionsObservationPort } from './sessions-observation-port'
+import {
+  SessionsObservationPort,
+  type CitySessionsObservationSource,
+} from './sessions-observation-port'
 import { SessionsUsageObservationPort } from './sessions-usage-observation-port'
 
 export interface ApplicationSessionsObservation {
@@ -25,6 +28,7 @@ export function installApplicationSessionsObservation(
   sessions: TerminalSessionObservationSource,
   ptys: PtyObservationSource & PtyUsageObservationSource,
   events: Pick<RendererEventPublisher, 'toRenderer'>,
+  cities?: CitySessionsObservationSource,
 ): ApplicationSessionsObservation {
   const observation = runtime.own(
     'Sessions observation port',
@@ -44,6 +48,7 @@ export function installApplicationSessionsObservation(
       ptys,
       observeProjects: (listener) => projects.observe(listener),
       emit: (owner, change) => events.toRenderer(owner, 'sessions:changed', change),
+      ...(cities === undefined ? {} : { cities }),
     }),
     (observation) => observation.dispose(),
   )

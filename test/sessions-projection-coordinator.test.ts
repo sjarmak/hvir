@@ -12,6 +12,7 @@ import {
   asHarnessProviderId,
   asSessionsPtyHandle,
   asSessionsProjectHandle,
+  SESSIONS_HVIR_ORIGIN,
   asSessionsTerminalHandle,
   asSessionsWorkspaceHandle,
   sessionsWorkspaceQualifier,
@@ -282,6 +283,7 @@ function observed(
   return {
     handle: asSessionsTerminalHandle(id),
     workspaceId: asSessionsWorkspaceHandle(workspaceId),
+    origin: SESSIONS_HVIR_ORIGIN,
     providerId,
     profile: { status: 'available', value: { id: profileId } },
     title: `Session ${id}`,

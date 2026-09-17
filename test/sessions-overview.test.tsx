@@ -12,6 +12,7 @@ import {
   asHarnessProviderId,
   asSessionsPtyHandle,
   asSessionsProjectHandle,
+  SESSIONS_HVIR_ORIGIN,
   asSessionsTerminalHandle,
   asSessionsWorkspaceHandle,
   asSessionsWorkspaceRuntimeId,
@@ -876,6 +877,7 @@ function snapshot(demandGeneration: number): SessionsObservationSnapshot {
       {
         handle: asSessionsTerminalHandle('terminal-private-agent'),
         workspaceId: asSessionsWorkspaceHandle('opaque-workspace'),
+        origin: SESSIONS_HVIR_ORIGIN,
         providerId: asHarnessProviderId('codex'),
         profile: {
           status: 'available',
@@ -898,6 +900,7 @@ function snapshot(demandGeneration: number): SessionsObservationSnapshot {
       {
         handle: asSessionsTerminalHandle('terminal-private-shell'),
         workspaceId: asSessionsWorkspaceHandle('opaque-workspace'),
+        origin: SESSIONS_HVIR_ORIGIN,
         providerId: asHarnessProviderId('plain-shell'),
         profile: {
           status: 'available',
