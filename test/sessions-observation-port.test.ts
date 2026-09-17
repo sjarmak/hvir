@@ -4,6 +4,8 @@ import {
   SessionsObservationPort,
   assembleSessionsObservation,
 } from '../src/main/sessions/sessions-observation-port'
+import type { HostCityEvents } from '../src/main/gascity/city-event-facts'
+import type { HostCitySessions } from '../src/main/gascity/gascity-city-sessions'
 import type { ObservedManagedPty } from '../src/main/pty/pty-supervisor'
 import type { OwnedTerminalSession } from '../src/main/terminal/session-registry'
 import {
@@ -243,6 +245,46 @@ describe('SessionsObservationPort', () => {
     expect(emit).not.toHaveBeenCalled()
     expect(() => port.snapshot(owner, 1)).toThrow('no longer current')
     expect(port.acquire(owner, 2).revision).toBeGreaterThan(initial.revision)
+    port.dispose()
+  })
+
+  it('reprojects on a city event alone, and reports the interaction it declared', () => {
+    const cities = observationSource([cityFacts()])
+    const cityEvents = observationSource([cityEventFacts([])])
+    const emit = vi.fn()
+    const port = new SessionsObservationPort({
+      projectState,
+      hosts: hostOptions,
+      providers,
+      sessions: observationSource<OwnedTerminalSession>([]),
+      ptys: observationSource<ObservedManagedPty>([]),
+      observeProjects: listeners().observe,
+      emit,
+      cities,
+      events: cityEvents,
+    })
+    const owner = { id: 11, generation: 1 }
+
+    const initial = port.acquire(owner, 1)
+    expect(cityEvents.listenerCount()).toBe(1)
+    expect(initial.sessions[0]?.attention).toBeUndefined()
+
+    // Nothing else moved: the interaction is the whole change.
+    cityEvents.set([cityEventFacts([{ sessionKey: 'gc-1', requestId: 'r1', kind: 'ask' }])])
+
+    expect(emit).toHaveBeenCalledExactlyOnceWith(owner, {
+      demandGeneration: 1,
+      revision: initial.revision + 1,
+    })
+    const waiting = port.snapshot(owner, 1).sessions[0]
+    expect(waiting?.attention).toMatchObject({ status: 'available', value: 'ready' })
+    expect(waiting?.telemetry.turn).toMatchObject({
+      status: 'available',
+      value: { state: 'waiting-for-user' },
+    })
+
+    expect(port.release(owner, 1)).toBe(true)
+    expect(cityEvents.listenerCount()).toBe(0)
     port.dispose()
   })
 
@@ -602,5 +644,37 @@ function listeners() {
       for (const listener of values) listener()
     },
     listenerCount: () => values.size,
+  }
+}
+
+function cityFacts(): HostCitySessions {
+  return {
+    root: localRoot,
+    cityRoot: localPath('/private/city'),
+    observedAt: 1_700_000_000_000,
+    staleAfterMs: 3_000,
+    stale: false,
+    sessions: [
+      {
+        sessionKey: 'gc-1',
+        label: 'city-worker',
+        tier: 'worker',
+        attachTarget: 'city-worker',
+        rigRoot: localRoot,
+        workDir: localRoot,
+        state: 'active',
+        activity: 'active',
+      },
+    ],
+  }
+}
+
+function cityEventFacts(pending: HostCityEvents['pending']): HostCityEvents {
+  return {
+    hostId: localRoot.hostId,
+    stream: 'live',
+    observedAt: 1_700_000_000_000,
+    lifecycle: [],
+    pending,
   }
 }

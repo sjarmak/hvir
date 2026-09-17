@@ -160,7 +160,7 @@ function turnsOf(
     })
   }
   const event =
-    'system_event' in message ? displayText(message.system_event?.message) : undefined
+    'system_event' in message ? sessionsTranscriptDisplayText(message.system_event?.message) : undefined
   if (event !== undefined && event.text !== '')
     turns.push({
       role,
@@ -213,7 +213,7 @@ function named(
   name: string | undefined,
   text: string | undefined,
 ): BlockTurn {
-  const cut = displayText(text)
+  const cut = sessionsTranscriptDisplayText(text)
   return {
     kind,
     text: cut?.text ?? '',
@@ -226,7 +226,7 @@ function withText(
   kind: SessionsTranscriptTurnKind,
   text: string | undefined,
 ): BlockTurn | undefined {
-  const cut = displayText(text)
+  const cut = sessionsTranscriptDisplayText(text)
   // A block whose only content is control bytes is not a turn.
   if (cut === undefined || cut.text === '') return undefined
   return { kind, ...cut }
@@ -275,15 +275,18 @@ function capped(fold: SessionsTranscriptFold): SessionsTranscriptFold {
  *
  * Stripping is for display only, exactly as gc's own dashboard does it. The
  * supervisor's transcript is unchanged; hvir is a reader here and alters
- * nothing upstream.
+ * nothing upstream. Exported because everything a supervisor sends for a person
+ * to read goes through it, not only the turns: a prompt and its options are
+ * server text on the same terms.
  */
-function displayText(
+export function sessionsTranscriptDisplayText(
   value: string | undefined,
+  cap = MAX_SESSIONS_TRANSCRIPT_TEXT,
 ): { readonly text: string; readonly truncated?: boolean } | undefined {
   if (value === undefined) return undefined
   const stripped = stripControlBytes(value)
-  if (stripped.length <= MAX_SESSIONS_TRANSCRIPT_TEXT) return { text: stripped }
-  return { text: stripped.slice(0, MAX_SESSIONS_TRANSCRIPT_TEXT), truncated: true }
+  if (stripped.length <= cap) return { text: stripped }
+  return { text: stripped.slice(0, cap), truncated: true }
 }
 
 /** CSI, OSC, and single-character escapes, then the C0 bytes that are not text. */

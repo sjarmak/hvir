@@ -362,7 +362,7 @@ function projectRow(
 ): SessionsProjectionRow {
   const identity = rendererIdentity(main, renderer)
   const lifecycle = lifecycleProjection(workspace, main, renderer)
-  const attention = attentionProjection(renderer)
+  const attention = attentionProjection(main, renderer)
   const telemetry =
     main?.telemetry ?? rendererOnlyTelemetry(provider?.telemetrySupported === true)
   const handle = main?.handle ?? renderer!.handle
@@ -444,15 +444,31 @@ function lifecycleProjection(
   return { lifecycle: renderer.resumeOnStart ? 'resuming' : 'starting' }
 }
 
-function attentionProjection(renderer: SessionsRendererSession | undefined): {
+/**
+ * Whether the row is asking for a person.
+ *
+ * A terminal hvir rendered is the authority on its own unseen output, so the
+ * renderer's state wins wherever there is one. A source that declares the
+ * signal itself is the authority where hvir renders nothing: main's fact is the
+ * exact one ADR-048 admits, and it is the only way a row with no terminal can
+ * ask for attention at all. Working stays the renderer's either way; a session
+ * hvir is not running is not something hvir can watch working.
+ */
+function attentionProjection(
+  main: SessionsObservedSession | undefined,
+  renderer: SessionsRendererSession | undefined,
+): {
   readonly attention: SessionsProjectionRow['attention']
   readonly working: SessionsProjectionRow['working']
 } {
+  const working: SessionsProjectionRow['working'] = renderer
+    ? { status: 'available', value: renderer.attention === 'working' }
+    : { status: 'unavailable', reason: 'not-materialized' }
+  if (!renderer && main?.attention !== undefined) {
+    return { attention: main.attention, working }
+  }
   if (!renderer) {
-    return {
-      attention: { status: 'unavailable', reason: 'not-materialized' },
-      working: { status: 'unavailable', reason: 'not-materialized' },
-    }
+    return { attention: { status: 'unavailable', reason: 'not-materialized' }, working }
   }
   return {
     attention: {
@@ -464,7 +480,7 @@ function attentionProjection(renderer: SessionsRendererSession | undefined): {
             ? 'bell'
             : 'none',
     },
-    working: { status: 'available', value: renderer.attention === 'working' },
+    working,
   }
 }
 

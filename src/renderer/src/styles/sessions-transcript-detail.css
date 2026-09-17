@@ -68,3 +68,59 @@
   color: var(--text-muted);
   font-style: italic;
 }
+
+/* What the session is waiting on. Set apart from the log: it is the one part of
+   the pane that is asking for something rather than reporting it. */
+.sessions-transcript-pending {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 9px 10px;
+  border: 1px solid #5a6a48;
+  border-radius: 7px;
+  background: rgb(127 176 131 / 8%);
+}
+
+.sessions-transcript-prompt {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-strong);
+  white-space: pre-wrap;
+}
+
+.sessions-transcript-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sessions-transcript-compose {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 8px;
+  align-items: end;
+  margin-top: 8px;
+}
+
+.sessions-transcript-compose label {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: calc(9px * var(--hvir-interface-scale));
+}
+
+.sessions-transcript-compose textarea {
+  min-width: 0;
+  padding: 6px 7px;
+  border: 1px solid #2b323d;
+  border-radius: 6px;
+  background: #111318;
+  color: var(--text);
+  font-family: var(--hvir-monospace-font);
+  font-size: calc(10px * var(--hvir-interface-scale));
+  resize: vertical;
+}
+
+.sessions-transcript-failure {
+  margin: 7px 0 0;
+  color: #d98b7f;
+}

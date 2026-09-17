@@ -18,7 +18,12 @@ import type {
   SupervisorUnavailable,
 } from '../src/main/gascity/supervisor-client'
 import type { SessionTranscriptStructuredResponse } from '../src/main/gascity/generated-supervisor-transcript'
-import type { SessionStreamStructuredMessageEvent } from '../src/main/gascity/generated-supervisor-api'
+import type {
+  PendingInteraction,
+  SessionRespondInputBody,
+  SessionStreamStructuredMessageEvent,
+  SessionSubmitInputBody,
+} from '../src/main/gascity/generated-supervisor-api'
 import type { SessionsResolvedExternalSession } from '../src/main/sessions/sessions-external-resolution'
 import { SessionsTranscriptPort } from '../src/main/sessions/sessions-transcript-port'
 import type { SessionsExternalSessionTarget } from '../src/main/sessions/sessions-projection-identities'
@@ -141,6 +146,261 @@ describe('sessions transcript port', () => {
     expect(world.streams[0]?.closed).toBe(true)
   })
 
+  it('carries the interaction the session is waiting on, with its options', async () => {
+    const world = harness({ pending: () => interaction() })
+    world.port.acquire(OWNER, request())
+    await world.settle()
+
+    expect(world.snapshot().pending).toEqual({
+      revision: 1,
+      prompt: 'Run the migration against production?',
+      options: [
+        { ordinal: 0, label: 'allow' },
+        { ordinal: 1, label: 'deny' },
+      ],
+    })
+  })
+
+  it('answers with the word the city published for that position', async () => {
+    const world = harness({ pending: () => interaction() })
+    world.port.acquire(OWNER, request())
+    await world.settle()
+    const answer = await world.port.respond(OWNER, {
+      demandGeneration: 1,
+      handle: HANDLE,
+      pendingRevision: 1,
+      optionOrdinal: 1,
+    })
+    await world.settle()
+
+    expect(answer).toEqual({ outcome: 'accepted' })
+    // The renderer named a position; gc is answered in its own vocabulary, and
+    // with the interaction identifier the renderer never received.
+    expect(world.responded).toEqual([{ action: 'deny', request_id: 'req-1' }])
+  })
+
+  it('clears the prompt on the answer and withdraws the attention it raised', async () => {
+    const world = harness({ pending: () => interaction() })
+    world.port.acquire(OWNER, request())
+    await world.settle()
+    const before = world.snapshot().revision
+    await world.port.respond(OWNER, {
+      demandGeneration: 1,
+      handle: HANDLE,
+      pendingRevision: 1,
+      optionOrdinal: 0,
+    })
+    await world.settle()
+
+    expect(world.snapshot().pending).toBeUndefined()
+    expect(world.snapshot().revision).toBeGreaterThan(before)
+    // Nothing was read again: the badge clears because the answer was given.
+    expect(world.answered).toEqual([{ hostId: 'local', requestId: 'req-1' }])
+  })
+
+  it('refuses an answer to a prompt that has already changed', async () => {
+    const world = harness({ pending: () => interaction() })
+    world.port.acquire(OWNER, request())
+    await world.settle()
+    world.streams[0]?.subscribers.onEvent({
+      kind: 'pending',
+      data: interaction({ request_id: 'req-2', prompt: 'Force push to main?' }),
+    })
+    await world.settle()
+
+    expect(world.snapshot().pending?.revision).toBe(2)
+    expect(
+      await world.port.respond(OWNER, {
+        demandGeneration: 1,
+        handle: HANDLE,
+        pendingRevision: 1,
+        optionOrdinal: 0,
+      }),
+    ).toEqual({ outcome: 'unavailable', reason: 'stale-interaction' })
+    expect(world.responded).toEqual([])
+  })
+
+  it('refuses a position the session never offered', async () => {
+    const world = harness({ pending: () => interaction() })
+    world.port.acquire(OWNER, request())
+    await world.settle()
+
+    expect(
+      await world.port.respond(OWNER, {
+        demandGeneration: 1,
+        handle: HANDLE,
+        pendingRevision: 1,
+        optionOrdinal: 4,
+      }),
+    ).toEqual({ outcome: 'unavailable', reason: 'invalid-option' })
+    expect(world.responded).toEqual([])
+  })
+
+  it('refuses an answer when nothing is waiting on one', async () => {
+    const world = harness()
+    world.port.acquire(OWNER, request())
+    await world.settle()
+
+    expect(
+      await world.port.respond(OWNER, {
+        demandGeneration: 1,
+        handle: HANDLE,
+        pendingRevision: 1,
+        optionOrdinal: 0,
+      }),
+    ).toEqual({ outcome: 'unavailable', reason: 'no-interaction' })
+  })
+
+  it('reports a refused answer and sends nothing a second time', async () => {
+    const world = harness({
+      pending: () => interaction(),
+      respond: () => ({ ok: false, failure: { reason: 'denied' } }),
+    })
+    world.port.acquire(OWNER, request())
+    await world.settle()
+
+    expect(
+      await world.port.respond(OWNER, {
+        demandGeneration: 1,
+        handle: HANDLE,
+        pendingRevision: 1,
+        optionOrdinal: 0,
+      }),
+    ).toEqual({ outcome: 'unavailable', reason: 'denied' })
+    expect(world.responded).toHaveLength(1)
+    // The prompt stands: nothing was answered, so nothing was withdrawn.
+    expect(world.snapshot().pending?.revision).toBe(1)
+    expect(world.answered).toEqual([])
+  })
+
+  it('clears the interaction when the supervisor says it was cleared', async () => {
+    const world = harness({ pending: () => interaction() })
+    world.port.acquire(OWNER, request())
+    await world.settle()
+    world.streams[0]?.subscribers.onEvent({
+      kind: 'pending-cleared',
+      data: { request_id: 'req-1' },
+    })
+    await world.settle()
+
+    expect(world.snapshot().pending).toBeUndefined()
+  })
+
+  it('keeps the interaction when a different one is cleared', async () => {
+    const world = harness({ pending: () => interaction() })
+    world.port.acquire(OWNER, request())
+    await world.settle()
+    world.streams[0]?.subscribers.onEvent({
+      kind: 'pending-cleared',
+      data: { request_id: 'req-9' },
+    })
+    await world.settle()
+
+    expect(world.snapshot().pending?.revision).toBe(1)
+  })
+
+  it('shows the transcript when the interaction could not be read', async () => {
+    const world = harness({
+      pendingRead: () => ({ ok: false, failure: { reason: 'unreachable' } }),
+    })
+    world.port.acquire(OWNER, request())
+    await world.settle()
+
+    // A prompt hvir could not read is not a transcript hvir could not read.
+    expect(world.snapshot().status).toBe('ready')
+    expect(world.snapshot().pending).toBeUndefined()
+    expect(world.snapshot().stream).toBe('live')
+  })
+
+  it('shows no prompt for a supervisor that does not declare interactions', async () => {
+    const world = harness({ pending: () => interaction(), pendingSupported: false })
+    world.port.acquire(OWNER, request())
+    await world.settle()
+
+    expect(world.snapshot().pending).toBeUndefined()
+  })
+
+  it('sends a message, and leaves what the session is waiting on alone', async () => {
+    const world = harness({ pending: () => interaction() })
+    world.port.acquire(OWNER, request())
+    await world.settle()
+    const sent = await world.port.submit(OWNER, {
+      demandGeneration: 1,
+      handle: HANDLE,
+      message: '  hold off until the release lands  ',
+    })
+
+    expect(sent).toEqual({ outcome: 'accepted' })
+    expect(world.submitted).toEqual([{ message: 'hold off until the release lands' }])
+    // Whether the message resolved the interaction is gc's to say, not hvir's.
+    expect(world.snapshot().pending?.revision).toBe(1)
+    expect(world.answered).toEqual([])
+  })
+
+  it('refuses a message with nothing in it', async () => {
+    const world = harness()
+    world.port.acquire(OWNER, request())
+    await world.settle()
+
+    expect(
+      await world.port.submit(OWNER, {
+        demandGeneration: 1,
+        handle: HANDLE,
+        message: '   ',
+      }),
+    ).toEqual({ outcome: 'unavailable', reason: 'invalid-message' })
+    expect(world.submitted).toEqual([])
+  })
+
+  it('refuses a mutation aimed at a row the pane is no longer showing', async () => {
+    const world = harness({ pending: () => interaction() })
+    world.port.acquire(OWNER, request())
+    await world.settle()
+
+    expect(
+      await world.port.submit(OWNER, {
+        demandGeneration: 1,
+        handle: OTHER,
+        message: 'wrong row',
+      }),
+    ).toEqual({ outcome: 'unavailable', reason: 'stale-projection' })
+    expect(world.submitted).toEqual([])
+  })
+
+  it('reports where a mutation cannot be addressed, and sends nothing', async () => {
+    let addressed = 0
+    const world = harness({
+      pending: () => interaction(),
+      address: (reachable) => {
+        addressed += 1
+        // The read reaches the host; the host is gone by the time someone answers.
+        return addressed > 1 ? { ok: false, failure: { reason: 'unreachable' } } : reachable
+      },
+    })
+    world.port.acquire(OWNER, request())
+    await world.settle()
+
+    expect(
+      await world.port.submit(OWNER, {
+        demandGeneration: 1,
+        handle: HANDLE,
+        message: 'still here?',
+      }),
+    ).toEqual({ outcome: 'unavailable', reason: 'unreachable' })
+    expect(world.submitted).toEqual([])
+    // The transcript is untouched: nothing was sent, so nothing changed.
+    expect(world.snapshot().status).toBe('ready')
+  })
+
+  it('drops the prompt with the transcript when the selection moves', async () => {
+    const world = harness({ pending: () => interaction() })
+    world.port.acquire(OWNER, request())
+    await world.settle()
+    world.port.acquire(OWNER, request({ handle: OTHER }))
+
+    expect(world.snapshot().pending).toBeUndefined()
+  })
+
   it('notifies the renderer that asked, on a rising revision', async () => {
     const world = harness()
     world.port.acquire(OWNER, request())
@@ -180,16 +440,49 @@ interface FakeStream {
 
 function harness(
   overrides: {
-    readonly address?: () => SupervisorAddressResult
+    /** Receives the reachable address, so a test can fail a later call only. */
+    readonly address?: (reachable: SupervisorAddressResult) => SupervisorAddressResult
     readonly resolve?: () => SessionsResolvedExternalSession
+    readonly pending?: () => PendingInteraction | undefined
+    readonly pendingSupported?: boolean
+    readonly pendingRead?: () => { readonly ok: false; readonly failure: { readonly reason: 'unreachable' } }
+    readonly respond?: () => { readonly ok: false; readonly failure: { readonly reason: 'denied' } }
   } = {},
 ) {
   const streams: FakeStream[] = []
   const changes: SessionsTranscriptChange[] = []
+  const responded: SessionRespondInputBody[] = []
+  const submitted: SessionSubmitInputBody[] = []
+  const answered: { readonly hostId: string; readonly requestId: string }[] = []
   let sourceListener: (() => void) | undefined
 
   const client = {
     transcript: () => Promise.resolve({ ok: true as const, value: transcriptResponse() }),
+    sessionPending: () =>
+      Promise.resolve(
+        overrides.pendingRead?.() ?? {
+          ok: true as const,
+          value: {
+            supported: overrides.pendingSupported ?? true,
+            ...(overrides.pending?.() === undefined
+              ? {}
+              : { pending: overrides.pending?.() }),
+          },
+        },
+      ),
+    respond: (_city: string, _session: string, body: SessionRespondInputBody) => {
+      responded.push(body)
+      return Promise.resolve(
+        overrides.respond?.() ?? { ok: true as const, value: { id: 'worker-1', status: 'ok' } },
+      )
+    },
+    submit: (_city: string, _session: string, body: SessionSubmitInputBody) => {
+      submitted.push(body)
+      return Promise.resolve({
+        ok: true as const,
+        value: { event_cursor: '0', request_id: 'req-9', status: 'accepted' },
+      })
+    },
     streamSession: (
       _city: string,
       _session: string,
@@ -209,17 +502,21 @@ function harness(
     },
   } as unknown as GascitySupervisorClient
 
+  const reachable: SupervisorAddressResult = {
+    ok: true,
+    value: { client, cityName: 'gastown' },
+  }
   const supervisor: SupervisorAccess = {
-    address: () =>
-      Promise.resolve(
-        overrides.address?.() ?? { ok: true, value: { client, cityName: 'gastown' } },
-      ),
+    address: () => Promise.resolve(overrides.address?.(reachable) ?? reachable),
   }
 
   const world = {
     port: undefined as unknown as SessionsTranscriptPort,
     streams,
     changes,
+    responded,
+    submitted,
+    answered,
     current: (): SessionsResolvedExternalSession => resolved(),
     sourceChanged: () => sourceListener?.(),
     snapshot: () => world.port.snapshot(OWNER, 1),
@@ -244,6 +541,9 @@ function harness(
     supervisor,
     emit: (_owner, change) => {
       changes.push(change)
+    },
+    onPendingAnswered: (hostId, requestId) => {
+      answered.push({ hostId, requestId })
     },
   })
   return world
@@ -315,3 +615,15 @@ function history() {
 
 // The unavailable shape the stream reports on a drop.
 export type { SupervisorUnavailable }
+
+function interaction(
+  overrides: Partial<PendingInteraction> = {},
+): PendingInteraction {
+  return {
+    kind: 'tool-approval',
+    request_id: 'req-1',
+    prompt: 'Run the migration against production?',
+    options: ['allow', 'deny'],
+    ...overrides,
+  }
+}

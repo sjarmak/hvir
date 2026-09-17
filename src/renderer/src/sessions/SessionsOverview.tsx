@@ -675,6 +675,8 @@ export function SessionsOverview({
           onResume={() => transcripts.resume()}
           onAttach={() => void attach()}
           onShowTerminal={transcript.live ? showTerminal : undefined}
+          onRespond={(optionOrdinal) => transcripts.respond(optionOrdinal)}
+          onSubmit={(message) => transcripts.submit(message)}
         />
       ) : null}
     </>

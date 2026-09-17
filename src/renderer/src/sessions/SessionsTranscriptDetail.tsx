@@ -1,21 +1,37 @@
-import { useEffect, useRef, type CSSProperties, type ReactElement } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+} from 'react'
 
-import type {
-  SessionsTranscriptSnapshot,
-  SessionsTranscriptTurn,
-  SessionsTranscriptTurnRole,
+import {
+  MAX_SESSIONS_SUBMIT_MESSAGE,
+  type SessionsMutationResponse,
+  type SessionsMutationUnavailableReason,
+  type SessionsTranscriptSnapshot,
+  type SessionsTranscriptTurn,
+  type SessionsTranscriptTurnRole,
 } from '../../../shared'
 import { useModalKeyboard } from '../workbench/use-modal-keyboard'
 import type { SessionsTerminalDetailContext } from './sessions-terminal-detail-controller'
-import { sessionsTranscriptUnavailableMessage } from './sessions-transcript-coordinator'
+import {
+  sessionsMutationUnavailableMessage,
+  sessionsTranscriptUnavailableMessage,
+} from './sessions-transcript-coordinator'
 
 /**
- * The transcript of one projected session, read only.
+ * The transcript of one projected session, and the two things a person may say
+ * back to it.
  *
- * hvir is a reader here: the turns are already stripped of control bytes for
- * display, the supervisor's own transcript is untouched, and nothing in this
- * pane can write to the session. Attach is the escape hatch for a person who
- * wants to type.
+ * hvir is a reader of the transcript itself: the turns are already stripped of
+ * control bytes for display, and the supervisor's own transcript is untouched.
+ * Two things can be written from here, and only two — the answer to an
+ * interaction the session declared it is waiting on, and a message sent to it.
+ * Everything else a person might do to a session, from a reset to a handoff,
+ * stays with the view that owns the city (ADR-048). Attach is still the escape
+ * hatch for someone who wants a terminal of their own.
  */
 export function SessionsTranscriptDetail({
   context,
@@ -27,6 +43,8 @@ export function SessionsTranscriptDetail({
   onResume,
   onAttach,
   onShowTerminal,
+  onRespond,
+  onSubmit,
 }: {
   readonly context: SessionsTerminalDetailContext
   /** The owning authority's display name, so the pane says whose session it is. */
@@ -43,9 +61,15 @@ export function SessionsTranscriptDetail({
   readonly onResume: () => void
   readonly onAttach?: () => void
   readonly onShowTerminal?: () => void
+  /** Answers the declared interaction by the position this pane rendered. */
+  readonly onRespond?: (optionOrdinal: number) => Promise<SessionsMutationResponse>
+  readonly onSubmit?: (message: string) => Promise<SessionsMutationResponse>
 }): ReactElement {
   const dialog = useRef<HTMLElement>(null)
   const log = useRef<HTMLOListElement>(null)
+  const [sending, setSending] = useState(false)
+  const [failure, setFailure] = useState<SessionsMutationUnavailableReason>()
+  const [draft, setDraft] = useState('')
   useModalKeyboard(dialog, onBack)
   const turns = state?.turns ?? []
   const last = turns.at(-1)?.ordinal
@@ -63,6 +87,28 @@ export function SessionsTranscriptDetail({
         '--sessions-detail-origin-left': `${origin.left}px`,
       } as CSSProperties)
     : undefined
+  const pending = state?.status === 'ready' ? state.pending : undefined
+  const answer = async (optionOrdinal: number): Promise<void> => {
+    if (!onRespond || sending) return
+    setFailure(undefined)
+    setSending(true)
+    const result = await onRespond(optionOrdinal)
+    setSending(false)
+    if (result.outcome === 'unavailable') setFailure(result.reason)
+  }
+  const send = async (): Promise<void> => {
+    if (!onSubmit || sending) return
+    setFailure(undefined)
+    setSending(true)
+    const result = await onSubmit(draft)
+    setSending(false)
+    if (result.outcome === 'unavailable') {
+      setFailure(result.reason)
+      return
+    }
+    // The message is the person's; it is cleared only once it has been taken.
+    setDraft('')
+  }
   return (
     <div className="sessions-detail-backdrop" style={originStyle}>
       <section
@@ -131,6 +177,56 @@ export function SessionsTranscriptDetail({
             </li>
           ))}
         </ol>
+        {pending ? (
+          <section className="sessions-transcript-pending" aria-label="Waiting on you">
+            <p className="sessions-transcript-prompt">
+              {pending.prompt ?? 'This session is waiting on an answer.'}
+            </p>
+            {pending.options.length > 0 ? (
+              <div className="sessions-transcript-options">
+                {pending.options.map((option) => (
+                  <button
+                    key={option.ordinal}
+                    type="button"
+                    disabled={sending}
+                    onClick={() => void answer(option.ordinal)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+        {onSubmit && state?.status === 'ready' ? (
+          <form
+            className="sessions-transcript-compose"
+            onSubmit={(event) => {
+              event.preventDefault()
+              void send()
+            }}
+          >
+            <label htmlFor="sessions-transcript-message">
+              {pending && pending.options.length === 0 ? 'Your answer' : 'Send a message'}
+            </label>
+            <textarea
+              id="sessions-transcript-message"
+              rows={2}
+              value={draft}
+              maxLength={MAX_SESSIONS_SUBMIT_MESSAGE}
+              disabled={sending}
+              onChange={(event) => setDraft(event.target.value)}
+            />
+            <button type="submit" disabled={sending || draft.trim() === ''}>
+              {sending ? 'Sending…' : 'Send'}
+            </button>
+          </form>
+        ) : null}
+        {failure ? (
+          <p className="sessions-transcript-failure" role="alert">
+            {sessionsMutationUnavailableMessage(failure)}
+          </p>
+        ) : null}
       </section>
     </div>
   )

@@ -15,11 +15,16 @@
 import {
   MAX_SESSIONS_TRANSCRIPT_TURNS,
   SESSIONS_TRANSCRIPT_VERSION,
+  type HostId,
+  type SessionsMutationResponse,
+  type SessionsMutationUnavailableReason,
   type SessionsTerminalHandle,
   type SessionsTranscriptChange,
   type SessionsTranscriptRequest,
+  type SessionsTranscriptRespondRequest,
   type SessionsTranscriptSnapshot,
   type SessionsTranscriptStreamState,
+  type SessionsTranscriptSubmitRequest,
   type SessionsTranscriptUnavailableReason,
 } from '../../shared'
 import type {
@@ -27,6 +32,7 @@ import type {
   SupervisorSessionAddress,
 } from '../gascity/supervisor-access'
 import type { SupervisorStreamSubscription } from '../gascity/supervisor-client'
+import type { PendingInteraction } from '../gascity/generated-supervisor-api'
 import type { Disposer } from '../project-host'
 import type { RendererOwner } from '../renderer-resource-scopes'
 import {
@@ -34,6 +40,13 @@ import {
   type SessionsExternalSessionTarget,
 } from './sessions-projection-identities'
 import type { SessionsObservationPort } from './sessions-observation-port'
+import {
+  projectSessionsPending,
+  sessionsPendingAction,
+  sessionsPendingRecord,
+  sessionsSubmitMessage,
+  type SessionsPendingRecord,
+} from './sessions-pending-projection'
 import {
   emptySessionsTranscriptFold,
   foldSessionsTranscriptEvent,
@@ -49,6 +62,11 @@ export interface SessionsTranscriptPortOptions {
   >
   readonly supervisor: SupervisorAccess
   readonly emit: (owner: RendererOwner, change: SessionsTranscriptChange) => void
+  /**
+   * Called once an interaction has been answered, so whoever raised attention
+   * for it can withdraw it immediately rather than at the next read (ADR-048).
+   */
+  readonly onPendingAnswered?: (hostId: HostId, requestId: string) => void
 }
 
 interface TranscriptLease {
@@ -72,6 +90,10 @@ interface TranscriptLease {
   subscription?: SupervisorStreamSubscription
   /** The server's resume position, held across a socket drop. */
   cursor?: string
+  /** The interaction the session declared it is waiting on, if any. */
+  pending?: SessionsPendingRecord
+  /** Mints the revision an answer names. Monotonic within the lease. */
+  pendingSeq: number
   revision: number
   notifyQueued: boolean
 }
@@ -116,6 +138,7 @@ export class SessionsTranscriptPort {
       fold: emptySessionsTranscriptFold(),
       status: 'loading',
       stream: 'opening',
+      pendingSeq: 0,
       revision: 1,
       notifyQueued: false,
     }
@@ -142,6 +165,9 @@ export class SessionsTranscriptPort {
       turns: sessionsTranscriptTurns(lease.fold),
       older: lease.fold.older,
       dropped: lease.fold.dropped,
+      ...(lease.pending === undefined
+        ? {}
+        : { pending: projectSessionsPending(lease.pending) }),
     }
   }
 
@@ -164,6 +190,75 @@ export class SessionsTranscriptPort {
       void this.open(lease, lease.epoch)
     }
     return this.snapshot(owner, demandGeneration)
+  }
+
+  /**
+   * Answers the interaction the session declared, with one of the options it
+   * declared. Exact on both sides: the answer names the interaction it is
+   * answering, and the option is the word gc itself published for that
+   * position. Never retried (ADR-047) — a failure is reported and the pane
+   * decides what to do about it.
+   */
+  async respond(
+    owner: RendererOwner,
+    request: SessionsTranscriptRespondRequest,
+  ): Promise<SessionsMutationResponse> {
+    const lease = this.leases.get(ownerKey(owner))
+    if (!lease || lease.demandGeneration !== request.demandGeneration) {
+      throw new Error('Sessions transcript demand is no longer current')
+    }
+    if (lease.handle !== request.handle) return unavailable('stale-projection')
+    const record = lease.pending
+    if (record === undefined) return unavailable('no-interaction')
+    if (record.revision !== request.pendingRevision) return unavailable('stale-interaction')
+    const action = sessionsPendingAction(record, request.optionOrdinal)
+    if (action === undefined) return unavailable('invalid-option')
+    const text = request.text === undefined ? undefined : sessionsSubmitMessage(request.text)
+    if (request.text !== undefined && text === undefined) return unavailable('invalid-message')
+    const found = await this.locate(lease)
+    if (!found.ok) return unavailable(found.reason)
+    const result = await found.address.client.respond(found.address.cityName, found.key, {
+      action,
+      request_id: record.requestId,
+      ...(text === undefined ? {} : { text }),
+    })
+    if (!result.ok) return unavailable(result.failure.reason)
+    // The answer is what the signal asked for, so the interaction is withdrawn
+    // here rather than waited for. The lease may have moved on while the POST
+    // was in flight; the mutation still happened and is still reported, and
+    // only what is still current is updated.
+    this.options.onPendingAnswered?.(found.hostId, record.requestId)
+    if (this.ownsLease(lease) && lease.pending === record) this.clearPending(lease)
+    return { outcome: 'accepted' }
+  }
+
+  /**
+   * Sends a message to the session. The one mutation that does not need an
+   * interaction: a session waiting on free text declares no options, and a
+   * session mid-turn can still be sent a follow-up. It does not withdraw
+   * anything — whether a message resolved an interaction is the supervisor's to
+   * say, and it says so on the stream.
+   */
+  async submit(
+    owner: RendererOwner,
+    request: SessionsTranscriptSubmitRequest,
+  ): Promise<SessionsMutationResponse> {
+    const lease = this.leases.get(ownerKey(owner))
+    if (!lease || lease.demandGeneration !== request.demandGeneration) {
+      throw new Error('Sessions transcript demand is no longer current')
+    }
+    if (lease.handle !== request.handle) return unavailable('stale-projection')
+    const message = sessionsSubmitMessage(request.message)
+    if (message === undefined) return unavailable('invalid-message')
+    const found = await this.locate(lease)
+    if (!found.ok) return unavailable(found.reason)
+    const result = await found.address.client.submit(
+      found.address.cityName,
+      found.key,
+      { message },
+    )
+    if (!result.ok) return unavailable(result.failure.reason)
+    return { outcome: 'accepted' }
   }
 
   release(owner: RendererOwner, demandGeneration: number): boolean {
@@ -237,9 +332,84 @@ export class SessionsTranscriptPort {
     lease.cursor = lease.fold.cursor
     lease.status = 'ready'
     delete lease.reason
+    delete lease.pending
     lease.revision += 1
     this.queueNotification(lease)
+    await this.readPending(lease, epoch, address.value, target.key)
+    if (!this.live(lease, epoch)) return
     await this.open(lease, epoch, { address: address.value, key: target.key })
+  }
+
+  /**
+   * The interaction the session is waiting on, read once alongside the
+   * transcript. The stream announces every change from here, but says nothing
+   * about what was already waiting when the pane opened.
+   *
+   * A failed read leaves the pane with no prompt and changes nothing else: an
+   * interaction that was declared is still declared, and the attention it
+   * raised is reported where it was raised rather than being contradicted here.
+   */
+  private async readPending(
+    lease: TranscriptLease,
+    epoch: number,
+    address: SupervisorSessionAddress,
+    key: string,
+  ): Promise<void> {
+    const result = await address.client.sessionPending(address.cityName, key)
+    if (!this.live(lease, epoch) || !result.ok) return
+    const declared = result.value.pending
+    if (result.value.supported !== true || declared === undefined) return
+    this.setPending(lease, declared)
+  }
+
+  private setPending(lease: TranscriptLease, interaction: PendingInteraction): void {
+    lease.pendingSeq += 1
+    const record = sessionsPendingRecord(interaction, lease.pendingSeq)
+    // An interaction hvir cannot answer is not shown as one: a prompt with no
+    // way to reply is worse than the row's own attention badge alone.
+    if (record === undefined) return
+    lease.pending = record
+    lease.revision += 1
+    this.queueNotification(lease)
+  }
+
+  private clearPending(lease: TranscriptLease): void {
+    if (lease.pending === undefined) return
+    delete lease.pending
+    lease.revision += 1
+    this.queueNotification(lease)
+  }
+
+  /**
+   * Where a mutation goes, resolved fresh because the projection may have moved
+   * since the pane last read it. Unlike a resume, a failure here changes no
+   * lease state: nothing was sent, so nothing about the transcript changed.
+   */
+  private async locate(
+    lease: TranscriptLease,
+  ): Promise<
+    | {
+        readonly ok: true
+        readonly address: SupervisorSessionAddress
+        readonly key: string
+        readonly hostId: HostId
+      }
+    | { readonly ok: false; readonly reason: SessionsMutationUnavailableReason }
+  > {
+    const current = this.options.sessions.currentExternalSession(
+      lease.owner,
+      lease.projectionDemandGeneration,
+      lease.handle,
+    )
+    if (current.outcome === 'unavailable') return { ok: false, reason: current.reason }
+    const address = await this.options.supervisor.address(accessTarget(current.target))
+    if (!address.ok) return { ok: false, reason: address.failure.reason }
+    return {
+      ok: true,
+      address: address.value,
+      key: current.target.key,
+      hostId: current.target.hostId,
+    }
   }
 
   private async open(
@@ -254,7 +424,17 @@ export class SessionsTranscriptPort {
       found.key,
       {
         onEvent: (event) => {
-          if (!this.live(lease, epoch) || event.kind !== 'structured') return
+          if (!this.live(lease, epoch)) return
+          if (event.kind === 'pending') {
+            this.setPending(lease, event.data)
+            return
+          }
+          if (event.kind === 'pending-cleared') {
+            if (lease.pending?.requestId !== event.data.request_id) return
+            this.clearPending(lease)
+            return
+          }
+          if (event.kind !== 'structured') return
           lease.fold = foldSessionsTranscriptEvent(lease.fold, event.data)
           lease.cursor = lease.fold.cursor ?? lease.cursor
           if (lease.stream === 'opening') lease.stream = 'live'
@@ -324,6 +504,7 @@ export class SessionsTranscriptPort {
     delete lease.streamReason
     lease.fold = emptySessionsTranscriptFold()
     lease.cursor = undefined
+    delete lease.pending
     lease.revision += 1
     this.queueNotification(lease)
   }
@@ -345,6 +526,7 @@ export class SessionsTranscriptPort {
     lease.handle = handle
     lease.fold = emptySessionsTranscriptFold()
     lease.cursor = undefined
+    delete lease.pending
     lease.status = 'loading'
     delete lease.reason
     lease.stream = 'opening'
@@ -392,6 +574,7 @@ export class SessionsTranscriptPort {
     this.closeStream(lease)
     lease.fold = emptySessionsTranscriptFold()
     lease.cursor = undefined
+    delete lease.pending
   }
 
   private closeStream(lease: TranscriptLease): void {
@@ -435,6 +618,12 @@ export class SessionsTranscriptPort {
 interface StreamAddress {
   readonly address: SupervisorSessionAddress
   readonly key: string
+}
+
+function unavailable(
+  reason: SessionsMutationUnavailableReason,
+): SessionsMutationResponse {
+  return { outcome: 'unavailable', reason }
 }
 
 function ownerKey(owner: RendererOwner): string {

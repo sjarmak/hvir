@@ -19,6 +19,7 @@ import {
   sessionsWorkspaceQualifier,
   type ProjectState,
   type SessionsAttachExternalResponse,
+  type SessionsMutationResponse,
   type SessionsObservationSnapshot,
   type SessionsTranscriptSnapshot,
 } from '../src/shared'
@@ -186,6 +187,160 @@ describe('Sessions transcript detail', () => {
     expect(api.attachExternal).toHaveBeenCalledTimes(1)
   })
 
+  it('renders the prompt it was given and answers by the position clicked', async () => {
+    const api = installApi({ transcript: () => waiting() })
+    await render()
+    await act(async () => {
+      button('Interact').click()
+      await settle()
+    })
+
+    const prompt = host.querySelector('.sessions-transcript-prompt')
+    expect(prompt?.textContent).toBe('Run the migration against production?')
+    expect(
+      [...host.querySelectorAll('.sessions-transcript-options button')].map(text),
+    ).toEqual(['allow', 'deny'])
+
+    await act(async () => {
+      button('deny').click()
+      await settle()
+    })
+
+    expect(api.respond).toHaveBeenCalledExactlyOnceWith({
+      demandGeneration: 1,
+      handle: EXTERNAL,
+      pendingRevision: 4,
+      optionOrdinal: 1,
+    })
+    expect(host.querySelector('.sessions-transcript-failure')).toBeNull()
+  })
+
+  it('sends a typed message, and keeps the draft when it could not be sent', async () => {
+    const api = installApi({
+      transcript: () => waiting(),
+      submit: () => ({ outcome: 'unavailable', reason: 'conflict' }),
+    })
+    await render()
+    await act(async () => {
+      button('Interact').click()
+      await settle()
+    })
+
+    const box = host.querySelector<HTMLTextAreaElement>('#sessions-transcript-message')!
+    await act(async () => {
+      type(box, 'hold off until the release lands')
+      await settle()
+    })
+    await act(async () => {
+      submitCompose()
+      await settle()
+    })
+
+    expect(api.submit).toHaveBeenCalledExactlyOnceWith({
+      demandGeneration: 1,
+      handle: EXTERNAL,
+      message: 'hold off until the release lands',
+    })
+    expect(host.querySelector('.sessions-transcript-failure')?.textContent).toBe(
+      'The supervisor reports the session in a conflicting state.',
+    )
+    // The words are the person's until they have been taken.
+    expect(box.value).toBe('hold off until the release lands')
+
+    // Reported, not retried: a second send is a second message.
+    await act(async () => {
+      await settle()
+    })
+    expect(api.submit).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears the draft once the message has been taken', async () => {
+    installApi({ transcript: () => waiting() })
+    await render()
+    await act(async () => {
+      button('Interact').click()
+      await settle()
+    })
+    const box = host.querySelector<HTMLTextAreaElement>('#sessions-transcript-message')!
+    await act(async () => {
+      type(box, 'looks right')
+      await settle()
+    })
+    await act(async () => {
+      submitCompose()
+      await settle()
+    })
+
+    expect(box.value).toBe('')
+  })
+
+  it('says why an answer was refused, and does not send it again', async () => {
+    const api = installApi({
+      transcript: () => waiting(),
+      respond: () => ({ outcome: 'unavailable', reason: 'stale-interaction' }),
+    })
+    await render()
+    await act(async () => {
+      button('Interact').click()
+      await settle()
+    })
+    await act(async () => {
+      button('allow').click()
+      await settle()
+    })
+
+    expect(host.querySelector('.sessions-transcript-failure')?.textContent).toBe(
+      'That prompt changed before the answer was sent. Read the new one.',
+    )
+    expect(api.respond).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks for the answer in words when the session declared no options', async () => {
+    installApi({
+      transcript: () => waiting({ revision: 4, prompt: 'Which branch?', options: [] }),
+    })
+    await render()
+    await act(async () => {
+      button('Interact').click()
+      await settle()
+    })
+
+    expect(host.querySelector('.sessions-transcript-options')).toBeNull()
+    expect(
+      host.querySelector('label[for="sessions-transcript-message"]')?.textContent,
+    ).toBe('Your answer')
+  })
+
+  it('offers nothing to write when the session declared no interaction', async () => {
+    installApi()
+    await render()
+    await act(async () => {
+      button('Interact').click()
+      await settle()
+    })
+
+    expect(host.querySelector('.sessions-transcript-pending')).toBeNull()
+    // The compose box stands on its own: a session mid-turn can still be sent
+    // a follow-up.
+    expect(host.querySelector('#sessions-transcript-message')).not.toBeNull()
+  })
+
+  it('carries no verb that would change the session itself', async () => {
+    installApi({ transcript: () => waiting() })
+    await render()
+    await act(async () => {
+      button('Interact').click()
+      await settle()
+    })
+
+    // ADR-048: reset, handoff, and lifecycle stay on the crew card.
+    expect(
+      [...host.querySelectorAll<HTMLButtonElement>('.sessions-transcript-detail button')]
+        .map(text)
+        .sort(),
+    ).toEqual(['Attach', 'Close', 'Send', 'allow', 'deny'])
+  })
+
   it('shows the borrowed terminal first for a row hvir already owns, and toggles to the transcript', async () => {
     const api = installApi({ live: true })
     await render()
@@ -242,6 +397,8 @@ function installApi(
     readonly live?: boolean
     readonly transcript?: (demandGeneration: number) => SessionsTranscriptSnapshot
     readonly attach?: () => SessionsAttachExternalResponse
+    readonly respond?: () => SessionsMutationResponse
+    readonly submit?: () => SessionsMutationResponse
   } = {},
 ) {
   const transcriptListeners = new Set<(payload: unknown) => void>()
@@ -259,11 +416,19 @@ function installApi(
   const attachExternal = vi.fn((_request: unknown) =>
     Promise.resolve(options.attach?.() ?? attached()),
   )
+  const respond = vi.fn((_request: unknown) =>
+    Promise.resolve(options.respond?.() ?? { outcome: 'accepted' as const }),
+  )
+  const submit = vi.fn((_request: unknown) =>
+    Promise.resolve(options.submit?.() ?? { outcome: 'accepted' as const }),
+  )
   const api = {
     transcriptObserve,
     transcriptResume,
     transcriptRelease,
     attachExternal,
+    respond,
+    submit,
     /** What the next read of the transcript answers. */
     reply: (snapshot: SessionsTranscriptSnapshot) => {
       next = () => snapshot
@@ -289,6 +454,10 @@ function installApi(
           return transcriptRelease(request)
         case 'sessions:attach-external':
           return attachExternal(request)
+        case 'sessions:respond':
+          return respond(request)
+        case 'sessions:submit':
+          return submit(request)
         case 'sessions:resolve-terminal':
           return Promise.resolve({ outcome: 'unavailable', reason: 'session-unavailable' })
         default:
@@ -386,6 +555,45 @@ function transcript(demandGeneration: number): SessionsTranscriptSnapshot {
     older: false,
     dropped: 0,
   }
+}
+
+/** What pressing Send does: the form owns the send, the button only asks. */
+function submitCompose(): void {
+  const form = host.querySelector<HTMLFormElement>('.sessions-transcript-compose')
+  if (!form) throw new Error('Missing compose form')
+  expect(button('Send').disabled).toBe(false)
+  form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+}
+
+function waiting(
+  pending: {
+    readonly revision: number
+    readonly prompt?: string
+    readonly options: readonly { readonly ordinal: number; readonly label: string }[]
+  } = {
+    revision: 4,
+    prompt: 'Run the migration against production?',
+    options: [
+      { ordinal: 0, label: 'allow' },
+      { ordinal: 1, label: 'deny' },
+    ],
+  },
+): SessionsTranscriptSnapshot {
+  return { ...transcript(1), pending }
+}
+
+/**
+ * React tracks the value it last rendered, so a plain assignment looks like no
+ * change at all. Setting through the prototype's own setter is what a keystroke
+ * does.
+ */
+function type(box: HTMLTextAreaElement, value: string): void {
+  const descriptor = Object.getOwnPropertyDescriptor(
+    HTMLTextAreaElement.prototype,
+    'value',
+  )
+  descriptor?.set?.call(box, value)
+  box.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
 function attached(): SessionsAttachExternalResponse {

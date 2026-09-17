@@ -66,6 +66,67 @@ describe('SessionsProjectionCoordinator', () => {
     })
   })
 
+  it('takes the attention a source declared for a row hvir runs no terminal for', () => {
+    const rows = joinSessionsProjection(
+      observation(1, [
+        observed('projected', 'workspace-a', 'retained', {
+          status: 'available',
+          value: 'ready',
+          observedAt: 1_700_000_000_000,
+        }),
+      ]),
+      [],
+    )
+
+    expect(rows[0]).toMatchObject({
+      attention: { status: 'available', value: 'ready', observedAt: 1_700_000_000_000 },
+      // hvir cannot watch a session it does not run, so Working stays what it
+      // is for any unmaterialized row.
+      working: { status: 'unavailable', reason: 'not-materialized' },
+    })
+  })
+
+  it('carries a declared attention that is stale, with its reason', () => {
+    const rows = joinSessionsProjection(
+      observation(1, [
+        observed('projected', 'workspace-a', 'retained', {
+          status: 'stale',
+          value: 'ready',
+          observedAt: 1_700_000_000_000,
+          reason: 'source-stale',
+        }),
+      ]),
+      [],
+    )
+
+    expect(rows[0]?.attention).toEqual({
+      status: 'stale',
+      value: 'ready',
+      observedAt: 1_700_000_000_000,
+      reason: 'source-stale',
+    })
+  })
+
+  it('prefers the terminal in front of the person over a declared fact', () => {
+    const rows = joinSessionsProjection(
+      observation(1, [
+        observed('projected', 'workspace-a', 'live', {
+          status: 'available',
+          value: 'ready',
+          observedAt: 1_700_000_000_000,
+        }),
+      ]),
+      [renderer('projected', 'workspace-a', { attention: 'bell' })],
+    )
+
+    // Unseen output is known where it is rendered (ADR-009); a source's own
+    // claim does not overwrite what the renderer can see.
+    expect(rows[0]).toMatchObject({
+      attention: { status: 'available', value: 'bell' },
+      working: { status: 'available', value: false },
+    })
+  })
+
   it('deduplicates a transient renderer collision in favor of the authoritative workspace', () => {
     const rows = joinSessionsProjection(
       observation(1, [observed('same', 'workspace-b')]),
@@ -278,9 +339,11 @@ function observed(
   id: string,
   workspaceId: string,
   lifecycle: 'retained' | 'live' = 'retained',
+  attention?: SessionsObservationSnapshot['sessions'][number]['attention'],
 ): SessionsObservationSnapshot['sessions'][number] {
   const unsupported = { status: 'unsupported' as const }
   return {
+    ...(attention === undefined ? {} : { attention }),
     handle: asSessionsTerminalHandle(id),
     workspaceId: asSessionsWorkspaceHandle(workspaceId),
     origin: SESSIONS_HVIR_ORIGIN,

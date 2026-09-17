@@ -141,6 +141,18 @@ export function registerSessionsIpc(ipc: IpcRegistrar, deps: SessionsIpcDeps): v
     await deps.rendererResources.disposeResource(owner, 'sessions-transcript-observation')
   })
 
+  ipc.handle('sessions:respond', async (request, context) => {
+    const owner = context.owner()
+    deps.rendererResources.assertCurrent(owner)
+    return await deps.sessionsTranscripts.respond(owner, request)
+  })
+
+  ipc.handle('sessions:submit', async (request, context) => {
+    const owner = context.owner()
+    deps.rendererResources.assertCurrent(owner)
+    return await deps.sessionsTranscripts.submit(owner, request)
+  })
+
   ipc.handle('sessions:attach-external', async (request, context) => {
     const owner = context.owner()
     deps.rendererResources.assertCurrent(owner)

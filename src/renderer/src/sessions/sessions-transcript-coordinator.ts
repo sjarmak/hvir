@@ -11,12 +11,16 @@
 import {
   SESSIONS_TRANSCRIPT_VERSION,
   type HvirApi,
+  type SessionsMutationResponse,
+  type SessionsMutationUnavailableReason,
   type SessionsDemandRequest,
   type SessionsProjectionSnapshot,
   type SessionsTerminalHandle,
   type SessionsTranscriptChange,
   type SessionsTranscriptRequest,
+  type SessionsTranscriptRespondRequest,
   type SessionsTranscriptSnapshot,
+  type SessionsTranscriptSubmitRequest,
   type SessionsTranscriptUnavailableReason,
 } from '../../../shared'
 
@@ -25,6 +29,8 @@ export interface SessionsTranscriptMainPort {
   snapshot(request: SessionsDemandRequest): Promise<SessionsTranscriptSnapshot>
   resume(request: SessionsDemandRequest): Promise<SessionsTranscriptSnapshot>
   release(request: SessionsDemandRequest): Promise<void>
+  respond(request: SessionsTranscriptRespondRequest): Promise<SessionsMutationResponse>
+  submit(request: SessionsTranscriptSubmitRequest): Promise<SessionsMutationResponse>
   subscribe(listener: (change: SessionsTranscriptChange) => void): () => void
 }
 
@@ -38,6 +44,8 @@ export class SessionsTranscriptCoordinator {
   private unsubscribe?: () => void
   private refreshInFlight = false
   private pendingRevision = 0
+  /** One mutation at a time: a second send is a second answer, not a retry. */
+  private sending = false
   private disposed = false
 
   constructor(private readonly main: SessionsTranscriptMainPort) {}
@@ -122,6 +130,47 @@ export class SessionsTranscriptCoordinator {
       (snapshot) => this.accept(generation, handle, snapshot),
       () => this.unavailable(generation, handle, 'stale-projection'),
     )
+  }
+
+  /**
+   * Answers the interaction the pane is showing, by the position it rendered.
+   * The answer names the revision it is answering, so a prompt that changed
+   * while someone was reading it is refused by main rather than answered.
+   */
+  async respond(
+    optionOrdinal: number,
+    text?: string,
+  ): Promise<SessionsMutationResponse> {
+    const pending = this.current?.pending
+    const handle = this.handle
+    if (!this.active || !handle || pending === undefined) {
+      return { outcome: 'unavailable', reason: 'no-interaction' }
+    }
+    return await this.mutate((generation) =>
+      this.main.respond({
+        demandGeneration: generation,
+        handle,
+        pendingRevision: pending.revision,
+        optionOrdinal,
+        ...(text === undefined ? {} : { text }),
+      }),
+    )
+  }
+
+  /** Sends a message to the session, whether or not it is waiting on one. */
+  async submit(message: string): Promise<SessionsMutationResponse> {
+    const handle = this.handle
+    if (!this.active || !handle) {
+      return { outcome: 'unavailable', reason: 'stale-projection' }
+    }
+    return await this.mutate((generation) =>
+      this.main.submit({ demandGeneration: generation, handle, message }),
+    )
+  }
+
+  /** Whether a mutation is in flight, so a pane can hold its own buttons. */
+  isSending(): boolean {
+    return this.sending
   }
 
   close(): void {
@@ -231,6 +280,27 @@ export class SessionsTranscriptCoordinator {
     })
   }
 
+  /**
+   * One mutation, under the demand that is current when it starts. A failed
+   * call is reported, never repeated: the request may well have reached the
+   * session, and sending it again would be a second answer (ADR-047).
+   */
+  private async mutate(
+    send: (generation: number) => Promise<SessionsMutationResponse>,
+  ): Promise<SessionsMutationResponse> {
+    if (this.sending) return { outcome: 'unavailable', reason: 'conflict' }
+    this.sending = true
+    this.notify()
+    try {
+      return await send(this.demandGeneration)
+    } catch {
+      return { outcome: 'unavailable', reason: 'stale-projection' }
+    } finally {
+      this.sending = false
+      this.notify()
+    }
+  }
+
   private isCurrent(generation: number, handle: SessionsTerminalHandle): boolean {
     return (
       !this.disposed &&
@@ -258,6 +328,8 @@ export function createSessionsTranscriptMainPort(
     snapshot: (request) => api.invoke('sessions:transcript-snapshot', request),
     resume: (request) => api.invoke('sessions:transcript-resume', request),
     release: (request) => api.invoke('sessions:transcript-release', request),
+    respond: (request) => api.invoke('sessions:respond', request),
+    submit: (request) => api.invoke('sessions:submit', request),
     subscribe: (listener) => api.on('sessions:transcript-changed', listener),
   }
 }
@@ -299,5 +371,23 @@ export function sessionsTranscriptUnavailableMessage(
       return 'The city backend is not serving transcripts yet.'
     case 'faulted':
       return 'The supervisor reported a fault reading this transcript.'
+  }
+}
+
+/** What a pane says about a mutation that did not happen. */
+export function sessionsMutationUnavailableMessage(
+  reason: SessionsMutationUnavailableReason,
+): string {
+  switch (reason) {
+    case 'stale-interaction':
+      return 'That prompt changed before the answer was sent. Read the new one.'
+    case 'no-interaction':
+      return 'This session is not waiting on an answer.'
+    case 'invalid-option':
+      return 'That answer is no longer one of the options.'
+    case 'invalid-message':
+      return 'A message has to have text in it, and fit inside one message.'
+    default:
+      return sessionsTranscriptUnavailableMessage(reason)
   }
 }

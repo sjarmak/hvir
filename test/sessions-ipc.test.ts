@@ -7,6 +7,7 @@ import type {
   SessionsResolvedOpen,
 } from '../src/main/sessions/sessions-observation-port'
 import { RendererResourceScopes } from '../src/main/renderer-resource-scopes'
+import { sessionsIpc } from '../src/shared/ipc/sessions'
 import {
   SESSIONS_PROJECTION_VERSION,
   asSessionsProjectHandle,
@@ -258,6 +259,62 @@ describe('Sessions IPC', () => {
     await scopes.dispose()
   })
 
+  it('carries an answer and a message, and nothing about the interaction itself', async () => {
+    const scopes = new RendererResourceScopes()
+    const owner = scopes.activateOwner(37)
+    const observation = { acquire: vi.fn(), snapshot: vi.fn(), release: vi.fn() }
+    const { invoke, sessionsTranscripts } = fixture(scopes, observation)
+    const context = { owner: () => owner }
+    const handle = asSessionsTerminalHandle('sessions-external-0001')
+    const answer = {
+      demandGeneration: 2,
+      handle,
+      pendingRevision: 3,
+      // A position, not an option word and not gc's request identifier: the
+      // renderer never received either (ADR-046).
+      optionOrdinal: 1,
+    }
+    const message = { demandGeneration: 2, handle, message: 'hold the release' }
+
+    await expect(invoke('sessions:respond', answer, context)).resolves.toEqual({
+      outcome: 'accepted',
+    })
+    await expect(invoke('sessions:submit', message, context)).resolves.toEqual({
+      outcome: 'accepted',
+    })
+    expect(sessionsTranscripts.respond).toHaveBeenCalledExactlyOnceWith(owner, answer)
+    expect(sessionsTranscripts.submit).toHaveBeenCalledExactlyOnceWith(owner, message)
+
+    const stale = scopes.rolloverOwner(owner.id)
+    await stale.cleanup
+    // A revoked renderer cannot answer for the one that replaced it.
+    await expect(invoke('sessions:respond', answer, context)).rejects.toThrow()
+    await scopes.dispose()
+  })
+
+  it('carries no mutation of a session other than an answer and a message', () => {
+    // ADR-048: reset, handoff, and everything else in a session's lifecycle
+    // stay with the view that owns the city. This is the whole surface.
+    expect(Object.keys(sessionsIpc.invoke).sort()).toEqual([
+      'sessions:attach-external',
+      'sessions:observe',
+      'sessions:open',
+      'sessions:release',
+      'sessions:resolve-terminal',
+      'sessions:respond',
+      'sessions:snapshot',
+      'sessions:submit',
+      'sessions:transcript-observe',
+      'sessions:transcript-release',
+      'sessions:transcript-resume',
+      'sessions:transcript-snapshot',
+      'sessions:usage-observe',
+      'sessions:usage-release',
+      'sessions:usage-snapshot',
+    ])
+    expect(Object.keys(sessionsIpc.send)).toEqual([])
+  })
+
   it('answers an external Attach with a command and a ticket, never the identifier', async () => {
     const scopes = new RendererResourceScopes()
     const owner = scopes.activateOwner(31)
@@ -379,6 +436,8 @@ function fixture(
     resume: vi.fn((_owner, demandGeneration: number) =>
       transcriptSnapshot(demandGeneration, 3),
     ),
+    respond: vi.fn(() => Promise.resolve({ outcome: 'accepted' })),
+    submit: vi.fn(() => Promise.resolve({ outcome: 'accepted' })),
     release: vi.fn(() => true),
   }
   const sessionsAttachTickets = { mint: vi.fn(() => 'a'.repeat(32)) }

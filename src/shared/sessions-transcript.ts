@@ -22,6 +22,15 @@ export const MAX_SESSIONS_TRANSCRIPT_TURNS = 240
 /** Per-turn display text. Longer content is cut and marked, never silently. */
 export const MAX_SESSIONS_TRANSCRIPT_TEXT = 4_000
 
+/** Options one pending interaction may offer. More than this is not a prompt. */
+export const MAX_SESSIONS_PENDING_OPTIONS = 12
+
+/** An option's label, as a person reads it. */
+export const MAX_SESSIONS_PENDING_OPTION_TEXT = 200
+
+/** What a compose box may send in one message. */
+export const MAX_SESSIONS_SUBMIT_MESSAGE = 8_000
+
 /** Who produced the turn, in the supervisor's provider-neutral vocabulary. */
 export type SessionsTranscriptTurnRole =
   'user' | 'assistant' | 'system' | 'tool' | 'unknown'
@@ -103,6 +112,12 @@ export interface SessionsTranscriptSnapshot {
   readonly older: boolean
   /** Turns dropped off the head to stay inside the cap. */
   readonly dropped: number
+  /**
+   * The interaction this session is waiting on, when it declares one. Absent is
+   * absent: a transcript whose stream is lost carries whatever it last had, and
+   * `stream` is what says the pane is no longer watching for changes to it.
+   */
+  readonly pending?: SessionsTranscriptPending
 }
 
 export interface SessionsTranscriptRequest extends SessionsDemandRequest {
@@ -117,6 +132,77 @@ export interface SessionsTranscriptChange {
   readonly revision: number
   readonly handle: SessionsTerminalHandle
 }
+
+/**
+ * One answer a person may give, addressed by position.
+ *
+ * The ordinal is the whole of the address. gc names its options with its own
+ * words and its interactions with its own request identifier; neither crosses
+ * this boundary (ADR-046), so main holds the mapping and the renderer answers
+ * with the position it rendered.
+ */
+export interface SessionsTranscriptPendingOption {
+  readonly ordinal: number
+  readonly label: string
+}
+
+export interface SessionsTranscriptPending {
+  /**
+   * Bumped whenever the interaction changes. An answer names the revision it
+   * answers, so a prompt replaced between render and click is refused instead
+   * of being answered by accident.
+   */
+  readonly revision: number
+  /** What the session is asking, as display text. */
+  readonly prompt?: string
+  /**
+   * The answers the session declared. Empty means it declared none, which is a
+   * prompt for text rather than a choice: hvir does not invent an option word.
+   */
+  readonly options: readonly SessionsTranscriptPendingOption[]
+}
+
+/** Answering a declared interaction: one option, optionally with text. */
+export interface SessionsTranscriptRespondRequest extends SessionsDemandRequest {
+  readonly handle: SessionsTerminalHandle
+  readonly pendingRevision: number
+  readonly optionOrdinal: number
+  readonly text?: string
+}
+
+/** Sending a message to the session, whether or not it is waiting on one. */
+export interface SessionsTranscriptSubmitRequest extends SessionsDemandRequest {
+  readonly handle: SessionsTerminalHandle
+  readonly message: string
+}
+
+/**
+ * Why a mutation did not happen. The transcript vocabulary plus what only a
+ * mutation can fail on. A refused mutation is never retried behind the caller
+ * (ADR-047): the reason is reported and the pane decides.
+ */
+export type SessionsMutationUnavailableReason =
+  | SessionsTranscriptUnavailableReason
+  /** The interaction moved on; what was answered is not what is waiting. */
+  | 'stale-interaction'
+  /** Nothing is waiting on an answer. */
+  | 'no-interaction'
+  /** No option stands at that position. */
+  | 'invalid-option'
+  /** A message with nothing in it, or more than one message may carry. */
+  | 'invalid-message'
+
+/**
+ * The outcome of one mutation. An accepted answer carries nothing back: the
+ * transcript it changed arrives by the same change notification every other
+ * update arrives by, so the pane learns what happened one way rather than two.
+ */
+export type SessionsMutationResponse =
+  | { readonly outcome: 'accepted' }
+  | {
+      readonly outcome: 'unavailable'
+      readonly reason: SessionsMutationUnavailableReason
+    }
 
 /**
  * One renderer-side reference to an external session hvir may attach a terminal

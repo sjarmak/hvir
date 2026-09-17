@@ -162,7 +162,7 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   >
   readonly sessionsTranscripts: Pick<
     SessionsTranscriptPort,
-    'acquire' | 'snapshot' | 'resume' | 'release'
+    'acquire' | 'snapshot' | 'resume' | 'release' | 'respond' | 'submit'
   >
   /** Mints what stands in for a foreign session identifier across the boundary. */
   readonly sessionsAttachTickets: Pick<SessionsAttachTicketRegistry, 'mint' | 'redeem'>

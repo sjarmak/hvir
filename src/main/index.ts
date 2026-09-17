@@ -281,6 +281,7 @@ function createWorkbenchEntry(): void {
       rendererEvents,
       gasCitySupervisor,
       ownGasCitySessionsSource(gasCityReader, gasCityHosts),
+      gasCityStreams,
     )
     documentReview = await installApplicationDocumentReviewRuntime(
       runtime,

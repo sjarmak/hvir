@@ -29,7 +29,9 @@ import type { PtyObservationSource } from '../pty/pty-supervisor'
 import type { RendererOwner } from '../renderer-resource-scopes'
 import type { TerminalSessionObservationSource } from '../terminal/session-registry'
 import type { HostCitySessions } from '../gascity/gascity-city-sessions'
+import type { HostCityEvents } from '../gascity/city-event-facts'
 import {
+  cityPendingSignals,
   projectCitySessions,
   type SessionsCityAttachedTerminal,
   type SessionsCityWorkspaceTarget,
@@ -75,11 +77,24 @@ export interface SessionsObservationPortOptions {
    * arrives and dropped with the last one.
    */
   readonly cities?: CitySessionsObservationSource
+  /**
+   * The per-host city event facts, for the interactions a city declared it is
+   * waiting on. Observation only: these facts are main's and follow open
+   * projects, so a row reports an interaction that was already known rather
+   * than being the reason anything was read (ADR-048).
+   */
+  readonly events?: CityEventsObservationSource
 }
 
 /** The shape {@link GasCitySessionsSource} presents to the projection. */
 export interface CitySessionsObservationSource {
   observationSnapshot(): readonly HostCitySessions[]
+  observe(listener: () => void): Disposer
+}
+
+/** The shape {@link GasCityEventStreams} presents to the projection. */
+export interface CityEventsObservationSource {
+  observationSnapshot(): readonly HostCityEvents[]
   observe(listener: () => void): Disposer
 }
 
@@ -314,6 +329,7 @@ export class SessionsObservationPort {
       this.options.ptys.observe(this.sourceChanged),
       this.options.observeProjects(this.sourceChanged),
       ...(this.options.cities ? [this.options.cities.observe(this.sourceChanged)] : []),
+      ...(this.options.events ? [this.options.events.observe(this.sourceChanged)] : []),
     ]
     this.rebuild(true)
   }
@@ -348,6 +364,7 @@ export class SessionsObservationPort {
       sessions: this.options.sessions.observationSnapshot(),
       ptys: this.options.ptys.observationSnapshot(),
       cities: this.options.cities?.observationSnapshot() ?? [],
+      events: this.options.events?.observationSnapshot() ?? [],
       identities: this.identities,
     })
     const fingerprint = JSON.stringify(next)
@@ -372,6 +389,7 @@ export function assembleSessionsObservation({
   sessions,
   ptys,
   cities = [],
+  events = [],
   identities = createSessionsProjectionIdentityScope(),
 }: {
   readonly projectState: ProjectState
@@ -380,6 +398,7 @@ export function assembleSessionsObservation({
   readonly sessions: ReturnType<TerminalSessionObservationSource['observationSnapshot']>
   readonly ptys: ReturnType<PtyObservationSource['observationSnapshot']>
   readonly cities?: readonly HostCitySessions[]
+  readonly events?: readonly HostCityEvents[]
   readonly identities?: SessionsProjectionIdentityScope
 }): ObservationBase {
   const hostById = new Map(
@@ -555,6 +574,7 @@ export function assembleSessionsObservation({
     providers: providerById,
     capacity: Math.max(0, MAX_SESSIONS_PROJECTION_ROWS - observed.size),
     attached,
+    pending: cityPendingSignals(events),
   })
   // An attached terminal keeps its row and its handle; what the row presents
   // becomes the session it attached to.

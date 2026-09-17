@@ -3,16 +3,23 @@ import {
   isHarnessProviderId,
   sessionsProjectionDisplayTitle,
   type HarnessProviderId,
+  type HostId,
   type HostPath,
+  type SessionsAttentionValue,
   type SessionsContextFact,
   type SessionsFact,
   type SessionsObservedSession,
   type SessionsOrigin,
   type SessionsProviderProjection,
   type SessionsTelemetryFacts,
+  type SessionsTurnFact,
   type SessionsWorkspaceProjection,
   type ExternalSessionAttachment,
 } from '../../shared'
+import {
+  hostCityEventsFresh,
+  type HostCityEvents,
+} from '../gascity/city-event-facts'
 import {
   placeCitySession,
   type CityPlacementTarget,
@@ -70,6 +77,45 @@ export interface SessionsCityAttachedTerminal {
   readonly session: SessionsObservedSession
 }
 
+/**
+ * One interaction a city declared it is waiting on, as the host event streams
+ * hold it. The projection never reads this from gc itself: the facts follow
+ * open projects so that a blocked agent raises attention with no view open at
+ * all (ADR-048), and the row simply reports what is already known.
+ */
+export interface SessionsCityPendingSignal {
+  readonly hostId: HostId
+  readonly sessionKey: string
+  /** hvir has stopped watching the host that declared it. */
+  readonly stale?: true
+}
+
+/**
+ * The declared interactions in a set of hosts' facts, one per session.
+ *
+ * A session may be waiting on more than one interaction; a row is waiting or it
+ * is not, so the count stays with the attention rollup that reports it. Facts
+ * hvir has stopped watching are carried with the staleness intact.
+ */
+export function cityPendingSignals(
+  events: readonly HostCityEvents[],
+): readonly SessionsCityPendingSignal[] {
+  const signals = new Map<string, SessionsCityPendingSignal>()
+  for (const facts of events) {
+    const stale = !hostCityEventsFresh(facts)
+    for (const entry of facts.pending) {
+      const key = pendingKey(facts.hostId, entry.sessionKey)
+      if (signals.has(key)) continue
+      signals.set(key, {
+        hostId: facts.hostId,
+        sessionKey: entry.sessionKey,
+        ...(stale ? { stale: true } : {}),
+      })
+    }
+  }
+  return [...signals.values()]
+}
+
 /** A workspace hvir has discovered, with the project it belongs to. */
 export interface SessionsCityWorkspaceTarget {
   readonly root: HostPath
@@ -87,6 +133,8 @@ export interface SessionsCityProjectionInput {
   readonly capacity: number
   /** Terminals hvir holds for sessions in this set, if any. */
   readonly attached?: readonly SessionsCityAttachedTerminal[]
+  /** Interactions the cities declared they are waiting on, if any. */
+  readonly pending?: readonly SessionsCityPendingSignal[]
 }
 
 export interface SessionsCityProjection {
@@ -109,6 +157,7 @@ export function projectCitySessions({
   providers,
   capacity,
   attached = [],
+  pending = [],
 }: SessionsCityProjectionInput): SessionsCityProjection {
   const sessions: SessionsObservedSession[] = []
   const merged = new Map<string, SessionsObservedSession>()
@@ -117,12 +166,16 @@ export function projectCitySessions({
       .filter((terminal) => terminal.attachment.sourceId === 'gas-city')
       .map((terminal) => [terminal.attachment.sessionDigest, terminal] as const),
   )
+  const pendingByKey = new Map(
+    pending.map((signal) => [pendingKey(signal.hostId, signal.sessionKey), signal]),
+  )
   let sourceProviderUsed = false
   for (const city of cities) {
     const placement = placementTargets(workspaces, city)
     if (placement.length === 0) continue
     for (const fact of city.sessions) {
       const target = externalTarget(fact, city)
+      const waiting = pendingByKey.get(pendingKey(city.root.hostId, fact.sessionKey))
       const claimed = attachedByDigest.get(
         externalSessionDigest('gas-city', fact.sessionKey),
       )
@@ -138,7 +191,7 @@ export function projectCitySessions({
         identities.bindExternalSession(claimed.session.handle, target)
         merged.set(
           String(claimed.session.handle),
-          attachedSession(claimed.session, fact, city, declared),
+          attachedSession(claimed.session, fact, city, declared, waiting),
         )
         continue
       }
@@ -170,7 +223,8 @@ export function projectCitySessions({
         // without a live PTY qualifier can be opened or attached, whatever its
         // lifecycle reads.
         lifecycle: fact.activity === 'active' ? 'live' : 'retained',
-        telemetry: telemetryFor(fact, city),
+        telemetry: telemetryFor(fact, city, waiting),
+        ...attentionFor(waiting, city),
       })
     }
   }
@@ -218,6 +272,7 @@ function attachedSession(
   fact: CitySessionFact,
   city: HostCitySessions,
   declared: SessionsProviderProjection | undefined,
+  waiting: SessionsCityPendingSignal | undefined,
 ): SessionsObservedSession {
   return {
     ...session,
@@ -229,7 +284,8 @@ function attachedSession(
       fact.workDir?.path ?? '',
       fact.rigRoot?.path ?? '',
     ]),
-    telemetry: telemetryFor(fact, city),
+    telemetry: telemetryFor(fact, city, waiting),
+    ...attentionFor(waiting, city),
   }
 }
 
@@ -274,12 +330,13 @@ function declaredProvider(
 function telemetryFor(
   fact: CitySessionFact,
   city: HostCitySessions,
+  waiting: SessionsCityPendingSignal | undefined,
 ): SessionsTelemetryFacts {
   const observedAt = city.observedAt
   return {
     model: { status: 'unsupported' },
     context: contextFact(fact, city),
-    turn: { status: 'unsupported' },
+    turn: turnFact(waiting, city),
     freshness: city.stale
       ? {
           status: 'stale',
@@ -305,4 +362,52 @@ function contextFact(
         reason: 'source-unavailable',
       }
     : { status: 'available', value: { usedPercent }, observedAt: city.observedAt }
+}
+
+/** The host and session a declared interaction belongs to, as one key. */
+function pendingKey(hostId: HostId, sessionKey: string): string {
+  return `${hostId}\u0000${sessionKey}`
+}
+
+/**
+ * The row's attention, when an interaction was declared for it.
+ *
+ * Nothing is reported when nothing was declared: a source that is not waiting
+ * on a person has said nothing about unseen output, and hvir renders no
+ * terminal here to know it for itself. A declaration hvir has stopped watching
+ * is marked stale with its reason rather than dropped or asserted (ADR-048).
+ */
+function attentionFor(
+  waiting: SessionsCityPendingSignal | undefined,
+  city: HostCitySessions,
+): Pick<SessionsObservedSession, 'attention'> {
+  if (waiting === undefined) return {}
+  const value: SessionsAttentionValue = 'ready'
+  return {
+    attention:
+      waiting.stale === true || city.stale
+        ? {
+            status: 'stale',
+            value,
+            observedAt: city.observedAt,
+            reason: 'source-stale',
+          }
+        : { status: 'available', value, observedAt: city.observedAt },
+  }
+}
+
+/**
+ * The turn, from the same declaration. `waiting-for-user` is what a pending
+ * interaction says: gc names its own kinds with its own words and declares no
+ * vocabulary for them, so reading approval out of one would be a guess.
+ */
+function turnFact(
+  waiting: SessionsCityPendingSignal | undefined,
+  city: HostCitySessions,
+): SessionsFact<SessionsTurnFact> {
+  if (waiting === undefined) return { status: 'unsupported' }
+  const value: SessionsTurnFact = { state: 'waiting-for-user' }
+  return waiting.stale === true || city.stale
+    ? { status: 'stale', value, observedAt: city.observedAt, reason: 'source-stale' }
+    : { status: 'available', value, observedAt: city.observedAt }
 }

@@ -141,6 +141,12 @@ export interface SessionsContextFact {
   readonly usedPercent?: number
 }
 
+/**
+ * Whether a row is asking for a person. `ready` is work that finished and has
+ * not been looked at; `bell` is a terminal that rang.
+ */
+export type SessionsAttentionValue = 'none' | 'ready' | 'bell'
+
 export interface SessionsTurnFact {
   readonly state: 'working' | 'waiting-for-user' | 'waiting-for-approval' | 'idle'
 }
@@ -199,6 +205,13 @@ export interface SessionsObservedSession {
   readonly lifecycle: 'retained' | 'live'
   readonly livePty?: SessionsLivePtyQualifier
   readonly telemetry: SessionsTelemetryFacts
+  /**
+   * Attention the source itself declared, for a row hvir runs no terminal for.
+   * Absent for hvir's own sessions, whose attention is the renderer's to state:
+   * a terminal's unseen output is known where it is rendered (ADR-009). Present
+   * only where the signal is exact, never inferred (ADR-048).
+   */
+  readonly attention?: SessionsFact<SessionsAttentionValue>
 }
 
 export interface SessionsObservationSnapshot {
@@ -318,7 +331,7 @@ export interface SessionsProjectionRow {
   readonly lifecycle: SessionsLifecycle
   readonly lifecycleReason?: SessionsReasonCode
   readonly connectionState: HostConnectionState
-  readonly attention: SessionsFact<'none' | 'ready' | 'bell'>
+  readonly attention: SessionsFact<SessionsAttentionValue>
   readonly working: SessionsFact<boolean>
   readonly model: SessionsFact<SessionsModelFact>
   readonly context: SessionsFact<SessionsContextFact>

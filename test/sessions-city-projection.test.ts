@@ -8,8 +8,10 @@ import { externalSessionAttachment } from '../src/main/terminal/external-session
 import type { OwnedTerminalSession } from '../src/main/terminal/session-registry'
 import type { ObservedManagedPty } from '../src/main/pty/pty-supervisor'
 import { assembleSessionsObservation } from '../src/main/sessions/sessions-observation-port'
+import type { HostCityEvents } from '../src/main/gascity/city-event-facts'
 import {
   SESSIONS_GAS_CITY_PROVIDER,
+  cityPendingSignals,
   projectCitySessions,
 } from '../src/main/sessions/sessions-city-projection'
 import { createSessionsProjectionIdentityScope } from '../src/main/sessions/sessions-projection-identities'
@@ -287,6 +289,117 @@ describe('A terminal attached to a Gas City session', () => {
   })
 })
 
+describe('A Gas City session waiting on a person', () => {
+  it('makes the row actionable attention, and says the turn is theirs', () => {
+    const source = assemble([hostCity()], {
+      events: [cityEvents({ pending: [pendingFor('gc-mem-worker-1')] })],
+    })
+    const waiting = row(source, 'mem-worker-1')
+
+    expect(waiting.attention).toEqual({
+      status: 'available',
+      value: 'ready',
+      observedAt: 1_700_000_000_000,
+    })
+    expect(waiting.telemetry.turn).toEqual({
+      status: 'available',
+      value: { state: 'waiting-for-user' },
+      observedAt: 1_700_000_000_000,
+    })
+  })
+
+  it('leaves every other row reporting nothing about attention', () => {
+    const source = assemble([hostCity()], {
+      events: [cityEvents({ pending: [pendingFor('gc-mem-worker-1')] })],
+    })
+    const quiet = row(source, 'mem-worker-2')
+
+    // Not "no attention": gc declared nothing about this session, and an
+    // absent declaration is not a declaration of absence (ADR-048).
+    expect(quiet.attention).toBeUndefined()
+    expect(quiet.telemetry.turn).toEqual({ status: 'unsupported' })
+  })
+
+  it('marks the attention stale with its reason when the stream is lost', () => {
+    const source = assemble([hostCity()], {
+      events: [
+        cityEvents({
+          stream: 'lost',
+          reason: 'unreachable',
+          pending: [pendingFor('gc-mem-worker-1')],
+        }),
+      ],
+    })
+    const waiting = row(source, 'mem-worker-1')
+
+    // Kept, not dropped, and not asserted: nobody is watching this host.
+    expect(waiting.attention).toEqual({
+      status: 'stale',
+      value: 'ready',
+      observedAt: 1_700_000_000_000,
+      reason: 'source-stale',
+    })
+    expect(waiting.telemetry.turn).toMatchObject({
+      status: 'stale',
+      reason: 'source-stale',
+    })
+  })
+
+  it('marks the attention stale when the session list itself is stale', () => {
+    const source = assemble([hostCity({ stale: true })], {
+      events: [cityEvents({ pending: [pendingFor('gc-mem-worker-1')] })],
+    })
+
+    expect(row(source, 'mem-worker-1').attention).toMatchObject({
+      status: 'stale',
+      reason: 'source-stale',
+    })
+  })
+
+  it('says nothing about a session no row stands for', () => {
+    const source = assemble([hostCity()], {
+      events: [cityEvents({ pending: [pendingFor('gc-not-projected')] })],
+    })
+
+    expect(
+      source.sessions.filter((session) => session.attention !== undefined),
+    ).toHaveLength(0)
+  })
+
+  it('reduces a city list to one signal per session', () => {
+    const signals = cityPendingSignals([
+      cityEvents({
+        pending: [
+          pendingFor('gc-mem-worker-1'),
+          // A session may be waiting on more than one interaction; the row is
+          // waiting or it is not.
+          pendingFor('gc-mem-worker-1', 'req-2'),
+          pendingFor('gc-mem-worker-2'),
+        ],
+      }),
+    ])
+
+    expect(signals).toEqual([
+      { hostId: memRoot.hostId, sessionKey: 'gc-mem-worker-1' },
+      { hostId: memRoot.hostId, sessionKey: 'gc-mem-worker-2' },
+    ])
+  })
+
+  it('carries the reason a signal is no longer being watched', () => {
+    const signals = cityPendingSignals([
+      cityEvents({
+        stream: 'unavailable',
+        reason: 'disabled',
+        pending: [pendingFor('gc-mem-worker-1')],
+      }),
+    ])
+
+    expect(signals).toEqual([
+      { hostId: memRoot.hostId, sessionKey: 'gc-mem-worker-1', stale: true },
+    ])
+  })
+})
+
 describe('Gas City rows in the overview model', () => {
   it('filters, groups, sorts, and pages alongside hvir own sessions', () => {
     const facts = Array.from({ length: SESSIONS_OVERVIEW_PAGE_SIZE + 5 }, (_, index) =>
@@ -342,6 +455,7 @@ function assemble(
   hvir: {
     readonly sessions?: readonly OwnedTerminalSession[]
     readonly ptys?: readonly ObservedManagedPty[]
+    readonly events?: readonly HostCityEvents[]
   } = {},
 ) {
   return assembleSessionsObservation({
@@ -351,6 +465,7 @@ function assemble(
     sessions: hvir.sessions ?? [],
     ptys: hvir.ptys ?? [],
     cities,
+    ...(hvir.events === undefined ? {} : { events: hvir.events }),
   })
 }
 
@@ -724,4 +839,26 @@ function attachRequest(
 function ownTerminal(id: string): OwnedTerminalSession {
   const { attachedExternalSession: _attached, ...rest } = attachedTerminal(id, 'unused')
   return rest
+}
+
+function cityEvents(
+  overrides: {
+    readonly stream?: HostCityEvents['stream']
+    readonly reason?: HostCityEvents['reason']
+    readonly pending?: HostCityEvents['pending']
+  } = {},
+): HostCityEvents {
+  return {
+    hostId: memRoot.hostId,
+    cityRoot: city,
+    stream: overrides.stream ?? 'live',
+    ...(overrides.reason === undefined ? {} : { reason: overrides.reason }),
+    observedAt: 1_700_000_000_000,
+    lifecycle: [],
+    pending: overrides.pending ?? [],
+  }
+}
+
+function pendingFor(sessionKey: string, requestId = 'req-1') {
+  return { sessionKey, requestId, kind: 'tool-approval' }
 }
