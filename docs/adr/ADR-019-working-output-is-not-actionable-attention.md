@@ -3,6 +3,7 @@
 > Lifecycle: Partially superseded
 > Supersedes: [ADR-009](ADR-009-hierarchical-attention.md) | partial | Classifying ongoing post-submission output as actionable new-output attention.
 > Superseded by: [ADR-034](ADR-034-project-name-working-presentation.md) | partial | Working presentation being confined to the terminal row.
+> Superseded by: [ADR-048](ADR-048-exact-external-pending-interaction-attention.md) | partial | Actionable workspace, project, and OS attention counts including only distinct terminals.
 
 ## Context
 

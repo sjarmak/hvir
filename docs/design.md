@@ -165,6 +165,7 @@ worktree orchestrator.
 
 > Lifecycle: Partially superseded
 > Superseded by: [ADR-019](adr/ADR-019-working-output-is-not-actionable-attention.md) | partial | Classifying ongoing post-submission output as actionable new-output attention.
+> Superseded by: [ADR-048](adr/ADR-048-exact-external-pending-interaction-attention.md) | partial | Terminal focus as the only rule that clears attention.
 
 Terminal focus is the single clearing rule; workspace/project and OS surfaces only aggregate
 the appropriate unseen child attention.
@@ -254,6 +255,7 @@ platform selection, integrity, and provenance authority.
 > Lifecycle: Partially superseded
 > Supersedes: [ADR-009](adr/ADR-009-hierarchical-attention.md) | partial | Classifying ongoing post-submission output as actionable new-output attention.
 > Superseded by: [ADR-034](adr/ADR-034-project-name-working-presentation.md) | partial | Working presentation being confined to the terminal row.
+> Superseded by: [ADR-048](adr/ADR-048-exact-external-pending-interaction-attention.md) | partial | Actionable workspace, project, and OS attention counts including only distinct terminals.
 
 Ongoing output after a submitted turn remains visible as low-salience Working state while
 workspace and project rollups count only actionable Ready and bell signals.
@@ -484,6 +486,29 @@ including native updates and package-owned removal; legacy npm migration remains
 
 Explicit same-host file activation opens ephemeral read-only outside-project tabs; automatic
 Markdown images remain within the canonical document directory and descendants.
+
+### [ADR-046 — Sessions projects external agent sessions without owning them](adr/ADR-046-projected-external-agent-sessions.md)
+
+> Lifecycle: Active
+
+Sessions admits sessions hvir never launched as one row each with a recorded origin and an
+opaque handle, bounded to read, answer, and attach, with demand held per selection.
+
+### [ADR-047 — Foreign supervisor loopback API as a bounded read-and-answer client](adr/ADR-047-supervisor-loopback-api-client.md)
+
+> Lifecycle: Active
+
+One main-owned client reaches a foreign supervisor through `ProjectHost` loopback on a declared
+endpoint, exposing a narrow verb surface with pinned generated types and typed unavailability.
+
+### [ADR-048 — A declared external pending interaction is actionable attention](adr/ADR-048-exact-external-pending-interaction-attention.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-009](adr/ADR-009-hierarchical-attention.md) | partial | Terminal focus as the only rule that clears attention.
+> Supersedes: [ADR-019](adr/ADR-019-working-output-is-not-actionable-attention.md) | partial | Actionable workspace, project, and OS attention counts including only distinct terminals.
+
+An authority-declared pending interaction rolls up as actionable attention cleared by
+resolution rather than focus, carrying its freshness to every surface that counts it.
 
 ## 5. Architecture
 
