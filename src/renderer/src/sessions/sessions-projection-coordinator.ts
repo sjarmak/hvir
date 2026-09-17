@@ -302,7 +302,7 @@ export function joinSessionsProjection(
       session.handle,
       projectRow(
         workspace,
-        providerById.get(renderer?.providerId ?? session.providerId),
+        providerById.get(rendererIdentity(session, renderer)?.providerId ?? session.providerId),
         session,
         renderer,
       ),
@@ -338,12 +338,29 @@ function selectRendererFact(
   )
 }
 
+/**
+ * The renderer fact, when it is also the row's identity.
+ *
+ * A renderer fact describes a terminal hvir launched, which is the whole of the
+ * row when hvir launched the session too. For a session another authority
+ * started, main's row is the identity and the terminal is a capability that row
+ * gained (ADR-046): the viewing terminal's own provider, profile and title
+ * would otherwise present an agent session as a bare shell.
+ */
+function rendererIdentity(
+  main: SessionsObservedSession | undefined,
+  renderer: SessionsRendererSession | undefined,
+): SessionsRendererSession | undefined {
+  return main?.origin.kind === 'external-agent' ? undefined : renderer
+}
+
 function projectRow(
   workspace: SessionsWorkspaceProjection,
   provider: SessionsProviderProjection | undefined,
   main: SessionsObservedSession | undefined,
   renderer: SessionsRendererSession | undefined,
 ): SessionsProjectionRow {
+  const identity = rendererIdentity(main, renderer)
   const lifecycle = lifecycleProjection(workspace, main, renderer)
   const attention = attentionProjection(renderer)
   const telemetry =
@@ -353,7 +370,7 @@ function projectRow(
   // row with no main observation is hvir's by construction.
   const origin = main?.origin ?? SESSIONS_HVIR_ORIGIN
   const providerName =
-    provider?.displayName ?? String(renderer?.providerId ?? main!.providerId)
+    provider?.displayName ?? String(identity?.providerId ?? main!.providerId)
   return {
     handle,
     origin,
@@ -366,7 +383,7 @@ function projectRow(
     },
     host: workspace.host,
     provider: {
-      id: renderer?.providerId ?? main!.providerId,
+      id: identity?.providerId ?? main!.providerId,
       name: providerName,
       // An unregistered provider leaves the kind unknown, except where the
       // origin itself declares it: an external agent session is an agent
@@ -375,11 +392,11 @@ function projectRow(
         provider?.sessionKind ?? (origin.kind === 'external-agent' ? 'agent' : 'unknown'),
       contextPressure: provider?.contextPressure,
     },
-    profile: renderer
-      ? { status: 'available', value: { id: renderer.profileId } }
+    profile: identity
+      ? { status: 'available', value: { id: identity.profileId } }
       : main!.profile,
     title: sessionsProjectionDisplayTitle(
-      renderer?.title ?? main?.title,
+      identity?.title ?? main?.title,
       handle,
       `${providerName} · ${workspace.workspaceName}`,
     ),

@@ -9,6 +9,7 @@ import type {
   HostConnectionState,
   HostPath,
   TerminalIdentityStatus,
+  ExternalSessionAttachTarget,
 } from '../../../shared'
 import type { TerminalThemeOverride } from '../settings/settings'
 import { useAppTheme, type AppTheme } from '../theme'
@@ -43,6 +44,12 @@ interface TerminalViewProps {
   readonly resumeOnStart: boolean
   /** Command typed into the shell once, right after first launch (e.g. `gc session attach …`). */
   readonly initialInput?: string
+  /**
+   * The gc session this terminal attaches to, when hvir is performing the
+   * attach and the requesting surface named the session exactly. Recorded by
+   * main at spawn, so the row it joins survives a reload (ADR-046).
+   */
+  readonly externalAttach?: ExternalSessionAttachTarget
   readonly startMode: 'interactive' | 'bulk'
   readonly position: number
   readonly slot: 'primary' | 'secondary'

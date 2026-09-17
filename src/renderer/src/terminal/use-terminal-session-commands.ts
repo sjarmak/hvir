@@ -2,6 +2,7 @@ import type { RefObject } from 'react'
 
 import { hostPathEquals } from '../../../shared'
 import type {
+  ExternalSessionAttachTarget,
   HarnessProfile,
   HarnessProfileId,
   HarnessProfileProbe,
@@ -57,6 +58,7 @@ export function useTerminalSessionCommands({
     profile: HarnessProfile,
     provider: HarnessProviderDescriptor,
     initialInput?: string,
+    externalAttach?: ExternalSessionAttachTarget,
   ): string => {
     const current = modelRef.current
     const pane = terminalWorkspaceSplit(current) ? current.activePane : 'primary'
@@ -68,6 +70,7 @@ export function useTerminalSessionCommands({
       pane,
       profileProbe(probes, profile)?.capabilities,
       initialInput,
+      externalAttach,
     )
     send({ type: 'session-added', session })
     closeLaunchMenu()
@@ -224,9 +227,12 @@ export function useTerminalSessionCommands({
     // Open a bare shell running an attach command (e.g. `gc session attach
     // <worker>`) when the Beads panel requests one; returns the new session id,
     // or undefined when the workspace has no default harness to launch.
-    launchAttach: (command: string): string | undefined =>
+    launchAttach: (
+      command: string,
+      externalAttach?: ExternalSessionAttachTarget,
+    ): string | undefined =>
       available && defaultProvider && defaultProfile
-        ? launch(defaultProfile, defaultProvider, command)
+        ? launch(defaultProfile, defaultProvider, command, externalAttach)
         : undefined,
     acceptFreshStart: (id: string, started: FreshTerminalStart) => {
       const session = modelRef.current.sessions.find((candidate) => candidate.id === id)

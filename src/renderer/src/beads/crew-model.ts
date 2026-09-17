@@ -145,6 +145,23 @@ export function holdsBead(
   )
 }
 
+/**
+ * The crew member an identity names, when exactly one does.
+ *
+ * Exact membership in a member's identity keys, with keys more than one member
+ * claims left unresolved — the same rule that decides which bead a member
+ * holds. A bead's assignee is a name, not a session, so this is how a surface
+ * holding only the assignee reaches the session behind it without guessing from
+ * labels or timing (ADR-046).
+ */
+export function memberForIdentity(
+  members: readonly GasCityCrewMember[],
+  identity: string,
+): GasCityCrewMember | undefined {
+  if (ambiguousIdentityKeys(members).has(identity)) return undefined
+  return members.find((member) => member.identityKeys.includes(identity))
+}
+
 function heldBeads(
   member: GasCityCrewMember,
   issues: readonly BeadIssue[],

@@ -11,12 +11,18 @@ import {
   type TerminalAttentionState,
   type TerminalLayoutEntry,
   type TerminalRecoverySession,
+  isExternalSessionAttachment,
+  sameExternalSessionAttachment,
+  type ExternalSessionAttachment,
+  type ExternalSessionAttachTarget,
 } from '../../shared'
 import type { Disposer, ProjectHost } from '../project-host'
+import { externalSessionAttachment } from './external-session-attachment'
 import { harnessProvider } from '../harness/harness-provider'
 import type { HarnessRecoveryProfileReference } from '../harness/harness-profile-store'
 
-const FILE_VERSION = 6
+const FILE_VERSION = 7
+const LEGACY_PRE_EXTERNAL_ATTACH_FILE_VERSION = 6
 const LEGACY_ATTENTION_OR_SKIP_FILE_VERSION = 5
 const LEGACY_PROFILE_FILE_VERSION = 4
 const LEGACY_WORKSPACE_FILE_VERSION = 3
@@ -34,6 +40,12 @@ interface StoredTerminalSession {
   readonly recoverySkipCount: 0 | 1
   readonly artifactIdentity?: string
   readonly harnessSessionId?: string
+  /**
+   * The foreign session this terminal attached to, as a digest. Recorded from
+   * the launch that performed the attach and kept across restarts, so the join
+   * outlives the renderer that requested it.
+   */
+  readonly attachedExternalSession?: ExternalSessionAttachment
   readonly hostId: string
   readonly workspaceRoot: HostPath
   readonly cwd: HostPath
@@ -56,6 +68,8 @@ export interface RecordTerminalSpawn {
   readonly launchRevision: number
   readonly artifactIdentity?: string
   readonly harnessSessionId?: string
+  /** Present only when this launch is itself the attach hvir is performing. */
+  readonly externalAttach?: ExternalSessionAttachTarget
   readonly workspaceRoot: HostPath
   readonly cwd: HostPath
   readonly title: string
@@ -125,6 +139,8 @@ export interface MoveTerminalSession {
 
 export interface OwnedTerminalSession extends TerminalRecoverySession {
   readonly workspaceRoot: HostPath
+  /** Main-internal: the digest never crosses IPC with the recovery record. */
+  readonly attachedExternalSession?: ExternalSessionAttachment
 }
 
 interface PendingIdentityRegistration {
@@ -144,6 +160,8 @@ export interface TerminalSessionStore {
       readonly skippedIds: readonly string[]
     },
   ): Promise<void>
+  /** Terminals in one workspace attached to `target`, in presentation order. */
+  attachedTerminals(workspaceRoot: HostPath, target: ExternalSessionAttachTarget): readonly string[]
   recordSpawn(spawn: RecordTerminalSpawn): Promise<void>
   recordReplacement(replacement: RecordTerminalReplacement): Promise<void>
   recordIdentity(id: string, harnessSessionId: string): Promise<boolean>
@@ -223,6 +241,7 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
         if (
           isRecord(value) &&
           (value['version'] === FILE_VERSION ||
+            value['version'] === LEGACY_PRE_EXTERNAL_ATTACH_FILE_VERSION ||
             value['version'] === LEGACY_ATTENTION_OR_SKIP_FILE_VERSION ||
             value['version'] === LEGACY_PROFILE_FILE_VERSION ||
             value['version'] === LEGACY_WORKSPACE_FILE_VERSION ||
@@ -233,7 +252,8 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
           if (Array.isArray(rawSessions)) {
             const parsed = rawSessions
               .map((session) =>
-                value['version'] === FILE_VERSION
+                value['version'] === FILE_VERSION ||
+                value['version'] === LEGACY_PRE_EXTERNAL_ATTACH_FILE_VERSION
                   ? parseStoredSession(session)
                   : value['version'] === LEGACY_ATTENTION_OR_SKIP_FILE_VERSION
                     ? parseAttentionOrSkipStoredSession(session)
@@ -286,12 +306,30 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
         (left, right) =>
           left.position - right.position || left.updatedAt - right.updatedAt,
       )
-      .map(({ workspaceRoot: _workspaceRoot, ...session }) => session)
+      .map(recoverySession)
   }
 
   get(id: string): OwnedTerminalSession | undefined {
     const session = this.sessions.get(id)
     return session ? { ...session } : undefined
+  }
+
+  attachedTerminals(
+    workspaceRoot: HostPath,
+    target: ExternalSessionAttachTarget,
+  ): readonly string[] {
+    const attachment = externalSessionAttachment(target)
+    return [...this.sessions.values()]
+      .filter(
+        (session) =>
+          hostPathEquals(session.workspaceRoot, workspaceRoot) &&
+          sameExternalSessionAttachment(session.attachedExternalSession, attachment),
+      )
+      .sort(
+        (left, right) =>
+          left.position - right.position || left.updatedAt - right.updatedAt,
+      )
+      .map((session) => session.id)
   }
 
   observationSnapshot(): readonly OwnedTerminalSession[] {
@@ -396,6 +434,10 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
     const harnessSessionId = spawn.harnessSessionId ?? pendingIdentity?.harnessSessionId
     const previous = this.sessions.get(spawn.id)
     const retainedAttention = previous?.attention
+    // A recovered terminal restarts without naming its attach again: the
+    // renderer was never told what it was attached to. Main is the only holder
+    // of that fact, so a spawn that declares none keeps the recorded one.
+    const attachedExternalSession = attachedExternal(spawn, previous)
     this.pendingIdentities.delete(spawn.id)
     const now = Date.now()
     const recorded: StoredTerminalSession = {
@@ -406,6 +448,7 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
       recoverySkipCount: 0,
       artifactIdentity: spawn.artifactIdentity,
       harnessSessionId,
+      attachedExternalSession,
       hostId: spawn.cwd.hostId,
       workspaceRoot: spawn.workspaceRoot,
       cwd: spawn.cwd,
@@ -466,6 +509,7 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
       recoverySkipCount: 0,
       artifactIdentity: spawn.artifactIdentity,
       harnessSessionId,
+      attachedExternalSession: attachedExternal(spawn, replaced),
       hostId: spawn.cwd.hostId,
       workspaceRoot: spawn.workspaceRoot,
       cwd: spawn.cwd,
@@ -618,8 +662,7 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
         this.sessions.set(request.id, current)
       throw error
     }
-    const { workspaceRoot: _workspaceRoot, ...result } = updated
-    return result
+    return recoverySession(updated)
   }
 
   async rebindProfile(request: RebindTerminalProfile): Promise<TerminalRecoverySession> {
@@ -647,8 +690,7 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
       }
       throw error
     }
-    const { workspaceRoot: _workspaceRoot, ...result } = updated
-    return result
+    return recoverySession(updated)
   }
 
   authorizeResume(request: AuthorizeTerminalResume): boolean {
@@ -733,6 +775,33 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
   }
 }
 
+/**
+ * The recovery record a renderer receives. Workspace ownership and the external
+ * attachment stay behind in main: one is authority, the other is a foreign join
+ * that has no business in a renderer, in Sessions, or on the wire.
+ */
+function recoverySession({
+  workspaceRoot: _workspaceRoot,
+  attachedExternalSession: _attachedExternalSession,
+  ...session
+}: StoredTerminalSession): TerminalRecoverySession {
+  return session
+}
+
+/**
+ * A recovered terminal restarts without naming its attach again: the renderer
+ * was never told what it was attached to. Main holds that fact alone, so a
+ * spawn that declares no attach keeps the one already recorded.
+ */
+function attachedExternal(
+  spawn: RecordTerminalSpawn,
+  previous: StoredTerminalSession | undefined,
+): ExternalSessionAttachment | undefined {
+  return spawn.externalAttach
+    ? externalSessionAttachment(spawn.externalAttach)
+    : previous?.attachedExternalSession
+}
+
 function reportDiagnostic(
   observer: ((event: TerminalSessionRegistryDiagnostic) => void) | undefined,
   event: TerminalSessionRegistryDiagnostic,
@@ -762,6 +831,7 @@ function parseStoredSession(value: unknown): StoredTerminalSession | undefined {
   const recoverySkipCount = value['recoverySkipCount']
   const artifactIdentity = value['artifactIdentity']
   const harnessSessionId = value['harnessSessionId']
+  const attachedExternalSession = value['attachedExternalSession']
   const hostId = value['hostId']
   const workspaceRoot =
     parsePath(value['workspaceRoot']) ?? parsePath(value['projectRoot'])
@@ -786,6 +856,8 @@ function parseStoredSession(value: unknown): StoredTerminalSession | undefined {
         !/^[a-f0-9]{24}$/.test(artifactIdentity))) ||
     (harnessSessionId !== undefined &&
       (typeof harnessSessionId !== 'string' || !isHarnessSessionId(harnessSessionId))) ||
+    (attachedExternalSession !== undefined &&
+      !isExternalSessionAttachment(attachedExternalSession)) ||
     typeof hostId !== 'string' ||
     !workspaceRoot ||
     !cwd ||
@@ -813,6 +885,7 @@ function parseStoredSession(value: unknown): StoredTerminalSession | undefined {
     recoverySkipCount,
     artifactIdentity,
     harnessSessionId,
+    attachedExternalSession,
     hostId,
     workspaceRoot,
     cwd,

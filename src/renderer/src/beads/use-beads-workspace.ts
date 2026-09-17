@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 
-import type { HostConnectionState, HostPath } from '../../../shared'
+import type {
+  ExternalSessionAttachTarget,
+  HostConnectionState,
+  HostPath,
+} from '../../../shared'
 import type { TerminalAttachRequest } from '../terminal/terminal-workspace-model'
 import type { WorkbenchRailMode } from '../workbench/use-workbench-layout'
 import { beadCommand, type BeadActionRequest } from './bead-commands'
@@ -24,8 +28,16 @@ export interface BeadsWorkspace {
    * when it has no default harness; the panel disables its actions on it.
    */
   readonly actionsAvailable: boolean
-  /** Run a gc action against a crew identity in the active workspace's terminal. */
-  readonly requestCrewAction: (action: GasCityAction, target: string) => void
+  /**
+   * Run a gc action against a crew identity in the active workspace's terminal.
+   * `sessionId` is gc's own id for the session, passed when the calling surface
+   * knows it: it is what joins the terminal to the session's row exactly.
+   */
+  readonly requestCrewAction: (
+    action: GasCityAction,
+    target: string,
+    sessionId?: string,
+  ) => void
   /**
    * Type a bd write action (claim/close/create) into the active workspace's
    * terminal. Never keyed: every action is one-shot and opens a fresh shell.
@@ -82,7 +94,11 @@ export function useBeadsWorkspace(
   // it instead of opening another one; one-shot commands pass none. Resolves
   // with the terminal's own answer; a workspace that cannot launch is refused
   // here rather than dispatched to vanish.
-  const requestCommand = (command: string, key?: string): Promise<boolean> => {
+  const requestCommand = (
+    command: string,
+    key?: string,
+    attaches?: ExternalSessionAttachTarget,
+  ): Promise<boolean> => {
     const workspaceId = activeWorkspace?.id
     if (!workspaceId || launchable.get(workspaceId) !== true) return Promise.resolve(false)
     attachNonce.current += 1
@@ -94,14 +110,19 @@ export function useBeadsWorkspace(
           nonce: attachNonce.current,
           onSettled: resolve,
           ...(key === undefined ? {} : { key }),
+          ...(attaches === undefined ? {} : { attaches }),
         },
       })
     })
   }
 
-  const requestCrewAction = (action: GasCityAction, target: string): void => {
-    const { command, key } = gasCityCommand(action, target)
-    void requestCommand(command, key)
+  const requestCrewAction = (
+    action: GasCityAction,
+    target: string,
+    sessionId?: string,
+  ): void => {
+    const { command, key, attaches } = gasCityCommand(action, target, sessionId)
+    void requestCommand(command, key, attaches)
   }
 
   const requestBeadAction = (request: BeadActionRequest): Promise<boolean> => {

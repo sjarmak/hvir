@@ -328,6 +328,38 @@ describe('focus-or-attach', () => {
     expect(outcome).toEqual({ type: 'launch' })
   })
 
+  it('prefers the terminal recorded against the session over the key map', () => {
+    // The key is a crew identity, which two sessions can wear over time. The
+    // recorded attach names the session itself, so it decides.
+    const both = reduce(model, { type: 'session-added', session: session('exact', 'secondary') })
+    const outcome = resolveTerminalAttach(
+      {
+        command: "gc session attach 'mayor'",
+        nonce: 5,
+        key: 'gc:mayor',
+        attaches: { sourceId: 'gas-city', key: 'gc-1' },
+      },
+      new Map([['gc:mayor', 'live']]),
+      both,
+      ['exact'],
+    )
+    expect(outcome).toEqual({ type: 'focus', id: 'exact' })
+  })
+
+  it('ignores a recorded terminal this workspace is not showing', () => {
+    const outcome = resolveTerminalAttach(
+      {
+        command: "gc session attach 'mayor'",
+        nonce: 6,
+        attaches: { sourceId: 'gas-city', key: 'gc-1' },
+      },
+      new Map(),
+      model,
+      ['closed-elsewhere'],
+    )
+    expect(outcome).toEqual({ type: 'launch' })
+  })
+
   it('always launches an unkeyed one-shot command', () => {
     const outcome = resolveTerminalAttach(
       { command: "gc session peek 'mayor'", nonce: 4 },

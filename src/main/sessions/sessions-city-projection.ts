@@ -12,8 +12,10 @@ import {
   type SessionsProviderProjection,
   type SessionsTelemetryFacts,
   type SessionsWorkspaceProjection,
+  type ExternalSessionAttachment,
 } from '../../shared'
 import type { CitySessionFact, HostCitySessions } from '../gascity/gascity-city-sessions'
+import { externalSessionDigest } from '../terminal/external-session-attachment'
 import type { SessionsProjectionIdentityScope } from './sessions-projection-identities'
 import { sessionsProjectionPercent } from './sessions-projection-values'
 
@@ -51,6 +53,17 @@ export const SESSIONS_GAS_CITY_PROVIDER: SessionsProviderProjection = {
   sessionKind: 'agent',
 }
 
+/**
+ * A terminal hvir launched to attach to one of these sessions, with the
+ * attachment it recorded at spawn. The digest is the whole of the join: no
+ * title, path, or timing is consulted (ADR-046).
+ */
+export interface SessionsCityAttachedTerminal {
+  readonly attachment: ExternalSessionAttachment
+  /** The row hvir already built for that terminal. */
+  readonly session: SessionsObservedSession
+}
+
 /** A workspace hvir has discovered, with the project it belongs to. */
 export interface SessionsCityWorkspaceTarget {
   readonly root: HostPath
@@ -66,10 +79,19 @@ export interface SessionsCityProjectionInput {
   readonly providers: ReadonlyMap<HarnessProviderId, SessionsProviderProjection>
   /** How many rows are still available in the projection. */
   readonly capacity: number
+  /** Terminals hvir holds for sessions in this set, if any. */
+  readonly attached?: readonly SessionsCityAttachedTerminal[]
 }
 
 export interface SessionsCityProjection {
   readonly sessions: readonly SessionsObservedSession[]
+  /**
+   * The rows of attached terminals, re-presented as the sessions they attach
+   * to, keyed by the terminal handle they keep. The caller replaces its own row
+   * with this one: an attach is a capability the session's row gains, never a
+   * second row (ADR-046).
+   */
+  readonly merged: ReadonlyMap<string, SessionsObservedSession>
   /** Present when at least one row needed the source's own provider identity. */
   readonly provider?: SessionsProviderProjection
 }
@@ -80,8 +102,15 @@ export function projectCitySessions({
   identities,
   providers,
   capacity,
+  attached = [],
 }: SessionsCityProjectionInput): SessionsCityProjection {
   const sessions: SessionsObservedSession[] = []
+  const merged = new Map<string, SessionsObservedSession>()
+  const attachedByDigest = new Map(
+    attached
+      .filter((terminal) => terminal.attachment.sourceId === 'gas-city')
+      .map((terminal) => [terminal.attachment.sessionDigest, terminal] as const),
+  )
   let sourceProviderUsed = false
   for (const city of cities) {
     const placement = workspaces.filter(
@@ -89,6 +118,21 @@ export function projectCitySessions({
     )
     if (placement.length === 0) continue
     for (const fact of city.sessions) {
+      const claimed = attachedByDigest.get(
+        externalSessionDigest('gas-city', fact.sessionKey),
+      )
+      if (claimed !== undefined) {
+        // An attached session is not a new row and does not consume capacity:
+        // hvir already published a row for the terminal, and hvir's own
+        // workspace placement for it beats anything inferred from gc's paths.
+        const declared = declaredProvider(fact, providers)
+        if (declared === undefined) sourceProviderUsed = true
+        merged.set(
+          String(claimed.session.handle),
+          attachedSession(claimed.session, fact, city, declared),
+        )
+        continue
+      }
       if (sessions.length >= capacity) break
       const workspace = placeSession(fact, placement)
       if (workspace === undefined) continue
@@ -126,7 +170,39 @@ export function projectCitySessions({
   }
   return {
     sessions,
+    merged,
     ...(sourceProviderUsed ? { provider: SESSIONS_GAS_CITY_PROVIDER } : {}),
+  }
+}
+
+/**
+ * The terminal's row, presented as the session it attached to.
+ *
+ * What hvir owns stays: the handle the renderer opens and focuses, the
+ * workspace hvir placed it in, the live PTY, the lifecycle of its own process.
+ * What the session is comes from gc: the origin, the harness identity, the
+ * label, and the telemetry, because the terminal is a viewport onto a turn hvir
+ * is not driving and hvir's provider adapter has nothing to report about it.
+ * There is no profile behind the session itself, whatever profile hvir happened
+ * to launch the viewing terminal with.
+ */
+function attachedSession(
+  session: SessionsObservedSession,
+  fact: CitySessionFact,
+  city: HostCitySessions,
+  declared: SessionsProviderProjection | undefined,
+): SessionsObservedSession {
+  return {
+    ...session,
+    origin: SESSIONS_GAS_CITY_ORIGIN,
+    providerId: declared?.id ?? SESSIONS_GAS_CITY_PROVIDER.id,
+    profile: { status: 'unsupported' },
+    title: sessionsProjectionDisplayTitle(fact.label, session.handle, session.title, [
+      fact.sessionKey,
+      fact.workDir?.path ?? '',
+      fact.rigRoot?.path ?? '',
+    ]),
+    telemetry: telemetryFor(fact, city),
   }
 }
 

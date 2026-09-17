@@ -105,6 +105,7 @@ export const AUTHORITY_SCOPED_INVOKE_CHANNELS = [
   'harness:preview',
   'harness:authorize-path',
   'terminal:recovery',
+  'terminal:resolve-attached',
   'terminal:record-recovery-decision',
   'terminal:update-layout',
   'terminal:forget',

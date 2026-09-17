@@ -117,6 +117,7 @@ export function TerminalSessionRuntimes({
             forkPending={session.forkPending}
             resumeOnStart={session.resumeOnStart}
             initialInput={session.initialInput}
+            externalAttach={session.externalAttach}
             startMode={session.startMode ?? 'interactive'}
             position={position}
             slot={session.pane}

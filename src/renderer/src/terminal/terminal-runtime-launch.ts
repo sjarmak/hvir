@@ -39,6 +39,7 @@ export function terminalStartRequest(
     ...(fork ? { launchMode: 'fork' as const } : {}),
     resume,
     harnessSessionId: resume ? options.harnessSessionId : undefined,
+    externalAttach: options.externalAttach,
     forkSourceSessionId: fork?.sourceSessionId,
     parentHarnessSessionId: fork?.parentHarnessSessionId,
   }

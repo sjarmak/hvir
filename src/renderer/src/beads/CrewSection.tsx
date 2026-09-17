@@ -28,7 +28,11 @@ interface CrewSectionProps {
   readonly issues: readonly BeadIssue[]
   readonly collapsed: boolean
   readonly onToggle: () => void
-  readonly onAction: (action: GasCityAction, target: string) => void
+  readonly onAction: (
+    action: GasCityAction,
+    target: string,
+    sessionId?: string,
+  ) => void
   /** When set, every session action is disabled and this says why. */
   readonly actionsDisabledHint?: string
   /** Focus a held bead's row in the bead sections; held chips are inert without it. */
@@ -194,7 +198,7 @@ export function CrewSection({
           className="crew-card-main"
           title={actionsDisabledHint ?? `Attach to ${member.target}`}
           disabled={actionsBlocked}
-          onClick={() => onAction('attach', member.target)}
+          onClick={() => onAction('attach', member.target, member.session?.id)}
         >
           {lead ? <span className="crew-pin" aria-hidden="true">📌</span> : null}
           <span className="crew-name">{member.label}</span>
@@ -219,7 +223,7 @@ export function CrewSection({
               className={`crew-action crew-action-${action}`}
               title={actionsDisabledHint ?? GAS_CITY_ACTION_HINTS[action]}
               disabled={actionsBlocked}
-              onClick={() => onAction(action, member.target)}
+              onClick={() => onAction(action, member.target, member.session?.id)}
             >
               {GAS_CITY_ACTION_LABELS[action]}
             </button>

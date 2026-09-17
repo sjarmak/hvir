@@ -4,6 +4,9 @@ import type {
   CitySessionFact,
   HostCitySessions,
 } from '../src/main/gascity/gascity-city-sessions'
+import { externalSessionAttachment } from '../src/main/terminal/external-session-attachment'
+import type { OwnedTerminalSession } from '../src/main/terminal/session-registry'
+import type { ObservedManagedPty } from '../src/main/pty/pty-supervisor'
 import { assembleSessionsObservation } from '../src/main/sessions/sessions-observation-port'
 import {
   SESSIONS_GAS_CITY_PROVIDER,
@@ -20,6 +23,7 @@ import {
 import { sessionsTerminalSurfaceEligible } from '../src/renderer/src/sessions/sessions-terminal-surface'
 import {
   MAX_SESSIONS_PROJECTION_ROWS,
+  asHarnessProfileId,
   asHarnessProviderId,
   localPath,
   type HostPath,
@@ -199,6 +203,75 @@ describe('Gas City sessions in the global projection', () => {
   })
 })
 
+describe('A terminal attached to a Gas City session', () => {
+  it('is one row: the session, with hvir terminal behind it', () => {
+    const source = assemble([hostCity()], {
+      sessions: [attachedTerminal('terminal-1', 'gc-mem-worker-1')],
+      ptys: [livePty('terminal-1')],
+    })
+
+    // Three gc sessions, one of them attached. The attach added no row.
+    expect(source.sessions).toHaveLength(3)
+    expect([...titles(source)].sort()).toEqual([
+      'mem-worker-1',
+      'mem-worker-2',
+      'polecat-lead',
+    ])
+
+    const attached = row(source, 'mem-worker-1')
+    // The handle stays hvir's terminal, which is what makes the row openable.
+    expect(attached.handle).toBe('terminal-1')
+    expect(attached.livePty).toMatchObject({ handle: 'pty-instance-terminal-1' })
+    expect(attached.lifecycle).toBe('live')
+    // What the row *is* comes from gas city.
+    expect(attached.origin).toMatchObject({
+      kind: 'external-agent',
+      sourceId: 'gas-city',
+    })
+    expect(attached.providerId).toBe(codex)
+    expect(attached.profile).toEqual({ status: 'unsupported' })
+    expect(attached.telemetry.context).toMatchObject({
+      status: 'available',
+      value: { usedPercent: 41 },
+    })
+    // hvir places its own terminal; gc's working directory does not move it.
+    expect(workspaceOf(source, 'mem-worker-1')).toBe('main')
+    expect(JSON.stringify(source)).not.toContain('gc-mem-worker-1')
+  })
+
+  it('keeps the agent identity when the renderer reports its own shell', () => {
+    const source = assemble([hostCity()], {
+      sessions: [attachedTerminal('terminal-1', 'gc-mem-worker-1')],
+      ptys: [livePty('terminal-1')],
+    })
+    const workspaceQualifier = source.workspaces.find(
+      (candidate) => candidate.workspaceName === 'main',
+    )!.qualifier
+    const rows = joinSessionsProjection(snapshot(source), [
+      {
+        handle: 'terminal-1' as (typeof source.sessions)[number]['handle'],
+        workspaceQualifier,
+        providerId: shell,
+        profileId: asHarnessProfileId('plain-shell-default'),
+        title: 'Shell · main',
+        dormant: false,
+        resumeOnStart: false,
+        exited: false,
+        recoveryUnavailable: false,
+      },
+    ])
+
+    expect(rows).toHaveLength(3)
+    const attached = rows.find((candidate) => candidate.handle === 'terminal-1')!
+    expect(attached.title).toBe('mem-worker-1')
+    expect(attached.provider).toMatchObject({ id: codex, kind: 'agent' })
+    expect(attached.profile).toEqual({ status: 'unsupported' })
+    expect(attached.lifecycle).toBe('live')
+    // The terminal is still hvir's to open.
+    expect(sessionsTerminalSurfaceEligible(attached)).toBe(true)
+  })
+})
+
 describe('Gas City rows in the overview model', () => {
   it('filters, groups, sorts, and pages alongside hvir own sessions', () => {
     const facts = Array.from({ length: SESSIONS_OVERVIEW_PAGE_SIZE + 5 }, (_, index) =>
@@ -249,15 +322,69 @@ describe('Gas City rows in the overview model', () => {
   })
 })
 
-function assemble(cities: readonly HostCitySessions[]) {
+function assemble(
+  cities: readonly HostCitySessions[],
+  hvir: {
+    readonly sessions?: readonly OwnedTerminalSession[]
+    readonly ptys?: readonly ObservedManagedPty[]
+  } = {},
+) {
   return assembleSessionsObservation({
     projectState: projectState(),
     hosts: hostOptions(),
     providers: providers(),
-    sessions: [],
-    ptys: [],
+    sessions: hvir.sessions ?? [],
+    ptys: hvir.ptys ?? [],
     cities,
   })
+}
+
+/** A terminal hvir launched to attach to one gc session, as main recorded it. */
+function attachedTerminal(id: string, sessionKey: string): OwnedTerminalSession {
+  return {
+    id,
+    providerId: shell,
+    profileId: asHarnessProfileId('plain-shell-default'),
+    launchRevision: 1,
+    recoverySkipCount: 0,
+    attachedExternalSession: externalSessionAttachment({
+      sourceId: 'gas-city',
+      key: sessionKey,
+    }),
+    hostId: memRoot.hostId,
+    workspaceRoot: memRoot,
+    cwd: memRoot,
+    title: 'Shell · main',
+    position: 0,
+    active: true,
+    updatedAt: 1,
+  }
+}
+
+function livePty(id: string): ObservedManagedPty {
+  return {
+    info: {
+      instanceId: `pty-instance-${id}`,
+      id,
+      ownerId: 7,
+      ownerGeneration: 4,
+      hostId: memRoot.hostId,
+      cwd: memRoot,
+      workspaceRoot: memRoot,
+      providerId: shell,
+      capabilities: {
+        sessionIdentity: 'none',
+        exactResume: false,
+        contextPresentation: 'none',
+      },
+      profileId: asHarnessProfileId('plain-shell-default'),
+      pid: 123,
+      startedAt: 1,
+      resumed: false,
+      identityStatus: 'none',
+    },
+    telemetry: undefined,
+  }
 }
 
 function snapshot(base: ReturnType<typeof assemble>): SessionsObservationSnapshot {

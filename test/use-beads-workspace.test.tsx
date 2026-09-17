@@ -105,6 +105,19 @@ describe('useBeadsWorkspace bead actions', () => {
     })
   })
 
+  it('carries the gas city session an attach names into the terminal request', async () => {
+    const beads = await render('ws-1')
+    const ready = await within(() => beads.reportLaunchAvailability('ws-1', true))
+    const next = await within(() =>
+      ready.requestCrewAction('attach', 'mayor', 'gc-mayor-01'),
+    )
+    expect(next.attachRequestFor('ws-1')).toMatchObject({
+      command: "gc session attach 'mayor'",
+      key: 'gc:mayor',
+      attaches: { sourceId: 'gas-city', key: 'gc-mayor-01' },
+    })
+  })
+
   it('is a no-op without an active workspace', async () => {
     const beads = await render()
     let accepted: boolean | undefined

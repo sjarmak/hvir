@@ -7,6 +7,7 @@ import { type HarnessProfileId } from '../harness-profile'
 import { type ProjectState } from '../workspace-types'
 import { type OperationResult } from '../operation-result'
 import type { TerminalAttentionState } from '../terminal-attention'
+import type { ExternalSessionAttachTarget } from '../external-session'
 
 export interface StartPtyRequest {
   readonly sessionId: string
@@ -35,6 +36,13 @@ export interface StartPtyRequest {
   /** Exact registered source terminal and provider-owned parent identity for a fork. */
   readonly forkSourceSessionId?: string
   readonly parentHarnessSessionId?: string
+  /**
+   * The foreign session this launch attaches to, when hvir is running the
+   * attach itself and the requesting surface knew exactly which session it
+   * named. Main hashes it before recording it; the identifier itself is not
+   * persisted and never reaches Sessions.
+   */
+  readonly externalAttach?: ExternalSessionAttachTarget
 }
 
 export type StartPtyResponse =
@@ -95,6 +103,16 @@ export interface TerminalLayoutEntry {
 
 export interface TerminalRecoveryRequest {
   readonly root: HostPath
+}
+
+/** Which of a workspace's terminals, if any, already attach to one session. */
+export interface ResolveAttachedTerminalsRequest {
+  readonly root: HostPath
+  readonly attach: ExternalSessionAttachTarget
+}
+
+export interface ResolveAttachedTerminalsResponse {
+  readonly ids: readonly string[]
 }
 
 export interface RecordTerminalRecoveryDecisionRequest {
@@ -165,6 +183,10 @@ export const terminalIpc = {
     'terminal:record-recovery-decision': invoke<
       RecordTerminalRecoveryDecisionRequest,
       void
+    >(),
+    'terminal:resolve-attached': invoke<
+      ResolveAttachedTerminalsRequest,
+      ResolveAttachedTerminalsResponse
     >(),
     'terminal:update-layout': invoke<TerminalLayoutRequest, void>(),
     'terminal:forget': invoke<ForgetTerminalRequest, void>(),

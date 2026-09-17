@@ -3,7 +3,11 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { CrewSection } from '../src/renderer/src/beads/CrewSection'
-import { buildCrewView, holdsBead } from '../src/renderer/src/beads/crew-model'
+import {
+  buildCrewView,
+  holdsBead,
+  memberForIdentity,
+} from '../src/renderer/src/beads/crew-model'
 import { gasCityCommand } from '../src/renderer/src/beads/gascity-commands'
 import {
   asHostId,
@@ -254,12 +258,49 @@ describe('holdsBead', () => {
   })
 })
 
+describe('memberForIdentity', () => {
+  // A bead card knows its assignee, not a session. This is how the attach it
+  // launches can still name the session exactly.
+  const ash = member({ key: 'gc-1', identityKeys: ['gc-1', 'mem-worker-ash'] })
+  const shared = [
+    member({ key: 'gc-2', identityKeys: ['gc-2', 'polecat'] }),
+    member({ key: 'gc-3', identityKeys: ['gc-3', 'polecat'] }),
+  ]
+
+  it('resolves an identity exactly one member answers to', () => {
+    expect(memberForIdentity([ash, ...shared], 'mem-worker-ash')?.key).toBe('gc-1')
+    expect(memberForIdentity([ash, ...shared], 'gc-3')?.key).toBe('gc-3')
+  })
+
+  it('resolves nothing for a contested or unknown identity', () => {
+    expect(memberForIdentity([ash, ...shared], 'polecat')).toBeUndefined()
+    expect(memberForIdentity([ash, ...shared], 'sjarmak')).toBeUndefined()
+    expect(memberForIdentity([ash, ...shared], 'mem-worker')).toBeUndefined()
+  })
+})
+
 describe('gc command construction', () => {
   it('keys attach so a repeat click can focus the live terminal', () => {
     expect(gasCityCommand('attach', 'mayor')).toEqual({
       command: "gc session attach 'mayor'",
       key: 'gc:mayor',
     })
+  })
+
+  it('names the session an attach targets, so the terminal can be rejoined later', () => {
+    expect(gasCityCommand('attach', 'mayor', 'gc-mayor-01')).toEqual({
+      command: "gc session attach 'mayor'",
+      key: 'gc:mayor',
+      attaches: { sourceId: 'gas-city', key: 'gc-mayor-01' },
+    })
+    // The command still names the alias; only the recorded target is the id.
+    expect(gasCityCommand('attach', 'mayor').attaches).toBeUndefined()
+  })
+
+  it('claims no attach target for one-shot commands', () => {
+    expect(gasCityCommand('peek', 'mayor', 'gc-mayor-01').attaches).toBeUndefined()
+    expect(gasCityCommand('reset', 'mayor', 'gc-mayor-01').attaches).toBeUndefined()
+    expect(gasCityCommand('handoff', 'mayor', 'gc-mayor-01').attaches).toBeUndefined()
   })
 
   it('leaves one-shot commands unkeyed so each gets a fresh shell', () => {

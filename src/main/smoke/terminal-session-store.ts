@@ -27,6 +27,9 @@ export function createSmokeTerminalSessionStore(defaultRoot: HostPath) {
         listeners.delete(listener)
       }
     },
+    // The smoke store only holds recovery records, which carry no attachment,
+    // so nothing in a smoke run is attached to a foreign session.
+    attachedTerminals: () => [],
     recordRecoveryDecision: () => Promise.resolve(),
     recordSpawn: () => Promise.resolve(),
     recordReplacement: () => Promise.resolve(),

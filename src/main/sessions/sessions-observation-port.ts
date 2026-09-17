@@ -29,6 +29,7 @@ import type { TerminalSessionObservationSource } from '../terminal/session-regis
 import type { HostCitySessions } from '../gascity/gascity-city-sessions'
 import {
   projectCitySessions,
+  type SessionsCityAttachedTerminal,
   type SessionsCityWorkspaceTarget,
 } from './sessions-city-projection'
 import {
@@ -467,6 +468,16 @@ export function assembleSessionsObservation({
     })
   }
 
+  // Terminals hvir launched to attach to a session someone else started. The
+  // fact was recorded by the launch that performed the attach, so the join is
+  // exact and survives the renderer that asked for it.
+  const attached: SessionsCityAttachedTerminal[] = []
+  for (const stored of sessions) {
+    const attachment = stored.attachedExternalSession
+    const session = attachment ? observed.get(stored.id) : undefined
+    if (attachment && session) attached.push({ attachment, session })
+  }
+
   // hvir's own sessions first: a row hvir can act on is never displaced by one
   // it can only describe.
   const city = projectCitySessions({
@@ -475,7 +486,11 @@ export function assembleSessionsObservation({
     identities,
     providers: providerById,
     capacity: Math.max(0, MAX_SESSIONS_PROJECTION_ROWS - observed.size),
+    attached,
   })
+  // An attached terminal keeps its row and its handle; what the row presents
+  // becomes the session it attached to.
+  for (const [handle, session] of city.merged) observed.set(handle, session)
   const allProviders =
     city.provider === undefined
       ? projectedProviders

@@ -303,13 +303,18 @@ export function TerminalWorkspace({
   }, [menuOpen])
 
   // Open a bare shell running an attach command (e.g. `gc session attach
-  // <worker>`) when the Beads panel requests one. A keyed request identifies a
-  // crew identity: if the terminal launched for it earlier is still alive, the
-  // click focuses that one rather than piling up another shell.
+  // <worker>`) when the Beads panel requests one. A request that names its
+  // session is served from what main recorded at the attaching launch, so the
+  // click focuses the terminal already showing that session instead of piling
+  // up another shell.
   useTerminalAttachRequest(attachRequest, {
     currentModel: () => modelRef.current,
     focusSession: commands.focus,
     launch: commands.launchAttach,
+    resolveAttached: (attach) =>
+      window.hvir
+        .invoke('terminal:resolve-attached', { root: workspaceRoot, attach })
+        .then((response) => response.ids),
     canLaunch: available && defaultProvider !== undefined && defaultProfile !== undefined,
     ...(onAttachAvailability === undefined
       ? {}

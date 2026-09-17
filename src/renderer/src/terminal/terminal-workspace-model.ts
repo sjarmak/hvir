@@ -8,6 +8,7 @@ import {
   type HarnessTelemetry,
   type HostPath,
   type TerminalIdentityStatus,
+  type ExternalSessionAttachTarget,
 } from '../../../shared'
 import type { TerminalAttention } from './terminal-attention'
 
@@ -26,6 +27,13 @@ export interface TerminalAttachRequest {
    * commands, which always want a fresh shell.
    */
   readonly key?: string
+  /**
+   * The session this request attaches to, named in the source's own namespace.
+   * Present only when the requesting surface knew the session exactly, which is
+   * what lets a terminal already showing it be recognized after a reload; the
+   * key above is the same-lifetime fallback for identities hvir cannot name.
+   */
+  readonly attaches?: ExternalSessionAttachTarget
   /**
    * Told whether the request was served: `true` when a shell launched or the
    * keyed terminal was focused, `false` when the workspace could not launch.
@@ -60,6 +68,12 @@ export interface TerminalSession {
   readonly resumeOnStart: boolean
   /** Command auto-typed into the shell on first launch (worker-attach terminals). */
   readonly initialInput?: string
+  /**
+   * The gc session this terminal attaches to, when hvir is performing the
+   * attach and the requesting surface named the session exactly. Recorded by
+   * main at spawn, so the row it joins survives a reload (ADR-046).
+   */
+  readonly externalAttach?: ExternalSessionAttachTarget
   /** Restored metadata exists, but no terminal engine or PTY has been allocated. */
   readonly dormant?: boolean
   /** Bulk starts alone use the main-owned per-host admission queue. */
@@ -236,6 +250,7 @@ export function createTerminalSession(
   pane: TerminalSplitPane,
   capabilities: HarnessProviderCapabilities = provider.capabilities,
   initialInput?: string,
+  externalAttach?: ExternalSessionAttachTarget,
 ): TerminalSession {
   const fallbackTitle = `${provider.displayName} · ${basenameHostPath(cwd)}`
   return {
@@ -249,6 +264,7 @@ export function createTerminalSession(
     status: 'Starting…',
     resumeOnStart: false,
     ...(initialInput ? { initialInput } : {}),
+    ...(externalAttach ? { externalAttach } : {}),
     dormant: false,
     startMode: 'interactive',
     pane,
@@ -261,16 +277,25 @@ export type TerminalAttachOutcome =
   | { readonly type: 'launch' }
 
 /**
- * Focus an existing terminal or open one — never both. A keyed request names a
- * crew identity; if the terminal this workspace launched for that identity is
- * still alive, the request focuses it. Requests without a key, and keys whose
+ * Focus an existing terminal or open one — never both.
+ *
+ * `attachedIds` are the terminals main has recorded as attached to this exact
+ * session, which is knowledge from the launch that performed the attach and
+ * therefore outlives this renderer. It decides first. Failing that, a keyed
+ * request names a crew identity, and the terminal this workspace launched for
+ * that key in this lifetime is focused. Requests with neither, and keys whose
  * terminal has since closed, launch a fresh shell.
  */
 export function resolveTerminalAttach(
   request: TerminalAttachRequest,
   launchedByKey: ReadonlyMap<string, string>,
   model: TerminalWorkspaceModel,
+  attachedIds: readonly string[] = [],
 ): TerminalAttachOutcome {
+  const attached = attachedIds.find((id) =>
+    model.sessions.some((session) => session.id === id),
+  )
+  if (attached !== undefined) return { type: 'focus', id: attached }
   const existing = request.key === undefined ? undefined : launchedByKey.get(request.key)
   if (existing !== undefined && model.sessions.some((session) => session.id === existing)) {
     return { type: 'focus', id: existing }

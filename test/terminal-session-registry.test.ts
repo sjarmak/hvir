@@ -890,6 +890,153 @@ describe('TerminalSessionRegistry', () => {
     ).toBe(true)
   })
 
+  it('keeps the attached gas city session across a restart and drops it on close', async () => {
+    const root = localPath('/tmp/project')
+    const attach = { sourceId: 'gas-city', key: 'gc-mem-worker-1' } as const
+    const other = { sourceId: 'gas-city', key: 'gc-mem-worker-2' } as const
+    await registry.recordSpawn({
+      id: SESSION_ID,
+      providerId: SHELL_PROVIDER_ID,
+      profileId: SHELL_PROFILE_ID,
+      launchRevision: 1,
+      externalAttach: attach,
+      workspaceRoot: root,
+      cwd: root,
+      title: 'Shell · project',
+      position: 0,
+      active: true,
+    })
+
+    expect(registry.attachedTerminals(root, attach)).toEqual([SESSION_ID])
+    expect(registry.attachedTerminals(root, other)).toEqual([])
+    // Another workspace's terminal is never offered for this workspace's attach.
+    expect(registry.attachedTerminals(localPath('/tmp/other'), attach)).toEqual([])
+    // The join is main's alone: neither the gc identifier nor its digest may
+    // travel with a recovery record.
+    expect(JSON.stringify(registry.list(root))).not.toContain('gc-mem-worker-1')
+    expect(registry.list(root)[0]).not.toHaveProperty('attachedExternalSession')
+    await registry.flush()
+
+    const restarted = await TerminalSessionRegistry.load(host, file)
+    expect(restarted.attachedTerminals(root, attach)).toEqual([SESSION_ID])
+    // A recovered terminal restarts without naming its attach again.
+    await restarted.recordSpawn({
+      id: SESSION_ID,
+      providerId: SHELL_PROVIDER_ID,
+      profileId: SHELL_PROFILE_ID,
+      launchRevision: 1,
+      workspaceRoot: root,
+      cwd: root,
+      title: 'Shell · project',
+      position: 0,
+      active: true,
+    })
+    expect(restarted.attachedTerminals(root, attach)).toEqual([SESSION_ID])
+
+    await restarted.forget(root, SESSION_ID)
+    expect(restarted.attachedTerminals(root, attach)).toEqual([])
+    await restarted.flush()
+  })
+
+  it('never persists the gas city identifier behind an attached terminal', async () => {
+    const root = localPath('/tmp/project')
+    await registry.recordSpawn({
+      id: SESSION_ID,
+      providerId: SHELL_PROVIDER_ID,
+      profileId: SHELL_PROFILE_ID,
+      launchRevision: 1,
+      externalAttach: { sourceId: 'gas-city', key: 'gc-mem-worker-1' },
+      workspaceRoot: root,
+      cwd: root,
+      title: 'Shell · project',
+      position: 0,
+      active: true,
+    })
+    await registry.flush()
+
+    const stored = await host.readTextFile(file)
+    expect(stored).not.toContain('gc-mem-worker-1')
+    expect(stored).toContain('"attachedExternalSession"')
+    expect(JSON.parse(stored)).toEqual(
+      expect.objectContaining({
+        sessions: [
+          expect.objectContaining({
+            attachedExternalSession: {
+              sourceId: 'gas-city',
+              sessionDigest: expect.stringMatching(/^[a-f0-9]{24}$/) as unknown as string,
+            },
+          }),
+        ],
+      }),
+    )
+  })
+
+  it('loads sessions written before the attach field as unattached', async () => {
+    const root = localPath('/tmp/project')
+    await host.writeFile(
+      file,
+      JSON.stringify({
+        version: 6,
+        sessions: [
+          {
+            id: SESSION_ID,
+            providerId: 'plain-shell',
+            profileId: 'plain-shell-default',
+            launchRevision: 1,
+            recoverySkipCount: 0,
+            hostId: root.hostId,
+            workspaceRoot: root,
+            cwd: root,
+            title: 'Shell · project',
+            position: 0,
+            active: true,
+            updatedAt: 42,
+          },
+        ],
+      }),
+    )
+
+    const migrated = await TerminalSessionRegistry.load(host, file)
+    expect(migrated.list(root)).toEqual([
+      expect.objectContaining({ id: SESSION_ID, title: 'Shell · project' }),
+    ])
+    expect(
+      migrated.attachedTerminals(root, { sourceId: 'gas-city', key: 'gc-mem-worker-1' }),
+    ).toEqual([])
+    await migrated.flush()
+  })
+
+  it('drops a stored record whose attachment is not a digest this build wrote', async () => {
+    const root = localPath('/tmp/project')
+    await host.writeFile(
+      file,
+      JSON.stringify({
+        version: 7,
+        sessions: [
+          {
+            id: SESSION_ID,
+            providerId: 'plain-shell',
+            profileId: 'plain-shell-default',
+            launchRevision: 1,
+            recoverySkipCount: 0,
+            attachedExternalSession: { sourceId: 'gas-city', key: 'gc-mem-worker-1' },
+            hostId: root.hostId,
+            workspaceRoot: root,
+            cwd: root,
+            title: 'Shell · project',
+            position: 0,
+            active: true,
+            updatedAt: 42,
+          },
+        ],
+      }),
+    )
+
+    const loaded = await TerminalSessionRegistry.load(host, file)
+    expect(loaded.list(root)).toEqual([])
+    await loaded.flush()
+  })
+
   it('migrates v1 adapter records to current profile records without changing identity', async () => {
     const root = localPath('/tmp/project')
     await host.writeFile(
@@ -925,7 +1072,7 @@ describe('TerminalSessionRegistry', () => {
     ])
     expect(JSON.parse(await host.readTextFile(file))).toEqual(
       expect.objectContaining({
-        version: 6,
+        version: 7,
         sessions: [
           expect.objectContaining({
             providerId: 'codex',
@@ -977,7 +1124,7 @@ describe('TerminalSessionRegistry', () => {
     )
     expect(JSON.parse(await host.readTextFile(file))).toEqual(
       expect.objectContaining({
-        version: 6,
+        version: 7,
         sessions: [
           expect.objectContaining({
             id: SESSION_ID,
@@ -1031,7 +1178,7 @@ describe('TerminalSessionRegistry', () => {
       expect(migrated.list(root)[0]).toEqual(expect.objectContaining(expected))
       expect(JSON.parse(await host.readTextFile(file))).toEqual(
         expect.objectContaining({
-          version: 6,
+          version: 7,
           sessions: [expect.objectContaining(expected)],
         }),
       )

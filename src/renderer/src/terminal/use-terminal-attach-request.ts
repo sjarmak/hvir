@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 
+import type { ExternalSessionAttachTarget } from '../../../shared'
 import {
   resolveTerminalAttach,
   type TerminalAttachRequest,
@@ -12,9 +13,18 @@ export interface TerminalAttachPorts {
   readonly focusSession: (id: string) => void
   /**
    * Open a shell running `command`, returning its session id — or `undefined`
-   * when the workspace is not ready to launch one.
+   * when the workspace is not ready to launch one. `externalAttach` records
+   * what the shell is attaching to, so the terminal can be recognized as that
+   * session's for the rest of its life, not just this renderer's.
    */
-  readonly launch: (command: string) => string | undefined
+  readonly launch: (
+    command: string,
+    externalAttach?: ExternalSessionAttachTarget,
+  ) => string | undefined
+  /** Which of this workspace's terminals main has recorded against `attach`. */
+  readonly resolveAttached: (
+    attach: ExternalSessionAttachTarget,
+  ) => Promise<readonly string[]>
   /** Whether `launch` would currently open a shell (a default harness exists). */
   readonly canLaunch: boolean
   /** Told when `canLaunch` changes, so the requester can disable its actions. */
@@ -25,10 +35,12 @@ export interface TerminalAttachPorts {
  * Serve one attach request per distinct nonce: a re-render with the same
  * request never re-fires, but a fresh nonce (even for the same command) does.
  *
- * A keyed request names a crew identity, and the hook remembers the terminal it
- * opened for that key — so a second click focuses the live session instead of
- * piling up another shell. Unkeyed requests are one-shot commands and always get
- * a fresh terminal.
+ * A request that names its session exactly is served from what main recorded at
+ * the attaching launch, so a repeat click focuses the terminal already showing
+ * that session even after a reload or a restart. A keyed request names a crew
+ * identity instead, and the hook remembers the terminal it opened for that key
+ * within this renderer's lifetime. Requests with neither are one-shot commands
+ * and always get a fresh terminal.
  */
 export function useTerminalAttachRequest(
   attachRequest: TerminalAttachRequest | undefined,
@@ -42,22 +54,39 @@ export function useTerminalAttachRequest(
   useEffect(() => {
     if (!attachRequest || lastNonce.current === attachRequest.nonce) return
     lastNonce.current = attachRequest.nonce
-    const { currentModel, focusSession, launch } = portsRef.current
-    const outcome = resolveTerminalAttach(
-      attachRequest,
-      launchedByKey.current,
-      currentModel(),
-    )
-    if (outcome.type === 'focus') {
-      focusSession(outcome.id)
-      attachRequest.onSettled?.(true)
-      return
+    const request = attachRequest
+    let cancelled = false
+    const serve = async (): Promise<void> => {
+      const { currentModel, focusSession, launch, resolveAttached } = portsRef.current
+      // A failed lookup means main could not say what is attached, not that
+      // nothing is: fall back to this renderer's own memory, which is what
+      // served the request before main recorded the attach at all. The cost of
+      // being wrong here is one extra terminal, never a wrong join.
+      const attachedIds = request.attaches
+        ? await resolveAttached(request.attaches).catch(() => [])
+        : []
+      if (cancelled) return
+      const outcome = resolveTerminalAttach(
+        request,
+        launchedByKey.current,
+        currentModel(),
+        attachedIds,
+      )
+      if (outcome.type === 'focus') {
+        focusSession(outcome.id)
+        request.onSettled?.(true)
+        return
+      }
+      const launched = launch(request.command, request.attaches)
+      if (launched !== undefined && request.key !== undefined) {
+        launchedByKey.current.set(request.key, launched)
+      }
+      request.onSettled?.(launched !== undefined)
     }
-    const launched = launch(attachRequest.command)
-    if (launched !== undefined && attachRequest.key !== undefined) {
-      launchedByKey.current.set(attachRequest.key, launched)
+    void serve()
+    return () => {
+      cancelled = true
     }
-    attachRequest.onSettled?.(launched !== undefined)
     // Ports are read through a ref so only a fresh nonce re-runs this effect.
   }, [attachRequest])
 

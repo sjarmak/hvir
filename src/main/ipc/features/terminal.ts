@@ -1,4 +1,4 @@
-import { hostPathEquals } from '../../../shared'
+import { hostPathEquals, isExternalSessionAttachTarget } from '../../../shared'
 import { resolveHarnessLaunch } from '../../harness/harness-launch'
 import { harnessProvider, selectHarnessLaunch } from '../../harness/harness-provider'
 import {
@@ -33,6 +33,18 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
   ipc.handle('terminal:recovery', (req) => {
     const root = ipc.authority.workspaceRoot(req.root)
     return deps.terminalSessions.list(root)
+  })
+
+  // Which of this workspace's terminals already attach to a named foreign
+  // session. The renderer asks main because the answer outlives the renderer
+  // that requested the attach, and main answers with terminal ids only: the
+  // foreign identifier goes in, nothing about it comes back out.
+  ipc.handle('terminal:resolve-attached', (req) => {
+    const root = ipc.authority.workspaceRoot(req.root)
+    if (!isExternalSessionAttachTarget(req.attach)) {
+      throw new Error('Invalid external attach target')
+    }
+    return { ids: deps.terminalSessions.attachedTerminals(root, req.attach) }
   })
 
   ipc.handle('terminal:record-recovery-decision', async (req, context) => {
@@ -168,7 +180,9 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
       (req.admission !== undefined &&
         req.admission !== 'interactive' &&
         req.admission !== 'bulk') ||
-      (req.resume !== undefined && typeof req.resume !== 'boolean')
+      (req.resume !== undefined && typeof req.resume !== 'boolean') ||
+      (req.externalAttach !== undefined &&
+        !isExternalSessionAttachTarget(req.externalAttach))
     ) {
       throw new Error('Invalid PTY session metadata')
     }
@@ -394,6 +408,7 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
       launchRevision: profile.launchRevision,
       artifactIdentity: resolved.artifactIdentity,
       harnessSessionId: managed.harnessSessionId,
+      externalAttach: req.externalAttach,
       workspaceRoot: root,
       cwd,
       title: req.title,

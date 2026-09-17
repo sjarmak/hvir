@@ -23,6 +23,7 @@ import type { BeadActionRequest } from './bead-commands'
 import { BeadCreateForm } from './bead-create-form'
 import { createVisibilityRefresh } from './beads-refresh'
 import { CrewSection } from './CrewSection'
+import { memberForIdentity } from './crew-model'
 import type { GasCityAction } from './gascity-commands'
 import { useAnalyticsConfig } from './use-analytics-config'
 import { useGasCityCrew } from './use-gascity-crew'
@@ -60,7 +61,11 @@ interface BeadsPanelProps {
   readonly connected: boolean
   readonly hidden?: boolean
   /** Run a gc action (attach/peek/reset/handoff) against a crew identity. */
-  readonly onCrewAction?: (action: GasCityAction, target: string) => void
+  readonly onCrewAction?: (
+    action: GasCityAction,
+    target: string,
+    sessionId?: string,
+  ) => void
   /**
    * Type a bd write action (claim/close/create) into the workspace terminal;
    * resolves true once the terminal reports the command was typed.
@@ -440,6 +445,17 @@ export function BeadsPanel({
     )
   }
 
+  // A bead names its owner, not a session. Resolving that name against the
+  // crew's identity keys is exact when a single member claims it, and that is
+  // what lets the terminal this opens be recognized later as the one showing
+  // the session. A contested or unknown name still attaches; it just carries no
+  // join, because guessing one from the label would be worse than none.
+  function attachWorker(worker: string): void {
+    if (!onCrewAction) return
+    const members = crew.response?.available === true ? crew.response.members : []
+    onCrewAction('attach', worker, memberForIdentity(members, worker)?.session?.id)
+  }
+
   function renderCard(card: BeadCard): ReactElement {
     const { issue } = card
     const open = expanded.has(issue.id)
@@ -461,7 +477,7 @@ export function BeadsPanel({
         </button>
         {beadSignals(
           card,
-          onCrewAction && ((worker) => onCrewAction('attach', worker)),
+          onCrewAction && ((worker) => attachWorker(worker)),
           traceScope,
         )}
         {open
