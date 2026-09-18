@@ -26,9 +26,10 @@ to iOS.
   tailnet too, because every local process can reach loopback.
 - Resize a terminal from the phone. The phone renders the desktop's columns and rows and
   scales them to fit; only the desktop pane changes the grid.
-- Clear attention from a phone action. Viewing a mirror, typing into it, and answering a
-  prompt from the phone all leave attention where it is; focusing the terminal on the desktop
-  is still the only clearing rule.
+- Clear Ready or Bell from a phone action. Viewing a mirror, typing into it, and answering an
+  external session's pending interaction from the phone all leave those where they are;
+  focusing the terminal on the desktop is still the rule that clears them. The one exception
+  is a prompt entry, which a key typed into the mirror clears (section 9).
 - Compose text into a terminal. A key sent from the phone is the exact bytes of that key,
   with nothing appended, and the free-text field sends what you typed, plus Enter only when
   you press the keyboard's return.
@@ -147,9 +148,11 @@ Back in Settings > Companion:
 - **Push token**: the ntfy token from section 3.
 
 hvir posts one plain-text body per Push, `<project> / <session title>`, with the kind of
-signal as the notification title and the first line of the pending prompt (at most 120
-characters) when there is one. It presents the token as a bearer credential, makes one attempt
-with a 10 second timeout, and never logs the token.
+signal (`ready`, `bell`, or `prompt`) as the notification title and one more line when there
+is one: for an external session, the first line of its pending prompt; for a terminal prompt,
+the message the terminal's notification carried (section 9). Either line is at most 120
+characters. hvir presents the token as a bearer credential, makes one attempt with a 10 second
+timeout, and never logs the token.
 
 The token is stored encrypted through Electron's safeStorage, which uses the OS keychain. If
 the keychain is unavailable, hvir refuses to store the token, keeps the URL, and says so in
@@ -175,7 +178,9 @@ at once. Pair again by issuing a new code.
   resolves it, exactly as answering on the desktop does.
 - Push fires once per session entering the actionable set while Away. A session leaving the
   set sends nothing, since a delivered notification cannot be retracted. A terminal that goes
-  Ready again after a new submission produces a new Push.
+  Ready again after a new submission produces a new Push. A terminal that is already in the
+  set as Ready and then raises a prompt produces no second Push; its row and badge change to
+  the prompt, but the set already held that session.
 - A row whose fact went stale (for example, the observing stream to its supervisor was lost)
   is shown as unconfirmed with the reason and is never pushed
   ([ADR-048](../adr/ADR-048-exact-external-pending-interaction-attention.md)).
@@ -193,8 +198,10 @@ at once. Pair again by issuing a new code.
 A row mirrors when the desktop would offer Interact for it: the session is live, its host is
 connected, and hvir owns the PTY behind it. That covers a shell running Claude Code or Codex,
 a `gc session attach` terminal, and a terminal on an SSH host alike. Select such a row and the
-page opens a terminal view in place of the transcript, rendered on the phone by the same
-ghostty-web emulator the desktop uses.
+page becomes a fixed column, rendered on the phone by the same ghostty-web emulator the
+desktop uses: one header line with **Sessions**, the row's title, and the view controls; the
+terminal taking every pixel that remains; and one control bar at the bottom (section 8).
+While the row carries a prompt, the header shows its message under the title (section 9).
 
 What the phone shows:
 
@@ -204,12 +211,22 @@ What the phone shows:
   partially overwritten line can look wrong; a full-screen program such as Claude Code
   redraws on its next output, and a shell prompt is right after its next Enter. The Claude
   Code permission prompt that is on the desktop's screen is on the phone's.
-- The desktop's geometry. The grid is exactly the desktop terminal's columns and rows, scaled
-  by a CSS transform to fit the phone's width, so a 200-column desktop terminal reads small on
-  a phone. Narrow the desktop pane to make the phone readable; every resize on the desktop
+- The desktop's geometry. The grid is exactly the desktop terminal's columns and rows; only a
+  CSS transform scales it, and the phone never resizes the PTY. Every resize on the desktop
   reaches the phone as a geometry frame and the emulator there follows it.
-- A **Transcript** button on rows that also take answers (an external session attached inside
-  an hvir terminal), switching between the mirror and the ADR-049 transcript view.
+- Two zooms, toggled by the header button, which names the zoom a tap switches to. **Fill
+  height**, the default, scales the rows to the height of the terminal area and lets you pan
+  sideways across the columns with a finger. **Fit width** scales the whole grid into the
+  phone's width, so a 200-column desktop terminal reads small; narrow the desktop pane to
+  make it readable. The choice is remembered in the phone browser's storage for the site.
+- Scrollback under your finger. A touch drag up or down over the terminal scrolls the
+  emulator's own scrollback by rows, in either zoom, and the page beneath never moves. In a
+  full-screen program (Claude Code, vim, less) there is no scrollback to move, so the drag
+  sends Page Up and Page Down to the program instead, and only while typing is armed
+  (section 8); a disarmed mirror sends nothing. A tap still reaches the terminal.
+- A **Transcript** button in the header on rows that also take answers (an external session
+  attached inside an hvir terminal), switching between the mirror and the ADR-049 transcript
+  view.
 
 The mirror survives a reload of the desktop window, because it is bound to the PTY instance
 and not to the renderer document. It ends, with one sentence on the page, when the terminal
@@ -232,17 +249,19 @@ Typing is off until you turn it on in three places, and each is independent of t
 1. In Settings > Companion, turn **Allow typing from the Companion** on and choose **Apply**.
    The status line under the section says `typing allowed` or `typing off`. The setting is
    stored beside the port and the Push sink, and it defaults to off on every install.
-2. On the phone, with a mirror open, choose **Arm typing**. The button reads **Disarm** while
-   armed, the on-screen keys and the text field come alive, and keys typed on the emulator
-   itself are accepted. Arming is per mirror: selecting another row, a mirror ending, hiding
-   the page (switching apps, locking the phone, backgrounding the tab), and two minutes with
-   no key sent all disarm it. Every key you send restarts the two minutes.
-3. Send a key. The row of on-screen keys carries Esc, Tab, Ctrl-C, the four arrows, and
-   Enter. Each sends the bytes of that key and nothing else; the arrows send the CSI form
-   (`ESC [ A` and so on), which is what a program reads in the terminal's default cursor
-   mode; a program that switched the terminal to application cursor mode reads the same
-   bytes differently, and the page does not track that mode. The text field's **Send** posts
-   the text exactly as typed, and the phone
+2. On the phone, with a mirror open, choose **Arm typing** in the control bar under the
+   terminal. While disarmed the bar holds that one button. While armed the button reads
+   **Disarm**, a strip of on-screen keys appears beside it, a text field with **Send**
+   appears under it, and keys typed on the emulator itself are accepted. Arming is per
+   mirror: selecting another row, a mirror ending, hiding the page (switching apps, locking
+   the phone, backgrounding the tab), and two minutes with no key sent all disarm it, and the
+   keys and the text field go away with it. Every key you send restarts the two minutes.
+3. Send a key. The strip carries Esc, Tab, Ctrl-C, the four arrows, and Enter, and scrolls
+   sideways when the phone is too narrow for all of them. Each sends the bytes of that key
+   and nothing else; the arrows send the CSI form (`ESC [ A` and so on), which is what a
+   program reads in the terminal's default cursor mode; a program that switched the terminal
+   to application cursor mode reads the same bytes differently, and the page does not track
+   that mode. The text field's **Send** posts the text exactly as typed, and the phone
    keyboard's return posts it followed by Enter. One request carries at most 4096 characters.
 
 A keystroke reaches the exact PTY instance the mirror was opened on. When the terminal has
@@ -259,6 +278,80 @@ arm: an Enter sent while the desktop window is reloading its document. The keyst
 reaches the terminal, but the notice goes to the window generation that owned the PTY at that
 instant and a swapping renderer drops it, so that one submission produces no Ready and no
 Push. The next submission, from either end, arms detection again.
+
+Any key that reaches the terminal from the phone, Enter or not, also clears a prompt entry on
+that terminal (section 9). Ready and Bell are not touched by phone input.
+
+## 9. Prompt attention from the harness
+
+A harness that is blocked on a permission prompt and one that has finished its turn both go
+quiet, so both show as Ready. A harness can say which it is by writing a terminal notification
+(OSC 9 or OSC 777) into the PTY, and hvir shows that as a **prompt** with the message the
+notification carried ([ADR-051](../adr/ADR-051-terminal-notification-prompt-attention.md)).
+The message is the harness's own words, cut to its first line and at most 120 characters. hvir
+never reads the screen for this; the notification sequence is the only source of a prompt.
+
+### Make Claude Code emit it
+
+hvir does not configure the harness. Set Claude Code's notification channel to the iTerm2
+style, which is the OSC 9 form, in `~/.claude/settings.json`:
+
+```json
+{ "preferredNotifChannel": "iterm2" }
+```
+
+or on one command line:
+
+```sh
+claude --settings '{"preferredNotifChannel":"iterm2"}'
+```
+
+Two things to know about when the sequence arrives:
+
+- Claude Code waits a few seconds after a permission prompt appears before it notifies, about
+  six seconds in our probe of Claude Code 2.1.277 under `TERM_PROGRAM=hvir`. The terminal is
+  silent meanwhile, so the prompt shows on the phone a few seconds after it shows on the
+  desktop's screen.
+- Claude Code 2.1.27x defaults to its auto permission mode, in which many commands never
+  prompt at all, so a session in that mode emits no permission notification for them. Start it
+  with `--permission-mode default` to see permission prompts.
+
+Claude Code also notifies when it finishes a turn (`Claude is waiting for your input`). That
+arrives as a prompt too, so a finished turn can show first as Ready and then, when the
+notification lands, as a prompt with that message. A harness that emits no notification keeps
+the Ready behavior exactly as before.
+
+### What each surface shows
+
+A prompt outranks Ready and Bell on the same terminal, and a later notification replaces the
+message. The entry reaches every surface the terminal's attention already reaches:
+
+- The desktop terminal rail shows a `prompt` badge on the row; hovering it, or a screen
+  reader, gives `Prompt: <message>`. The collapsed rail shows a `P` marker on the row and a
+  `P <count>` rollup ahead of the Ready and Bell counts.
+- The desktop Sessions view shows `Prompt: <message>` as the row's Attention fact.
+- The Companion list shows a `prompt` badge on the row and the message on its own line under
+  the row's title.
+- The Companion mirror shows the message in the header, under the row's title, for as long as
+  the row carries it.
+- Push, while Away, sends the usual `<project> / <session title>` body with `prompt` as the
+  notification title and the message as the second line (section 4).
+
+### What clears it
+
+- Focusing the terminal on the desktop, as for Ready and Bell.
+- A key that reaches the terminal from the Companion mirror. Typing into a mirrored terminal
+  is the person answering what the notification asked, so any key sent from the phone clears
+  the prompt entry on that terminal and nothing else: Ready and Bell on that terminal, and
+  attention on every other terminal, are unchanged by phone input. A stray key clears the
+  entry too; the prompt is still on the mirrored screen, and the harness does not notify
+  again for it.
+- Nothing else. Output resuming does not clear a prompt, because a repaint and an answer
+  produce the same bytes. A second prompt in the same session shows again without a desktop
+  focus in between.
+
+The message is not persisted. A prompt that is restored with a session after an hvir restart
+shows as a prompt without its message until the harness notifies again.
 
 ## Troubleshooting
 
@@ -277,6 +370,10 @@ Push. The next submission, from either end, arms detection again.
 | Every key answers `Typing from the Companion is off in Settings` | **Allow typing from the Companion** is off, or was turned off after pairing. Turn it on and choose **Apply**, then arm again. |
 | The page says `The phone fell behind; select the row again.` | Output outran the phone's connection by more than 4 MiB. Select the row again; the mirror restarts from the current tail. |
 | An Enter from the phone produced no Ready and no Push | The desktop window was reloading when the key landed, so the renderer never recorded the input, or a desktop window was focused. The next submission arms Ready detection again. |
+| A Claude Code permission prompt shows as Ready, or not at all, never as a prompt | The notification channel is not set: put `"preferredNotifChannel": "iterm2"` in `~/.claude/settings.json` or pass `--settings '{"preferredNotifChannel":"iterm2"}'`. If it is set and still nothing arrives, the session is in auto permission mode and the command never prompted; start Claude Code with `--permission-mode default`. Wait the few seconds Claude Code holds before notifying. |
+| A prompt badge shows but no Push arrived for it | The terminal was already in the actionable set as Ready when the prompt arrived; Push fires only when a session enters the set. Or a desktop window was focused. |
+| A touch drag over a full-screen program (vim, less, Claude Code) moves nothing | Page keys are terminal input and pass the typing gate; choose **Arm typing**, then drag. Wheel input from a trackpad follows the same rule. |
+| The mirror is a thin strip of tiny text | The zoom is **Fit width** on a wide desktop grid. Tap the header button to switch to **Fill height** and pan sideways, or narrow the desktop pane. |
 
 ## Developer note
 
