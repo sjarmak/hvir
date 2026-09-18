@@ -1,9 +1,11 @@
+import { join } from 'node:path'
 import { app, BrowserWindow, dialog, shell } from 'electron'
 import { registerIpcHandlers } from './ipc'
 import { createProjectCommands } from './ipc/project-commands'
 import { GitMutationCoordinator } from './git/mutation-coordinator'
 import { GitMutationAuthorization } from './git/mutation-authorization'
 import { GitWorkerHostRouter } from './git/worker-host-router'
+import { gitDiscoveryWorker, gitMutationWorker } from './git/worker-ports'
 import { HtmlPreviewProtocol } from './html-preview-protocol'
 import { createWorkerClient, workerPath, type WorkerClient } from './worker-host'
 import { electronTrash, ProjectHostCatalog, RendererSshPrompter } from './project-host'
@@ -14,7 +16,8 @@ import { ProjectCoordinator } from './project-coordinator'
 import { PtySupervisor } from './pty/pty-supervisor'
 import { installApplicationAttention } from './attention/attention-owner'
 import { ownBeadsService } from './beads/beads-owner'
-import { installApplicationCompanionSettings } from './companion/companion-owner'
+import { createCompanionAssetReader } from './companion/companion-assets'
+import { installApplicationCompanion } from './companion/companion-owner'
 import { ownGasCityRuntime, ownGasCityService } from './gascity/gascity-owner'
 import { HarnessProfileStore } from './harness/harness-profile-store'
 import { HarnessProbeManager } from './harness/harness-probe'
@@ -40,17 +43,7 @@ import type { DocumentReviewRuntime } from './document-review'
 import { installApplicationDocumentReviewRuntime } from './document-review/document-review-application'
 import { installApplicationSessionsObservation } from './sessions/sessions-observation-application'
 import { applicationRuntime, applicationUserDataPath } from './application-runtime'
-import {
-  GIT_WORKSPACE_ACTIVITY_TYPE,
-  GIT_FETCH_TYPE,
-  GIT_PRUNE_WORKTREES_TYPE,
-  GIT_PULL_TYPE,
-  GIT_SWITCH_BRANCH_TYPE,
-  GIT_WORKTREES_TYPE,
-  localPath,
-  type EchoWorkerProtocol,
-  type GitWorkerProtocol,
-} from '../shared'
+import { localPath, type EchoWorkerProtocol, type GitWorkerProtocol } from '../shared'
 HtmlPreviewProtocol.registerScheme()
 function createWorkbenchEntry(): void {
   const runtime = new WorkbenchRuntime({
@@ -257,12 +250,6 @@ function createWorkbenchEntry(): void {
       gasCityAttention: gasCity.attention,
       setBadgeCount: (count) => app.setBadgeCount(count),
     })
-    const companion = await installApplicationCompanionSettings(
-      runtime,
-      hostCatalog.local,
-      localPath(applicationUserDataPath('companion.json')),
-      (view) => rendererEvents.toWindows('companion:status-changed', view),
-    )
     const sessionsPorts = installApplicationSessionsObservation(
       runtime,
       projectRegistry,
@@ -274,6 +261,26 @@ function createWorkbenchEntry(): void {
       gasCity.sessionsSource,
       gasCity.streams,
     )
+    const companion = await installApplicationCompanion(runtime, {
+      store: {
+        host: hostCatalog.local,
+        file: localPath(applicationUserDataPath('companion.json')),
+      },
+      assets: createCompanionAssetReader(
+        hostCatalog.local,
+        join(__dirname, '../renderer'),
+      ),
+      sessions: { ...sessionsPorts, sinks: sessionsPorts.companionSinks },
+      actionable: attention.set,
+      describe: {
+        terminals: terminalSessionRegistry,
+        projects: projectRegistry,
+        supervisor: gasCity.supervisor,
+        external: gasCity.attention,
+      },
+      publish: (view) => rendererEvents.toWindows('companion:status-changed', view),
+      onDiagnostic: (diagnostic) => console.warn('[companion]', diagnostic),
+    })
     documentReview = await installApplicationDocumentReviewRuntime(
       runtime,
       hostCatalog.local,
@@ -304,14 +311,7 @@ function createWorkbenchEntry(): void {
       'workspace coordinator',
       new WorkspaceCoordinator({
         registry: projectRegistry,
-        discovery: {
-          discover: (root) => gitWorker!.request(GIT_WORKTREES_TYPE, { root }),
-          workspaceActivity: (root, relatedWorktreeRoots) =>
-            gitWorker!.request(GIT_WORKSPACE_ACTIVITY_TYPE, {
-              root,
-              relatedWorktreeRoots,
-            }),
-        },
+        discovery: gitDiscoveryWorker(gitWorker),
         removal,
         emitWatch: (event) => emit('project:watch', event),
         createWatch: (target, callbacks) => new ProjectWatchController(target, callbacks),
@@ -332,18 +332,7 @@ function createWorkbenchEntry(): void {
     })
     const gitMutations = new GitMutationCoordinator({
       registry: projectRegistry,
-      worker: {
-        pruneWorktrees: (root) => gitWorker!.request(GIT_PRUNE_WORKTREES_TYPE, { root }),
-        switchBranch: (root, branch, relatedWorktreeRoots) =>
-          gitWorker!.request(GIT_SWITCH_BRANCH_TYPE, {
-            root,
-            branch,
-            relatedWorktreeRoots,
-          }),
-        fetch: (root) => gitWorker!.request(GIT_FETCH_TYPE, { root }),
-        pull: (root, relatedWorktreeRoots) =>
-          gitWorker!.request(GIT_PULL_TYPE, { root, relatedWorktreeRoots }),
-      },
+      worker: gitMutationWorker(gitWorker),
       workspaces: workspaceCoordinator,
       authorizations: gitMutationAuthorizations,
       removal,
@@ -415,7 +404,7 @@ function createWorkbenchEntry(): void {
         remoteImagePaste,
         beads: beadsService,
         gascity: gasCityService,
-        companion,
+        companion: companion.settings,
         updateAttention: (owner, set) => attention?.updateAttention(owner, set),
         updateWebPaneBindings: (owner, bindings) =>
           windowManager.updateWebPaneBindings(owner.id, bindings),

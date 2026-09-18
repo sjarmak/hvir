@@ -55,6 +55,22 @@ export interface CompanionSessionsPorts {
 
 export type CompanionEventListener = (event: CompanionEvent) => void
 
+/** A verb named a page this service does not hold. */
+export class CompanionPageNotOpenError extends Error {
+  constructor() {
+    super('Companion page is not open')
+    this.name = 'CompanionPageNotOpenError'
+  }
+}
+
+/** A transcript verb arrived before the page selected a row. */
+export class CompanionNoSelectionError extends Error {
+  constructor() {
+    super('Companion page has no selection')
+    this.name = 'CompanionNoSelectionError'
+  }
+}
+
 export interface CompanionOpenPage {
   readonly pageId: string
   readonly snapshot: CompanionSnapshot
@@ -310,13 +326,13 @@ export class CompanionSessionsService {
 
   private page(pageId: string): CompanionPage {
     const page = this.pages.get(pageId)
-    if (page === undefined) throw new Error('Companion page is not open')
+    if (page === undefined) throw new CompanionPageNotOpenError()
     return page
   }
 
   private selected(pageId: string): CompanionPage {
     const page = this.page(pageId)
-    if (page.selected === undefined) throw new Error('Companion page has no selection')
+    if (page.selected === undefined) throw new CompanionNoSelectionError()
     return page
   }
 }
