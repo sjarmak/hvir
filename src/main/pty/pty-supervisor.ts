@@ -25,16 +25,25 @@ import {
   type ObservedManagedPty,
   type PtyUsageObservationResolution,
   type HarnessSessionIdentityStatus,
+  type PtyGeometry,
+  type PtyMirrorHandlers,
+  type PtyMirrorLease,
   type PtyStreamHandlers,
   type PtySupervisorDiagnostic,
   type PtySupervisorOptions,
 } from './pty-contract'
 import { PtyLaunchAdmission } from './pty-launch-admission'
+import {
+  PtyMirrorRefusedError,
+  createPtyMirrorLease,
+  type PtyMirrorEntryView,
+} from './pty-mirror-lease'
 import { PtyStreamAttachment } from './pty-stream-attachment'
 import { PtySessionObservation } from './pty-session-observation'
 import { PtySessionLifetime, type PendingPtyExit } from './pty-session-lifetime'
 
 export * from './pty-contract'
+export { PtyMirrorRefusedError } from './pty-mirror-lease'
 
 interface Entry {
   info: ManagedPty
@@ -44,6 +53,8 @@ interface Entry {
   readonly usage: Pick<PtySpawnRequest, 'host'> & {
     readonly artifact: NonNullable<PtySpawnRequest['artifact']>
   }
+  /** The last size applied to the PTY; replaced, never mutated. */
+  geometry: PtyGeometry
   rendererReattachPending: boolean
 }
 
@@ -51,6 +62,9 @@ export class PtySupervisor {
   private readonly entries = new Map<string, Entry>()
   private readonly globalExitListeners = new Set<
     (info: ManagedPty, exit: PtyExit) => void
+  >()
+  private readonly mirrorInputListeners = new Set<
+    (info: ManagedPty, data: string) => void
   >()
   private readonly identityListeners = new Set<(info: ManagedPty) => void>()
   private readonly observationListeners = new Set<() => void>()
@@ -288,6 +302,8 @@ export class PtySupervisor {
       stream,
       observation,
       usage: { host: req.host, artifact },
+      // Both hosts spawn at 80x24 when the request carries no size.
+      geometry: { cols: req.cols ?? 80, rows: req.rows ?? 24 },
       rendererReattachPending: false,
     }
 
@@ -347,6 +363,42 @@ export class PtySupervisor {
     const detach = entry.stream.attach(handlers)
     if (handlers.onData) entry.rendererReattachPending = false
     return detach
+  }
+
+  /** A second reader bound to one exact PTY instance, never a renderer owner (ADR-050). */
+  attachMirror(
+    id: string,
+    instanceId: string,
+    handlers: PtyMirrorHandlers,
+  ): PtyMirrorLease {
+    const entry = this.entries.get(id)
+    if (!entry) throw new PtyMirrorRefusedError('no-session', id)
+    if (!entry.lifetime.current) throw new PtyMirrorRefusedError('exited', id)
+    if (entry.info.instanceId !== instanceId) {
+      throw new PtyMirrorRefusedError('instance-changed', id)
+    }
+    return createPtyMirrorLease(
+      {
+        ptyId: id,
+        instanceId,
+        entry: () => this.mirrorEntryView(id),
+        attach: (mirror) => entry.stream.attachMirror(mirror),
+        tail: () => entry.stream.tail,
+        geometry: () => entry.geometry,
+        onInput: (data) => {
+          for (const cb of this.mirrorInputListeners) cb(entry.info, data)
+        },
+      },
+      handlers,
+    )
+  }
+
+  /** Subscribe after a mirror write landed; `info` carries the current renderer owner. */
+  onMirrorInput(cb: (info: ManagedPty, data: string) => void): Disposer {
+    this.mirrorInputListeners.add(cb)
+    return () => {
+      this.mirrorInputListeners.delete(cb)
+    }
   }
 
   resolveUsageObservation(id: string, instanceId: string): PtyUsageObservationResolution {
@@ -457,7 +509,10 @@ export class PtySupervisor {
     rows: number,
     ownerGeneration?: number,
   ): void {
-    this.requireOwned(id, ownerId, ownerGeneration).lifetime.resize(cols, rows)
+    const entry = this.requireOwned(id, ownerId, ownerGeneration)
+    entry.lifetime.resize(cols, rows)
+    entry.geometry = { cols, rows }
+    entry.stream.publishGeometry(entry.geometry)
   }
 
   kill(id: string, ownerId: number, signal?: string, ownerGeneration?: number): void {
@@ -616,6 +671,7 @@ export class PtySupervisor {
 
   private clearLifetimeListeners(): void {
     this.globalExitListeners.clear()
+    this.mirrorInputListeners.clear()
     this.identityListeners.clear()
     this.observationListeners.clear()
   }
@@ -663,6 +719,20 @@ export class PtySupervisor {
       throw new Error(`PTY session '${id}' belongs to another renderer`)
     }
     return entry
+  }
+
+  /** The entry registered under `id` right now, as a mirror lease may write to it. */
+  private mirrorEntryView(id: string): PtyMirrorEntryView | undefined {
+    const entry = this.entries.get(id)
+    if (!entry) return undefined
+    return {
+      current: entry.lifetime.current,
+      instanceId: entry.info.instanceId,
+      write: (data) => {
+        entry.lifetime.write(data)
+        entry.observation.retryAfterInput()
+      },
+    }
   }
 
   private disposeEntry(id: string, entry: Entry): boolean {

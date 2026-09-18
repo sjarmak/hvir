@@ -25,6 +25,8 @@ describe('PTY owner dependency direction', () => {
     'pty-stream-attachment',
     'pty-session-observation',
     'pty-session-lifetime',
+    'pty-output-tail',
+    'pty-mirror-lease',
   ])('keeps %s inward and without spawning authority', async (owner) => {
     for (const path of [
       './pty-supervisor',

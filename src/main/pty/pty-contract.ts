@@ -117,6 +117,40 @@ export interface PtyStreamHandlers {
   onTelemetry?: (telemetry: HarnessTelemetry | undefined) => void
 }
 
+/** The desktop's last applied terminal size; a mirror renders at it and never changes it. */
+export interface PtyGeometry {
+  readonly cols: number
+  readonly rows: number
+}
+
+export type PtyMirrorEnd =
+  | { readonly kind: 'exited'; readonly exit: PtyExit }
+  /** The supervisor released the session: revocation, workspace close, or shutdown. */
+  | { readonly kind: 'released' }
+
+/** A second reader of one PTY instance (ADR-050). `onEnd` fires exactly once, then nothing. */
+export interface PtyMirrorHandlers {
+  readonly onData: (data: string) => void
+  readonly onGeometry: (geometry: PtyGeometry) => void
+  readonly onEnd: (end: PtyMirrorEnd) => void
+}
+
+export interface PtyMirrorLease {
+  readonly ptyId: string
+  readonly instanceId: string
+  /** Retained output at attach; live bytes follow through `onData` only. */
+  readonly tail: string
+  /** Geometry at attach; later changes arrive through `onGeometry`. */
+  readonly geometry: PtyGeometry
+  readonly ended: boolean
+  /** Writes the user's exact bytes to this instance or throws `PtyMirrorRefusedError`. */
+  write(data: string): void
+  /** Idempotent. Detaches the mirror; never kills, resizes, or transfers the PTY. */
+  release(): void
+}
+
+export type PtyMirrorRefusal = 'no-session' | 'instance-changed' | 'exited' | 'ended'
+
 export type PtySupervisorDiagnostic =
   | {
       readonly kind: 'pty-spawned' | 'pty-spawn-failed'
