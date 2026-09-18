@@ -4,8 +4,8 @@
  * Sessions verbs, and terminal input. Bodies are validated with the shared
  * guards before any port is asked; a page the service does not hold is 404, a
  * transcript verb before a selection is 409, typing while Settings forbids it
- * is 403, input for a row without a mirror is 404, input after the mirror
- * ended is 409, and every other shape mismatch is 400. Mirror output rides the
+ * is 403, input for a row without a mirror or after the mirror ended is 409,
+ * and every other shape mismatch is 400. Mirror output rides the
  * page stream as `terminal` frames; a stream that cannot drain them ends the
  * mirror instead of buffering without bound.
  */
