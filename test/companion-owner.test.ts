@@ -356,7 +356,7 @@ async function firstSnapshot(client: EventsClient): Promise<CompanionSnapshot> {
 }
 
 async function opened(
-  options: { pending?: boolean } = {},
+  options: { pending?: boolean; store?: CompanionStoreFile } = {},
 ): Promise<Harness & { port: number; token: string; client: EventsClient }> {
   const world = await harness(options)
   const port = await enable(world.companion)
@@ -781,6 +781,55 @@ describe('installApplicationCompanion sessions API', () => {
     expect(JSON.stringify(world.mirrors.leases.map((l) => l.writes))).not.toContain(
       'permission?',
     )
+  })
+
+  it('input answers 403 until the setting is saved true, then 200, and the file carries the flag', async () => {
+    const store = memoryFile()
+    const { world, companion, client, port, token } = await opened({ store })
+    const headers = bearer(token)
+    const page = client.pageId
+    const input = `/api/sessions/${encodeURIComponent(LOCAL)}/input`
+    const stored = async (): Promise<boolean> => {
+      await companion.settings.flush()
+      const text = await store.readTextFile(localPath('/companion.json'))
+      return (JSON.parse(text) as { mirrorInputAllowed: boolean }).mirrorInputAllowed
+    }
+    world.ptys.set([livePty('local-session', localRoot)])
+    await until(
+      () =>
+        client.frames.some(
+          (frame) =>
+            frame.event === 'snapshot' &&
+            (frame.data as CompanionSnapshot).rows.some(
+              (row) => row.handle === LOCAL && row.canMirror,
+            ),
+        ),
+      'a mirrorable local row',
+    )
+    const select = `/api/sessions/${encodeURIComponent(LOCAL)}/select`
+    expect((await send(port, 'POST', select, { headers, body: { page } })).status).toBe(
+      200,
+    )
+    await until(() => world.mirrors.leases.length === 1, 'lease')
+    const lease = world.mirrors.leases[0]!
+    const port_ = companion.settings.view().port
+
+    expect(await stored()).toBe(false)
+    expect((await send(port, 'POST', input, { headers, body: { page, data: '\r' } })).status)
+      .toBe(403)
+
+    await companion.settings.save({ enabled: true, port: port_, mirrorInputAllowed: true })
+    expect(await stored()).toBe(true)
+    expect(companion.settings.view().mirrorInputAllowed).toBe(true)
+    expect((await send(port, 'POST', input, { headers, body: { page, data: '\r' } })).status)
+      .toBe(200)
+    expect(lease.writes).toEqual(['\r'])
+
+    await companion.settings.save({ enabled: true, port: port_, mirrorInputAllowed: false })
+    expect(await stored()).toBe(false)
+    expect((await send(port, 'POST', input, { headers, body: { page, data: 'y' } })).status)
+      .toBe(403)
+    expect(lease.writes).toEqual(['\r'])
   })
 
   it('input after the PTY exited answers 409 once the page holds the ended frame', async () => {

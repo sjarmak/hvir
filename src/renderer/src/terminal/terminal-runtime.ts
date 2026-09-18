@@ -533,6 +533,9 @@ export class TerminalRuntime {
         onTelemetry: (telemetry) => this.options.onTelemetry(telemetry),
         onIdentity: (harnessSessionId, identityStatus, identityDiverged) =>
           this.publishIdentity(harnessSessionId, identityStatus, identityDiverged),
+        // Already written to the PTY by a Companion mirror (ADR-050): record it
+        // as this terminal's input so ADR-019 arming happens here; write nothing.
+        onMirrorInput: (data) => this.options.onInput(data),
       },
     )
     this.surface.installRoute(this.eventRoute)

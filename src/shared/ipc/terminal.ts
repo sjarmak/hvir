@@ -251,5 +251,11 @@ export const terminalIpc = {
       readonly identityStatus: TerminalIdentityStatus
       readonly identityDiverged?: true
     }>(),
+    /**
+     * Bytes a Companion mirror wrote to this renderer's PTY (ADR-050). The
+     * renderer records them as terminal input so ADR-019 arming stays there;
+     * it writes nothing back, the bytes already reached the PTY.
+     */
+    'pty:mirror-input': payload<{ readonly id: string; readonly data: string }>(),
   },
 } satisfies IpcFeatureContract

@@ -121,7 +121,7 @@ describe('CompanionSettings section', () => {
     expect(input('settings-companion-push-token').value).toBe('')
     expect(host.textContent).toContain('token set')
     expect(host.querySelector('.settings-companion-status')?.textContent).toBe(
-      'Not listening',
+      'Not listening, typing off',
     )
   })
 
@@ -136,7 +136,7 @@ describe('CompanionSettings section', () => {
       await Promise.resolve()
     })
     expect(host.querySelector('.settings-companion-status')?.textContent).toBe(
-      'Listening on 127.0.0.1:47811',
+      'Listening on 127.0.0.1:47811, typing off',
     )
     await act(async () => {
       listeners.get('companion:status-changed')?.({
@@ -146,7 +146,57 @@ describe('CompanionSettings section', () => {
       await Promise.resolve()
     })
     expect(host.querySelector('.settings-companion-status')?.textContent).toBe(
-      'Not listening: port 47811 is in use',
+      'Not listening: port 47811 is in use, typing off',
+    )
+  })
+
+  it('toggling Allow typing saves mirrorInputAllowed true', async () => {
+    views['companion:config-save'] = { ...BASE, mirrorInputAllowed: true }
+    await render()
+    await settle()
+    const checkbox = input('settings-companion-mirror-input')
+    expect(checkbox.type).toBe('checkbox')
+    expect(checkbox.checked).toBe(false)
+    expect(host.querySelector('label[for="settings-companion-mirror-input"]')?.textContent)
+      .toContain('Allow typing from the Companion')
+
+    await act(async () => {
+      checkbox.click()
+      await Promise.resolve()
+    })
+    await click('Apply')
+    expect(invoke).toHaveBeenLastCalledWith('companion:config-save', {
+      enabled: false,
+      port: 47811,
+      mirrorInputAllowed: true,
+    })
+    expect(input('settings-companion-mirror-input').checked).toBe(true)
+  })
+
+  it('status names typing state', async () => {
+    views['companion:config'] = { ...BASE, mirrorInputAllowed: true }
+    await render()
+    await settle()
+    expect(host.querySelector('.settings-companion-status')?.textContent).toBe(
+      'Not listening, typing allowed',
+    )
+    await act(async () => {
+      listeners.get('companion:status-changed')?.({
+        ...BASE,
+        mirrorInputAllowed: true,
+        status: { listening: true, port: 47811 },
+      })
+      await Promise.resolve()
+    })
+    expect(host.querySelector('.settings-companion-status')?.textContent).toBe(
+      'Listening on 127.0.0.1:47811, typing allowed',
+    )
+    await act(async () => {
+      listeners.get('companion:status-changed')?.({ ...BASE, mirrorInputAllowed: false })
+      await Promise.resolve()
+    })
+    expect(host.querySelector('.settings-companion-status')?.textContent).toBe(
+      'Not listening, typing off',
     )
   })
 

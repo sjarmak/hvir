@@ -47,11 +47,13 @@ function saveOf(draft: CompanionDraft): CompanionConfigSave | string {
 
 function statusText(view: CompanionConfigView | undefined): string {
   if (view === undefined) return 'Reading Companion settings'
-  if (view.status.listening)
-    return `Listening on 127.0.0.1:${view.status.port ?? view.port}`
+  const typing = view.mirrorInputAllowed ? 'typing allowed' : 'typing off'
+  if (view.status.listening) {
+    return `Listening on 127.0.0.1:${view.status.port ?? view.port}, ${typing}`
+  }
   return view.status.error === undefined
-    ? 'Not listening'
-    : `Not listening: ${view.status.error}`
+    ? `Not listening, ${typing}`
+    : `Not listening: ${view.status.error}, ${typing}`
 }
 
 export function CompanionSettings(): ReactElement {
@@ -130,6 +132,21 @@ export function CompanionSettings(): ReactElement {
           />
         </label>
         <PairingField view={view} disabled={disabled} companion={companion} />
+        <label htmlFor="settings-companion-mirror-input" className="settings-checkbox">
+          <span>Typing</span>
+          <span className="settings-checkbox-control">
+            <input
+              id="settings-companion-mirror-input"
+              type="checkbox"
+              checked={draft?.mirrorInputAllowed ?? false}
+              disabled={disabled}
+              onChange={(event) =>
+                edit({ mirrorInputAllowed: event.currentTarget.checked })
+              }
+            />
+            Allow typing from the Companion
+          </span>
+        </label>
         <label htmlFor="settings-companion-push-url">
           <span>Push sink</span>
           <input

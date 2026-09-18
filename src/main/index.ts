@@ -29,6 +29,7 @@ import { createWorkspaceCleanup } from './workspace-cleanup'
 import { WorkspaceRemovalCoordinator } from './workspace-removal-coordinator'
 import { TerminalSessionRegistry } from './terminal/session-registry'
 import { TerminalWorkspaceMoveCoordinator } from './terminal/terminal-workspace-move-coordinator'
+import { installMirrorInputNotice } from './terminal/mirror-input-notice'
 import { installTerminalIdentityPublication } from './terminal/terminal-identity-publication'
 import { RendererResourceScopes, type RendererOwner } from './renderer-resource-scopes'
 import { createRendererPresentationInstaller } from './renderer-presentation-resources'
@@ -348,6 +349,7 @@ function createWorkbenchEntry(): void {
       onError: (message, error) => console.error(message, error),
     })
     installTerminalIdentityPublication(runtime, ptySupervisor, rendererEvents)
+    installMirrorInputNotice(runtime, ptySupervisor, rendererEvents)
     const withSshPresentation = <T>(owner: RendererOwner, operation: () => T): T => {
       if (!sshPrompter) throw new Error('SSH prompting is unavailable')
       return sshPrompter.runForOwner(owner, operation)

@@ -62,6 +62,40 @@ describe('terminal attention controller', () => {
     expect(session.attention).toBe('idle')
   })
 
+  it('recordInput from a mirror Enter arms exactly like a desktop Enter', () => {
+    // The phone sends the line and its Enter as one write (ADR-050); the
+    // renderer records it through the same door a keyboard Enter uses.
+    act(() => {
+      controller?.recordInput(session.id, "printf 'mirror-done'\r")
+      controller?.recordOutput(session.id)
+    })
+    expect(session.attention).toBe('working')
+
+    act(() => {
+      vi.advanceTimersByTime(1_000)
+    })
+    expect(session.attention).toBe('idle')
+  })
+
+  it('recordInput without newline never clears attention', () => {
+    act(() => {
+      controller?.recordInput(session.id, '\r')
+      controller?.recordOutput(session.id)
+      vi.advanceTimersByTime(1_000)
+    })
+    expect(session.attention).toBe('idle')
+
+    // Arrow keys, a bare answer, and a fresh line from the phone: none clears.
+    for (const data of ['[A', 'y', 'y\r']) {
+      act(() => {
+        controller?.recordInput(session.id, data)
+        controller?.recordOutput(session.id)
+        vi.advanceTimersByTime(1_000)
+      })
+      expect(session.attention, JSON.stringify(data)).toBe('idle')
+    }
+  })
+
   it('publishes Working separately from actionable attention and clears both on cleanup', () => {
     const onRollup = vi.fn()
     const sessions = [

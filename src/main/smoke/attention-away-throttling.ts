@@ -14,15 +14,20 @@ import {
   AWAY_DEFAULT_HOLD_MS,
   AWAY_WINDOW_STATES,
   awayAppearanceViolations,
-  awayReadyBudgetMs,
   formatAwayReadyMeasurement,
   judgeAwayReadyMeasurement,
   parseAwayHiddenHoldMs,
   type AwayReadyMeasurement,
   type AwayWindowState,
 } from './attention-away-policy'
-import { rendererFocusState, waitFor } from './attention-away-probe'
+import { rendererFocusState, waitFor, waitForReady } from './attention-away-probe'
 import { armAwayTerminal, type MeasuredTerminal } from './attention-away-terminal'
+import {
+  applyAwayState,
+  clearTerminalAttention,
+  restoreWindow,
+  withWindowRestored,
+} from './attention-away-window'
 import { prepareTerminalScenario } from './terminal-scenario-ready'
 
 export interface AttentionAwayThrottlingOptions {
@@ -48,26 +53,27 @@ export async function verifyAttentionAwayThrottlingScenario(
   attention.setOwnerFocused(owner, win.isFocused())
   const log: ActionableSnapshot[] = []
   const stopObserving = attention.set.observe((snapshot) => log.push(snapshot))
-  try {
-    const measurements: AwayReadyMeasurement[] = []
-    for (const state of AWAY_WINDOW_STATES) {
-      const measurement = await measureAwayState(options, terminal, state)
-      console.log(`[smoke] away ready ${formatAwayReadyMeasurement(measurement)}`)
-      const failure = judgeAwayReadyMeasurement(measurement)
-      if (failure) throw new Error(`away throttling: ${failure}`)
-      measurements.push(measurement)
+  return withWindowRestored(win, async () => {
+    try {
+      const measurements: AwayReadyMeasurement[] = []
+      for (const state of AWAY_WINDOW_STATES) {
+        const measurement = await measureAwayState(options, terminal, state)
+        console.log(`[smoke] away ready ${formatAwayReadyMeasurement(measurement)}`)
+        const failure = judgeAwayReadyMeasurement(measurement)
+        if (failure) throw new Error(`away throttling: ${failure}`)
+        measurements.push(measurement)
+      }
+      const violations = awayAppearanceViolations(log, terminal.id)
+      if (violations.length > 0) {
+        throw new Error(`away throttling: focused appearances at ${violations.join(', ')}`)
+      }
+      return measurements.map(formatAwayReadyMeasurement).join('; ')
+    } finally {
+      stopObserving()
+      win.removeListener('focus', onFocus)
+      win.removeListener('blur', onBlur)
     }
-    const violations = awayAppearanceViolations(log, terminal.id)
-    if (violations.length > 0) {
-      throw new Error(`away throttling: focused appearances at ${violations.join(', ')}`)
-    }
-    return measurements.map(formatAwayReadyMeasurement).join('; ')
-  } finally {
-    stopObserving()
-    win.removeListener('focus', onFocus)
-    win.removeListener('blur', onBlur)
-    await restoreWindow(win)
-  }
+  })
 }
 
 async function measureAwayState(
@@ -101,87 +107,4 @@ async function measureAwayState(
   } finally {
     await armed.detach()
   }
-}
-
-/** Shows, restores and focuses the window until the renderer agrees it is focused. */
-async function restoreWindow(win: BrowserWindow): Promise<void> {
-  if (win.isDestroyed()) return
-  if (win.isMinimized()) win.restore()
-  if (!win.isVisible()) win.show()
-  win.focus()
-  await waitFor(
-    async () => (await rendererFocusState(win)).focused && win.isFocused(),
-    10_000,
-    'away throttling: window did not regain focus',
-  )
-}
-
-/** Focuses the active terminal so any Ready it carried clears, then waits for main to agree. */
-async function clearTerminalAttention(
-  win: BrowserWindow,
-  attention: SmokeAttention,
-  terminalId: string,
-): Promise<void> {
-  await win.webContents.executeJavaScript(`
-    (() => {
-      const surface = document.querySelector(
-        '.terminal-surface[data-terminal-session="' + CSS.escape(${JSON.stringify(terminalId)}) + '"]'
-      );
-      const container = surface?.querySelector('.terminal-container');
-      container?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
-      surface?.querySelector('.terminal-engine-host')?.focus();
-    })()
-  `)
-  await waitFor(
-    () =>
-      !attention.set.away() &&
-      !attention.set.snapshot().entries.some((entry) => entry.key === terminalId),
-    10_000,
-    'away throttling: focusing the terminal did not clear its attention',
-  )
-}
-
-/** Puts the window in the away state; reports whether the display honored it. */
-async function applyAwayState(
-  win: BrowserWindow,
-  state: AwayWindowState,
-): Promise<boolean> {
-  if (state === 'visible-unfocused') win.blur()
-  if (state === 'hidden') win.hide()
-  if (state === 'minimized') win.minimize()
-  const honored = await waitFor(async () => {
-    const renderer = await rendererFocusState(win)
-    if (renderer.focused || win.isFocused()) return false
-    if (state === 'minimized' && !win.isMinimized()) return false
-    return state === 'visible-unfocused' || renderer.visibility === 'hidden'
-  }, 5_000)
-  if (honored) return true
-  win.blur()
-  await waitFor(
-    async () => !(await rendererFocusState(win)).focused && !win.isFocused(),
-    5_000,
-    `away throttling: ${state} fallback blur left the renderer focused`,
-  )
-  return false
-}
-
-/** Resolves with the time main's set first carried the terminal as Ready. */
-async function waitForReady(
-  attention: SmokeAttention,
-  terminalId: string,
-): Promise<number> {
-  const timeoutMs = awayReadyBudgetMs() + 60_000
-  const carriesReady = (snapshot: ActionableSnapshot): boolean =>
-    snapshot.entries.some((entry) => entry.key === terminalId && entry.kind === 'ready')
-  let readyAt = carriesReady(attention.set.snapshot()) ? Date.now() : 0
-  const stop = attention.set.observe((snapshot) => {
-    if (readyAt === 0 && carriesReady(snapshot)) readyAt = Date.now()
-  })
-  try {
-    const message = `away throttling: Ready never reached main within ${timeoutMs}ms`
-    await waitFor(() => readyAt !== 0, timeoutMs, message)
-  } finally {
-    stop()
-  }
-  return readyAt
 }

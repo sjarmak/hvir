@@ -53,6 +53,12 @@ describe('feature-owned IPC composition', () => {
       readonly data: string
     }>()
     expectTypeOf<IpcEventMap['project:state']>().toEqualTypeOf<WorkspaceProjectState>()
+    // The mirror input notice (ADR-050) is a renderer-admitted event channel.
+    expect(EVENT_CHANNELS).toContain('pty:mirror-input')
+    expectTypeOf<IpcEventMap['pty:mirror-input']>().toEqualTypeOf<{
+      readonly id: string
+      readonly data: string
+    }>()
     expectTypeOf<PreloadOnlyIpcInvokeChannel>().toEqualTypeOf<'fs:acquire-dropped-files'>()
     expectTypeOf<RendererIpcInvokeChannel>().toEqualTypeOf<
       Exclude<keyof IpcInvokeMap, 'fs:acquire-dropped-files'>

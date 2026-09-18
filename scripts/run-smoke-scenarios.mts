@@ -28,6 +28,7 @@ export const DEFAULT_SMOKE_SCENARIOS = [
   'harness-profiles',
   'attention-away-throttling',
   'companion',
+  'companion-mirror-away',
 ] as const satisfies readonly ElectronSmokeScenario[]
 
 export type SmokeScenarioName = ElectronSmokeScenario

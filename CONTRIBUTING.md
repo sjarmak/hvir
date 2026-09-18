@@ -268,7 +268,7 @@ not launch Electron, require a display, or access the network.
 `sessions-projection`, `document-review`, `terminal-presentation`, and `terminal-lifecycle` groups plus the focused
 `native-host-worker`, `workbench-health`, `platform-contracts`, `terminal-theme`,
 `terminal-move`, `workbench-layout`, `terminal-split`, `app-settings`, `harness-profiles`,
-`attention-away-throttling`, and `companion` groups in separate Electron processes with fresh project and user-data roots, then
+`attention-away-throttling`, `companion`, and `companion-mirror-away` groups in separate Electron processes with fresh project and user-data roots, then
 reports a result for every scheduled group. Direct single-process invocations require
 `HVIR_SMOKE_SCENARIO`; missing and invalid names fail with a selection diagnostic. Select one group locally with
 `npm run smoke:scenario -- <name>`; the complete name set is `pty-native`, `viewer-position`, `viewer-content`,
@@ -276,7 +276,7 @@ reports a result for every scheduled group. Direct single-process invocations re
 `diagnostic-report-restart`, `renderer-recovery`, `sessions-projection`, `document-review`, `development-performance`,
 `terminal-presentation`, `terminal-lifecycle`, `native-host-worker`, `workbench-health`,
 `terminal-theme`, `terminal-move`, `workbench-layout`, `terminal-split`, `app-settings`,
-`harness-profiles`, `attention-away-throttling`, `companion`, and `capacity`. The
+`harness-profiles`, `attention-away-throttling`, `companion`, `companion-mirror-away`, and `capacity`. The
 development-performance group starts a development renderer and is run separately with `npm run
 smoke:development-performance`; the restart scenario is reserved for the packaged multi-launch
 fixture. `npm run smoke:macos` runs the focused PTY, viewer, Git, workspace/remote, web-pane,

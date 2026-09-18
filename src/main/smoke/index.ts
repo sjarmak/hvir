@@ -731,6 +731,8 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       emitState: (state) => emit('project:state', state),
       attention: smokeAttention,
       resources: rendererResources,
+      companion: smokeCompanion,
+      addRetained: smokeTerminalSessionHarness.add,
     })[mode]
     if (terminalScenario !== undefined) {
       await terminalScenario()

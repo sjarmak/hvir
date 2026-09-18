@@ -32,9 +32,10 @@ describe('TerminalEventRouter', () => {
       'pty:exit': 1,
       'pty:telemetry': 1,
       'pty:identity': 1,
+      'pty:mirror-input': 1,
     })
     expect(router.snapshot()).toMatchObject({
-      nativeSubscriptions: 4,
+      nativeSubscriptions: 5,
       registeredSessions: 12,
     })
 
@@ -95,6 +96,26 @@ describe('TerminalEventRouter', () => {
     router.dispose()
   })
 
+  it('routes pty:mirror-input to the session handler uncoalesced and by id only', () => {
+    const api = new FakeHvirApi()
+    const scheduler = new ManualScheduler()
+    const router = new TerminalEventRouter(api, { scheduler })
+    const mirrored = handlersFixture()
+    const other = handlersFixture()
+    router.register('terminal-1', 'hidden', mirrored)
+    router.register('terminal-2', 'hidden', other)
+
+    api.emit('pty:mirror-input', { id: 'terminal-1', data: 'printf done\r' })
+    api.emit('pty:mirror-input', { id: 'terminal-1', data: '[A' })
+    api.emit('pty:mirror-input', { id: 'terminal-9', data: '\r' })
+
+    expect(mirrored.onMirrorInput.mock.calls).toEqual([['printf done\r'], ['[A']])
+    expect(other.onMirrorInput).not.toHaveBeenCalled()
+    expect(mirrored.onData).not.toHaveBeenCalled()
+    expect(router.snapshot()).toMatchObject({ unroutedEvents: 1, nativeDataEvents: 0 })
+    router.dispose()
+  })
+
   it('flushes output before exit and rejects every later event for that session', () => {
     const api = new FakeHvirApi()
     const scheduler = new ManualScheduler()
@@ -115,13 +136,15 @@ describe('TerminalEventRouter', () => {
       harnessSessionId: 'late-identity',
       identityStatus: 'identified',
     })
+    api.emit('pty:mirror-input', { id: 'terminal-1', data: '\r' })
 
     expect(order).toEqual(['data:final-output', 'exit:7:15'])
     expect(handlers.onTelemetry).not.toHaveBeenCalled()
     expect(handlers.onIdentity).not.toHaveBeenCalled()
+    expect(handlers.onMirrorInput).not.toHaveBeenCalled()
     expect(router.snapshot()).toMatchObject({
       registeredSessions: 0,
-      unroutedEvents: 3,
+      unroutedEvents: 4,
     })
     scheduler.flushFrames()
     expect(order).toHaveLength(2)
@@ -227,6 +250,7 @@ function handlersFixture(
     onExit: vi.fn(overrides.onExit ?? (() => undefined)),
     onTelemetry: vi.fn(overrides.onTelemetry ?? (() => undefined)),
     onIdentity: vi.fn(overrides.onIdentity ?? (() => undefined)),
+    onMirrorInput: vi.fn(overrides.onMirrorInput ?? (() => undefined)),
   }
 }
 
@@ -235,6 +259,7 @@ interface MockTerminalEventHandlers extends TerminalEventHandlers {
   readonly onExit: Mock<(exitCode: number, signal?: number) => void>
   readonly onTelemetry: Mock<TerminalEventHandlers['onTelemetry']>
   readonly onIdentity: Mock<TerminalEventHandlers['onIdentity']>
+  readonly onMirrorInput: Mock<(data: string) => void>
 }
 
 class FakeHvirApi implements HvirApi {

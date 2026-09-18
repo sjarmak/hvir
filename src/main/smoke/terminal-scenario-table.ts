@@ -1,11 +1,13 @@
 import type { BrowserWindow } from 'electron'
 
-import type { HostPath, ProjectState } from '../../shared'
+import type { HostPath, ProjectState, TerminalRecoverySession } from '../../shared'
 import type { ProjectHost } from '../project-host'
 import type { PtySupervisor } from '../pty/pty-supervisor'
 import type { RendererResourceScopes } from '../renderer-resource-scopes'
 import type { SmokeAttention } from './attention-smoke'
 import { verifyAttentionAwayThrottlingScenario } from './attention-away-throttling'
+import { verifyCompanionMirrorAwayScenario } from './companion-mirror-away'
+import type { SmokeCompanion } from './companion-smoke'
 import type { TerminalMoveSmokeHarness } from './terminal-move'
 import {
   verifyAppSettingsScenario,
@@ -24,7 +26,9 @@ export interface TerminalScenarioTableOptions {
   readonly harness: TerminalMoveSmokeHarness
   readonly emitState: (state: ProjectState) => void
   readonly attention: SmokeAttention
-  readonly resources: Pick<RendererResourceScopes, 'currentOwner'>
+  readonly resources: Pick<RendererResourceScopes, 'currentOwner' | 'isCurrent'>
+  readonly companion: SmokeCompanion
+  readonly addRetained: (root: HostPath, session: TerminalRecoverySession) => void
 }
 
 /** The terminal presentation scenarios, keyed by smoke mode, over one live window. */
@@ -37,6 +41,8 @@ export function terminalScenarioTable({
   emitState,
   attention,
   resources,
+  companion,
+  addRetained,
 }: TerminalScenarioTableOptions): Readonly<Record<string, () => Promise<void>>> {
   return {
     'terminal-theme': () => verifyTerminalThemeScenario(win, supervisor),
@@ -54,6 +60,18 @@ export function terminalScenarioTable({
         attention,
         resources,
       })
+    },
+    'companion-mirror-away': async () => {
+      const result = await verifyCompanionMirrorAwayScenario({
+        win,
+        supervisor,
+        attention,
+        resources,
+        companion,
+        smokeRoot,
+        addRetained,
+      })
+      console.log(`[smoke] companion mirror away OK (${result})`)
     },
   }
 }

@@ -31,6 +31,8 @@ export interface TerminalEventHandlers {
     identityStatus: TerminalIdentityStatus,
     identityDiverged?: true,
   ) => void
+  /** Bytes a Companion mirror already wrote to the PTY; input to record, not output. */
+  readonly onMirrorInput: (data: string) => void
 }
 
 export interface TerminalEventRoute {
@@ -107,6 +109,11 @@ export class TerminalEventRouter {
           else this.unroutedEvents += 1
         },
       ),
+      api.on('pty:mirror-input', ({ id, data }) => {
+        const route = this.routes.get(id)
+        if (route) route.mirrorInput(data)
+        else this.unroutedEvents += 1
+      }),
     ]
   }
 
@@ -214,6 +221,10 @@ class TerminalEventRouteState implements TerminalEventRoute {
     if (!this.disposed) {
       this.handlers.onIdentity(harnessSessionId, identityStatus, identityDiverged)
     }
+  }
+
+  mirrorInput(data: string): void {
+    if (!this.disposed) this.handlers.onMirrorInput(data)
   }
 
   setPresentation(presentation: TerminalPresentation): void {
