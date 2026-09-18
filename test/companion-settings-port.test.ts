@@ -120,6 +120,26 @@ describe('CompanionSettings', () => {
     expect(seen.map((view) => view.paired)).toEqual([false, true, false])
   })
 
+  it('hands the decrypted push token to main only, never through the view', async () => {
+    const { settings } = await harness()
+    expect(settings.pushToken()).toBeUndefined()
+
+    await settings.save({
+      enabled: true,
+      port: 47811,
+      push: { url: 'https://ntfy.example/hvir', token: 'secret-value' },
+    })
+    expect(settings.pushToken()).toBe('secret-value')
+    expect(JSON.stringify(settings.view())).not.toContain('secret-value')
+
+    await settings.save({
+      enabled: true,
+      port: 47811,
+      push: { url: 'https://ntfy.example/hvir', token: '' },
+    })
+    expect(settings.pushToken()).toBeUndefined()
+  })
+
   it('carries the listener status a later owner sets', async () => {
     const { settings, seen } = await harness()
     settings.setStatus({ listening: true, port: 47811 })

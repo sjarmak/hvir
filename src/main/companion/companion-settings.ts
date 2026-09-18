@@ -126,6 +126,14 @@ export class CompanionSettings implements CompanionSettingsPort {
     return this.store.flush()
   }
 
+  /**
+   * The push token in the clear, for the sink that sends with it. Main only:
+   * the view carries `tokenConfigured` and nothing else about the token.
+   */
+  pushToken(): string | undefined {
+    return this.store.pushToken()
+  }
+
   private notify(): void {
     const view = this.view()
     for (const listener of this.observers) listener(view)
