@@ -35,10 +35,10 @@ to iOS.
 
 Open Settings > Companion.
 
-1. Turn **enable** on.
-2. Leave **port** at its default, 47811, or choose any free port from 1024 to 65535. The
+1. Turn **Serve the Companion on this machine** on.
+2. Leave **Port** at its default, 47811, or choose any free port from 1024 to 65535. The
    listener binds `127.0.0.1:<port>` only.
-3. Leave **Push URL** and **token** empty for now; section 4 fills them in.
+3. Leave **Push sink** and **Push token** empty for now; section 4 fills them in.
 
 The status line under the section reports whether the listener is up and on which port, or
 the bind error if the port is taken.
@@ -129,9 +129,9 @@ curl -H "Authorization: Bearer <token>" -d "test" \
 
 Back in Settings > Companion:
 
-- **Push URL**: `https://<desktop>.<tailnet>.ts.net:8443/hvir-attention`. hvir accepts
+- **Push sink**: `https://<desktop>.<tailnet>.ts.net:8443/hvir-attention`. hvir accepts
   `https://` URLs and `http://127.0.0.1` URLs, nothing else.
-- **token**: the ntfy token from section 3.
+- **Push token**: the ntfy token from section 3.
 
 hvir posts one plain-text body per Push, `<project> / <session title>`, with the kind of
 signal as the notification title and the first line of the pending prompt (at most 120
@@ -151,7 +151,7 @@ the section. Settings shows only whether a token is set; the value never comes b
 The phone exchanges the code once for a long-lived credential and keeps it in the browser's
 local storage for that site. Five wrong codes within a minute lock pairing for a minute.
 
-**Revoke** in the same section invalidates the credential and closes every open Companion page
+**Revoke pairing** in the same section invalidates the credential and closes every open Companion page
 at once. Pair again by issuing a new code.
 
 ## 6. What to expect
@@ -180,7 +180,7 @@ at once. Pair again by issuing a new code.
 | No Push arrives | Check that a desktop window is not focused (Push is Away-only), that the row is not stale, and read the sink status under Settings > Companion. Then repeat the `curl` test from section 3. |
 | Push arrives on Android only | `NTFY_UPSTREAM_BASE_URL` is missing or `NTFY_BASE_URL` differs from the server URL configured in the iOS app. |
 | Settings refuses the token | The OS keychain is unavailable to Electron's safeStorage. On Linux, install and unlock a Secret Service provider such as GNOME Keyring or KWallet. |
-| Port already in use at startup | Another process holds the port. Change **port** in Settings and update the `tailscale serve` target. |
+| Port already in use at startup | Another process holds the port. Change **Port** in Settings and update the `tailscale serve` target. |
 
 ## Developer note
 
