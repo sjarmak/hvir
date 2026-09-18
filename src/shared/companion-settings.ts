@@ -34,6 +34,8 @@ export interface CompanionListenerStatus {
 export interface CompanionConfigView {
   readonly enabled: boolean
   readonly port: number
+  /** Whether an armed Companion page may type into a mirrored terminal (ADR-050). */
+  readonly mirrorInputAllowed: boolean
   readonly paired: boolean
   /** Present only while a pairing code is outstanding. */
   readonly pairing?: CompanionPairingCode
@@ -50,9 +52,12 @@ export interface CompanionPushSave {
 export interface CompanionConfigSave {
   readonly enabled: boolean
   readonly port: number
+  readonly mirrorInputAllowed: boolean
   /** Omitted removes the push sink altogether. */
   readonly push?: CompanionPushSave
 }
+
+const SAVE_KEYS: readonly string[] = ['enabled', 'port', 'mirrorInputAllowed', 'push']
 
 export function isCompanionPort(value: unknown): value is number {
   return (
@@ -94,12 +99,14 @@ function isCompanionPushSave(value: unknown): value is CompanionPushSave {
 
 export function isCompanionConfigSave(value: unknown): value is CompanionConfigSave {
   if (!isRecord(value)) return false
-  const keys = Object.keys(value)
-  if (!keys.every((key) => key === 'enabled' || key === 'port' || key === 'push')) {
+  if (!Object.keys(value).every((key) => SAVE_KEYS.includes(key))) return false
+  if (
+    typeof value['enabled'] !== 'boolean' ||
+    !isCompanionPort(value['port']) ||
+    typeof value['mirrorInputAllowed'] !== 'boolean'
+  ) {
     return false
   }
-  if (typeof value['enabled'] !== 'boolean' || !isCompanionPort(value['port']))
-    return false
   return value['push'] === undefined || isCompanionPushSave(value['push'])
 }
 

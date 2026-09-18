@@ -10,6 +10,8 @@ import type { CompanionAuthPort } from './companion-auth'
 export const MAX_BODY_BYTES = 64 * 1024
 export const SSE_HEARTBEAT_MS = 25_000
 export const SSE_RETRY_MS = 3_000
+/** Unsent bytes a stream may hold before a mirror is ended rather than buffered further. */
+export const SSE_MAX_BACKLOG_BYTES = 4 * 1024 * 1024
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.html': 'text/html; charset=utf-8',
@@ -118,6 +120,8 @@ export function normalizeAssetPath(rawPath: string): string | undefined {
 
 /** The slice of ServerResponse an event stream writes through. */
 export interface SseResponse {
+  /** Bytes written but not yet handed to the socket. */
+  readonly writableLength: number
   writeHead(status: number, headers: Readonly<Record<string, string>>): unknown
   flushHeaders(): void
   write(chunk: string): unknown
@@ -150,6 +154,11 @@ export class SseWriter {
 
   get closed(): boolean {
     return this.ended
+  }
+
+  /** What the socket has not taken yet; a route bounds its own frames on it. */
+  get backlog(): number {
+    return this.response.writableLength
   }
 
   send(event: string, data: unknown): void {

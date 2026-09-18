@@ -311,6 +311,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       cleanup,
       sessions: sessionsPorts,
       actionable: smokeAttention.set,
+      mirrors: supervisor,
       terminals: smokeTerminalSessions,
       projectState: () => projectFixture.get(),
       publish: (view) => emit('companion:status-changed', view),

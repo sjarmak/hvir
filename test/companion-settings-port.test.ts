@@ -52,11 +52,27 @@ describe('CompanionSettings', () => {
     expect(settings.view()).toEqual({
       enabled: false,
       port: 47811,
+      mirrorInputAllowed: false,
       paired: false,
       push: undefined,
       status: { listening: false },
     })
     expect('pairing' in settings.view()).toBe(false)
+    expect(settings.typingAllowed()).toBe(false)
+  })
+
+  it('typingAllowed reads the stored flag', async () => {
+    const { settings, seen } = await harness()
+    const view = await settings.save({
+      enabled: false,
+      port: 47811,
+      mirrorInputAllowed: true,
+    })
+    expect(view.mirrorInputAllowed).toBe(true)
+    expect(settings.typingAllowed()).toBe(true)
+    expect(seen.map((item) => item.mirrorInputAllowed)).toEqual([true])
+    await settings.save({ enabled: false, port: 47811, mirrorInputAllowed: false })
+    expect(settings.typingAllowed()).toBe(false)
   })
 
   it('saves settings, reports the push token only as configured, and notifies', async () => {
@@ -64,6 +80,7 @@ describe('CompanionSettings', () => {
     const view = await settings.save({
       enabled: true,
       port: 50_000,
+      mirrorInputAllowed: false,
       push: { url: 'https://ntfy.example/hvir', token: 'secret-value' },
     })
     expect(view).toMatchObject({
@@ -83,6 +100,7 @@ describe('CompanionSettings', () => {
       settings.save({
         enabled: false,
         port: 47811,
+        mirrorInputAllowed: false,
         push: { url: 'https://ntfy.example/hvir', token: 'secret-value' },
       }),
     ).rejects.toThrow(/encrypted/)
@@ -127,6 +145,7 @@ describe('CompanionSettings', () => {
     await settings.save({
       enabled: true,
       port: 47811,
+      mirrorInputAllowed: false,
       push: { url: 'https://ntfy.example/hvir', token: 'secret-value' },
     })
     expect(settings.pushToken()).toBe('secret-value')
@@ -135,6 +154,7 @@ describe('CompanionSettings', () => {
     await settings.save({
       enabled: true,
       port: 47811,
+      mirrorInputAllowed: false,
       push: { url: 'https://ntfy.example/hvir', token: '' },
     })
     expect(settings.pushToken()).toBeUndefined()
@@ -208,16 +228,24 @@ describe('registerCompanionIpc', () => {
       paired: false,
     })
     await expect(
-      call('companion:config-save', { enabled: true, port: 47811 }),
+      call('companion:config-save', {
+        enabled: true,
+        port: 47811,
+        mirrorInputAllowed: false,
+      }),
     ).resolves.toMatchObject({ enabled: true })
     expect(owner).toHaveBeenCalledTimes(4)
   })
 
   it('rejects a save that is not a settings save', async () => {
     const { call, settings } = await wired()
-    expect(() => call('companion:config-save', { enabled: true, port: 80 })).toThrow(
-      /Companion settings/,
-    )
+    expect(() =>
+      call('companion:config-save', {
+        enabled: true,
+        port: 80,
+        mirrorInputAllowed: false,
+      }),
+    ).toThrow(/Companion settings/)
     expect(settings.view().enabled).toBe(false)
   })
 })

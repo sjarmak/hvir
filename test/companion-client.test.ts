@@ -288,6 +288,22 @@ describe('companion client', () => {
     expect(calls[0]?.init.signal?.aborted).toBe(true)
   })
 
+  it('decodes terminal frames and refuses a malformed one', async () => {
+    const stream = streamResponse('page-7')
+    const { client } = harness(() => stream.response, 'tok-1')
+    const events: CompanionEvent[] = []
+    const opened = await client.openEvents((event) => events.push(event))
+
+    const output = { type: 'output', handle: 'row-1', data: '[2J$ ' }
+    stream.push(`event: terminal\ndata: ${JSON.stringify(output)}\n\n`)
+    await tick()
+    expect(events).toEqual([{ type: 'terminal', terminal: output }])
+
+    stream.push('event: terminal\ndata: {"type":"resize","handle":"row-1"}\n\n')
+    expect(await opened.done).toMatchObject({ kind: 'protocol' })
+    expect(events).toHaveLength(1)
+  })
+
   it('reports a stream the server ended as lost and never reopens it', async () => {
     const stream = streamResponse('page-7')
     const { client, calls } = harness(() => stream.response, 'tok-1')

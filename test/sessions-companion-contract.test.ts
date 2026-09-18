@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'vitest'
 
+import { PTY_OUTPUT_TAIL_CHARS } from '../src/main/pty/pty-output-tail'
 import {
+  MAX_COMPANION_INPUT_CHARS,
   MAX_COMPANION_ROWS,
+  MAX_COMPANION_TERMINAL_TAIL_CHARS,
   MAX_SESSIONS_SUBMIT_MESSAGE,
   SESSIONS_COMPANION_VERSION,
   compareCompanionRows,
+  isCompanionInputRequest,
   isCompanionRespondRequest,
   isCompanionRow,
   isCompanionSnapshot,
   isCompanionSubmitRequest,
+  isCompanionTerminalEvent,
   type CompanionRow,
 } from '../src/shared'
 
@@ -27,6 +32,7 @@ const row = (fields: Record<string, unknown> = {}): Record<string, unknown> => (
   freshness: 'fresh',
   turn: { status: 'unsupported' },
   canAnswer: false,
+  canMirror: false,
   ...fields,
 })
 
@@ -110,6 +116,85 @@ describe('sessions companion contract', () => {
       isCompanionRow(row({ turn: { status: 'available', value: { state: 'busy' } } })),
     ).toBe(false)
     expect(isCompanionRow(row({ handle: '' }))).toBe(false)
+  })
+
+  it('rows require canMirror as a boolean', () => {
+    expect(isCompanionRow(row({ canMirror: true }))).toBe(true)
+    const { canMirror: _dropped, ...withoutMirror } = row()
+    expect(isCompanionRow(withoutMirror)).toBe(false)
+    expect(isCompanionRow(row({ canMirror: 'yes' }))).toBe(false)
+  })
+
+  it('accepts every terminal event variant and rejects extra keys', () => {
+    const opened = {
+      type: 'opened',
+      handle: 't1',
+      cols: 120,
+      rows: 40,
+      tail: '\u001b[2J',
+    }
+    const output = { type: 'output', handle: 't1', data: 'hello\r\n' }
+    const geometry = { type: 'geometry', handle: 't1', cols: 80, rows: 24 }
+    for (const reason of [
+      'exited',
+      'released',
+      'reselected',
+      'page-closed',
+      'revoked',
+      'shutdown',
+      'lease-lost',
+      'overrun',
+    ]) {
+      expect(
+        isCompanionTerminalEvent({ type: 'ended', handle: 't1', reason }),
+        reason,
+      ).toBe(true)
+    }
+    for (const event of [opened, output, geometry]) {
+      expect(isCompanionTerminalEvent(event), event.type).toBe(true)
+      expect(isCompanionTerminalEvent({ ...event, extra: 1 }), event.type).toBe(false)
+      expect(isCompanionTerminalEvent({ ...event, handle: '' }), event.type).toBe(false)
+    }
+    expect(isCompanionTerminalEvent({ ...opened, tail: 7 })).toBe(false)
+    expect(isCompanionTerminalEvent({ ...opened, cols: 0 })).toBe(false)
+    expect(isCompanionTerminalEvent({ ...geometry, rows: 1.5 })).toBe(false)
+    expect(isCompanionTerminalEvent({ ...output, data: undefined })).toBe(false)
+    expect(
+      isCompanionTerminalEvent({ type: 'ended', handle: 't1', reason: 'bored' }),
+    ).toBe(false)
+    expect(
+      isCompanionTerminalEvent({ type: 'resize', handle: 't1', cols: 1, rows: 1 }),
+    ).toBe(false)
+    expect(isCompanionTerminalEvent(null)).toBe(false)
+  })
+
+  it('bounds tail and input length', () => {
+    const tail = (length: number) => ({
+      type: 'opened',
+      handle: 't1',
+      cols: 1,
+      rows: 1,
+      tail: 'x'.repeat(length),
+    })
+    expect(isCompanionTerminalEvent(tail(MAX_COMPANION_TERMINAL_TAIL_CHARS))).toBe(true)
+    expect(isCompanionTerminalEvent(tail(MAX_COMPANION_TERMINAL_TAIL_CHARS + 1))).toBe(
+      false,
+    )
+    expect(isCompanionInputRequest({ data: '\r' })).toBe(true)
+    expect(isCompanionInputRequest({ data: 'x'.repeat(MAX_COMPANION_INPUT_CHARS) })).toBe(
+      true,
+    )
+    expect(
+      isCompanionInputRequest({ data: 'x'.repeat(MAX_COMPANION_INPUT_CHARS + 1) }),
+    ).toBe(false)
+    expect(isCompanionInputRequest({ data: '' })).toBe(false)
+    expect(isCompanionInputRequest({ data: '\r', handle: 't1' })).toBe(false)
+    expect(isCompanionInputRequest({})).toBe(false)
+    expect(isCompanionInputRequest('\r')).toBe(false)
+  })
+
+  it('tail bound equals PTY_OUTPUT_TAIL_CHARS', () => {
+    expect(MAX_COMPANION_TERMINAL_TAIL_CHARS).toBe(PTY_OUTPUT_TAIL_CHARS)
   })
 
   it('accepts an answer and a message of the transcript shapes, without a generation', () => {

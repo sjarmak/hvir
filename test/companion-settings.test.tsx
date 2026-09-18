@@ -10,6 +10,7 @@ import type { CompanionConfigView } from '../src/shared'
 const BASE: CompanionConfigView = {
   enabled: false,
   port: 47811,
+  mirrorInputAllowed: false,
   paired: false,
   push: undefined,
   status: { listening: false },
@@ -198,6 +199,7 @@ describe('CompanionSettings section', () => {
     expect(invoke).toHaveBeenLastCalledWith('companion:config-save', {
       enabled: true,
       port: 50_000,
+      mirrorInputAllowed: false,
       push: { url: 'https://ntfy.example/hvir' },
     })
 
@@ -206,6 +208,7 @@ describe('CompanionSettings section', () => {
     expect(invoke).toHaveBeenLastCalledWith('companion:config-save', {
       enabled: true,
       port: 50_000,
+      mirrorInputAllowed: false,
       push: { url: 'https://ntfy.example/hvir', token: 'fresh-token' },
     })
     expect(input('settings-companion-push-token').value).toBe('')
@@ -227,6 +230,7 @@ describe('CompanionSettings section', () => {
     expect(invoke).toHaveBeenLastCalledWith('companion:config-save', {
       enabled: false,
       port: 47811,
+      mirrorInputAllowed: false,
       push: { url: 'https://ntfy.example/hvir', token: '' },
     })
     expect(host.textContent).not.toContain('token set')
@@ -237,5 +241,31 @@ describe('CompanionSettings section', () => {
     expect(host.querySelector('.dialog-error')?.textContent).toContain(
       'no answer for companion:config-save',
     )
+  })
+
+  it('carries the stored typing permission through Apply and Remove token', async () => {
+    views['companion:config'] = {
+      ...BASE,
+      mirrorInputAllowed: true,
+      push: { url: 'https://ntfy.example/hvir', tokenConfigured: true },
+    }
+    views['companion:config-save'] = views['companion:config']
+    await render()
+    await settle()
+
+    await click('Apply')
+    expect(invoke).toHaveBeenLastCalledWith('companion:config-save', {
+      enabled: false,
+      port: 47811,
+      mirrorInputAllowed: true,
+      push: { url: 'https://ntfy.example/hvir' },
+    })
+    await click('Remove token')
+    expect(invoke).toHaveBeenLastCalledWith('companion:config-save', {
+      enabled: false,
+      port: 47811,
+      mirrorInputAllowed: true,
+      push: { url: 'https://ntfy.example/hvir', token: '' },
+    })
   })
 })

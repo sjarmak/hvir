@@ -21,6 +21,7 @@ import {
 } from '../../shared'
 import type { MainActionableEntry } from '../attention/actionable-attention-set'
 import type { SessionsExternalSessionKey } from '../sessions/sessions-projection-identities'
+import { companionMirrorEligible } from './companion-mirror-target'
 
 export interface CompanionRowsInput {
   readonly observation: Pick<SessionsObservationSnapshot, 'workspaces' | 'sessions'>
@@ -67,6 +68,7 @@ function externalKey(key: SessionsExternalSessionKey): string {
 /**
  * Field by field on purpose: livePty, the workspace qualifier and host.id are
  * left behind because nothing copies them, not because something removes them.
+ * `canMirror` is the one fact derived from livePty; the qualifier stays here.
  */
 function companionRow(
   session: SessionsObservedSession,
@@ -90,6 +92,7 @@ function companionRow(
     ...(entry?.reason === undefined ? {} : { reason: entry.reason }),
     turn: session.telemetry.turn,
     canAnswer,
+    canMirror: companionMirrorEligible(session, workspace),
   }
 }
 

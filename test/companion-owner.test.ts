@@ -37,7 +37,12 @@ import {
   type HostPath,
   type ProjectState,
 } from '../src/shared'
-import { companionWorld, interaction, localRoot } from './companion-sessions-fixture'
+import {
+  companionWorld,
+  interaction,
+  livePty,
+  localRoot,
+} from './companion-sessions-fixture'
 
 const EXTERNAL = asSessionsTerminalHandle('sessions-external-0001')
 const OTHER = asSessionsTerminalHandle('sessions-external-0002')
@@ -159,6 +164,7 @@ async function harness(
       sinks: world.sinks,
     },
     actionable: world.ports.actionable,
+    mirrors: { attachMirror: world.mirrors.ports.attach },
     describe: {
       terminals: { get: () => undefined },
       projects: { state: emptyProjectState },
@@ -218,7 +224,7 @@ async function until(predicate: () => boolean, what: string): Promise<void> {
 }
 
 async function enable(companion: ApplicationCompanion, port = 0): Promise<number> {
-  await companion.settings.save({ enabled: true, port })
+  await companion.settings.save({ enabled: true, port, mirrorInputAllowed: false })
   await until(() => companion.settings.view().status.listening, 'listener to open')
   const bound = companion.settings.view().status.port
   if (bound === undefined) throw new Error('status reported no port')
@@ -370,14 +376,22 @@ describe('installApplicationCompanion listener lifecycle', () => {
     expect(published.at(-1)?.status).toEqual({ listening: true, port: first })
     expect((await send(first, 'GET', '/')).status).toBe(200)
 
-    await companion.settings.save({ enabled: true, port: first })
+    await companion.settings.save({
+      enabled: true,
+      port: first,
+      mirrorInputAllowed: false,
+    })
     await until(
       () => companion.settings.view().status.port === first && companion.server.listening,
       'reopen on the named port',
     )
     expect((await send(first, 'GET', '/')).status).toBe(200)
 
-    await companion.settings.save({ enabled: false, port: first })
+    await companion.settings.save({
+      enabled: false,
+      port: first,
+      mirrorInputAllowed: false,
+    })
     await until(() => !companion.settings.view().status.listening, 'listener to close')
     expect(companion.server.listening).toBe(false)
     await expect(send(first, 'GET', '/')).rejects.toMatchObject({ code: 'ECONNREFUSED' })
@@ -390,7 +404,11 @@ describe('installApplicationCompanion listener lifecycle', () => {
     cleanups.push(() => new Promise<void>((resolve) => blocker.close(() => resolve())))
     const taken = (blocker.address() as AddressInfo).port
 
-    await companion.settings.save({ enabled: true, port: taken })
+    await companion.settings.save({
+      enabled: true,
+      port: taken,
+      mirrorInputAllowed: false,
+    })
     await until(
       () => companion.settings.view().status.error !== undefined,
       'bind failure status',
@@ -634,6 +652,214 @@ describe('installApplicationCompanion sessions API', () => {
     expect(world.actionableListeners()).toBe(1)
   })
 
+  it('POST input answers 403, 409, 404 and 200 in order and forwards terminal frames over SSE', async () => {
+    const { world, companion, client, port, token } = await opened()
+    const headers = bearer(token)
+    const page = client.pageId
+    const input = (handle: string) => `/api/sessions/${encodeURIComponent(handle)}/input`
+    world.ptys.set([livePty('local-session', localRoot)])
+    await until(
+      () =>
+        client.frames.some(
+          (frame) =>
+            frame.event === 'snapshot' &&
+            (frame.data as CompanionSnapshot).rows.some(
+              (row) => row.handle === LOCAL && row.canMirror,
+            ),
+        ),
+      'a mirrorable local row',
+    )
+
+    const selected = await send(port, 'POST', input(LOCAL).replace('/input', '/select'), {
+      headers,
+      body: { page },
+    })
+    expect(selected.status).toBe(200)
+    await until(() => client.frames.some((frame) => frame.event === 'terminal'), 'opened')
+    expect(client.frames.find((frame) => frame.event === 'terminal')).toEqual({
+      event: 'terminal',
+      data: { type: 'opened', handle: LOCAL, cols: 132, rows: 43, tail: '\u001b[2J$ ' },
+    })
+    const lease = world.mirrors.leases[0]!
+    lease.handlers.onData('permission? [y/n] ')
+    const terminalFrames = () =>
+      client.frames
+        .filter((frame) => frame.event === 'terminal')
+        .map((frame) => frame.data)
+    await until(() => terminalFrames().length >= 2, 'output frame')
+    expect(terminalFrames()[1]).toEqual({
+      type: 'output',
+      handle: LOCAL,
+      data: 'permission? [y/n] ',
+    })
+
+    const disallowed = await send(port, 'POST', input(LOCAL), {
+      headers,
+      body: { page, data: 'y\r' },
+    })
+    expect(disallowed.status).toBe(403)
+    expect(JSON.parse(disallowed.body)).toEqual({
+      error: 'Typing from the Companion is off in Settings',
+    })
+    expect(lease.writes).toEqual([])
+
+    // The same enabled/port keeps the listener where it is; only typing changes.
+    await companion.settings.save({
+      enabled: true,
+      port: companion.settings.view().port,
+      mirrorInputAllowed: true,
+    })
+    const noMirror = await send(port, 'POST', input(OTHER), {
+      headers,
+      body: { page, data: 'y\r' },
+    })
+    expect(noMirror.status).toBe(409)
+    expect(JSON.parse(noMirror.body)).toEqual({
+      error: 'Companion page holds no mirror for this row',
+    })
+    for (const body of [
+      { page },
+      { page, data: '' },
+      { page, data: 'x'.repeat(4097) },
+      { page, data: 'y', handle: LOCAL },
+      { page, data: 7 },
+    ]) {
+      expect(
+        (await send(port, 'POST', input(LOCAL), { headers, body })).status,
+        JSON.stringify(body).slice(0, 40),
+      ).toBe(400)
+    }
+    expect(
+      (
+        await send(port, 'POST', input(LOCAL), {
+          headers,
+          body: { page: 'nope', data: 'y' },
+        })
+      ).status,
+    ).toBe(404)
+    expect(lease.writes).toEqual([])
+
+    const accepted = await send(port, 'POST', input(LOCAL), {
+      headers,
+      body: { page, data: 'y\r' },
+    })
+    expect(accepted.status).toBe(200)
+    expect(JSON.parse(accepted.body)).toEqual({ outcome: 'accepted' })
+    expect(lease.writes).toEqual(['y\r'])
+
+    lease.refuseWrite = 'ended'
+    const ended = await send(port, 'POST', input(LOCAL), {
+      headers,
+      body: { page, data: '\u0003' },
+    })
+    expect(ended.status).toBe(409)
+    expect(JSON.parse(ended.body)).toEqual({
+      error: 'The mirrored terminal ended or changed',
+    })
+    await until(
+      () =>
+        client.frames.some(
+          (frame) =>
+            frame.event === 'terminal' &&
+            (frame.data as { type: string }).type === 'ended',
+        ),
+      'ended frame',
+    )
+    expect(client.frames.at(-1)).toEqual({
+      event: 'terminal',
+      data: { type: 'ended', handle: LOCAL, reason: 'exited' },
+    })
+    expect(lease.writes).toEqual(['y\r'])
+    expect(
+      (await send(port, 'POST', input(LOCAL), { headers, body: { page, data: 'y' } }))
+        .status,
+    ).toBe(409)
+    expect(JSON.stringify(world.mirrors.leases.map((l) => l.writes))).not.toContain(
+      'permission?',
+    )
+  })
+
+  it('input after the PTY exited answers 409 once the page holds the ended frame', async () => {
+    const { world, companion, client, port, token } = await opened()
+    const headers = bearer(token)
+    const page = client.pageId
+    world.ptys.set([livePty('local-session', localRoot)])
+    await companion.settings.save({
+      enabled: true,
+      port: companion.settings.view().port,
+      mirrorInputAllowed: true,
+    })
+    await until(
+      () =>
+        client.frames.some(
+          (frame) =>
+            frame.event === 'snapshot' &&
+            (frame.data as CompanionSnapshot).rows.some(
+              (row) => row.handle === LOCAL && row.canMirror,
+            ),
+        ),
+      'a mirrorable local row',
+    )
+    const select = `/api/sessions/${encodeURIComponent(LOCAL)}/select`
+    expect((await send(port, 'POST', select, { headers, body: { page } })).status).toBe(
+      200,
+    )
+    await until(() => world.mirrors.leases.length === 1, 'lease')
+    const lease = world.mirrors.leases[0]!
+
+    lease.exit({ exitCode: 0, signal: undefined })
+    await until(
+      () =>
+        client.frames.some(
+          (frame) =>
+            frame.event === 'terminal' &&
+            (frame.data as { type: string }).type === 'ended',
+        ),
+      'ended frame',
+    )
+    expect(client.frames.at(-1)).toEqual({
+      event: 'terminal',
+      data: { type: 'ended', handle: LOCAL, reason: 'exited' },
+    })
+
+    const refused = await send(
+      port,
+      'POST',
+      `/api/sessions/${encodeURIComponent(LOCAL)}/input`,
+      {
+        headers,
+        body: { page, data: '\r' },
+      },
+    )
+    expect(refused.status).toBe(409)
+    expect(JSON.parse(refused.body)).toEqual({
+      error: 'Companion page holds no mirror for this row',
+    })
+    expect(lease.writes).toEqual([])
+  })
+
+  it('revocation sends terminal ended revoked before closed', async () => {
+    const { world, companion, client, port, token } = await opened()
+    world.ptys.set([livePty('local-session', localRoot)])
+    await until(() => client.frames.length >= 2, 'live snapshot')
+    await send(port, 'POST', `/api/sessions/${encodeURIComponent(LOCAL)}/select`, {
+      headers: bearer(token),
+      body: { page: client.pageId },
+    })
+    await until(() => client.frames.some((frame) => frame.event === 'terminal'), 'opened')
+
+    await companion.settings.revokePairing()
+    await client.closed
+    expect(client.frames.slice(-2)).toEqual([
+      {
+        event: 'terminal',
+        data: { type: 'ended', handle: LOCAL, reason: 'revoked' },
+      },
+      { event: 'closed', data: { reason: 'revoked' } },
+    ])
+    expect(world.mirrors.leases[0]!.released).toBe(true)
+  })
+
   it('closes every stream with revoked and refuses the old bearer afterwards', async () => {
     const { companion, client, port, token } = await opened()
     await companion.settings.revokePairing()
@@ -658,6 +884,7 @@ describe('installApplicationCompanion push and disposal', () => {
     await companion.settings.save({
       enabled: false,
       port: 47811,
+      mirrorInputAllowed: false,
       push: { url: 'https://ntfy.example/hvir' },
     })
     expect(world.actionable.snapshot().away).toBe(true)
@@ -708,7 +935,11 @@ describe('installApplicationCompanion push and disposal', () => {
   it('keeps the saved configuration across a reload', async () => {
     const store = memoryFile()
     const first = await harness({ store })
-    await first.companion.settings.save({ enabled: true, port: 50_123 })
+    await first.companion.settings.save({
+      enabled: true,
+      port: 50_123,
+      mirrorInputAllowed: false,
+    })
     await first.dispose()
     const second = await harness({ store })
     expect(second.companion.settings.view()).toMatchObject({

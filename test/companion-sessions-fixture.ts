@@ -37,6 +37,7 @@ import {
   localPath,
   type ProjectState,
 } from '../src/shared'
+import { fakeMirrors } from './companion-mirror-fixture'
 
 export const codex = asHarnessProviderId('codex')
 export const codexProfile = asHarnessProfileId('codex-default')
@@ -98,6 +99,7 @@ export function companionWorld(options: CompanionWorldOptions = {}) {
       }),
   })
   const actionable = new ActionableAttentionSet()
+  const mirrors = fakeMirrors()
   let actionableListeners = 0
   const countedActionable: Pick<ActionableAttentionSet, 'snapshot' | 'observe'> = {
     snapshot: () => actionable.snapshot(),
@@ -120,6 +122,7 @@ export function companionWorld(options: CompanionWorldOptions = {}) {
     transcripts,
     actionable,
     sinks,
+    mirrors,
     missing,
     rendererEmits,
     streams: supervisor.streams,
@@ -131,6 +134,7 @@ export function companionWorld(options: CompanionWorldOptions = {}) {
       transcripts,
       actionable: countedActionable,
       sinks,
+      mirrors: mirrors.ports,
     },
     settle: async () => {
       for (let turn = 0; turn < 8; turn += 1) await Promise.resolve()
@@ -322,6 +326,33 @@ export function retained(
     position: 0,
     active: true,
     updatedAt: 1,
+  }
+}
+
+/** A live PTY under a retained session id; `livePty.handle` becomes `pty-instance-<id>`. */
+export function livePty(id: string, root: typeof localRoot): ObservedManagedPty {
+  return {
+    info: {
+      instanceId: `pty-instance-${id}`,
+      id,
+      ownerId: 7,
+      ownerGeneration: 4,
+      hostId: root.hostId,
+      cwd: root,
+      workspaceRoot: root,
+      providerId: codex,
+      capabilities: {
+        sessionIdentity: 'discovered',
+        exactResume: true,
+        contextPresentation: 'pressure',
+      },
+      profileId: codexProfile,
+      pid: 123,
+      startedAt: 1,
+      resumed: false,
+      harnessSessionId: 'provider-session-secret',
+      identityStatus: 'identified',
+    },
   }
 }
 

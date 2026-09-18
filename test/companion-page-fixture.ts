@@ -44,6 +44,7 @@ export function row(overrides: Unbranded<CompanionRow>): CompanionRow {
     freshness: 'fresh',
     turn: { status: 'unsupported' },
     canAnswer: true,
+    canMirror: false,
     ...overrides,
     handle: asSessionsTerminalHandle(overrides.handle),
   }

@@ -54,11 +54,16 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
     let active = true
     const opening = client.openEvents((event) => {
       if (!active) return
-      setState((current) =>
-        event.type === 'snapshot'
-          ? applyCompanionSnapshot(current, event.snapshot)
-          : applyCompanionTranscript(current, event.transcript),
-      )
+      setState((current) => {
+        switch (event.type) {
+          case 'snapshot':
+            return applyCompanionSnapshot(current, event.snapshot)
+          case 'transcript':
+            return applyCompanionTranscript(current, event.transcript)
+          case 'terminal':
+            return current
+        }
+      })
     })
     opening.then(
       (opened) => {

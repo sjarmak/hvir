@@ -52,9 +52,41 @@ async function load(
 describe('CompanionConfigStore', () => {
   it('starts disabled on the default port when nothing is stored', async () => {
     const { store, onDiagnostic } = await load(await scratch())
-    expect(store.config()).toEqual({ enabled: false, port: 47811 })
+    expect(store.config()).toEqual({
+      enabled: false,
+      port: 47811,
+      mirrorInputAllowed: false,
+    })
     expect(store.pushToken()).toBeUndefined()
     expect(onDiagnostic).not.toHaveBeenCalled()
+  })
+
+  it('persists mirrorInputAllowed and defaults it off', async () => {
+    const world = await scratch()
+    const { store } = await load(world)
+    await store.save({ enabled: false, port: 47811, mirrorInputAllowed: true })
+    await store.flush()
+    expect(JSON.parse(await readFile(world.path, 'utf8'))).toMatchObject({
+      mirrorInputAllowed: true,
+    })
+    expect((await load(world)).store.config().mirrorInputAllowed).toBe(true)
+
+    await writeFile(world.path, JSON.stringify({ version: 1, enabled: true, port: 2000 }))
+    expect((await load(world)).store.config()).toEqual({
+      enabled: true,
+      port: 2000,
+      mirrorInputAllowed: false,
+    })
+    await writeFile(
+      world.path,
+      JSON.stringify({
+        version: 1,
+        enabled: true,
+        port: 2000,
+        mirrorInputAllowed: 'yes',
+      }),
+    )
+    expect((await load(world)).store.config().mirrorInputAllowed).toBe(false)
   })
 
   it('round-trips a save and keeps the push token encrypted on disk', async () => {
@@ -64,6 +96,7 @@ describe('CompanionConfigStore', () => {
       store.save({
         enabled: true,
         port: 50_000,
+        mirrorInputAllowed: false,
         push: { url: 'https://ntfy.example/hvir', token: TOKEN },
       }),
     ).resolves.toEqual({ outcome: 'saved' })
@@ -87,7 +120,11 @@ describe('CompanionConfigStore', () => {
     const world = await scratch()
     await writeFile(world.path, JSON.stringify({ version: 2, enabled: true, port: 1 }))
     const { store, onDiagnostic } = await load(world)
-    expect(store.config()).toEqual({ enabled: false, port: 47811 })
+    expect(store.config()).toEqual({
+      enabled: false,
+      port: 47811,
+      mirrorInputAllowed: false,
+    })
     expect(onDiagnostic).toHaveBeenCalledWith({ kind: 'version-mismatch', found: 2 })
   })
 
@@ -95,7 +132,11 @@ describe('CompanionConfigStore', () => {
     const world = await scratch()
     await writeFile(world.path, '{not json')
     const { store, onDiagnostic } = await load(world)
-    expect(store.config()).toEqual({ enabled: false, port: 47811 })
+    expect(store.config()).toEqual({
+      enabled: false,
+      port: 47811,
+      mirrorInputAllowed: false,
+    })
     expect(onDiagnostic).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'unreadable' }),
     )
@@ -107,6 +148,7 @@ describe('CompanionConfigStore', () => {
       store.save({
         enabled: false,
         port: 47811,
+        mirrorInputAllowed: false,
         push: { url: 'https://x.example', token: TOKEN },
       }),
     ).resolves.toEqual({ outcome: 'token-rejected', reason: 'encryption-unavailable' })
@@ -119,21 +161,28 @@ describe('CompanionConfigStore', () => {
     await store.save({
       enabled: true,
       port: 47811,
+      mirrorInputAllowed: false,
       push: { url: 'https://a.example', token: TOKEN },
     })
-    await store.save({ enabled: true, port: 47811, push: { url: 'https://b.example' } })
+    await store.save({
+      enabled: true,
+      port: 47811,
+      mirrorInputAllowed: false,
+      push: { url: 'https://b.example' },
+    })
     expect(store.config().push?.url).toBe('https://b.example')
     expect(store.pushToken()).toBe(TOKEN)
 
     await store.save({
       enabled: true,
       port: 47811,
+      mirrorInputAllowed: false,
       push: { url: 'https://b.example', token: '' },
     })
     expect(store.config().push).toEqual({ url: 'https://b.example' })
     expect(store.pushToken()).toBeUndefined()
 
-    await store.save({ enabled: true, port: 47811 })
+    await store.save({ enabled: true, port: 47811, mirrorInputAllowed: false })
     expect(store.config().push).toBeUndefined()
   })
 
@@ -141,7 +190,7 @@ describe('CompanionConfigStore', () => {
     const world = await scratch()
     const { store } = await load(world)
     await store.setCredential({ hash: 'ab'.repeat(32), issuedAt: 1_700_000_000_000 })
-    await store.save({ enabled: true, port: 47811 })
+    await store.save({ enabled: true, port: 47811, mirrorInputAllowed: false })
     const reloaded = await load(world)
     expect(reloaded.store.config().credential).toEqual({
       hash: 'ab'.repeat(32),
@@ -157,6 +206,7 @@ describe('CompanionConfigStore', () => {
     await first.store.save({
       enabled: true,
       port: 47811,
+      mirrorInputAllowed: false,
       push: { url: 'https://a.example', token: TOKEN },
     })
     await first.store.flush()

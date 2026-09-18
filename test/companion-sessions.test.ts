@@ -1,18 +1,26 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { CompanionSessionsService } from '../src/main/companion/companion-sessions'
+import { CompanionMirrorEndedError } from '../src/main/companion/companion-page-mirror'
+import {
+  CompanionNoMirrorError,
+  CompanionSessionsService,
+  CompanionTypingDisallowedError,
+} from '../src/main/companion/companion-sessions'
 import type { MainActionableEntry } from '../src/main/attention/actionable-attention-set'
 import {
   asHostId,
   asSessionsTerminalHandle,
   type CompanionEvent,
   type CompanionRow,
+  type CompanionTerminalEvent,
 } from '../src/shared'
 import {
   companionWorld,
   interaction,
+  livePty,
   localRoot,
   retained,
+  sshRoot,
 } from './companion-sessions-fixture'
 
 const EXTERNAL = asSessionsTerminalHandle('sessions-external-0001')
@@ -415,5 +423,289 @@ describe('CompanionSessionsService', () => {
     expect(service.openPages).toBe(0)
     expect(() => service.openPage()).toThrow('Companion sessions are disposed')
     expect(() => world.sinks.register(service as never)).not.toThrow()
+  })
+})
+
+const REMOTE = asSessionsTerminalHandle('remote-session')
+const EXIT = { exitCode: 0, signal: undefined }
+
+function terminalEvents(events: readonly CompanionEvent[]): CompanionTerminalEvent[] {
+  return events.flatMap((event) => (event.type === 'terminal' ? [event.terminal] : []))
+}
+
+function mirrorWorld() {
+  const world = companionWorld()
+  world.ptys.set([
+    livePty('local-session', localRoot),
+    livePty('remote-session', sshRoot),
+  ])
+  const service = new CompanionSessionsService({ ...world.ports, mintPageId: pageIds() })
+  const page = service.openPage()
+  const events: CompanionEvent[] = []
+  page.events((event) => events.push(event))
+  return { world, service, page, events, terminal: () => terminalEvents(events) }
+}
+
+describe('CompanionSessionsService mirrors', () => {
+  it('selecting a live hvir row opens a mirror and emits opened with tail and geometry to that page only', () => {
+    const { world, service, page, events, terminal } = mirrorWorld()
+    const other = service.openPage()
+    const otherEvents: CompanionEvent[] = []
+    other.events((event) => otherEvents.push(event))
+    expect(
+      service.snapshot(page.pageId).rows.map((row) => [row.handle, row.canMirror]),
+    ).toContainEqual([LOCAL, true])
+
+    service.select(page.pageId, LOCAL)
+    expect(world.mirrors.attaches).toEqual([
+      { ptyId: 'local-session', instanceId: 'pty-instance-local-session' },
+    ])
+    expect(terminal()).toEqual([
+      { type: 'opened', handle: LOCAL, cols: 132, rows: 43, tail: '\u001b[2J$ ' },
+    ])
+    world.mirrors.leases[0]!.handlers.onData('$ ls\r\n')
+    world.mirrors.leases[0]!.handlers.onGeometry({ cols: 80, rows: 24 })
+    expect(terminal().slice(1)).toEqual([
+      { type: 'output', handle: LOCAL, data: '$ ls\r\n' },
+      { type: 'geometry', handle: LOCAL, cols: 80, rows: 24 },
+    ])
+    expect(otherEvents).toEqual([])
+    expect(events.every((event) => event.type !== 'closed')).toBe(true)
+    service.dispose()
+  })
+
+  it('selecting a row still acquires the transcript lease and the transcript frame follows the opened frame', async () => {
+    const { world, service, page, events } = mirrorWorld()
+    const acquire = vi.spyOn(world.transcripts, 'acquire')
+    const opened = service.select(page.pageId, LOCAL)
+    expect(acquire).toHaveBeenCalledOnce()
+    // An hvir row has no supervisor transcript; the lease says so at once.
+    expect(opened).toMatchObject({
+      handle: LOCAL,
+      status: 'unavailable',
+      reason: 'not-projected',
+    })
+    await world.settle()
+    expect(events.map((event) => event.type)).toEqual(['terminal', 'transcript'])
+    expect(events[1]).toMatchObject({
+      type: 'transcript',
+      transcript: { handle: LOCAL, status: 'unavailable', reason: 'not-projected' },
+    })
+    service.dispose()
+  })
+
+  it('rows without a live hvir PTY keep the transcript path and open no mirror', async () => {
+    const { world, service, page, events, terminal } = mirrorWorld()
+    service.select(page.pageId, EXTERNAL)
+    service.select(page.pageId, REMOTE)
+    await world.settle()
+    expect(world.mirrors.attaches).toEqual([])
+    expect(terminal()).toEqual([])
+    expect(events.at(-1)).toMatchObject({
+      type: 'transcript',
+      transcript: { handle: REMOTE },
+    })
+    service.dispose()
+  })
+
+  it('a second page selecting the same row gets its own lease', () => {
+    const { world, service, page } = mirrorWorld()
+    const second = service.openPage()
+    const secondTerminal: CompanionTerminalEvent[] = []
+    second.events((event) => {
+      if (event.type === 'terminal') secondTerminal.push(event.terminal)
+    })
+    service.select(page.pageId, LOCAL)
+    service.select(second.pageId, LOCAL)
+    expect(world.mirrors.leases).toHaveLength(2)
+    expect(world.mirrors.leases.map((lease) => lease.released)).toEqual([false, false])
+    world.mirrors.leases[1]!.handlers.onData('only the second')
+    expect(secondTerminal.map((event) => event.type)).toEqual(['opened', 'output'])
+    service.closePage(second.pageId)
+    expect(world.mirrors.leases.map((lease) => lease.released)).toEqual([false, true])
+    service.dispose()
+  })
+
+  it('reselecting replaces the mirror and emits ended reselected', () => {
+    const { world, service, page, terminal } = mirrorWorld()
+    service.select(page.pageId, LOCAL)
+    service.select(page.pageId, LOCAL)
+    expect(world.mirrors.leases.map((lease) => lease.released)).toEqual([true, false])
+    expect(terminal().map((event) => event.type)).toEqual(['opened', 'ended', 'opened'])
+    expect(terminal()[1]).toEqual({ type: 'ended', handle: LOCAL, reason: 'reselected' })
+    world.mirrors.leases[0]!.handlers.onData('stale')
+    expect(terminal()).toHaveLength(3)
+
+    service.select(page.pageId, EXTERNAL)
+    expect(terminal().at(-1)).toEqual({
+      type: 'ended',
+      handle: LOCAL,
+      reason: 'reselected',
+    })
+    expect(world.mirrors.leases[1]!.released).toBe(true)
+    service.select(page.pageId, EXTERNAL)
+    expect(terminal()).toHaveLength(4)
+    service.dispose()
+  })
+
+  it('a refused attach emits ended exited and select still returns the transcript', () => {
+    const { world, service, page, terminal } = mirrorWorld()
+    world.mirrors.refuseAttach = 'instance-changed'
+    world.mirrors.typingAllowed = true
+    expect(service.select(page.pageId, LOCAL)).toMatchObject({ handle: LOCAL })
+    expect(terminal()).toEqual([{ type: 'ended', handle: LOCAL, reason: 'exited' }])
+    expect(() => service.input(page.pageId, LOCAL, 'x')).toThrow(CompanionNoMirrorError)
+    service.dispose()
+  })
+
+  it('closePage releases the lease and emits ended page-closed', () => {
+    const { world, service, page, terminal } = mirrorWorld()
+    service.select(page.pageId, LOCAL)
+    service.closePage(page.pageId)
+    expect(world.mirrors.leases[0]!.released).toBe(true)
+    expect(terminal().at(-1)).toEqual({
+      type: 'ended',
+      handle: LOCAL,
+      reason: 'page-closed',
+    })
+    service.closePage(page.pageId)
+    expect(terminal()).toHaveLength(2)
+    service.dispose()
+  })
+
+  it('closeAll revoked ends mirrors before closed', () => {
+    const { world, service, page, events } = mirrorWorld()
+    service.select(page.pageId, LOCAL)
+    service.closeAll('revoked')
+    expect(events.slice(1)).toEqual([
+      { type: 'terminal', terminal: { type: 'ended', handle: LOCAL, reason: 'revoked' } },
+      { type: 'closed', reason: 'revoked' },
+    ])
+    expect(world.mirrors.leases[0]!.released).toBe(true)
+    expect(service.openPages).toBe(0)
+  })
+
+  it('dispose ends mirrors with shutdown and a lost lease with lease-lost', () => {
+    const first = mirrorWorld()
+    first.service.select(first.page.pageId, LOCAL)
+    first.service.dispose()
+    expect(first.terminal().at(-1)).toEqual({
+      type: 'ended',
+      handle: LOCAL,
+      reason: 'shutdown',
+    })
+
+    const lost = mirrorWorld()
+    lost.service.select(lost.page.pageId, LOCAL)
+    lost.world.observation.dispose()
+    lost.world.actionable.setExternal([externalEntry()])
+    expect(lost.events.slice(1)).toEqual([
+      {
+        type: 'terminal',
+        terminal: { type: 'ended', handle: LOCAL, reason: 'lease-lost' },
+      },
+      { type: 'closed', reason: 'lease-lost' },
+    ])
+    expect(lost.world.mirrors.leases[0]!.released).toBe(true)
+    lost.service.dispose()
+  })
+
+  it('PTY exit emits ended exited and drops the mirror', () => {
+    const { world, service, page, terminal } = mirrorWorld()
+    world.mirrors.typingAllowed = true
+    service.select(page.pageId, LOCAL)
+    world.mirrors.leases[0]!.exit(EXIT)
+    expect(terminal().at(-1)).toEqual({ type: 'ended', handle: LOCAL, reason: 'exited' })
+    expect(() => service.input(page.pageId, LOCAL, '\r')).toThrow(CompanionNoMirrorError)
+    expect(world.mirrors.leases[0]!.writes).toEqual([])
+    service.closePage(page.pageId)
+    expect(terminal()).toHaveLength(2)
+    service.dispose()
+  })
+
+  it('a supervisor release emits ended released', () => {
+    const { world, service, page, terminal } = mirrorWorld()
+    service.select(page.pageId, LOCAL)
+    world.mirrors.leases[0]!.handlers.onEnd({ kind: 'released' })
+    expect(terminal().at(-1)).toEqual({
+      type: 'ended',
+      handle: LOCAL,
+      reason: 'released',
+    })
+    service.dispose()
+  })
+
+  it('endMirror overrun releases the lease and emits ended overrun', () => {
+    const { world, service, page, terminal } = mirrorWorld()
+    service.endMirror(page.pageId, 'overrun')
+    service.endMirror('page-9', 'overrun')
+    expect(terminal()).toEqual([])
+    service.select(page.pageId, LOCAL)
+    service.endMirror(page.pageId, 'overrun')
+    expect(world.mirrors.leases[0]!.released).toBe(true)
+    expect(terminal().at(-1)).toEqual({ type: 'ended', handle: LOCAL, reason: 'overrun' })
+    service.endMirror(page.pageId, 'overrun')
+    expect(terminal()).toHaveLength(2)
+    service.dispose()
+  })
+
+  it('input refused with CompanionTypingDisallowedError when typing is off', () => {
+    const { world, service, page } = mirrorWorld()
+    service.select(page.pageId, LOCAL)
+    expect(() => service.input(page.pageId, LOCAL, '\r')).toThrow(
+      CompanionTypingDisallowedError,
+    )
+    expect(() => service.input(page.pageId, LOCAL, '\r')).toThrow(
+      'Typing from the Companion is off in Settings',
+    )
+    expect(world.mirrors.leases[0]!.writes).toEqual([])
+    expect(() => service.input('page-9', LOCAL, '\r')).toThrow(
+      'Companion page is not open',
+    )
+    service.dispose()
+  })
+
+  it('input refused with CompanionNoMirrorError for another handle or no selection', () => {
+    const { world, service, page } = mirrorWorld()
+    world.mirrors.typingAllowed = true
+    expect(() => service.input(page.pageId, LOCAL, '\r')).toThrow(CompanionNoMirrorError)
+    service.select(page.pageId, LOCAL)
+    expect(() => service.input(page.pageId, REMOTE, '\r')).toThrow(
+      'Companion page holds no mirror for this row',
+    )
+    expect(world.mirrors.leases[0]!.writes).toEqual([])
+    service.dispose()
+  })
+
+  it('input after lease end throws CompanionMirrorEndedError and emits ended', () => {
+    const { world, service, page, terminal } = mirrorWorld()
+    world.mirrors.typingAllowed = true
+    service.select(page.pageId, LOCAL)
+    world.mirrors.leases[0]!.refuseWrite = 'instance-changed'
+    expect(() => service.input(page.pageId, LOCAL, '\r')).toThrow(
+      CompanionMirrorEndedError,
+    )
+    expect(terminal().at(-1)).toEqual({ type: 'ended', handle: LOCAL, reason: 'exited' })
+    expect(world.mirrors.leases[0]!.released).toBe(true)
+    expect(() => service.input(page.pageId, LOCAL, '\r')).toThrow(CompanionNoMirrorError)
+    service.dispose()
+  })
+
+  it('accepted input reaches lease.write unchanged', () => {
+    const { world, service, page, terminal } = mirrorWorld()
+    world.mirrors.typingAllowed = true
+    service.select(page.pageId, LOCAL)
+    for (const data of ['\r', '\u001b[A', 'y\n', '\udc00', '  padded  ']) {
+      service.input(page.pageId, LOCAL, data)
+    }
+    expect(world.mirrors.leases[0]!.writes).toEqual([
+      '\r',
+      '\u001b[A',
+      'y\n',
+      '\udc00',
+      '  padded  ',
+    ])
+    expect(terminal().map((event) => event.type)).toEqual(['opened'])
+    service.dispose()
   })
 })

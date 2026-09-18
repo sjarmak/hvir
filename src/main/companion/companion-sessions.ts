@@ -1,14 +1,16 @@
 /**
- * The Companion's Sessions verbs (ADR-049): open a page, read its rows, select
- * a row's transcript, answer, message, close.
+ * The Companion's Sessions verbs (ADR-049, ADR-050): open a page, read its
+ * rows, select a row's transcript and mirror, answer, message, type, close.
  *
  * Every open page holds one observation lease under a companion owner the
- * service mints (page id plus a service-wide generation), and at most one
- * transcript lease under the same owner. The service registers the one
+ * service mints (page id plus a service-wide generation), at most one
+ * transcript lease under the same owner, and at most one mirror lease on the
+ * live PTY instance behind the selected row. The service registers the one
  * companion sink and routes each change to the page whose owner and generation
  * it names. No page open means no lease held and no source subscribed: the
- * Companion is quiet when hidden. It never resolves an open, never attaches,
- * never asks for usage; those are renderer verbs the ports refuse it anyway.
+ * Companion is quiet when hidden. It never resolves an open, never attaches as
+ * a renderer, never asks for usage; those are renderer verbs the ports refuse
+ * it anyway. Mirror bytes pass through the service and never into a message.
  */
 import { randomBytes } from 'node:crypto'
 
@@ -36,7 +38,15 @@ import type { SessionsCompanionDemandOwner } from '../sessions/sessions-demand-o
 import type { SessionsObservationPort } from '../sessions/sessions-observation-port'
 import type { SessionsExternalSessionKey } from '../sessions/sessions-projection-identities'
 import type { SessionsTranscriptPort } from '../sessions/sessions-transcript-port'
+import { companionMirrorTarget } from './companion-mirror-target'
+import { CompanionPageMirror, type CompanionMirrorAttach } from './companion-page-mirror'
 import { companionRows } from './companion-rows'
+
+/** The PTY supervisor's mirror door and the Settings permission, as ports. */
+export interface CompanionMirrorPorts {
+  readonly attach: CompanionMirrorAttach
+  readonly typingAllowed: () => boolean
+}
 
 export interface CompanionSessionsPorts {
   readonly observation: Pick<
@@ -49,6 +59,7 @@ export interface CompanionSessionsPorts {
   >
   readonly actionable: Pick<ActionableAttentionSet, 'snapshot' | 'observe'>
   readonly sinks: Pick<SessionsCompanionSinkRegistry, 'register'>
+  readonly mirrors: CompanionMirrorPorts
   /** Page ids are random by default; a test names them. */
   readonly mintPageId?: () => string
 }
@@ -71,6 +82,22 @@ export class CompanionNoSelectionError extends Error {
   }
 }
 
+/** Input arrived while Settings does not allow typing from the Companion. */
+export class CompanionTypingDisallowedError extends Error {
+  constructor() {
+    super('Typing from the Companion is off in Settings')
+    this.name = 'CompanionTypingDisallowedError'
+  }
+}
+
+/** Input named a row this page holds no mirror for. */
+export class CompanionNoMirrorError extends Error {
+  constructor() {
+    super('Companion page holds no mirror for this row')
+    this.name = 'CompanionNoMirrorError'
+  }
+}
+
 export interface CompanionOpenPage {
   readonly pageId: string
   readonly snapshot: CompanionSnapshot
@@ -81,6 +108,7 @@ interface CompanionPage {
   readonly id: string
   readonly owner: SessionsCompanionDemandOwner
   readonly listeners: Set<CompanionEventListener>
+  readonly mirror: CompanionPageMirror
   selected?: SessionsTerminalHandle
   fingerprint: string
   snapshot: CompanionSnapshot
@@ -116,6 +144,9 @@ export class CompanionSessionsService {
       id,
       owner,
       listeners: new Set(),
+      mirror: new CompanionPageMirror(this.ports.mirrors.attach, (terminal) =>
+        this.emit(page, { type: 'terminal', terminal }),
+      ),
       fingerprint: '',
       snapshot: {
         version: SESSIONS_COMPANION_VERSION,
@@ -151,7 +182,23 @@ export class CompanionSessionsService {
       handle,
     })
     page.selected = handle
+    const target = companionMirrorTarget(observed, handle)
+    if (target === undefined) page.mirror.end('reselected')
+    else page.mirror.open(handle, target)
     return snapshot
+  }
+
+  /** The user's exact bytes to the mirrored row; refused before the lease is asked. */
+  input(pageId: string, handle: SessionsTerminalHandle, data: string): void {
+    const page = this.page(pageId)
+    if (!this.ports.mirrors.typingAllowed()) throw new CompanionTypingDisallowedError()
+    if (page.mirror.handle !== handle) throw new CompanionNoMirrorError()
+    page.mirror.write(data)
+  }
+
+  /** The stream fell behind: the route ends the mirror rather than the page. */
+  endMirror(pageId: string, reason: 'overrun'): void {
+    this.pages.get(pageId)?.mirror.end(reason)
   }
 
   resume(pageId: string): SessionsTranscriptSnapshot {
@@ -197,7 +244,7 @@ export class CompanionSessionsService {
   /** Every page hears why before any lease goes, so a stream can say goodbye. */
   closeAll(reason: CompanionClosedReason): void {
     const pages = [...this.pages.values()]
-    for (const page of pages) this.emit(page, { type: 'closed', reason })
+    for (const page of pages) this.close(page, reason)
     for (const page of pages) this.closePage(page.id)
   }
 
@@ -252,7 +299,7 @@ export class CompanionSessionsService {
   private publish(page: CompanionPage): void {
     const observed = this.currentObservation(page)
     if (observed === undefined) {
-      this.emit(page, { type: 'closed', reason: 'lease-lost' })
+      this.close(page, 'lease-lost')
       this.closePage(page.id)
       return
     }
@@ -304,8 +351,15 @@ export class CompanionSessionsService {
     return { sourceId, hostId, key }
   }
 
+  /** The mirror ends first so its `ended` precedes the page's `closed`. */
+  private close(page: CompanionPage, reason: CompanionClosedReason): void {
+    page.mirror.end(reason)
+    this.emit(page, { type: 'closed', reason })
+  }
+
   private releaseLeases(page: CompanionPage): void {
     const { generation } = page.owner
+    page.mirror.end('page-closed')
     if (page.selected !== undefined) {
       page.selected = undefined
       this.ports.transcripts.release(page.owner, generation)

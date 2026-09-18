@@ -52,7 +52,32 @@ describe('companion rows', () => {
         freshness: 'fresh',
         turn: { status: 'available', value: { state: 'working' } },
         canAnswer: false,
+        canMirror: false,
       },
+    ])
+  })
+
+  it('canMirror follows companionMirrorEligible', () => {
+    const rows = companionRows({
+      observation: observation([
+        { ...terminal(TERMINAL, 'Codex'), livePty: livePtyQualifier() },
+        {
+          ...terminal(asSessionsTerminalHandle('terminal-2'), 'Remote'),
+          workspaceId: REMOTE_WORKSPACE,
+          livePty: livePtyQualifier(),
+        },
+        {
+          ...terminal(asSessionsTerminalHandle('terminal-3'), 'Retained'),
+          lifecycle: 'retained',
+        },
+      ]),
+      actionable: [],
+      resolveExternal: () => undefined,
+    })
+    expect(rows.map((row) => [row.handle, row.canMirror])).toEqual([
+      [TERMINAL, true],
+      ['terminal-3', false],
+      ['terminal-2', false],
     ])
   })
 

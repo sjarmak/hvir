@@ -70,6 +70,7 @@ export class CompanionSettings implements CompanionSettingsPort {
     return {
       enabled: config.enabled,
       port: config.port,
+      mirrorInputAllowed: config.mirrorInputAllowed,
       paired: this.pairing.paired(),
       ...(pairing === undefined ? {} : { pairing }),
       push:
@@ -106,6 +107,11 @@ export class CompanionSettings implements CompanionSettingsPort {
     return () => {
       this.observers.delete(listener)
     }
+  }
+
+  /** The mirror input gate (ADR-050): the stored permission, read at every keystroke. */
+  typingAllowed(): boolean {
+    return this.store.config().mirrorInputAllowed
   }
 
   /** Runs when the pairing is revoked, so open Companion pages can be closed. */

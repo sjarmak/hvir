@@ -1,22 +1,38 @@
 /**
- * The Companion's /api rows (ADR-049), bound onto the server's router: one
- * event stream per page, the page's rows on demand, and the four Sessions
- * verbs. Bodies are validated with the shared guards before any port is
- * asked; a page the service does not hold is 404, a transcript verb before a
- * selection is 409, and every other shape mismatch is 400.
+ * The Companion's /api rows (ADR-049, ADR-050), bound onto the server's
+ * router: one event stream per page, the page's rows on demand, the four
+ * Sessions verbs, and terminal input. Bodies are validated with the shared
+ * guards before any port is asked; a page the service does not hold is 404, a
+ * transcript verb before a selection is 409, typing while Settings forbids it
+ * is 403, input for a row without a mirror is 404, input after the mirror
+ * ended is 409, and every other shape mismatch is 400. Mirror output rides the
+ * page stream as `terminal` frames; a stream that cannot drain them ends the
+ * mirror instead of buffering without bound.
  */
 import {
   asSessionsTerminalHandle,
+  isCompanionInputRequest,
   isCompanionRespondRequest,
   isCompanionSubmitRequest,
   type CompanionEvent,
+  type CompanionTerminalEvent,
+  type SessionsMutationResponse,
   type SessionsTerminalHandle,
 } from '../../shared'
-import { CompanionHttpError, json, readJsonBody } from './companion-http'
+import {
+  CompanionHttpError,
+  SSE_MAX_BACKLOG_BYTES,
+  json,
+  readJsonBody,
+  type SseWriter,
+} from './companion-http'
+import { CompanionMirrorEndedError } from './companion-page-mirror'
 import type { CompanionRequestContext, CompanionRouter } from './companion-router'
 import {
+  CompanionNoMirrorError,
   CompanionNoSelectionError,
   CompanionPageNotOpenError,
+  CompanionTypingDisallowedError,
   type CompanionSessionsService,
 } from './companion-sessions'
 
@@ -48,6 +64,7 @@ export function bindCompanionApi(
   })
   bind('POST', '/api/sessions/:handle/respond', (context) => respond(context, sessions))
   bind('POST', '/api/sessions/:handle/message', (context) => message(context, sessions))
+  bind('POST', '/api/sessions/:handle/input', (context) => input(context, sessions))
 }
 
 async function respond(
@@ -77,6 +94,19 @@ async function message(
   json(context.response, 200, await sessions.submit(page, { ...rest, message: text }))
 }
 
+async function input(
+  context: CompanionRequestContext,
+  sessions: CompanionSessionsService,
+): Promise<void> {
+  const { page, rest } = await verbBody(context)
+  if (!isCompanionInputRequest(rest)) {
+    throw new CompanionHttpError(400, 'Expected {"page", "data"}')
+  }
+  sessions.input(page, handleParam(context), rest.data)
+  const accepted: SessionsMutationResponse = { outcome: 'accepted' }
+  json(context.response, 200, accepted)
+}
+
 async function translate(run: () => Promise<void> | void): Promise<void> {
   try {
     await run()
@@ -84,7 +114,14 @@ async function translate(run: () => Promise<void> | void): Promise<void> {
     if (error instanceof CompanionPageNotOpenError) {
       throw new CompanionHttpError(404, error.message)
     }
-    if (error instanceof CompanionNoSelectionError) {
+    if (error instanceof CompanionTypingDisallowedError) {
+      throw new CompanionHttpError(403, error.message)
+    }
+    if (
+      error instanceof CompanionNoSelectionError ||
+      error instanceof CompanionNoMirrorError ||
+      error instanceof CompanionMirrorEndedError
+    ) {
       throw new CompanionHttpError(409, error.message)
     }
     throw error
@@ -99,17 +136,50 @@ function streamEvents(
   const stream = context.openEventStream({ [COMPANION_PAGE_HEADER]: page.pageId })
   stream.send('snapshot', page.snapshot)
   const stop = page.events((event: CompanionEvent) => {
-    if (event.type === 'snapshot') stream.send('snapshot', event.snapshot)
-    else if (event.type === 'transcript') stream.send('transcript', event.transcript)
-    else {
-      stream.send('closed', { reason: event.reason })
-      stream.close()
+    switch (event.type) {
+      case 'snapshot':
+        stream.send('snapshot', event.snapshot)
+        return
+      case 'transcript':
+        stream.send('transcript', event.transcript)
+        return
+      case 'terminal':
+        sendTerminal(stream, event.terminal, () =>
+          sessions.endMirror(page.pageId, 'overrun'),
+        )
+        return
+      case 'closed':
+        stream.send('closed', { reason: event.reason })
+        stream.close()
+        return
+      default:
+        unreachable(event)
     }
   })
   stream.onClose(() => {
     void stop()
     sessions.closePage(page.pageId)
   })
+}
+
+/**
+ * Output past the backlog cap is dropped and the mirror ended: the `ended`
+ * frame that follows is small, and the page reselects when it catches up.
+ */
+function sendTerminal(
+  stream: SseWriter,
+  terminal: CompanionTerminalEvent,
+  overrun: () => void,
+): void {
+  if (terminal.type === 'output' && stream.backlog > SSE_MAX_BACKLOG_BYTES) {
+    overrun()
+    return
+  }
+  stream.send('terminal', terminal)
+}
+
+function unreachable(event: never): never {
+  throw new Error(`Unhandled Companion event ${JSON.stringify(event)}`)
 }
 
 function handleParam(context: CompanionRequestContext): SessionsTerminalHandle {

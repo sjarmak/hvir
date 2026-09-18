@@ -271,6 +271,7 @@ function createWorkbenchEntry(): void {
       assets: createCompanionAssetReader(hostCatalog.local, rendererRoot),
       sessions: { ...sessionsPorts, sinks: sessionsPorts.companionSinks },
       actionable: attention.set,
+      mirrors: ptySupervisor,
       describe: {
         terminals: terminalSessionRegistry,
         projects: projectRegistry,

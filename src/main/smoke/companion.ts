@@ -36,7 +36,7 @@ export async function verifyCompanionScenario(
   options.addRetained(options.root, retained(options.root, options.providerId))
   if (server.listening) throw new Error('Companion listener was open before enable')
 
-  await settings.save({ enabled: true, port: requestedPort() })
+  await settings.save({ enabled: true, port: requestedPort(), mirrorInputAllowed: false })
   await waitFor(() => settings.view().status.listening, STEP_TIMEOUT_MS, 'listener open')
   const port = settings.view().status.port
   if (port === undefined || server.port !== port) {
@@ -91,7 +91,11 @@ export async function verifyCompanionScenario(
   )
   if (unexpected.length > 0)
     throw new Error(`Companion diagnostics: ${JSON.stringify(unexpected)}`)
-  await settings.save({ enabled: false, port: settings.view().port })
+  await settings.save({
+    enabled: false,
+    port: settings.view().port,
+    mirrorInputAllowed: false,
+  })
   await waitFor(() => !server.listening, STEP_TIMEOUT_MS, 'listener close')
   return `port ${port}, ${assets} assets, ${snapshot.rows.length} rows, leases released, revoke refused`
 }

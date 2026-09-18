@@ -460,4 +460,16 @@ describe('SseWriter', () => {
     expect(writer.closed).toBe(true)
     expect(() => writer.send('snapshot', {})).not.toThrow()
   })
+
+  it('reports backlog from writableLength', () => {
+    const { response } = fakeResponse()
+    const writer = new SseWriter(response)
+    // Nothing reads the PassThrough, so once its readable side is full the
+    // writable side holds what the socket has not yet taken.
+    const before = writer.backlog
+    writer.send('snapshot', { tail: 'x'.repeat(256 * 1024) })
+    expect(writer.backlog).toBeGreaterThan(before)
+    expect(writer.backlog).toBe(response.writableLength)
+    writer.close()
+  })
 })

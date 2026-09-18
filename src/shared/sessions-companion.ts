@@ -1,13 +1,15 @@
 /**
- * What the Companion sees (ADR-049).
+ * What the Companion sees (ADR-049, ADR-050).
  *
  * A Companion page is an away-time observer of the Sessions projection: it
- * reads rows, answers the interaction a row is waiting on, and sends a row a
- * message. Nothing else. A row is the projection row with everything a phone
- * has no use for stripped, and with the actionable state the badge reports, so
- * the two never disagree. Staleness travels with the row (freshness, reason),
- * and no identifier that belongs to main crosses this boundary: no session key,
- * city root, host id, path, or request id appears here.
+ * reads rows, answers the interaction a row is waiting on, sends a row a
+ * message, and mirrors a live hvir terminal. A row is the projection row with
+ * everything a phone has no use for stripped, and with the actionable state
+ * the badge reports, so the two never disagree. Staleness travels with the row
+ * (freshness, reason), and no identifier that belongs to main crosses this
+ * boundary: no session key, city root, host id, path, PTY instance, or request
+ * id appears here. Terminal bytes cross as the strings the PTY produced and the
+ * user typed; nothing here inspects them.
  */
 import type { ActionableFreshness } from './actionable-attention'
 import {
@@ -37,6 +39,10 @@ export const SESSIONS_COMPANION_VERSION = 1
 
 /** A page shows what the projection shows; it never grows past it. */
 export const MAX_COMPANION_ROWS = MAX_SESSIONS_PROJECTION_ROWS
+/** The retained output a mirror opens with; the PTY supervisor's tail bound. */
+export const MAX_COMPANION_TERMINAL_TAIL_CHARS = 256 * 1024
+/** One input request carries at most this many characters of the user's bytes. */
+export const MAX_COMPANION_INPUT_CHARS = 4096
 
 export interface CompanionRow {
   readonly handle: SessionsTerminalHandle
@@ -67,6 +73,8 @@ export interface CompanionRow {
   readonly turn: SessionsFact<SessionsTurnFact>
   /** The row stands for a session that takes answers and messages. */
   readonly canAnswer: boolean
+  /** The row is a live hvir terminal on a connected host, so a page may mirror it. */
+  readonly canMirror: boolean
 }
 
 export interface CompanionSnapshot {
@@ -82,10 +90,47 @@ export interface CompanionSnapshot {
 /** Why a page was closed from main's side. */
 export type CompanionClosedReason = 'revoked' | 'shutdown' | 'lease-lost'
 
+/** Why a page's mirror ended; a page shows a sentence for it, never the code. */
+export type CompanionMirrorEndReason =
+  'exited' | 'released' | 'reselected' | 'page-closed' | CompanionClosedReason | 'overrun'
+
+/** One page's mirror of a live terminal (ADR-050); every variant names its row. */
+export type CompanionTerminalEvent =
+  | {
+      readonly type: 'opened'
+      readonly handle: SessionsTerminalHandle
+      readonly cols: number
+      readonly rows: number
+      /** Retained output at open; live bytes follow as `output`. */
+      readonly tail: string
+    }
+  | {
+      readonly type: 'output'
+      readonly handle: SessionsTerminalHandle
+      readonly data: string
+    }
+  | {
+      readonly type: 'geometry'
+      readonly handle: SessionsTerminalHandle
+      readonly cols: number
+      readonly rows: number
+    }
+  | {
+      readonly type: 'ended'
+      readonly handle: SessionsTerminalHandle
+      readonly reason: CompanionMirrorEndReason
+    }
+
 export type CompanionEvent =
   | { readonly type: 'snapshot'; readonly snapshot: CompanionSnapshot }
   | { readonly type: 'transcript'; readonly transcript: SessionsTranscriptSnapshot }
+  | { readonly type: 'terminal'; readonly terminal: CompanionTerminalEvent }
   | { readonly type: 'closed'; readonly reason: CompanionClosedReason }
+
+/** The user's exact bytes for the mirrored terminal: uncomposed, unappended. */
+export interface CompanionInputRequest {
+  readonly data: string
+}
 
 /** An answer, as a page sends it: the page's lease supplies the generation. */
 export type CompanionRespondRequest = Omit<
@@ -151,7 +196,49 @@ export function isCompanionRow(value: unknown): value is CompanionRow {
     isFact(value['attention'], isAttentionValue) &&
     isStaleness(value['freshness'], value['reason']) &&
     isFact(value['turn'], isTurn) &&
-    typeof value['canAnswer'] === 'boolean'
+    typeof value['canAnswer'] === 'boolean' &&
+    typeof value['canMirror'] === 'boolean'
+  )
+}
+
+export function isCompanionTerminalEvent(
+  value: unknown,
+): value is CompanionTerminalEvent {
+  if (!isRecord(value) || !isHandle(value['handle'])) return false
+  switch (value['type']) {
+    case 'opened':
+      return (
+        hasExactKeys(value, OPENED_KEYS) &&
+        isDimension(value['cols']) &&
+        isDimension(value['rows']) &&
+        typeof value['tail'] === 'string' &&
+        value['tail'].length <= MAX_COMPANION_TERMINAL_TAIL_CHARS
+      )
+    case 'output':
+      return hasExactKeys(value, OUTPUT_KEYS) && typeof value['data'] === 'string'
+    case 'geometry':
+      return (
+        hasExactKeys(value, GEOMETRY_KEYS) &&
+        isDimension(value['cols']) &&
+        isDimension(value['rows'])
+      )
+    case 'ended':
+      return (
+        hasExactKeys(value, ENDED_KEYS) &&
+        MIRROR_END_REASONS.some((reason) => reason === value['reason'])
+      )
+    default:
+      return false
+  }
+}
+
+export function isCompanionInputRequest(value: unknown): value is CompanionInputRequest {
+  if (!isRecord(value) || !hasExactKeys(value, INPUT_KEYS)) return false
+  const data = value['data']
+  return (
+    typeof data === 'string' &&
+    data.length > 0 &&
+    data.length <= MAX_COMPANION_INPUT_CHARS
   )
 }
 
@@ -185,10 +272,26 @@ const ROW_REQUIRED_KEYS = [
   'freshness',
   'turn',
   'canAnswer',
+  'canMirror',
 ] as const
 const ROW_OPTIONAL_KEYS = ['reason'] as const
 const RESPOND_KEYS = ['handle', 'pendingRevision', 'optionOrdinal'] as const
 const SUBMIT_KEYS = ['handle', 'message'] as const
+const INPUT_KEYS = ['data'] as const
+const OPENED_KEYS = ['type', 'handle', 'cols', 'rows', 'tail'] as const
+const OUTPUT_KEYS = ['type', 'handle', 'data'] as const
+const GEOMETRY_KEYS = ['type', 'handle', 'cols', 'rows'] as const
+const ENDED_KEYS = ['type', 'handle', 'reason'] as const
+const MIRROR_END_REASONS: readonly CompanionMirrorEndReason[] = [
+  'exited',
+  'released',
+  'reselected',
+  'page-closed',
+  'revoked',
+  'shutdown',
+  'lease-lost',
+  'overrun',
+]
 const ATTENTION_VALUES: readonly SessionsAttentionValue[] = ['none', 'ready', 'bell']
 const TURN_STATES: readonly SessionsTurnFact['state'][] = [
   'working',
@@ -226,6 +329,10 @@ function isCount(value: unknown): value is number {
 }
 
 function isGeneration(value: unknown): value is number {
+  return isCount(value) && value > 0
+}
+
+function isDimension(value: unknown): value is number {
   return isCount(value) && value > 0
 }
 

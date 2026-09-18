@@ -240,6 +240,7 @@ describe('companionPushSinkFactory', () => {
     await settings.save({
       enabled: true,
       port: 47811,
+      mirrorInputAllowed: false,
       push: { url: server.url, token: 'tk_secret' },
     })
 
@@ -247,11 +248,16 @@ describe('companionPushSinkFactory', () => {
     expect(server.requests[0]?.headers['authorization']).toBe('Bearer tk_secret')
     expect(JSON.stringify(settings.view())).not.toContain('tk_secret')
 
-    await settings.save({ enabled: true, port: 47811, push: { url: server.url, token: '' } })
+    await settings.save({
+      enabled: true,
+      port: 47811,
+      mirrorInputAllowed: false,
+      push: { url: server.url, token: '' },
+    })
     await sink()?.send(MESSAGE)
     expect(server.requests[1]?.headers['authorization']).toBeUndefined()
 
-    await settings.save({ enabled: true, port: 47811 })
+    await settings.save({ enabled: true, port: 47811, mirrorInputAllowed: false })
     expect(sink()).toBeUndefined()
   })
 })

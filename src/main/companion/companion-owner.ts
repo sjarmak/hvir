@@ -12,6 +12,7 @@ import { safeStorage } from 'electron'
 
 import type { CompanionConfigView, HostPath } from '../../shared'
 import type { ActionableAttentionSet } from '../attention/actionable-attention-set'
+import type { PtySupervisor } from '../pty/pty-supervisor'
 import type { WorkbenchRuntime } from '../workbench-runtime'
 import { AwayPush, type AwayPushOutcome } from './away-push'
 import { bindCompanionApi } from './companion-api-routes'
@@ -56,6 +57,8 @@ export interface CompanionDependencies {
   readonly assets: CompanionAssetReader
   readonly sessions: Pick<CompanionSessionsPorts, 'observation' | 'transcripts' | 'sinks'>
   readonly actionable: Pick<ActionableAttentionSet, 'snapshot' | 'observe'>
+  /** The PTY supervisor's mirror door (ADR-050); the Companion never spawns or owns. */
+  readonly mirrors: Pick<PtySupervisor, 'attachMirror'>
   readonly describe: Omit<PushDescribePorts, 'onDiagnostic'>
   readonly publish: (view: CompanionConfigView) => void
   readonly onDiagnostic?: (diagnostic: CompanionOwnerDiagnostic) => void
@@ -80,6 +83,11 @@ export async function installApplicationCompanion(
   const sessions = new CompanionSessionsService({
     ...deps.sessions,
     actionable: deps.actionable,
+    mirrors: {
+      attach: (id, instanceId, handlers) =>
+        deps.mirrors.attachMirror(id, instanceId, handlers),
+      typingAllowed: () => settings.typingAllowed(),
+    },
   })
   const server = new CompanionServer({
     auth: settings.auth,

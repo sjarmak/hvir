@@ -24,6 +24,7 @@ export interface CompanionStoredPush {
 export interface CompanionStoredConfig {
   readonly enabled: boolean
   readonly port: number
+  readonly mirrorInputAllowed: boolean
   readonly credential?: CompanionCredentialRecord
   readonly push?: CompanionStoredPush
 }
@@ -52,7 +53,11 @@ export interface CompanionConfigStoreOptions {
   readonly onDiagnostic?: (diagnostic: CompanionConfigDiagnostic) => void
 }
 
-const DEFAULTS: CompanionStoredConfig = { enabled: false, port: COMPANION_DEFAULT_PORT }
+const DEFAULTS: CompanionStoredConfig = {
+  enabled: false,
+  port: COMPANION_DEFAULT_PORT,
+  mirrorInputAllowed: false,
+}
 
 /**
  * `companion.json` under the application user data root (ADR-049).
@@ -128,6 +133,7 @@ export class CompanionConfigStore {
     this.state = {
       enabled: request.enabled,
       port: request.port,
+      mirrorInputAllowed: request.mirrorInputAllowed,
       ...(this.state.credential === undefined
         ? {}
         : { credential: this.state.credential }),
@@ -198,6 +204,7 @@ function parseStored(value: Record<string, unknown>): CompanionStoredConfig {
   return {
     enabled: value['enabled'] === true,
     port: isCompanionPort(value['port']) ? value['port'] : COMPANION_DEFAULT_PORT,
+    mirrorInputAllowed: value['mirrorInputAllowed'] === true,
     ...(isCredential(credential) ? { credential } : {}),
     ...(isStoredPush(push) ? { push } : {}),
   }

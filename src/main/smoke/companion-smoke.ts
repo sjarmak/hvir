@@ -8,6 +8,7 @@ import {
   type CompanionOwnerDiagnostic,
 } from '../companion/companion-owner'
 import type { ProjectHost } from '../project-host'
+import type { PtySupervisor } from '../pty/pty-supervisor'
 import type { TerminalSessionRegistry } from '../terminal/session-registry'
 import type { SmokeCleanup } from './cleanup'
 import type { SmokeSessionsPorts } from './sessions-ports'
@@ -22,27 +23,39 @@ export interface SmokeCompanionOptions {
     'observation' | 'transcripts' | 'companionSinks'
   >
   readonly actionable: ActionableAttentionSet
+  readonly mirrors: Pick<PtySupervisor, 'attachMirror'>
   readonly terminals: Pick<TerminalSessionRegistry, 'get'>
   readonly projectState: () => ProjectState
   readonly publish: (view: CompanionConfigView) => void
 }
 
+/** One Push the owner sent, as the sink would have received it. */
+export interface SmokePush {
+  readonly url: string
+  readonly body: string
+}
+
 export interface SmokeCompanion extends ApplicationCompanion {
   /** Every diagnostic the owner reported, in order; a scenario asserts on it. */
   readonly diagnostics: readonly CompanionOwnerDiagnostic[]
+  /** Every Push the owner sent, in order; nothing leaves the process. */
+  readonly pushes: readonly SmokePush[]
+  readonly rendererRoot: string
 }
 
 /**
  * The production Companion owner over a settings file that exists only in
  * memory and no OS cipher: a scenario enables, pairs and revokes exactly as
  * the app does, while nothing touches the disk or the keychain of the machine
- * running it. The listener stays closed until a scenario enables it, and the
- * cleanup ledger winds the owner down the way the runtime would.
+ * running it. The listener stays closed until a scenario enables it, the Push
+ * fetch records instead of sending, and the cleanup ledger winds the owner
+ * down the way the runtime would.
  */
 export async function installSmokeCompanion(
   options: SmokeCompanionOptions,
 ): Promise<SmokeCompanion> {
   const diagnostics: CompanionOwnerDiagnostic[] = []
+  const pushes: SmokePush[] = []
   const runtime = {
     own: <T>(
       label: string,
@@ -62,6 +75,7 @@ export async function installSmokeCompanion(
       sinks: options.sessions.companionSinks,
     },
     actionable: options.actionable,
+    mirrors: options.mirrors,
     describe: {
       terminals: options.terminals,
       projects: { state: options.projectState },
@@ -75,8 +89,19 @@ export async function installSmokeCompanion(
     onDiagnostic: (diagnostic) => {
       diagnostics.push(diagnostic)
     },
+    push: { fetch: recordingFetch(pushes) },
   })
-  return { ...companion, diagnostics }
+  return { ...companion, diagnostics, pushes, rendererRoot: options.rendererRoot }
+}
+
+/** Records the sink request and answers 200; the smoke never reaches a network. */
+function recordingFetch(pushes: SmokePush[]): typeof globalThis.fetch {
+  return (input, init) => {
+    const url =
+      typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    pushes.push({ url, body: typeof init?.body === 'string' ? init.body : '' })
+    return Promise.resolve(new Response(null, { status: 200 }))
+  }
 }
 
 const noSecrets = {

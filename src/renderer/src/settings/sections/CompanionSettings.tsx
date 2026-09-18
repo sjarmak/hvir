@@ -12,6 +12,7 @@ import { useCompanionSettings } from '../use-companion-settings'
 interface CompanionDraft {
   readonly enabled: boolean
   readonly port: string
+  readonly mirrorInputAllowed: boolean
   readonly pushUrl: string
   readonly pushToken: string
 }
@@ -20,6 +21,7 @@ function draftOf(view: CompanionConfigView): CompanionDraft {
   return {
     enabled: view.enabled,
     port: String(view.port),
+    mirrorInputAllowed: view.mirrorInputAllowed,
     pushUrl: view.push?.url ?? '',
     pushToken: '',
   }
@@ -28,13 +30,19 @@ function draftOf(view: CompanionConfigView): CompanionDraft {
 function saveOf(draft: CompanionDraft): CompanionConfigSave | string {
   const port = Number(draft.port)
   if (!isCompanionPort(port)) return 'Port must be a whole number between 1024 and 65535.'
+  const { enabled, mirrorInputAllowed } = draft
   const url = draft.pushUrl.trim()
-  if (url === '') return { enabled: draft.enabled, port }
+  if (url === '') return { enabled, port, mirrorInputAllowed }
   if (!isCompanionPushUrl(url)) {
     return 'The push sink must be an https:// address, or http://127.0.0.1 on this machine.'
   }
   const token = draft.pushToken
-  return { enabled: draft.enabled, port, push: token === '' ? { url } : { url, token } }
+  return {
+    enabled,
+    port,
+    mirrorInputAllowed,
+    push: token === '' ? { url } : { url, token },
+  }
 }
 
 function statusText(view: CompanionConfigView | undefined): string {
@@ -80,6 +88,7 @@ export function CompanionSettings(): ReactElement {
     apply({
       enabled: view.enabled,
       port: view.port,
+      mirrorInputAllowed: view.mirrorInputAllowed,
       push: { url: view.push.url, token: '' },
     })
   }

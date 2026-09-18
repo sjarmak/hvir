@@ -7,6 +7,7 @@
 import {
   SESSIONS_TRANSCRIPT_VERSION,
   isCompanionSnapshot,
+  isCompanionTerminalEvent,
   type CompanionClosedReason,
   type CompanionEvent,
   type SessionsMutationResponse,
@@ -67,7 +68,7 @@ function parseFrame(block: string): SseFrame | undefined {
  * with the wrong shape is refused.
  */
 export function decodeCompanionEvent(frame: SseFrame): CompanionEvent | undefined {
-  if (!['snapshot', 'transcript', 'closed'].includes(frame.event)) return undefined
+  if (!EVENT_NAMES.includes(frame.event)) return undefined
   const data = parseJson(frame.event, frame.data)
   if (frame.event === 'snapshot') {
     if (!isCompanionSnapshot(data)) {
@@ -80,6 +81,12 @@ export function decodeCompanionEvent(frame: SseFrame): CompanionEvent | undefine
       throw new CompanionProtocolError('Unreadable transcript event')
     }
     return { type: 'transcript', transcript: data }
+  }
+  if (frame.event === 'terminal') {
+    if (!isCompanionTerminalEvent(data)) {
+      throw new CompanionProtocolError('Unreadable terminal event')
+    }
+    return { type: 'terminal', terminal: data }
   }
   if (!isRecord(data) || !isClosedReason(data['reason'])) {
     throw new CompanionProtocolError('Unreadable closed event')
@@ -95,6 +102,7 @@ function parseJson(event: string, text: string): unknown {
   }
 }
 
+const EVENT_NAMES: readonly string[] = ['snapshot', 'transcript', 'terminal', 'closed']
 const CLOSED_REASONS: readonly string[] = ['revoked', 'shutdown', 'lease-lost']
 const TURN_ROLES: readonly string[] = ['user', 'assistant', 'system', 'tool', 'unknown']
 const TURN_KINDS: readonly string[] = [
