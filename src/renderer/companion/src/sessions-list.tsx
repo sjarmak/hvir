@@ -1,44 +1,67 @@
 import type { CompanionRow, SessionsTerminalHandle } from '../../../shared'
+import {
+  companionGroupTitle,
+  groupCompanionRows,
+  type CompanionRowGroup,
+} from './companion-row-groups'
 
 interface SessionsListProps {
   readonly rows: readonly CompanionRow[]
   readonly onSelect: (handle: SessionsTerminalHandle) => Promise<void>
 }
 
-/** The desktop's ordering, verbatim: actionable rows first, then the rest. */
+/**
+ * One group per workspace, each headed by its project and workspace; inside a
+ * group the desktop's ordering, verbatim: actionable rows first, then the rest.
+ */
 export function SessionsList({ rows, onSelect }: SessionsListProps) {
   if (rows.length === 0) {
     return <p className="companion-empty">No sessions to show.</p>
   }
   return (
-    <ul className="companion-rows">
-      {rows.map((row) => (
-        <li key={row.handle}>
-          <button
-            type="button"
-            className="companion-row"
-            data-handle={row.handle}
-            onClick={() => void onSelect(row.handle)}
-          >
-            <span className="companion-row-title">{row.title}</span>
-            {row.promptBody === undefined ? null : (
-              <span className="companion-row-prompt">
-                <span className="companion-visually-hidden">Prompt: </span>
-                {row.promptBody}
-              </span>
-            )}
-            <span className="companion-row-meta">
-              {row.project.name} / {row.workspace.name}
-              {row.workspace.hostKind === 'ssh' ? ` on ${row.workspace.hostLabel}` : ''}
-              {row.origin.kind === 'external-agent'
-                ? ` via ${row.origin.sourceName}`
-                : ''}
-            </span>
-            <RowBadges row={row} />
-          </button>
-        </li>
+    <div className="companion-groups">
+      {groupCompanionRows(rows).map((group) => (
+        <WorkspaceGroup key={group.key} group={group} onSelect={onSelect} />
       ))}
-    </ul>
+    </div>
+  )
+}
+
+function WorkspaceGroup({
+  group,
+  onSelect,
+}: {
+  readonly group: CompanionRowGroup
+  readonly onSelect: SessionsListProps['onSelect']
+}) {
+  return (
+    <section className="companion-group" data-workspace={group.key}>
+      <h2 className="companion-group-title">{companionGroupTitle(group)}</h2>
+      <ul className="companion-rows">
+        {group.rows.map((row) => (
+          <li key={row.handle}>
+            <button
+              type="button"
+              className="companion-row"
+              data-handle={row.handle}
+              onClick={() => void onSelect(row.handle)}
+            >
+              <span className="companion-row-title">{row.title}</span>
+              {row.promptBody === undefined ? null : (
+                <span className="companion-row-prompt">
+                  <span className="companion-visually-hidden">Prompt: </span>
+                  {row.promptBody}
+                </span>
+              )}
+              {row.origin.kind === 'external-agent' ? (
+                <span className="companion-row-meta">via {row.origin.sourceName}</span>
+              ) : null}
+              <RowBadges row={row} />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   )
 }
 

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 import { COMPANION_TOKEN_STORAGE_KEY } from '../src/renderer/companion/src/companion-client'
 import { COMPANION_KEYS } from '../src/renderer/companion/src/companion-keys'
+import { asSessionsProjectHandle, asSessionsWorkspaceHandle } from '../src/shared'
 import { row, snapshot, transcript } from './companion-page-fixture'
 import {
   MIRROR_ROW,
@@ -102,7 +103,48 @@ describe('Companion page', () => {
     )
     expect(quiet?.querySelectorAll('.companion-badge')).toHaveLength(0)
     expect(quiet?.textContent).toContain('Quiet terminal')
-    expect(ready?.textContent).toContain('hvir / main')
+    expect(ready?.textContent).not.toContain('hvir / main')
+    expect(host.querySelector('.companion-group-title')?.textContent).toBe('hvir / main')
+  })
+
+  it('groups rows under one heading per workspace, by name, keeping the order inside', async () => {
+    const remote = row({
+      handle: 'remote-1',
+      title: 'Remote shell',
+      project: { handle: asSessionsProjectHandle('p2'), name: 'api' },
+      workspace: {
+        handle: asSessionsWorkspaceHandle('w3'),
+        name: 'main',
+        hostLabel: 'prod',
+        hostKind: 'ssh',
+      },
+    })
+    const feature = row({
+      handle: 'feature-1',
+      title: 'Feature agent',
+      workspace: {
+        handle: asSessionsWorkspaceHandle('w2'),
+        name: 'feat/beads',
+        hostLabel: 'Local',
+        hostKind: 'local',
+      },
+    })
+    await renderPaired()
+    await emit('snapshot', snapshot(1, [remote, READY_ROW, feature, QUIET_ROW]))
+
+    const groups = [...host.querySelectorAll<HTMLElement>('.companion-group')]
+    expect(
+      groups.map((group) => group.querySelector('.companion-group-title')?.textContent),
+    ).toEqual(['api / main on prod', 'hvir / feat/beads', 'hvir / main'])
+    expect(groups.map((group) => group.dataset['workspace'])).toEqual(['w3', 'w2', 'w1'])
+    expect(
+      groups.map((group) =>
+        [...group.querySelectorAll<HTMLElement>('.companion-row')].map(
+          (element) => element.dataset['handle'],
+        ),
+      ),
+    ).toEqual([['remote-1'], ['feature-1'], ['ready-1', 'quiet-1']])
+    expect(rowHandles()).toEqual(['remote-1', 'feature-1', 'ready-1', 'quiet-1'])
   })
 
   it('shows a prompt row with its badge and the message under the title (ADR-051)', async () => {

@@ -108,7 +108,9 @@ supervisor's doors.
   external session's first prompt line, or a terminal prompt entry's `body` (ADR-051). The
   sink's `title` header is the entry's kind (`ready`, `bell`, `prompt`).
 - Phone page (`src/renderer/companion/src/`): `use-companion-session.ts` holds the one stream
-  and every verb; `companion-mirror-feed.ts` is the page's bounded copy of the mirror stream;
+  and every verb; `sessions-list.tsx` shows the rows under one heading per workspace, grouped
+  by `companion-row-groups.ts` (groups in name order, rows in the desktop's order within);
+  `companion-mirror-feed.ts` is the page's bounded copy of the mirror stream;
   `terminal-view.tsx` is the fixed column (`mirror-header.tsx`, the terminal area,
   `mirror-controls.tsx`); `companion-terminal-mount.ts` builds the pane at the desktop
   geometry and scales it by `companion-mirror-zoom.ts`; `companion-mirror-scroll.ts` turns a

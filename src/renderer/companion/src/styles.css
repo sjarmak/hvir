@@ -148,6 +148,21 @@ body {
   color: var(--companion-muted);
 }
 
+/* One group per workspace, headed by its project and workspace. */
+.companion-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.companion-group-title {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--companion-muted);
+  overflow-wrap: anywhere;
+}
+
 .companion-rows {
   list-style: none;
   margin: 0;
