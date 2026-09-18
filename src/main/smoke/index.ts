@@ -1,5 +1,7 @@
 import { createSmokeAttention } from './attention-smoke'
-import { createSmokeCompanionSettings } from './companion-smoke'
+import { installSmokeCompanion } from './companion-smoke'
+import { verifyCompanionScenario } from './companion'
+import { createSmokeSessionsPorts } from './sessions-ports'
 import { terminalScenarioTable } from './terminal-scenario-table'
 import type { ElectronSmokeDependencies } from './bootstrap-contract'
 import { SmokeRendererReadiness } from './renderer-readiness-observer'
@@ -30,19 +32,9 @@ import {
   harnessProviderCatalog,
   harnessProviders,
 } from '../harness/harness-provider'
-import { HarnessUsageDemandController } from '../harness/harness-usage-demand-controller'
 import { sendRendererEvent } from '../renderer-event-delivery'
 import { registerIpcHandlers } from '../ipc'
 import { PtySupervisor } from '../pty/pty-supervisor'
-import { SessionsObservationPort } from '../sessions/sessions-observation-port'
-import { SessionsUsageObservationPort } from '../sessions/sessions-usage-observation-port'
-import { SessionsTranscriptPort } from '../sessions/sessions-transcript-port'
-import { SessionsAttachTicketRegistry } from '../sessions/sessions-attach-tickets'
-import {
-  dispatchDemandOwner,
-  rendererOwnerOf,
-  type SessionsDemandOwner,
-} from '../sessions/sessions-demand-owner'
 import { createWorkerClient, workerPath } from '../worker-host'
 import { createWorkspaceCleanup } from '../workspace-cleanup'
 import { SmokeCleanup } from './cleanup'
@@ -106,23 +98,9 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     updateWebPaneFullPage,
     webPaneRoutes,
     interruptionCheckpoint,
+    rendererRoot,
   } = dependencies
   let smokeWindow: BrowserWindow | undefined
-  // The smoke build serves no Companion, so only renderer-kind leases deliver.
-  const toSessionsRenderer = <C extends IpcEventChannel>(
-    owner: SessionsDemandOwner,
-    channel: C,
-    payload: IpcEventPayload<C>,
-  ): void =>
-    dispatchDemandOwner(owner, {
-      renderer: (lease) => {
-        const renderer = rendererOwnerOf(lease)
-        if (smokeWindow?.webContents.id !== renderer.id) return
-        if (!rendererResources.isCurrent(renderer)) return
-        sendRendererEvent(smokeWindow.webContents, channel, payload)
-      },
-      companion: () => undefined,
-    })
   let smokeSupervisor: PtySupervisor | undefined
   let cleanupFailureResource: ReturnType<typeof smokeCleanupResource> = null
   let discardedRendererGenerations = 0
@@ -299,64 +277,24 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       },
     )
     cleanup.defer('document review', () => documentReview.dispose())
-    const smokeHostOptions = () => [
-      {
-        hostId: host.hostId,
-        label: 'Local',
-        kind: 'local' as const,
-        connectionState: host.connectionState,
-        watchTier: host.watchTier,
-      },
-      {
-        hostId: smokeRemoteHost.hostId,
-        label: 'Smoke SSH',
-        kind: 'ssh' as const,
-        connectionState: smokeRemoteHost.connectionState,
-        watchTier: smokeRemoteHost.watchTier,
-      },
-    ]
-    const sessionsObservation = new SessionsObservationPort({
-      projectState: () => projectFixture.get(),
-      hosts: smokeHostOptions,
-      providers: () =>
-        smokeSessionsProviders.all().map((provider) => ({
-          id: provider.manifest.id,
-          displayName: provider.manifest.displayName,
-          telemetrySupported: Boolean(provider.telemetry),
-          usageSupported: Boolean(provider.usageTelemetry),
-          sessionKind: provider.manifest.sessionKind,
-        })),
+    const sessionsPorts = createSmokeSessionsPorts({
+      host,
+      remoteHost: smokeRemoteHost,
+      projectFixture,
+      providers: smokeSessionsProviders,
       sessions: smokeTerminalSessions,
       ptys: supervisor,
-      observeProjects: projectFixture.observe,
-      emit: (owner, change) => toSessionsRenderer(owner, 'sessions:changed', change),
+      cleanup,
+      window: () => smokeWindow,
+      resources: rendererResources,
     })
-    cleanup.defer('Sessions observation', () => sessionsObservation.dispose())
-    const sessionsUsageDemand = new HarnessUsageDemandController(smokeSessionsProviders)
-    cleanup.defer('Sessions usage demand', () => sessionsUsageDemand.dispose())
-    const sessionsUsage = new SessionsUsageObservationPort({
-      sessions: sessionsObservation,
-      ptys: supervisor,
-      usage: sessionsUsageDemand,
-      emit: (owner, change) =>
-        toSessionsRenderer(owner, 'sessions:usage-changed', change),
-    })
-    cleanup.defer('Sessions usage observation', () => sessionsUsage.dispose())
-    const sessionsTranscripts = new SessionsTranscriptPort({
-      sessions: sessionsObservation,
-      // The smoke build runs no supervisor, so a detail reports that rather
-      // than presenting an empty transcript as if it were the session's.
-      supervisor: {
-        address: () => Promise.resolve({ ok: false, failure: { reason: 'disabled' } }),
-      },
-      emit: (owner, change) =>
-        toSessionsRenderer(owner, 'sessions:transcript-changed', change),
-    })
-    cleanup.defer('Sessions transcript observation', () => sessionsTranscripts.dispose())
-    const sessionsAttachTickets = new SessionsAttachTicketRegistry()
-    cleanup.defer('Sessions attach tickets', () => {
-      sessionsAttachTickets.clear()
-    })
+    const {
+      observation: sessionsObservation,
+      usage: sessionsUsage,
+      transcripts: sessionsTranscripts,
+      attachTickets: sessionsAttachTickets,
+      hostOptions: smokeHostOptions,
+    } = sessionsPorts
     const smokeBeads = new BeadsService({
       getProject: () => ({ host, root: smokeRoot }),
       emitChanged: (event) => emit('beads:changed', event),
@@ -367,7 +305,16 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     })
     const smokeAttention = createSmokeAttention()
     cleanup.defer('attention', () => smokeAttention.dispose())
-    const smokeCompanion = await createSmokeCompanionSettings()
+    const smokeCompanion = await installSmokeCompanion({
+      host,
+      rendererRoot,
+      cleanup,
+      sessions: sessionsPorts,
+      actionable: smokeAttention.set,
+      terminals: smokeTerminalSessions,
+      projectState: () => projectFixture.get(),
+      publish: (view) => emit('companion:status-changed', view),
+    })
     const terminalMoveSmoke = createTerminalMoveSmokeHarness({
       sourceState: smokeProjectState,
       targetRoot: smokeWebSwitchRoot,
@@ -463,7 +410,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       beads: smokeBeads,
       gascity: smokeGasCity,
       updateAttention: smokeAttention.updateAttention,
-      companion: smokeCompanion,
+      companion: smokeCompanion.settings,
       updateWebPaneBindings: (owner, bindings) =>
         updateWebPaneBindings(owner.id, bindings),
       updateWebPaneFullPage: (owner, paneId) => updateWebPaneFullPage(owner.id, paneId),
@@ -748,6 +695,18 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     }
     if (mode === 'native-host-worker') {
       await verifyNativeHostWorker(worker, host, smokeRoot)
+      console.log('HVIR_SMOKE_OK')
+      return 0
+    }
+    if (mode === 'companion') {
+      const result = await verifyCompanionScenario({
+        companion: smokeCompanion,
+        root: smokeRoot,
+        providerId: defaultHarnessProviderId,
+        addRetained: smokeTerminalSessionHarness.add,
+        sourceListeners: smokeTerminalSessionHarness.listenerCount,
+      })
+      console.log(`[smoke] companion OK (${result})`)
       console.log('HVIR_SMOKE_OK')
       return 0
     }

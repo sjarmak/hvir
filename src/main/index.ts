@@ -45,6 +45,8 @@ import { installApplicationSessionsObservation } from './sessions/sessions-obser
 import { applicationRuntime, applicationUserDataPath } from './application-runtime'
 import { localPath, type EchoWorkerProtocol, type GitWorkerProtocol } from '../shared'
 HtmlPreviewProtocol.registerScheme()
+/** The built renderer directory: the workbench window and the Companion page. */
+const rendererRoot = join(__dirname, '../renderer')
 function createWorkbenchEntry(): void {
   const runtime = new WorkbenchRuntime({
     start: startup,
@@ -266,10 +268,7 @@ function createWorkbenchEntry(): void {
         host: hostCatalog.local,
         file: localPath(applicationUserDataPath('companion.json')),
       },
-      assets: createCompanionAssetReader(
-        hostCatalog.local,
-        join(__dirname, '../renderer'),
-      ),
+      assets: createCompanionAssetReader(hostCatalog.local, rendererRoot),
       sessions: { ...sessionsPorts, sinks: sessionsPorts.companionSinks },
       actionable: attention.set,
       describe: {
@@ -458,6 +457,7 @@ function createWorkbenchEntry(): void {
           updateWebPaneBindings: windowManager.updateWebPaneBindings,
           updateWebPaneFullPage: windowManager.updateWebPaneFullPage,
           openExternal: (url) => shell.openExternal(url),
+          rendererRoot,
         })
         app.exit(code)
         return

@@ -76,5 +76,7 @@ export function createSmokeTerminalSessionStore(defaultRoot: HostPath) {
     },
     has: (root: HostPath, sessionId: string): boolean =>
       store.list(root).some((session) => session.id === sessionId),
+    /** Observers currently subscribed; a released lease leaves none behind. */
+    listenerCount: (): number => listeners.size,
   }
 }

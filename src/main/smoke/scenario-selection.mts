@@ -23,6 +23,7 @@ export const ELECTRON_SMOKE_SCENARIOS = [
   'harness-profiles',
   'app-settings',
   'attention-away-throttling',
+  'companion',
   'capacity',
 ] as const
 

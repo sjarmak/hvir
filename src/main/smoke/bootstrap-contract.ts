@@ -27,5 +27,7 @@ export interface ElectronSmokeDependencies {
   readonly updateWebPaneBindings: (ownerId: number, bindings: KeybindingMap) => void
   readonly updateWebPaneFullPage: (ownerId: number, paneId?: string) => void
   readonly openExternal: (url: string) => Promise<void>
+  /** The built renderer directory the Companion serves its page from. */
+  readonly rendererRoot: string
   readonly interruptionCheckpoint: SmokeInterruptionCheckpoint
 }
