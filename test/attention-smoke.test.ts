@@ -16,6 +16,7 @@ describe('smoke attention wiring', () => {
           freshness: 'fresh' as const,
         },
       ],
+      working: [],
     }
 
     attention.setOwnerFocused(owner, false)

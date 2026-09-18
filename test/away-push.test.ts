@@ -50,6 +50,7 @@ function fakeSet(initial: {
     revision: 1,
     away: initial.away,
     entries: initial.entries ?? [],
+    working: [],
   }
   return {
     snapshot: () => current,
@@ -60,7 +61,7 @@ function fakeSet(initial: {
       }
     },
     emit: (away, entries) => {
-      current = { revision: current.revision + 1, away, entries }
+      current = { revision: current.revision + 1, away, entries, working: [] }
       for (const listener of listeners) listener(current)
     },
     get listeners() {

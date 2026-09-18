@@ -59,7 +59,8 @@ export function installApplicationAttention(
   return {
     set,
     badge,
-    updateAttention: (owner, next) => set.setRendererEntries(owner, next.entries),
+    updateAttention: (owner, next) =>
+      set.setRendererEntries(owner, next.entries, next.working),
     setOwnerFocused: (owner, focused) => set.setFocused(owner, focused),
     removeOwner: (owner) => set.removeOwner(owner.id, owner.generation),
   }

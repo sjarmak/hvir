@@ -33,6 +33,7 @@ const row = (fields: Record<string, unknown> = {}): Record<string, unknown> => (
   freshness: 'fresh',
   turn: { status: 'unsupported' },
   canAnswer: false,
+  working: false,
   canMirror: false,
   ...fields,
 })
@@ -164,6 +165,13 @@ describe('sessions companion contract', () => {
     expect(
       isCompanionRow(row({ attention: { status: 'available', value: 'prompt' }, promptBody })),
     ).toBe(true)
+  })
+
+  it('rows require working as a boolean', () => {
+    expect(isCompanionRow(row({ working: true }))).toBe(true)
+    const { working: _dropped, ...withoutWorking } = row()
+    expect(isCompanionRow(withoutWorking)).toBe(false)
+    expect(isCompanionRow(row({ working: 'yes' }))).toBe(false)
   })
 
   it('rows require canMirror as a boolean', () => {

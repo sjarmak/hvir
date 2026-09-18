@@ -178,6 +178,7 @@ describe('terminal attention controller', () => {
     expect(onRollup).toHaveBeenLastCalledWith('workspace:local:/repo', {
       actionable: 3,
       working: 1,
+      workingHandles: ['terminal-1'],
       entries: [
         { handle: 'terminal-2', kind: 'ready', freshness: 'fresh' },
         { handle: 'terminal-3', kind: 'bell', freshness: 'fresh' },
@@ -194,6 +195,7 @@ describe('terminal attention controller', () => {
     expect(onRollup).toHaveBeenLastCalledWith('workspace:local:/repo', {
       actionable: 0,
       working: 0,
+      workingHandles: [],
       entries: [],
     })
   })
@@ -223,6 +225,7 @@ describe('terminal attention controller', () => {
     expect(onRollup).toHaveBeenLastCalledWith('workspace:local:/repo', {
       actionable: 1,
       working: 0,
+      workingHandles: [],
       entries: [{ handle: 'terminal-1', kind: 'bell', freshness: 'fresh' }],
     })
 
@@ -233,6 +236,7 @@ describe('terminal attention controller', () => {
     expect(onRollup).toHaveBeenLastCalledWith('workspace:local:/repo', {
       actionable: 1,
       working: 0,
+      workingHandles: [],
       entries: [{ handle: 'terminal-1', kind: 'prompt', freshness: 'fresh', body: 'second' }],
     })
   })

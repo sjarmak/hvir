@@ -13,6 +13,7 @@ import {
 const set = (entries: readonly unknown[], extra: Record<string, unknown> = {}) => ({
   version: ACTIONABLE_ATTENTION_VERSION,
   entries,
+  working: [],
   ...extra,
 })
 
@@ -55,21 +56,25 @@ describe('actionable attention contract', () => {
         set([entry({ kind: 'prompt', body: 'Claude needs your permission' })]),
       ),
     ).toBe(true)
-    expect(isRendererAttentionSet(set([entry({ body: 'Claude needs your permission' })]))).toBe(
-      false,
-    )
     expect(
-      isRendererAttentionSet(set([entry({ kind: 'bell', body: 'Claude needs your permission' })])),
+      isRendererAttentionSet(set([entry({ body: 'Claude needs your permission' })])),
+    ).toBe(false)
+    expect(
+      isRendererAttentionSet(
+        set([entry({ kind: 'bell', body: 'Claude needs your permission' })]),
+      ),
     ).toBe(false)
   })
 
   it('rejects a body over the bound, an empty one, and one that is not a string', () => {
     expect(MAX_ACTIONABLE_BODY_CHARS).toBe(120)
     const prompt = (body: unknown) => set([entry({ kind: 'prompt', body })])
-    expect(isRendererAttentionSet(prompt('x'.repeat(MAX_ACTIONABLE_BODY_CHARS)))).toBe(true)
-    expect(isRendererAttentionSet(prompt('x'.repeat(MAX_ACTIONABLE_BODY_CHARS + 1)))).toBe(
-      false,
+    expect(isRendererAttentionSet(prompt('x'.repeat(MAX_ACTIONABLE_BODY_CHARS)))).toBe(
+      true,
     )
+    expect(
+      isRendererAttentionSet(prompt('x'.repeat(MAX_ACTIONABLE_BODY_CHARS + 1))),
+    ).toBe(false)
     expect(isRendererAttentionSet(prompt(''))).toBe(false)
     expect(isRendererAttentionSet(prompt(7))).toBe(false)
     expect(isRendererAttentionSet(prompt(null))).toBe(false)
@@ -97,6 +102,27 @@ describe('actionable attention contract', () => {
     )
     expect(isRendererAttentionSet(set(entries))).toBe(false)
     expect(isRendererAttentionSet(set(entries.slice(1)))).toBe(true)
+  })
+
+  it('accepts working handles, and rejects one that is also an entry, empty, or over the cap', () => {
+    expect(isRendererAttentionSet(set([], { working: ['terminal-2'] }))).toBe(true)
+    expect(
+      isRendererAttentionSet(set([entry()], { working: ['terminal-2', 'terminal-3'] })),
+    ).toBe(true)
+    expect(isRendererAttentionSet(set([entry()], { working: ['terminal-1'] }))).toBe(
+      false,
+    )
+    expect(
+      isRendererAttentionSet(set([], { working: ['terminal-2', 'terminal-2'] })),
+    ).toBe(false)
+    expect(isRendererAttentionSet(set([], { working: [''] }))).toBe(false)
+    expect(isRendererAttentionSet(set([], { working: [7] }))).toBe(false)
+    expect(isRendererAttentionSet(set([], { working: 'terminal-2' }))).toBe(false)
+    const { working: _dropped, ...withoutWorking } = set([])
+    expect(isRendererAttentionSet(withoutWorking)).toBe(false)
+    const working = Array.from({ length: MAX_ACTIONABLE_ENTRIES + 1 }, (_, i) => `t-${i}`)
+    expect(isRendererAttentionSet(set([], { working }))).toBe(false)
+    expect(isRendererAttentionSet(set([], { working: working.slice(1) }))).toBe(true)
   })
 
   it('rejects a value that is not a set at all', () => {

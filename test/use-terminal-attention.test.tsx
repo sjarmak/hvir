@@ -28,8 +28,13 @@ const entry = (
 
 const rollup = (
   entries: readonly ActionableAttentionEntry[],
-  working = 0,
-): WorkspaceAttentionRollup => ({ actionable: entries.length, working, entries })
+  working: readonly string[] = [],
+): WorkspaceAttentionRollup => ({
+  actionable: entries.length,
+  working: working.length,
+  entries,
+  workingHandles: working.map(asSessionsTerminalHandle),
+})
 
 const sent = (): unknown[] => send.mock.calls.map(([, set]) => set)
 
@@ -52,23 +57,30 @@ afterEach(() => {
 })
 
 describe('terminal attention rollup bridge', () => {
-  it('updates Working presentation without sending non-actionable OS attention', () => {
+  it('sends the working terminals beside the entries, and an entry outranks working', () => {
     expect(send).toHaveBeenCalledOnce()
     expect(send).toHaveBeenLastCalledWith('app:attention', EMPTY_RENDERER_ATTENTION_SET)
 
-    act(() => attention.updateRollup('workspace:local:/repo', rollup([], 1)))
+    act(() => attention.updateRollup('ws-a', rollup([], ['t1'])))
     expect(host.textContent).toContain('"working":1')
-    expect(send).toHaveBeenCalledOnce()
-
-    act(() => attention.updateRollup('workspace:local:/repo', rollup([], 2)))
-    expect(host.textContent).toContain('"working":2')
-    expect(send).toHaveBeenCalledOnce()
-
-    act(() => attention.updateRollup('workspace:local:/repo', rollup([entry('t1')], 2)))
     expect(send).toHaveBeenCalledTimes(2)
     expect(send).toHaveBeenLastCalledWith('app:attention', {
       version: 1,
+      entries: [],
+      working: ['t1'],
+    })
+
+    // The same working terminal again, in a fresh array, is not a change.
+    act(() => attention.updateRollup('ws-a', rollup([], ['t1'])))
+    expect(send).toHaveBeenCalledTimes(2)
+
+    // Another workspace claims t1 as an entry: it leaves working and joins the entries.
+    act(() => attention.updateRollup('ws-b', rollup([entry('t1')], ['t2'])))
+    expect(send).toHaveBeenCalledTimes(3)
+    expect(send).toHaveBeenLastCalledWith('app:attention', {
+      version: 1,
       entries: [entry('t1')],
+      working: ['t2'],
     })
   })
 
@@ -78,6 +90,7 @@ describe('terminal attention rollup bridge', () => {
     expect(sent().at(-1)).toEqual({
       version: 1,
       entries: [entry('t1'), entry('t2', 'bell')],
+      working: [],
     })
     expect(send).toHaveBeenCalledTimes(3)
 
@@ -91,10 +104,15 @@ describe('terminal attention rollup bridge', () => {
     expect(sent().at(-1)).toEqual({
       version: 1,
       entries: [entry('t1', 'bell'), entry('t2', 'bell')],
+      working: [],
     })
 
     act(() => attention.updateRollup('ws-b', rollup([])))
-    expect(sent().at(-1)).toEqual({ version: 1, entries: [entry('t1', 'bell')] })
+    expect(sent().at(-1)).toEqual({
+      version: 1,
+      entries: [entry('t1', 'bell')],
+      working: [],
+    })
   })
 
   it('sends a prompt again when only its body changed (ADR-051)', () => {
@@ -108,7 +126,11 @@ describe('terminal attention rollup bridge', () => {
     expect(send).toHaveBeenCalledTimes(2)
     act(() => attention.updateRollup('ws-a', rollup([prompt('second')])))
     expect(send).toHaveBeenCalledTimes(3)
-    expect(sent().at(-1)).toEqual({ version: 1, entries: [prompt('second')] })
+    expect(sent().at(-1)).toEqual({
+      version: 1,
+      entries: [prompt('second')],
+      working: [],
+    })
   })
 
   it('withdraws everything on unmount', () => {

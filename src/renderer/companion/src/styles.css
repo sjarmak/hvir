@@ -12,6 +12,7 @@
   --companion-ready: #1f8a4c;
   --companion-bell: #b8620a;
   --companion-prompt: #7a3fb5;
+  --companion-working: #2f6fed;
   --companion-stale: #8a6d1f;
   --companion-error: #b42318;
   --companion-error-bg: #fdecec;
@@ -29,6 +30,7 @@
     --companion-ready: #4ccb7f;
     --companion-bell: #f0a04a;
     --companion-prompt: #c89bf0;
+    --companion-working: #6b9cff;
     --companion-stale: #d9b75a;
     --companion-error: #ff8a80;
     --companion-error-bg: #3a1d1b;
@@ -222,6 +224,10 @@ body {
 
 .companion-badge-prompt {
   color: var(--companion-prompt);
+}
+
+.companion-badge-working {
+  color: var(--companion-working);
 }
 
 .companion-badge-stale {

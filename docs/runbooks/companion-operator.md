@@ -184,6 +184,11 @@ at once. Pair again by issuing a new code.
 - A row whose fact went stale (for example, the observing stream to its supervisor was lost)
   is shown as unconfirmed with the reason and is never pushed
   ([ADR-048](../adr/ADR-048-exact-external-pending-interaction-attention.md)).
+- A row shows a `working` badge while the desktop sees its terminal working: output arriving
+  on a terminal no window is focused on, after the person last pressed Enter in it. The badge
+  is the desktop's own Working state and travels beside the actionable entries; it never
+  pushes and never counts toward the OS badge. An external agent whose source reports its
+  turn as working shows the same badge.
 - Each running hvir serves its own Companion and pairs on its own. Two desktops mean two
   pairings and two Push URLs, or one shared topic.
 - Selecting a row without a live hvir terminal keeps the path ADR-049 gave it. An external

@@ -397,7 +397,10 @@ function renderProjectsBar(
 ) {
   // The bar shows counts; which terminals are waiting is main's concern, not its.
   const rollups = Object.fromEntries(
-    Object.entries(counts).map(([id, count]) => [id, { ...count, entries: [] }]),
+    Object.entries(counts).map(([id, count]) => [
+      id,
+      { ...count, entries: [], workingHandles: [] },
+    ]),
   )
   const callbacks = {
     plan: vi.fn(() => Promise.resolve({ terminalCount: 0 })),

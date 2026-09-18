@@ -320,9 +320,11 @@ export class CompanionSessionsService {
   }
 
   private refresh(page: CompanionPage, observed: SessionsObservationSnapshot): boolean {
+    const actionable = this.ports.actionable.snapshot()
     const rows = companionRows({
       observation: observed,
-      actionable: this.ports.actionable.snapshot().entries,
+      actionable: actionable.entries,
+      working: actionable.working,
       resolveExternal: (handle) => this.resolveExternal(page, handle),
     })
     const fingerprint = JSON.stringify(rows)

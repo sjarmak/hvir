@@ -75,6 +75,8 @@ export interface CompanionRow {
   readonly freshness: ActionableFreshness
   /** Why the attention is stale. Present exactly when `freshness` is `stale`. */
   readonly reason?: ExternalAttentionStaleReason
+  /** A window shows this terminal working: output on a row nobody is looking at. */
+  readonly working: boolean
   readonly turn: SessionsFact<SessionsTurnFact>
   /** The row stands for a session that takes answers and messages. */
   readonly canAnswer: boolean
@@ -201,6 +203,7 @@ export function isCompanionRow(value: unknown): value is CompanionRow {
     isFact(value['attention'], isAttentionValue) &&
     isPromptBodyFor(value['promptBody'], value['attention']) &&
     isStaleness(value['freshness'], value['reason']) &&
+    typeof value['working'] === 'boolean' &&
     isFact(value['turn'], isTurn) &&
     typeof value['canAnswer'] === 'boolean' &&
     typeof value['canMirror'] === 'boolean'
@@ -276,6 +279,7 @@ const ROW_REQUIRED_KEYS = [
   'origin',
   'attention',
   'freshness',
+  'working',
   'turn',
   'canAnswer',
   'canMirror',

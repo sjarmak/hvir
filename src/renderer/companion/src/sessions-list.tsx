@@ -45,7 +45,9 @@ export function SessionsList({ rows, onSelect }: SessionsListProps) {
 /**
  * Attention as the actionable set reports it. A stale row says so, with the
  * reason the desktop gave; a row nobody watches says nothing at all. A prompt's
- * message sits under the title, not in the badge (ADR-051).
+ * message sits under the title, not in the badge (ADR-051). A row is working
+ * when a window sees its terminal working or its source says the turn is,
+ * and either way the word appears once.
  */
 function RowBadges({ row }: { readonly row: CompanionRow }) {
   const attention =
@@ -54,8 +56,16 @@ function RowBadges({ row }: { readonly row: CompanionRow }) {
       ? row.attention.value
       : undefined
   const turn = row.turn.status === 'available' ? row.turn.value.state : undefined
-  if (attention === undefined && row.freshness === 'fresh' && turn === undefined)
+  const working = row.working || turn === 'working'
+  const otherTurn = turn === 'working' ? undefined : turn
+  if (
+    attention === undefined &&
+    row.freshness === 'fresh' &&
+    !working &&
+    otherTurn === undefined
+  ) {
     return null
+  }
   return (
     <span className="companion-row-badges">
       {attention === undefined ? null : (
@@ -70,8 +80,11 @@ function RowBadges({ row }: { readonly row: CompanionRow }) {
           unconfirmed ({row.reason ?? 'unknown'})
         </span>
       ) : null}
-      {turn === undefined ? null : (
-        <span className="companion-badge companion-badge-turn">{turn}</span>
+      {working ? (
+        <span className="companion-badge companion-badge-working">working</span>
+      ) : null}
+      {otherTurn === undefined ? null : (
+        <span className="companion-badge companion-badge-turn">{otherTurn}</span>
       )}
     </span>
   )

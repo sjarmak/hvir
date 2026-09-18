@@ -26,6 +26,8 @@ import { companionMirrorEligible } from './companion-mirror-target'
 export interface CompanionRowsInput {
   readonly observation: Pick<SessionsObservationSnapshot, 'workspaces' | 'sessions'>
   readonly actionable: readonly MainActionableEntry[]
+  /** The terminals a window shows working, as the same set reports them. */
+  readonly working: readonly SessionsTerminalHandle[]
   /** Main only: the foreign session a handle stands for, when it is external. */
   readonly resolveExternal: (
     handle: SessionsTerminalHandle,
@@ -37,6 +39,7 @@ export function companionRows(input: CompanionRowsInput): readonly CompanionRow[
     input.observation.workspaces.map((workspace) => [workspace.workspaceId, workspace]),
   )
   const entries = indexEntries(input.actionable)
+  const working = new Set(input.working)
   const rows: CompanionRow[] = []
   for (const session of input.observation.sessions) {
     const workspace = workspaces.get(session.workspaceId)
@@ -45,7 +48,15 @@ export function companionRows(input: CompanionRowsInput): readonly CompanionRow[
     const entry =
       entries.byHandle.get(session.handle) ??
       (external === undefined ? undefined : entries.byExternal.get(externalKey(external)))
-    rows.push(companionRow(session, workspace, entry, external !== undefined))
+    rows.push(
+      companionRow(
+        session,
+        workspace,
+        entry,
+        working.has(session.handle),
+        external !== undefined,
+      ),
+    )
   }
   return rows.sort(compareCompanionRows)
 }
@@ -74,6 +85,7 @@ function companionRow(
   session: SessionsObservedSession,
   workspace: SessionsWorkspaceProjection,
   entry: MainActionableEntry | undefined,
+  working: boolean,
   canAnswer: boolean,
 ): CompanionRow {
   const attention = attentionOf(entry, session.attention)
@@ -92,6 +104,7 @@ function companionRow(
     ...promptBodyOf(entry, attention),
     freshness: entry?.freshness ?? 'fresh',
     ...(entry?.reason === undefined ? {} : { reason: entry.reason }),
+    working,
     turn: session.telemetry.turn,
     canAnswer,
     canMirror: companionMirrorEligible(session, workspace),
@@ -127,7 +140,9 @@ function promptBodyOf(
   attention: SessionsFact<SessionsAttentionValue>,
 ): Pick<CompanionRow, 'promptBody'> {
   const body = entry?.body
-  return body !== undefined && attention.status === 'available' && attention.value === 'prompt'
+  return body !== undefined &&
+    attention.status === 'available' &&
+    attention.value === 'prompt'
     ? { promptBody: body }
     : {}
 }

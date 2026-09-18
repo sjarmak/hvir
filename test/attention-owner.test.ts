@@ -111,7 +111,9 @@ describe('installApplicationAttention', () => {
         { handle: asSessionsTerminalHandle('t1'), kind: 'ready', freshness: 'fresh' },
         { handle: asSessionsTerminalHandle('t2'), kind: 'bell', freshness: 'fresh' },
       ],
+      working: [asSessionsTerminalHandle('t3')],
     })
+    expect(attention.set.snapshot().working).toEqual(['t3'])
     expect(attention.set.away()).toBe(false)
     expect(world.counts().at(-1)).toBe(0)
 

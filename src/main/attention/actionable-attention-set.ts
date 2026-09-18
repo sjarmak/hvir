@@ -37,6 +37,11 @@ export interface ActionableSnapshot {
   /** No hvir window is focused. Vacuously true before any window exists. */
   readonly away: boolean
   readonly entries: readonly MainActionableEntry[]
+  /**
+   * The terminals some window shows working, sorted. Not actionable and not
+   * counted; carried so the Companion's list can say a row is busy.
+   */
+  readonly working: readonly SessionsTerminalHandle[]
 }
 
 type SnapshotListener = (snapshot: ActionableSnapshot) => void
@@ -46,16 +51,25 @@ export class ActionableAttentionSet {
     string,
     readonly ActionableAttentionEntry[]
   >()
+  private readonly rendererWorking = new Map<string, readonly SessionsTerminalHandle[]>()
   private readonly focus = new Map<string, boolean>()
   private readonly listeners = new Set<SnapshotListener>()
   private external: readonly MainActionableEntry[] = []
-  private current: ActionableSnapshot = { revision: 0, away: true, entries: [] }
+  private current: ActionableSnapshot = {
+    revision: 0,
+    away: true,
+    entries: [],
+    working: [],
+  }
 
+  /** What one window reports: its entries, and the terminals it shows working. */
   setRendererEntries(
     owner: RendererOwner,
     entries: readonly ActionableAttentionEntry[],
+    working: readonly SessionsTerminalHandle[] = [],
   ): void {
     this.rendererEntries.set(ownerKey(owner), entries)
+    this.rendererWorking.set(ownerKey(owner), working)
     this.settle()
   }
 
@@ -69,6 +83,7 @@ export class ActionableAttentionSet {
     for (const key of keys) {
       this.focus.delete(key)
       this.rendererEntries.delete(key)
+      this.rendererWorking.delete(key)
     }
     this.settle()
   }
@@ -104,6 +119,7 @@ export class ActionableAttentionSet {
 
   clear(): void {
     this.rendererEntries.clear()
+    this.rendererWorking.clear()
     this.focus.clear()
     this.external = []
     this.settle()
@@ -111,10 +127,29 @@ export class ActionableAttentionSet {
 
   private settle(): void {
     const entries = this.merge()
+    const working = this.mergeWorking(entries)
     const away = this.away()
-    if (away === this.current.away && sameEntries(this.current.entries, entries)) return
-    this.current = { revision: this.current.revision + 1, away, entries }
+    if (
+      away === this.current.away &&
+      sameEntries(this.current.entries, entries) &&
+      sameHandles(this.current.working, working)
+    ) {
+      return
+    }
+    this.current = { revision: this.current.revision + 1, away, entries, working }
     for (const listener of this.listeners) listener(this.current)
+  }
+
+  /** Working across windows, each terminal once; an entry for it outranks working. */
+  private mergeWorking(
+    entries: readonly MainActionableEntry[],
+  ): readonly SessionsTerminalHandle[] {
+    const actionable = new Set(entries.map((entry) => entry.terminalHandle))
+    const working = new Set<SessionsTerminalHandle>()
+    for (const handles of this.rendererWorking.values()) {
+      for (const handle of handles) if (!actionable.has(handle)) working.add(handle)
+    }
+    return [...working].sort((left, right) => left.localeCompare(right))
   }
 
   private merge(): readonly MainActionableEntry[] {
@@ -155,6 +190,15 @@ function sameEntries(
   return (
     left.length === right.length &&
     left.every((entry, index) => fingerprint(entry) === fingerprint(right[index]!))
+  )
+}
+
+function sameHandles(
+  left: readonly SessionsTerminalHandle[],
+  right: readonly SessionsTerminalHandle[],
+): boolean {
+  return (
+    left.length === right.length && left.every((handle, index) => handle === right[index])
   )
 }
 

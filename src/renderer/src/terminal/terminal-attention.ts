@@ -1,6 +1,7 @@
 import {
   asSessionsTerminalHandle,
   type ActionableAttentionEntry,
+  type SessionsTerminalHandle,
   type TerminalAttentionState,
 } from '../../../shared'
 
@@ -148,6 +149,15 @@ export function terminalWorkingCount(
   attentions: readonly (TerminalAttention | undefined)[],
 ): number {
   return attentions.filter((attention) => attention === 'working').length
+}
+
+/** The terminals this window shows working, in session order, for the same set. */
+export function terminalWorkingHandles(
+  sessions: readonly ({ readonly id: string } & TerminalAttentionSnapshot)[],
+): readonly SessionsTerminalHandle[] {
+  return sessions
+    .filter((session) => session.attention === 'working')
+    .map((session) => asSessionsTerminalHandle(session.id))
 }
 
 function isActionable(

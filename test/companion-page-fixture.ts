@@ -46,6 +46,7 @@ export function row(overrides: Unbranded<CompanionRow>): CompanionRow {
     origin: { kind: 'external-agent', sourceId: 'gas-city', sourceName: 'gas city' },
     attention: { status: 'unsupported' },
     freshness: 'fresh',
+    working: false,
     turn: { status: 'unsupported' },
     canAnswer: true,
     canMirror: false,

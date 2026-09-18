@@ -33,6 +33,7 @@ function snapshot(
     revision,
     away,
     entries: keys.map((key) => ({ key, kind: 'ready', freshness: 'fresh' })),
+    working: [],
   }
 }
 

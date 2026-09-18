@@ -73,6 +73,31 @@ describe('ActionableAttentionSet', () => {
     expect(set.snapshot().entries).toEqual([])
   })
 
+  it('merges working across windows, sorted and once, and an entry outranks it', () => {
+    const set = new ActionableAttentionSet()
+    const listener = vi.fn()
+    set.observe(listener)
+    set.setRendererEntries(owner(1), [], [asSessionsTerminalHandle('t2')])
+    set.setRendererEntries(owner(2), [rendererEntry('t1')], [
+      asSessionsTerminalHandle('t2'),
+      asSessionsTerminalHandle('t1'),
+      asSessionsTerminalHandle('t0'),
+    ])
+    expect(set.snapshot().working).toEqual(['t0', 't2'])
+    expect(set.freshCount()).toBe(1)
+    expect(listener).toHaveBeenCalledTimes(2)
+
+    // The same working terminals again are not a change.
+    set.setRendererEntries(owner(1), [], [asSessionsTerminalHandle('t2')])
+    expect(listener).toHaveBeenCalledTimes(2)
+
+    set.removeOwner(2)
+    expect(set.snapshot().working).toEqual(['t2'])
+    expect(set.snapshot().entries).toEqual([])
+    set.clear()
+    expect(set.snapshot().working).toEqual([])
+  })
+
   it('carries a prompt body from the renderer and treats a new body as a change', () => {
     const set = new ActionableAttentionSet()
     const prompt = (body: string): ActionableAttentionEntry => ({

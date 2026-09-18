@@ -6,6 +6,7 @@ import {
   MAX_ACTIONABLE_ENTRIES,
   type ActionableAttentionEntry,
   type RendererAttentionSet,
+  type SessionsTerminalHandle,
 } from '../../../shared'
 import type {
   WorkspaceAttentionRollup,
@@ -31,7 +32,8 @@ export function useTerminalAttention() {
           existing?.actionable === rollup.actionable &&
           existing.working === rollup.working &&
           actionableEntriesFingerprint(existing.entries) ===
-            actionableEntriesFingerprint(rollup.entries)
+            actionableEntriesFingerprint(rollup.entries) &&
+          existing.workingHandles.join(' ') === rollup.workingHandles.join(' ')
         ) {
           return current
         }
@@ -41,7 +43,7 @@ export function useTerminalAttention() {
     [],
   )
   const set = rendererAttentionSet(rollups)
-  const fingerprint = actionableEntriesFingerprint(set.entries)
+  const fingerprint = actionableEntriesFingerprint(set.entries) + set.working.join(' ')
   const setRef = useRef(set)
   setRef.current = set
 
@@ -56,10 +58,14 @@ export function useTerminalAttention() {
   return { rollups, updateRollup }
 }
 
-/** Every workspace's entries as one set, each terminal once, within the cap. */
+/**
+ * Every workspace's entries and working terminals as one set, each terminal
+ * once, within the cap. An entry outranks working for the same terminal.
+ */
 function rendererAttentionSet(rollups: WorkspaceAttentionRollups): RendererAttentionSet {
   const seen = new Set<string>()
   const entries: ActionableAttentionEntry[] = []
+  const working: SessionsTerminalHandle[] = []
   for (const rollup of Object.values(rollups)) {
     for (const entry of rollup.entries) {
       if (seen.has(entry.handle) || entries.length >= MAX_ACTIONABLE_ENTRIES) continue
@@ -67,5 +73,12 @@ function rendererAttentionSet(rollups: WorkspaceAttentionRollups): RendererAtten
       entries.push(entry)
     }
   }
-  return { version: ACTIONABLE_ATTENTION_VERSION, entries }
+  for (const rollup of Object.values(rollups)) {
+    for (const handle of rollup.workingHandles) {
+      if (seen.has(handle) || working.length >= MAX_ACTIONABLE_ENTRIES) continue
+      seen.add(handle)
+      working.push(handle)
+    }
+  }
+  return { version: ACTIONABLE_ATTENTION_VERSION, entries, working }
 }

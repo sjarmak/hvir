@@ -64,15 +64,23 @@ export interface ActionableAttentionEntry {
 export interface RendererAttentionSet {
   readonly version: typeof ACTIONABLE_ATTENTION_VERSION
   readonly entries: readonly ActionableAttentionEntry[]
+  /**
+   * The terminals this window shows working: output arriving on a terminal
+   * nobody is looking at. Never actionable, so never an entry; carried for
+   * the Companion's list, which otherwise cannot tell a busy row from a quiet
+   * one.
+   */
+  readonly working: readonly SessionsTerminalHandle[]
 }
 
 export const EMPTY_RENDERER_ATTENTION_SET: RendererAttentionSet = {
   version: ACTIONABLE_ATTENTION_VERSION,
   entries: [],
+  working: [],
 }
 
 export function isRendererAttentionSet(value: unknown): value is RendererAttentionSet {
-  if (!isRecord(value) || !exactKeys(value, ['version', 'entries'])) return false
+  if (!isRecord(value) || !exactKeys(value, ['version', 'entries', 'working'])) return false
   if (value['version'] !== ACTIONABLE_ATTENTION_VERSION) return false
   const entries = value['entries']
   if (!Array.isArray(entries) || entries.length > MAX_ACTIONABLE_ENTRIES) return false
@@ -80,6 +88,13 @@ export function isRendererAttentionSet(value: unknown): value is RendererAttenti
   for (const entry of entries) {
     if (!isActionableAttentionEntry(entry) || handles.has(entry.handle)) return false
     handles.add(entry.handle)
+  }
+  // A terminal has one attention: it is waiting on the person or working, not both.
+  const working = value['working']
+  if (!Array.isArray(working) || working.length > MAX_ACTIONABLE_ENTRIES) return false
+  for (const handle of working) {
+    if (typeof handle !== 'string' || handle === '' || handles.has(handle)) return false
+    handles.add(handle)
   }
   return true
 }

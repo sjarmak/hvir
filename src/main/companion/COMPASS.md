@@ -96,7 +96,10 @@ supervisor's doors.
 - **`companion-rows.ts`**: the join of observation sessions with the actionable set into
   `CompanionRow`. Deliberately drops `livePty`, host id, and the workspace qualifier; exposes
   `canMirror` and `canAnswer` as booleans instead. `promptBodyOf` copies the entry's `body`
-  onto the row only when the row's attention is an available `prompt`.
+  onto the row only when the row's attention is an available `prompt`. `working` is a boolean
+  from the same set's `working` handles: what a window shows working, which the renderer sends
+  beside its entries in `app:attention` and `ActionableAttentionSet` merges across windows
+  (an entry for a terminal outranks working). It is never actionable and never pushes.
 - **`companion-settings.ts`**, **`companion-config-store.ts`**, **`companion-pairing.ts`**:
   `companion.json` (version 1), the pairing code and credential, `typingAllowed()` read
   straight from the store.

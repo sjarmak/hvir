@@ -40,7 +40,7 @@ export function createSmokeAttention(): SmokeAttention {
     updates,
     updateAttention: (owner, next) => {
       updates.push({ owner, set: next })
-      set.setRendererEntries(owner, next.entries)
+      set.setRendererEntries(owner, next.entries, next.working)
     },
     setOwnerFocused: (owner, focused) => set.setFocused(owner, focused),
     dispose: () => {

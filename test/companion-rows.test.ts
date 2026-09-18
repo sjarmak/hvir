@@ -32,6 +32,7 @@ describe('companion rows', () => {
   it('takes a terminal row attention from the entry with the same handle', () => {
     const rows = companionRows({
       observation: observation([terminal(TERMINAL, 'Codex')]),
+      working: [],
       actionable: [entry({ key: TERMINAL, kind: 'bell', terminalHandle: TERMINAL })],
       resolveExternal: () => undefined,
     })
@@ -50,6 +51,7 @@ describe('companion rows', () => {
         origin: { kind: 'hvir-terminal' },
         attention: { status: 'available', value: 'bell' },
         freshness: 'fresh',
+        working: false,
         turn: { status: 'available', value: { state: 'working' } },
         canAnswer: false,
         canMirror: false,
@@ -57,9 +59,30 @@ describe('companion rows', () => {
     ])
   })
 
+  it('marks a row working when the set names its handle, and no other row', () => {
+    const rows = companionRows({
+      observation: observation([
+        terminal(TERMINAL, 'Codex'),
+        terminal(asSessionsTerminalHandle('terminal-2'), 'Quiet'),
+      ]),
+      working: [TERMINAL],
+      actionable: [],
+      resolveExternal: () => undefined,
+    })
+
+    expect(rows.map((row) => [row.handle, row.working])).toEqual([
+      [TERMINAL, true],
+      ['terminal-2', false],
+    ])
+    expect(
+      isCompanionSnapshot({ version: 1, revision: 1, demandGeneration: 1, rows }),
+    ).toBe(true)
+  })
+
   it('carries a prompt entry as prompt attention with its body (ADR-051)', () => {
     const rows = companionRows({
       observation: observation([terminal(TERMINAL, 'Codex')]),
+      working: [],
       actionable: [
         entry({
           key: TERMINAL,
@@ -83,6 +106,7 @@ describe('companion rows', () => {
   it('drops the body of a prompt entry whose attention is no longer an available prompt', () => {
     const rows = companionRows({
       observation: observation([terminal(TERMINAL, 'Codex')]),
+      working: [],
       actionable: [
         entry({
           key: TERMINAL,
@@ -106,6 +130,7 @@ describe('companion rows', () => {
   it('carries no promptBody for a prompt entry without one', () => {
     const rows = companionRows({
       observation: observation([terminal(TERMINAL, 'Codex')]),
+      working: [],
       actionable: [entry({ key: TERMINAL, kind: 'prompt', terminalHandle: TERMINAL })],
       resolveExternal: () => undefined,
     })
@@ -128,6 +153,7 @@ describe('companion rows', () => {
           lifecycle: 'retained',
         },
       ]),
+      working: [],
       actionable: [],
       resolveExternal: () => undefined,
     })
@@ -141,6 +167,7 @@ describe('companion rows', () => {
   it('takes an external row attention from the entry its resolver names', () => {
     const rows = companionRows({
       observation: observation([external(EXTERNAL, 'city-worker', 1_700)]),
+      working: [],
       actionable: [entry({ key: 'gas-city ssh-prod gc-1', external: EXTERNAL_KEY })],
       resolveExternal: (handle) => (handle === EXTERNAL ? EXTERNAL_KEY : undefined),
     })
@@ -159,6 +186,7 @@ describe('companion rows', () => {
   it('carries a stale entry as stale attention with the reason it was given', () => {
     const rows = companionRows({
       observation: observation([external(EXTERNAL, 'city-worker', 1_700)]),
+      working: [],
       actionable: [
         entry({
           key: 'gas-city ssh-prod gc-1',
@@ -185,6 +213,7 @@ describe('companion rows', () => {
   it('reports a stale entry it cannot date as unavailable rather than dating it', () => {
     const rows = companionRows({
       observation: observation([terminal(TERMINAL, 'Codex')]),
+      working: [],
       actionable: [
         entry({
           key: TERMINAL,
@@ -209,6 +238,7 @@ describe('companion rows', () => {
         terminal(TERMINAL, 'Codex'),
         external(EXTERNAL, 'city-worker', 1_700),
       ]),
+      working: [],
       actionable: [],
       resolveExternal: () => EXTERNAL_KEY,
     })
@@ -235,6 +265,7 @@ describe('companion rows', () => {
         terminal(a, 'Alpha'),
         external(EXTERNAL, 'city-worker', 1_700),
       ]),
+      working: [],
       actionable: [
         entry({ key: b, terminalHandle: b, freshness: 'stale', reason: 'closed' }),
         entry({ key: 'gas-city ssh-prod gc-1', external: EXTERNAL_KEY }),
@@ -255,6 +286,7 @@ describe('companion rows', () => {
     expect(
       companionRows({
         observation: observation([orphan]),
+        working: [],
         actionable: [],
         resolveExternal: () => undefined,
       }),
@@ -267,6 +299,7 @@ describe('companion rows', () => {
         { ...terminal(TERMINAL, 'Codex'), livePty: livePtyQualifier() },
         external(EXTERNAL, 'city-worker', 1_700),
       ]),
+      working: [],
       actionable: [
         entry({ key: TERMINAL, terminalHandle: TERMINAL }),
         entry({ key: 'gas-city ssh-prod gc-1', external: EXTERNAL_KEY }),

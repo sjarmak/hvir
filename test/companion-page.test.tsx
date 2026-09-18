@@ -124,6 +124,48 @@ describe('Companion page', () => {
     expect(ready?.querySelector('.companion-row-prompt')).toBeNull()
   })
 
+  it('shows one working badge, whether the desktop or the turn says so', async () => {
+    const busyTerminal = row({
+      handle: 'busy-1',
+      title: 'Busy terminal',
+      origin: { kind: 'hvir-terminal' },
+      working: true,
+      canAnswer: false,
+    })
+    const busyAgent = row({
+      handle: 'busy-2',
+      title: 'Busy agent',
+      working: true,
+      turn: { status: 'available', value: { state: 'working' } },
+    })
+    const waitingAgent = row({
+      handle: 'waiting-1',
+      title: 'Waiting agent',
+      turn: { status: 'available', value: { state: 'waiting-for-user' } },
+    })
+    await renderPaired()
+    await emit(
+      'snapshot',
+      snapshot(1, [busyTerminal, busyAgent, waitingAgent, QUIET_ROW]),
+    )
+
+    const badges = (index: number): string[] =>
+      [
+        ...(host
+          .querySelectorAll('.companion-row')
+          [index]?.querySelectorAll('.companion-badge') ?? []),
+      ].map((badge) => badge.textContent ?? '')
+    expect(badges(0)).toEqual(['working'])
+    expect(badges(1)).toEqual(['working'])
+    expect(badges(2)).toEqual(['waiting-for-user'])
+    expect(badges(3)).toEqual([])
+    expect(
+      host
+        .querySelector('.companion-badge-working')
+        ?.classList.contains('companion-badge'),
+    ).toBe(true)
+  })
+
   it('ignores a snapshot revision older than the one it shows', async () => {
     await renderPaired()
     await emit('snapshot', snapshot(2, [READY_ROW]))
@@ -304,13 +346,17 @@ describe('Companion page terminal mirror', () => {
     expect(pane.writes).toEqual(['tail', 'more'])
   })
 
-  it('shows the selected row\'s prompt message above the terminal while it lasts (ADR-051)', async () => {
+  it("shows the selected row's prompt message above the terminal while it lasts (ADR-051)", async () => {
     await openMirror()
     expect(host.querySelector('.companion-mirror-prompt')).toBeNull()
 
     const prompted = {
       ...MIRROR_ROW,
-      attention: { status: 'available' as const, value: 'prompt' as const, observedAt: 5 },
+      attention: {
+        status: 'available' as const,
+        value: 'prompt' as const,
+        observedAt: 5,
+      },
       promptBody: 'Claude needs your permission',
     }
     await emit('snapshot', snapshot(2, [prompted]))
@@ -319,9 +365,9 @@ describe('Companion page terminal mirror', () => {
     const header = host.querySelector('.companion-mirror-header')
     expect(line?.parentElement).toBe(header)
     expect(header?.lastElementChild).toBe(line)
-    expect(header?.nextElementSibling?.classList.contains('companion-terminal-area')).toBe(
-      true,
-    )
+    expect(
+      header?.nextElementSibling?.classList.contains('companion-terminal-area'),
+    ).toBe(true)
     expect(host.querySelector('.companion-terminal')).not.toBeNull()
 
     await emit('snapshot', snapshot(3, [MIRROR_ROW]))
