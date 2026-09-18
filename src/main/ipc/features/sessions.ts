@@ -2,6 +2,7 @@ import type { IpcRegistrar } from '../authority-router'
 import type { IpcDeps } from '../deps'
 import { asSessionsWorkspaceRuntimeId, gasCityAttachCommand } from '../../../shared'
 import { rendererDemandOwner } from '../../sessions/sessions-demand-owner'
+import { isTerminalTitle } from './terminal'
 
 type SessionsIpcDeps = Pick<
   IpcDeps,
@@ -11,6 +12,7 @@ type SessionsIpcDeps = Pick<
   | 'sessionsTranscripts'
   | 'sessionsAttachTickets'
   | 'switchWorkspace'
+  | 'terminalSessions'
 >
 
 export function registerSessionsIpc(ipc: IpcRegistrar, deps: SessionsIpcDeps): void {
@@ -198,5 +200,22 @@ export function registerSessionsIpc(ipc: IpcRegistrar, deps: SessionsIpcDeps): v
       handle: target.handle,
       target: { ...command, ticket },
     }
+  })
+
+  ipc.handle('sessions:forget', async (request, context) => {
+    const demandOwner = rendererDemandOwner(context.owner())
+    const target = deps.sessionsObservation.resolveMutation(demandOwner, request)
+    if (target.outcome === 'unavailable') return target
+    await deps.terminalSessions.forget(target.root, target.id)
+    return { outcome: 'applied' as const }
+  })
+
+  ipc.handle('sessions:rename', async (request, context) => {
+    if (!isTerminalTitle(request.title)) throw new Error('Invalid terminal title')
+    const demandOwner = rendererDemandOwner(context.owner())
+    const target = deps.sessionsObservation.resolveMutation(demandOwner, request)
+    if (target.outcome === 'unavailable') return target
+    await deps.terminalSessions.rename(target.root, target.id, request.title)
+    return { outcome: 'applied' as const }
   })
 }

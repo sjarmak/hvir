@@ -98,7 +98,7 @@ describe('SessionsOverview', () => {
       [...shellCard.querySelectorAll<HTMLButtonElement>('button')].map((action) =>
         action.textContent?.trim(),
       ),
-    ).toEqual([])
+    ).toEqual(['Rename', 'Forget'])
 
     const agentCard = [...host.querySelectorAll<HTMLElement>('.session-card')].find(
       (card) => card.textContent?.includes('Review release notes'),

@@ -709,6 +709,7 @@ describe('terminal resume unavailable state', () => {
           onFocusSession={vi.fn()}
           onMoveSession={vi.fn()}
           onCloseSession={vi.fn()}
+          onRenameSession={vi.fn()}
         />,
       )
     })

@@ -92,6 +92,8 @@ export interface TerminalRecoverySession {
   readonly hostId: string
   readonly cwd: HostPath
   readonly title: string
+  /** User-set name; survives OSC title updates until explicitly renamed again. */
+  readonly titlePinned?: boolean
   readonly position: number
   readonly active: boolean
   readonly attention?: TerminalAttentionState
@@ -101,6 +103,7 @@ export interface TerminalRecoverySession {
 export interface TerminalLayoutEntry {
   readonly id: string
   readonly title: string
+  readonly titlePinned?: boolean
   readonly position: number
   readonly active: boolean
   readonly attention?: TerminalAttentionState
@@ -134,6 +137,12 @@ export interface TerminalLayoutRequest {
 export interface ForgetTerminalRequest {
   readonly root: HostPath
   readonly id: string
+}
+
+export interface RenameTerminalRequest {
+  readonly root: HostPath
+  readonly id: string
+  readonly title: string
 }
 
 export interface PlanTerminalMoveRequest {
@@ -195,6 +204,7 @@ export const terminalIpc = {
     >(),
     'terminal:update-layout': invoke<TerminalLayoutRequest, void>(),
     'terminal:forget': invoke<ForgetTerminalRequest, void>(),
+    'terminal:rename': invoke<RenameTerminalRequest, void>(),
     'terminal:plan-move': invoke<
       PlanTerminalMoveRequest,
       OperationResult<TerminalMovePlan>

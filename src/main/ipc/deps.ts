@@ -160,7 +160,12 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly terminalSessions: TerminalSessionStore
   readonly sessionsObservation: Pick<
     SessionsObservationPort,
-    'acquire' | 'snapshot' | 'release' | 'resolveOpen' | 'resolveExternalAttach'
+    | 'acquire'
+    | 'snapshot'
+    | 'release'
+    | 'resolveOpen'
+    | 'resolveExternalAttach'
+    | 'resolveMutation'
   >
   readonly sessionsTranscripts: Pick<
     SessionsTranscriptPort,

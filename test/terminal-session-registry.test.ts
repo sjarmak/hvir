@@ -107,6 +107,81 @@ describe('TerminalSessionRegistry', () => {
     await release()
   })
 
+  it('renames a retained record, pins it, and survives a reload', async () => {
+    const root = localPath('/tmp/project')
+    await registry.recordSpawn({
+      id: SESSION_ID,
+      providerId: SHELL_PROVIDER_ID,
+      profileId: SHELL_PROFILE_ID,
+      launchRevision: 1,
+      workspaceRoot: root,
+      cwd: root,
+      title: 'ds@ds-5090: ~/projects/mem',
+      position: 0,
+      active: true,
+    })
+
+    await registry.rename(root, SESSION_ID, 'Beads Dolt server unreachable')
+    expect(registry.list(root)).toEqual([
+      expect.objectContaining({
+        id: SESSION_ID,
+        title: 'Beads Dolt server unreachable',
+        titlePinned: true,
+      }),
+    ])
+
+    // A later OSC-driven layout sync must not clobber the pinned rename.
+    await registry.updateLayout(root, [
+      { id: SESSION_ID, title: 'ds@ds-5090: ~/projects/mem', position: 0, active: true },
+    ])
+    expect(registry.list(root)).toEqual([
+      expect.objectContaining({
+        title: 'ds@ds-5090: ~/projects/mem',
+        titlePinned: false,
+      }),
+    ])
+
+    await registry.updateLayout(root, [
+      {
+        id: SESSION_ID,
+        title: 'Beads Dolt server unreachable',
+        titlePinned: true,
+        position: 0,
+        active: true,
+      },
+    ])
+    await registry.flush()
+
+    const restored = await TerminalSessionRegistry.load(host, file)
+    expect(restored.list(root)).toEqual([
+      expect.objectContaining({
+        title: 'Beads Dolt server unreachable',
+        titlePinned: true,
+      }),
+    ])
+  })
+
+  it('rejects renaming a session that belongs to another workspace', async () => {
+    const root = localPath('/tmp/project')
+    const otherRoot = localPath('/tmp/other-project')
+    await registry.recordSpawn({
+      id: SESSION_ID,
+      providerId: SHELL_PROVIDER_ID,
+      profileId: SHELL_PROFILE_ID,
+      launchRevision: 1,
+      workspaceRoot: root,
+      cwd: root,
+      title: 'Terminal',
+      position: 0,
+      active: true,
+    })
+
+    await expect(
+      registry.rename(otherRoot, SESSION_ID, 'Renamed'),
+    ).rejects.toThrow('no longer belongs to the workspace')
+    expect(registry.list(root)).toEqual([expect.objectContaining({ title: 'Terminal' })])
+  })
+
   it.each([
     ['local', localPath('/tmp/project')],
     ['SSH', hostPath(asHostId('ssh-recovery-skips'), '/srv/project')],

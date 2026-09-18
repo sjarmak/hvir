@@ -1,10 +1,13 @@
 import { invoke, payload, type IpcFeatureContract } from '../ipc-contract'
 import {
   type SessionsDemandRequest,
+  type SessionsMutationRequest,
+  type SessionsProjectionMutationResponse,
   type SessionsOpenRequest,
   type SessionsOpenResponse,
   type SessionsObservationSnapshot,
   type SessionsProjectionChange,
+  type SessionsRenameRequest,
   type SessionsTerminalResolutionResponse,
   type SessionsUsageChange,
   type SessionsUsageDemandRequest,
@@ -64,6 +67,14 @@ export const sessionsIpc = {
     'sessions:attach-external': invoke<
       SessionsAttachExternalRequest,
       SessionsAttachExternalResponse
+    >(),
+    'sessions:forget': invoke<
+      SessionsMutationRequest,
+      SessionsProjectionMutationResponse
+    >(),
+    'sessions:rename': invoke<
+      SessionsRenameRequest,
+      SessionsProjectionMutationResponse
     >(),
   },
   send: {},

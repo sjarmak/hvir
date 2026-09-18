@@ -50,6 +50,7 @@ interface StoredTerminalSession {
   readonly workspaceRoot: HostPath
   readonly cwd: HostPath
   readonly title: string
+  readonly titlePinned?: boolean
   readonly position: number
   readonly active: boolean
   readonly attention?: TerminalAttentionState
@@ -171,6 +172,7 @@ export interface TerminalSessionStore {
     layout: readonly TerminalLayoutEntry[],
   ): Promise<void>
   forget(workspaceRoot: HostPath, id: string): Promise<void>
+  rename(workspaceRoot: HostPath, id: string, title: string): Promise<void>
   rebindProfile(request: RebindTerminalProfile): Promise<TerminalRecoverySession>
   authorizeReattach(request: AuthorizeTerminalReattach): boolean
   authorizeResume(request: AuthorizeTerminalResume): boolean
@@ -615,6 +617,7 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
       const next = {
         ...current,
         title: cleanTitle(item.title),
+        titlePinned: item.titlePinned === true,
         position: cleanPosition(item.position),
         active: item.active,
         attention: item.attention,
@@ -638,6 +641,21 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
     if (!current) return Promise.resolve()
     this.sessions.delete(id)
     return this.persist().then(() => this.publishObservation())
+  }
+
+  async rename(workspaceRoot: HostPath, id: string, title: string): Promise<void> {
+    const current = this.sessions.get(id)
+    if (!current || !hostPathEquals(current.workspaceRoot, workspaceRoot)) {
+      throw new Error('Terminal no longer belongs to the workspace')
+    }
+    this.sessions.set(id, {
+      ...current,
+      title: cleanTitle(title),
+      titlePinned: true,
+      updatedAt: Date.now(),
+    })
+    await this.persist()
+    this.publishObservation()
   }
 
   async move(request: MoveTerminalSession): Promise<TerminalRecoverySession> {
@@ -837,6 +855,7 @@ function parseStoredSession(value: unknown): StoredTerminalSession | undefined {
     parsePath(value['workspaceRoot']) ?? parsePath(value['projectRoot'])
   const cwd = parsePath(value['cwd'])
   const title = value['title']
+  const titlePinned = value['titlePinned']
   const position = value['position']
   const active = value['active']
   const attention = value['attention']
@@ -865,6 +884,7 @@ function parseStoredSession(value: unknown): StoredTerminalSession | undefined {
     cwd.hostId !== hostId ||
     typeof title !== 'string' ||
     title.length > MAX_TITLE_LENGTH ||
+    (titlePinned !== undefined && typeof titlePinned !== 'boolean') ||
     typeof position !== 'number' ||
     !Number.isSafeInteger(position) ||
     position < 0 ||
@@ -890,6 +910,7 @@ function parseStoredSession(value: unknown): StoredTerminalSession | undefined {
     workspaceRoot,
     cwd,
     title,
+    titlePinned,
     position,
     active,
     attention,

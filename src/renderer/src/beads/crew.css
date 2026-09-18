@@ -5,7 +5,7 @@
  */
 
 .beads-section-crew {
-  color: #b07fd4;
+  color: #8f85c7;
 }
 
 .crew-header-row {
@@ -76,14 +76,14 @@
 }
 
 .crew-card-lead {
-  border-left: 2px solid #b07fd4;
+  border-left: 2px solid #8f85c7;
 }
 
 /* The city's own lead heads the crew; a brighter rule and a stronger name make
    it read as the top of the hierarchy rather than the first row of a list. */
 .crew-card-city {
   border-left-width: 3px;
-  border-left-color: #d4a5ff;
+  border-left-color: #ab9fe0;
 }
 
 .crew-card-city .crew-name {

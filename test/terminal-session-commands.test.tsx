@@ -80,6 +80,20 @@ describe('terminal session commands', () => {
     expect(invoke.mock.calls[0]?.[0]).toBe('terminal:forget')
   })
 
+  it('renames the active session, trimming input and pinning against later OSC titles', () => {
+    renderHarness()
+    act(() => button('start-default').click())
+
+    act(() => button('rename-active-blank').click())
+    expect(text('titles')).toBe('Shell · repo')
+    expect(text('pinned')).toBe('false')
+
+    act(() => button('rename-active').click())
+
+    expect(text('titles')).toBe('Deploy preview shell')
+    expect(text('pinned')).toBe('true')
+  })
+
   it('turns an empty split request into one primary Bare Shell', () => {
     renderHarness()
 
@@ -229,6 +243,10 @@ function CommandsHarness({
       </span>
       <span data-testid="panes">{model.sessions.map(({ pane }) => pane).join(',')}</span>
       <span data-testid="ids">{model.sessions.map(({ id }) => id).join(',')}</span>
+      <span data-testid="titles">{model.sessions.map(({ title }) => title).join(',')}</span>
+      <span data-testid="pinned">
+        {model.sessions.map(({ titlePinned }) => String(titlePinned === true)).join(',')}
+      </span>
       <span data-testid="active">{model.activeId}</span>
       <span data-testid="source-pending">{String(source?.forkPending === true)}</span>
       <span data-testid="fork-id">{pendingFork?.id}</span>
@@ -304,6 +322,20 @@ function CommandsHarness({
         data-testid="close-active"
         onClick={() => {
           if (model.activeId) commands.close(model.activeId)
+        }}
+      />
+      <button
+        type="button"
+        data-testid="rename-active"
+        onClick={() => {
+          if (model.activeId) commands.rename(model.activeId, '  Deploy preview shell  ')
+        }}
+      />
+      <button
+        type="button"
+        data-testid="rename-active-blank"
+        onClick={() => {
+          if (model.activeId) commands.rename(model.activeId, '   ')
         }}
       />
     </>

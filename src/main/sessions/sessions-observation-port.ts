@@ -12,6 +12,7 @@ import {
   sessionsWorkspaceQualifier,
   type ProjectHostOption,
   type ProjectState,
+  type SessionsMutationRequest,
   type SessionsObservationSnapshot,
   type SessionsOpenRequest,
   type SessionsObservedSession,
@@ -46,7 +47,9 @@ import {
   type SessionsProjectionIdentityScope,
 } from './sessions-projection-identities'
 import {
+  resolveSessionsMutationTarget,
   resolveSessionsOpen,
+  type SessionsResolvedMutationTarget,
   type SessionsResolvedOpen,
 } from './sessions-open-resolution'
 import {
@@ -113,7 +116,10 @@ export interface SessionsResolvedUsageTarget extends SessionsUsageDemandTarget {
   readonly connectionState: SessionsWorkspaceProjection['host']['connectionState']
 }
 
-export type { SessionsResolvedOpen } from './sessions-open-resolution'
+export type {
+  SessionsResolvedMutationTarget,
+  SessionsResolvedOpen,
+} from './sessions-open-resolution'
 export type {
   SessionsResolvedExternalAttach,
   SessionsResolvedExternalSession,
@@ -218,6 +224,20 @@ export class SessionsObservationPort {
   ): SessionsResolvedExternalSession {
     const lease = this.leases.get(demandOwnerKey(owner))
     return resolveSessionsExternalSession({
+      request,
+      activeDemandGeneration: lease?.demandGeneration,
+      sourceRevision: this.revision,
+      observation: this.current,
+      identities: this.identities,
+    })
+  }
+
+  resolveMutation(
+    owner: SessionsDemandOwner,
+    request: SessionsMutationRequest,
+  ): SessionsResolvedMutationTarget {
+    const lease = this.leases.get(demandOwnerKey(owner))
+    return resolveSessionsMutationTarget({
       request,
       activeDemandGeneration: lease?.demandGeneration,
       sourceRevision: this.revision,

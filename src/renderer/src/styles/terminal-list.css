@@ -109,6 +109,18 @@
   font-weight: 600;
 }
 
+.terminal-list-rename-input {
+  width: 100%;
+  background: #10151b;
+  border: 1px solid #3a4552;
+  border-radius: 3px;
+  color: #d3d8df;
+  font: inherit;
+  font-size: calc(10px * var(--hvir-interface-scale));
+  font-weight: 600;
+  padding: 1px 4px;
+}
+
 .terminal-list-meta {
   color: #77818f;
   font-size: calc(9px * var(--hvir-interface-scale));
@@ -124,9 +136,12 @@
 
 .terminal-list-row:hover .terminal-close-button,
 .terminal-list-row:hover .terminal-move-button,
+.terminal-list-row:hover .terminal-rename-button,
 .terminal-list-row.active .terminal-close-button,
 .terminal-list-row.active .terminal-move-button,
+.terminal-list-row.active .terminal-rename-button,
 .terminal-move-button:focus-visible,
+.terminal-rename-button:focus-visible,
 .terminal-close-button:focus-visible {
   opacity: 1;
 }
@@ -134,6 +149,13 @@
 .terminal-move-button {
   flex: 0 0 24px;
   opacity: 0;
+}
+
+.terminal-rename-button {
+  align-self: center;
+  flex: 0 0 22px;
+  opacity: 0;
+  font-size: calc(11px * var(--hvir-interface-scale));
 }
 
 .terminal-empty {

@@ -1,6 +1,8 @@
 import {
   hostPathEquals,
+  type HostPath,
   type ProjectState,
+  type SessionsMutationRequest,
   type SessionsObservationSnapshot,
   type SessionsOpenRequest,
   type SessionsOpenUnavailableReason,
@@ -149,6 +151,65 @@ export function resolveSessionsPlacement({
     projectId: project.id,
     workspaceId: target.id,
   }
+}
+
+export type SessionsResolvedMutationTarget =
+  | { readonly outcome: 'resolved'; readonly root: HostPath; readonly id: string }
+  | { readonly outcome: 'unavailable'; readonly reason: SessionsOpenUnavailableReason }
+
+/**
+ * Resolves a retained (non-live) row back to its real workspace root. Deliberately
+ * skips the open path's connection/liveness checks: forgetting or renaming a stray
+ * record must work even when its host is disconnected or its workspace is closed.
+ */
+export function resolveSessionsMutationTarget({
+  request,
+  activeDemandGeneration,
+  sourceRevision,
+  observation,
+  identities,
+}: {
+  readonly request: SessionsMutationRequest
+  readonly activeDemandGeneration?: number
+  readonly sourceRevision: number
+  readonly observation?: Omit<
+    SessionsObservationSnapshot,
+    'demandGeneration' | 'revision'
+  >
+  readonly identities?: SessionsProjectionIdentityScope
+}): SessionsResolvedMutationTarget {
+  if (
+    activeDemandGeneration !== request.demandGeneration ||
+    request.sourceRevision !== sourceRevision ||
+    !observation ||
+    !identities
+  ) {
+    return { outcome: 'unavailable', reason: 'stale-projection' }
+  }
+  const observed = observation.sessions.find(
+    (session) => session.handle === request.handle,
+  )
+  const workspace = observation.workspaces.find(
+    (candidate) =>
+      candidate.projectId === request.projectId &&
+      candidate.workspaceId === request.workspaceId &&
+      candidate.qualifier === request.workspaceQualifier,
+  )
+  if (
+    !observed ||
+    observed.workspaceId !== request.workspaceId ||
+    observed.lifecycle !== 'retained'
+  ) {
+    return { outcome: 'unavailable', reason: 'session-unavailable' }
+  }
+  if (!workspace) {
+    return { outcome: 'unavailable', reason: 'workspace-unavailable' }
+  }
+  const workspaceRoot = identities.resolveWorkspace(request.workspaceId)
+  if (!workspaceRoot) {
+    return { outcome: 'unavailable', reason: 'workspace-unavailable' }
+  }
+  return { outcome: 'resolved', root: workspaceRoot, id: request.handle }
 }
 
 function sameLivePty(

@@ -1,12 +1,12 @@
 import type { ReactElement } from 'react'
 
-import type {
-  BeadIssue,
-  GasCityAnalyticsConfig,
-  GasCityCrew,
-  GasCityCrewResponse,
+import {
+  crewActivityBand,
+  type BeadIssue,
+  type GasCityAnalyticsConfig,
+  type GasCityCrew,
+  type GasCityCrewResponse,
 } from '../../../shared'
-import { gasCitySessionActivity } from '../../../shared'
 import { agentName, omniAnalyticsUrl, sessionTraceUrl, traceLinkTitle } from './analytics-links'
 import { buildCrewView, type CrewCard, type CrewGroup, type HeldBead } from './crew-model'
 import {
@@ -53,8 +53,9 @@ const OMNI_HINT =
 
 /**
  * The rig's crew, pinned above the bead sections: the workspace's permanent
- * lead identities first — rendered even when dormant — then the live worker
- * pools. Every card is clickable into the terminal area and carries the same
+ * lead identities first — rendered even when dormant — then the worker pools,
+ * each ordered so what is running sits at the top. Every card is clickable into
+ * the terminal area and carries the same
  * four gc actions; the tier changes a card's prominence, not what you can do
  * to the session behind it.
  */
@@ -202,7 +203,7 @@ export function CrewSection({
         >
           {lead ? <span className="crew-pin" aria-hidden="true">📌</span> : null}
           <span className="crew-name">{member.label}</span>
-          <span className={`crew-state crew-state-${stateClass(state)}`}>{state}</span>
+          <span className={`crew-state crew-state-${crewActivityBand(state)}`}>{state}</span>
           {member.session?.contextPct !== undefined ? (
             <span className="crew-context">{Math.round(member.session.contextPct)}%</span>
           ) : null}
@@ -297,15 +298,3 @@ function scopeHint(scope: 'city' | 'rig'): string {
     : 'Rig workspace: this rig’s crew plus the city’s leads'
 }
 
-/**
- * Collapse gc's state vocabulary onto the three the styling distinguishes.
- * Unknown states fall through to `other` rather than being coerced into one of
- * the known ones. `not running` is this panel's own word for a dormant pinned
- * identity, which is why it is read here and not in the shared activity rule.
- */
-function stateClass(state: string): string {
-  const activity = gasCitySessionActivity(state)
-  if (activity !== 'unknown') return activity
-  if (state === 'not running') return 'dormant'
-  return 'other'
-}

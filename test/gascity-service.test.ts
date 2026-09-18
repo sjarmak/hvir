@@ -262,10 +262,10 @@ rig = "mem"
     expect(crew.available).toBe(true)
     if (!crew.available) return
     expect(crew.scope).toBe('rig')
-    expect([...crew.members.map((member) => member.label)].sort()).toEqual([
-      'mayor',
-      'mem-pl',
-    ])
+    // The HQ rig names the city that only the rig list could locate; the crew
+    // itself is this rig's, so the mayor stays in the city workspace.
+    expect(crew.hqRigName).toBe('hq')
+    expect([...crew.members.map((member) => member.label)].sort()).toEqual(['mem-pl'])
   })
 
   it('re-reads only the session list on a repeat poll', async () => {

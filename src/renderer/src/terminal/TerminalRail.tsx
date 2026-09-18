@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import { useState, type KeyboardEvent, type ReactElement } from 'react'
 
 import type {
   HarnessProfile,
@@ -53,6 +53,7 @@ export function TerminalRail({
   onFocusSession,
   onMoveSession,
   onCloseSession,
+  onRenameSession,
 }: {
   readonly label: string
   readonly visible: boolean
@@ -83,13 +84,29 @@ export function TerminalRail({
   readonly onFocusSession: (id: string) => void
   readonly onMoveSession: (id: string) => void
   readonly onCloseSession: (id: string) => void
+  readonly onRenameSession: (id: string, title: string) => void
 }): ReactElement {
   const { menuRef: launchMenuRef, menuStyle: launchMenuStyle } =
     useTerminalLaunchMenuLayout(menuOpen)
+  const [renaming, setRenaming] = useState<{ readonly id: string; readonly value: string }>()
   const applyCompact = (next: boolean): void => {
     if (next && menuOpen) onToggleMenu()
     if (next && moveMenuOpen) onToggleMoveMenu()
     onCompact(next)
+  }
+  const commitRename = (): void => {
+    if (!renaming) return
+    onRenameSession(renaming.id, renaming.value)
+    setRenaming(undefined)
+  }
+  const renameKeyDown = (event: KeyboardEvent<HTMLInputElement>): void => {
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      commitRename()
+    } else if (event.key === 'Escape') {
+      event.preventDefault()
+      setRenaming(undefined)
+    }
   }
 
   return (
@@ -270,7 +287,22 @@ export function TerminalRail({
                 onClick={() => onFocusSession(session.id)}
               >
                 <span className="terminal-list-copy">
-                  <span className="terminal-list-title">{session.title}</span>
+                  {renaming?.id === session.id ? (
+                    <input
+                      type="text"
+                      className="terminal-list-rename-input"
+                      value={renaming.value}
+                      autoFocus
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={(event) =>
+                        setRenaming({ id: session.id, value: event.currentTarget.value })
+                      }
+                      onKeyDown={renameKeyDown}
+                      onBlur={commitRename}
+                    />
+                  ) : (
+                    <span className="terminal-list-title">{session.title}</span>
+                  )}
                   <span className="terminal-list-meta">
                     <span className="terminal-list-profile">
                       {profileDisplayName(profiles, session.profileId)}
@@ -308,6 +340,15 @@ export function TerminalRail({
                   {session.pane === 'primary' ? '→' : '←'}
                 </button>
               ) : null}
+              <button
+                type="button"
+                className="terminal-rename-button"
+                aria-label={`Rename ${session.title}`}
+                title="Rename terminal"
+                onClick={() => setRenaming({ id: session.id, value: session.title })}
+              >
+                ✎
+              </button>
               <button
                 type="button"
                 className="terminal-close-button"

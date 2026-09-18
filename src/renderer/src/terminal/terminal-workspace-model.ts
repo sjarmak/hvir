@@ -56,6 +56,8 @@ export interface TerminalSession {
   readonly capabilities: HarnessProviderCapabilities
   readonly fallbackTitle: string
   readonly title: string
+  /** User-set name; once set, live OSC title updates no longer override it. */
+  readonly titlePinned?: true
   readonly status: string
   readonly attention?: TerminalAttention
   readonly telemetry?: HarnessTelemetry
@@ -140,6 +142,18 @@ export function settledTerminalSessions(
   sessions: readonly TerminalSession[],
 ): readonly TerminalSession[] {
   return sessions.filter((session) => !session.forkRequest)
+}
+
+const MAX_TERMINAL_TITLE_LENGTH = 512
+
+/** Mirrors main's terminal title validation; returns undefined for a blank rename. */
+export function cleanTerminalTitle(value: string): string | undefined {
+  const cleaned = [...value]
+    .map((character) => (character.charCodeAt(0) <= 31 ? ' ' : character))
+    .join('')
+    .trim()
+    .slice(0, MAX_TERMINAL_TITLE_LENGTH)
+  return cleaned.length > 0 ? cleaned : undefined
 }
 
 export const initialTerminalWorkspaceModel: TerminalWorkspaceModel = {

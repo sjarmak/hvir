@@ -4,6 +4,7 @@ import type { IpcRegistrar } from '../src/main/ipc/authority-router'
 import { registerSessionsIpc } from '../src/main/ipc/features/sessions'
 import type {
   SessionsResolvedExternalAttach,
+  SessionsResolvedMutationTarget,
   SessionsResolvedOpen,
 } from '../src/main/sessions/sessions-observation-port'
 import { RendererResourceScopes } from '../src/main/renderer-resource-scopes'
@@ -15,6 +16,8 @@ import {
   asSessionsPtyHandle,
   asSessionsTerminalHandle,
   asSessionsWorkspaceHandle,
+  asHostId,
+  hostPath,
   sessionsWorkspaceQualifier,
   SESSIONS_TRANSCRIPT_VERSION,
   type SessionsObservationSnapshot,
@@ -192,6 +195,75 @@ describe('Sessions IPC', () => {
     await scopes.dispose()
   })
 
+  it('forgets and renames only a resolved retained record, never a live one', async () => {
+    const scopes = new RendererResourceScopes()
+    const owner = scopes.activateOwner(31)
+    const qualifier = sessionsWorkspaceQualifier(3, 0, 0)
+    const root = hostPath(asHostId('work'), '/home/ds/projects/mem')
+    const resolveMutation = vi.fn(
+      (): SessionsResolvedMutationTarget => ({
+        outcome: 'resolved',
+        root,
+        id: 'terminal-retained',
+      }),
+    )
+    const observation = {
+      acquire: vi.fn(),
+      snapshot: vi.fn(),
+      release: vi.fn(),
+      resolveMutation,
+    }
+    const terminalSessions = {
+      forget: vi.fn(() => Promise.resolve()),
+      rename: vi.fn(() => Promise.resolve()),
+    }
+    const { invoke } = fixture(scopes, observation, vi.fn(), terminalSessions)
+    const request = {
+      demandGeneration: 4,
+      sourceRevision: 7,
+      handle: asSessionsTerminalHandle('terminal-retained'),
+      projectId: asSessionsProjectHandle('project-opaque'),
+      workspaceId: asSessionsWorkspaceHandle('workspace-opaque'),
+      workspaceQualifier: qualifier,
+    }
+
+    await expect(
+      invoke('sessions:forget', request, { owner: () => owner }),
+    ).resolves.toEqual({ outcome: 'applied' })
+    expect(terminalSessions.forget).toHaveBeenCalledExactlyOnceWith(
+      root,
+      'terminal-retained',
+    )
+
+    await expect(
+      invoke(
+        'sessions:rename',
+        { ...request, title: 'Beads Dolt server unreachable' },
+        { owner: () => owner },
+      ),
+    ).resolves.toEqual({ outcome: 'applied' })
+    expect(terminalSessions.rename).toHaveBeenCalledExactlyOnceWith(
+      root,
+      'terminal-retained',
+      'Beads Dolt server unreachable',
+    )
+
+    await expect(
+      invoke('sessions:rename', { ...request, title: '' }, { owner: () => owner }),
+    ).rejects.toThrow('Invalid terminal title')
+    expect(terminalSessions.rename).toHaveBeenCalledOnce()
+
+    resolveMutation.mockReturnValueOnce({
+      outcome: 'unavailable' as const,
+      reason: 'session-unavailable' as const,
+    })
+    await expect(
+      invoke('sessions:forget', request, { owner: () => owner }),
+    ).resolves.toEqual({ outcome: 'unavailable', reason: 'session-unavailable' })
+    expect(terminalSessions.forget).toHaveBeenCalledOnce()
+    await scopes.dispose()
+  })
+
   it('routes the exact production Usage demand shape and revokes it with the renderer owner', async () => {
     const scopes = new RendererResourceScopes()
     const owner = scopes.activateOwner(23)
@@ -318,13 +390,17 @@ describe('Sessions IPC', () => {
   })
 
   it('carries no mutation of a session other than an answer and a message', () => {
-    // ADR-048: reset, handoff, and everything else in a session's lifecycle
-    // stay with the view that owns the city. This is the whole surface.
+    // ADR-048: reset, handoff, and everything else in a foreign session's
+    // lifecycle stay with the view that owns the city. This is the whole
+    // surface. `forget` and `rename` are not exceptions to it: they mutate
+    // hvir's own retained terminal record, and resolve only a row hvir owns.
     expect(Object.keys(sessionsIpc.invoke).sort()).toEqual([
       'sessions:attach-external',
+      'sessions:forget',
       'sessions:observe',
       'sessions:open',
       'sessions:release',
+      'sessions:rename',
       'sessions:resolve-terminal',
       'sessions:respond',
       'sessions:snapshot',
@@ -425,8 +501,13 @@ function fixture(
     release: ReturnType<typeof vi.fn>
     resolveOpen?: ReturnType<typeof vi.fn>
     resolveExternalAttach?: ReturnType<typeof vi.fn>
+    resolveMutation?: ReturnType<typeof vi.fn>
   },
   switchWorkspace = vi.fn(),
+  terminalSessions: { forget: ReturnType<typeof vi.fn>; rename: ReturnType<typeof vi.fn> } = {
+    forget: vi.fn(() => Promise.resolve()),
+    rename: vi.fn(() => Promise.resolve()),
+  },
 ) {
   const handlers = new Map<string, (request: never, context: never) => unknown>()
   const ipc = {
@@ -476,16 +557,21 @@ function fixture(
       resolveExternalAttach:
         sessionsObservation.resolveExternalAttach ??
         vi.fn(() => ({ outcome: 'unavailable', reason: 'stale-projection' })),
+      resolveMutation:
+        sessionsObservation.resolveMutation ??
+        vi.fn(() => ({ outcome: 'unavailable', reason: 'stale-projection' })),
     },
     sessionsUsage,
     sessionsTranscripts,
     sessionsAttachTickets,
     switchWorkspace,
+    terminalSessions,
   } as never)
   return {
     sessionsUsage,
     sessionsTranscripts,
     sessionsAttachTickets,
+    terminalSessions,
     invoke: (channel: string, request: unknown, context: unknown) => {
       const handler = handlers.get(channel)
       if (!handler) throw new Error(`Missing handler ${channel}`)

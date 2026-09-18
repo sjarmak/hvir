@@ -143,7 +143,9 @@ export function TerminalSessionRuntimes({
             runtimes={runtimes}
             connectionState={connectionState}
             onTitle={(title) =>
-              onUpdateSession(session.id, (current) => ({ ...current, title }))
+              onUpdateSession(session.id, (current) =>
+                current.titlePinned ? current : { ...current, title },
+              )
             }
             onStatus={(status) =>
               onUpdateSession(session.id, (current) => ({ ...current, status }))

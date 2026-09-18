@@ -192,6 +192,7 @@ function renderRail(overrides: Partial<ComponentProps<typeof TerminalRail>> = {}
     onFocusSession: vi.fn(),
     onMoveSession: vi.fn(),
     onCloseSession: vi.fn(),
+    onRenameSession: vi.fn(),
     ...overrides,
   }
   act(() => root.render(<TerminalRail {...props} />))

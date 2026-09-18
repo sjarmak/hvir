@@ -44,6 +44,16 @@ export function createSmokeTerminalSessionStore(defaultRoot: HostPath) {
       }
       return Promise.resolve()
     },
+    rename: (root, id, title) => {
+      if (!hostPathEquals(sessionRoot(id), root)) {
+        return Promise.reject(new Error('Terminal no longer belongs to the workspace'))
+      }
+      sessions = sessions.map((session) =>
+        session.id === id ? { ...session, title, titlePinned: true } : session,
+      )
+      publish()
+      return Promise.resolve()
+    },
     rebindProfile: () => Promise.reject(new Error('Smoke recovery is read-only')),
     authorizeReattach: (request) => {
       const stored = sessions.find((session) => session.id === request.id)

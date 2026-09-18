@@ -67,6 +67,7 @@ describe('terminal workspace move controls', () => {
           onFocusSession={vi.fn()}
           onMoveSession={vi.fn()}
           onCloseSession={vi.fn()}
+          onRenameSession={vi.fn()}
         />,
       )
     })
@@ -122,6 +123,7 @@ describe('terminal workspace move controls', () => {
           onFocusSession={vi.fn()}
           onMoveSession={vi.fn()}
           onCloseSession={vi.fn()}
+          onRenameSession={vi.fn()}
         />,
       )
     })
@@ -167,6 +169,7 @@ describe('terminal workspace move controls', () => {
           onFocusSession={onFocusSession}
           onMoveSession={vi.fn()}
           onCloseSession={vi.fn()}
+          onRenameSession={vi.fn()}
         />,
       )
     })

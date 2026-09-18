@@ -107,6 +107,7 @@ describe('harness launch-menu view', () => {
           onFocusSession={vi.fn()}
           onMoveSession={vi.fn()}
           onCloseSession={vi.fn()}
+          onRenameSession={vi.fn()}
         />,
       )
     })

@@ -195,14 +195,13 @@ describe('live gc crew derivation', () => {
     expect(inWorkspace(LIVE_CITY, 'hq', true).hqRigName).toBe('hq')
   })
 
-  it('pins the mayor and shows this rig only, in a rig workspace', () => {
+  it('shows this rig only — its own lead, not the mayor — in a rig workspace', () => {
     const crew = inWorkspace(LIVE_MEM, 'mem')
     expect([...crew.members.map((member) => member.label)].sort()).toEqual([
-      'mayor',
       'mem-pl',
       'mem-worker-2',
     ])
-    expect(crew.members.find((member) => member.label === 'mayor')?.tier).toBe('lead')
+    expect(crew.members.find((member) => member.label === 'mem-pl')?.tier).toBe('lead')
   })
 
   it('associates a worktree-based worker by its rig-qualified name', () => {
@@ -511,14 +510,14 @@ describe('rig leads defined at city scope', () => {
     })
   }
 
-  it("keeps this rig's lead and the mayor, dropping another rig's lead", () => {
+  it("keeps this rig's lead, dropping the mayor and another rig's lead", () => {
     const labels = scoped(CITY_WIDE).members.map((member) => member.label)
-    expect([...labels].sort()).toEqual(['mayor', 'mem-pl', 'mem-worker-ash'])
+    expect([...labels].sort()).toEqual(['mem-pl', 'mem-worker-ash'])
   })
 
-  it('keeps the mayor visible when the city root could not be resolved', () => {
-    // A rig registered outside the city directory: nothing to compare roots
-    // against, so the crew errs toward showing a lead rather than hiding one.
+  it('leaves the mayor out even when the city root could not be resolved', () => {
+    // A rig registered outside the city directory: the mayor's work_dir still
+    // fails to land under this rig, which is all the scope rule asks.
     const blind = deriveCrew({
       sessions: CITY_WIDE,
       config: WORKDIR_SCOPED_CONFIG,
@@ -529,14 +528,14 @@ describe('rig leads defined at city scope', () => {
       includeInternals: false,
       tierSource: 'config',
     })
-    expect(blind.members.map((member) => member.label)).toContain('mayor')
+    expect(blind.members.map((member) => member.label)).not.toContain('mayor')
   })
 
   it('scopes dormant leads by their configured work_dir, not by having no rig', () => {
     // Nothing running at all: every lead is dormant and only `work_dir` can say
     // which rig it belongs to.
     const labels = scoped([]).members.map((member) => member.label)
-    expect([...labels].sort()).toEqual(['mayor', 'mem-pl'])
+    expect([...labels].sort()).toEqual(['mem-pl'])
   })
 })
 
@@ -583,9 +582,9 @@ describe('workspace scope', () => {
     expect([...leads].sort()).toEqual(['aoa-pl', 'city-infra-pl', 'mayor', 'mem-pl'])
   })
 
-  it('narrows to this rig plus the city leads from a rig workspace', () => {
+  it('narrows to this rig alone from a rig workspace', () => {
     const labels = scopedTo(false).members.map((member) => member.label)
-    expect([...labels].sort()).toEqual(['mayor', 'mem-pl', 'mem-worker-ash'])
+    expect([...labels].sort()).toEqual(['mem-pl', 'mem-worker-ash'])
   })
 
   it("drops another rig's lead and workers from a rig workspace", () => {
@@ -600,12 +599,12 @@ describe('workspace scope', () => {
     )
   })
 
-  it('keeps only the rig-less city lead, not every lead sitting at city scope', () => {
-    // `city-infra-pl` has the mayor's work_dir but belongs to a rig, so rig
-    // association is the only thing that separates them.
-    expect(scopedTo(false).members.map((member) => member.label)).not.toContain(
-      'city-infra-pl',
-    )
+  it('drops the city-scope leads, mayor and city-infra alike', () => {
+    // Both sit at city scope — `city-infra-pl` even shares the mayor's work_dir
+    // — and neither is this project's lead, so neither belongs on this card.
+    const labels = scopedTo(false).members.map((member) => member.label)
+    expect(labels).not.toContain('city-infra-pl')
+    expect(labels).not.toContain('mayor')
   })
 })
 
@@ -661,6 +660,83 @@ describe('crew derivation', () => {
     expect(new Set(workers.map((member) => member.poolName))).toEqual(
       new Set(['mem-worker']),
     )
+  })
+
+  it('orders a pool by activity before name', () => {
+    const mixed = deriveCrew({
+      sessions: parseSessionListOutput(
+        JSON.stringify([
+          sessionJson({ id: 'gc-5', name: 'mem-worker-ash', state: 'suspended' }),
+          sessionJson({ id: 'gc-6', name: 'mem-worker-bay', state: 'not running' }),
+          sessionJson({ id: 'gc-7', name: 'mem-worker-cove', state: 'active' }),
+          sessionJson({ id: 'gc-8', name: 'mem-worker-dune', state: 'running' }),
+        ]),
+        HOST,
+      ),
+      config,
+      rigName: 'mem',
+      rigRoot: RIG_ROOT,
+      cityWorkspace: false,
+      cityRoot: CITY_ROOT,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    expect(
+      mixed.members
+        .filter((member) => member.tier === 'worker')
+        .map((member) => member.label),
+    ).toEqual([
+      'mem-worker-cove',
+      'mem-worker-dune',
+      'mem-worker-ash',
+      'mem-worker-bay',
+    ])
+  })
+
+  it('sinks a dormant lead below a running one', () => {
+    const leads = deriveCrew({
+      sessions: parseSessionListOutput(
+        JSON.stringify([
+          sessionJson({
+            id: 'gc-1',
+            name: 'mem-pl',
+            alias: 'mem-pl',
+            template: 'mem-pl',
+            state: 'active',
+          }),
+        ]),
+        HOST,
+      ),
+      config: parseResolvedConfig(`
+[[named_session]]
+name = "mem-pl"
+alias = "mem-pl"
+agent = "mem-pl"
+mode = "always"
+
+[[named_session]]
+name = "aardvark-pl"
+alias = "aardvark-pl"
+agent = "aardvark-pl"
+mode = "always"
+
+[agents.mem-pl]
+work_dir = "${CITY}/rigs/mem"
+
+[agents.aardvark-pl]
+work_dir = "${CITY}/rigs/mem"
+`),
+      rigName: 'mem',
+      rigRoot: RIG_ROOT,
+      cityWorkspace: false,
+      cityRoot: CITY_ROOT,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    // Alphabetically `aardvark-pl` would lead; it is not running, so it does not.
+    expect(leads.members.map((member) => member.label)).toEqual(['mem-pl', 'aardvark-pl'])
   })
 
   it('hides binding-qualified sessions unless internals are requested', () => {
@@ -895,7 +971,22 @@ describe('trace rig', () => {
       tierSource: 'config',
     })
     expect(traceRigOf(crew, 'mem-worker-ash')).toBe('mem')
-    expect(traceRigOf(crew, 'mayor')).toBe('gas-city')
+    expect(
+      traceRigOf(
+        deriveCrew({
+          sessions: CITY_WIDE,
+          config: CITY_WIDE_CONFIG,
+          rigName: 'hq',
+          rigRoot: CITY_ROOT,
+          cityWorkspace: true,
+          cityRoot: CITY_ROOT,
+          hqRigName: 'hq',
+          includeInternals: false,
+          tierSource: 'config',
+        }),
+        'mayor',
+      ),
+    ).toBe('gas-city')
   })
 
   it('prefers the rig gc projects on the session', () => {

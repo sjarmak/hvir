@@ -292,6 +292,26 @@ export type SessionsOpenResponse =
       readonly reason: SessionsOpenUnavailableReason
     }
 
+/** A retained (non-live) session, addressed the same opaque way as an open request. */
+export interface SessionsMutationRequest extends SessionsDemandRequest {
+  readonly sourceRevision: number
+  readonly handle: SessionsTerminalHandle
+  readonly projectId: SessionsProjectHandle
+  readonly workspaceId: SessionsWorkspaceHandle
+  readonly workspaceQualifier: SessionsWorkspaceQualifier
+}
+
+export interface SessionsRenameRequest extends SessionsMutationRequest {
+  readonly title: string
+}
+
+export type SessionsProjectionMutationResponse =
+  | { readonly outcome: 'applied' }
+  | {
+      readonly outcome: 'unavailable'
+      readonly reason: SessionsOpenUnavailableReason
+    }
+
 /** Exact read-only resolution for borrowing an existing renderer terminal surface. */
 export type SessionsTerminalResolutionResponse =
   | {

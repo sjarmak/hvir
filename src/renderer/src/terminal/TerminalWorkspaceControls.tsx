@@ -115,6 +115,7 @@ export function TerminalWorkspaceControls({
         onFocusSession={commands.focus}
         onMoveSession={commands.moveToOtherPane}
         onCloseSession={commands.close}
+        onRenameSession={commands.rename}
       />
       <TerminalWorkspaceDialogs
         visible

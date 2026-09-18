@@ -15,6 +15,7 @@ import { terminalForkAvailability } from './terminal-fork-policy'
 import type { FreshTerminalStart } from './terminal-runtime-options'
 import type { TerminalRuntimeRegistry } from './terminal-runtime-registry'
 import {
+  cleanTerminalTitle,
   createTerminalSession,
   createTerminalForkSession,
   nextTerminalSplitPane,
@@ -272,6 +273,15 @@ export function useTerminalSessionCommands({
       })
     },
     moveToOtherPane: (id: string) => send({ type: 'session-moved', id }),
+    rename: (id: string, title: string) => {
+      const session = modelRef.current.sessions.find((candidate) => candidate.id === id)
+      const cleaned = cleanTerminalTitle(title)
+      if (!session || !cleaned) return
+      send({
+        type: 'session-updated',
+        session: { ...session, title: cleaned, titlePinned: true },
+      })
+    },
     close: (id: string) => {
       forgetAttention(id)
       const session = modelRef.current.sessions.find((candidate) => candidate.id === id)

@@ -90,30 +90,37 @@ pack-stamped lead that a rig override suspended drops out, leaving the hand-defi
 
 - **Scope depends on whether the workspace *is* the city.** The orchestration workspace
   shows the whole city — every rig's lead pinned and every active worker — because that is
-  the one place you want it. A rig workspace narrows to that rig's lead and workers plus the
-  city's own lead; other rigs' leads, other rigs' workers, and the city's worker pools all
-  drop out. `findCityRoot` answers "is this
-  the city" with a marker walk, so no rig is recognized by name.
+  the one place you want it. A rig workspace narrows to that rig's own lead and workers;
+  everything else drops out — other rigs' leads and workers, the city's worker pools, and the
+  mayor. Standing in one project, the crew that matters is the one working that project.
+  `findCityRoot` answers "is this the city" with a marker walk, so no rig is recognized by
+  name.
 - **The city is found through `gc rig list`, not the filesystem walk.** `gc rig list`
   reports the HQ rig — the city itself — alongside every registered rig, so `resolveCity`
   asks which listed rig root carries `city.toml`. Rigs are *external project directories*
   and often live outside the city, where walking up from the workspace never reaches it; on
-  that path the city root came back undefined and the mayor silently vanished from every rig
-  crew. The walk survives only as the fallback for when the rig list is unavailable, and
-  when no city root resolves at all the scope rule turns permissive on purpose — an extra
-  lead is a visible annoyance, a missing mayor looks like the whole view is broken.
+  that path the city root came back undefined, which mis-sorts the city workspace and
+  costs every member its trace rig. The walk survives only as the fallback for when the rig
+  list is unavailable, and when no city root resolves at all `isCityLead` turns permissive on
+  purpose — an extra lead at the head of the city crew is a visible annoyance, a missing
+  mayor looks like the whole view is broken.
 - **`city.toml` marks the city root; `.gc` does not.** gc creates a `.gc` directory inside
   every registered rig. Treating it as a city marker made every rig workspace look like the
   orchestration workspace, so the whole city's workers showed up everywhere. Membership
   ("am I in a city", used by the probe) and identity ("am I *the* city") are different
   questions and use different markers — `CITY_MEMBER_MARKERS` vs `CITY_ROOT_MARKER`.
+- **Order inside a tier is activity, then name.** A crew is read to find out who is working
+  right now, so `sortCrew` ranks by `crewActivityBand` — running, parked, absent, unknown —
+  before falling back to the label. The band vocabulary is shared with the renderer's state
+  styling (`crewActivityBand` in `shared/gascity.ts`) so a state that sorts as dormant can
+  never be painted as active. Tier and pool still group first; activity orders within.
 - **`GasCityCrew.scope` is surfaced in the header** for exactly that reason: a wrong scope is
   otherwise invisible, it just looks like too many cards.
-- **`cityLead` is one fact serving three jobs.** "Belongs to the city, not to a rig" decides
-  scope in a rig workspace, sorts the mayor to the head of the crew in the city workspace,
-  and marks the card visually. Deriving it once on the member keeps those three from drifting
-  apart — an earlier version recomputed the scope test inline and could rank a card it had
-  already filtered differently.
+- **`cityLead` is one fact serving three jobs.** "Belongs to the city, not to a rig" sorts
+  the mayor to the head of the crew in the city workspace, picks the city trace rig, and
+  marks the card visually. It is derived once on the member, live (`isCityLead`) and dormant
+  (`isDormantCityLead`) by the same rule, so the three never drift apart. Scope no longer
+  reads it: a rig workspace shows its own rig and nothing else.
 - **`GasCityCrew.diagnostics` is the standing answer to this whole class of bug.** Every
   failure in this area has been a rule deciding quietly on data that was not there, and a
   config key read under the wrong name yields zero pinned identities while looking exactly
@@ -131,7 +138,7 @@ pack-stamped lead that a rig override suspended drops out, leaving the hand-defi
 - **"The mayor" is the pinned identity rooted *at the city*, and nothing else works.** The
   trap: a rig's hand-defined project lead is a **city-scope** named session carrying no
   `rig` key at all — its rig association lives only in `work_dir`, pointing at the rig root.
-  So "has no rig" pins every rig's lead into every workspace, which is exactly the bug that
+  So "has no rig" marks every rig's lead as the city's, which is exactly the bug that
   shipped twice. The rule that holds: with no rig on either side, compare the identity's
   root against the city root. `identityRoot` prefers the live session's `work_dir` and falls
   back to the configured `work_dir` on the named session or its backing agent, so dormant

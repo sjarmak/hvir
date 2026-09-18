@@ -1,4 +1,6 @@
 import {
+  crewActivityBand,
+  GAS_CITY_ACTIVITY_BANDS,
   GAS_CITY_CREW_TIERS,
   hostPath,
   hostPathEquals,
@@ -75,15 +77,14 @@ export function deriveCrew(input: DeriveCrewInput): GasCityCrew {
  * everything: every rig's lead pinned and every active worker, because seeing
  * the whole city at once is the point of standing there.
  *
- * In a **rig** workspace the crew narrows to that rig's lead and workers, plus
- * the city's own lead. Other rigs' leads and workers drop out, and so do the
- * city's worker pools — they are not this workspace's crew, and carrying them
- * makes the section useless exactly where focus matters most.
+ * In a **rig** workspace the crew narrows to that rig's own lead and workers.
+ * Everything else drops out — other rigs' leads and workers, the city's worker
+ * pools, and the mayor. Standing in one project, the crew that matters is the
+ * one working that project; the city's identities are one workspace away, and
+ * carrying them makes the section useless exactly where focus matters most.
  */
 function inScope(candidate: CrewCandidate, input: DeriveCrewInput): boolean {
-  if (input.cityWorkspace) return true
-  if (belongsToRig(candidate, input)) return true
-  return candidate.member.tier === 'lead' && candidate.member.cityLead === true
+  return input.cityWorkspace || belongsToRig(candidate, input)
 }
 
 /**
@@ -424,7 +425,7 @@ function dormantLeads(
         tier: 'lead' as const,
         label: target,
         target,
-        ...(named.rig === undefined ? { cityLead: true } : {}),
+        ...(isDormantCityLead(named, input) ? { cityLead: true } : {}),
         identityKeys: [
           ...new Set([named.name, named.alias, named.agent].filter((key): key is string => !!key)),
         ],
@@ -433,22 +434,38 @@ function dormantLeads(
 }
 
 /**
+ * The city's own lead, read from config alone — the dormant counterpart of
+ * {@link isCityLead}. Having no `rig` key is not the test: a rig's lead is a
+ * city-scope named session too, and its `work_dir` is what says otherwise.
+ */
+function isDormantCityLead(
+  named: GasCityNamedSessionConfig,
+  input: DeriveCrewInput,
+): boolean {
+  if (named.rig !== undefined) return named.rig === input.hqRigName
+  if (input.cityRoot === undefined) return true
+  const root = configuredRoot(named, input)
+  return root === undefined || hostPathEquals(root, input.cityRoot)
+}
+
+/**
  * A dormant lead renders under the same scope rule as a live one: everything in
- * the city workspace, and in a rig workspace only that rig's lead plus the
- * city's own (a named session with no rig is city-scope by construction).
+ * the city workspace, and in a rig workspace only that rig's own lead.
+ *
+ * A rig's lead is usually a *city-scope* named session carrying no `rig` key at
+ * all, with its rig association in `work_dir`, so the configured root is what
+ * decides. An identity whose root cannot be resolved names no rig, and an
+ * unplaceable identity is not this rig's lead — it stays out rather than
+ * pinning itself into every project.
  */
 function dormantLeadInScope(
   named: GasCityNamedSessionConfig,
   input: DeriveCrewInput,
 ): boolean {
   if (input.cityWorkspace) return true
-  if (named.rig !== undefined) {
-    return named.rig === input.rigName || named.rig === input.hqRigName
-  }
-  // Same rule as a live identity: rooted under this rig, or rooted at the city.
+  if (named.rig !== undefined) return named.rig === input.rigName
   const root = configuredRoot(named, input)
-  if (root === undefined || input.cityRoot === undefined) return true
-  return isAtOrUnder(root, input.rigRoot) || hostPathEquals(root, input.cityRoot)
+  return root !== undefined && isAtOrUnder(root, input.rigRoot)
 }
 
 /**
@@ -469,6 +486,10 @@ function dedupeByTarget(
   return [...byTarget.values()]
 }
 
+function activityRank(member: GasCityCrewMember): number {
+  return GAS_CITY_ACTIVITY_BANDS.indexOf(crewActivityBand(member.session?.state))
+}
+
 function sortCrew(members: readonly GasCityCrewMember[]): readonly GasCityCrewMember[] {
   return [...members].sort((left, right) => {
     const byTier =
@@ -480,6 +501,11 @@ function sortCrew(members: readonly GasCityCrewMember[]): readonly GasCityCrewMe
     if (byCity !== 0) return byCity
     const byPool = (left.poolName ?? '').localeCompare(right.poolName ?? '')
     if (byPool !== 0) return byPool
+    // Within a tier and pool, what is running comes first: a crew is read to
+    // find out who is working, and a dormant identity answers that in one
+    // glance from the bottom of the list.
+    const byActivity = activityRank(left) - activityRank(right)
+    if (byActivity !== 0) return byActivity
     return left.label.localeCompare(right.label)
   })
 }

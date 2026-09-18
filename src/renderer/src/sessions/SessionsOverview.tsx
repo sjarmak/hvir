@@ -393,6 +393,52 @@ export function SessionsOverview({
     source,
     transcripts,
   ])
+  const forget = useCallback(
+    async (row: SessionsProjectionRow): Promise<void> => {
+      const captured = source.snapshot()
+      try {
+        const result = await window.hvir.invoke('sessions:forget', {
+          demandGeneration: captured.demandGeneration,
+          sourceRevision: captured.sourceRevision,
+          handle: row.handle,
+          projectId: row.project.id,
+          workspaceId: row.workspace.id,
+          workspaceQualifier: row.workspace.qualifier,
+        })
+        if (result.outcome === 'unavailable') {
+          setFeedback(openUnavailableMessage(result.reason))
+        }
+      } catch {
+        setFeedback('The session record could not be forgotten')
+      }
+    },
+    [source],
+  )
+
+  const rename = useCallback(
+    async (row: SessionsProjectionRow, title: string): Promise<void> => {
+      const cleaned = title.trim()
+      if (!cleaned) return
+      const captured = source.snapshot()
+      try {
+        const result = await window.hvir.invoke('sessions:rename', {
+          demandGeneration: captured.demandGeneration,
+          sourceRevision: captured.sourceRevision,
+          handle: row.handle,
+          projectId: row.project.id,
+          workspaceId: row.workspace.id,
+          workspaceQualifier: row.workspace.qualifier,
+          title: cleaned,
+        })
+        if (result.outcome === 'unavailable') {
+          setFeedback(openUnavailableMessage(result.reason))
+        }
+      } catch {
+        setFeedback('The session could not be renamed')
+      }
+    },
+    [source],
+  )
 
   const moveFocus = (
     event: ReactKeyboardEvent<HTMLElement>,
@@ -635,6 +681,16 @@ export function SessionsOverview({
                                       : external
                                         ? () => openTranscript(row)
                                         : undefined
+                                  }
+                                  onForget={
+                                    row.lifecycle === 'retained'
+                                      ? () => void forget(row)
+                                      : undefined
+                                  }
+                                  onRename={
+                                    row.lifecycle === 'retained'
+                                      ? (title: string) => void rename(row, title)
+                                      : undefined
                                   }
                                 />
                               </article>

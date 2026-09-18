@@ -199,6 +199,7 @@ export function restoreTerminalSessions(
       capabilities,
       fallbackTitle: record.title,
       title: record.title,
+      titlePinned: record.titlePinned === true ? true : undefined,
       status: !hasHarnessIdentity
         ? 'Ready to start'
         : resumable

@@ -171,6 +171,22 @@
   font-weight: 660;
 }
 
+.session-card-rename-input {
+  width: 100%;
+  background: #10151b;
+  border: 1px solid #3a4552;
+  border-radius: 3px;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: calc(11px * var(--hvir-interface-scale));
+  font-weight: 660;
+  padding: 2px 5px;
+}
+
+.session-card-forget {
+  color: #e08b8b;
+}
+
 .session-kind {
   flex: 0 0 auto;
   color: #7ea6cf;

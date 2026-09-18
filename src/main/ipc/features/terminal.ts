@@ -89,12 +89,14 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
       if (!isUnknownRecord(value)) throw new Error('Invalid terminal layout entry')
       const id = value['id']
       const title = value['title']
+      const titlePinned = value['titlePinned']
       const position = value['position']
       const active = value['active']
       const attention = value['attention']
       if (
         !isTerminalId(id) ||
         !isTerminalTitle(title) ||
+        (titlePinned !== undefined && typeof titlePinned !== 'boolean') ||
         !Number.isSafeInteger(position) ||
         typeof position !== 'number' ||
         position < 0 ||
@@ -104,7 +106,7 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
       ) {
         throw new Error('Invalid terminal layout entry')
       }
-      return { id, title, position, active, attention }
+      return { id, title, titlePinned, position, active, attention }
     })
     await deps.terminalSessions.updateLayout(root, sessions)
   })
@@ -112,6 +114,12 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
     const root = ipc.authority.workspaceRoot(req.root)
     if (!isTerminalId(req.id)) throw new Error('Invalid terminal session id')
     await deps.terminalSessions.forget(root, req.id)
+  })
+  ipc.handle('terminal:rename', async (req) => {
+    const root = ipc.authority.workspaceRoot(req.root)
+    if (!isTerminalId(req.id)) throw new Error('Invalid terminal session id')
+    if (!isTerminalTitle(req.title)) throw new Error('Invalid terminal title')
+    await deps.terminalSessions.rename(root, req.id, req.title)
   })
   ipc.handle('terminal:plan-move', (req, context) =>
     operationResult(() => Promise.resolve(deps.terminalMoves.plan(req, context.owner()))),
@@ -490,7 +498,7 @@ function recoveryDecisionIds(value: unknown): readonly string[] {
   return ids
 }
 
-function isTerminalTitle(value: unknown): value is string {
+export function isTerminalTitle(value: unknown): value is string {
   return (
     typeof value === 'string' &&
     value.length > 0 &&

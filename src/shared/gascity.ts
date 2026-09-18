@@ -20,6 +20,27 @@ export const GAS_CITY_CREW_TIERS = ['lead', 'worker', 'internal'] as const
  */
 export type GasCityCrewTier = (typeof GAS_CITY_CREW_TIERS)[number]
 
+/**
+ * Activity bands, ordered as the crew lists them: what is running now, then
+ * what is parked, then what is not there at all. `other` sits last because an
+ * unrecognized state says nothing about whether the session is doing work.
+ */
+export const GAS_CITY_ACTIVITY_BANDS = ['active', 'idle', 'dormant', 'other'] as const
+
+export type GasCityActivityBand = (typeof GAS_CITY_ACTIVITY_BANDS)[number]
+
+/**
+ * Collapse gc's state vocabulary onto the bands the crew orders and styles by.
+ * Unknown states fall through to `other` rather than being coerced into one of
+ * the known ones. A member with no session is dormant by construction.
+ */
+export function crewActivityBand(state: string | undefined): GasCityActivityBand {
+  if (state === undefined || state === 'not running') return 'dormant'
+  if (state === 'active' || state === 'running') return 'active'
+  if (state === 'suspended' || state === 'asleep') return 'idle'
+  return 'other'
+}
+
 /** One live (or suspended) `gc` session, normalized from `gc session list`. */
 export interface GasCitySession {
   readonly id: string
