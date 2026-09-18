@@ -47,6 +47,10 @@ or Apple-silicon macOS before invoking the platform installation step.
 
 Want to manage the installation yourself? [Follow these steps.](docs/manual-installation.md)
 
+Want to reach your sessions from a phone while you are away? The
+[Companion operator runbook](docs/runbooks/companion-operator.md) covers publishing the loopback
+port to your tailnet and delivering Push through a self-hosted ntfy server.
+
 hvir does expect the system `git` binary. Claude Code and Codex launch options use those CLIs
 from the selected host's login-shell environment; plain shells work without either.
 
