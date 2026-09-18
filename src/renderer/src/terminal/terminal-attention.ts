@@ -1,4 +1,8 @@
-import type { TerminalAttentionState } from '../../../shared'
+import {
+  asSessionsTerminalHandle,
+  type ActionableAttentionEntry,
+  type TerminalAttentionState,
+} from '../../../shared'
 
 export type TerminalAttention = TerminalAttentionState
 export type TerminalIdleAttentionState = 'initial' | 'armed' | 'settled'
@@ -68,6 +72,33 @@ export function terminalActionableAttentionCount(
 ): number {
   return attentions.filter((attention) => attention === 'idle' || attention === 'bell')
     .length
+}
+
+/**
+ * The terminals waiting on the person, as the entries main aggregates across
+ * windows (ADR-049). Order follows the sessions; a terminal this window shows
+ * is always a fresh claim, so no entry here is stale.
+ */
+export function terminalActionableEntries(
+  sessions: readonly { readonly id: string; readonly attention?: TerminalAttention }[],
+): readonly ActionableAttentionEntry[] {
+  const entries: ActionableAttentionEntry[] = []
+  for (const session of sessions) {
+    if (session.attention !== 'idle' && session.attention !== 'bell') continue
+    entries.push({
+      handle: asSessionsTerminalHandle(session.id),
+      kind: session.attention === 'idle' ? 'ready' : 'bell',
+      freshness: 'fresh',
+    })
+  }
+  return entries
+}
+
+/** One string per set of entries, so a rollup republishes only when the set changes. */
+export function actionableEntriesFingerprint(
+  entries: readonly ActionableAttentionEntry[],
+): string {
+  return entries.map((entry) => `${entry.handle}:${entry.kind}`).join('|')
 }
 
 export function terminalWorkingCount(

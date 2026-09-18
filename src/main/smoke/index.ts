@@ -1,11 +1,5 @@
-import {
-  verifyTerminalThemeScenario,
-  verifyTerminalMoveScenario,
-  verifyWorkbenchLayoutScenario,
-  verifyTerminalSplitScenario,
-  verifyAppSettingsScenario,
-  verifyHarnessProfilesScenario,
-} from './terminal-presentation-scenarios'
+import { createSmokeAttention } from './attention-smoke'
+import { terminalScenarioTable } from './terminal-scenario-table'
 import type { ElectronSmokeDependencies } from './bootstrap-contract'
 import { SmokeRendererReadiness } from './renderer-readiness-observer'
 import { verifyTerminalLifecycleScenario } from './terminal-lifecycle-scenario'
@@ -373,6 +367,8 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     const smokeGasCity = new GasCityService({
       getProject: () => ({ host, root: smokeRoot }),
     })
+    const smokeAttention = createSmokeAttention()
+    cleanup.defer('attention', () => smokeAttention.dispose())
     const terminalMoveSmoke = createTerminalMoveSmokeHarness({
       sourceState: smokeProjectState,
       targetRoot: smokeWebSwitchRoot,
@@ -477,7 +473,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       systemClipboard: { writeText: () => undefined },
       beads: smokeBeads,
       gascity: smokeGasCity,
-      updateAttention: () => undefined,
+      updateAttention: smokeAttention.updateAttention,
       updateWebPaneBindings: (owner, bindings) =>
         updateWebPaneBindings(owner.id, bindings),
       updateWebPaneFullPage: (owner, paneId) => updateWebPaneFullPage(owner.id, paneId),
@@ -775,23 +771,16 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       console.log('HVIR_SMOKE_OK')
       return 0
     }
-    const terminalScenarios = {
-      'terminal-theme': () => verifyTerminalThemeScenario(win, supervisor),
-      'terminal-move': () =>
-        verifyTerminalMoveScenario({
-          win,
-          supervisor,
-          harness: terminalMoveSmoke,
-          emitState: (state) => emit('project:state', state),
-        }),
-      'workbench-layout': () => verifyWorkbenchLayoutScenario(win, supervisor),
-      'terminal-split': () => verifyTerminalSplitScenario(win, supervisor),
-      'app-settings': () => verifyAppSettingsScenario(win, supervisor),
-      'harness-profiles': () =>
-        verifyHarnessProfilesScenario(win, supervisor, host, smokeRoot),
-    }
-    if (mode in terminalScenarios) {
-      await terminalScenarios[mode as keyof typeof terminalScenarios]()
+    const terminalScenario = terminalScenarioTable({
+      win,
+      supervisor,
+      host,
+      smokeRoot,
+      harness: terminalMoveSmoke,
+      emitState: (state) => emit('project:state', state),
+    })[mode]
+    if (terminalScenario !== undefined) {
+      await terminalScenario()
       console.log('HVIR_SMOKE_OK')
       return 0
     }

@@ -1,0 +1,139 @@
+import { describe, expect, it, vi } from 'vitest'
+
+import {
+  ActionableAttentionSet,
+  appearances,
+  type MainActionableEntry,
+} from '../src/main/attention/actionable-attention-set'
+import {
+  asHostId,
+  asSessionsTerminalHandle,
+  type ActionableAttentionEntry,
+} from '../src/shared'
+
+const owner = (id: number, generation = 1) => ({ id, generation })
+
+const rendererEntry = (
+  handle: string,
+  kind: ActionableAttentionEntry['kind'] = 'ready',
+): ActionableAttentionEntry => ({
+  handle: asSessionsTerminalHandle(handle),
+  kind,
+  freshness: 'fresh',
+})
+
+const external = (
+  key: string,
+  freshness: MainActionableEntry['freshness'] = 'fresh',
+): MainActionableEntry => ({
+  key: `gas-city host-a ${key}`,
+  kind: 'ready',
+  freshness,
+  ...(freshness === 'stale' ? { reason: 'unreachable' as const } : {}),
+  external: { sourceId: 'gas-city', hostId: asHostId('host-a'), key },
+})
+
+describe('ActionableAttentionSet', () => {
+  it('is away with no owners at all, so an external entry counts before a window opens', () => {
+    const set = new ActionableAttentionSet()
+    expect(set.away()).toBe(true)
+    set.setExternal([external('s1')])
+    expect(set.freshCount()).toBe(1)
+    expect(set.snapshot().away).toBe(true)
+  })
+
+  it('is away exactly when no owner is focused', () => {
+    const set = new ActionableAttentionSet()
+    set.setFocused(owner(1), true)
+    expect(set.away()).toBe(false)
+    set.setFocused(owner(2), false)
+    expect(set.away()).toBe(false)
+    set.setFocused(owner(1), false)
+    expect(set.away()).toBe(true)
+    set.setFocused(owner(2), true)
+    set.removeOwner(2)
+    expect(set.away()).toBe(true)
+  })
+
+  it('dedupes one terminal reported by two renderer generations, newest wins', () => {
+    const set = new ActionableAttentionSet()
+    set.setRendererEntries(owner(1, 1), [rendererEntry('t1', 'ready')])
+    set.setRendererEntries(owner(1, 2), [rendererEntry('t1', 'bell')])
+    expect(set.snapshot().entries).toEqual([
+      {
+        key: 't1',
+        kind: 'bell',
+        freshness: 'fresh',
+        terminalHandle: asSessionsTerminalHandle('t1'),
+      },
+    ])
+    set.removeOwner(1, 1)
+    expect(set.snapshot().entries.map((entry) => entry.kind)).toEqual(['bell'])
+    set.removeOwner(1)
+    expect(set.snapshot().entries).toEqual([])
+  })
+
+  it('counts fresh entries only and keeps stale ones in the snapshot', () => {
+    const set = new ActionableAttentionSet()
+    set.setRendererEntries(owner(1), [rendererEntry('t1'), rendererEntry('t2', 'bell')])
+    set.setExternal([external('s1'), external('s2', 'stale')])
+    expect(set.freshCount()).toBe(3)
+    expect(set.snapshot().entries.map((entry) => entry.key)).toEqual([
+      'gas-city host-a s1',
+      'gas-city host-a s2',
+      't1',
+      't2',
+    ])
+    expect(set.snapshot().entries[1]).toMatchObject({
+      freshness: 'stale',
+      reason: 'unreachable',
+      external: { sourceId: 'gas-city', hostId: asHostId('host-a'), key: 's2' },
+    })
+  })
+
+  it('bumps the revision only when the entries or away change', () => {
+    const set = new ActionableAttentionSet()
+    const listener = vi.fn()
+    set.observe(listener)
+    const first = set.snapshot().revision
+
+    set.setRendererEntries(owner(1), [rendererEntry('t1')])
+    expect(set.snapshot().revision).toBe(first + 1)
+    set.setRendererEntries(owner(1), [rendererEntry('t1')])
+    expect(set.snapshot().revision).toBe(first + 1)
+    set.setFocused(owner(1), false)
+    expect(set.snapshot().revision).toBe(first + 1)
+    set.setFocused(owner(1), true)
+    expect(set.snapshot().revision).toBe(first + 2)
+    set.setExternal([])
+    expect(set.snapshot().revision).toBe(first + 2)
+    expect(listener).toHaveBeenCalledTimes(2)
+    expect(listener).toHaveBeenLastCalledWith(set.snapshot())
+  })
+
+  it('stops notifying a disposed observer and forgets everything on clear', () => {
+    const set = new ActionableAttentionSet()
+    const listener = vi.fn()
+    const stop = set.observe(listener)
+    set.setFocused(owner(1), true)
+    set.setRendererEntries(owner(1), [rendererEntry('t1')])
+    stop()
+    set.clear()
+    expect(listener).toHaveBeenCalledTimes(2)
+    expect(set.snapshot()).toMatchObject({ away: true, entries: [] })
+    expect(set.freshCount()).toBe(0)
+  })
+
+  it('names the entries that appeared between two snapshots', () => {
+    const set = new ActionableAttentionSet()
+    set.setRendererEntries(owner(1), [rendererEntry('t1')])
+    const previous = set.snapshot()
+    set.setRendererEntries(owner(1), [rendererEntry('t1', 'bell'), rendererEntry('t2')])
+    set.setExternal([external('s1')])
+    expect(appearances(previous, set.snapshot()).map((entry) => entry.key)).toEqual([
+      'gas-city host-a s1',
+      't2',
+    ])
+    expect(appearances(set.snapshot(), previous).map((entry) => entry.key)).toEqual([])
+  })
+})

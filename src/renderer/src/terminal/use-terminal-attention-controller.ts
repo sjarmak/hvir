@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react'
 
+import type { ActionableAttentionEntry } from '../../../shared'
 import {
+  actionableEntriesFingerprint,
   nextTerminalAttention,
-  terminalActionableAttentionCount,
+  terminalActionableEntries,
   terminalIdleAttentionAfterInput,
   terminalOutputAttentionDecision,
   terminalWorkingCount,
@@ -10,6 +12,13 @@ import {
   type TerminalIdleAttentionState,
 } from './terminal-attention'
 import type { TerminalSession } from './terminal-workspace-model'
+
+/** What one terminal workspace contributes to the window's attention. */
+export interface TerminalAttentionRollup {
+  readonly actionable: number
+  readonly working: number
+  readonly entries: readonly ActionableAttentionEntry[]
+}
 
 export function useTerminalAttentionController({
   idleThresholdMs,
@@ -157,19 +166,21 @@ export function useTerminalAttentionRollup({
 }: {
   readonly workspaceId: string
   readonly sessions: readonly TerminalSession[]
-  readonly onRollup: (
-    workspaceId: string,
-    rollup: { readonly actionable: number; readonly working: number },
-  ) => void
+  readonly onRollup: (workspaceId: string, rollup: TerminalAttentionRollup) => void
 }): void {
-  const attentions = sessions.map((session) => session.attention)
-  const actionable = terminalActionableAttentionCount(attentions)
-  const working = terminalWorkingCount(attentions)
+  const entries = terminalActionableEntries(sessions)
+  const fingerprint = actionableEntriesFingerprint(entries)
+  const working = terminalWorkingCount(sessions.map((session) => session.attention))
+  // The entries are a fresh array every render; the fingerprint says whether
+  // they changed, so the effect is keyed on that and reads the latest array.
+  const entriesRef = useRef(entries)
+  entriesRef.current = entries
   useEffect(() => {
-    onRollup(workspaceId, { actionable, working })
-  }, [actionable, onRollup, working, workspaceId])
+    const current = entriesRef.current
+    onRollup(workspaceId, { actionable: current.length, working, entries: current })
+  }, [fingerprint, onRollup, working, workspaceId])
   useEffect(
-    () => () => onRollup(workspaceId, { actionable: 0, working: 0 }),
+    () => () => onRollup(workspaceId, { actionable: 0, working: 0, entries: [] }),
     [onRollup, workspaceId],
   )
 }

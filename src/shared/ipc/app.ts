@@ -1,3 +1,4 @@
+import type { RendererAttentionSet } from '../actionable-attention'
 import { invoke, payload, type IpcFeatureContract } from '../ipc-contract'
 
 /** Basic app/runtime info — the trivial round-trip that proves the contract. */
@@ -25,7 +26,8 @@ export const appIpc = {
   },
   send: {
     'app:renderer-ready': payload<{ readonly ownerGeneration: number }>(),
-    'app:attention': payload<{ readonly count: number }>(),
+    /** What this window presents as waiting on the person (ADR-049). */
+    'app:attention': payload<RendererAttentionSet>(),
   },
   event: {},
 } satisfies IpcFeatureContract

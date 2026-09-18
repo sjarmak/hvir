@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
+import { asSessionsTerminalHandle } from '../src/shared'
 import {
   nextTerminalAttention,
   terminalActionableAttentionCount,
+  terminalActionableEntries,
   terminalAttentionBadgeText,
   terminalAttentionLabel,
   terminalIdleAttentionAfterInput,
@@ -44,6 +46,28 @@ describe('terminal attention', () => {
       2,
     )
     expect(terminalWorkingCount(['working', 'bell', 'working', undefined])).toBe(2)
+  })
+
+  it('lists the actionable terminals as fresh entries, in session order', () => {
+    expect(
+      terminalActionableEntries([
+        { id: 'terminal-1', attention: 'working' },
+        { id: 'terminal-2', attention: 'bell' },
+        { id: 'terminal-3' },
+        { id: 'terminal-4', attention: 'idle' },
+      ]),
+    ).toEqual([
+      {
+        handle: asSessionsTerminalHandle('terminal-2'),
+        kind: 'bell',
+        freshness: 'fresh',
+      },
+      {
+        handle: asSessionsTerminalHandle('terminal-4'),
+        kind: 'ready',
+        freshness: 'fresh',
+      },
+    ])
   })
 
   it('arms idle-after-burst only at a submitted terminal-input boundary', () => {

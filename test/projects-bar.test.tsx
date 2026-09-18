@@ -390,11 +390,15 @@ describe('ProjectsBar middle-click close', () => {
 
 function renderProjectsBar(
   state: ProjectState,
-  rollups: Readonly<
+  counts: Readonly<
     Record<string, { readonly actionable: number; readonly working: number }>
   >,
   options: { readonly busy?: boolean; readonly sessionsActive?: boolean } = {},
 ) {
+  // The bar shows counts; which terminals are waiting is main's concern, not its.
+  const rollups = Object.fromEntries(
+    Object.entries(counts).map(([id, count]) => [id, { ...count, entries: [] }]),
+  )
   const callbacks = {
     plan: vi.fn(() => Promise.resolve({ terminalCount: 0 })),
     close: vi.fn(),

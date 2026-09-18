@@ -1,49 +1,39 @@
-/** Quiet OS-level aggregation for actionable terminal attention. */
+import type { ActionableAttentionSet } from './attention/actionable-attention-set'
+
+/**
+ * The OS badge, one consumer of the actionable set (ADR-049). It counts fresh
+ * entries while hvir is away and shows nothing while a window is focused; a
+ * stale entry is the last thing seen, not a claim, so it never counts.
+ */
 export class AttentionBadge {
-  private readonly owners = new Map<string, { count: number; focused: boolean }>()
   private lastRendered = -1
   private failed = false
+  private readonly stop: () => void | Promise<void>
 
-  constructor(private readonly setBadgeCount: (count: number) => boolean | void) {}
-
-  update(ownerId: number, count: number, ownerGeneration = 0): void {
-    const key = ownerKey(ownerId, ownerGeneration)
-    const current = this.owners.get(key) ?? { count: 0, focused: false }
-    this.owners.set(key, { ...current, count: cleanCount(count) })
+  constructor(
+    private readonly setBadgeCount: (count: number) => boolean | void,
+    private readonly source: Pick<ActionableAttentionSet, 'observe' | 'snapshot'>,
+  ) {
+    this.stop = source.observe(() => this.render())
     this.render()
   }
 
-  setFocused(ownerId: number, focused: boolean, ownerGeneration = 0): void {
-    const key = ownerKey(ownerId, ownerGeneration)
-    const current = this.owners.get(key) ?? { count: 0, focused: false }
-    this.owners.set(key, { ...current, focused })
-    this.render()
-  }
-
-  remove(ownerId: number, ownerGeneration?: number): void {
-    if (ownerGeneration === undefined) {
-      for (const key of this.owners.keys()) {
-        if (key.startsWith(`${ownerId}:`)) this.owners.delete(key)
-      }
-    } else {
-      this.owners.delete(ownerKey(ownerId, ownerGeneration))
-    }
-    this.render()
-  }
-
-  clear(): void {
-    this.owners.clear()
-    this.render()
+  dispose(): void {
+    void this.stop()
+    this.paint(0)
   }
 
   private render(): void {
-    const focused = [...this.owners.values()].some((owner) => owner.focused)
-    const count = focused
-      ? 0
-      : Math.min(
-          99,
-          [...this.owners.values()].reduce((total, owner) => total + owner.count, 0),
-        )
+    const snapshot = this.source.snapshot()
+    if (!snapshot.away) {
+      this.paint(0)
+      return
+    }
+    const fresh = snapshot.entries.filter((entry) => entry.freshness === 'fresh').length
+    this.paint(Math.min(99, fresh))
+  }
+
+  private paint(count: number): void {
     if (count === this.lastRendered) return
     this.lastRendered = count
     if (this.failed) return
@@ -54,13 +44,4 @@ export class AttentionBadge {
       console.warn('[attention] OS badge unavailable', error)
     }
   }
-}
-
-function ownerKey(ownerId: number, ownerGeneration: number): string {
-  return `${ownerId}:${ownerGeneration}`
-}
-
-function cleanCount(value: number): number {
-  if (!Number.isSafeInteger(value)) return 0
-  return Math.max(0, Math.min(99, value))
 }

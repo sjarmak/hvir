@@ -44,6 +44,7 @@ import { useTerminalAttachRequest } from './use-terminal-attach-request'
 import {
   useTerminalAttentionController,
   useTerminalAttentionRollup,
+  type TerminalAttentionRollup,
 } from './use-terminal-attention-controller'
 import { useTerminalProfiles } from './use-terminal-profiles'
 import { useTerminalPersistence } from './use-terminal-persistence'
@@ -107,10 +108,7 @@ interface TerminalWorkspaceProps {
   readonly onError: (message: string) => void
 }
 
-export interface TerminalWorkspaceRollup {
-  readonly actionable: number
-  readonly working: number
-}
+export type TerminalWorkspaceRollup = TerminalAttentionRollup
 
 export function TerminalWorkspace({
   cwd,

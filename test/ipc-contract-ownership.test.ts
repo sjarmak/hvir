@@ -19,7 +19,11 @@ async function messages(filePath: string, source: string) {
 }
 
 describe('shared capability contract direction', () => {
-  it.each(['src/shared/sessions-projection.ts', 'src/shared/ipc/sessions.ts'])(
+  it.each([
+    'src/shared/sessions-projection.ts',
+    'src/shared/ipc/sessions.ts',
+    'src/shared/actionable-attention.ts',
+  ])(
     'rejects transport and process imports from %s, including erased references',
     async (owner) => {
       for (const path of [

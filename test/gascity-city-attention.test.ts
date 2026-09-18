@@ -292,6 +292,110 @@ describe('gas city attention rollup', () => {
   })
 })
 
+describe('gas city attention pending sessions', () => {
+  it('lists each placed pending session with its workspace, kind and title', async () => {
+    const world = harness()
+    world.hosts = [live([pending('w-1'), pending('ghost'), pending('w-2')])]
+    world.sessions = [session('w-1', FEATURE), session('w-2', PROJECT)]
+    world.attention.start()
+    await world.settle()
+
+    expect(world.attention.pendingSessions()).toEqual([
+      {
+        hostId: RIG,
+        sessionKey: 'w-1',
+        cityRoot: hostPath(RIG, '/home/ds/gas-city'),
+        workspaceId: 'ws-feature',
+        kind: 'approval',
+        freshness: 'fresh',
+        title: 'w-1',
+      },
+      {
+        hostId: RIG,
+        sessionKey: 'w-2',
+        cityRoot: hostPath(RIG, '/home/ds/gas-city'),
+        workspaceId: 'ws-main',
+        kind: 'approval',
+        freshness: 'fresh',
+        title: 'w-2',
+      },
+    ])
+  })
+
+  it('marks a pending session stale with the reason its host stream went down', async () => {
+    const world = harness()
+    world.hosts = [live([pending('w-1')])]
+    world.sessions = [session('w-1', FEATURE)]
+    world.attention.start()
+    await world.settle()
+
+    world.hosts = [lost([pending('w-1')], 'unreachable')]
+    world.notify()
+    await world.settle()
+
+    expect(world.attention.pendingSessions()).toMatchObject([
+      { sessionKey: 'w-1', freshness: 'stale', reason: 'unreachable' },
+    ])
+  })
+
+  it('notifies pending observers only when the pending sessions change', async () => {
+    const world = harness()
+    let notified = 0
+    world.attention.observePending(() => {
+      notified += 1
+    })
+    world.hosts = [live([pending('w-1')])]
+    world.sessions = [session('w-1', FEATURE)]
+    world.attention.start()
+    await world.settle()
+    world.notify()
+    world.notify()
+    await world.settle()
+    expect(notified).toBe(1)
+
+    world.hosts = [live([pending('w-1'), pending('w-1-b')])]
+    world.sessions = [session('w-1', FEATURE), session('w-1-b', FEATURE)]
+    world.notify()
+    await world.settle()
+    // The workspace count changed too, so both publications moved together.
+    expect(notified).toBe(2)
+    expect(world.published).toHaveLength(2)
+  })
+
+  it('notifies pending observers after the workspace snapshot is published, never inside it', async () => {
+    const world = harness()
+    const order: string[] = []
+    world.onPublish = () => order.push('publish')
+    world.attention.observePending(() => {
+      order.push(`pending@${world.attention.snapshot().revision}`)
+    })
+    world.hosts = [live([pending('w-1')])]
+    world.sessions = [session('w-1', FEATURE)]
+    world.attention.start()
+    await world.settle()
+
+    expect(order).toEqual(['publish', 'pending@1'])
+  })
+
+  it('stops notifying a released pending observer and empties on dispose', async () => {
+    const world = harness()
+    let notified = 0
+    const stop = world.attention.observePending(() => {
+      notified += 1
+    })
+    world.hosts = [live([pending('w-1')])]
+    world.sessions = [session('w-1', FEATURE)]
+    world.attention.start()
+    await world.settle()
+    expect(notified).toBe(1)
+
+    void stop()
+    world.attention.dispose()
+    expect(notified).toBe(1)
+    expect(world.attention.pendingSessions()).toEqual([])
+  })
+})
+
 function live(
   entries: readonly { sessionKey: string; requestId: string; kind: string }[],
 ) {
@@ -348,6 +452,7 @@ function harness(overrides: { readonly address?: () => SupervisorAddressResult }
     reads: 0,
     released: 0,
     published: [] as ExternalAttentionSnapshot[],
+    onPublish: undefined as (() => void) | undefined,
     workspaces: [
       {
         workspaceId: 'ws-main',
@@ -404,7 +509,10 @@ function harness(overrides: { readonly address?: () => SupervisorAddressResult }
     },
     workspaces: () => world.workspaces,
     observeWorkspaces: () => release(world),
-    publish: (snapshot) => world.published.push(snapshot),
+    publish: (snapshot) => {
+      world.published.push(snapshot)
+      world.onPublish?.()
+    },
   })
   return world
 }

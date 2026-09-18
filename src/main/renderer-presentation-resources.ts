@@ -1,4 +1,4 @@
-import type { AttentionBadge } from './attention-badge'
+import type { ApplicationAttention } from './attention/attention-owner'
 import type { DiagnosticReportCoordinator } from './diagnostics/diagnostic-report-coordinator'
 import type { RendererSshPrompter } from './project-host'
 import type { RendererOwner, RendererResourceScopes } from './renderer-resource-scopes'
@@ -6,7 +6,7 @@ import type { RendererOwner, RendererResourceScopes } from './renderer-resource-
 interface RendererPresentationResources {
   readonly scopes: RendererResourceScopes
   readonly reports: DiagnosticReportCoordinator
-  readonly attention: () => AttentionBadge | null
+  readonly attention: () => Pick<ApplicationAttention, 'removeOwner'> | null
   readonly sshPrompter: () => RendererSshPrompter | null
 }
 
@@ -16,7 +16,7 @@ export function createRendererPresentationInstaller(
 ): (owner: RendererOwner) => RendererOwner {
   return (owner) => {
     resources.scopes.register(owner, { lifetime: 'renderer', type: 'attention' }, () =>
-      resources.attention()?.remove(owner.id, owner.generation),
+      resources.attention()?.removeOwner(owner),
     )
     resources.scopes.register(
       owner,

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   useTerminalAttentionController,
   useTerminalAttentionRollup,
+  type TerminalAttentionRollup,
 } from '../src/renderer/src/terminal/use-terminal-attention-controller'
 import type { TerminalSession } from '../src/renderer/src/terminal/terminal-workspace-model'
 import { asHarnessProfileId, asHarnessProviderId, localPath } from '../src/shared'
@@ -81,12 +82,46 @@ describe('terminal attention controller', () => {
     expect(onRollup).toHaveBeenLastCalledWith('workspace:local:/repo', {
       actionable: 2,
       working: 1,
+      entries: [
+        { handle: 'terminal-2', kind: 'ready', freshness: 'fresh' },
+        { handle: 'terminal-3', kind: 'bell', freshness: 'fresh' },
+      ],
     })
 
     act(() => root.render(<></>))
     expect(onRollup).toHaveBeenLastCalledWith('workspace:local:/repo', {
       actionable: 0,
       working: 0,
+      entries: [],
+    })
+  })
+
+  it('republishes the rollup only when a counted signal or an entry changes', () => {
+    const onRollup = vi.fn()
+    const render = (sessions: readonly TerminalSession[]) =>
+      act(() =>
+        root.render(
+          <AttentionRollupProbe
+            workspaceId="workspace:local:/repo"
+            sessions={sessions}
+            onRollup={onRollup}
+          />,
+        ),
+      )
+    render([{ ...terminalSession(), attention: 'idle' }])
+    expect(onRollup).toHaveBeenCalledOnce()
+
+    // A new array with the same signals is the same rollup.
+    render([{ ...terminalSession(), attention: 'idle' }])
+    expect(onRollup).toHaveBeenCalledOnce()
+
+    // The count stays at one, but it is now a different kind of attention.
+    render([{ ...terminalSession(), attention: 'bell' }])
+    expect(onRollup).toHaveBeenCalledTimes(2)
+    expect(onRollup).toHaveBeenLastCalledWith('workspace:local:/repo', {
+      actionable: 1,
+      working: 0,
+      entries: [{ handle: 'terminal-1', kind: 'bell', freshness: 'fresh' }],
     })
   })
 })
@@ -112,10 +147,7 @@ function AttentionRollupProbe({
 }: {
   readonly workspaceId: string
   readonly sessions: readonly TerminalSession[]
-  readonly onRollup: (
-    workspaceId: string,
-    rollup: { readonly actionable: number; readonly working: number },
-  ) => void
+  readonly onRollup: (workspaceId: string, rollup: TerminalAttentionRollup) => void
 }) {
   useTerminalAttentionRollup({ workspaceId, sessions, onRollup })
   return null

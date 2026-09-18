@@ -12,7 +12,7 @@ import { electronReveal } from './project-host/electron-project-reveal'
 import { ProjectRegistry } from './project-registry'
 import { ProjectCoordinator } from './project-coordinator'
 import { PtySupervisor } from './pty/pty-supervisor'
-import { AttentionBadge } from './attention-badge'
+import { installApplicationAttention } from './attention/attention-owner'
 import { ownBeadsService } from './beads/beads-owner'
 import {
   ownGasCityAttention,
@@ -106,13 +106,13 @@ function createWorkbenchEntry(): void {
   let terminalSessionRegistry: TerminalSessionRegistry | null = null
   let harnessProfileStore: HarnessProfileStore | null = null
   let documentReview: DocumentReviewRuntime | null = null
-  let attentionBadge: AttentionBadge | null = null
+  let attention: ReturnType<typeof installApplicationAttention> | null = null
   let workspaceCoordinator: WorkspaceCoordinator | null = null
   let hostCatalog: ProjectHostCatalog | null = null
   const installRendererPresentation = createRendererPresentationInstaller({
     scopes: rendererScopes,
     reports: diagnosticReports,
-    attention: () => attentionBadge,
+    attention: () => attention,
     sshPrompter: () => sshPrompter,
   })
   const windowManager = runtime.own(
@@ -137,8 +137,7 @@ function createWorkbenchEntry(): void {
       },
       isRendererCurrent: (owner) => rendererScopes.isCurrent(owner),
       resumeRendererIpc: (owner) => rendererScopes.resumeOwnerIpc(owner),
-      setOwnerFocused: (owner, focused) =>
-        attentionBadge?.setFocused(owner.id, focused, owner.generation),
+      setOwnerFocused: (owner, focused) => attention?.setOwnerFocused(owner, focused),
       startRendererDiagnostics: (owner) => diagnostics.startRenderer(owner),
       rendererReady: (owner) => diagnostics.rendererReady(owner),
       recordWindowHealth: (event) => diagnostics.recordWindowHealth(event),
@@ -270,8 +269,12 @@ function createWorkbenchEntry(): void {
       ownGasCityAttention(gasCitySupervisor, gasCityStreams, gasCityHosts, (snapshot) =>
         rendererEvents.toWindows('gascity:attention-changed', snapshot),
       ),
-      (attention) => attention.dispose(),
+      (rollup) => rollup.dispose(),
     )
+    attention = installApplicationAttention(runtime, {
+      gasCityAttention,
+      setBadgeCount: (count) => app.setBadgeCount(count),
+    })
     const sessionsPorts = installApplicationSessionsObservation(
       runtime,
       projectRegistry,
@@ -367,14 +370,6 @@ function createWorkbenchEntry(): void {
       webPanes: webPaneRoutes,
       onError: (message, error) => console.error(message, error),
     })
-    attentionBadge = runtime.own(
-      'attention badge',
-      new AttentionBadge((count) => {
-        if (process.platform !== 'darwin' && process.platform !== 'linux') return false
-        return app.setBadgeCount(count)
-      }),
-      (badge) => badge.clear(),
-    )
     installTerminalIdentityPublication(runtime, ptySupervisor, rendererEvents)
     const withSshPresentation = <T>(owner: RendererOwner, operation: () => T): T => {
       if (!sshPrompter) throw new Error('SSH prompting is unavailable')
@@ -386,10 +381,7 @@ function createWorkbenchEntry(): void {
       git: gitMutations,
       withSshPresentation,
     })
-    const getProject = () => {
-      if (!projectRegistry) throw new Error('Project registry is unavailable')
-      return projectRegistry.active
-    }
+    const getProject = () => registry.active
     const beadsService = ownBeadsService(runtime, getProject, emit)
     const gasCityService = ownGasCityService(getProject, gasCityReader)
     runtime.own(
@@ -435,8 +427,7 @@ function createWorkbenchEntry(): void {
         remoteImagePaste,
         beads: beadsService,
         gascity: gasCityService,
-        updateAttention: (owner, count) =>
-          attentionBadge?.update(owner.id, count, owner.generation),
+        updateAttention: (owner, set) => attention?.updateAttention(owner, set),
         updateWebPaneBindings: (owner, bindings) =>
           windowManager.updateWebPaneBindings(owner.id, bindings),
         updateWebPaneFullPage: (owner, paneId) =>

@@ -5,7 +5,6 @@ import {
   aggregateExternalAttention,
   externalAttentionByWorkspace,
   externalAttentionLabel,
-  liveExternalAttentionTotal,
   workspaceExternalAttention,
 } from '../src/renderer/src/workspaces/external-attention'
 
@@ -43,17 +42,6 @@ describe('external attention rollup', () => {
       stale: true,
       reason: 'unreachable',
     })
-  })
-
-  it('keeps a stale count out of the OS badge and a watched one in it', () => {
-    // The badge is a number with nowhere to say it is stale, so it carries only
-    // what hvir is watching (ADR-048).
-    const attention = byWorkspace([
-      { workspaceId: 'ws-1', waiting: 2 },
-      { workspaceId: 'ws-2', waiting: 4, stale: true, reason: 'closed' },
-    ])
-
-    expect(liveExternalAttentionTotal(attention)).toBe(2)
   })
 
   it('says how many agents are waiting, and why a count is stale', () => {

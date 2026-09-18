@@ -57,20 +57,6 @@ export function aggregateExternalAttention(
   }
 }
 
-/**
- * The external contribution to the OS badge: the interactions hvir is watching
- * right now, and nothing stale. A dock badge is a number with nowhere to put a
- * reason, so a count it cannot qualify does not belong in it (ADR-048).
- */
-export function liveExternalAttentionTotal(
-  attention: ExternalWorkspaceAttention,
-): number {
-  return Object.values(attention).reduce(
-    (sum, entry) => sum + (entry.stale === true ? 0 : entry.waiting),
-    0,
-  )
-}
-
 /** How a stale external count says why, in a title or an accessible name. */
 export function externalAttentionLabel(total: ExternalAttentionTotal): string {
   const waiting = `${total.waiting} agent${total.waiting === 1 ? '' : 's'} waiting on you`

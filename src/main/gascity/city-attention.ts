@@ -20,6 +20,10 @@
  * Staleness travels with the count. When a host's stream is down the entries
  * from it are marked with the reason it went down: ADR-048 forbids dropping a
  * pending interaction and forbids asserting one nobody is watching.
+ *
+ * The same pass also keeps the per-session list the actionable set consumes
+ * (ADR-049): what the nav gets as a count, the Companion gets as sessions.
+ * That list carries foreign identifiers and stays in main (ADR-046).
  */
 import {
   EMPTY_EXTERNAL_ATTENTION,
@@ -27,6 +31,7 @@ import {
   hostPath,
   MAX_EXTERNAL_ATTENTION_ENTRIES,
   MAX_EXTERNAL_ATTENTION_WAITING,
+  type ActionableFreshness,
   type ExternalAttentionEntry,
   type ExternalAttentionSnapshot,
   type ExternalAttentionStaleReason,
@@ -46,6 +51,20 @@ export interface CityAttentionWorkspaceTarget {
   /** However the caller names projects; only equality is used. */
   readonly projectKey: string
   readonly main: boolean
+}
+
+/** One pending interaction, placed, for the actionable set. Main only. */
+export interface ExternalPendingSession {
+  readonly hostId: HostId
+  readonly sessionKey: string
+  readonly cityRoot?: HostPath
+  readonly workspaceId: string
+  /** gc's kind word, verbatim. */
+  readonly kind: string
+  readonly freshness: ActionableFreshness
+  readonly reason?: ExternalAttentionStaleReason
+  /** The session's own title, when the placement read carried one. */
+  readonly title?: string
 }
 
 /** The notification surface of the city event streams, and nothing more. */
@@ -76,6 +95,7 @@ const PLACEMENT_READ_LIMIT = 500
 /** Where one session is working, as the supervisor's list reported it. */
 interface CitySessionPlace {
   readonly workDir?: HostPath
+  readonly title?: string
 }
 
 interface HostPlacements {
@@ -90,6 +110,8 @@ interface HostPlacements {
 export class GasCityAttention {
   private readonly placements = new Map<HostId, HostPlacements>()
   private current: ExternalAttentionSnapshot = EMPTY_EXTERNAL_ATTENTION
+  private pending: readonly ExternalPendingSession[] = []
+  private readonly pendingListeners = new Set<() => void>()
   private disposers: readonly Disposer[] = []
   private started = false
   private disposed = false
@@ -112,6 +134,19 @@ export class GasCityAttention {
     return this.current
   }
 
+  /** The placed pending interactions behind {@link snapshot}, one per session. */
+  pendingSessions(): readonly ExternalPendingSession[] {
+    return this.pending
+  }
+
+  /** Fires after {@link pendingSessions} changed, once the snapshot is published. */
+  observePending(listener: () => void): Disposer {
+    this.pendingListeners.add(listener)
+    return () => {
+      this.pendingListeners.delete(listener)
+    }
+  }
+
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
@@ -119,6 +154,8 @@ export class GasCityAttention {
     this.disposers = []
     for (const dispose of disposers) void dispose()
     this.placements.clear()
+    this.pending = []
+    this.pendingListeners.clear()
   }
 
   private readonly recompute = (): void => {
@@ -127,28 +164,51 @@ export class GasCityAttention {
     this.forgetHostsAway(hosts)
     const targets = this.targetsByHost()
     const counts = new Map<string, ExternalAttentionEntry>()
+    const pending: ExternalPendingSession[] = []
     for (const facts of hosts) {
       const hostTargets = targets.get(facts.hostId) ?? []
       // A host with no pending interaction contributes nothing, stale or not:
       // there is no attention to mark.
       if (facts.pending.length === 0 || hostTargets.length === 0) continue
-      const places = this.placementsFor(facts.hostId)
-      let unplaced = false
-      for (const pending of facts.pending) {
-        const place = places.places.get(pending.sessionKey)
-        if (place === undefined) {
-          if (!places.missing.has(pending.sessionKey)) unplaced = true
-          continue
-        }
-        const workspaceId = placeCitySession(place, hostTargets)
-        if (workspaceId === undefined) continue
-        add(counts, workspaceId, staleOf(facts))
-      }
       // Reading is deferred to here so one read covers every unplaced session
       // on the host, and so a host whose sessions are all placed never reads.
-      if (unplaced) void this.read(facts)
+      if (this.collect(facts, hostTargets, counts, pending)) void this.read(facts)
     }
-    this.settle(counts)
+    this.settle(counts, pending)
+  }
+
+  /** Folds one host's pending facts in; true when a session could not be placed. */
+  private collect(
+    facts: HostCityEvents,
+    hostTargets: readonly CityPlacementTarget<string>[],
+    counts: Map<string, ExternalAttentionEntry>,
+    pending: ExternalPendingSession[],
+  ): boolean {
+    const places = this.placementsFor(facts.hostId)
+    const stale = staleOf(facts)
+    let unplaced = false
+    for (const fact of facts.pending) {
+      const place = places.places.get(fact.sessionKey)
+      if (place === undefined) {
+        if (!places.missing.has(fact.sessionKey)) unplaced = true
+        continue
+      }
+      const workspaceId = placeCitySession(place, hostTargets)
+      if (workspaceId === undefined) continue
+      add(counts, workspaceId, stale)
+      pending.push({
+        hostId: facts.hostId,
+        sessionKey: fact.sessionKey,
+        ...(facts.cityRoot === undefined ? {} : { cityRoot: facts.cityRoot }),
+        workspaceId,
+        kind: fact.kind,
+        ...(stale.stale === true && stale.reason !== undefined
+          ? { freshness: 'stale', reason: stale.reason }
+          : { freshness: 'fresh' }),
+        ...(place.title === undefined ? {} : { title: place.title }),
+      })
+    }
+    return unplaced
   }
 
   /**
@@ -180,6 +240,9 @@ export class GasCityAttention {
       if (session.work_dir === undefined || session.work_dir === '') continue
       placements.places.set(session.id, {
         workDir: hostPath(facts.hostId, session.work_dir),
+        ...(session.title === undefined || session.title === ''
+          ? {}
+          : { title: session.title }),
       })
     }
     // What the city itself did not report is not asked for again, so a session
@@ -235,17 +298,26 @@ export class GasCityAttention {
     return byHost
   }
 
-  private settle(counts: ReadonlyMap<string, ExternalAttentionEntry>): void {
+  private settle(
+    counts: ReadonlyMap<string, ExternalAttentionEntry>,
+    pending: readonly ExternalPendingSession[],
+  ): void {
     const entries = [...counts.values()]
       .sort((left, right) => left.workspaceId.localeCompare(right.workspaceId))
       .slice(0, MAX_EXTERNAL_ATTENTION_ENTRIES)
-    if (sameEntries(this.current.entries, entries)) return
-    this.current = {
-      version: EXTERNAL_ATTENTION_VERSION,
-      revision: this.current.revision + 1,
-      entries,
+    if (!sameEntries(this.current.entries, entries)) {
+      this.current = {
+        version: EXTERNAL_ATTENTION_VERSION,
+        revision: this.current.revision + 1,
+        entries,
+      }
+      this.options.publish(this.current)
     }
-    this.options.publish(this.current)
+    // Pending observers run after the publish, so a consumer that reads both
+    // sees the snapshot the sessions belong to, and never re-enters publish.
+    if (samePending(this.pending, pending)) return
+    this.pending = pending
+    for (const listener of [...this.pendingListeners]) listener()
   }
 }
 
@@ -289,6 +361,27 @@ function add(
     ...(carried.stale === true && carried.reason !== undefined
       ? { stale: carried.stale, reason: carried.reason }
       : {}),
+  })
+}
+
+function samePending(
+  left: readonly ExternalPendingSession[],
+  right: readonly ExternalPendingSession[],
+): boolean {
+  if (left.length !== right.length) return false
+  return left.every((entry, index) => {
+    const other = right[index]
+    return (
+      other !== undefined &&
+      entry.hostId === other.hostId &&
+      entry.sessionKey === other.sessionKey &&
+      entry.cityRoot?.path === other.cityRoot?.path &&
+      entry.workspaceId === other.workspaceId &&
+      entry.kind === other.kind &&
+      entry.freshness === other.freshness &&
+      entry.reason === other.reason &&
+      entry.title === other.title
+    )
   })
 }
 

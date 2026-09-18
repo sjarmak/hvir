@@ -1,6 +1,11 @@
 import { app } from 'electron'
 
-import { ECHO_REQUEST_TYPE, type AppInfo } from '../../../shared'
+import {
+  ECHO_REQUEST_TYPE,
+  EMPTY_RENDERER_ATTENTION_SET,
+  isRendererAttentionSet,
+  type AppInfo,
+} from '../../../shared'
 import type { IpcRegistrar } from '../authority-router'
 import type { IpcDeps } from '../deps'
 
@@ -47,8 +52,13 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
   ipc.handleSend('diagnostics:render-containment', (batch, context) => {
     deps.recordRenderContainment(context.owner(), batch)
   })
-  ipc.handleSend('app:attention', ({ count }, context) => {
-    const safeCount = Number.isSafeInteger(count) ? Math.max(0, Math.min(99, count)) : 0
-    deps.updateAttention(context.owner(), safeCount)
+  ipc.handleSend('app:attention', (set, context) => {
+    // A malformed set says nothing about what is waiting; treating it as empty
+    // withdraws whatever that window claimed before rather than keeping it.
+    const owner = context.owner()
+    deps.updateAttention(
+      owner,
+      isRendererAttentionSet(set) ? set : EMPTY_RENDERER_ATTENTION_SET,
+    )
   })
 }

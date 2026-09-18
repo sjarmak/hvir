@@ -258,6 +258,9 @@ export function createElectronWindowManager(
     let hadUsableDocument = false
     const windowHealth = new WindowHealthTracker(dependencies.recordWindowHealth)
 
+    // Seed the owner's focus at creation: the aggregate is away until some
+    // window says otherwise, and a window focused at birth never blurs first.
+    dependencies.setOwnerFocused(rendererOwner, win.isFocused())
     win.on('focus', () => dependencies.setOwnerFocused(rendererOwner, true))
     win.on('blur', () => dependencies.setOwnerFocused(rendererOwner, false))
 

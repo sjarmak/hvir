@@ -14,7 +14,6 @@ import { TerminalWorkspaceCollection } from './terminal/TerminalWorkspaceCollect
 import { useTerminalWorkspaceRuntime } from './terminal/use-terminal-workspace-runtime'
 import { useTerminalAttention } from './terminal/use-terminal-attention'
 import { ProjectsBar } from './workspaces/ProjectsBar'
-import { liveExternalAttentionTotal } from './workspaces/external-attention'
 import { useExternalAttention } from './workspaces/use-external-attention'
 import { MissingWorkspaceNotice } from './workspaces/MissingWorkspaceNotice'
 import { useProjectSession } from './workspaces/project-session'
@@ -57,9 +56,7 @@ export function App(): ReactElement {
   const [gitChanges, setGitChanges] = useState<GitChanges>()
   const overlays = useWorkbenchOverlays()
   const externalAttention = useExternalAttention()
-  const terminalAttention = useTerminalAttention(
-    liveExternalAttentionTotal(externalAttention),
-  )
+  const terminalAttention = useTerminalAttention()
   const viewer = useViewerWorkspace({
     onActivateFile: () => {
       deactivateGitGraphRef.current()

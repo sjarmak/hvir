@@ -1,5 +1,6 @@
 import {
   hostPathEquals,
+  type ActionableAttentionEntry,
   type HostConnectionState,
   type HostWatchTier,
   type ProjectState,
@@ -20,6 +21,8 @@ export interface ProjectSessionModel {
 export interface WorkspaceAttentionRollup {
   readonly actionable: number
   readonly working: number
+  /** The terminals behind `actionable`, for the set main aggregates (ADR-049). */
+  readonly entries: readonly ActionableAttentionEntry[]
 }
 
 export type WorkspaceAttentionRollups = Readonly<Record<string, WorkspaceAttentionRollup>>

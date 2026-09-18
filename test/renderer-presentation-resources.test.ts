@@ -7,12 +7,12 @@ describe('renderer presentation resources', () => {
   it('registers exact-generation attention, SSH, and diagnostic cleanup', async () => {
     const scopes = new RendererResourceScopes()
     const owner = scopes.activateOwner(12)
-    const attention = { remove: vi.fn() }
+    const attention = { removeOwner: vi.fn() }
     const sshPrompter = { revokeOwner: vi.fn() }
     const reports = { revoke: vi.fn() }
     const install = createRendererPresentationInstaller({
       scopes,
-      attention: () => attention as never,
+      attention: () => attention,
       sshPrompter: () => sshPrompter as never,
       reports: reports as never,
     })
@@ -20,7 +20,7 @@ describe('renderer presentation resources', () => {
     expect(install(owner)).toBe(owner)
     await scopes.revokeOwner(owner.id)
 
-    expect(attention.remove).toHaveBeenCalledExactlyOnceWith(owner.id, owner.generation)
+    expect(attention.removeOwner).toHaveBeenCalledExactlyOnceWith(owner)
     expect(sshPrompter.revokeOwner).toHaveBeenCalledExactlyOnceWith(owner)
     expect(reports.revoke).toHaveBeenCalledExactlyOnceWith(owner)
   })
@@ -28,11 +28,11 @@ describe('renderer presentation resources', () => {
   it('reads late-bound presentation owners at cleanup time', async () => {
     const scopes = new RendererResourceScopes()
     const owner = scopes.activateOwner(12)
-    const attention = { remove: vi.fn() }
+    const attention = { removeOwner: vi.fn() }
     let current: typeof attention | null = null
     const install = createRendererPresentationInstaller({
       scopes,
-      attention: () => current as never,
+      attention: () => current,
       sshPrompter: () => null,
       reports: { revoke: vi.fn() } as never,
     })
@@ -40,6 +40,6 @@ describe('renderer presentation resources', () => {
     current = attention
 
     await scopes.revokeOwner(owner.id)
-    expect(attention.remove).toHaveBeenCalledExactlyOnceWith(owner.id, owner.generation)
+    expect(attention.removeOwner).toHaveBeenCalledExactlyOnceWith(owner)
   })
 })
