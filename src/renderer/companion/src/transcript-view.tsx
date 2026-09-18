@@ -6,11 +6,25 @@ import type {
   SessionsTranscriptSnapshot,
   SessionsTranscriptTurn,
 } from '../../../shared'
-import { MAX_SESSIONS_SUBMIT_MESSAGE } from '../../../shared'
+import {
+  MAX_SESSIONS_SUBMIT_MESSAGE,
+  sessionsTranscriptUnavailableMessage,
+} from '../../../shared'
+
+const STREAM_SENTENCES: Record<
+  Exclude<SessionsTranscriptSnapshot['stream'], 'live'>,
+  string
+> = {
+  opening: 'The transcript stream is opening.',
+  lost: 'The transcript stream was lost.',
+  closed: 'The transcript stream is closed.',
+}
 
 interface TranscriptViewProps {
   readonly row: CompanionRow | undefined
   readonly transcript: SessionsTranscriptSnapshot
+  /** Where Back leads; the Sessions list unless a mirror sits beside this. */
+  readonly backLabel?: string
   readonly onBack: () => void
   readonly onResume: () => Promise<void>
   readonly onRespond: (optionOrdinal: number) => Promise<void>
@@ -19,7 +33,7 @@ interface TranscriptViewProps {
 
 /** One selected row: its recent turns, what it is waiting on, and a reply box. */
 export function TranscriptView(props: TranscriptViewProps) {
-  const { row, transcript, onBack, onResume, onRespond, onSubmit } = props
+  const { row, transcript, backLabel, onBack, onResume, onRespond, onSubmit } = props
   const canAnswer = row?.canAnswer ?? false
   return (
     <section className="companion-transcript">
@@ -29,7 +43,7 @@ export function TranscriptView(props: TranscriptViewProps) {
           className="companion-button companion-back"
           onClick={onBack}
         >
-          Sessions
+          {backLabel ?? 'Sessions'}
         </button>
         <h2 className="companion-transcript-title">{row?.title ?? transcript.handle}</h2>
       </header>
@@ -60,18 +74,22 @@ function TranscriptStatus({
   if (transcript.status === 'unavailable') {
     return (
       <p className="companion-status companion-unavailable">
-        Transcript unavailable ({transcript.reason ?? 'unknown'})
+        {transcript.reason === undefined
+          ? 'The transcript is not available.'
+          : sessionsTranscriptUnavailableMessage(transcript.reason)}
       </p>
     )
   }
   if (transcript.stream === 'live') return null
-  const reason =
-    transcript.streamReason === undefined ? '' : ` (${transcript.streamReason})`
+  const detail =
+    transcript.streamReason === undefined
+      ? ''
+      : ` ${sessionsTranscriptUnavailableMessage(transcript.streamReason)}`
   return (
     <div className="companion-stream">
       <span>
-        Stream {transcript.stream}
-        {reason}
+        {STREAM_SENTENCES[transcript.stream]}
+        {detail}
       </span>
       {transcript.stream === 'lost' ? (
         <button

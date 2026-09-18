@@ -10,11 +10,19 @@ import {
   browserTokenStore,
   createCompanionClient,
 } from '../src/renderer/companion/src/companion-client'
-import { FakeCompanionServer, row, snapshot, transcript } from './companion-page-fixture'
+import { COMPANION_KEYS } from '../src/renderer/companion/src/companion-keys'
+import {
+  FakeCompanionServer,
+  fakePaneFactory,
+  row,
+  snapshot,
+  transcript,
+} from './companion-page-fixture'
 
 let host: HTMLDivElement
 let root: Root
 let server: FakeCompanionServer
+let panes: ReturnType<typeof fakePaneFactory>
 
 beforeEach(() => {
   ;(
@@ -25,6 +33,7 @@ beforeEach(() => {
   document.body.append(host)
   root = createRoot(host)
   server = new FakeCompanionServer()
+  panes = fakePaneFactory()
   // The page must never reach for the desktop bridge (ADR-049 module boundary).
   Object.defineProperty(window, 'hvir', {
     configurable: true,
@@ -38,6 +47,7 @@ afterEach(() => {
   act(() => root.unmount())
   host.remove()
   delete (window as unknown as { hvir?: unknown }).hvir
+  delete (document as unknown as { hidden?: unknown }).hidden
 })
 
 async function settle(): Promise<void> {
@@ -53,7 +63,7 @@ async function render(): Promise<void> {
     tokens: browserTokenStore(() => localStorage),
   })
   await act(async () => {
-    root.render(createElement(CompanionApp, { client }))
+    root.render(createElement(CompanionApp, { client, createPane: panes.createPane }))
     await Promise.resolve()
   })
   await settle()
@@ -257,7 +267,9 @@ describe('Companion page', () => {
         streamReason: 'timeout',
       }),
     )
-    expect(host.querySelector('.companion-stream')?.textContent).toContain('timeout')
+    expect(host.querySelector('.companion-stream span')?.textContent).toBe(
+      'The transcript stream was lost. The Gas City supervisor did not answer in time.',
+    )
     await click(button('Resume'))
     expect(server.calls.at(-1)).toMatchObject({
       url: '/api/sessions/ready-1/resume',
@@ -282,8 +294,8 @@ describe('Companion page', () => {
     const before = server.calls.length
     await click(button('yes'))
     expect(server.calls).toHaveLength(before + 1)
-    expect(host.querySelector('.companion-error')?.textContent).toContain(
-      'stale-interaction',
+    expect(host.querySelector('.companion-error')?.textContent).toBe(
+      'That prompt changed before the answer was sent. Read the new one.',
     )
   })
 
@@ -337,5 +349,368 @@ describe('Companion page', () => {
     act(() => root.unmount())
     root = createRoot(host)
     expect(() => server.emit('snapshot', snapshot(2, []))).toThrow('no open event stream')
+  })
+})
+
+const MIRROR_ROW = row({
+  handle: 'term-1',
+  title: 'claude in shell',
+  origin: { kind: 'hvir-terminal' },
+  canAnswer: false,
+  canMirror: true,
+})
+const NOT_PROJECTED = transcript({
+  handle: 'term-1',
+  status: 'unavailable',
+  reason: 'not-projected',
+  stream: 'closed',
+})
+
+async function openMirror(tail = '$ '): Promise<void> {
+  server.transcriptReply = NOT_PROJECTED
+  await renderPaired()
+  await emit('snapshot', snapshot(1, [MIRROR_ROW]))
+  await click(host.querySelector<HTMLElement>('.companion-row') as HTMLElement)
+  await emit('terminal', { type: 'opened', handle: 'term-1', cols: 132, rows: 43, tail })
+}
+
+function armButton(): HTMLButtonElement {
+  const element = host.querySelector<HTMLButtonElement>('.companion-arm')
+  if (element === null) throw new Error('missing arm control')
+  return element
+}
+
+async function hide(): Promise<void> {
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+  await act(async () => {
+    document.dispatchEvent(new Event('visibilitychange'))
+    await Promise.resolve()
+  })
+  await settle()
+}
+
+describe('Companion page terminal mirror', () => {
+  it('selecting a canMirror row mounts a pane at the desktop geometry and writes the tail then output', async () => {
+    await openMirror('tail')
+    expect(host.querySelector('.companion-terminal')).not.toBeNull()
+    expect(host.querySelector('.companion-transcript')).toBeNull()
+    expect(panes.panes).toHaveLength(1)
+    const pane = panes.panes[0]!
+    expect([pane.cols, pane.rows]).toEqual([132, 43])
+    expect(pane.mounted?.closest('.companion-terminal-host')).not.toBeNull()
+    expect(pane.writes).toEqual(['tail'])
+    await emit('terminal', { type: 'output', handle: 'term-1', data: 'more' })
+    expect(pane.writes).toEqual(['tail', 'more'])
+    await emit('terminal', { type: 'output', handle: 'other', data: 'never' })
+    expect(pane.writes).toEqual(['tail', 'more'])
+  })
+
+  it('an opened frame that lands before the select reply still writes the tail', async () => {
+    server.transcriptReply = NOT_PROJECTED
+    server.holdSelect = true
+    await renderPaired()
+    await emit('snapshot', snapshot(1, [MIRROR_ROW]))
+    await click(host.querySelector<HTMLElement>('.companion-row') as HTMLElement)
+    await emit('terminal', {
+      type: 'opened',
+      handle: 'term-1',
+      cols: 80,
+      rows: 24,
+      tail: 'early',
+    })
+    await emit('terminal', { type: 'output', handle: 'term-1', data: '+' })
+    expect(panes.panes[0]?.writes).toEqual(['early', '+'])
+    await act(async () => {
+      server.releaseSelect()
+      await Promise.resolve()
+    })
+    await settle()
+    expect(panes.panes).toHaveLength(1)
+    expect(panes.panes[0]?.writes).toEqual(['early', '+'])
+    expect(host.querySelector('.companion-terminal')).not.toBeNull()
+  })
+
+  it('geometry events resize the pane and the page never sends a resize', async () => {
+    await openMirror()
+    await emit('terminal', { type: 'geometry', handle: 'term-1', cols: 100, rows: 30 })
+    expect(panes.panes[0]?.resizes).toEqual([{ cols: 100, rows: 30 }])
+    expect(server.calls.some((call) => call.url.includes('resize'))).toBe(false)
+    expect(
+      server.calls.every((call) => call.method === 'GET' || !call.url.includes('cols')),
+    ).toBe(true)
+  })
+
+  it('keys are dropped while disarmed and sent as exact bytes while armed', async () => {
+    await openMirror()
+    const pane = panes.panes[0]!
+    expect(armButton().dataset['armed']).toBe('false')
+    expect(pane.inputEnabled.at(-1)).toBe(false)
+    for (const key of COMPANION_KEYS) {
+      expect(button(key.label).disabled).toBe(true)
+    }
+    await act(async () => {
+      pane.emitData('\r')
+      await Promise.resolve()
+    })
+    await settle()
+    expect(server.inputs()).toEqual([])
+
+    await click(armButton())
+    expect(armButton().dataset['armed']).toBe('true')
+    expect(pane.inputEnabled.at(-1)).toBe(true)
+    for (const key of COMPANION_KEYS) {
+      await click(button(key.label))
+      expect(server.calls.at(-1)).toMatchObject({
+        url: '/api/sessions/term-1/input',
+        method: 'POST',
+        body: { page: 'page-1', data: key.data },
+      })
+    }
+    expect(server.inputs()).toEqual(
+      COMPANION_KEYS.map((key) => ({ page: 'page-1', data: key.data })),
+    )
+
+    await act(async () => {
+      pane.emitData('x')
+      await Promise.resolve()
+    })
+    await settle()
+    expect(server.inputs().at(-1)).toEqual({ page: 'page-1', data: 'x' })
+
+    await type('#companion-terminal-text', 'ls -la')
+    await click(button('Send'))
+    expect(server.inputs().at(-1)).toEqual({ page: 'page-1', data: 'ls -la' })
+    expect(host.querySelector<HTMLInputElement>('#companion-terminal-text')?.value).toBe(
+      '',
+    )
+
+    await type('#companion-terminal-text', 'y')
+    await act(async () => {
+      host
+        .querySelector('form.companion-terminal-form')
+        ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+      await Promise.resolve()
+    })
+    await settle()
+    expect(server.inputs().at(-1)).toEqual({ page: 'page-1', data: 'y\r' })
+
+    await click(armButton())
+    expect(armButton().dataset['armed']).toBe('false')
+    expect(pane.inputEnabled.at(-1)).toBe(false)
+  })
+
+  it('hiding the page disarms; pagehide disarms', async () => {
+    await openMirror()
+    await click(armButton())
+    expect(armButton().dataset['armed']).toBe('true')
+    await hide()
+    expect(armButton().dataset['armed']).toBe('false')
+    expect(panes.panes[0]?.inputEnabled.at(-1)).toBe(false)
+
+    delete (document as unknown as { hidden?: unknown }).hidden
+    await click(armButton())
+    expect(armButton().dataset['armed']).toBe('true')
+    await act(async () => {
+      window.dispatchEvent(new Event('pagehide'))
+      await Promise.resolve()
+    })
+    await settle()
+    expect(armButton().dataset['armed']).toBe('false')
+  })
+
+  it('a terminal ended event disarms and shows the plain sentence', async () => {
+    await openMirror()
+    await click(armButton())
+    await emit('terminal', { type: 'ended', handle: 'term-1', reason: 'exited' })
+    expect(host.querySelector('.companion-mirror-ended')?.textContent).toBe(
+      'The terminal ended.',
+    )
+    expect(host.textContent).not.toContain('exited')
+    expect(armButton().dataset['armed']).toBe('false')
+    for (const key of COMPANION_KEYS) {
+      expect(button(key.label).disabled).toBe(true)
+    }
+    expect(panes.panes[0]?.disposed).toBe(false)
+  })
+
+  it('a 403 on input disarms and names Settings; a 409 names the ended terminal', async () => {
+    await openMirror()
+    await click(armButton())
+    server.inputStatus = 403
+    server.inputError = 'server words'
+    await click(button('Enter'))
+    expect(host.querySelector('.companion-error')?.textContent).toBe(
+      'Typing from the Companion is off in Settings',
+    )
+    expect(armButton().dataset['armed']).toBe('false')
+
+    await click(armButton())
+    server.inputStatus = 409
+    await click(button('Enter'))
+    expect(host.querySelector('.companion-error')?.textContent).toBe(
+      'The mirrored terminal ended or changed',
+    )
+    expect(armButton().dataset['armed']).toBe('true')
+  })
+
+  it('unavailable transcripts show the desktop sentence and are hidden while a mirror is live', async () => {
+    server.transcriptReply = transcript({
+      handle: 'quiet-1',
+      status: 'unavailable',
+      reason: 'not-projected',
+      stream: 'closed',
+    })
+    await renderPaired()
+    await emit('snapshot', snapshot(1, [QUIET_ROW, MIRROR_ROW]))
+    await click(host.querySelector<HTMLElement>('.companion-row') as HTMLElement)
+    expect(host.querySelector('.companion-unavailable')?.textContent).toBe(
+      'This session is no longer in the current Sessions view.',
+    )
+    expect(host.textContent).not.toContain('not-projected')
+    await click(button('Sessions'))
+
+    server.transcriptReply = NOT_PROJECTED
+    await click(host.querySelectorAll<HTMLElement>('.companion-row')[1] as HTMLElement)
+    await emit('terminal', {
+      type: 'opened',
+      handle: 'term-1',
+      cols: 80,
+      rows: 24,
+      tail: '',
+    })
+    expect(host.querySelector('.companion-terminal')).not.toBeNull()
+    expect(host.querySelector('.companion-unavailable')).toBeNull()
+    expect(host.textContent).not.toContain('not-projected')
+  })
+
+  it('offers the transcript beside a mirror when the row takes answers', async () => {
+    server.transcriptReply = transcript({
+      handle: 'term-1',
+      turns: [{ ordinal: 1, role: 'assistant', kind: 'text', text: 'hello from city' }],
+    })
+    await renderPaired()
+    await emit('snapshot', snapshot(1, [{ ...MIRROR_ROW, canAnswer: true }]))
+    await click(host.querySelector<HTMLElement>('.companion-row') as HTMLElement)
+    await emit('terminal', {
+      type: 'opened',
+      handle: 'term-1',
+      cols: 80,
+      rows: 24,
+      tail: '',
+    })
+    await click(button('Transcript'))
+    expect(host.querySelector('.companion-transcript')).not.toBeNull()
+    expect(host.textContent).toContain('hello from city')
+    await click(button('Terminal'))
+    expect(host.querySelector('.companion-terminal')).not.toBeNull()
+    expect(panes.panes).toHaveLength(2)
+    expect(panes.panes[0]?.disposed).toBe(true)
+  })
+
+  it('leaving the mirror disposes the pane and returning replays only the new lease', async () => {
+    await openMirror('first')
+    await emit('terminal', { type: 'output', handle: 'term-1', data: '-second' })
+    await click(armButton())
+    await click(button('Sessions'))
+    expect(panes.panes[0]?.disposed).toBe(true)
+    expect(host.querySelector('.companion-terminal')).toBeNull()
+    await click(host.querySelector<HTMLElement>('.companion-row') as HTMLElement)
+    // The listener ends the old lease and opens the new one back to back; when
+    // the frames land in separate reads, no pane may show the old lease's tail.
+    await emit('terminal', { type: 'ended', handle: 'term-1', reason: 'reselected' })
+    expect(panes.panes).toHaveLength(1)
+    await emit('terminal', {
+      type: 'opened',
+      handle: 'term-1',
+      cols: 80,
+      rows: 24,
+      tail: 'again',
+    })
+    expect(panes.panes).toHaveLength(2)
+    expect(panes.panes[1]?.writes).toEqual(['again'])
+    expect(host.querySelector('.companion-mirror-ended')).toBeNull()
+    expect(armButton().dataset['armed']).toBe('false')
+    expect(panes.panes[1]?.inputEnabled).toEqual([false])
+  })
+
+  it('a second mirror opened after Back starts disarmed', async () => {
+    server.transcriptReply = NOT_PROJECTED
+    await renderPaired()
+    const secondRow = row({ ...MIRROR_ROW, handle: 'term-2', title: 'second shell' })
+    await emit('snapshot', snapshot(1, [MIRROR_ROW, secondRow]))
+    await click(host.querySelector<HTMLElement>('.companion-row') as HTMLElement)
+    await emit('terminal', {
+      type: 'opened',
+      handle: 'term-1',
+      cols: 80,
+      rows: 24,
+      tail: '',
+    })
+    await click(armButton())
+    expect(armButton().dataset['armed']).toBe('true')
+
+    await click(button('Sessions'))
+    server.transcriptReply = transcript({ ...NOT_PROJECTED, handle: 'term-2' })
+    await click(host.querySelectorAll<HTMLElement>('.companion-row')[1] as HTMLElement)
+    await emit('terminal', { type: 'ended', handle: 'term-1', reason: 'reselected' })
+    await emit('terminal', {
+      type: 'opened',
+      handle: 'term-2',
+      cols: 80,
+      rows: 24,
+      tail: '',
+    })
+
+    expect(armButton().dataset['armed']).toBe('false')
+    expect(panes.panes).toHaveLength(2)
+    expect(panes.panes[1]?.inputEnabled).toEqual([false])
+    for (const key of COMPANION_KEYS) {
+      expect(button(key.label).disabled).toBe(true)
+    }
+    await act(async () => {
+      panes.panes[1]?.emitData('\r')
+      await Promise.resolve()
+    })
+    await settle()
+    expect(server.inputs()).toEqual([])
+  })
+
+  it('a mirror opened after reconnect starts disarmed', async () => {
+    await openMirror()
+    await click(armButton())
+    expect(armButton().dataset['armed']).toBe('true')
+    act(() => {
+      server.drop()
+    })
+    await settle()
+    await settle()
+    await click(button('Reconnect'))
+    await emit('snapshot', snapshot(1, [MIRROR_ROW]))
+    await click(host.querySelector<HTMLElement>('.companion-row') as HTMLElement)
+    await emit('terminal', {
+      type: 'opened',
+      handle: 'term-1',
+      cols: 80,
+      rows: 24,
+      tail: '',
+    })
+
+    expect(armButton().dataset['armed']).toBe('false')
+    expect(panes.panes.at(-1)?.inputEnabled).toEqual([false])
+  })
+
+  it('shows a refused answer with the desktop sentence', async () => {
+    server.transcriptReply = transcript({
+      handle: 'ready-1',
+      pending: { revision: 1, options: [{ ordinal: 1, label: 'yes' }] },
+    })
+    server.mutationReply = { outcome: 'unavailable', reason: 'no-interaction' }
+    await renderPaired()
+    await emit('snapshot', snapshot(1, [READY_ROW]))
+    await click(host.querySelector<HTMLElement>('.companion-row') as HTMLElement)
+    await click(button('yes'))
+    expect(host.querySelector('.companion-error')?.textContent).toBe(
+      'This session is not waiting on an answer.',
+    )
   })
 })

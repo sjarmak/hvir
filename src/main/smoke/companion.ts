@@ -1,16 +1,21 @@
 /**
- * The Companion scenario (ADR-049) in the real Electron smoke app: enable the
- * loopback listener, pair over HTTP, prove the served page resolves every
- * asset it names, read the first Sessions snapshot over SSE, then prove that
- * closing the socket releases every lease and that revoking the pairing
- * refuses the bearer that opened it.
+ * The Companion scenario (ADR-049, ADR-050) in the real Electron smoke app:
+ * enable the loopback listener, pair over HTTP, prove the served page resolves
+ * every asset it names and that the emulator's WebAssembly module is served as
+ * one, read the first Sessions snapshot over SSE, then prove that closing the
+ * socket releases every lease and that revoking the pairing refuses the bearer
+ * that opened it.
  */
+import { join } from 'node:path'
+
 import {
   asHarnessProfileId,
+  localPath,
   type HarnessProviderId,
   type HostPath,
   type TerminalRecoverySession,
 } from '../../shared'
+import type { ProjectHost } from '../project-host'
 import { waitFor } from './attention-away-probe'
 import { expectStatus, openEvents, send } from './companion-http'
 import type { SmokeCompanion } from './companion-smoke'
@@ -21,6 +26,8 @@ const STEP_TIMEOUT_MS = 10_000
 
 export interface CompanionScenarioOptions {
   readonly companion: SmokeCompanion
+  /** Lists the built renderer bundle, so the wasm module is found by its hashed name. */
+  readonly bundle: Pick<ProjectHost, 'readdir'>
   readonly root: HostPath
   readonly providerId: HarnessProviderId
   readonly addRetained: (root: HostPath, session: TerminalRecoverySession) => void
@@ -50,6 +57,7 @@ export async function verifyCompanionScenario(
   const bearer = { authorization: `Bearer ${token}` }
 
   const assets = await verifyServedPage(port)
+  const wasm = await verifyServedWasm(port, options.bundle, companion.rendererRoot)
   const listenersBefore = sourceListeners()
   const stream = await openEvents(port, bearer)
   const snapshot = await stream.firstSnapshot()
@@ -97,7 +105,7 @@ export async function verifyCompanionScenario(
     mirrorInputAllowed: false,
   })
   await waitFor(() => !server.listening, STEP_TIMEOUT_MS, 'listener close')
-  return `port ${port}, ${assets} assets, ${snapshot.rows.length} rows, leases released, revoke refused`
+  return `port ${port}, ${assets} assets, ${wasm} served as wasm, ${snapshot.rows.length} rows, leases released, revoke refused`
 }
 
 function requestedPort(): number {
@@ -149,4 +157,30 @@ async function verifyServedPage(port: number): Promise<number> {
     )
   }
   return references.length
+}
+
+/**
+ * The page loads ghostty-web's module by a hashed name the HTML never lists,
+ * so the bundle's one `.wasm` is found on disk and fetched by name: it must be
+ * allowlisted and served with the media type WebAssembly streaming requires.
+ */
+async function verifyServedWasm(
+  port: number,
+  bundle: Pick<ProjectHost, 'readdir'>,
+  rendererRoot: string,
+): Promise<string> {
+  const entries = await bundle.readdir(localPath(join(rendererRoot, 'assets')))
+  const modules = entries
+    .filter((entry) => entry.type === 'file' && entry.name.endsWith('.wasm'))
+    .map((entry) => entry.name)
+  if (modules.length !== 1) {
+    throw new Error(`Expected one .wasm in the renderer bundle, found ${modules.length}`)
+  }
+  const name = modules[0]!
+  const reply = await send(port, 'GET', `/assets/${name}`)
+  expectStatus(reply, 200, `GET /assets/${name}`)
+  if (reply.headers['content-type'] !== 'application/wasm') {
+    throw new Error(`GET /assets/${name} content type ${reply.headers['content-type']}`)
+  }
+  return name
 }

@@ -20,6 +20,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.woff2': 'font/woff2',
+  '.wasm': 'application/wasm',
 }
 
 const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/

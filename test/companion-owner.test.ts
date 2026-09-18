@@ -87,6 +87,7 @@ function bundleHost(): {
     [`${BUNDLE_ROOT}/assets/app-1.js`, 'console.log(1)'],
     [`${BUNDLE_ROOT}/assets/app-1.css`, 'body{}'],
     [`${BUNDLE_ROOT}/assets/app-1.js.map`, '{"version":3}'],
+    [`${BUNDLE_ROOT}/assets/ghostty-vt-abc123.wasm`, '\0asm'],
     [`${BUNDLE_ROOT}/secret.txt`, 'never served'],
   ])
   const host = {
@@ -442,6 +443,9 @@ describe('installApplicationCompanion assets', () => {
     expect(
       (await send(port, 'GET', '/assets/app-1.js.map')).headers['content-type'],
     ).toBe('application/json; charset=utf-8')
+    const wasm = await send(port, 'GET', '/assets/ghostty-vt-abc123.wasm')
+    expect(wasm.status).toBe(200)
+    expect(wasm.headers['content-type']).toBe('application/wasm')
 
     for (const path of [
       '/assets/../secret.txt',

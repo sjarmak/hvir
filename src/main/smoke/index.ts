@@ -702,6 +702,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     if (mode === 'companion') {
       const result = await verifyCompanionScenario({
         companion: smokeCompanion,
+        bundle: host,
         root: smokeRoot,
         providerId: defaultHarnessProviderId,
         addRetained: smokeTerminalSessionHarness.add,

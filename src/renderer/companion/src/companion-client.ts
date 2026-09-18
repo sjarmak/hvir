@@ -108,6 +108,12 @@ export interface CompanionClient {
     request: CompanionRespondRequest,
   ): Promise<SessionsMutationResponse>
   submit(page: string, request: CompanionSubmitRequest): Promise<SessionsMutationResponse>
+  /** The user's exact bytes for the mirrored row; nothing is appended. */
+  input(
+    page: string,
+    handle: SessionsTerminalHandle,
+    data: string,
+  ): Promise<SessionsMutationResponse>
 }
 
 export interface CompanionClientOptions {
@@ -224,6 +230,13 @@ export function createCompanionClient(options: CompanionClientOptions): Companio
       post(
         route(request.handle, 'message'),
         { page, ...request },
+        isSessionsMutationResponse,
+        'mutation outcome',
+      ),
+    input: (page, handle, data) =>
+      post(
+        route(handle, 'input'),
+        { page, data },
         isSessionsMutationResponse,
         'mutation outcome',
       ),

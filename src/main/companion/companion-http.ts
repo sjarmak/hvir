@@ -1,7 +1,7 @@
 /**
  * Wire mechanics shared by the Companion routes: bounded JSON bodies, JSON
- * replies, bearer parsing, the text/event-stream writer, asset path
- * normalization, and the content-type map the asset reader uses.
+ * replies, bearer parsing, the text/event-stream writer, and asset path
+ * normalization. The asset allowlist and its media types live with the reader.
  */
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http'
 
@@ -12,15 +12,6 @@ export const SSE_HEARTBEAT_MS = 25_000
 export const SSE_RETRY_MS = 3_000
 /** Unsent bytes a stream may hold before a mirror is ended rather than buffered further. */
 export const SSE_MAX_BACKLOG_BYTES = 4 * 1024 * 1024
-
-const CONTENT_TYPES: Readonly<Record<string, string>> = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.woff2': 'font/woff2',
-}
 
 /** A request the server answers with the given status instead of 500. */
 export class CompanionHttpError extends Error {
@@ -86,12 +77,6 @@ export function authorized(
 ): boolean {
   const token = bearerToken(headers)
   return token !== undefined && auth.verify(token)
-}
-
-/** The media type for an allowlisted bundle file, by extension. */
-export function companionContentType(relativePath: string): string | undefined {
-  const dot = relativePath.lastIndexOf('.')
-  return dot < 0 ? undefined : CONTENT_TYPES[relativePath.slice(dot).toLowerCase()]
 }
 
 /**

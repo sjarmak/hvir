@@ -298,3 +298,58 @@ body {
   flex-direction: column;
   gap: 8px;
 }
+
+/* A mirrored terminal (ADR-050): the desktop's grid, scaled to the phone. */
+.companion-terminal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.companion-terminal-host {
+  width: 100%;
+  min-height: 120px;
+  overflow: hidden;
+  border: 1px solid var(--companion-border);
+  border-radius: 10px;
+  background: #000;
+}
+
+.companion-terminal-scale {
+  transform-origin: top left;
+  width: max-content;
+}
+
+.companion-terminal-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.companion-arm[data-armed='true'] {
+  border-color: var(--companion-bell);
+  color: var(--companion-bell);
+}
+
+.companion-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.companion-key {
+  min-width: 44px;
+  padding: 10px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.companion-terminal-form {
+  display: flex;
+  gap: 8px;
+}
+
+.companion-terminal-form .companion-input {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}

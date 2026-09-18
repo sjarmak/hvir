@@ -233,6 +233,31 @@ describe('companion client', () => {
     }
   })
 
+  it('input posts exact bytes with the page and reads the mutation outcome', async () => {
+    const { client, calls } = harness(
+      () => jsonResponse(200, { outcome: 'accepted' }),
+      'tok-1',
+    )
+    const bytes = '\u001b[A\r\ud800'
+    expect(await client.input('page-1', ROW, bytes)).toEqual({ outcome: 'accepted' })
+    expect(calls.map((call) => [call.url, call.init.method])).toEqual([
+      ['/api/sessions/row%2F1/input', 'POST'],
+    ])
+    expect(JSON.parse(calls[0]?.init.body ?? '')).toEqual({ page: 'page-1', data: bytes })
+    expect(calls[0]?.init.headers['authorization']).toBe('Bearer tok-1')
+  })
+
+  it('surfaces a refused input with its status', async () => {
+    const { client } = harness(
+      () => jsonResponse(403, { error: 'Typing from the Companion is off in Settings' }),
+      'tok-1',
+    )
+    await expect(client.input('page-1', ROW, '\r')).rejects.toMatchObject({
+      status: 403,
+      message: 'Typing from the Companion is off in Settings',
+    })
+  })
+
   it('refuses a mutation reply that is not a mutation response', async () => {
     const { client } = harness(() => jsonResponse(200, { outcome: 'maybe' }), 'tok-1')
     await expect(
@@ -294,7 +319,7 @@ describe('companion client', () => {
     const events: CompanionEvent[] = []
     const opened = await client.openEvents((event) => events.push(event))
 
-    const output = { type: 'output', handle: 'row-1', data: '[2J$ ' }
+    const output = { type: 'output', handle: 'row-1', data: '\u001b[2J$ ' }
     stream.push(`event: terminal\ndata: ${JSON.stringify(output)}\n\n`)
     await tick()
     expect(events).toEqual([{ type: 'terminal', terminal: output }])

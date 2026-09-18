@@ -1,13 +1,9 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactElement,
-} from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from 'react'
 
 import {
   MAX_SESSIONS_SUBMIT_MESSAGE,
+  sessionsMutationUnavailableMessage,
+  sessionsTranscriptUnavailableMessage,
   type SessionsMutationResponse,
   type SessionsMutationUnavailableReason,
   type SessionsTranscriptSnapshot,
@@ -16,10 +12,6 @@ import {
 } from '../../../shared'
 import { useModalKeyboard } from '../workbench/use-modal-keyboard'
 import type { SessionsTerminalDetailContext } from './sessions-terminal-detail-controller'
-import {
-  sessionsMutationUnavailableMessage,
-  sessionsTranscriptUnavailableMessage,
-} from './sessions-transcript-coordinator'
 
 /**
  * The transcript of one projected session, and the two things a person may say
