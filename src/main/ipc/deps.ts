@@ -17,6 +17,7 @@ import type {
   WorkbenchHealthSnapshot,
 } from '../../shared'
 import type { BeadsService } from '../beads/beads-service'
+import type { CompanionSettingsPort } from '../companion/companion-settings'
 import type { GasCityService } from '../gascity/gascity-service'
 import type { HarnessProfileStoreContract } from '../harness/harness-profile-store'
 import type { HarnessProbeManager } from '../harness/harness-probe'
@@ -179,6 +180,11 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly systemClipboard?: SystemClipboardPort
   readonly beads: Pick<BeadsService, 'list' | 'probe' | 'watch' | 'unwatch'>
   readonly gascity: Pick<GasCityService, 'crew' | 'probe' | 'analyticsConfig'>
+  /** Companion settings (ADR-049); the view it answers with carries no secret. */
+  readonly companion: Pick<
+    CompanionSettingsPort,
+    'view' | 'save' | 'issuePairing' | 'revokePairing'
+  >
   /**
    * Attention external agent sessions are raising right now. Always available:
    * the facts follow open projects, not the Sessions view (ADR-048).

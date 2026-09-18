@@ -1,5 +1,6 @@
 import type { ExternalAttentionSnapshot, HostPath, ProjectState } from '../../shared'
 import type { Disposer, ProjectHost } from '../project-host'
+import type { WorkbenchRuntime } from '../workbench-runtime'
 import {
   GasCityAttention,
   type CityAttentionStreams,
@@ -188,4 +189,46 @@ export function ownGasCityAttention(
   })
   attention.start()
   return attention
+}
+
+/** Every Gas City owner the composition root holds, built once and shared. */
+export interface GasCityRuntime {
+  readonly reader: GasCityReader
+  readonly supervisor: GascitySupervisorAccess
+  readonly streams: GasCityEventStreams
+  readonly attention: GasCityAttention
+  readonly sessionsSource: GasCitySessionsSource
+}
+
+/**
+ * Own the Gas City surfaces on the workbench runtime: one reader, one
+ * supervisor access, the per-host event streams and the attention rollup
+ * over them, disposed in reverse. The streams and the rollup follow open
+ * projects, not any view: a blocked worker raises attention with the
+ * Sessions list closed (ADR-048).
+ */
+export function ownGasCityRuntime(
+  runtime: Pick<WorkbenchRuntime, 'own'>,
+  deps: GasCityHostDeps,
+  publish: (snapshot: ExternalAttentionSnapshot) => void,
+): GasCityRuntime {
+  const reader = ownGasCityReader()
+  const supervisor = ownGasCitySupervisorAccess(deps.hosts)
+  const streams = runtime.own(
+    'Gas City event streams',
+    ownGasCityEventStreams(supervisor, reader, deps),
+    (owned) => owned.dispose(),
+  )
+  const attention = runtime.own(
+    'Gas City attention rollup',
+    ownGasCityAttention(supervisor, streams, deps, publish),
+    (owned) => owned.dispose(),
+  )
+  return {
+    reader,
+    supervisor,
+    streams,
+    attention,
+    sessionsSource: ownGasCitySessionsSource(reader, deps),
+  }
 }

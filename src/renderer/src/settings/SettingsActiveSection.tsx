@@ -8,6 +8,7 @@ import {
 import type { SettingsDraft, SettingsDraftValidation } from './settings-draft'
 import type { SettingsSection } from './settings-navigation'
 import { AppearanceSettings } from './sections/AppearanceSettings'
+import { CompanionSettings } from './sections/CompanionSettings'
 import { GitSettings } from './sections/GitSettings'
 import { KeybindingsSettings } from './sections/KeybindingsSettings'
 import { TerminalSettings } from './sections/TerminalSettings'
@@ -65,5 +66,7 @@ export function SettingsActiveSection({
           initialAddOpen={initialAddOpen}
         />
       )
+    case 'companion':
+      return <CompanionSettings />
   }
 }

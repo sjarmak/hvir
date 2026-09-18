@@ -5,6 +5,7 @@ import type { IpcDeps } from './ipc/deps'
 import { registerAppIpc } from './ipc/features/app'
 import { registerClipboardIpc } from './ipc/features/clipboard'
 import { registerBeadsIpc } from './ipc/features/beads'
+import { registerCompanionIpc } from './ipc/features/companion'
 import { registerDiagnosticReportIpc } from './ipc/features/diagnostic-report'
 import { registerDocumentReviewIpc } from './ipc/features/document-review'
 import { registerFilesystemIpc } from './ipc/features/filesystem'
@@ -44,6 +45,7 @@ export function registerIpcHandlers(
     registerTerminalFilePasteIpc(router, new ElectronClipboardFilePaste())
     registerBeadsIpc(router, deps)
     registerGasCityIpc(router, deps)
+    registerCompanionIpc(router, deps)
     router.assertComplete()
     return router
   } catch (error) {

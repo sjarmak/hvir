@@ -1,4 +1,5 @@
 import { createSmokeAttention } from './attention-smoke'
+import { createSmokeCompanionSettings } from './companion-smoke'
 import { terminalScenarioTable } from './terminal-scenario-table'
 import type { ElectronSmokeDependencies } from './bootstrap-contract'
 import { SmokeRendererReadiness } from './renderer-readiness-observer'
@@ -89,6 +90,7 @@ import {
   type GitWorkerProtocol,
   type IpcEventChannel,
   type IpcEventPayload,
+  type WorkbenchHealthSnapshot,
 } from '../../shared'
 
 /** Production-composed Electron acceptance workflow selected by `HVIR_SMOKE=1`. */
@@ -366,6 +368,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     })
     const smokeAttention = createSmokeAttention()
     cleanup.defer('attention', () => smokeAttention.dispose())
+    const smokeCompanion = await createSmokeCompanionSettings()
     const terminalMoveSmoke = createTerminalMoveSmokeHarness({
       sourceState: smokeProjectState,
       targetRoot: smokeWebSwitchRoot,
@@ -439,20 +442,10 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
         if (accepted) readiness.accept(owner)
         return accepted
       },
-      getWorkbenchHealth: () => ({
-        version: 1,
-        evidence: 'memory-only',
-        items: [],
-        dropped: 0,
-      }),
+      getWorkbenchHealth: memoryOnlyHealth,
       // The smoke harness runs no gas city owner, so nothing is waiting.
       getExternalAttention: () => EMPTY_EXTERNAL_ATTENTION,
-      acknowledgeWorkbenchHealth: () => ({
-        version: 1,
-        evidence: 'memory-only',
-        items: [],
-        dropped: 0,
-      }),
+      acknowledgeWorkbenchHealth: memoryOnlyHealth,
       diagnostics: dependencies.diagnostics,
       recordIpcContractDiagnostic: () => undefined,
       recordRenderContainment: () => undefined,
@@ -471,6 +464,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       beads: smokeBeads,
       gascity: smokeGasCity,
       updateAttention: smokeAttention.updateAttention,
+      companion: smokeCompanion,
       updateWebPaneBindings: (owner, bindings) =>
         updateWebPaneBindings(owner.id, bindings),
       updateWebPaneFullPage: (owner, paneId) => updateWebPaneFullPage(owner.id, paneId),
@@ -848,3 +842,8 @@ type EmitSmokeEvent = <E extends IpcEventChannel>(
   channel: E,
   payload: IpcEventPayload<E>,
 ) => void
+
+/** The smoke build keeps no durable health evidence; a read and an acknowledge both say so. */
+function memoryOnlyHealth(): WorkbenchHealthSnapshot {
+  return { version: 1, evidence: 'memory-only', items: [], dropped: 0 }
+}

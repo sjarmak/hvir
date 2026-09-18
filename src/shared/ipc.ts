@@ -23,6 +23,7 @@ import { webPaneIpc } from './ipc/web-pane'
 import { documentReviewIpc } from './ipc/document-review'
 import { beadsIpc } from './ipc/beads'
 import { gascityIpc } from './ipc/gascity'
+import { companionIpc } from './ipc/companion'
 
 // Compatibility only: domain contracts import their named owners directly.
 export { type AppInfo, type EchoRequest, type EchoResponse } from './ipc/app'
@@ -119,6 +120,7 @@ const contract = composeIpcContracts(
   documentReviewIpc,
   beadsIpc,
   gascityIpc,
+  companionIpc,
 )
 
 export type IpcInvokeMap = InvokeMap<typeof contract>

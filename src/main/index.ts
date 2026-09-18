@@ -14,14 +14,8 @@ import { ProjectCoordinator } from './project-coordinator'
 import { PtySupervisor } from './pty/pty-supervisor'
 import { installApplicationAttention } from './attention/attention-owner'
 import { ownBeadsService } from './beads/beads-owner'
-import {
-  ownGasCityAttention,
-  ownGasCityEventStreams,
-  ownGasCityReader,
-  ownGasCityService,
-  ownGasCitySessionsSource,
-  ownGasCitySupervisorAccess,
-} from './gascity/gascity-owner'
+import { installApplicationCompanionSettings } from './companion/companion-owner'
+import { ownGasCityRuntime, ownGasCityService } from './gascity/gascity-owner'
 import { HarnessProfileStore } from './harness/harness-profile-store'
 import { HarnessProbeManager } from './harness/harness-probe'
 import { harnessProviders } from './harness/harness-provider'
@@ -254,27 +248,21 @@ function createWorkbenchEntry(): void {
       }),
       (supervisor) => supervisor.disposeAllAndWait(),
     )
-    const gasCityReader = ownGasCityReader()
-    const gasCityHosts = { projects: projectRegistry, hosts: hostCatalog }
-    const gasCitySupervisor = ownGasCitySupervisorAccess(hostCatalog)
-    // Follows open projects, not any view: a blocked worker raises attention
-    // with the Sessions list closed (ADR-048).
-    const gasCityStreams = runtime.own(
-      'Gas City event streams',
-      ownGasCityEventStreams(gasCitySupervisor, gasCityReader, gasCityHosts),
-      (streams) => streams.dispose(),
-    )
-    const gasCityAttention = runtime.own(
-      'Gas City attention rollup',
-      ownGasCityAttention(gasCitySupervisor, gasCityStreams, gasCityHosts, (snapshot) =>
-        rendererEvents.toWindows('gascity:attention-changed', snapshot),
-      ),
-      (rollup) => rollup.dispose(),
+    const gasCity = ownGasCityRuntime(
+      runtime,
+      { projects: projectRegistry, hosts: hostCatalog },
+      (snapshot) => rendererEvents.toWindows('gascity:attention-changed', snapshot),
     )
     attention = installApplicationAttention(runtime, {
-      gasCityAttention,
+      gasCityAttention: gasCity.attention,
       setBadgeCount: (count) => app.setBadgeCount(count),
     })
+    const companion = await installApplicationCompanionSettings(
+      runtime,
+      hostCatalog.local,
+      localPath(applicationUserDataPath('companion.json')),
+      (view) => rendererEvents.toWindows('companion:status-changed', view),
+    )
     const sessionsPorts = installApplicationSessionsObservation(
       runtime,
       projectRegistry,
@@ -282,9 +270,9 @@ function createWorkbenchEntry(): void {
       terminalSessionRegistry,
       ptySupervisor,
       { events: rendererEvents, diagnostics },
-      gasCitySupervisor,
-      ownGasCitySessionsSource(gasCityReader, gasCityHosts),
-      gasCityStreams,
+      gasCity.supervisor,
+      gasCity.sessionsSource,
+      gasCity.streams,
     )
     documentReview = await installApplicationDocumentReviewRuntime(
       runtime,
@@ -383,7 +371,7 @@ function createWorkbenchEntry(): void {
     })
     const getProject = () => registry.active
     const beadsService = ownBeadsService(runtime, getProject, emit)
-    const gasCityService = ownGasCityService(getProject, gasCityReader)
+    const gasCityService = ownGasCityService(getProject, gasCity.reader)
     runtime.own(
       'IPC authority router',
       registerIpcHandlers({
@@ -409,7 +397,7 @@ function createWorkbenchEntry(): void {
           windowManager.rendererReady(owner, reportedGeneration) &&
           sshPrompter?.activateOwner(owner),
         getWorkbenchHealth: () => diagnostics.healthSnapshot(),
-        getExternalAttention: () => gasCityAttention.snapshot(),
+        getExternalAttention: () => gasCity.attention.snapshot(),
         acknowledgeWorkbenchHealth: (id) => diagnostics.acknowledgeHealth(id),
         diagnostics: diagnosticIpc,
         recordIpcContractDiagnostic: (event) => diagnostics.recordIpcContract(event),
@@ -427,6 +415,7 @@ function createWorkbenchEntry(): void {
         remoteImagePaste,
         beads: beadsService,
         gascity: gasCityService,
+        companion,
         updateAttention: (owner, set) => attention?.updateAttention(owner, set),
         updateWebPaneBindings: (owner, bindings) =>
           windowManager.updateWebPaneBindings(owner.id, bindings),

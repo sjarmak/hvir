@@ -23,6 +23,8 @@ describe('shared capability contract direction', () => {
     'src/shared/sessions-projection.ts',
     'src/shared/ipc/sessions.ts',
     'src/shared/actionable-attention.ts',
+    'src/shared/companion-settings.ts',
+    'src/shared/ipc/companion.ts',
   ])(
     'rejects transport and process imports from %s, including erased references',
     async (owner) => {

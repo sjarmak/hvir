@@ -2,6 +2,10 @@ import { SEND_CHANNELS, type IpcInvokeChannel } from '../../shared'
 
 export const OWNER_SCOPED_INVOKE_CHANNELS = [
   'workbench-health:acknowledge',
+  'companion:config',
+  'companion:config-save',
+  'companion:pairing-issue',
+  'companion:pairing-revoke',
   'diagnostic-evidence:get',
   'diagnostic-evidence:delete',
   'diagnostic-report:create',

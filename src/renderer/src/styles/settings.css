@@ -326,6 +326,35 @@
   color: var(--danger-text);
 }
 
+.settings-companion-status,
+.settings-dialog .settings-fields > .settings-companion-pairing {
+  width: min(760px, 100%);
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px 16px;
+  margin: 0;
+  color: var(--text);
+  font-size: calc(11px * var(--hvir-interface-scale));
+}
+
+.settings-companion-status {
+  grid-template-columns: 1fr;
+  color: var(--text-muted);
+}
+
+.settings-companion-code {
+  font-family: var(--hvir-monospace-font);
+  font-size: calc(14px * var(--hvir-interface-scale));
+  letter-spacing: 0.08em;
+  user-select: all;
+}
+
+.settings-companion-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .settings-footer {
   min-width: 0;
   display: flex;

@@ -516,6 +516,10 @@ describe('IpcAuthorityRouter', () => {
         'diagnostic-report:save',
         'diagnostic-report:cancel',
         'diagnostic-report:delete',
+        'companion:config',
+        'companion:config-save',
+        'companion:pairing-issue',
+        'companion:pairing-revoke',
       ]),
     )
     expect(new Set(OWNER_SCOPED_SEND_CHANNELS)).toEqual(
@@ -591,6 +595,7 @@ describe('IpcAuthorityRouter', () => {
       'clipboard.ts',
       'terminal-file-paste.ts',
       'sessions.ts',
+      'companion.ts',
     ]
     const source = (
       await Promise.all(
