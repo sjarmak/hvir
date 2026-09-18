@@ -321,30 +321,94 @@ body {
   gap: 8px;
 }
 
-/* A mirrored terminal (ADR-050): the desktop's grid, scaled to the phone. */
+/* A mirrored terminal (ADR-050): the desktop's grid, scaled to the phone.
+ * With a mirror open the page is one fixed-height column that never scrolls:
+ * a one-line header, the terminal in all the height that remains, and one
+ * compact control bar at the bottom. Scrolling over the terminal moves its
+ * scrollback, so the page must not move under the finger. */
+.companion:has(> .companion-terminal) {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  gap: 8px;
+  padding: 8px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+}
+
 .companion-terminal {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
-.companion-mirror-prompt {
+.companion-button-compact {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 14px;
+}
+
+.companion-mirror-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.companion-mirror-title {
+  flex: 1;
+  min-width: 0;
   margin: 0;
-  padding: 10px 12px;
-  border: 1px solid var(--companion-prompt);
-  border-radius: 10px;
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The prompt's message (ADR-051): the header's second line while it lasts. */
+.companion-mirror-prompt {
+  flex-basis: 100%;
+  margin: 0;
   color: var(--companion-prompt);
   font-weight: 600;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+.companion-terminal-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* The host is the scroll gesture surface. Fit-to-width owns every touch so a
+ * drag reaches the scrollback; fill-height leaves sideways panning to the
+ * browser and takes the vertical drags. */
 .companion-terminal-host {
+  flex: 1;
+  min-height: 0;
   width: 100%;
-  min-height: 120px;
   overflow: hidden;
   border: 1px solid var(--companion-border);
   border-radius: 10px;
   background: #000;
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+
+.companion-terminal-host[data-zoom='fill-height'] {
+  overflow-x: auto;
+  overflow-y: hidden;
+  touch-action: pan-x;
+}
+
+.companion-terminal-extent {
+  position: relative;
+  overflow: hidden;
 }
 
 .companion-terminal-scale {
@@ -352,11 +416,20 @@ body {
   width: max-content;
 }
 
-.companion-terminal-controls {
+.companion-mirror-controls {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.companion-mirror-controls-row {
+  display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+}
+
+.companion-arm {
+  flex: none;
 }
 
 .companion-arm[data-armed='true'] {
@@ -365,23 +438,28 @@ body {
 }
 
 .companion-keys {
+  flex: 1;
+  min-width: 0;
   display: flex;
-  flex-wrap: wrap;
   gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
 .companion-key {
+  flex: none;
   min-width: 44px;
-  padding: 10px 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .companion-terminal-form {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
 .companion-terminal-form .companion-input {
   flex: 1;
+  min-height: 40px;
+  padding: 8px 10px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }

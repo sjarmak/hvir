@@ -1,17 +1,20 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type {
   CompanionRow,
   SessionsTerminalHandle,
   SessionsTranscriptSnapshot,
 } from '../../../shared'
-import { COMPANION_KEYS } from './companion-keys'
 import type { CompanionMirrorFeed } from './companion-mirror-feed'
+import type { CompanionMirrorZoom } from './companion-mirror-zoom'
 import { companionMirrorEndMessage, type CompanionTerminalState } from './companion-store'
 import { CompanionTerminalMount } from './companion-terminal-mount'
 import type { CompanionTerminalPaneFactory } from './companion-terminal-pane'
+import { MirrorControls } from './mirror-controls'
+import { MirrorHeader } from './mirror-header'
 import { TranscriptView } from './transcript-view'
 import type { CompanionInputArmingControl } from './use-input-arming'
+import { useMirrorZoom } from './use-mirror-zoom'
 
 interface TerminalViewProps {
   readonly row: CompanionRow | undefined
@@ -28,18 +31,18 @@ interface TerminalViewProps {
 }
 
 /**
- * One mirrored terminal (ADR-050): the desktop's screen at its geometry,
- * scaled to the phone, with typing behind an explicit arm control and the
- * keys a phone keyboard lacks. A row that also takes answers offers its
- * transcript beside the mirror. While the row carries a prompt, its message
- * stands in one line above the terminal (ADR-051).
+ * One mirrored terminal (ADR-050) filling the phone's screen: a one-line
+ * header, the desktop's grid scaled into all the height that remains, and one
+ * compact control bar at the bottom. While the row carries a prompt, its
+ * message is the header's second line (ADR-051). A row that also takes
+ * answers offers its transcript beside the mirror.
  */
 export function TerminalView(props: TerminalViewProps) {
   const { row, terminal, transcript, arming, onInput } = props
   const [showTranscript, setShowTranscript] = useState(false)
   const [paneFailure, setPaneFailure] = useState<string>()
+  const { zoom, toggle: toggleZoom } = useMirrorZoom()
   const live = terminal.status === 'live'
-  const canType = live && arming.armed
   if (showTranscript && transcript !== undefined) {
     return (
       <TranscriptView
@@ -55,73 +58,37 @@ export function TerminalView(props: TerminalViewProps) {
   }
   return (
     <section className="companion-terminal">
-      <header className="companion-transcript-header">
-        <button
-          type="button"
-          className="companion-button companion-back"
-          onClick={props.onBack}
-        >
-          Sessions
-        </button>
-        <h2 className="companion-transcript-title">{row?.title ?? terminal.handle}</h2>
-        {row?.canAnswer && transcript !== undefined ? (
-          <button
-            type="button"
-            className="companion-button"
-            onClick={() => setShowTranscript(true)}
-          >
-            Transcript
-          </button>
-        ) : null}
-      </header>
-      {terminal.status === 'ended' ? (
-        <p className="companion-status companion-mirror-ended">
-          {companionMirrorEndMessage(terminal.reason)}
-        </p>
-      ) : null}
-      {paneFailure === undefined ? null : (
-        <p className="companion-error" role="alert">
-          {paneFailure}
-        </p>
-      )}
-      {row?.promptBody === undefined ? null : (
-        <p className="companion-mirror-prompt" role="status">
-          {row.promptBody}
-        </p>
-      )}
-      <TerminalSurface
-        handle={terminal.handle}
-        feed={props.feed}
-        createPane={props.createPane}
-        inputEnabled={canType}
-        onInput={onInput}
-        onFailure={(error) => setPaneFailure(describeFailure(error))}
+      <MirrorHeader
+        title={row?.title ?? terminal.handle}
+        promptBody={row?.promptBody}
+        zoom={zoom}
+        offersTranscript={row?.canAnswer === true && transcript !== undefined}
+        onBack={props.onBack}
+        onTranscript={() => setShowTranscript(true)}
+        onZoom={toggleZoom}
       />
-      <div className="companion-terminal-controls">
-        <button
-          type="button"
-          className="companion-button companion-arm"
-          data-armed={arming.armed ? 'true' : 'false'}
-          disabled={!live}
-          onClick={arming.armed ? arming.disarm : arming.arm}
-        >
-          {arming.armed ? 'Disarm' : 'Arm typing'}
-        </button>
-        <div className="companion-keys">
-          {COMPANION_KEYS.map((key) => (
-            <button
-              key={key.label}
-              type="button"
-              className="companion-button companion-key"
-              disabled={!canType}
-              onClick={() => void onInput(key.data)}
-            >
-              {key.label}
-            </button>
-          ))}
-        </div>
+      <div className="companion-terminal-area">
+        {terminal.status === 'ended' ? (
+          <p className="companion-status companion-mirror-ended">
+            {companionMirrorEndMessage(terminal.reason)}
+          </p>
+        ) : null}
+        {paneFailure === undefined ? null : (
+          <p className="companion-error" role="alert">
+            {paneFailure}
+          </p>
+        )}
+        <TerminalSurface
+          handle={terminal.handle}
+          feed={props.feed}
+          createPane={props.createPane}
+          inputEnabled={arming.armed}
+          zoom={zoom}
+          onInput={onInput}
+          onFailure={(error) => setPaneFailure(describeFailure(error))}
+        />
       </div>
-      <TerminalTextForm enabled={canType} onInput={onInput} />
+      <MirrorControls live={live} arming={arming} onInput={onInput} />
     </section>
   )
 }
@@ -132,6 +99,7 @@ function TerminalSurface({
   feed,
   createPane,
   inputEnabled,
+  zoom,
   onInput,
   onFailure,
 }: {
@@ -139,6 +107,7 @@ function TerminalSurface({
   readonly feed: CompanionMirrorFeed
   readonly createPane: CompanionTerminalPaneFactory
   readonly inputEnabled: boolean
+  readonly zoom: CompanionMirrorZoom
   readonly onInput: (data: string) => Promise<void>
   readonly onFailure: (error: unknown) => void
 }) {
@@ -169,57 +138,14 @@ function TerminalSurface({
     mount.current?.setInputEnabled(inputEnabled)
   }, [inputEnabled])
 
-  return <div ref={host} className="companion-terminal-host" />
+  useEffect(() => {
+    mount.current?.setZoom(zoom)
+  }, [zoom])
+
+  return <div ref={host} className="companion-terminal-host" data-zoom={zoom} />
 }
 
 function describeFailure(error: unknown): string {
   const detail = error instanceof Error ? error.message : String(error)
   return `The terminal could not be shown: ${detail}`
-}
-
-/** Free text: Send posts it as typed; the keyboard's return posts it with Enter. */
-function TerminalTextForm({
-  enabled,
-  onInput,
-}: {
-  readonly enabled: boolean
-  readonly onInput: (data: string) => Promise<void>
-}) {
-  const [text, setText] = useState('')
-
-  async function send(data: string): Promise<void> {
-    if (!enabled || data === '') return
-    setText('')
-    await onInput(data)
-  }
-
-  function submit(event: FormEvent<HTMLFormElement>): void {
-    event.preventDefault()
-    void send(`${text}\r`)
-  }
-
-  return (
-    <form className="companion-terminal-form" onSubmit={submit}>
-      <input
-        id="companion-terminal-text"
-        className="companion-input"
-        type="text"
-        autoComplete="off"
-        autoCapitalize="off"
-        autoCorrect="off"
-        spellCheck={false}
-        disabled={!enabled}
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-      />
-      <button
-        type="button"
-        className="companion-button companion-button-primary"
-        disabled={!enabled || text === ''}
-        onClick={() => void send(text)}
-      >
-        Send
-      </button>
-    </form>
-  )
 }

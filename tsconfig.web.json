@@ -11,6 +11,6 @@
     "src/renderer/**/*.tsx",
     "src/renderer/**/*.mts",
     "src/shared/**/*.ts",
-    "test/**/*.test.tsx"
+    "test/**/*.tsx"
   ]
 }

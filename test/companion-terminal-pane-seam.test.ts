@@ -35,6 +35,7 @@ describe('Companion terminal pane seam', () => {
         mount: () => calls.push(`mount ${cols}x${rows}`),
         write: (data) => calls.push(`write ${data.length}`),
         resize: (nextCols, nextRows) => calls.push(`resize ${nextCols}x${nextRows}`),
+        scrollLines: (amount) => calls.push(`scroll ${amount}`),
         dispose: () => calls.push('dispose'),
         setInputEnabled: (enabled) => calls.push(`input ${enabled}`),
         events: {

@@ -1,3 +1,9 @@
+/**
+ * Wheel input over a terminal, as the desktop pane and the Companion mirror
+ * both decide it: the viewport owns a normal-screen gesture, an alternate
+ * screen program receives page keys, and a program tracking the mouse
+ * receives SGR reports. Pure: no DOM, no emulator.
+ */
 const DOM_DELTA_PIXEL = 0
 const DOM_DELTA_LINE = 1
 const DOM_DELTA_PAGE = 2

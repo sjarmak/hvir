@@ -8,11 +8,15 @@ interface FakeTerminalState {
   readonly options: Record<string, unknown>
   readonly writes: string[]
   readonly resizes: Array<{ readonly cols: number; readonly rows: number }>
+  readonly scrolls: number[]
   onResizeSubscriptions: number
   opened?: HTMLElement
   disposed: boolean
+  alternateScreen: boolean
+  mouseTracking: boolean
   /** Fires the terminal's own reply synchronously inside the next write. */
   replyOnWrite?: string
+  wheelHandler?: (event: WheelEvent) => boolean
   emitData: (data: string) => void
 }
 
@@ -22,18 +26,25 @@ const initCalls = vi.hoisted(() => ({ urls: [] as string[] }))
 vi.mock('ghostty-web', () => {
   class Terminal {
     readonly options: Record<string, unknown>
+    readonly cols: number
+    readonly rows: number
     private readonly dataListeners = new Set<(data: string) => void>()
     private readonly state: FakeTerminalState
     element?: HTMLElement
 
     constructor(options: Record<string, unknown>) {
       this.options = { ...options }
+      this.cols = Number(options['cols'])
+      this.rows = Number(options['rows'])
       const state: FakeTerminalState = {
         options: this.options,
         writes: [],
         resizes: [],
+        scrolls: [],
         onResizeSubscriptions: 0,
         disposed: false,
+        alternateScreen: false,
+        mouseTracking: false,
         emitData: (data) => {
           for (const listener of this.dataListeners) listener(data)
         },
@@ -41,6 +52,14 @@ vi.mock('ghostty-web', () => {
       this.state = state
       fakes.push(state)
     }
+
+    readonly wasmTerm = {
+      isAlternateScreen: () => this.state.alternateScreen,
+      hasMouseTracking: () => this.state.mouseTracking,
+      getMode: () => false,
+    }
+
+    readonly renderer = { charWidth: 8, charHeight: 16 }
 
     readonly onData = (listener: (data: string) => void) => {
       this.dataListeners.add(listener)
@@ -59,6 +78,10 @@ vi.mock('ghostty-web', () => {
       this.state.opened = parent
     }
 
+    attachCustomWheelEventHandler(handler: (event: WheelEvent) => boolean): void {
+      this.state.wheelHandler = handler
+    }
+
     write(data: string): void {
       this.state.writes.push(data)
       const reply = this.state.replyOnWrite
@@ -67,6 +90,10 @@ vi.mock('ghostty-web', () => {
 
     resize(cols: number, rows: number): void {
       this.state.resizes.push({ cols, rows })
+    }
+
+    scrollLines(amount: number): void {
+      this.state.scrolls.push(amount)
     }
 
     dispose(): void {
@@ -83,6 +110,9 @@ vi.mock('ghostty-web', () => {
   }
 })
 
+const PAGE_UP = '\x1b[5~'
+const PAGE_DOWN = '\x1b[6~'
+
 beforeEach(() => {
   fakes.splice(0)
 })
@@ -90,6 +120,11 @@ beforeEach(() => {
 afterEach(() => {
   document.body.replaceChildren()
 })
+
+function wheel(fake: FakeTerminalState, deltaY: number): boolean {
+  if (fake.wheelHandler === undefined) throw new Error('no wheel handler attached')
+  return fake.wheelHandler(new WheelEvent('wheel', { deltaY, deltaMode: 0 }))
+}
 
 describe('ghostty companion pane', () => {
   it('constructs the terminal at the desktop geometry with input off and no fit', async () => {
@@ -116,9 +151,9 @@ describe('ghostty companion pane', () => {
     pane.setInputEnabled(true)
     const seen: string[] = []
     pane.events.onData((data, source) => seen.push(`${source}:${data}`))
-    fake.replyOnWrite = '\u001b[?1;2c'
-    pane.write('\u001b[c')
-    expect(fake.writes).toEqual(['\u001b[c'])
+    fake.replyOnWrite = '[?1;2c'
+    pane.write('[c')
+    expect(fake.writes).toEqual(['[c'])
     expect(seen).toEqual([])
     fake.emitData('\r')
     expect(seen).toEqual(['user:\r'])
@@ -148,6 +183,65 @@ describe('ghostty companion pane', () => {
     pane.resize(200, 50)
     expect(fake.resizes).toEqual([{ cols: 200, rows: 50 }])
     expect(fake.onResizeSubscriptions).toBe(0)
+  })
+
+  it('scrollLines moves the emulator viewport on the normal screen', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    const seen: string[] = []
+    pane.events.onData((data) => seen.push(data))
+    pane.scrollLines(-3)
+    pane.scrollLines(2)
+    expect(fake.scrolls).toEqual([-3, 2])
+    expect(seen).toEqual([])
+  })
+
+  it('wheel on the normal screen is left to the emulator viewport', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    pane.setInputEnabled(true)
+    const seen: string[] = []
+    pane.events.onData((data) => seen.push(data))
+    expect(wheel(fake, 96)).toBe(false)
+    expect(seen).toEqual([])
+    expect(fake.scrolls).toEqual([])
+  })
+
+  it('wheel on the alternate screen sends page keys through the input gate and never scrolls the viewport', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    fake.alternateScreen = true
+    const seen: string[] = []
+    pane.events.onData((data) => seen.push(data))
+    expect(wheel(fake, 96)).toBe(true)
+    expect(seen).toEqual([])
+    pane.setInputEnabled(true)
+    expect(wheel(fake, 96)).toBe(true)
+    expect(wheel(fake, -96)).toBe(true)
+    expect(seen).toEqual([PAGE_DOWN, PAGE_UP])
+    expect(fake.scrolls).toEqual([])
+  })
+
+  it('rows on the alternate screen send nothing while disarmed and page keys while armed', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    fake.alternateScreen = true
+    const seen: string[] = []
+    pane.events.onData((data) => seen.push(data))
+    pane.scrollLines(3)
+    expect(seen).toEqual([])
+    expect(fake.scrolls).toEqual([])
+    pane.setInputEnabled(true)
+    pane.scrollLines(1)
+    pane.scrollLines(1)
+    pane.scrollLines(1)
+    pane.scrollLines(-3)
+    expect(seen).toEqual([PAGE_DOWN, PAGE_UP])
+    expect(fake.scrolls).toEqual([])
   })
 
   it('loads the wasm through a bundle url once per document', async () => {

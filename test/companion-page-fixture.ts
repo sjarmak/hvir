@@ -184,11 +184,16 @@ export class FakeCompanionServer {
   }
 }
 
+/** The fake grid's cell size: happy-dom lays nothing out, so the pane reports its own. */
+export const FAKE_CELL_WIDTH = 8
+export const FAKE_CELL_HEIGHT = 16
+
 /** A pane the page test drives by hand: records every call, emits key bytes. */
 export class FakeCompanionPane implements CompanionTerminalPane {
   readonly writes: string[] = []
   readonly resizes: Array<{ readonly cols: number; readonly rows: number }> = []
   readonly inputEnabled: boolean[] = []
+  readonly scrolls: number[] = []
   mounted?: HTMLElement
   disposed = false
   private readonly listeners = new Set<(data: string, source: 'user') => void>()
@@ -211,6 +216,12 @@ export class FakeCompanionPane implements CompanionTerminalPane {
     this.mounted = container
     const surface = document.createElement('div')
     surface.className = 'fake-pane'
+    Object.defineProperty(surface, 'offsetWidth', {
+      get: () => (this.resizes.at(-1)?.cols ?? this.cols) * FAKE_CELL_WIDTH,
+    })
+    Object.defineProperty(surface, 'offsetHeight', {
+      get: () => (this.resizes.at(-1)?.rows ?? this.rows) * FAKE_CELL_HEIGHT,
+    })
     container.append(surface)
   }
 
@@ -220,6 +231,10 @@ export class FakeCompanionPane implements CompanionTerminalPane {
 
   resize(cols: number, rows: number): void {
     this.resizes.push({ cols, rows })
+  }
+
+  scrollLines(amount: number): void {
+    this.scrolls.push(amount)
   }
 
   setInputEnabled(enabled: boolean): void {

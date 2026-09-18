@@ -4,7 +4,7 @@ import {
   TerminalWheelController,
   type TerminalWheelEvent,
   type TerminalWheelState,
-} from '../src/renderer/src/terminal/terminal-wheel'
+} from '../src/shared/terminal-wheel'
 
 const baseState: TerminalWheelState = {
   alternateScreen: false,

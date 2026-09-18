@@ -1,15 +1,24 @@
 /**
  * One mirror's pane inside the terminal view: created at the geometry the
  * `opened` frame names, fed the tail and every later frame, replaced when a
- * new `opened` arrives, and scaled to the host's width. The pane is built
+ * new `opened` arrives, and scaled into the host. The pane is built
  * asynchronously (the emulator loads its module first), so frames that land
  * before it is ready are queued in order and written once it mounts.
  *
  * The grid is the desktop's: geometry frames resize the pane, and nothing
- * here ever reports a size back. Fit to width is a CSS transform on the
- * pane's surface, so the emulator keeps its exact cell grid.
+ * here ever reports a size back. Zoom is a CSS transform on the pane's
+ * surface, so the emulator keeps its exact cell grid; the extent around the
+ * surface takes the scaled size, so the host scrolls over exactly the grid.
+ * A touch drag over the host scrolls the pane by rows; wheel input reaches
+ * the pane directly.
  */
 import type { CompanionTerminalEvent } from '../../../shared'
+import { MirrorScrollGestures } from './companion-mirror-scroll'
+import {
+  DEFAULT_MIRROR_ZOOM,
+  mirrorScale,
+  type CompanionMirrorZoom,
+} from './companion-mirror-zoom'
 import type {
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
@@ -25,9 +34,14 @@ export class CompanionTerminalMount {
   private pane?: CompanionTerminalPane
   private pending?: PendingPane
   private inputEnabled = false
+  private zoom: CompanionMirrorZoom = DEFAULT_MIRROR_ZOOM
+  private rows = 0
+  private scale = 1
   private disposed = false
+  private readonly extent: HTMLDivElement
   private readonly surface: HTMLDivElement
   private readonly observer: ResizeObserver
+  private readonly gestures: MirrorScrollGestures
 
   constructor(
     private readonly host: HTMLElement,
@@ -35,11 +49,18 @@ export class CompanionTerminalMount {
     private readonly onInput: (data: string) => void,
     private readonly onFailure: (error: unknown) => void,
   ) {
+    this.extent = document.createElement('div')
+    this.extent.className = 'companion-terminal-extent'
     this.surface = document.createElement('div')
     this.surface.className = 'companion-terminal-scale'
-    host.append(this.surface)
+    this.extent.append(this.surface)
+    host.append(this.extent)
     this.observer = new ResizeObserver(() => this.fit())
     this.observer.observe(host)
+    this.gestures = new MirrorScrollGestures(host, {
+      rowHeight: () => this.rowHeight(),
+      scrollLines: (lines) => this.pane?.scrollLines(lines),
+    })
   }
 
   handle(event: CompanionTerminalEvent): void {
@@ -52,6 +73,7 @@ export class CompanionTerminalMount {
         else this.pending?.frames.push(event.data)
         return
       case 'geometry':
+        this.rows = event.rows
         if (this.pane !== undefined) {
           this.pane.resize(event.cols, event.rows)
           this.fit()
@@ -69,18 +91,25 @@ export class CompanionTerminalMount {
     this.pane?.setInputEnabled(enabled)
   }
 
+  setZoom(zoom: CompanionMirrorZoom): void {
+    this.zoom = zoom
+    this.fit()
+  }
+
   dispose(): void {
     this.disposed = true
     this.observer.disconnect()
+    this.gestures.dispose()
     this.pane?.dispose()
     this.pane = undefined
     this.pending = undefined
-    this.surface.remove()
+    this.extent.remove()
   }
 
   private open(cols: number, rows: number, tail: string): void {
     this.pane?.dispose()
     this.pane = undefined
+    this.rows = rows
     this.surface.replaceChildren()
     const pending: PendingPane = { created: this.createPane(cols, rows), frames: [tail] }
     this.pending = pending
@@ -125,15 +154,32 @@ export class CompanionTerminalMount {
     this.onFailure(error)
   }
 
-  /** Scales the surface down to the host width; a grid narrower than the host stays 1:1. */
-  private fit(): void {
+  private grid(): HTMLElement | undefined {
     const grid = this.surface.firstElementChild
-    if (!(grid instanceof HTMLElement)) return
-    const hostWidth = this.host.clientWidth
-    const gridWidth = grid.offsetWidth
-    if (hostWidth <= 0 || gridWidth <= 0) return
-    const scale = Math.min(1, hostWidth / gridWidth)
+    return grid instanceof HTMLElement ? grid : undefined
+  }
+
+  /** One row's height on screen: the grid's unscaled height per row, scaled. */
+  private rowHeight(): number {
+    const grid = this.grid()
+    if (grid === undefined || this.rows <= 0) return 0
+    return (grid.offsetHeight / this.rows) * this.scale
+  }
+
+  /** Applies the zoom's scale to the surface and sizes the extent to match. */
+  private fit(): void {
+    const grid = this.grid()
+    if (grid === undefined) return
+    const scale = mirrorScale(this.zoom, {
+      hostWidth: this.host.clientWidth,
+      hostHeight: this.host.clientHeight,
+      gridWidth: grid.offsetWidth,
+      gridHeight: grid.offsetHeight,
+    })
+    if (scale === undefined) return
+    this.scale = scale
     this.surface.style.transform = `scale(${scale})`
-    this.host.style.height = `${Math.ceil(grid.offsetHeight * scale)}px`
+    this.extent.style.width = `${Math.ceil(grid.offsetWidth * scale)}px`
+    this.extent.style.height = `${Math.ceil(grid.offsetHeight * scale)}px`
   }
 }

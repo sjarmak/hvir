@@ -12,10 +12,11 @@ import {
 } from 'ghostty-web'
 import ghosttyWasmUrl from 'ghostty-web/ghostty-vt.wasm?url'
 
-import type {
-  ComposerSubmitMode,
-  Disposer,
-  HarnessModifiedKeyProtocol,
+import {
+  TerminalWheelController,
+  type ComposerSubmitMode,
+  type Disposer,
+  type HarnessModifiedKeyProtocol,
 } from '../../../shared'
 import type {
   TerminalEvent,
@@ -48,7 +49,6 @@ import {
   ghosttyClipboardPasteFallback,
   ghosttyKeyboardOverride,
 } from './ghostty-terminal-keyboard'
-import { TerminalWheelController } from './terminal-wheel'
 
 let initializeGhostty: Promise<void> | undefined
 const TERMINAL_SCROLLBACK_BYTES = 10_000_000

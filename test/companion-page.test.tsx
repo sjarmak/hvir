@@ -1,121 +1,33 @@
 // @vitest-environment happy-dom
 
-import { act, createElement } from 'react'
-import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { act } from 'react'
+import { describe, expect, it } from 'vitest'
 
-import { CompanionApp } from '../src/renderer/companion/src/App'
-import {
-  COMPANION_TOKEN_STORAGE_KEY,
-  browserTokenStore,
-  createCompanionClient,
-} from '../src/renderer/companion/src/companion-client'
+import { COMPANION_TOKEN_STORAGE_KEY } from '../src/renderer/companion/src/companion-client'
 import { COMPANION_KEYS } from '../src/renderer/companion/src/companion-keys'
+import { row, snapshot, transcript } from './companion-page-fixture'
 import {
-  FakeCompanionServer,
-  fakePaneFactory,
-  row,
-  snapshot,
-  transcript,
-} from './companion-page-fixture'
+  MIRROR_ROW,
+  NOT_PROJECTED,
+  armButton,
+  button,
+  click,
+  emit,
+  hide,
+  host,
+  openMirror,
+  panes,
+  render,
+  renderPaired,
+  rowHandles,
+  server,
+  settle,
+  type,
+  unmountPage,
+  useCompanionPage,
+} from './companion-page-harness'
 
-let host: HTMLDivElement
-let root: Root
-let server: FakeCompanionServer
-let panes: ReturnType<typeof fakePaneFactory>
-
-beforeEach(() => {
-  ;(
-    globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
-  ).IS_REACT_ACT_ENVIRONMENT = true
-  localStorage.clear()
-  host = document.createElement('div')
-  document.body.append(host)
-  root = createRoot(host)
-  server = new FakeCompanionServer()
-  panes = fakePaneFactory()
-  // The page must never reach for the desktop bridge (ADR-049 module boundary).
-  Object.defineProperty(window, 'hvir', {
-    configurable: true,
-    get: () => {
-      throw new Error('window.hvir was read by the Companion page')
-    },
-  })
-})
-
-afterEach(() => {
-  act(() => root.unmount())
-  host.remove()
-  delete (window as unknown as { hvir?: unknown }).hvir
-  delete (document as unknown as { hidden?: unknown }).hidden
-})
-
-async function settle(): Promise<void> {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  })
-}
-
-async function render(): Promise<void> {
-  const client = createCompanionClient({
-    fetch: server.fetch,
-    tokens: browserTokenStore(() => localStorage),
-  })
-  await act(async () => {
-    root.render(createElement(CompanionApp, { client, createPane: panes.createPane }))
-    await Promise.resolve()
-  })
-  await settle()
-}
-
-async function renderPaired(): Promise<void> {
-  localStorage.setItem(COMPANION_TOKEN_STORAGE_KEY, server.token)
-  await render()
-}
-
-async function emit(event: string, data: unknown): Promise<void> {
-  act(() => {
-    server.emit(event, data)
-  })
-  await settle()
-}
-
-function button(label: string): HTMLButtonElement {
-  const element = [...host.querySelectorAll('button')].find(
-    (candidate) => candidate.textContent?.trim() === label,
-  )
-  if (element === undefined) throw new Error(`missing button ${label}`)
-  return element
-}
-
-async function click(element: HTMLElement): Promise<void> {
-  await act(async () => {
-    element.click()
-    await Promise.resolve()
-  })
-  await settle()
-}
-
-async function type(selector: string, value: string): Promise<void> {
-  await act(async () => {
-    const element = host.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector)
-    if (element === null) throw new Error(`missing ${selector}`)
-    const prototype =
-      element instanceof HTMLTextAreaElement
-        ? HTMLTextAreaElement.prototype
-        : HTMLInputElement.prototype
-    Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(element, value)
-    element.dispatchEvent(new Event('input', { bubbles: true }))
-    await Promise.resolve()
-  })
-}
-
-function rowHandles(): string[] {
-  return [...host.querySelectorAll<HTMLElement>('.companion-row')].map(
-    (element) => element.dataset['handle'] ?? '',
-  )
-}
+useCompanionPage()
 
 const READY_ROW = row({
   handle: 'ready-1',
@@ -371,48 +283,10 @@ describe('Companion page', () => {
   it('closes the stream when the page unmounts', async () => {
     await renderPaired()
     await emit('snapshot', snapshot(1, [READY_ROW]))
-    act(() => root.unmount())
-    root = createRoot(host)
+    unmountPage()
     expect(() => server.emit('snapshot', snapshot(2, []))).toThrow('no open event stream')
   })
 })
-
-const MIRROR_ROW = row({
-  handle: 'term-1',
-  title: 'claude in shell',
-  origin: { kind: 'hvir-terminal' },
-  canAnswer: false,
-  canMirror: true,
-})
-const NOT_PROJECTED = transcript({
-  handle: 'term-1',
-  status: 'unavailable',
-  reason: 'not-projected',
-  stream: 'closed',
-})
-
-async function openMirror(tail = '$ '): Promise<void> {
-  server.transcriptReply = NOT_PROJECTED
-  await renderPaired()
-  await emit('snapshot', snapshot(1, [MIRROR_ROW]))
-  await click(host.querySelector<HTMLElement>('.companion-row') as HTMLElement)
-  await emit('terminal', { type: 'opened', handle: 'term-1', cols: 132, rows: 43, tail })
-}
-
-function armButton(): HTMLButtonElement {
-  const element = host.querySelector<HTMLButtonElement>('.companion-arm')
-  if (element === null) throw new Error('missing arm control')
-  return element
-}
-
-async function hide(): Promise<void> {
-  Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
-  await act(async () => {
-    document.dispatchEvent(new Event('visibilitychange'))
-    await Promise.resolve()
-  })
-  await settle()
-}
 
 describe('Companion page terminal mirror', () => {
   it('selecting a canMirror row mounts a pane at the desktop geometry and writes the tail then output', async () => {
@@ -442,7 +316,10 @@ describe('Companion page terminal mirror', () => {
     await emit('snapshot', snapshot(2, [prompted]))
     const line = host.querySelector('.companion-mirror-prompt')
     expect(line?.textContent).toBe('Claude needs your permission')
-    expect(line?.nextElementSibling?.classList.contains('companion-terminal-host')).toBe(
+    const header = host.querySelector('.companion-mirror-header')
+    expect(line?.parentElement).toBe(header)
+    expect(header?.lastElementChild).toBe(line)
+    expect(header?.nextElementSibling?.classList.contains('companion-terminal-area')).toBe(
       true,
     )
     expect(host.querySelector('.companion-terminal')).not.toBeNull()
@@ -491,10 +368,10 @@ describe('Companion page terminal mirror', () => {
     await openMirror()
     const pane = panes.panes[0]!
     expect(armButton().dataset['armed']).toBe('false')
+    expect(armButton().getAttribute('aria-pressed')).toBe('false')
     expect(pane.inputEnabled.at(-1)).toBe(false)
-    for (const key of COMPANION_KEYS) {
-      expect(button(key.label).disabled).toBe(true)
-    }
+    expect(host.querySelector('.companion-keys')).toBeNull()
+    expect(host.querySelector('#companion-terminal-text')).toBeNull()
     await act(async () => {
       pane.emitData('\r')
       await Promise.resolve()
@@ -504,7 +381,13 @@ describe('Companion page terminal mirror', () => {
 
     await click(armButton())
     expect(armButton().dataset['armed']).toBe('true')
+    expect(armButton().getAttribute('aria-pressed')).toBe('true')
     expect(pane.inputEnabled.at(-1)).toBe(true)
+    expect(
+      [...host.querySelectorAll('.companion-keys .companion-key')].map((key) =>
+        key.textContent?.trim(),
+      ),
+    ).toEqual(COMPANION_KEYS.map((key) => key.label))
     for (const key of COMPANION_KEYS) {
       await click(button(key.label))
       expect(server.calls.at(-1)).toMatchObject({
@@ -544,6 +427,8 @@ describe('Companion page terminal mirror', () => {
     await click(armButton())
     expect(armButton().dataset['armed']).toBe('false')
     expect(pane.inputEnabled.at(-1)).toBe(false)
+    expect(host.querySelector('.companion-keys')).toBeNull()
+    expect(host.querySelector('#companion-terminal-text')).toBeNull()
   })
 
   it('hiding the page disarms; pagehide disarms', async () => {
@@ -574,9 +459,9 @@ describe('Companion page terminal mirror', () => {
     )
     expect(host.textContent).not.toContain('exited')
     expect(armButton().dataset['armed']).toBe('false')
-    for (const key of COMPANION_KEYS) {
-      expect(button(key.label).disabled).toBe(true)
-    }
+    expect(armButton().disabled).toBe(true)
+    expect(host.querySelector('.companion-keys')).toBeNull()
+    expect(host.querySelector('#companion-terminal-text')).toBeNull()
     expect(panes.panes[0]?.disposed).toBe(false)
   })
 
@@ -711,9 +596,7 @@ describe('Companion page terminal mirror', () => {
     expect(armButton().dataset['armed']).toBe('false')
     expect(panes.panes).toHaveLength(2)
     expect(panes.panes[1]?.inputEnabled).toEqual([false])
-    for (const key of COMPANION_KEYS) {
-      expect(button(key.label).disabled).toBe(true)
-    }
+    expect(host.querySelector('.companion-keys')).toBeNull()
     await act(async () => {
       panes.panes[1]?.emitData('\r')
       await Promise.resolve()
