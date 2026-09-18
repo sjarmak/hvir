@@ -66,6 +66,29 @@ describe('SessionsProjectionCoordinator', () => {
     })
   })
 
+  it('projects a prompt with its body from the renderer session (ADR-051)', () => {
+    const rows = joinSessionsProjection(
+      observation(1, [observed('asked', 'workspace-a', 'live'), observed('bare', 'workspace-a')]),
+      [
+        renderer('asked', 'workspace-a', {
+          attention: 'prompt',
+          promptBody: 'Claude needs your permission',
+        }),
+        renderer('bare', 'workspace-a', { attention: 'prompt' }),
+      ],
+    )
+
+    expect(rows.find((row) => row.handle === 'asked')).toMatchObject({
+      attention: { status: 'available', value: 'prompt' },
+      promptBody: 'Claude needs your permission',
+      working: { status: 'available', value: false },
+    })
+    expect(rows.find((row) => row.handle === 'bare')).toMatchObject({
+      attention: { status: 'available', value: 'prompt' },
+    })
+    expect(rows.find((row) => row.handle === 'bare')).not.toHaveProperty('promptBody')
+  })
+
   it('takes the attention a source declared for a row hvir runs no terminal for', () => {
     const rows = joinSessionsProjection(
       observation(1, [

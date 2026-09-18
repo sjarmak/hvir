@@ -5,6 +5,7 @@ import {
   asHarnessProfileId,
   hostPath,
   isHarnessProviderId,
+  isTerminalAttentionState,
   type HarnessProviderId,
   type HarnessProfileId,
   type HostPath,
@@ -890,7 +891,7 @@ function parseStoredSession(value: unknown): StoredTerminalSession | undefined {
     position < 0 ||
     position >= MAX_SESSIONS ||
     typeof active !== 'boolean' ||
-    (attention !== undefined && !isTerminalAttention(attention)) ||
+    (attention !== undefined && !isTerminalAttentionState(attention)) ||
     typeof updatedAt !== 'number' ||
     !Number.isFinite(updatedAt) ||
     updatedAt < 0
@@ -1000,10 +1001,6 @@ function isHarnessSessionId(value: string): boolean {
     !/\s/.test(value) &&
     !hasControlCharacter(value)
   )
-}
-
-function isTerminalAttention(value: unknown): value is TerminalAttentionState {
-  return value === 'working' || value === 'bell' || value === 'idle'
 }
 
 function hasControlCharacter(value: string): boolean {

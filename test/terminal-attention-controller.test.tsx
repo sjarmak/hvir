@@ -96,12 +96,74 @@ describe('terminal attention controller', () => {
     }
   })
 
+  it('raises a prompt with its body at once, with no Enter and no quiet period', () => {
+    act(() => {
+      controller?.raiseAttention(session.id, 'prompt', 'Claude needs your permission')
+    })
+    expect(session.attention).toBe('prompt')
+    expect(session.promptBody).toBe('Claude needs your permission')
+
+    // Output resuming never clears it, and Ready cannot displace it.
+    act(() => {
+      controller?.recordInput(session.id, '\r')
+      controller?.recordOutput(session.id)
+      vi.advanceTimersByTime(1_000)
+    })
+    expect(session.attention).toBe('prompt')
+    expect(session.promptBody).toBe('Claude needs your permission')
+
+    act(() => {
+      controller?.raiseAttention(session.id, 'bell')
+      controller?.raiseAttention(session.id, 'prompt', 'Claude is waiting for your input')
+    })
+    expect(session.attention).toBe('prompt')
+    expect(session.promptBody).toBe('Claude is waiting for your input')
+  })
+
+  it('clears only a prompt on mirror input, and still arms Ready like a desktop Enter', () => {
+    act(() => {
+      controller?.raiseAttention(session.id, 'prompt', 'Claude needs your permission')
+      controller?.recordMirrorInput(session.id, 'y')
+    })
+    expect(session.attention).toBeUndefined()
+    expect(session.promptBody).toBeUndefined()
+
+    act(() => {
+      controller?.recordMirrorInput(session.id, '\r')
+      controller?.recordOutput(session.id)
+      vi.advanceTimersByTime(1_000)
+    })
+    expect(session.attention).toBe('idle')
+
+    act(() => {
+      controller?.recordMirrorInput(session.id, 'more\r')
+    })
+    expect(session.attention).toBe('idle')
+
+    act(() => {
+      controller?.raiseAttention(session.id, 'bell')
+      controller?.recordMirrorInput(session.id, '\r')
+    })
+    expect(session.attention).toBe('idle')
+    session = { ...session, attention: 'bell' }
+    act(() => {
+      controller?.recordMirrorInput(session.id, '\r')
+    })
+    expect(session.attention).toBe('bell')
+  })
+
   it('publishes Working separately from actionable attention and clears both on cleanup', () => {
     const onRollup = vi.fn()
     const sessions = [
       { ...terminalSession(), attention: 'working' as const },
       { ...terminalSession(), id: 'terminal-2', attention: 'idle' as const },
       { ...terminalSession(), id: 'terminal-3', attention: 'bell' as const },
+      {
+        ...terminalSession(),
+        id: 'terminal-4',
+        attention: 'prompt' as const,
+        promptBody: 'Claude needs your permission',
+      },
     ]
 
     act(() => {
@@ -114,11 +176,17 @@ describe('terminal attention controller', () => {
       )
     })
     expect(onRollup).toHaveBeenLastCalledWith('workspace:local:/repo', {
-      actionable: 2,
+      actionable: 3,
       working: 1,
       entries: [
         { handle: 'terminal-2', kind: 'ready', freshness: 'fresh' },
         { handle: 'terminal-3', kind: 'bell', freshness: 'fresh' },
+        {
+          handle: 'terminal-4',
+          kind: 'prompt',
+          freshness: 'fresh',
+          body: 'Claude needs your permission',
+        },
       ],
     })
 
@@ -156,6 +224,16 @@ describe('terminal attention controller', () => {
       actionable: 1,
       working: 0,
       entries: [{ handle: 'terminal-1', kind: 'bell', freshness: 'fresh' }],
+    })
+
+    // The same prompt with a new message is a new entry (ADR-051).
+    render([{ ...terminalSession(), attention: 'prompt', promptBody: 'first' }])
+    render([{ ...terminalSession(), attention: 'prompt', promptBody: 'second' }])
+    expect(onRollup).toHaveBeenCalledTimes(4)
+    expect(onRollup).toHaveBeenLastCalledWith('workspace:local:/repo', {
+      actionable: 1,
+      working: 0,
+      entries: [{ handle: 'terminal-1', kind: 'prompt', freshness: 'fresh', body: 'second' }],
     })
   })
 })

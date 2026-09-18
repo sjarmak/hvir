@@ -3,8 +3,8 @@ import { useCallback, useEffect, useRef } from 'react'
 import type { ActionableAttentionEntry } from '../../../shared'
 import {
   actionableEntriesFingerprint,
-  nextTerminalAttention,
   terminalActionableEntries,
+  terminalAttentionAfterSignal,
   terminalIdleAttentionAfterInput,
   terminalOutputAttentionDecision,
   terminalWorkingCount,
@@ -110,20 +110,41 @@ export function useTerminalAttentionController({
     [clearTimer],
   )
 
-  const raiseAttention = useCallback((id: string, attention: TerminalAttention): void => {
-    const focused = focusedTerminal.current === id && appFocused.current
-    updateRef.current(id, (session) => {
-      const nextAttention = nextTerminalAttention(session.attention, attention, focused)
-      return nextAttention === session.attention
-        ? session
-        : { ...session, attention: nextAttention }
-    })
-  }, [])
+  /** A signal from the terminal; only a prompt brings a body (ADR-051). */
+  const raiseAttention = useCallback(
+    (id: string, attention: TerminalAttention, body?: string): void => {
+      const focused = focusedTerminal.current === id && appFocused.current
+      updateRef.current(id, (session) => {
+        const next = terminalAttentionAfterSignal(session, attention, body, focused)
+        return next.attention === session.attention && next.promptBody === session.promptBody
+          ? session
+          : { ...session, attention: next.attention, promptBody: next.promptBody }
+      })
+    },
+    [],
+  )
 
   const recordInput = useCallback((id: string, data: string): void => {
     const current = idleStates.current.get(id) ?? 'initial'
     idleStates.current.set(id, terminalIdleAttentionAfterInput(current, data))
   }, [])
+
+  /**
+   * Input the Companion mirror already wrote to the PTY (ADR-050). It arms
+   * Ready exactly like keyboard input, and it answers a prompt: a keystroke
+   * into the mirrored terminal clears a prompt and nothing else (ADR-051).
+   */
+  const recordMirrorInput = useCallback(
+    (id: string, data: string): void => {
+      recordInput(id, data)
+      updateRef.current(id, (session) =>
+        session.attention === 'prompt'
+          ? { ...session, attention: undefined, promptBody: undefined }
+          : session,
+      )
+    },
+    [recordInput],
+  )
 
   const recordOutput = useCallback(
     (id: string): void => {
@@ -155,6 +176,7 @@ export function useTerminalAttentionController({
     forgetSession,
     raiseAttention,
     recordInput,
+    recordMirrorInput,
     recordOutput,
   }
 }

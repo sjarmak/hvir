@@ -17,6 +17,8 @@ export interface SessionsRendererSession {
   readonly exited: boolean
   readonly recoveryUnavailable: boolean
   readonly attention?: TerminalAttentionState
+  /** The notification's message; present only with a `prompt` attention (ADR-051). */
+  readonly promptBody?: string
 }
 
 /** Read-only view of already materialized renderer terminal owners. */

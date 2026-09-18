@@ -72,8 +72,12 @@ export interface TerminalRuntimeOptions {
   readonly onFreshStarted: (started: FreshTerminalStart) => void
   readonly onCapabilities: (capabilities: HarnessProviderCapabilities) => void
   readonly onInput: (data: string) => void
+  /** Input a Companion mirror already wrote to this terminal's PTY (ADR-050). */
+  readonly onMirrorInput: (data: string) => void
   readonly onOutput: () => void
   readonly onBell: () => void
+  /** The program's notification, with its bounded body when it had one (ADR-051). */
+  readonly onNotification: (body: string | undefined) => void
   readonly onFocus: () => void
   readonly onLink: (activation: TerminalLinkActivation) => void
 }

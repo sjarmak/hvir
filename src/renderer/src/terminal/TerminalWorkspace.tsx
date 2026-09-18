@@ -203,6 +203,7 @@ export function TerminalWorkspace({
           exited: runtime?.exited === true,
           recoveryUnavailable: runtime?.recoveryFailure !== undefined,
           attention: session.attention,
+          promptBody: session.promptBody,
         }
       }),
     )
@@ -235,6 +236,7 @@ export function TerminalWorkspace({
     forgetSession: forgetAttentionSession,
     raiseAttention,
     recordInput,
+    recordMirrorInput,
     recordOutput,
   } = useTerminalAttentionController({
     idleThresholdMs: preferences.idleThresholdMs,
@@ -377,8 +379,10 @@ export function TerminalWorkspace({
         onForkStartFailed={commands.failForkStart}
         onExit={commands.handleExit}
         onInput={recordInput}
+        onMirrorInput={recordMirrorInput}
         onOutput={recordOutput}
         onBell={(id) => raiseAttention(id, 'bell')}
+        onNotification={(id, body) => raiseAttention(id, 'prompt', body)}
         onFocus={commands.focus}
         onLink={(session, activation) => {
           if (activation.kind === 'file') {

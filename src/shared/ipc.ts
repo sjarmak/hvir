@@ -104,7 +104,7 @@ export {
 } from './ipc/web-pane'
 export { type ProjectRootResponse, type ProjectState } from './workspace-types'
 export { type OperationResult, unwrapOperation } from './operation-result'
-export type { TerminalAttentionState } from './terminal-attention'
+export { isTerminalAttentionState, type TerminalAttentionState } from './terminal-attention'
 
 const contract = composeIpcContracts(
   appIpc,

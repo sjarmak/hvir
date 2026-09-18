@@ -83,8 +83,10 @@ interface TerminalViewProps {
   readonly onFreshStarted: (started: FreshTerminalStart) => void
   readonly onCapabilities: (capabilities: HarnessProviderCapabilities) => void
   readonly onInput: (data: string) => void
+  readonly onMirrorInput: (data: string) => void
   readonly onOutput: () => void
   readonly onBell: () => void
+  readonly onNotification: (body: string | undefined) => void
   readonly onFocus: () => void
   readonly onLink: (activation: TerminalLinkActivation) => void
   readonly onSplit: () => void

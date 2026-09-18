@@ -57,6 +57,63 @@ describe('companion rows', () => {
     ])
   })
 
+  it('carries a prompt entry as prompt attention with its body (ADR-051)', () => {
+    const rows = companionRows({
+      observation: observation([terminal(TERMINAL, 'Codex')]),
+      actionable: [
+        entry({
+          key: TERMINAL,
+          kind: 'prompt',
+          terminalHandle: TERMINAL,
+          body: 'Claude needs your permission',
+        }),
+      ],
+      resolveExternal: () => undefined,
+    })
+
+    expect(rows[0]).toMatchObject({
+      attention: { status: 'available', value: 'prompt' },
+      promptBody: 'Claude needs your permission',
+    })
+    expect(
+      isCompanionSnapshot({ version: 1, revision: 1, demandGeneration: 1, rows }),
+    ).toBe(true)
+  })
+
+  it('drops the body of a prompt entry whose attention is no longer an available prompt', () => {
+    const rows = companionRows({
+      observation: observation([terminal(TERMINAL, 'Codex')]),
+      actionable: [
+        entry({
+          key: TERMINAL,
+          kind: 'prompt',
+          terminalHandle: TERMINAL,
+          freshness: 'stale',
+          reason: 'closed',
+          body: 'Claude needs your permission',
+        }),
+      ],
+      resolveExternal: () => undefined,
+    })
+
+    expect(rows[0]?.attention).toEqual({ status: 'unavailable', reason: 'source-stale' })
+    expect(rows[0]).not.toHaveProperty('promptBody')
+    expect(
+      isCompanionSnapshot({ version: 1, revision: 1, demandGeneration: 1, rows }),
+    ).toBe(true)
+  })
+
+  it('carries no promptBody for a prompt entry without one', () => {
+    const rows = companionRows({
+      observation: observation([terminal(TERMINAL, 'Codex')]),
+      actionable: [entry({ key: TERMINAL, kind: 'prompt', terminalHandle: TERMINAL })],
+      resolveExternal: () => undefined,
+    })
+
+    expect(rows[0]?.attention).toEqual({ status: 'available', value: 'prompt' })
+    expect(rows[0]).not.toHaveProperty('promptBody')
+  })
+
   it('canMirror follows companionMirrorEligible', () => {
     const rows = companionRows({
       observation: observation([

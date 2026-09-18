@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TerminalRuntimeOptions } from '../src/renderer/src/terminal/terminal-runtime-options'
 import { terminalThemeForAppearance } from '../src/renderer/src/terminal/terminal-palette'
 import { TerminalRuntimeRegistry } from '../src/renderer/src/terminal/terminal-runtime-registry'
-import type { TerminalPane } from '../src/renderer/src/terminal/terminal-pane'
+import type { TerminalEvent, TerminalPane } from '../src/renderer/src/terminal/terminal-pane'
 import { asHarnessProfileId, localPath, type StartPtyResponse } from '../src/shared'
 
 const paneFactory = vi.hoisted(() => vi.fn())
@@ -15,9 +15,18 @@ vi.mock('../src/renderer/src/terminal/terminal-pane-factory', () => ({
 
 const SESSION_ID = 'terminal-mirrored'
 
-function fakePane(): TerminalPane & { readonly write: ReturnType<typeof vi.fn> } {
+type FakePane = TerminalPane & {
+  readonly write: ReturnType<typeof vi.fn>
+  emitEvent(event: TerminalEvent): void
+}
+
+function fakePane(): FakePane {
   const noopDisposer = () => undefined
+  const eventHandlers: Array<(event: TerminalEvent) => void> = []
   return {
+    emitEvent: (event: TerminalEvent) => {
+      for (const handler of eventHandlers) handler(event)
+    },
     mount: vi.fn(),
     reparent: vi.fn(),
     dispose: vi.fn(),
@@ -46,11 +55,14 @@ function fakePane(): TerminalPane & { readonly write: ReturnType<typeof vi.fn> }
     events: {
       onData: vi.fn(() => noopDisposer),
       onClipboardPaste: vi.fn(() => noopDisposer),
-      onEvent: vi.fn(() => noopDisposer),
+      onEvent: vi.fn((handler: (event: TerminalEvent) => void) => {
+        eventHandlers.push(handler)
+        return noopDisposer
+      }),
       onResize: vi.fn(() => noopDisposer),
       onLink: vi.fn(() => noopDisposer),
     },
-  } as unknown as TerminalPane & { readonly write: ReturnType<typeof vi.fn> }
+  } as unknown as FakePane
 }
 
 function startResponse(): StartPtyResponse {
@@ -96,8 +108,10 @@ function options(): TerminalRuntimeOptions {
     onFreshStarted: vi.fn(),
     onCapabilities: vi.fn(),
     onInput: vi.fn(),
+    onMirrorInput: vi.fn(),
     onOutput: vi.fn(),
     onBell: vi.fn(),
+    onNotification: vi.fn(),
     onFocus: vi.fn(),
     onLink: vi.fn(),
   }
@@ -130,7 +144,7 @@ describe('TerminalRuntime mirror input (ADR-050)', () => {
     paneFactory.mockReset()
   })
 
-  it('mirror input reaches onInput and never pty:write', async () => {
+  it('mirror input reaches onMirrorInput, not onInput, and never pty:write', async () => {
     const pane = fakePane()
     paneFactory.mockResolvedValue(pane)
     const { send, invoke, emit } = stubHvir()
@@ -145,10 +159,49 @@ describe('TerminalRuntime mirror input (ADR-050)', () => {
     emit('pty:mirror-input', { id: SESSION_ID, data: "printf 'done'\r" })
     emit('pty:mirror-input', { id: 'another-session', data: '\r' })
 
-    expect(runtimeOptions.onInput).toHaveBeenCalledExactlyOnceWith("printf 'done'\r")
+    expect(runtimeOptions.onMirrorInput).toHaveBeenCalledExactlyOnceWith("printf 'done'\r")
+    expect(runtimeOptions.onInput).not.toHaveBeenCalled()
     expect(send).not.toHaveBeenCalledWith('pty:write', expect.anything())
     expect(pane.write.mock.calls).not.toContainEqual(["printf 'done'\r"])
     expect(runtimeOptions.onOutput).not.toHaveBeenCalled()
+    runtime.dispose()
+  })
+})
+
+describe('TerminalRuntime notification (ADR-051)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    paneFactory.mockReset()
+  })
+
+  it('hands a notification body to onNotification and keeps the bell for BEL', async () => {
+    const pane = fakePane()
+    paneFactory.mockResolvedValue(pane)
+    const { invoke } = stubHvir()
+    const runtimeOptions = options()
+    const runtime = new TerminalRuntimeRegistry().acquire(runtimeOptions)
+    runtime.attach(document.createElement('div'))
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith('pty:start', expect.anything()),
+    )
+    await vi.waitFor(() => expect(runtimeOptions.onStarted).toHaveBeenCalled())
+
+    pane.emitEvent({
+      type: 'notification',
+      source: 'osc-9',
+      title: '',
+      body: 'Claude needs your permission',
+    })
+    pane.emitEvent({ type: 'notification', source: 'osc-777', title: 'Done', body: '' })
+    pane.emitEvent({ type: 'bell' })
+
+    expect(runtimeOptions.onNotification).toHaveBeenNthCalledWith(
+      1,
+      'Claude needs your permission',
+    )
+    expect(runtimeOptions.onNotification).toHaveBeenNthCalledWith(2, undefined)
+    expect(runtimeOptions.onBell).toHaveBeenCalledOnce()
+    expect(runtimeOptions.onInput).not.toHaveBeenCalled()
     runtime.dispose()
   })
 })

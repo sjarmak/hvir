@@ -49,8 +49,10 @@ export interface TerminalSessionRuntimesProps {
   readonly onForkStartFailed: (id: string, reason: string) => void
   readonly onExit: (id: string, exitCode: number) => void
   readonly onInput: (id: string, data: string) => void
+  readonly onMirrorInput: (id: string, data: string) => void
   readonly onOutput: (id: string) => void
   readonly onBell: (id: string) => void
+  readonly onNotification: (id: string, body: string | undefined) => void
   readonly onFocus: (id: string) => void
   readonly onLink: (session: TerminalSession, activation: TerminalLinkActivation) => void
   readonly onSplit: () => void
@@ -83,8 +85,10 @@ export function TerminalSessionRuntimes({
   onForkStartFailed,
   onExit,
   onInput,
+  onMirrorInput,
   onOutput,
   onBell,
+  onNotification,
   onFocus,
   onLink,
   onSplit,
@@ -191,8 +195,10 @@ export function TerminalSessionRuntimes({
               )
             }
             onInput={(data) => onInput(session.id, data)}
+            onMirrorInput={(data) => onMirrorInput(session.id, data)}
             onOutput={() => onOutput(session.id)}
             onBell={() => onBell(session.id)}
+            onNotification={(body) => onNotification(session.id, body)}
             onFocus={() => onFocus(session.id)}
             onLink={(activation) => onLink(session, activation)}
             onSplit={onSplit}

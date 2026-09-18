@@ -12,11 +12,20 @@ export interface TerminalOutputAttentionDecision {
   readonly scheduleIdle: boolean
 }
 
+/** What a terminal shows: its attention and, for a prompt, the message it came with. */
+export interface TerminalAttentionSnapshot {
+  readonly attention?: TerminalAttention
+  readonly promptBody?: string
+}
+
 const attentionPriority: Record<TerminalAttention, number> = {
   working: 1,
   bell: 2,
   idle: 3,
+  prompt: 4,
 }
+
+const ACTIONABLE: readonly TerminalAttention[] = ['idle', 'bell', 'prompt']
 
 export function nextTerminalAttention(
   current: TerminalAttention | undefined,
@@ -28,6 +37,24 @@ export function nextTerminalAttention(
     return current
   }
   return incoming
+}
+
+/**
+ * The snapshot after a signal. A prompt carries its latest message: a later
+ * notification replaces the body, a lower signal leaves it, and nothing else
+ * carries one (ADR-051).
+ */
+export function terminalAttentionAfterSignal(
+  current: TerminalAttentionSnapshot,
+  incoming: TerminalAttention,
+  body: string | undefined,
+  focused: boolean,
+): TerminalAttentionSnapshot {
+  const attention = nextTerminalAttention(current.attention, incoming, focused)
+  if (attention === undefined) return {}
+  if (attention !== 'prompt') return { attention }
+  const promptBody = incoming === 'prompt' ? body : current.promptBody
+  return promptBody === undefined ? { attention } : { attention, promptBody }
 }
 
 /**
@@ -55,23 +82,25 @@ export function terminalOutputAttentionDecision(
   }
 }
 
+const ATTENTION_LABELS: Record<TerminalAttention, string> = {
+  working: 'Working',
+  bell: 'Bell',
+  idle: 'Ready',
+  prompt: 'Prompt',
+}
+
 export function terminalAttentionLabel(attention: TerminalAttention): string {
-  if (attention === 'idle') return 'Ready'
-  if (attention === 'bell') return 'Bell'
-  return 'Working'
+  return ATTENTION_LABELS[attention]
 }
 
 export function terminalAttentionBadgeText(attention: TerminalAttention): string {
-  if (attention === 'idle') return 'ready'
-  if (attention === 'bell') return 'bell'
-  return 'working'
+  return ATTENTION_LABELS[attention].toLowerCase()
 }
 
 export function terminalActionableAttentionCount(
   attentions: readonly (TerminalAttention | undefined)[],
 ): number {
-  return attentions.filter((attention) => attention === 'idle' || attention === 'bell')
-    .length
+  return attentions.filter(isActionable).length
 }
 
 /**
@@ -80,15 +109,18 @@ export function terminalActionableAttentionCount(
  * is always a fresh claim, so no entry here is stale.
  */
 export function terminalActionableEntries(
-  sessions: readonly { readonly id: string; readonly attention?: TerminalAttention }[],
+  sessions: readonly ({ readonly id: string } & TerminalAttentionSnapshot)[],
 ): readonly ActionableAttentionEntry[] {
   const entries: ActionableAttentionEntry[] = []
   for (const session of sessions) {
-    if (session.attention !== 'idle' && session.attention !== 'bell') continue
+    if (!isActionable(session.attention)) continue
     entries.push({
       handle: asSessionsTerminalHandle(session.id),
-      kind: session.attention === 'idle' ? 'ready' : 'bell',
+      kind: session.attention === 'idle' ? 'ready' : session.attention,
       freshness: 'fresh',
+      ...(session.attention === 'prompt' && session.promptBody !== undefined
+        ? { body: session.promptBody }
+        : {}),
     })
   }
   return entries
@@ -98,11 +130,17 @@ export function terminalActionableEntries(
 export function actionableEntriesFingerprint(
   entries: readonly ActionableAttentionEntry[],
 ): string {
-  return entries.map((entry) => `${entry.handle}:${entry.kind}`).join('|')
+  return JSON.stringify(entries.map((entry) => [entry.handle, entry.kind, entry.body ?? '']))
 }
 
 export function terminalWorkingCount(
   attentions: readonly (TerminalAttention | undefined)[],
 ): number {
   return attentions.filter((attention) => attention === 'working').length
+}
+
+function isActionable(
+  attention: TerminalAttention | undefined,
+): attention is 'idle' | 'bell' | 'prompt' {
+  return attention !== undefined && ACTIONABLE.includes(attention)
 }

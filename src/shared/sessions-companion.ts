@@ -11,7 +11,10 @@
  * id appears here. Terminal bytes cross as the strings the PTY produced and the
  * user typed; nothing here inspects them.
  */
-import type { ActionableFreshness } from './actionable-attention'
+import {
+  isActionableAttentionBody,
+  type ActionableFreshness,
+} from './actionable-attention'
 import {
   isExternalAttentionStaleReason,
   type ExternalAttentionStaleReason,
@@ -66,6 +69,8 @@ export interface CompanionRow {
    * Companion, and the Companion does not infer.
    */
   readonly attention: SessionsFact<SessionsAttentionValue>
+  /** The prompt's message, bounded; present only when the set carried one (ADR-051). */
+  readonly promptBody?: string
   /** Whether the attention above is current or the last thing hvir saw. */
   readonly freshness: ActionableFreshness
   /** Why the attention is stale. Present exactly when `freshness` is `stale`. */
@@ -194,6 +199,7 @@ export function isCompanionRow(value: unknown): value is CompanionRow {
     isWorkspace(value['workspace']) &&
     isOrigin(value['origin']) &&
     isFact(value['attention'], isAttentionValue) &&
+    isPromptBodyFor(value['promptBody'], value['attention']) &&
     isStaleness(value['freshness'], value['reason']) &&
     isFact(value['turn'], isTurn) &&
     typeof value['canAnswer'] === 'boolean' &&
@@ -274,7 +280,7 @@ const ROW_REQUIRED_KEYS = [
   'canAnswer',
   'canMirror',
 ] as const
-const ROW_OPTIONAL_KEYS = ['reason'] as const
+const ROW_OPTIONAL_KEYS = ['reason', 'promptBody'] as const
 const RESPOND_KEYS = ['handle', 'pendingRevision', 'optionOrdinal'] as const
 const SUBMIT_KEYS = ['handle', 'message'] as const
 const INPUT_KEYS = ['data'] as const
@@ -292,7 +298,12 @@ const MIRROR_END_REASONS: readonly CompanionMirrorEndReason[] = [
   'lease-lost',
   'overrun',
 ]
-const ATTENTION_VALUES: readonly SessionsAttentionValue[] = ['none', 'ready', 'bell']
+const ATTENTION_VALUES: readonly SessionsAttentionValue[] = [
+  'none',
+  'ready',
+  'bell',
+  'prompt',
+]
 const TURN_STATES: readonly SessionsTurnFact['state'][] = [
   'working',
   'waiting-for-user',
@@ -384,6 +395,19 @@ function isTurn(value: unknown): value is SessionsTurnFact {
     isRecord(value) &&
     hasExactKeys(value, ['state']) &&
     TURN_STATES.some((state) => state === value['state'])
+  )
+}
+
+/** Only a row whose attention is an available prompt carries the message (ADR-051). */
+function isPromptBodyFor(
+  promptBody: unknown,
+  attention: SessionsFact<SessionsAttentionValue>,
+): boolean {
+  if (promptBody === undefined) return true
+  return (
+    attention.status === 'available' &&
+    attention.value === 'prompt' &&
+    isActionableAttentionBody(promptBody)
   )
 }
 

@@ -54,6 +54,23 @@ describe('terminal workspace model', () => {
     expect(model.activeId).toBe('b')
   })
 
+  it('clears a prompt and its body on focus (ADR-051)', () => {
+    let model = reduce(initialTerminalWorkspaceModel, {
+      type: 'sessions-replaced',
+      sessions: [
+        {
+          ...session('a', 'primary'),
+          attention: 'prompt',
+          promptBody: 'Claude needs your permission',
+        },
+      ],
+      activeId: 'a',
+    })
+    model = reduce(model, { type: 'session-focused', id: 'a' })
+    expect(model.sessions[0]?.attention).toBeUndefined()
+    expect(model.sessions[0]?.promptBody).toBeUndefined()
+  })
+
   it('selects an exact Sessions target without clearing attention or starting it', () => {
     const selected = { ...session('selected', 'secondary'), attention: 'idle' as const }
     const model = reduce(

@@ -51,8 +51,10 @@ export function TerminalDeck({
   onForkStartFailed,
   onExit,
   onInput,
+  onMirrorInput,
   onOutput,
   onBell,
+  onNotification,
   onFocus,
   onLink,
   onSplit,
@@ -94,8 +96,10 @@ export function TerminalDeck({
   readonly onForkStartFailed: TerminalSessionRuntimesProps['onForkStartFailed']
   readonly onExit: TerminalSessionRuntimesProps['onExit']
   readonly onInput: (id: string, data: string) => void
+  readonly onMirrorInput: TerminalSessionRuntimesProps['onMirrorInput']
   readonly onOutput: (id: string) => void
   readonly onBell: (id: string) => void
+  readonly onNotification: TerminalSessionRuntimesProps['onNotification']
   readonly onFocus: (id: string) => void
   readonly onLink: (session: TerminalSession, activation: TerminalLinkActivation) => void
   readonly onSplit: () => void
@@ -132,8 +136,10 @@ export function TerminalDeck({
       onForkStartFailed={onForkStartFailed}
       onExit={onExit}
       onInput={onInput}
+      onMirrorInput={onMirrorInput}
       onOutput={onOutput}
       onBell={onBell}
+      onNotification={onNotification}
       onFocus={onFocus}
       onLink={onLink}
       onSplit={onSplit}

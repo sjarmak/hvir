@@ -3,6 +3,7 @@ import {
   isExternalSessionAttachRequest,
   isExternalSessionAttachTarget,
   isExternalSessionAttachTicketRequest,
+  isTerminalAttentionState,
   type ExternalSessionAttachRequest,
   type ExternalSessionAttachTarget,
 } from '../../../shared'
@@ -102,7 +103,7 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
         position < 0 ||
         position >= 500 ||
         typeof active !== 'boolean' ||
-        (attention !== undefined && !isTerminalAttention(attention))
+        (attention !== undefined && !isTerminalAttentionState(attention))
       ) {
         throw new Error('Invalid terminal layout entry')
       }
@@ -505,10 +506,6 @@ export function isTerminalTitle(value: unknown): value is string {
     value.length <= 512 &&
     !hasControlCharacter(value)
   )
-}
-
-function isTerminalAttention(value: unknown): value is 'working' | 'bell' | 'idle' {
-  return value === 'working' || value === 'bell' || value === 'idle'
 }
 
 function hasControlCharacter(value: string): boolean {

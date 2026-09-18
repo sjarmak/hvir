@@ -372,6 +372,9 @@ describe('terminal resume unavailable state', () => {
     ]
     for (const event of authorityFreeEvents) paneState.instances[0]?.emitEvent(event)
     expect(runtimeOptions.onBell).not.toHaveBeenCalled()
+    expect(runtimeOptions.onNotification).toHaveBeenCalledExactlyOnceWith(
+      'No attention authority',
+    )
     expect(send).not.toHaveBeenCalled()
     paneState.instances[0]?.emitEvent({
       type: 'notification',
@@ -379,9 +382,11 @@ describe('terminal resume unavailable state', () => {
       title: '',
       body: 'Legacy attention',
     })
-    expect(runtimeOptions.onBell).toHaveBeenCalledOnce()
+    // A notification is a prompt with its message (ADR-051), never a bell.
+    expect(runtimeOptions.onBell).not.toHaveBeenCalled()
+    expect(runtimeOptions.onNotification).toHaveBeenLastCalledWith('Legacy attention')
     paneState.instances[0]?.emitEvent({ type: 'bell' })
-    expect(runtimeOptions.onBell).toHaveBeenCalledTimes(2)
+    expect(runtimeOptions.onBell).toHaveBeenCalledOnce()
 
     runtime.restart()
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(2))
@@ -783,8 +788,10 @@ function options(): TerminalRuntimeOptions {
     onFreshStarted: vi.fn(),
     onCapabilities: vi.fn(),
     onInput: vi.fn(),
+    onMirrorInput: vi.fn(),
     onOutput: vi.fn(),
     onBell: vi.fn(),
+    onNotification: vi.fn(),
     onFocus: vi.fn(),
     onLink: vi.fn(),
   }

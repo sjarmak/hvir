@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { PTY_OUTPUT_TAIL_CHARS } from '../src/main/pty/pty-output-tail'
 import {
+  MAX_ACTIONABLE_BODY_CHARS,
   MAX_COMPANION_INPUT_CHARS,
   MAX_COMPANION_ROWS,
   MAX_COMPANION_TERMINAL_TAIL_CHARS,
@@ -116,6 +117,53 @@ describe('sessions companion contract', () => {
       isCompanionRow(row({ turn: { status: 'available', value: { state: 'busy' } } })),
     ).toBe(false)
     expect(isCompanionRow(row({ handle: '' }))).toBe(false)
+  })
+
+  it('admits a prompt row with a bounded promptBody (ADR-051)', () => {
+    const prompt = (promptBody?: unknown) =>
+      row({
+        attention: { status: 'available', value: 'prompt' },
+        ...(promptBody === undefined ? {} : { promptBody }),
+      })
+    expect(isCompanionRow(prompt())).toBe(true)
+    expect(isCompanionRow(prompt('Claude needs your permission'))).toBe(true)
+    expect(isCompanionRow(prompt('x'.repeat(MAX_ACTIONABLE_BODY_CHARS)))).toBe(true)
+    expect(isCompanionRow(prompt('x'.repeat(MAX_ACTIONABLE_BODY_CHARS + 1)))).toBe(false)
+    expect(isCompanionRow(prompt(''))).toBe(false)
+    expect(isCompanionRow(prompt(7))).toBe(false)
+    expect(isCompanionRow(prompt(null))).toBe(false)
+    expect(
+      isCompanionSnapshot(snapshot([prompt('Claude needs your permission')])),
+    ).toBe(true)
+  })
+
+  it('rejects a promptBody on any row whose attention is not an available prompt', () => {
+    const promptBody = 'Claude needs your permission'
+    expect(isCompanionRow(row({ promptBody }))).toBe(false)
+    expect(
+      isCompanionRow(row({ attention: { status: 'available', value: 'bell' }, promptBody })),
+    ).toBe(false)
+    expect(
+      isCompanionRow(
+        row({ attention: { status: 'unavailable', reason: 'source-stale' }, promptBody }),
+      ),
+    ).toBe(false)
+    expect(isCompanionRow(row({ attention: { status: 'unsupported' }, promptBody }))).toBe(
+      false,
+    )
+    expect(
+      isCompanionRow(
+        row({
+          attention: { status: 'stale', value: 'prompt', observedAt: 5, reason: 'source-stale' },
+          freshness: 'stale',
+          reason: 'closed',
+          promptBody,
+        }),
+      ),
+    ).toBe(false)
+    expect(
+      isCompanionRow(row({ attention: { status: 'available', value: 'prompt' }, promptBody })),
+    ).toBe(true)
   })
 
   it('rows require canMirror as a boolean', () => {

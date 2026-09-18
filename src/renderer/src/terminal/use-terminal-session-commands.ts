@@ -247,6 +247,7 @@ export function useTerminalSessionCommands({
           status: started.status,
           telemetry: undefined,
           attention: undefined,
+          promptBody: undefined,
           harnessSessionId: started.harnessSessionId,
           identityStatus: started.identityStatus,
           capabilities: started.capabilities,

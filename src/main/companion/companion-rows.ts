@@ -76,6 +76,7 @@ function companionRow(
   entry: MainActionableEntry | undefined,
   canAnswer: boolean,
 ): CompanionRow {
+  const attention = attentionOf(entry, session.attention)
   return {
     handle: session.handle,
     title: session.title,
@@ -87,7 +88,8 @@ function companionRow(
       hostKind: workspace.host.kind,
     },
     origin: session.origin,
-    attention: attentionOf(entry, session.attention),
+    attention,
+    ...promptBodyOf(entry, attention),
     freshness: entry?.freshness ?? 'fresh',
     ...(entry?.reason === undefined ? {} : { reason: entry.reason }),
     turn: session.telemetry.turn,
@@ -117,6 +119,17 @@ function attentionOf(
   }
   if (observedAt === undefined) return { status: 'unavailable', reason: 'source-stale' }
   return { status: 'stale', value: entry.kind, observedAt, reason: 'source-stale' }
+}
+
+/** The message travels only with an available prompt, as the wire admits it (ADR-051). */
+function promptBodyOf(
+  entry: MainActionableEntry | undefined,
+  attention: SessionsFact<SessionsAttentionValue>,
+): Pick<CompanionRow, 'promptBody'> {
+  const body = entry?.body
+  return body !== undefined && attention.status === 'available' && attention.value === 'prompt'
+    ? { promptBody: body }
+    : {}
 }
 
 function observedAtOf(

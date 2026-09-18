@@ -4,6 +4,7 @@ import {
   SESSIONS_PROJECTION_VERSION,
   sessionsProjectionDisplayTitle,
   type HvirApi,
+  type SessionsAttentionValue,
   type SessionsFact,
   type SessionsObservationSnapshot,
   type SessionsObservedSession,
@@ -409,8 +410,7 @@ function projectRow(
     ),
     ...lifecycle,
     connectionState: workspace.host.connectionState,
-    attention: attention.attention,
-    working: attention.working,
+    ...attention,
     model: telemetry.model,
     context: telemetry.context,
     turn: telemetry.turn,
@@ -464,10 +464,7 @@ function lifecycleProjection(
 function attentionProjection(
   main: SessionsObservedSession | undefined,
   renderer: SessionsRendererSession | undefined,
-): {
-  readonly attention: SessionsProjectionRow['attention']
-  readonly working: SessionsProjectionRow['working']
-} {
+): Pick<SessionsProjectionRow, 'attention' | 'promptBody' | 'working'> {
   const working: SessionsProjectionRow['working'] = renderer
     ? { status: 'available', value: renderer.attention === 'working' }
     : { status: 'unavailable', reason: 'not-materialized' }
@@ -478,16 +475,23 @@ function attentionProjection(
     return { attention: { status: 'unavailable', reason: 'not-materialized' }, working }
   }
   return {
-    attention: {
-      status: 'available',
-      value:
-        renderer.attention === 'idle'
-          ? 'ready'
-          : renderer.attention === 'bell'
-            ? 'bell'
-            : 'none',
-    },
+    attention: { status: 'available', value: rendererAttentionValue(renderer.attention) },
+    ...(renderer.promptBody === undefined ? {} : { promptBody: renderer.promptBody }),
     working,
+  }
+}
+
+function rendererAttentionValue(
+  attention: SessionsRendererSession['attention'],
+): SessionsAttentionValue {
+  switch (attention) {
+    case 'idle':
+      return 'ready'
+    case 'bell':
+    case 'prompt':
+      return attention
+    default:
+      return 'none'
   }
 }
 

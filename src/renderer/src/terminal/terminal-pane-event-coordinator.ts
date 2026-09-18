@@ -1,3 +1,4 @@
+import { actionableAttentionBody } from '../../../shared'
 import type { TerminalEvent, TerminalPane } from './terminal-pane'
 import {
   MAX_TERMINAL_SEMANTIC_REGIONS,
@@ -14,6 +15,8 @@ export interface TerminalPaneEventSnapshot {
 export type TerminalPaneEventEffect =
   | { readonly title: string }
   | { readonly bell: true }
+  /** The program's own notification (OSC 9 / OSC 777), its body already bounded (ADR-051). */
+  | { readonly notification: { readonly body?: string } }
   | { readonly clipboardWrite: { readonly selection: string; readonly data: string } }
 
 /** Owns parser-event consumption and bounded, per-pane transcript navigation. */
@@ -53,11 +56,10 @@ export class TerminalPaneEventCoordinator {
       this.currentTitle = title
       return { title }
     }
-    if (
-      event.type === 'bell' ||
-      (event.type === 'notification' && event.source === 'osc-9')
-    ) {
-      return { bell: true }
+    if (event.type === 'bell') return { bell: true }
+    if (event.type === 'notification') {
+      const body = actionableAttentionBody(event.body)
+      return { notification: body === undefined ? {} : { body } }
     }
     if (event.type === 'clipboard') {
       // A read query would hand the local clipboard to the remote host that

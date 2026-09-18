@@ -143,9 +143,10 @@ export interface SessionsContextFact {
 
 /**
  * Whether a row is asking for a person. `ready` is work that finished and has
- * not been looked at; `bell` is a terminal that rang.
+ * not been looked at; `bell` is a terminal that rang; `prompt` is a terminal
+ * whose program notified, with a message the row carries beside it (ADR-051).
  */
-export type SessionsAttentionValue = 'none' | 'ready' | 'bell'
+export type SessionsAttentionValue = 'none' | 'ready' | 'bell' | 'prompt'
 
 export interface SessionsTurnFact {
   readonly state: 'working' | 'waiting-for-user' | 'waiting-for-approval' | 'idle'
@@ -352,6 +353,8 @@ export interface SessionsProjectionRow {
   readonly lifecycleReason?: SessionsReasonCode
   readonly connectionState: HostConnectionState
   readonly attention: SessionsFact<SessionsAttentionValue>
+  /** The notification's message, bounded; present only with a `prompt` attention. */
+  readonly promptBody?: string
   readonly working: SessionsFact<boolean>
   readonly model: SessionsFact<SessionsModelFact>
   readonly context: SessionsFact<SessionsContextFact>

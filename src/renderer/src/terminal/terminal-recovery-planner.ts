@@ -205,6 +205,7 @@ export function restoreTerminalSessions(
         : resumable
           ? 'Ready to resume'
           : 'Ready to start',
+      // A prompt's message is never persisted, so a restored prompt shows without it.
       attention: record.attention,
       harnessSessionId: record.harnessSessionId,
       identityStatus: !hasHarnessIdentity

@@ -73,6 +73,32 @@ describe('ActionableAttentionSet', () => {
     expect(set.snapshot().entries).toEqual([])
   })
 
+  it('carries a prompt body from the renderer and treats a new body as a change', () => {
+    const set = new ActionableAttentionSet()
+    const prompt = (body: string): ActionableAttentionEntry => ({
+      ...rendererEntry('t1', 'prompt'),
+      body,
+    })
+    set.setRendererEntries(owner(1), [prompt('Claude needs your permission')])
+    expect(set.snapshot().entries).toEqual([
+      {
+        key: 't1',
+        kind: 'prompt',
+        freshness: 'fresh',
+        terminalHandle: asSessionsTerminalHandle('t1'),
+        body: 'Claude needs your permission',
+      },
+    ])
+    const revision = set.snapshot().revision
+    set.setRendererEntries(owner(1), [prompt('Claude needs your permission')])
+    expect(set.snapshot().revision).toBe(revision)
+    set.setRendererEntries(owner(1), [prompt('Claude is waiting for your input')])
+    expect(set.snapshot().revision).toBe(revision + 1)
+    expect(set.snapshot().entries[0]?.body).toBe('Claude is waiting for your input')
+    set.setRendererEntries(owner(1), [rendererEntry('t1', 'prompt')])
+    expect(set.snapshot().entries[0]).not.toHaveProperty('body')
+  })
+
   it('counts fresh entries only and keeps stale ones in the snapshot', () => {
     const set = new ActionableAttentionSet()
     set.setRendererEntries(owner(1), [rendererEntry('t1'), rendererEntry('t2', 'bell')])

@@ -60,6 +60,8 @@ export interface TerminalSession {
   readonly titlePinned?: true
   readonly status: string
   readonly attention?: TerminalAttention
+  /** The notification's message; present only while `attention` is `prompt` (ADR-051). */
+  readonly promptBody?: string
   readonly telemetry?: HarnessTelemetry
   readonly harnessSessionId?: string
   readonly identityStatus?: TerminalIdentityStatus
@@ -198,7 +200,9 @@ export function terminalWorkspaceReducer(
         sessions: model.sessions.map((candidate) => {
           if (candidate.id !== action.id) return candidate
           return requestTerminalStart(
-            candidate.attention ? { ...candidate, attention: undefined } : candidate,
+            candidate.attention
+              ? { ...candidate, attention: undefined, promptBody: undefined }
+              : candidate,
             'interactive',
           )
         }),
@@ -244,6 +248,7 @@ export function createTerminalForkSession(
     title: source.fallbackTitle,
     status: 'Forking conversation…',
     attention: undefined,
+    promptBody: undefined,
     telemetry: undefined,
     harnessSessionId: undefined,
     identityStatus: undefined,

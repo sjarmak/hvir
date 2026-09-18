@@ -492,7 +492,9 @@ export class TerminalRuntime {
           this.updateSnapshot({ ...this.currentSnapshot, title: effect.title })
           this.options.onTitle(effect.title)
         } else if (effect && 'bell' in effect) this.options.onBell()
-        else if (effect && 'clipboardWrite' in effect && this.started) {
+        else if (effect && 'notification' in effect) {
+          this.options.onNotification(effect.notification.body)
+        } else if (effect && 'clipboardWrite' in effect && this.started) {
           // A pane that outlived its PTY (resume-unavailable, exited) can still
           // emit trailing/replayed events; only a live session is a trusted
           // remote host allowed to place text on the local clipboard.
@@ -533,9 +535,9 @@ export class TerminalRuntime {
         onTelemetry: (telemetry) => this.options.onTelemetry(telemetry),
         onIdentity: (harnessSessionId, identityStatus, identityDiverged) =>
           this.publishIdentity(harnessSessionId, identityStatus, identityDiverged),
-        // Already written to the PTY by a Companion mirror (ADR-050): record it
-        // as this terminal's input so ADR-019 arming happens here; write nothing.
-        onMirrorInput: (data) => this.options.onInput(data),
+        // Already written to the PTY by a Companion mirror (ADR-050): hand it
+        // to the owner as this terminal's mirror input; write nothing.
+        onMirrorInput: (data) => this.options.onMirrorInput(data),
       },
     )
     this.surface.installRoute(this.eventRoute)

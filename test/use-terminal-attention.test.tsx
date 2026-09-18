@@ -97,6 +97,20 @@ describe('terminal attention rollup bridge', () => {
     expect(sent().at(-1)).toEqual({ version: 1, entries: [entry('t1', 'bell')] })
   })
 
+  it('sends a prompt again when only its body changed (ADR-051)', () => {
+    const prompt = (body: string): ActionableAttentionEntry => ({
+      ...entry('t1', 'prompt'),
+      body,
+    })
+    act(() => attention.updateRollup('ws-a', rollup([prompt('first')])))
+    expect(send).toHaveBeenCalledTimes(2)
+    act(() => attention.updateRollup('ws-a', rollup([prompt('first')])))
+    expect(send).toHaveBeenCalledTimes(2)
+    act(() => attention.updateRollup('ws-a', rollup([prompt('second')])))
+    expect(send).toHaveBeenCalledTimes(3)
+    expect(sent().at(-1)).toEqual({ version: 1, entries: [prompt('second')] })
+  })
+
   it('withdraws everything on unmount', () => {
     act(() => attention.updateRollup('ws-a', rollup([entry('t1')])))
     act(() => root.unmount())

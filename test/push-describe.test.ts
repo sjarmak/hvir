@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { MainActionableEntry } from '../src/main/attention/actionable-attention-set'
-import { createPushDescriber, PUSH_LINE_MAX } from '../src/main/companion/push-describe'
+import { createPushDescriber } from '../src/main/companion/push-describe'
 import type { ExternalPendingSession } from '../src/main/gascity/city-attention'
 import type { SessionPendingResponse } from '../src/main/gascity/generated-supervisor-api'
 import type {
@@ -14,6 +14,7 @@ import type {
 } from '../src/main/gascity/supervisor-client'
 import type { OwnedTerminalSession } from '../src/main/terminal/session-registry'
 import {
+  MAX_ACTIONABLE_BODY_CHARS,
   asHarnessProfileId,
   asHarnessProviderId,
   asHostId,
@@ -213,6 +214,25 @@ describe('push-describe', () => {
     expect(message?.kind).toBe('bell')
   })
 
+  it('carries a prompt entry body as the line (ADR-051)', async () => {
+    const { describe: describeEntry } = harness()
+
+    const message = await describeEntry({
+      ...terminalEntry(),
+      kind: 'prompt',
+      body: 'Claude needs your permission',
+    })
+
+    expect(message).toEqual({
+      project: 'Secret Project',
+      title: 'Fix the panel',
+      kind: 'prompt',
+      line: 'Claude needs your permission',
+    })
+    const bare = await describeEntry({ ...terminalEntry(), kind: 'prompt' })
+    expect(bare).toEqual({ project: 'Secret Project', title: 'Fix the panel', kind: 'prompt' })
+  })
+
   it('scrubs a terminal title that repeats a private value, like the projection does', async () => {
     const { describe: describeEntry } = harness({
       sessions: [terminalSession({ title: `resume ${HARNESS_SESSION_ID}` })],
@@ -286,8 +306,9 @@ describe('push-describe', () => {
 
     const message = await describeEntry(externalEntry())
 
-    expect(message?.line).toHaveLength(PUSH_LINE_MAX)
-    expect(message?.line).toBe('x'.repeat(PUSH_LINE_MAX))
+    // The push line and a prompt body share one bound (ADR-051).
+    expect(message?.line).toHaveLength(MAX_ACTIONABLE_BODY_CHARS)
+    expect(message?.line).toBe('x'.repeat(MAX_ACTIONABLE_BODY_CHARS))
   })
 
   it('still describes an external entry when the supervisor cannot be addressed', async () => {

@@ -108,8 +108,10 @@ function options(
     onFreshStarted: vi.fn(),
     onCapabilities: vi.fn(),
     onInput: vi.fn(),
+    onMirrorInput: vi.fn(),
     onOutput: vi.fn(),
     onBell: vi.fn(),
+    onNotification: vi.fn(),
     onFocus: vi.fn(),
     onLink: vi.fn(),
   }

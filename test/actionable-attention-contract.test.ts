@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   ACTIONABLE_ATTENTION_VERSION,
   EMPTY_RENDERER_ATTENTION_SET,
+  MAX_ACTIONABLE_BODY_CHARS,
   MAX_ACTIONABLE_ENTRIES,
   MAX_SESSIONS_PROJECTION_ROWS,
   asSessionsTerminalHandle,
@@ -45,6 +46,33 @@ describe('actionable attention contract', () => {
         set([entry({ freshness: 'stale', reason: 'supervisor said no' })]),
       ),
     ).toBe(false)
+  })
+
+  it('accepts a prompt entry with or without its body, and the body only on a prompt', () => {
+    expect(isRendererAttentionSet(set([entry({ kind: 'prompt' })]))).toBe(true)
+    expect(
+      isRendererAttentionSet(
+        set([entry({ kind: 'prompt', body: 'Claude needs your permission' })]),
+      ),
+    ).toBe(true)
+    expect(isRendererAttentionSet(set([entry({ body: 'Claude needs your permission' })]))).toBe(
+      false,
+    )
+    expect(
+      isRendererAttentionSet(set([entry({ kind: 'bell', body: 'Claude needs your permission' })])),
+    ).toBe(false)
+  })
+
+  it('rejects a body over the bound, an empty one, and one that is not a string', () => {
+    expect(MAX_ACTIONABLE_BODY_CHARS).toBe(120)
+    const prompt = (body: unknown) => set([entry({ kind: 'prompt', body })])
+    expect(isRendererAttentionSet(prompt('x'.repeat(MAX_ACTIONABLE_BODY_CHARS)))).toBe(true)
+    expect(isRendererAttentionSet(prompt('x'.repeat(MAX_ACTIONABLE_BODY_CHARS + 1)))).toBe(
+      false,
+    )
+    expect(isRendererAttentionSet(prompt(''))).toBe(false)
+    expect(isRendererAttentionSet(prompt(7))).toBe(false)
+    expect(isRendererAttentionSet(prompt(null))).toBe(false)
   })
 
   it('rejects an unknown kind, an unknown freshness, and an extra key', () => {

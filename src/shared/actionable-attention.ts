@@ -12,6 +12,7 @@ import type { ExternalAttentionStaleReason } from './external-attention'
 import { isExternalAttentionStaleReason } from './external-attention'
 import {
   MAX_SESSIONS_PROJECTION_ROWS,
+  sessionsProjectionOptionalText,
   type SessionsTerminalHandle,
 } from './sessions-projection'
 
@@ -20,8 +21,28 @@ export const ACTIONABLE_ATTENTION_VERSION = 1
 /** A window cannot present more sessions than the projection may hold. */
 export const MAX_ACTIONABLE_ENTRIES = MAX_SESSIONS_PROJECTION_ROWS
 
-/** Why a session wants a person: it finished a turn, or it rang the bell. */
-export type ActionableKind = 'ready' | 'bell'
+/**
+ * The one short line a prompt's message is bounded to (ADR-051), at every
+ * boundary it crosses and in the Push line that carries it.
+ */
+export const MAX_ACTIONABLE_BODY_CHARS = 120
+
+/**
+ * Why a session wants a person: it finished a turn, it rang the bell, or it
+ * notified with a message of its own (ADR-051).
+ */
+export type ActionableKind = 'ready' | 'bell' | 'prompt'
+
+/** The first line of a message, scrubbed and bounded; nothing when that leaves nothing. */
+export function actionableAttentionBody(value: string): string | undefined {
+  return sessionsProjectionOptionalText(value.split(/\r?\n/, 1)[0], MAX_ACTIONABLE_BODY_CHARS)
+}
+
+export function isActionableAttentionBody(value: unknown): value is string {
+  return (
+    typeof value === 'string' && value.length > 0 && value.length <= MAX_ACTIONABLE_BODY_CHARS
+  )
+}
 
 /**
  * Whether the entry is a current claim or the last thing seen. A renderer's
@@ -36,6 +57,8 @@ export interface ActionableAttentionEntry {
   readonly freshness: ActionableFreshness
   /** Present exactly when the entry is stale. */
   readonly reason?: ExternalAttentionStaleReason
+  /** The notification's message; only a prompt carries one (ADR-051). */
+  readonly body?: string
 }
 
 export interface RendererAttentionSet {
@@ -64,15 +87,20 @@ export function isRendererAttentionSet(value: unknown): value is RendererAttenti
 function isActionableAttentionEntry(value: unknown): value is ActionableAttentionEntry {
   if (!isRecord(value)) return false
   const keys = Object.keys(value)
-  if (!keys.every((key) => ['handle', 'kind', 'freshness', 'reason'].includes(key))) {
-    return false
-  }
+  if (!keys.every((key) => ENTRY_KEYS.includes(key))) return false
   if (typeof value['handle'] !== 'string' || value['handle'] === '') return false
-  if (value['kind'] !== 'ready' && value['kind'] !== 'bell') return false
+  if (!ACTIONABLE_KINDS.some((kind) => kind === value['kind'])) return false
+  // Only a prompt has a message, and one that says nothing is not carried.
+  if (value['body'] !== undefined) {
+    if (value['kind'] !== 'prompt' || !isActionableAttentionBody(value['body'])) return false
+  }
   // Fresh entries carry no reason; a stale entry must say why (ADR-048).
   if (value['freshness'] === 'fresh') return value['reason'] === undefined
   return value['freshness'] === 'stale' && isExternalAttentionStaleReason(value['reason'])
 }
+
+const ENTRY_KEYS = ['handle', 'kind', 'freshness', 'reason', 'body']
+const ACTIONABLE_KINDS: readonly ActionableKind[] = ['ready', 'bell', 'prompt']
 
 function exactKeys(value: object, expected: readonly string[]): boolean {
   const keys = Object.keys(value)

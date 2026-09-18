@@ -1221,6 +1221,11 @@ describe('TerminalSessionRegistry', () => {
       stored: { attention: 'output' },
       expected: { recoverySkipCount: 0, attention: 'working' },
     },
+    {
+      label: 'prompt attention',
+      stored: { attention: 'prompt' },
+      expected: { recoverySkipCount: 0, attention: 'prompt' },
+    },
   ])(
     'migrates v5 $label into the combined registry schema',
     async ({ stored, expected }) => {

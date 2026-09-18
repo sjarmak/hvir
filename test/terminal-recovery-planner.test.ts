@@ -461,6 +461,23 @@ describe('terminal recovery planner', () => {
       },
     ])
   })
+
+  it('restores a stored prompt as a prompt without its message (ADR-051)', () => {
+    const stored: TerminalRecoverySession = {
+      ...record,
+      id: 'terminal-prompt',
+      attention: 'prompt',
+    }
+
+    const restored = restoreTerminalSessions([stored], [provider], [profile], [], {
+      secondaryIds: [],
+      activeByPane: { primary: 'terminal-prompt', secondary: undefined },
+    })
+
+    expect(restored.sessions).toHaveLength(1)
+    expect(restored.sessions[0]).toMatchObject({ id: 'terminal-prompt', attention: 'prompt' })
+    expect(restored.sessions[0]).not.toHaveProperty('promptBody')
+  })
 })
 
 function providerFor(

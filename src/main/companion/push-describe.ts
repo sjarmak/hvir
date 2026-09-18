@@ -9,9 +9,9 @@
  * session id, a path or a session key is replaced exactly as a row would be.
  */
 import {
+  actionableAttentionBody,
   hostPathEquals,
   sessionsProjectionDisplayTitle,
-  sessionsProjectionOptionalText,
   sessionsProjectionText,
   type ProjectState,
   type RegisteredProjectState,
@@ -25,9 +25,6 @@ import type { ProjectRegistry } from '../project-registry'
 import type { SessionsExternalSessionKey } from '../sessions/sessions-projection-identities'
 import type { OwnedTerminalSession, TerminalSessionRegistry } from '../terminal/session-registry'
 import type { PushMessage } from './push-sink'
-
-/** The longest prompt line a Push carries. */
-export const PUSH_LINE_MAX = 120
 
 export interface PushDescribeDiagnostic {
   readonly kind: 'prompt-unreadable'
@@ -75,6 +72,8 @@ function describeTerminal(
     project: projectName(place),
     title: terminalTitle(session, handle, workspaceName, place),
     kind: entry.kind,
+    // A prompt's message is the line (ADR-051); it arrived bounded at the wire.
+    ...(entry.body === undefined ? {} : { line: entry.body }),
   }
 }
 
@@ -153,9 +152,9 @@ function unreadable(ports: PushDescribePorts, reason: string): undefined {
   return undefined
 }
 
+/** The Push line and a prompt body share one bound. */
 function firstLine(prompt: string | undefined): string | undefined {
-  if (prompt === undefined) return undefined
-  return sessionsProjectionOptionalText(prompt.split(/\r?\n/, 1)[0], PUSH_LINE_MAX)
+  return prompt === undefined ? undefined : actionableAttentionBody(prompt)
 }
 
 function projectName(place: Placement | undefined): string {

@@ -25,6 +25,8 @@ export interface MainActionableEntry {
   readonly kind: ActionableKind
   readonly freshness: ActionableFreshness
   readonly reason?: ExternalAttentionStaleReason
+  /** The prompt's message, already bounded; only a prompt entry carries one (ADR-051). */
+  readonly body?: string
   readonly terminalHandle?: SessionsTerminalHandle
   /** Main only: the foreign identifier this entry stands for. */
   readonly external?: SessionsExternalSessionKey
@@ -141,6 +143,7 @@ function fromRenderer(entry: ActionableAttentionEntry): MainActionableEntry {
     kind: entry.kind,
     freshness: entry.freshness,
     ...(entry.reason === undefined ? {} : { reason: entry.reason }),
+    ...(entry.body === undefined ? {} : { body: entry.body }),
     terminalHandle: entry.handle,
   }
 }
@@ -156,7 +159,8 @@ function sameEntries(
 }
 
 function fingerprint(entry: MainActionableEntry): string {
-  return `${entry.key}|${entry.kind}|${entry.freshness}|${entry.reason ?? ''}`
+  // The body goes last: it is free text, so nothing may follow it.
+  return `${entry.key}|${entry.kind}|${entry.freshness}|${entry.reason ?? ''}|${entry.body ?? ''}`
 }
 
 function ownerKey(owner: RendererOwner): string {
