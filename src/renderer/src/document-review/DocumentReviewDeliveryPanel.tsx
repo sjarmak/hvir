@@ -66,7 +66,7 @@ export function DocumentReviewDeliveryPanel({
           </div>
         </dl>
       ) : null}
-      {selected?.attention === 'bell' ? (
+      {selected?.attention === 'bell' || selected?.attention === 'prompt' ? (
         <p className="document-review-warning" role="alert">
           This terminal is requesting attention. Resolve its current prompt or state
           before inserting.

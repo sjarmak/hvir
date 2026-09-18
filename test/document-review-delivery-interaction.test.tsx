@@ -453,6 +453,16 @@ describe('document review delivery interaction', () => {
     )
   })
 
+  it('surfaces a harness prompt as the same actionable warning (ADR-051)', () => {
+    const destination = { ...prepared.destination, attention: 'prompt' as const }
+    render(<DocumentReviewDeliveryPanel delivery={panelInteraction(destination)} />)
+
+    expect(host.textContent).toContain('Attentionprompt')
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+      'requesting attention',
+    )
+  })
+
   it('keeps idle attention visible without an extra warning', () => {
     render(
       <DocumentReviewDeliveryPanel delivery={panelInteraction(prepared.destination)} />,
