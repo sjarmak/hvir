@@ -108,6 +108,10 @@ const baseConfig: UserConfig = {
       rollupOptions: {
         input: {
           index: resolve('src/renderer/index.html'),
+          // The Companion phone page (ADR-049): a second entry the loopback
+          // listener serves from out/renderer/companion, sharing the assets
+          // directory with the desktop renderer.
+          companion: resolve('src/renderer/companion/index.html'),
         },
       },
     },

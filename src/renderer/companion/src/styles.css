@@ -1,0 +1,300 @@
+/* Phone-first. One column, 16px gutters, tap targets of 44px or more, and no
+ * horizontal scroll. Colors follow the phone's own light or dark preference. */
+:root {
+  color-scheme: light dark;
+  --companion-bg: #f6f7f9;
+  --companion-surface: #ffffff;
+  --companion-text: #17191c;
+  --companion-muted: #5f6672;
+  --companion-border: #d9dde3;
+  --companion-accent: #2f6fed;
+  --companion-accent-text: #ffffff;
+  --companion-ready: #1f8a4c;
+  --companion-bell: #b8620a;
+  --companion-stale: #8a6d1f;
+  --companion-error: #b42318;
+  --companion-error-bg: #fdecec;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --companion-bg: #0f1114;
+    --companion-surface: #1a1d22;
+    --companion-text: #e8eaee;
+    --companion-muted: #9aa3b0;
+    --companion-border: #2c3138;
+    --companion-accent: #6b9cff;
+    --companion-accent-text: #0f1114;
+    --companion-ready: #4ccb7f;
+    --companion-bell: #f0a04a;
+    --companion-stale: #d9b75a;
+    --companion-error: #ff8a80;
+    --companion-error-bg: #3a1d1b;
+  }
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--companion-bg);
+  color: var(--companion-text);
+  font:
+    16px/1.45 system-ui,
+    -apple-system,
+    'Segoe UI',
+    sans-serif;
+  overflow-x: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+.companion {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.companion-title {
+  margin: 8px 0 0;
+  font-size: 22px;
+}
+
+.companion-hint,
+.companion-status,
+.companion-empty {
+  margin: 0;
+  color: var(--companion-muted);
+}
+
+.companion-label {
+  font-size: 14px;
+  color: var(--companion-muted);
+}
+
+.companion-pair-form,
+.companion-message-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.companion-input {
+  width: 100%;
+  min-height: 48px;
+  padding: 12px;
+  border: 1px solid var(--companion-border);
+  border-radius: 10px;
+  background: var(--companion-surface);
+  color: inherit;
+  font: inherit;
+}
+
+.companion-message {
+  resize: vertical;
+}
+
+.companion-button {
+  min-height: 44px;
+  padding: 10px 16px;
+  border: 1px solid var(--companion-border);
+  border-radius: 10px;
+  background: var(--companion-surface);
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+}
+
+.companion-button:disabled {
+  opacity: 0.5;
+}
+
+.companion-button-primary {
+  background: var(--companion-accent);
+  border-color: var(--companion-accent);
+  color: var(--companion-accent-text);
+}
+
+.companion-error {
+  margin: 0;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--companion-error-bg);
+  color: var(--companion-error);
+  overflow-wrap: anywhere;
+}
+
+.companion-connection {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--companion-border);
+  border-radius: 10px;
+  background: var(--companion-surface);
+  color: var(--companion-muted);
+}
+
+.companion-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.companion-row {
+  width: 100%;
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--companion-border);
+  border-radius: 12px;
+  background: var(--companion-surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.companion-row-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.companion-row-meta {
+  font-size: 14px;
+  color: var(--companion-muted);
+  overflow-wrap: anywhere;
+}
+
+.companion-row-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.companion-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid currentcolor;
+  font-size: 13px;
+  color: var(--companion-muted);
+}
+
+.companion-badge-ready {
+  color: var(--companion-ready);
+}
+
+.companion-badge-bell {
+  color: var(--companion-bell);
+}
+
+.companion-badge-stale {
+  color: var(--companion-stale);
+}
+
+.companion-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.companion-transcript-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.companion-transcript-title {
+  margin: 0;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+
+.companion-stream {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--companion-border);
+  border-radius: 10px;
+  color: var(--companion-muted);
+}
+
+.companion-turns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.companion-turn {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--companion-surface);
+  border: 1px solid var(--companion-border);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.companion-turn-user {
+  border-color: var(--companion-accent);
+}
+
+.companion-turn-failed {
+  border-color: var(--companion-error);
+}
+
+.companion-turn-role,
+.companion-turn-tool {
+  display: block;
+  font-size: 13px;
+  color: var(--companion-muted);
+}
+
+.companion-turn-partial .companion-turn-text::after {
+  content: ' …';
+  color: var(--companion-muted);
+}
+
+.companion-turn-cut {
+  color: var(--companion-muted);
+}
+
+.companion-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--companion-accent);
+  border-radius: 12px;
+}
+
+.companion-pending-prompt {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.companion-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
