@@ -232,6 +232,27 @@ describe('SessionsProjectionCoordinator', () => {
     coordinator.dispose()
   })
 
+  it('carries a newer source revision even when the joined rows did not change', async () => {
+    // Main bumps its revision for any observed change, including one the join
+    // does not present. The advertised source revision must follow it, or every
+    // later exact request (transcript, open, attach) is refused as stale.
+    const main = mainPort(observation(1, [observed('worker', 'workspace-a')]))
+    const coordinator = new SessionsProjectionCoordinator(main, rendererPort([]))
+    const changed = vi.fn()
+    coordinator.subscribe(changed)
+    const release = coordinator.acquire()
+    await settle()
+    expect(coordinator.snapshot()).toMatchObject({ status: 'available', sourceRevision: 1 })
+
+    main.nextSnapshot = observation(2, [observed('worker', 'workspace-a')])
+    main.publish({ demandGeneration: 1, revision: 2 })
+    await settle()
+
+    expect(coordinator.snapshot()).toMatchObject({ status: 'available', sourceRevision: 2 })
+    expect(coordinator.snapshot().rows).toHaveLength(1)
+    release()
+  })
+
   it('rejects a late snapshot after demand is revoked', async () => {
     let resolveRefresh: ((snapshot: SessionsObservationSnapshot) => void) | undefined
     const main = mainPort(observation(1, [observed('first', 'workspace-a')]))

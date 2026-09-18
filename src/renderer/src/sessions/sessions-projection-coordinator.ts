@@ -199,7 +199,14 @@ export class SessionsProjectionCoordinator {
   private publishJoined(): void {
     if (!this.mainSnapshot) return
     const rows = joinSessionsProjection(this.mainSnapshot, this.renderer.snapshot())
-    const fingerprint = JSON.stringify([this.mainSnapshot.activeProject, rows])
+    // The source revision is part of what consumers hold: every exact request
+    // (transcript, open, attach) is checked against it in main. A source change
+    // the join does not present still moves it, so it fingerprints too.
+    const fingerprint = JSON.stringify([
+      this.mainSnapshot.revision,
+      this.mainSnapshot.activeProject,
+      rows,
+    ])
     if (
       fingerprint === this.projectionFingerprint &&
       this.current.status === 'available'
