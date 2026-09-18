@@ -167,6 +167,7 @@ worktree orchestrator.
 > Superseded by: [ADR-019](adr/ADR-019-working-output-is-not-actionable-attention.md) | partial | Classifying ongoing post-submission output as actionable new-output attention.
 > Superseded by: [ADR-048](adr/ADR-048-exact-external-pending-interaction-attention.md) | partial | Terminal focus as the only rule that clears attention.
 > Superseded by: [ADR-049](adr/ADR-049-companion-observer-and-away-push.md) | partial | The OS badge as the only attention surface while all hvir windows are unfocused.
+> Superseded by: [ADR-051](adr/ADR-051-terminal-notification-prompt-attention.md) | partial | Terminal focus as the only rule that clears a terminal's own attention, for a prompt entry answered through the Companion mirror.
 
 Terminal focus is the single clearing rule; workspace/project and OS surfaces only aggregate
 the appropriate unseen child attention.
@@ -525,13 +526,25 @@ drives the badge and away-time Push.
 
 ### [ADR-050 — The Companion mirrors a live hvir terminal and carries its user's keystrokes](adr/ADR-050-companion-live-terminal-mirror.md)
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-049](adr/ADR-049-companion-observer-and-away-push.md) | partial | The exclusion of a terminal screen and terminal input from the Companion, for live hvir-owned terminals under a mirror lease.
+> Superseded by: [ADR-051](adr/ADR-051-terminal-notification-prompt-attention.md) | partial | No phone action clearing attention, for a prompt entry on the mirrored terminal.
 
 A Companion page holds a mirror lease on one live hvir-owned PTY: main forwards the retained
 output tail, live bytes, and desktop geometry, the phone emulates them with ghostty-web, and
 armed user keystrokes return to that exact instance without the mirror ever owning, resizing,
 or composing anything.
+
+### [ADR-051 — A terminal's in-band notification is actionable attention that carries its message](adr/ADR-051-terminal-notification-prompt-attention.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-009](adr/ADR-009-hierarchical-attention.md) | partial | Terminal focus as the only rule that clears a terminal's own attention, for a prompt entry answered through the Companion mirror.
+> Supersedes: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | No phone action clearing attention, for a prompt entry on the mirrored terminal.
+
+A terminal's OSC 9 or OSC 777 notification raises a prompt attention at once, carrying the
+harness's own bounded message through every attention surface and the Push line; it outranks
+Ready and Bell, is cleared by desktop focus or by an answer sent from the Companion mirror, and
+never comes from reading the screen.
 
 ## 5. Architecture
 
