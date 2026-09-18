@@ -1,7 +1,11 @@
 import { existsSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import ts from 'typescript'
-import type { ArchitecturePolicy, SourceInventory } from './architecture-policy.mts'
+import {
+  toolOwnedRoles,
+  type ArchitecturePolicy,
+  type SourceInventory,
+} from './architecture-policy.mts'
 import {
   createModuleResolution,
   DECLARATION_EXTENSION,
@@ -257,6 +261,7 @@ export function collectModuleGraph(
       exclusions: [
         'Installed dependencies and builtins are external module leaves.',
         'Git internals and disposable output retain the maintained inventory exclusions.',
+        `Tool-owned directories are outside the maintained inventory: ${toolOwnedRoles().join('; ')}.`,
         'Non-code assets and exact native build output are explicit loading rows.',
         'Worker and utility-process entries and nonliteral discovery are outside same-module cycle proof.',
       ],

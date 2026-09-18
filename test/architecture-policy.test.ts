@@ -8,6 +8,7 @@ import {
   evaluateInventory,
   isRelaxation,
   physicalLines,
+  toolOwnedDirectory,
   validatePolicy,
 } from '../scripts/architecture-policy.mts'
 import {
@@ -81,6 +82,27 @@ describe('complete architecture budget policy', () => {
     r.remove('scripts/unknown.py')
     policy.extensions.push('.log')
     expect(collectInventory(r.root, policy).has('build.log')).toBe(true)
+  })
+  it('keeps a tool-owned directory outside the inventory whether tracked, executable, or runtime', () => {
+    const r = repo(),
+      policy = ordinaryPolicy()
+    r.write('.beads/hooks/pre-commit', '#!/usr/bin/env sh\nbd hooks run pre-commit "$@"\n')
+    chmodSync(join(r.root, '.beads/hooks/pre-commit'), 0o755)
+    r.write('.beads/issues.jsonl', '{"id":"hvir-1"}\n')
+    r.write('.beads/config.yaml', 'sync: false\n')
+    r.source(1, 'src/.beads/nested.ts')
+    r.source(1, 'src/owner.ts')
+    const head = r.commit()
+    r.write('.beads/backup/state.darc', 'opaque archive')
+    r.write('.beads/dolt-server.pid', '4242\n')
+    r.write('.beads/embeddeddolt/hvir/.dolt/noms/manifest', 'noms')
+    const expected = ['src/.beads/nested.ts', 'src/owner.ts']
+    expect([...collectInventory(r.root, policy).keys()].sort()).toEqual(expected)
+    expect([...collectInventory(r.root, policy, head).keys()].sort()).toEqual(expected)
+    expect(toolOwnedDirectory('.beads')).toBe(true)
+    expect(toolOwnedDirectory('.beads/hooks/pre-commit')).toBe(true)
+    for (const path of ['.beadsx/hooks/pre-commit', 'beads/x.ts', 'src/.beads/nested.ts'])
+      expect(toolOwnedDirectory(path)).toBe(false)
   })
   it.each([
     [500, false, 'ok'],

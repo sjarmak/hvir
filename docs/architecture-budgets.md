@@ -52,7 +52,11 @@ extensions take precedence, and executable shell shebangs remain source even wit
 Repository-owned aliases resolve once to their target; broken or escaping
 aliases fail. Installed `node_modules`, Git internals, `out`, `dist`, coverage, and native
 `packages/*/build` output are excluded by their disposable role. A tracked file under one of
-those roles is an error, never a silent exemption. Git caches belong to one bounded evaluation;
+those roles is an error, never a silent exemption. The top-level `.beads` directory carries a
+tool-owned role: its tracked files are the beads issue tracker's managed configuration and hooks
+and its untracked files are that tool's runtime state (Dolt database, backups, sockets, locks),
+so neither branch of the inventory reads it, and the dependency report names the exclusion.
+Git caches belong to one bounded evaluation;
 historical reads select source, alias, executable, and policy inputs without loading unrelated
 binary/data bodies. Every applicable accepted historical ratchet remains included.
 

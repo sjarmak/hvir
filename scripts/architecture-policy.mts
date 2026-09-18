@@ -57,6 +57,12 @@ const DISPOSABLE_ROLES: Readonly<Record<string, string>> = {
   dist: 'disposable distribution output',
   coverage: 'disposable test coverage',
 }
+// Top-level directories an external tool owns end to end: the tracked files are that tool's
+// managed configuration and the untracked files its runtime state (databases, backups,
+// sockets, locks), none of it hvir-maintained source.
+const TOOL_OWNED_ROLES: Readonly<Record<string, string>> = {
+  '.beads': 'beads issue tracker configuration and runtime state',
+}
 
 export interface BudgetMetadata {
   path: string
@@ -106,6 +112,12 @@ export function disposableDirectory(path: string): boolean {
     path.split('/').some((part) => Object.hasOwn(DISPOSABLE_ROLES, part)) ||
     /^packages\/[^/]+\/build(?:\/|$)/.test(path)
   )
+}
+export function toolOwnedDirectory(path: string): boolean {
+  return Object.hasOwn(TOOL_OWNED_ROLES, path.split('/')[0] ?? '')
+}
+export function toolOwnedRoles(): string[] {
+  return Object.entries(TOOL_OWNED_ROLES).map(([path, role]) => `${path} (${role})`)
 }
 
 // Configured source extensions always win. These fixed data dispositions are not a

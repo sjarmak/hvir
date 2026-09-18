@@ -12,6 +12,7 @@ import {
   readAcceptedPolicy,
   ruleFor,
   sourceDisposition,
+  toolOwnedDirectory,
   type ArchitecturePolicy,
   type ComparisonCounts,
   type SourceInventory,
@@ -132,12 +133,13 @@ export function createArchitectureInventory(repositoryRoot: string) {
       for (const path of entries.keys())
         if (disposableDirectory(path))
           throw new Error(`Tracked files hidden by disposable role: ${path}`)
-      // Data/binary bodies have no role in line-count or alias proof.
+      // Data/binary bodies and tool-owned files have no role in line-count or alias proof.
       const required = [...entries].filter(
         ([path, entry]) =>
-          entry.mode === '120000' ||
-          entry.mode === '100755' ||
-          sourceDisposition(path, policy) !== 'data',
+          !toolOwnedDirectory(path) &&
+          (entry.mode === '120000' ||
+            entry.mode === '100755' ||
+            sourceDisposition(path, policy) !== 'data'),
       )
       prefetch(
         revision,
@@ -191,7 +193,7 @@ export function createArchitectureInventory(repositoryRoot: string) {
         walk(target)
         return
       }
-      if (visited.has(path)) return
+      if (visited.has(path) || toolOwnedDirectory(path)) return
       visited.add(path)
       if (disposableDirectory(path)) {
         if ([...owned].some((p) => p === path || p.startsWith(`${path}/`)))
