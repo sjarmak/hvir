@@ -669,6 +669,26 @@ describe('installApplicationCompanion push and disposal', () => {
     expect(pushed).toEqual(['https://ntfy.example/hvir'])
   })
 
+  it('keeps the foreign session key out of push diagnostics', async () => {
+    const { world, diagnostics } = await harness()
+    expect(world.actionable.snapshot().away).toBe(true)
+
+    world.actionable.setExternal([externalEntry])
+    await until(
+      () => diagnostics.some((diagnostic) => diagnostic.kind === 'push-outcome'),
+      'a push outcome with no sink declared',
+    )
+    expect(diagnostics).toContainEqual({
+      kind: 'push-outcome',
+      outcome: {
+        source: 'external',
+        kind: 'ready',
+        result: { outcome: 'skipped', reason: 'no-sink' },
+      },
+    })
+    expect(JSON.stringify(diagnostics)).not.toContain('gc-1')
+  })
+
   it('disposes in order: push, pages say shutdown, then the port is free', async () => {
     const { companion, world, client, port, owned, dispose } = await opened()
     expect(owned).toContain('Companion')

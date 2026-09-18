@@ -14,7 +14,6 @@ import {
   appearances,
   type ActionableAttentionSet,
   type ActionableSnapshot,
-  type ActionableSourceKey,
   type MainActionableEntry,
 } from '../attention/actionable-attention-set'
 import type { PushFailureReason, PushMessage, PushSink } from './push-sink'
@@ -28,9 +27,12 @@ export type AwayPushResult =
     }
   | { readonly outcome: 'errored'; readonly message: string }
 
-/** One appearance's fate. The key is main only; it never travels further. */
+/**
+ * One appearance's fate. It names the source's kind, never its key: an
+ * external key is a foreign identifier (ADR-046) and outcomes reach logs.
+ */
 export interface AwayPushOutcome {
-  readonly key: ActionableSourceKey
+  readonly source: 'terminal' | 'external'
   readonly kind: ActionableKind
   readonly result: AwayPushResult
 }
@@ -78,7 +80,11 @@ export class AwayPush {
       result = { outcome: 'errored', message: messageOf(error) }
     }
     if (this.disposed) return
-    this.options.onOutcome?.({ key: entry.key, kind: entry.kind, result })
+    this.options.onOutcome?.({
+      source: entry.external === undefined ? 'terminal' : 'external',
+      kind: entry.kind,
+      result,
+    })
   }
 
   private async attempt(entry: MainActionableEntry): Promise<AwayPushResult> {

@@ -41,7 +41,10 @@ interface FakeSet {
   readonly listeners: number
 }
 
-function fakeSet(initial: { away: boolean; entries?: readonly MainActionableEntry[] }): FakeSet {
+function fakeSet(initial: {
+  away: boolean
+  entries?: readonly MainActionableEntry[]
+}): FakeSet {
   const listeners = new Set<(snapshot: ActionableSnapshot) => void>()
   let current: ActionableSnapshot = {
     revision: 1,
@@ -125,7 +128,7 @@ describe('AwayPush', () => {
 
     expect(world.sent).toEqual([{ project: 'hvir', title: 't-1', kind: 'ready' }])
     expect(world.outcomes).toEqual([
-      { key: 't-1', kind: 'ready', result: { outcome: 'sent' } },
+      { source: 'terminal', kind: 'ready', result: { outcome: 'sent' } },
     ])
   })
 
@@ -197,7 +200,11 @@ describe('AwayPush', () => {
 
     expect(world.sent).toEqual([])
     expect(world.outcomes).toEqual([
-      { key: 't-1', kind: 'ready', result: { outcome: 'skipped', reason: 'not-described' } },
+      {
+        source: 'terminal',
+        kind: 'ready',
+        result: { outcome: 'skipped', reason: 'not-described' },
+      },
     ])
   })
 
@@ -212,7 +219,11 @@ describe('AwayPush', () => {
     world.set.emit(true, [terminal('t-1')])
     await world.settle()
     expect(world.outcomes).toEqual([
-      { key: 't-1', kind: 'ready', result: { outcome: 'skipped', reason: 'no-sink' } },
+      {
+        source: 'terminal',
+        kind: 'ready',
+        result: { outcome: 'skipped', reason: 'no-sink' },
+      },
     ])
 
     configured = true
@@ -220,7 +231,7 @@ describe('AwayPush', () => {
     await world.settle()
     expect(sendCalls).toHaveBeenCalledTimes(1)
     expect(world.outcomes[1]).toEqual({
-      key: 't-2',
+      source: 'terminal',
       kind: 'bell',
       result: { outcome: 'failed', reason: 'unreachable' },
     })
@@ -235,8 +246,27 @@ describe('AwayPush', () => {
 
     expect(world.sent).toEqual([])
     expect(world.outcomes).toEqual([
-      { key: 't-1', kind: 'ready', result: { outcome: 'errored', message: 'registry gone' } },
+      {
+        source: 'terminal',
+        kind: 'ready',
+        result: { outcome: 'errored', message: 'registry gone' },
+      },
     ])
+  })
+
+  it('names an external appearance by source only, never by its foreign key', async () => {
+    const world = harness({ sink: () => undefined })
+    world.set.emit(true, [external('gc-7')])
+    await world.settle()
+
+    expect(world.outcomes).toEqual([
+      {
+        source: 'external',
+        kind: 'ready',
+        result: { outcome: 'skipped', reason: 'no-sink' },
+      },
+    ])
+    expect(JSON.stringify(world.outcomes)).not.toContain('gc-7')
   })
 
   it('stops observing on dispose', async () => {
