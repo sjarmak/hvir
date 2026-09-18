@@ -34,7 +34,7 @@ import type {
 import type { SupervisorStreamSubscription } from '../gascity/supervisor-client'
 import type { PendingInteraction } from '../gascity/generated-supervisor-api'
 import type { Disposer } from '../project-host'
-import type { RendererOwner } from '../renderer-resource-scopes'
+import { demandOwnerKey, type SessionsDemandOwner } from './sessions-demand-owner'
 import {
   sessionsProjectionRootKey,
   type SessionsExternalSessionTarget,
@@ -61,7 +61,7 @@ export interface SessionsTranscriptPortOptions {
     'resolveExternalSession' | 'currentExternalSession' | 'observeSourceChanges'
   >
   readonly supervisor: SupervisorAccess
-  readonly emit: (owner: RendererOwner, change: SessionsTranscriptChange) => void
+  readonly emit: (owner: SessionsDemandOwner, change: SessionsTranscriptChange) => void
   /**
    * Called once an interaction has been answered, so whoever raised attention
    * for it can withdraw it immediately rather than at the next read (ADR-048).
@@ -70,7 +70,7 @@ export interface SessionsTranscriptPortOptions {
 }
 
 interface TranscriptLease {
-  readonly owner: RendererOwner
+  readonly owner: SessionsDemandOwner
   readonly demandGeneration: number
   readonly projectionDemandGeneration: number
   handle: SessionsTerminalHandle
@@ -111,12 +111,12 @@ export class SessionsTranscriptPort {
    * for whatever row is selected, and only one row is.
    */
   acquire(
-    owner: RendererOwner,
+    owner: SessionsDemandOwner,
     request: SessionsTranscriptRequest,
   ): SessionsTranscriptSnapshot {
     this.validateRequest(request)
     if (this.disposed) throw new Error('Sessions transcript observation is disposed')
-    const key = ownerKey(owner)
+    const key = demandOwnerKey(owner)
     const current = this.leases.get(key)
     if (current && current.demandGeneration !== request.demandGeneration) {
       throw new Error('Sessions transcript demand is already active')
@@ -148,8 +148,11 @@ export class SessionsTranscriptPort {
     return this.snapshot(owner, request.demandGeneration)
   }
 
-  snapshot(owner: RendererOwner, demandGeneration: number): SessionsTranscriptSnapshot {
-    const lease = this.leases.get(ownerKey(owner))
+  snapshot(
+    owner: SessionsDemandOwner,
+    demandGeneration: number,
+  ): SessionsTranscriptSnapshot {
+    const lease = this.leases.get(demandOwnerKey(owner))
     if (!lease || lease.demandGeneration !== demandGeneration) {
       throw new Error('Sessions transcript demand is no longer current')
     }
@@ -176,8 +179,11 @@ export class SessionsTranscriptPort {
    * acknowledged. Explicit by design: the pane says it is still watching, and
    * the turns already folded are kept rather than replayed.
    */
-  resume(owner: RendererOwner, demandGeneration: number): SessionsTranscriptSnapshot {
-    const lease = this.leases.get(ownerKey(owner))
+  resume(
+    owner: SessionsDemandOwner,
+    demandGeneration: number,
+  ): SessionsTranscriptSnapshot {
+    const lease = this.leases.get(demandOwnerKey(owner))
     if (!lease || lease.demandGeneration !== demandGeneration) {
       throw new Error('Sessions transcript demand is no longer current')
     }
@@ -200,21 +206,24 @@ export class SessionsTranscriptPort {
    * decides what to do about it.
    */
   async respond(
-    owner: RendererOwner,
+    owner: SessionsDemandOwner,
     request: SessionsTranscriptRespondRequest,
   ): Promise<SessionsMutationResponse> {
-    const lease = this.leases.get(ownerKey(owner))
+    const lease = this.leases.get(demandOwnerKey(owner))
     if (!lease || lease.demandGeneration !== request.demandGeneration) {
       throw new Error('Sessions transcript demand is no longer current')
     }
     if (lease.handle !== request.handle) return unavailable('stale-projection')
     const record = lease.pending
     if (record === undefined) return unavailable('no-interaction')
-    if (record.revision !== request.pendingRevision) return unavailable('stale-interaction')
+    if (record.revision !== request.pendingRevision)
+      return unavailable('stale-interaction')
     const action = sessionsPendingAction(record, request.optionOrdinal)
     if (action === undefined) return unavailable('invalid-option')
-    const text = request.text === undefined ? undefined : sessionsSubmitMessage(request.text)
-    if (request.text !== undefined && text === undefined) return unavailable('invalid-message')
+    const text =
+      request.text === undefined ? undefined : sessionsSubmitMessage(request.text)
+    if (request.text !== undefined && text === undefined)
+      return unavailable('invalid-message')
     const found = await this.locate(lease)
     if (!found.ok) return unavailable(found.reason)
     const result = await found.address.client.respond(found.address.cityName, found.key, {
@@ -240,10 +249,10 @@ export class SessionsTranscriptPort {
    * say, and it says so on the stream.
    */
   async submit(
-    owner: RendererOwner,
+    owner: SessionsDemandOwner,
     request: SessionsTranscriptSubmitRequest,
   ): Promise<SessionsMutationResponse> {
-    const lease = this.leases.get(ownerKey(owner))
+    const lease = this.leases.get(demandOwnerKey(owner))
     if (!lease || lease.demandGeneration !== request.demandGeneration) {
       throw new Error('Sessions transcript demand is no longer current')
     }
@@ -252,17 +261,15 @@ export class SessionsTranscriptPort {
     if (message === undefined) return unavailable('invalid-message')
     const found = await this.locate(lease)
     if (!found.ok) return unavailable(found.reason)
-    const result = await found.address.client.submit(
-      found.address.cityName,
-      found.key,
-      { message },
-    )
+    const result = await found.address.client.submit(found.address.cityName, found.key, {
+      message,
+    })
     if (!result.ok) return unavailable(result.failure.reason)
     return { outcome: 'accepted' }
   }
 
-  release(owner: RendererOwner, demandGeneration: number): boolean {
-    const key = ownerKey(owner)
+  release(owner: SessionsDemandOwner, demandGeneration: number): boolean {
+    const key = demandOwnerKey(owner)
     const lease = this.leases.get(key)
     if (!lease || lease.demandGeneration !== demandGeneration) return false
     this.leases.delete(key)
@@ -385,9 +392,7 @@ export class SessionsTranscriptPort {
    * since the pane last read it. Unlike a resume, a failure here changes no
    * lease state: nothing was sent, so nothing about the transcript changed.
    */
-  private async locate(
-    lease: TranscriptLease,
-  ): Promise<
+  private async locate(lease: TranscriptLease): Promise<
     | {
         readonly ok: true
         readonly address: SupervisorSessionAddress
@@ -600,7 +605,7 @@ export class SessionsTranscriptPort {
   }
 
   private ownsLease(lease: TranscriptLease): boolean {
-    return !this.disposed && this.leases.get(ownerKey(lease.owner)) === lease
+    return !this.disposed && this.leases.get(demandOwnerKey(lease.owner)) === lease
   }
 
   private validateRequest(request: SessionsTranscriptRequest): void {
@@ -624,10 +629,6 @@ function unavailable(
   reason: SessionsMutationUnavailableReason,
 ): SessionsMutationResponse {
   return { outcome: 'unavailable', reason }
-}
-
-function ownerKey(owner: RendererOwner): string {
-  return `${owner.id}:${owner.generation}`
 }
 
 function positiveGeneration(value: number): boolean {

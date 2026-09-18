@@ -38,6 +38,11 @@ import { SessionsObservationPort } from '../sessions/sessions-observation-port'
 import { SessionsUsageObservationPort } from '../sessions/sessions-usage-observation-port'
 import { SessionsTranscriptPort } from '../sessions/sessions-transcript-port'
 import { SessionsAttachTicketRegistry } from '../sessions/sessions-attach-tickets'
+import {
+  dispatchDemandOwner,
+  rendererOwnerOf,
+  type SessionsDemandOwner,
+} from '../sessions/sessions-demand-owner'
 import { createWorkerClient, workerPath } from '../worker-host'
 import { createWorkspaceCleanup } from '../workspace-cleanup'
 import { SmokeCleanup } from './cleanup'
@@ -102,6 +107,21 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     interruptionCheckpoint,
   } = dependencies
   let smokeWindow: BrowserWindow | undefined
+  // The smoke build serves no Companion, so only renderer-kind leases deliver.
+  const toSessionsRenderer = <C extends IpcEventChannel>(
+    owner: SessionsDemandOwner,
+    channel: C,
+    payload: IpcEventPayload<C>,
+  ): void =>
+    dispatchDemandOwner(owner, {
+      renderer: (lease) => {
+        const renderer = rendererOwnerOf(lease)
+        if (smokeWindow?.webContents.id !== renderer.id) return
+        if (!rendererResources.isCurrent(renderer)) return
+        sendRendererEvent(smokeWindow.webContents, channel, payload)
+      },
+      companion: () => undefined,
+    })
   let smokeSupervisor: PtySupervisor | undefined
   let cleanupFailureResource: ReturnType<typeof smokeCleanupResource> = null
   let discardedRendererGenerations = 0
@@ -308,14 +328,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       sessions: smokeTerminalSessions,
       ptys: supervisor,
       observeProjects: projectFixture.observe,
-      emit: (owner, change) => {
-        if (
-          smokeWindow?.webContents.id === owner.id &&
-          rendererResources.isCurrent(owner)
-        ) {
-          sendRendererEvent(smokeWindow.webContents, 'sessions:changed', change)
-        }
-      },
+      emit: (owner, change) => toSessionsRenderer(owner, 'sessions:changed', change),
     })
     cleanup.defer('Sessions observation', () => sessionsObservation.dispose())
     const sessionsUsageDemand = new HarnessUsageDemandController(smokeSessionsProviders)
@@ -324,14 +337,8 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       sessions: sessionsObservation,
       ptys: supervisor,
       usage: sessionsUsageDemand,
-      emit: (owner, change) => {
-        if (
-          smokeWindow?.webContents.id === owner.id &&
-          rendererResources.isCurrent(owner)
-        ) {
-          sendRendererEvent(smokeWindow.webContents, 'sessions:usage-changed', change)
-        }
-      },
+      emit: (owner, change) =>
+        toSessionsRenderer(owner, 'sessions:usage-changed', change),
     })
     cleanup.defer('Sessions usage observation', () => sessionsUsage.dispose())
     const sessionsTranscripts = new SessionsTranscriptPort({
@@ -341,18 +348,8 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       supervisor: {
         address: () => Promise.resolve({ ok: false, failure: { reason: 'disabled' } }),
       },
-      emit: (owner, change) => {
-        if (
-          smokeWindow?.webContents.id === owner.id &&
-          rendererResources.isCurrent(owner)
-        ) {
-          sendRendererEvent(
-            smokeWindow.webContents,
-            'sessions:transcript-changed',
-            change,
-          )
-        }
-      },
+      emit: (owner, change) =>
+        toSessionsRenderer(owner, 'sessions:transcript-changed', change),
     })
     cleanup.defer('Sessions transcript observation', () => sessionsTranscripts.dispose())
     const sessionsAttachTickets = new SessionsAttachTicketRegistry()

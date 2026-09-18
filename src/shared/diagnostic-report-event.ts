@@ -14,6 +14,7 @@ export type DiagnosticReportEventKind =
   | 'terminal-session-registry-persist-failed'
   | 'host-control-failed'
   | 'ipc-contract-rejected'
+  | 'sessions-companion-sink-missing'
   | 'react-render-contained'
   | 'main-document-load-failed'
   | 'renderer-process-exited'
@@ -26,6 +27,7 @@ export type DiagnosticReportOwner =
   | 'terminal-session-registry'
   | 'project-coordinator'
   | 'ipc-authority-router'
+  | 'sessions-observation'
   | 'renderer-error-boundary'
   | 'window-manager'
 
@@ -49,6 +51,7 @@ export const DIAGNOSTIC_REPORT_OWNERS: readonly DiagnosticReportOwner[] = [
   'terminal-session-registry',
   'project-coordinator',
   'ipc-authority-router',
+  'sessions-observation',
   'renderer-error-boundary',
   'window-manager',
 ]
@@ -112,6 +115,7 @@ const REPORT_EVENT_KINDS: readonly DiagnosticReportEventKind[] = [
   'terminal-session-registry-persist-failed',
   'host-control-failed',
   'ipc-contract-rejected',
+  'sessions-companion-sink-missing',
   'react-render-contained',
   'main-document-load-failed',
   'renderer-process-exited',

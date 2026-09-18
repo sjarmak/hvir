@@ -6,6 +6,7 @@ import {
   type DiagnosticEvidenceDeleteResult,
   type DiagnosticEvidenceState,
   type HostPath,
+  type IpcEventChannel,
   type RenderContainmentDiagnosticBatch,
   type RendererDiagnosticSession,
   type WorkbenchHealthSnapshot,
@@ -117,6 +118,10 @@ export class RuntimeDiagnostics {
 
   recordIpcContract(event: IpcContractDiagnostic): void {
     this.intake.record({ kind: 'ipc-contract-rejected', ...event })
+  }
+
+  recordSessionsCompanionSinkMissing(channel: IpcEventChannel): void {
+    this.intake.record({ kind: 'sessions-companion-sink-missing', channel })
   }
 
   startRenderer(owner: RendererOwner): RendererDiagnosticSession {

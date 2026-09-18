@@ -4,6 +4,10 @@ import {
   SessionsObservationPort,
   assembleSessionsObservation,
 } from '../src/main/sessions/sessions-observation-port'
+import {
+  rendererDemandOwner,
+  type SessionsDemandOwner,
+} from '../src/main/sessions/sessions-demand-owner'
 import type { HostCityEvents } from '../src/main/gascity/city-event-facts'
 import type { HostCitySessions } from '../src/main/gascity/gascity-city-sessions'
 import type { ObservedManagedPty } from '../src/main/pty/pty-supervisor'
@@ -210,7 +214,7 @@ describe('SessionsObservationPort', () => {
       observeProjects: projects.observe,
       emit,
     })
-    const owner = { id: 9, generation: 2 }
+    const owner = rendererDemandOwner({ id: 9, generation: 2 })
 
     expect(() => port.acquire(owner, 0)).toThrow('Invalid Sessions demand generation')
 
@@ -248,6 +252,66 @@ describe('SessionsObservationPort', () => {
     port.dispose()
   })
 
+  it('leases to a companion owner by kind and keeps Open and attach renderer verbs', () => {
+    const sessions = observationSource([
+      retained('session-1', localRoot, shell, shellProfile, 'Shell'),
+    ])
+    const emit = vi.fn()
+    const port = new SessionsObservationPort({
+      projectState,
+      hosts: hostOptions,
+      providers,
+      sessions,
+      ptys: observationSource<ObservedManagedPty>([]),
+      observeProjects: listeners().observe,
+      emit,
+    })
+    const companion: SessionsDemandOwner = {
+      kind: 'companion',
+      page: 'page-1',
+      generation: 1,
+    }
+    const renderer = rendererDemandOwner({ id: 1, generation: 1 })
+    const initial = port.acquire(companion, 1)
+    // A renderer owner with the same numbers as the companion generation is a
+    // distinct lease, not an alias of it.
+    expect(port.acquire(renderer, 2)).toEqual({ ...initial, demandGeneration: 2 })
+    expect(() => port.snapshot(renderer, 1)).toThrow('no longer current')
+
+    sessions.set([retained('session-1', localRoot, shell, shellProfile, 'Renamed')])
+    expect(emit).toHaveBeenCalledTimes(2)
+    expect(emit).toHaveBeenCalledWith(companion, {
+      demandGeneration: 1,
+      revision: initial.revision + 1,
+    })
+    expect(emit).toHaveBeenCalledWith(renderer, {
+      demandGeneration: 2,
+      revision: initial.revision + 1,
+    })
+
+    const current = port.snapshot(companion, 1)
+    const session = current.sessions[0]!
+    const workspace = current.workspaces[0]!
+    const request = {
+      demandGeneration: 1,
+      sourceRevision: current.revision,
+      handle: session.handle,
+      projectId: workspace.projectId,
+      workspaceId: workspace.workspaceId,
+      workspaceQualifier: workspace.qualifier,
+      livePty: session.livePty,
+    }
+    expect(() => port.resolveOpen(companion, request)).toThrow(
+      'Sessions open is a renderer verb',
+    )
+    expect(() => port.resolveExternalAttach(companion, request)).toThrow(
+      'Sessions attach is a renderer verb',
+    )
+    expect(port.release(companion, 1)).toBe(true)
+    expect(port.release(renderer, 2)).toBe(true)
+    port.dispose()
+  })
+
   it('reprojects on a city event alone, and reports the interaction it declared', () => {
     const cities = observationSource([cityFacts()])
     const cityEvents = observationSource([cityEventFacts([])])
@@ -263,14 +327,16 @@ describe('SessionsObservationPort', () => {
       cities,
       events: cityEvents,
     })
-    const owner = { id: 11, generation: 1 }
+    const owner = rendererDemandOwner({ id: 11, generation: 1 })
 
     const initial = port.acquire(owner, 1)
     expect(cityEvents.listenerCount()).toBe(1)
     expect(initial.sessions[0]?.attention).toBeUndefined()
 
     // Nothing else moved: the interaction is the whole change.
-    cityEvents.set([cityEventFacts([{ sessionKey: 'gc-1', requestId: 'r1', kind: 'ask' }])])
+    cityEvents.set([
+      cityEventFacts([{ sessionKey: 'gc-1', requestId: 'r1', kind: 'ask' }]),
+    ])
 
     expect(emit).toHaveBeenCalledExactlyOnceWith(owner, {
       demandGeneration: 1,
@@ -302,7 +368,7 @@ describe('SessionsObservationPort', () => {
       observeProjects: projects.observe,
       emit: vi.fn(),
     })
-    const owner = { id: 9, generation: 2 }
+    const owner = rendererDemandOwner({ id: 9, generation: 2 })
     const initial = port.acquire(owner, 1)
     const firstLocal = initial.workspaces.find(
       (workspace) => workspace.workspaceName === 'main',
@@ -344,7 +410,7 @@ describe('SessionsObservationPort', () => {
       observeProjects: listeners().observe,
       emit: vi.fn(),
     })
-    const owner = { id: 7, generation: 4 }
+    const owner = rendererDemandOwner({ id: 7, generation: 4 })
     const snapshot = port.acquire(owner, 1)
     const local = snapshot.sessions.find(
       (candidate) => candidate.handle === 'local-session',

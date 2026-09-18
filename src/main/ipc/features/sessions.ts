@@ -1,6 +1,7 @@
 import type { IpcRegistrar } from '../authority-router'
 import type { IpcDeps } from '../deps'
 import { asSessionsWorkspaceRuntimeId, gasCityAttachCommand } from '../../../shared'
+import { rendererDemandOwner } from '../../sessions/sessions-demand-owner'
 
 type SessionsIpcDeps = Pick<
   IpcDeps,
@@ -15,70 +16,84 @@ type SessionsIpcDeps = Pick<
 export function registerSessionsIpc(ipc: IpcRegistrar, deps: SessionsIpcDeps): void {
   ipc.handle('sessions:observe', (request, context) => {
     const owner = context.owner()
+    const demandOwner = rendererDemandOwner(owner)
     deps.rendererResources.assertCurrent(owner)
-    const snapshot = deps.sessionsObservation.acquire(owner, request.demandGeneration)
+    const snapshot = deps.sessionsObservation.acquire(
+      demandOwner,
+      request.demandGeneration,
+    )
     try {
       deps.rendererResources.register(
         owner,
         { lifetime: 'renderer', type: 'sessions-observation' },
         () => {
-          deps.sessionsObservation.release(owner, request.demandGeneration)
+          deps.sessionsObservation.release(demandOwner, request.demandGeneration)
         },
         { duplicate: 'reuse' },
       )
       return snapshot
     } catch (error) {
-      deps.sessionsObservation.release(owner, request.demandGeneration)
+      deps.sessionsObservation.release(demandOwner, request.demandGeneration)
       throw error
     }
   })
 
   ipc.handle('sessions:snapshot', (request, context) =>
-    deps.sessionsObservation.snapshot(context.owner(), request.demandGeneration),
+    deps.sessionsObservation.snapshot(
+      rendererDemandOwner(context.owner()),
+      request.demandGeneration,
+    ),
   )
 
   ipc.handle('sessions:release', async (request, context) => {
     const owner = context.owner()
+    const demandOwner = rendererDemandOwner(owner)
     // Qualify the release at the observation owner before touching the renderer
     // resource. A duplicate from an older demand must not revoke a newer lease.
-    if (!deps.sessionsObservation.release(owner, request.demandGeneration)) return
+    if (!deps.sessionsObservation.release(demandOwner, request.demandGeneration)) return
     await deps.rendererResources.disposeResource(owner, 'sessions-observation')
   })
 
   ipc.handle('sessions:usage-observe', (request, context) => {
     const owner = context.owner()
+    const demandOwner = rendererDemandOwner(owner)
     deps.rendererResources.assertCurrent(owner)
-    const snapshot = deps.sessionsUsage.acquire(owner, request)
+    const snapshot = deps.sessionsUsage.acquire(demandOwner, request)
     try {
       deps.rendererResources.register(
         owner,
         { lifetime: 'renderer', type: 'sessions-usage-observation' },
         () => {
-          deps.sessionsUsage.release(owner, request.demandGeneration)
+          deps.sessionsUsage.release(demandOwner, request.demandGeneration)
         },
         { duplicate: 'reuse' },
       )
       return snapshot
     } catch (error) {
-      deps.sessionsUsage.release(owner, request.demandGeneration)
+      deps.sessionsUsage.release(demandOwner, request.demandGeneration)
       throw error
     }
   })
 
   ipc.handle('sessions:usage-snapshot', (request, context) =>
-    deps.sessionsUsage.snapshot(context.owner(), request.demandGeneration),
+    deps.sessionsUsage.snapshot(
+      rendererDemandOwner(context.owner()),
+      request.demandGeneration,
+    ),
   )
 
   ipc.handle('sessions:usage-release', async (request, context) => {
     const owner = context.owner()
-    if (!deps.sessionsUsage.release(owner, request.demandGeneration)) return
+    const demandOwner = rendererDemandOwner(owner)
+    if (!deps.sessionsUsage.release(demandOwner, request.demandGeneration)) return
     await deps.rendererResources.disposeResource(owner, 'sessions-usage-observation')
   })
 
   ipc.handle('sessions:open', async (request, context) => {
     const owner = context.owner()
+    const demandOwner = rendererDemandOwner(owner)
     deps.rendererResources.assertCurrent(owner)
-    const target = deps.sessionsObservation.resolveOpen(owner, request)
+    const target = deps.sessionsObservation.resolveOpen(demandOwner, request)
     if (target.outcome === 'unavailable') return target
     const state = await deps.switchWorkspace(target.projectId, target.workspaceId)
     deps.rendererResources.assertCurrent(owner)
@@ -93,8 +108,9 @@ export function registerSessionsIpc(ipc: IpcRegistrar, deps: SessionsIpcDeps): v
 
   ipc.handle('sessions:resolve-terminal', (request, context) => {
     const owner = context.owner()
+    const demandOwner = rendererDemandOwner(owner)
     deps.rendererResources.assertCurrent(owner)
-    const target = deps.sessionsObservation.resolveOpen(owner, request)
+    const target = deps.sessionsObservation.resolveOpen(demandOwner, request)
     if (target.outcome === 'unavailable') return target
     return {
       outcome: 'resolved' as const,
@@ -107,56 +123,65 @@ export function registerSessionsIpc(ipc: IpcRegistrar, deps: SessionsIpcDeps): v
 
   ipc.handle('sessions:transcript-observe', (request, context) => {
     const owner = context.owner()
+    const demandOwner = rendererDemandOwner(owner)
     deps.rendererResources.assertCurrent(owner)
-    const snapshot = deps.sessionsTranscripts.acquire(owner, request)
+    const snapshot = deps.sessionsTranscripts.acquire(demandOwner, request)
     try {
       deps.rendererResources.register(
         owner,
         { lifetime: 'renderer', type: 'sessions-transcript-observation' },
         () => {
-          deps.sessionsTranscripts.release(owner, request.demandGeneration)
+          deps.sessionsTranscripts.release(demandOwner, request.demandGeneration)
         },
         { duplicate: 'reuse' },
       )
       return snapshot
     } catch (error) {
-      deps.sessionsTranscripts.release(owner, request.demandGeneration)
+      deps.sessionsTranscripts.release(demandOwner, request.demandGeneration)
       throw error
     }
   })
 
   ipc.handle('sessions:transcript-snapshot', (request, context) =>
-    deps.sessionsTranscripts.snapshot(context.owner(), request.demandGeneration),
+    deps.sessionsTranscripts.snapshot(
+      rendererDemandOwner(context.owner()),
+      request.demandGeneration,
+    ),
   )
 
   ipc.handle('sessions:transcript-resume', (request, context) => {
     const owner = context.owner()
+    const demandOwner = rendererDemandOwner(owner)
     deps.rendererResources.assertCurrent(owner)
-    return deps.sessionsTranscripts.resume(owner, request.demandGeneration)
+    return deps.sessionsTranscripts.resume(demandOwner, request.demandGeneration)
   })
 
   ipc.handle('sessions:transcript-release', async (request, context) => {
     const owner = context.owner()
-    if (!deps.sessionsTranscripts.release(owner, request.demandGeneration)) return
+    const demandOwner = rendererDemandOwner(owner)
+    if (!deps.sessionsTranscripts.release(demandOwner, request.demandGeneration)) return
     await deps.rendererResources.disposeResource(owner, 'sessions-transcript-observation')
   })
 
   ipc.handle('sessions:respond', async (request, context) => {
     const owner = context.owner()
+    const demandOwner = rendererDemandOwner(owner)
     deps.rendererResources.assertCurrent(owner)
-    return await deps.sessionsTranscripts.respond(owner, request)
+    return await deps.sessionsTranscripts.respond(demandOwner, request)
   })
 
   ipc.handle('sessions:submit', async (request, context) => {
     const owner = context.owner()
+    const demandOwner = rendererDemandOwner(owner)
     deps.rendererResources.assertCurrent(owner)
-    return await deps.sessionsTranscripts.submit(owner, request)
+    return await deps.sessionsTranscripts.submit(demandOwner, request)
   })
 
   ipc.handle('sessions:attach-external', async (request, context) => {
     const owner = context.owner()
+    const demandOwner = rendererDemandOwner(owner)
     deps.rendererResources.assertCurrent(owner)
-    const target = deps.sessionsObservation.resolveExternalAttach(owner, request)
+    const target = deps.sessionsObservation.resolveExternalAttach(demandOwner, request)
     if (target.outcome === 'unavailable') return target
     // The command is the source's own published alias, and the ticket is what
     // the launch will redeem: the session identifier stays on this side.

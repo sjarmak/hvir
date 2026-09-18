@@ -26,7 +26,11 @@ import {
 } from '../../shared'
 import type { Disposer } from '../project-host'
 import type { PtyObservationSource } from '../pty/pty-supervisor'
-import type { RendererOwner } from '../renderer-resource-scopes'
+import {
+  demandOwnerKey,
+  requireRendererOwner,
+  type SessionsDemandOwner,
+} from './sessions-demand-owner'
 import type { TerminalSessionObservationSource } from '../terminal/session-registry'
 import type { HostCitySessions } from '../gascity/gascity-city-sessions'
 import type { HostCityEvents } from '../gascity/city-event-facts'
@@ -70,7 +74,7 @@ export interface SessionsObservationPortOptions {
   readonly sessions: TerminalSessionObservationSource
   readonly ptys: PtyObservationSource
   readonly observeProjects: (listener: () => void) => Disposer
-  readonly emit: (owner: RendererOwner, change: SessionsProjectionChange) => void
+  readonly emit: (owner: SessionsDemandOwner, change: SessionsProjectionChange) => void
   /**
    * Sessions another authority started, projected alongside hvir's own. Demand
    * scoped like every other source: it is subscribed when the first consumer
@@ -99,7 +103,7 @@ export interface CityEventsObservationSource {
 }
 
 interface DemandLease {
-  readonly owner: RendererOwner
+  readonly owner: SessionsDemandOwner
   readonly demandGeneration: number
 }
 
@@ -132,10 +136,13 @@ export class SessionsObservationPort {
 
   constructor(private readonly options: SessionsObservationPortOptions) {}
 
-  acquire(owner: RendererOwner, demandGeneration: number): SessionsObservationSnapshot {
+  acquire(
+    owner: SessionsDemandOwner,
+    demandGeneration: number,
+  ): SessionsObservationSnapshot {
     this.assertDemandGeneration(demandGeneration)
     if (this.disposed) throw new Error('Sessions observation is disposed')
-    const key = ownerKey(owner)
+    const key = demandOwnerKey(owner)
     const current = this.leases.get(key)
     if (current?.demandGeneration === demandGeneration) {
       return this.snapshot(owner, demandGeneration)
@@ -155,9 +162,12 @@ export class SessionsObservationPort {
     return this.snapshot(owner, demandGeneration)
   }
 
-  snapshot(owner: RendererOwner, demandGeneration: number): SessionsObservationSnapshot {
+  snapshot(
+    owner: SessionsDemandOwner,
+    demandGeneration: number,
+  ): SessionsObservationSnapshot {
     this.assertDemandGeneration(demandGeneration)
-    const lease = this.leases.get(ownerKey(owner))
+    const lease = this.leases.get(demandOwnerKey(owner))
     if (!lease || lease.demandGeneration !== demandGeneration || !this.current) {
       throw new Error('Sessions observation demand is no longer current')
     }
@@ -168,8 +178,8 @@ export class SessionsObservationPort {
     }
   }
 
-  release(owner: RendererOwner, demandGeneration: number): boolean {
-    const key = ownerKey(owner)
+  release(owner: SessionsDemandOwner, demandGeneration: number): boolean {
+    const key = demandOwnerKey(owner)
     const lease = this.leases.get(key)
     if (!lease || lease.demandGeneration !== demandGeneration) return false
     this.leases.delete(key)
@@ -177,10 +187,14 @@ export class SessionsObservationPort {
     return true
   }
 
-  resolveOpen(owner: RendererOwner, request: SessionsOpenRequest): SessionsResolvedOpen {
-    const lease = this.leases.get(ownerKey(owner))
+  resolveOpen(
+    owner: SessionsDemandOwner,
+    request: SessionsOpenRequest,
+  ): SessionsResolvedOpen {
+    const renderer = requireRendererOwner(owner, 'open')
+    const lease = this.leases.get(demandOwnerKey(owner))
     return resolveSessionsOpen({
-      owner,
+      owner: renderer,
       request,
       activeDemandGeneration: lease?.demandGeneration,
       sourceRevision: this.revision,
@@ -196,13 +210,13 @@ export class SessionsObservationPort {
    * callers, never to the renderer that asked (ADR-046).
    */
   resolveExternalSession(
-    owner: RendererOwner,
+    owner: SessionsDemandOwner,
     request: Pick<
       SessionsTranscriptRequest,
       'handle' | 'projectionDemandGeneration' | 'sourceRevision'
     >,
   ): SessionsResolvedExternalSession {
-    const lease = this.leases.get(ownerKey(owner))
+    const lease = this.leases.get(demandOwnerKey(owner))
     return resolveSessionsExternalSession({
       request,
       activeDemandGeneration: lease?.demandGeneration,
@@ -218,11 +232,11 @@ export class SessionsObservationPort {
    * reconciled against change rather than invalidated by it.
    */
   currentExternalSession(
-    owner: RendererOwner,
+    owner: SessionsDemandOwner,
     projectionDemandGeneration: number,
     handle: SessionsTerminalHandle,
   ): SessionsResolvedExternalSession {
-    const lease = this.leases.get(ownerKey(owner))
+    const lease = this.leases.get(demandOwnerKey(owner))
     if (!lease || lease.demandGeneration !== projectionDemandGeneration) {
       return { outcome: 'unavailable', reason: 'stale-projection' }
     }
@@ -231,10 +245,11 @@ export class SessionsObservationPort {
 
   /** Where an attach for a projected row would land, and what it would attach to. */
   resolveExternalAttach(
-    owner: RendererOwner,
+    owner: SessionsDemandOwner,
     request: SessionsAttachExternalRequest,
   ): SessionsResolvedExternalAttach {
-    const lease = this.leases.get(ownerKey(owner))
+    requireRendererOwner(owner, 'attach')
+    const lease = this.leases.get(demandOwnerKey(owner))
     return resolveSessionsExternalAttach({
       request,
       activeDemandGeneration: lease?.demandGeneration,
@@ -246,7 +261,7 @@ export class SessionsObservationPort {
   }
 
   resolveUsageTargets(
-    owner: RendererOwner,
+    owner: SessionsDemandOwner,
     request: SessionsUsageDemandRequest,
   ): readonly SessionsResolvedUsageTarget[] {
     if (
@@ -263,11 +278,11 @@ export class SessionsObservationPort {
   }
 
   currentUsageTargets(
-    owner: RendererOwner,
+    owner: SessionsDemandOwner,
     projectionDemandGeneration: number,
     targets: readonly SessionsUsageDemandTarget[],
   ): readonly SessionsResolvedUsageTarget[] {
-    const lease = this.leases.get(ownerKey(owner))
+    const lease = this.leases.get(demandOwnerKey(owner))
     if (
       !lease ||
       lease.demandGeneration !== projectionDemandGeneration ||
@@ -595,10 +610,6 @@ export function assembleSessionsObservation({
       String(left.handle).localeCompare(String(right.handle)),
     ),
   }
-}
-
-function ownerKey(owner: RendererOwner): string {
-  return `${owner.id}:${owner.generation}`
 }
 
 function sameLivePty(

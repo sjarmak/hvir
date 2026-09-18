@@ -1,7 +1,9 @@
 import {
+  EVENT_CHANNELS,
   INVOKE_CHANNELS,
   SEND_CHANNELS,
   isDiagnosticOpaqueId,
+  type IpcEventChannel,
   type IpcInvokeChannel,
   type IpcSendChannel,
 } from '../../shared'
@@ -50,6 +52,10 @@ export type RuntimeDiagnosticEvent =
       readonly timing: 'under-1ms' | 'under-10ms' | '10ms-or-more'
     }
   | {
+      readonly kind: 'sessions-companion-sink-missing'
+      readonly channel: IpcEventChannel
+    }
+  | {
       readonly kind: 'react-render-contained'
       readonly ownerId: number
       readonly ownerGeneration: number
@@ -63,6 +69,7 @@ export type DiagnosticSource =
   | 'terminal-session-registry'
   | 'project-coordinator'
   | 'ipc-authority-router'
+  | 'sessions-observation'
   | 'renderer-error-boundary'
   | 'window-manager'
 
@@ -131,6 +138,9 @@ export function materializeDiagnosticEvent(
         timing: event.timing,
       }
       break
+    case 'sessions-companion-sink-missing':
+      stored = { ...base, channel: event.channel }
+      break
     case 'react-render-contained':
       stored = {
         ...base,
@@ -198,6 +208,7 @@ export function diagnosticSource(kind: RuntimeDiagnosticEvent['kind']): Diagnost
   }
   if (kind === 'host-control-failed') return 'project-coordinator'
   if (kind === 'ipc-contract-rejected') return 'ipc-authority-router'
+  if (kind === 'sessions-companion-sink-missing') return 'sessions-observation'
   if (
     kind === 'main-document-load-failed' ||
     kind === 'renderer-process-exited' ||
@@ -213,6 +224,7 @@ function severityFor(
   kind: RuntimeDiagnosticEvent['kind'],
 ): StoredDiagnosticEventBase['severity'] {
   if (kind === 'ipc-contract-rejected') return 'warning'
+  if (kind === 'sessions-companion-sink-missing') return 'warning'
   if (kind === 'renderer-unresponsive') return 'warning'
   if (
     kind === 'react-render-contained' ||
@@ -272,6 +284,9 @@ function isStoredDiagnosticEvent(value: unknown): value is StoredDiagnosticEvent
       ['non-main-frame', 'renderer-revoked'].includes(String(value['outcome'])) &&
       ['under-1ms', 'under-10ms', '10ms-or-more'].includes(String(value['timing']))
     )
+  }
+  if (kind === 'sessions-companion-sink-missing') {
+    return exactFields(keys, ['channel']) && isIpcEventChannel(value['channel'])
   }
   if (kind === 'react-render-contained') {
     return (
@@ -348,6 +363,7 @@ const DIAGNOSTIC_KINDS = new Set<RuntimeDiagnosticEvent['kind']>([
   'terminal-session-registry-persist-failed',
   'host-control-failed',
   'ipc-contract-rejected',
+  'sessions-companion-sink-missing',
   'react-render-contained',
   'main-document-load-failed',
   'renderer-process-exited',
@@ -387,6 +403,12 @@ function isIpcChannel(value: unknown): value is DiagnosticIpcChannel {
   return (
     typeof value === 'string' &&
     ([...INVOKE_CHANNELS, ...SEND_CHANNELS] as readonly string[]).includes(value)
+  )
+}
+
+function isIpcEventChannel(value: unknown): value is IpcEventChannel {
+  return (
+    typeof value === 'string' && (EVENT_CHANNELS as readonly string[]).includes(value)
   )
 }
 

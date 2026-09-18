@@ -281,7 +281,7 @@ function createWorkbenchEntry(): void {
       hostCatalog,
       terminalSessionRegistry,
       ptySupervisor,
-      rendererEvents,
+      { events: rendererEvents, diagnostics },
       gasCitySupervisor,
       ownGasCitySessionsSource(gasCityReader, gasCityHosts),
       gasCityStreams,

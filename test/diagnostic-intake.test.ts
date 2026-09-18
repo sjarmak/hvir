@@ -97,6 +97,23 @@ describe('DiagnosticIntake', () => {
     expect(line).toBe(`${JSON.stringify(event)}\n`)
   })
 
+  it('records a missing Sessions companion sink as a warning owned by observation', () => {
+    const intake = fixture().intake
+    intake.record({
+      kind: 'sessions-companion-sink-missing',
+      channel: 'sessions:changed',
+    })
+
+    expect(intake.snapshot().events).toEqual([
+      expect.objectContaining({
+        kind: 'sessions-companion-sink-missing',
+        owner: 'sessions-observation',
+        severity: 'warning',
+        channel: 'sessions:changed',
+      }),
+    ])
+  })
+
   it('rate-limits by closed source and retains at most 256 events and 256 KiB', () => {
     let now = 0
     let correlation = 0

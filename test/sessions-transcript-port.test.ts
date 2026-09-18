@@ -25,10 +25,14 @@ import type {
   SessionSubmitInputBody,
 } from '../src/main/gascity/generated-supervisor-api'
 import type { SessionsResolvedExternalSession } from '../src/main/sessions/sessions-external-resolution'
+import {
+  rendererDemandOwner,
+  type SessionsDemandOwner,
+} from '../src/main/sessions/sessions-demand-owner'
 import { SessionsTranscriptPort } from '../src/main/sessions/sessions-transcript-port'
 import type { SessionsExternalSessionTarget } from '../src/main/sessions/sessions-projection-identities'
 
-const OWNER = { id: 7, generation: 1 }
+const OWNER = rendererDemandOwner({ id: 7, generation: 1 })
 const HANDLE = asSessionsTerminalHandle('sessions-external-0001')
 const OTHER = asSessionsTerminalHandle('sessions-external-0002')
 
@@ -374,7 +378,9 @@ describe('sessions transcript port', () => {
       address: (reachable) => {
         addressed += 1
         // The read reaches the host; the host is gone by the time someone answers.
-        return addressed > 1 ? { ok: false, failure: { reason: 'unreachable' } } : reachable
+        return addressed > 1
+          ? { ok: false, failure: { reason: 'unreachable' } }
+          : reachable
       },
     })
     world.port.acquire(OWNER, request())
@@ -399,6 +405,23 @@ describe('sessions transcript port', () => {
     world.port.acquire(OWNER, request({ handle: OTHER }))
 
     expect(world.snapshot().pending).toBeUndefined()
+  })
+
+  it('notifies a companion lease with its own owner, never a renderer one', async () => {
+    const world = harness()
+    const companion: SessionsDemandOwner = {
+      kind: 'companion',
+      page: 'page-1',
+      generation: 1,
+    }
+    world.port.acquire(companion, request())
+    await world.settle()
+
+    expect(world.changes.length).toBeGreaterThan(0)
+    expect(world.emittedTo.every((owner) => owner === companion)).toBe(true)
+    expect(world.port.snapshot(companion, 1).handle).toBe(HANDLE)
+    expect(() => world.port.snapshot(OWNER, 1)).toThrow()
+    expect(world.port.release(companion, 1)).toBe(true)
   })
 
   it('notifies the renderer that asked, on a rising revision', async () => {
@@ -445,12 +468,19 @@ function harness(
     readonly resolve?: () => SessionsResolvedExternalSession
     readonly pending?: () => PendingInteraction | undefined
     readonly pendingSupported?: boolean
-    readonly pendingRead?: () => { readonly ok: false; readonly failure: { readonly reason: 'unreachable' } }
-    readonly respond?: () => { readonly ok: false; readonly failure: { readonly reason: 'denied' } }
+    readonly pendingRead?: () => {
+      readonly ok: false
+      readonly failure: { readonly reason: 'unreachable' }
+    }
+    readonly respond?: () => {
+      readonly ok: false
+      readonly failure: { readonly reason: 'denied' }
+    }
   } = {},
 ) {
   const streams: FakeStream[] = []
   const changes: SessionsTranscriptChange[] = []
+  const emittedTo: SessionsDemandOwner[] = []
   const responded: SessionRespondInputBody[] = []
   const submitted: SessionSubmitInputBody[] = []
   const answered: { readonly hostId: string; readonly requestId: string }[] = []
@@ -473,7 +503,10 @@ function harness(
     respond: (_city: string, _session: string, body: SessionRespondInputBody) => {
       responded.push(body)
       return Promise.resolve(
-        overrides.respond?.() ?? { ok: true as const, value: { id: 'worker-1', status: 'ok' } },
+        overrides.respond?.() ?? {
+          ok: true as const,
+          value: { id: 'worker-1', status: 'ok' },
+        },
       )
     },
     submit: (_city: string, _session: string, body: SessionSubmitInputBody) => {
@@ -514,6 +547,7 @@ function harness(
     port: undefined as unknown as SessionsTranscriptPort,
     streams,
     changes,
+    emittedTo,
     responded,
     submitted,
     answered,
@@ -539,7 +573,8 @@ function harness(
       },
     },
     supervisor,
-    emit: (_owner, change) => {
+    emit: (owner, change) => {
+      emittedTo.push(owner)
       changes.push(change)
     },
     onPendingAnswered: (hostId, requestId) => {
@@ -616,9 +651,7 @@ function history() {
 // The unavailable shape the stream reports on a drop.
 export type { SupervisorUnavailable }
 
-function interaction(
-  overrides: Partial<PendingInteraction> = {},
-): PendingInteraction {
+function interaction(overrides: Partial<PendingInteraction> = {}): PendingInteraction {
   return {
     kind: 'tool-approval',
     request_id: 'req-1',

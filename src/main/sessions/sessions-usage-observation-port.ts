@@ -14,7 +14,7 @@ import {
 } from '../harness/harness-usage-demand-controller'
 import type { Disposer } from '../project-host'
 import type { PtyUsageObservationSource } from '../pty/pty-supervisor'
-import type { RendererOwner } from '../renderer-resource-scopes'
+import { demandOwnerKey, type SessionsDemandOwner } from './sessions-demand-owner'
 import type {
   SessionsObservationPort,
   SessionsResolvedUsageTarget,
@@ -22,7 +22,7 @@ import type {
 import { sessionsUsageFact } from './sessions-usage-projection'
 
 interface UsageLease {
-  readonly owner: RendererOwner
+  readonly owner: SessionsDemandOwner
   readonly demandGeneration: number
   order: readonly SessionsTerminalHandle[]
   readonly projectionDemandGeneration: number
@@ -42,7 +42,7 @@ export interface SessionsUsageObservationPortOptions {
   >
   readonly ptys: PtyUsageObservationSource
   readonly usage: Pick<HarnessUsageDemandController, 'acquire'>
-  readonly emit: (owner: RendererOwner, change: SessionsUsageChange) => void
+  readonly emit: (owner: SessionsDemandOwner, change: SessionsUsageChange) => void
   readonly now?: () => number
 }
 
@@ -55,12 +55,12 @@ export class SessionsUsageObservationPort {
   constructor(private readonly options: SessionsUsageObservationPortOptions) {}
 
   acquire(
-    owner: RendererOwner,
+    owner: SessionsDemandOwner,
     request: SessionsUsageDemandRequest,
   ): SessionsUsageSnapshot {
     this.validateRequest(request)
     if (this.disposed) throw new Error('Sessions usage observation is disposed')
-    const key = ownerKey(owner)
+    const key = demandOwnerKey(owner)
     const current = this.leases.get(key)
     if (current?.demandGeneration === request.demandGeneration) {
       const targets = this.options.sessions.resolveUsageTargets(owner, request)
@@ -90,8 +90,8 @@ export class SessionsUsageObservationPort {
     return this.snapshot(owner, request.demandGeneration)
   }
 
-  snapshot(owner: RendererOwner, demandGeneration: number): SessionsUsageSnapshot {
-    const lease = this.leases.get(ownerKey(owner))
+  snapshot(owner: SessionsDemandOwner, demandGeneration: number): SessionsUsageSnapshot {
+    const lease = this.leases.get(demandOwnerKey(owner))
     if (!lease || lease.demandGeneration !== demandGeneration) {
       throw new Error('Sessions usage demand is no longer current')
     }
@@ -109,8 +109,8 @@ export class SessionsUsageObservationPort {
     }
   }
 
-  release(owner: RendererOwner, demandGeneration: number): boolean {
-    const key = ownerKey(owner)
+  release(owner: SessionsDemandOwner, demandGeneration: number): boolean {
+    const key = demandOwnerKey(owner)
     const lease = this.leases.get(key)
     if (!lease || lease.demandGeneration !== demandGeneration) return false
     this.leases.delete(key)
@@ -231,7 +231,7 @@ export class SessionsUsageObservationPort {
     setFact({ status: 'pending', reason: 'observation-pending' })
     try {
       const demand: HarnessUsageDemand = {
-        ownerId: `sessions-usage:${lease.owner.id}`,
+        ownerId: `sessions-usage:${demandOwnerKey(lease.owner)}`,
         rendererGeneration: lease.owner.generation,
         demandGeneration: lease.demandGeneration,
         target: resolution.target,
@@ -264,7 +264,7 @@ export class SessionsUsageObservationPort {
   }
 
   private ownsLease(lease: UsageLease): boolean {
-    return !this.disposed && this.leases.get(ownerKey(lease.owner)) === lease
+    return !this.disposed && this.leases.get(demandOwnerKey(lease.owner)) === lease
   }
 
   private validateRequest(request: SessionsUsageDemandRequest): void {
@@ -325,10 +325,6 @@ export class SessionsUsageObservationPort {
     lease.releases.delete(handle)
     void release?.()
   }
-}
-
-function ownerKey(owner: RendererOwner): string {
-  return `${owner.id}:${owner.generation}`
 }
 
 function positiveGeneration(value: number): boolean {

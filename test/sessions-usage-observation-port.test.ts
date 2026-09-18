@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { rendererDemandOwner } from '../src/main/sessions/sessions-demand-owner'
 import { SessionsUsageObservationPort } from '../src/main/sessions/sessions-usage-observation-port'
 import type { SessionsResolvedUsageTarget } from '../src/main/sessions/sessions-observation-port'
 import { usageObservationHarnessTelemetry } from '../src/main/harness/harness-usage'
@@ -15,7 +16,7 @@ import {
 } from '../src/shared'
 import type { ProjectHost } from '../src/main/project-host'
 
-const owner = { id: 9, generation: 3 }
+const owner = rendererDemandOwner({ id: 9, generation: 3 })
 const providerId = asHarnessProviderId('future-trusted-provider')
 
 describe('SessionsUsageObservationPort', () => {

@@ -7,6 +7,7 @@ import type {
   SessionsResolvedOpen,
 } from '../src/main/sessions/sessions-observation-port'
 import { RendererResourceScopes } from '../src/main/renderer-resource-scopes'
+import { rendererDemandOwner } from '../src/main/sessions/sessions-demand-owner'
 import { sessionsIpc } from '../src/shared/ipc/sessions'
 import {
   SESSIONS_PROJECTION_VERSION,
@@ -47,12 +48,12 @@ describe('Sessions IPC', () => {
     await expect(
       invoke('sessions:observe', { demandGeneration: 4 }, context),
     ).resolves.toMatchObject({ demandGeneration: 4, revision: 1 })
-    expect(observation.acquire).toHaveBeenNthCalledWith(1, owner, 4)
-    expect(observation.acquire).toHaveBeenNthCalledWith(2, owner, 4)
+    expect(observation.acquire).toHaveBeenNthCalledWith(1, rendererDemandOwner(owner), 4)
+    expect(observation.acquire).toHaveBeenNthCalledWith(2, rendererDemandOwner(owner), 4)
     await expect(
       invoke('sessions:observe', { demandGeneration: 5 }, context),
     ).rejects.toThrow('already active')
-    expect(observation.release).not.toHaveBeenCalledWith(owner, 5)
+    expect(observation.release).not.toHaveBeenCalledWith(rendererDemandOwner(owner), 5)
 
     await expect(
       invoke('sessions:snapshot', { demandGeneration: 4 }, context),
@@ -60,7 +61,7 @@ describe('Sessions IPC', () => {
 
     const rollover = scopes.rolloverOwner(owner.id)
     await rollover.cleanup
-    expect(observation.release).toHaveBeenCalledWith(owner, 4)
+    expect(observation.release).toHaveBeenCalledWith(rendererDemandOwner(owner), 4)
     await scopes.dispose()
   })
 
@@ -96,11 +97,11 @@ describe('Sessions IPC', () => {
     ).resolves.toMatchObject({ demandGeneration: 9 })
 
     expect(observation.release).toHaveBeenCalledTimes(4)
-    expect(observation.release).toHaveBeenNthCalledWith(1, owner, 8)
-    expect(observation.release).toHaveBeenNthCalledWith(2, owner, 8)
-    expect(observation.release).toHaveBeenNthCalledWith(4, owner, 8)
+    expect(observation.release).toHaveBeenNthCalledWith(1, rendererDemandOwner(owner), 8)
+    expect(observation.release).toHaveBeenNthCalledWith(2, rendererDemandOwner(owner), 8)
+    expect(observation.release).toHaveBeenNthCalledWith(4, rendererDemandOwner(owner), 8)
     await scopes.dispose()
-    expect(observation.release).toHaveBeenLastCalledWith(owner, 9)
+    expect(observation.release).toHaveBeenLastCalledWith(rendererDemandOwner(owner), 9)
   })
 
   it('routes only an exactly resolved Open through the existing workspace owner', async () => {
@@ -149,7 +150,10 @@ describe('Sessions IPC', () => {
       workspaceQualifier: qualifier,
       livePty,
     })
-    expect(observation.resolveOpen).toHaveBeenCalledWith(owner, request)
+    expect(observation.resolveOpen).toHaveBeenCalledWith(
+      rendererDemandOwner(owner),
+      request,
+    )
     expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith(
       'project-real',
       'workspace-real',
@@ -216,14 +220,20 @@ describe('Sessions IPC', () => {
     await expect(
       invoke('sessions:usage-observe', request, { owner: () => owner }),
     ).resolves.toMatchObject({ demandGeneration: 6, sampledAt: 100 })
-    expect(sessionsUsage.acquire).toHaveBeenCalledExactlyOnceWith(owner, request)
+    expect(sessionsUsage.acquire).toHaveBeenCalledExactlyOnceWith(
+      rendererDemandOwner(owner),
+      request,
+    )
     await expect(
       invoke('sessions:usage-snapshot', { demandGeneration: 6 }, { owner: () => owner }),
     ).resolves.toMatchObject({ demandGeneration: 6, revision: 2 })
 
     const rollover = scopes.rolloverOwner(owner.id)
     await rollover.cleanup
-    expect(sessionsUsage.release).toHaveBeenCalledExactlyOnceWith(owner, 6)
+    expect(sessionsUsage.release).toHaveBeenCalledExactlyOnceWith(
+      rendererDemandOwner(owner),
+      6,
+    )
     await scopes.dispose()
   })
 
@@ -243,7 +253,10 @@ describe('Sessions IPC', () => {
     await expect(
       invoke('sessions:transcript-observe', request, context),
     ).resolves.toMatchObject({ demandGeneration: 2, revision: 1 })
-    expect(sessionsTranscripts.acquire).toHaveBeenCalledExactlyOnceWith(owner, request)
+    expect(sessionsTranscripts.acquire).toHaveBeenCalledExactlyOnceWith(
+      rendererDemandOwner(owner),
+      request,
+    )
     await expect(
       invoke('sessions:transcript-snapshot', { demandGeneration: 2 }, context),
     ).resolves.toMatchObject({ revision: 2 })
@@ -251,11 +264,17 @@ describe('Sessions IPC', () => {
     await expect(
       invoke('sessions:transcript-resume', { demandGeneration: 2 }, context),
     ).resolves.toMatchObject({ revision: 3 })
-    expect(sessionsTranscripts.resume).toHaveBeenCalledExactlyOnceWith(owner, 2)
+    expect(sessionsTranscripts.resume).toHaveBeenCalledExactlyOnceWith(
+      rendererDemandOwner(owner),
+      2,
+    )
 
     const rollover = scopes.rolloverOwner(owner.id)
     await rollover.cleanup
-    expect(sessionsTranscripts.release).toHaveBeenCalledExactlyOnceWith(owner, 2)
+    expect(sessionsTranscripts.release).toHaveBeenCalledExactlyOnceWith(
+      rendererDemandOwner(owner),
+      2,
+    )
     await scopes.dispose()
   })
 
@@ -282,8 +301,14 @@ describe('Sessions IPC', () => {
     await expect(invoke('sessions:submit', message, context)).resolves.toEqual({
       outcome: 'accepted',
     })
-    expect(sessionsTranscripts.respond).toHaveBeenCalledExactlyOnceWith(owner, answer)
-    expect(sessionsTranscripts.submit).toHaveBeenCalledExactlyOnceWith(owner, message)
+    expect(sessionsTranscripts.respond).toHaveBeenCalledExactlyOnceWith(
+      rendererDemandOwner(owner),
+      answer,
+    )
+    expect(sessionsTranscripts.submit).toHaveBeenCalledExactlyOnceWith(
+      rendererDemandOwner(owner),
+      message,
+    )
 
     const stale = scopes.rolloverOwner(owner.id)
     await stale.cleanup
