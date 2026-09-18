@@ -166,6 +166,7 @@ worktree orchestrator.
 > Lifecycle: Partially superseded
 > Superseded by: [ADR-019](adr/ADR-019-working-output-is-not-actionable-attention.md) | partial | Classifying ongoing post-submission output as actionable new-output attention.
 > Superseded by: [ADR-048](adr/ADR-048-exact-external-pending-interaction-attention.md) | partial | Terminal focus as the only rule that clears attention.
+> Superseded by: [ADR-049](adr/ADR-049-companion-observer-and-away-push.md) | partial | The OS badge as the only attention surface while all hvir windows are unfocused.
 
 Terminal focus is the single clearing rule; workspace/project and OS surfaces only aggregate
 the appropriate unseen child attention.
@@ -174,6 +175,7 @@ the appropriate unseen child attention.
 
 > Lifecycle: Partially superseded
 > Superseded by: [ADR-045](adr/ADR-045-explicit-outside-project-viewing.md) | partial | Temporary document viewing addendum: location, document-type, and automatic image-read scope.
+> Superseded by: [ADR-049](adr/ADR-049-companion-observer-and-away-push.md) | partial | The prohibition on any hvir-owned network listener, for one loopback-bound Companion listener.
 
 All project operations and paths are host-qualified behind `ProjectHost`; SSH remains a
 bounded transport owned by one logical host, not an installed remote service.
@@ -509,6 +511,16 @@ endpoint, exposing a narrow verb surface with pinned generated types and typed u
 
 An authority-declared pending interaction rolls up as actionable attention cleared by
 resolution rather than focus, carrying its freshness to every surface that counts it.
+
+### [ADR-049 — The Companion is an away-time observer served by the running app](adr/ADR-049-companion-observer-and-away-push.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-009](adr/ADR-009-hierarchical-attention.md) | partial | The OS badge as the only attention surface while all hvir windows are unfocused.
+> Supersedes: [ADR-010](adr/ADR-010-project-host-remote-boundary.md) | partial | The prohibition on any hvir-owned network listener, for one loopback-bound Companion listener.
+
+A paired phone client of the running app reads the Sessions inventory and answers external
+sessions over a loopback listener the operator publishes, fed by the one actionable set that also
+drives the badge and away-time Push.
 
 ## 5. Architecture
 

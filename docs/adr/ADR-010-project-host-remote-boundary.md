@@ -2,6 +2,7 @@
 
 > Lifecycle: Partially superseded
 > Superseded by: [ADR-045](ADR-045-explicit-outside-project-viewing.md) | partial | Temporary document viewing addendum: location, document-type, and automatic image-read scope.
+> Superseded by: [ADR-049](ADR-049-companion-observer-and-away-push.md) | partial | The prohibition on any hvir-owned network listener, for one loopback-bound Companion listener.
 
 ## Context
 
