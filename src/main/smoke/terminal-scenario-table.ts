@@ -3,6 +3,9 @@ import type { BrowserWindow } from 'electron'
 import type { HostPath, ProjectState } from '../../shared'
 import type { ProjectHost } from '../project-host'
 import type { PtySupervisor } from '../pty/pty-supervisor'
+import type { RendererResourceScopes } from '../renderer-resource-scopes'
+import type { SmokeAttention } from './attention-smoke'
+import { verifyAttentionAwayThrottlingScenario } from './attention-away-throttling'
 import type { TerminalMoveSmokeHarness } from './terminal-move'
 import {
   verifyAppSettingsScenario,
@@ -20,6 +23,8 @@ export interface TerminalScenarioTableOptions {
   readonly smokeRoot: HostPath
   readonly harness: TerminalMoveSmokeHarness
   readonly emitState: (state: ProjectState) => void
+  readonly attention: SmokeAttention
+  readonly resources: Pick<RendererResourceScopes, 'currentOwner'>
 }
 
 /** The terminal presentation scenarios, keyed by smoke mode, over one live window. */
@@ -30,6 +35,8 @@ export function terminalScenarioTable({
   smokeRoot,
   harness,
   emitState,
+  attention,
+  resources,
 }: TerminalScenarioTableOptions): Readonly<Record<string, () => Promise<void>>> {
   return {
     'terminal-theme': () => verifyTerminalThemeScenario(win, supervisor),
@@ -40,5 +47,13 @@ export function terminalScenarioTable({
     'app-settings': () => verifyAppSettingsScenario(win, supervisor),
     'harness-profiles': () =>
       verifyHarnessProfilesScenario(win, supervisor, host, smokeRoot),
+    'attention-away-throttling': async () => {
+      await verifyAttentionAwayThrottlingScenario({
+        win,
+        supervisor,
+        attention,
+        resources,
+      })
+    },
   }
 }

@@ -58,3 +58,55 @@ confidence is insufficient to justify persistent instrumentation or a user-facin
 No promotion issue is warranted from this evaluation. Reconsider only if a separately aligned
 problem identifies a higher-confidence production event and the Linux/macOS capacity evidence
 continues to meet ADR-016's cost budgets.
+
+## Ready detection while Away (2026-09-17)
+
+ADR-049 (Companion as away-time observer) makes away-time correctness depend on a hidden or
+unfocused renderer still classifying Ready on time, and its Consequences require that this be
+verified under Chromium background throttling rather than assumed. The `attention-away-throttling`
+Electron smoke group (`src/main/smoke/attention-away-throttling.ts`) measures it: it launches one
+Bare Shell, arms the renderer with Enter while the window is focused, puts the window in each
+away state, waits a hold, has main write one line so the shell prints a final burst and prompt,
+and records the time from the last PTY output main saw to the moment the Ready entry entered
+main's actionable set. The budget is the renderer quiet period (`idleThresholdMs`, 4000 ms by
+default) plus 2000 ms of slack, so 6000 ms. The group also requires that main's Away predicate is
+true when Ready arrives and that the terminal never enters the set while a window is focused.
+
+Measured on 2026-09-17 under `xvfb-run -a` on the shared Linux build machine, with the default
+window policy (`backgroundThrottling` unset, so Chromium's default of true):
+
+| State | Hold while away | Quiet to Ready | Renderer state at Ready | Run |
+| --- | --- | --- | --- | --- |
+| visible, unfocused (`win.blur()`) | 1000 ms | 4011 ms, 4003 ms, 4004 ms | visible, `hasFocus()` false | 1, 2, long |
+| hidden (`win.hide()`) | 1000 ms | 4582 ms, 4572 ms | `visibilityState` hidden | 1, 2 |
+| hidden (`win.hide()`) | 320000 ms | 5164 ms | `visibilityState` hidden | long |
+| minimized (`win.minimize()`) | 1000 ms | 4003 ms | visible, `hasFocus()` false | 2, long |
+
+Run 1 is the first `node scripts/run-smoke-scenarios.mts attention-away-throttling` invocation;
+it recorded the first two rows and then failed in the minimized state because the burst was still
+shell-timed and fired while the display was still deciding whether to honor the minimize. The
+scenario was changed so main triggers the burst only after the state settles; run 2 (the same
+command, 22685 ms wall clock) passed all three states. The long run is one
+`HVIR_SMOKE_AWAY_HIDDEN_HOLD_MS=320000 HVIR_SMOKE_SCENARIO=attention-away-throttling xvfb-run -a bash scripts/run-smoke.sh`
+invocation that keeps the window hidden for 320 s before the burst, past Chromium's five-minute
+threshold for intensive wake-up throttling.
+
+Environment caveats. Xvfb runs without a window manager, so `win.minimize()` is not honored
+(`win.isMinimized()` stays false and the document stays visible); the scenario reports
+`state not honored by the display, blurred instead` and measures the minimized row as a second
+unfocused-visible case. On a desktop with a window manager the minimized row is expected to behave
+like the hidden row, which is the throttled case measured here. Timings include IPC delivery and a
+25 ms main-side poll for the state probes, and the hidden rows show the 1 Hz timer alignment
+Chromium applies to hidden pages (about 0.6 s over the 4 s quiet period after 1 s hidden, about
+1.2 s over after 320 s hidden). The Ready timer is a single `setTimeout` scheduled from the PTY
+output handler, not a chained timer, so intensive throttling (one wake-up per minute for chained
+timers) did not apply even after five minutes hidden.
+
+Decision: keep Electron's default `backgroundThrottling` (true) in
+`src/main/window/window-policy.ts`. Every measured state reached main within the 6000 ms budget,
+including the five-minute hidden case, so the hidden renderer classifies Ready on time and ADR-049's
+away-time channel can rely on it without spending the CPU that an unthrottled hidden renderer
+would cost. Revisit if `idleThresholdMs` is lowered below the 1 Hz alignment headroom, if the Ready
+timer becomes a chained or nested timer, or if a desktop measurement with an honored minimize
+exceeds the budget; `npm run smoke` now carries the group, and the hold knob supports a one-off
+long-hidden re-measurement.

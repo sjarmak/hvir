@@ -33,7 +33,6 @@ import {
 import { HarnessUsageDemandController } from '../harness/harness-usage-demand-controller'
 import { sendRendererEvent } from '../renderer-event-delivery'
 import { registerIpcHandlers } from '../ipc'
-import type { RendererResourceScopes } from '../renderer-resource-scopes'
 import { PtySupervisor } from '../pty/pty-supervisor'
 import { SessionsObservationPort } from '../sessions/sessions-observation-port'
 import { SessionsUsageObservationPort } from '../sessions/sessions-usage-observation-port'
@@ -47,12 +46,12 @@ import {
 import { createWorkerClient, workerPath } from '../worker-host'
 import { createWorkspaceCleanup } from '../workspace-cleanup'
 import { SmokeCleanup } from './cleanup'
+import { smokeOwnedResourceEvidence } from './owned-resource-evidence'
 import {
   reportSmokeFailureEvidence,
   smokeCleanupResource,
   type SmokeFailureCheckpoint,
   type SmokeFailurePhase,
-  type SmokeOwnedResourceEvidence,
 } from './failure-evidence.mts'
 import { recordRendererIsolationSelection } from './renderer-isolation'
 import { createSmokeImagePasteFallback } from './image-paste-fallback'
@@ -769,6 +768,8 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       smokeRoot,
       harness: terminalMoveSmoke,
       emitState: (state) => emit('project:state', state),
+      attention: smokeAttention,
+      resources: rendererResources,
     })[mode]
     if (terminalScenario !== undefined) {
       await terminalScenario()
@@ -812,29 +813,6 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
         throw cleanupError
       }
     }
-  }
-}
-
-function smokeOwnedResourceEvidence(
-  win: BrowserWindow | undefined,
-  supervisor: PtySupervisor | undefined,
-  watcherActive: boolean,
-  rendererResources: RendererResourceScopes,
-): SmokeOwnedResourceEvidence {
-  let rendererGeneration: number | null = null
-  if (win && !win.isDestroyed()) {
-    try {
-      rendererGeneration = rendererResources.currentOwner(win.webContents.id).generation
-    } catch {
-      // A revoked owner is represented by the closed null/false fields below.
-    }
-  }
-  return {
-    windowCount: win && !win.isDestroyed() ? 1 : 0,
-    ptyCount: supervisor?.list().length ?? 0,
-    watcherActive,
-    rendererOwnerActive: rendererGeneration !== null,
-    rendererGeneration,
   }
 }
 
