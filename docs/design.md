@@ -514,13 +514,24 @@ resolution rather than focus, carrying its freshness to every surface that count
 
 ### [ADR-049 — The Companion is an away-time observer served by the running app](adr/ADR-049-companion-observer-and-away-push.md)
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-009](adr/ADR-009-hierarchical-attention.md) | partial | The OS badge as the only attention surface while all hvir windows are unfocused.
 > Supersedes: [ADR-010](adr/ADR-010-project-host-remote-boundary.md) | partial | The prohibition on any hvir-owned network listener, for one loopback-bound Companion listener.
+> Superseded by: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | The exclusion of a terminal screen and terminal input from the Companion, for live hvir-owned terminals under a mirror lease.
 
 A paired phone client of the running app reads the Sessions inventory and answers external
 sessions over a loopback listener the operator publishes, fed by the one actionable set that also
 drives the badge and away-time Push.
+
+### [ADR-050 — The Companion mirrors a live hvir terminal and carries its user's keystrokes](adr/ADR-050-companion-live-terminal-mirror.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-049](adr/ADR-049-companion-observer-and-away-push.md) | partial | The exclusion of a terminal screen and terminal input from the Companion, for live hvir-owned terminals under a mirror lease.
+
+A Companion page holds a mirror lease on one live hvir-owned PTY: main forwards the retained
+output tail, live bytes, and desktop geometry, the phone emulates them with ghostty-web, and
+armed user keystrokes return to that exact instance without the mirror ever owning, resizing,
+or composing anything.
 
 ## 5. Architecture
 

@@ -1,8 +1,9 @@
 # ADR-049: The Companion is an away-time observer served by the running app
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-009](ADR-009-hierarchical-attention.md) | partial | The OS badge as the only attention surface while all hvir windows are unfocused.
 > Supersedes: [ADR-010](ADR-010-project-host-remote-boundary.md) | partial | The prohibition on any hvir-owned network listener, for one loopback-bound Companion listener.
+> Superseded by: [ADR-050](ADR-050-companion-live-terminal-mirror.md) | partial | The exclusion of a terminal screen and terminal input from the Companion, for live hvir-owned terminals under a mirror lease.
 
 ## Context
 
