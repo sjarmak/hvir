@@ -32,10 +32,11 @@ interface TerminalViewProps {
 
 /**
  * One mirrored terminal (ADR-050) filling the phone's screen: a one-line
- * header, the desktop's grid scaled into all the height that remains, and one
- * compact control bar at the bottom. While the row carries a prompt, its
- * message is the header's second line (ADR-051). A row that also takes
- * answers offers its transcript beside the mirror.
+ * header, the terminal in all the height that remains (the desktop's output
+ * reflowed to the phone's width, or its grid scaled), and one compact control
+ * bar at the bottom. While the row carries a prompt, its message is the
+ * header's second line (ADR-051). A row that also takes answers offers its
+ * transcript beside the mirror.
  */
 export function TerminalView(props: TerminalViewProps) {
   const { row, terminal, transcript, arming, onInput } = props

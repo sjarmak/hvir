@@ -1,4 +1,8 @@
-import { mirrorZoomAction, type CompanionMirrorZoom } from './companion-mirror-zoom'
+import {
+  mirrorZoomAction,
+  mirrorZoomLabel,
+  type CompanionMirrorZoom,
+} from './companion-mirror-zoom'
 
 interface MirrorHeaderProps {
   readonly title: string
@@ -37,10 +41,11 @@ export function MirrorHeader(props: MirrorHeaderProps) {
         type="button"
         className="companion-button companion-button-compact companion-zoom"
         data-zoom={props.zoom}
-        aria-pressed={props.zoom === 'fill-height'}
+        aria-label={mirrorZoomAction(props.zoom)}
+        title={mirrorZoomAction(props.zoom)}
         onClick={props.onZoom}
       >
-        {mirrorZoomAction(props.zoom)}
+        {mirrorZoomLabel(props.zoom)}
       </button>
       {props.promptBody === undefined ? null : (
         <p className="companion-mirror-prompt" role="status">

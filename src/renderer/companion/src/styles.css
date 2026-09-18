@@ -427,6 +427,29 @@ body {
   touch-action: pan-x;
 }
 
+/* The reflow view is a page of its own: the browser scrolls it. */
+.companion-terminal-host[data-zoom='reflow'] {
+  touch-action: pan-y;
+}
+
+.companion-terminal-reflow {
+  height: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  color: #e8eaee;
+  font:
+    13px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  touch-action: pan-y;
+}
+
 .companion-terminal-extent {
   position: relative;
   overflow: hidden;

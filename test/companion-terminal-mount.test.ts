@@ -1,7 +1,11 @@
 // @vitest-environment happy-dom
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
+import {
+  REFLOW_LINE_LIMIT,
+  REFLOW_REFRESH_MS,
+} from '../src/renderer/companion/src/companion-mirror-reflow'
 import { CompanionTerminalMount } from '../src/renderer/companion/src/companion-terminal-mount'
 import type { CompanionTerminalPane } from '../src/renderer/companion/src/companion-terminal-pane'
 import { asSessionsTerminalHandle } from '../src/shared'
@@ -131,7 +135,12 @@ describe('CompanionTerminalMount', () => {
     mount.setZoom('fit-width')
     const drag = (type: string, clientY: number): boolean =>
       host.dispatchEvent(
-        new PointerEvent(type, { pointerId: 1, pointerType: 'touch', clientY, bubbles: true }),
+        new PointerEvent(type, {
+          pointerId: 1,
+          pointerType: 'touch',
+          clientY,
+          bubbles: true,
+        }),
       )
     drag('pointerdown', 100)
     drag('pointermove', 76)
@@ -141,5 +150,78 @@ describe('CompanionTerminalMount', () => {
     drag('pointerdown', 100)
     drag('pointermove', 76)
     expect(panes[0]?.scrolls).toEqual([3])
+  })
+
+  it('the reflow view shows the pane text as a page, hides the grid, and takes no drags', async () => {
+    vi.useFakeTimers()
+    try {
+      const panes: FakeCompanionPane[] = []
+      const { mount, host } = mountWith((cols, rows) => {
+        const pane = new FakeCompanionPane(cols, rows)
+        pane.lines = [
+          { text: 'first  ', wrapped: false },
+          { text: 'line', wrapped: true },
+        ]
+        panes.push(pane)
+        return Promise.resolve(pane)
+      })
+      const page = host.querySelector<HTMLElement>('.companion-terminal-reflow')
+      const extent = host.querySelector<HTMLElement>('.companion-terminal-extent')
+      expect(page?.hidden).toBe(false)
+      expect(extent?.hidden).toBe(true)
+
+      mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: 'tail' })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(page?.textContent).toBe('first  line')
+      expect(panes[0]?.reads).toEqual([REFLOW_LINE_LIMIT])
+
+      // Output refreshes the page once per interval, from the pane's current rows.
+      panes[0]!.lines = [
+        { text: 'first', wrapped: false },
+        { text: 'second', wrapped: false },
+      ]
+      mount.handle({ type: 'output', handle: ROW, data: 'a' })
+      mount.handle({ type: 'output', handle: ROW, data: 'b' })
+      expect(page?.textContent).toBe('first  line')
+      await vi.advanceTimersByTimeAsync(REFLOW_REFRESH_MS)
+      expect(page?.textContent).toBe('first\nsecond')
+      expect(panes[0]?.reads).toHaveLength(2)
+
+      const drag = (type: string, clientY: number): boolean =>
+        host.dispatchEvent(
+          new PointerEvent(type, {
+            pointerId: 1,
+            pointerType: 'touch',
+            clientY,
+            bubbles: true,
+          }),
+        )
+      drag('pointerdown', 100)
+      drag('pointermove', 20)
+      drag('pointerup', 20)
+      expect(panes[0]?.scrolls).toEqual([])
+
+      // A grid view puts the grid back and stops refreshing the page.
+      Object.defineProperty(host, 'clientWidth', { get: () => 400 })
+      Object.defineProperty(host, 'clientHeight', { get: () => 320 })
+      mount.setZoom('fit-width')
+      expect(page?.hidden).toBe(true)
+      expect(extent?.hidden).toBe(false)
+      expect(
+        host.querySelector<HTMLElement>('.companion-terminal-scale')?.style.transform,
+      ).toBe('scale(0.5)')
+      panes[0]!.lines = [{ text: 'third', wrapped: false }]
+      mount.handle({ type: 'output', handle: ROW, data: 'c' })
+      await vi.advanceTimersByTimeAsync(REFLOW_REFRESH_MS)
+      expect(page?.textContent).toBe('first\nsecond')
+
+      mount.setZoom('reflow')
+      expect(page?.textContent).toBe('third')
+      expect(panes[0]?.resizes).toEqual([])
+      mount.dispose()
+      expect(host.querySelector('.companion-terminal-reflow')).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

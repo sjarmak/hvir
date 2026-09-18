@@ -21,6 +21,7 @@ import ghosttyWasmUrl from 'ghostty-web/ghostty-vt.wasm?url'
 
 import { TerminalWheelController, type TerminalWheelEvent } from '../../../shared'
 import type {
+  CompanionBufferLine,
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
 } from './companion-terminal-pane'
@@ -100,6 +101,18 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
       ctrlKey: false,
     })
     if (!handled) this.terminal.scrollLines(amount)
+  }
+
+  /** Rows from the active buffer's end; `translateToString` keeps the width, the page trims. */
+  bufferLines(limit: number): readonly CompanionBufferLine[] {
+    const buffer = this.terminal.buffer.active
+    const lines: CompanionBufferLine[] = []
+    for (let y = Math.max(0, buffer.length - limit); y < buffer.length; y += 1) {
+      const line = buffer.getLine(y)
+      if (line === undefined) continue
+      lines.push({ text: line.translateToString(false), wrapped: line.isWrapped })
+    }
+    return lines
   }
 
   setInputEnabled(enabled: boolean): void {

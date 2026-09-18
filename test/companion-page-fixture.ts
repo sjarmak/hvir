@@ -9,6 +9,7 @@ import {
   type CompanionResponse,
 } from '../src/renderer/companion/src/companion-client'
 import type {
+  CompanionBufferLine,
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
 } from '../src/renderer/companion/src/companion-terminal-pane'
@@ -195,6 +196,9 @@ export class FakeCompanionPane implements CompanionTerminalPane {
   readonly resizes: Array<{ readonly cols: number; readonly rows: number }> = []
   readonly inputEnabled: boolean[] = []
   readonly scrolls: number[] = []
+  /** What `bufferLines` reads: a test writes the rows the emulator would hold. */
+  lines: CompanionBufferLine[] = []
+  readonly reads: number[] = []
   mounted?: HTMLElement
   disposed = false
   private readonly listeners = new Set<(data: string, source: 'user') => void>()
@@ -236,6 +240,11 @@ export class FakeCompanionPane implements CompanionTerminalPane {
 
   scrollLines(amount: number): void {
     this.scrolls.push(amount)
+  }
+
+  bufferLines(limit: number): readonly CompanionBufferLine[] {
+    this.reads.push(limit)
+    return this.lines.slice(-limit)
   }
 
   setInputEnabled(enabled: boolean): void {

@@ -1,30 +1,44 @@
 /**
- * How the desktop's grid is scaled onto the phone (ADR-050): the emulator
- * keeps the desktop's exact columns and rows, and only a CSS transform
- * changes. Fill-height, the default, makes the rows fill the terminal area
- * and lets the person pan across the columns (a wide desktop grid fitted to a
- * phone's width is a few pixels per row over a dark area); fit-to-width shows
- * the whole grid. The choice is the page's own and is remembered in its
- * storage.
+ * How the desktop's grid is shown on the phone (ADR-050): the emulator keeps
+ * the desktop's exact columns and rows whatever the view. Reflow, the
+ * default, reads the emulator's screen and scrollback as text wrapped to the
+ * phone's width at a readable size, filling the area and scrolling like a
+ * page. The two grid views only change a CSS transform: fit-to-width shows
+ * the whole grid (a wide desktop grid on a phone is small), and fill-height
+ * makes the rows fill the area and lets the person pan across the columns.
+ * The choice is the page's own and is remembered in its storage.
  */
-export type CompanionMirrorZoom = 'fit-width' | 'fill-height'
+export type CompanionMirrorGridZoom = 'fit-width' | 'fill-height'
+export type CompanionMirrorZoom = 'reflow' | CompanionMirrorGridZoom
 
 export const COMPANION_MIRROR_ZOOM_STORAGE_KEY = 'hvir-companion-mirror-zoom'
-export const DEFAULT_MIRROR_ZOOM: CompanionMirrorZoom = 'fill-height'
+export const DEFAULT_MIRROR_ZOOM: CompanionMirrorZoom = 'reflow'
 
-const ZOOMS: readonly CompanionMirrorZoom[] = ['fit-width', 'fill-height']
+/** A tap moves through the views in this order and round again. */
+const ZOOMS: readonly CompanionMirrorZoom[] = ['reflow', 'fit-width', 'fill-height']
+
+const LABELS: Record<CompanionMirrorZoom, string> = {
+  reflow: 'Reflow',
+  'fit-width': 'Fit width',
+  'fill-height': 'Fill height',
+}
 
 export function isCompanionMirrorZoom(value: unknown): value is CompanionMirrorZoom {
   return typeof value === 'string' && (ZOOMS as readonly string[]).includes(value)
 }
 
 export function nextMirrorZoom(zoom: CompanionMirrorZoom): CompanionMirrorZoom {
-  return zoom === 'fit-width' ? 'fill-height' : 'fit-width'
+  return ZOOMS[(ZOOMS.indexOf(zoom) + 1) % ZOOMS.length]!
 }
 
-/** The toggle's label: the mode a tap switches to. */
+/** The view's name, as the header control shows the one in force. */
+export function mirrorZoomLabel(zoom: CompanionMirrorZoom): string {
+  return LABELS[zoom]
+}
+
+/** What a tap on the control does, for its accessible name. */
 export function mirrorZoomAction(zoom: CompanionMirrorZoom): string {
-  return zoom === 'fit-width' ? 'Fill height' : 'Fit width'
+  return `View: ${LABELS[zoom]}. Switch to ${LABELS[nextMirrorZoom(zoom)]}`
 }
 
 export interface MirrorGeometry {
@@ -37,12 +51,13 @@ export interface MirrorGeometry {
 }
 
 /**
- * The transform scale for a zoom, or nothing while either box has no layout.
- * Fit-to-width never enlarges and never lets the rows run past the area;
- * fill-height sets the rows to the area's height whatever the width becomes.
+ * The transform scale for a grid view, or nothing while either box has no
+ * layout. Fit-to-width never enlarges and never lets the rows run past the
+ * area; fill-height sets the rows to the area's height whatever the width
+ * becomes.
  */
 export function mirrorScale(
-  zoom: CompanionMirrorZoom,
+  zoom: CompanionMirrorGridZoom,
   geometry: MirrorGeometry,
 ): number | undefined {
   const { hostWidth, hostHeight, gridWidth, gridHeight } = geometry

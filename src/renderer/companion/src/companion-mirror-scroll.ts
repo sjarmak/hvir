@@ -63,6 +63,7 @@ interface Drag {
  */
 export class MirrorScrollGestures {
   private drag?: Drag
+  private enabled = true
 
   constructor(
     private readonly host: HTMLElement,
@@ -74,6 +75,12 @@ export class MirrorScrollGestures {
     host.addEventListener('pointercancel', this.onPointerCancel)
     host.addEventListener('touchend', this.onTouchEnd, { capture: true })
     host.addEventListener('touchcancel', this.onTouchEnd, { capture: true })
+  }
+
+  /** Off while the host scrolls a page of its own (the reflow view); a drag in progress ends. */
+  setEnabled(enabled: boolean): void {
+    this.enabled = enabled
+    if (!enabled) this.drag = undefined
   }
 
   dispose(): void {
@@ -88,6 +95,7 @@ export class MirrorScrollGestures {
   }
 
   private readonly onPointerDown = (event: PointerEvent): void => {
+    if (!this.enabled) return
     if (event.pointerType !== 'touch' && event.pointerType !== 'pen') return
     this.host.setPointerCapture(event.pointerId)
     this.drag = {

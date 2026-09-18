@@ -1,18 +1,22 @@
 /**
  * One mirror's pane inside the terminal view: created at the geometry the
  * `opened` frame names, fed the tail and every later frame, replaced when a
- * new `opened` arrives, and scaled into the host. The pane is built
- * asynchronously (the emulator loads its module first), so frames that land
- * before it is ready are queued in order and written once it mounts.
+ * new `opened` arrives, and shown in the host by the view in force. The pane
+ * is built asynchronously (the emulator loads its module first), so frames
+ * that land before it is ready are queued in order and written once it
+ * mounts.
  *
  * The grid is the desktop's: geometry frames resize the pane, and nothing
- * here ever reports a size back. Zoom is a CSS transform on the pane's
- * surface, so the emulator keeps its exact cell grid; the extent around the
- * surface takes the scaled size, so the host scrolls over exactly the grid.
- * A touch drag over the host scrolls the pane by rows; wheel input reaches
- * the pane directly.
+ * here ever reports a size back. The reflow view hides the grid and shows the
+ * emulator's text at the phone's width in a page of its own, which the
+ * browser scrolls. A grid view is a CSS transform on the pane's surface, so
+ * the emulator keeps its exact cell grid; the extent around the surface takes
+ * the scaled size, so the host scrolls over exactly the grid, and a touch drag
+ * over the host scrolls the pane by rows. Wheel input reaches the pane
+ * directly in every view.
  */
 import type { CompanionTerminalEvent } from '../../../shared'
+import { MirrorReflow, REFLOW_LINE_LIMIT } from './companion-mirror-reflow'
 import { MirrorScrollGestures } from './companion-mirror-scroll'
 import {
   DEFAULT_MIRROR_ZOOM,
@@ -40,6 +44,8 @@ export class CompanionTerminalMount {
   private disposed = false
   private readonly extent: HTMLDivElement
   private readonly surface: HTMLDivElement
+  private readonly page: HTMLPreElement
+  private readonly reflow: MirrorReflow
   private readonly observer: ResizeObserver
   private readonly gestures: MirrorScrollGestures
 
@@ -54,13 +60,20 @@ export class CompanionTerminalMount {
     this.surface = document.createElement('div')
     this.surface.className = 'companion-terminal-scale'
     this.extent.append(this.surface)
-    host.append(this.extent)
+    this.page = document.createElement('pre')
+    this.page.className = 'companion-terminal-reflow'
+    host.append(this.extent, this.page)
+    this.reflow = new MirrorReflow(
+      this.page,
+      () => this.pane?.bufferLines(REFLOW_LINE_LIMIT) ?? [],
+    )
     this.observer = new ResizeObserver(() => this.fit())
     this.observer.observe(host)
     this.gestures = new MirrorScrollGestures(host, {
       rowHeight: () => this.rowHeight(),
       scrollLines: (lines) => this.pane?.scrollLines(lines),
     })
+    this.show()
   }
 
   handle(event: CompanionTerminalEvent): void {
@@ -69,7 +82,7 @@ export class CompanionTerminalMount {
         this.open(event.cols, event.rows, event.tail)
         return
       case 'output':
-        if (this.pane !== undefined) this.pane.write(event.data)
+        if (this.pane !== undefined) this.write(event.data)
         else this.pending?.frames.push(event.data)
         return
       case 'geometry':
@@ -77,6 +90,7 @@ export class CompanionTerminalMount {
         if (this.pane !== undefined) {
           this.pane.resize(event.cols, event.rows)
           this.fit()
+          this.refreshPage()
         } else if (this.pending !== undefined) {
           this.pending.geometry = { cols: event.cols, rows: event.rows }
         }
@@ -93,17 +107,19 @@ export class CompanionTerminalMount {
 
   setZoom(zoom: CompanionMirrorZoom): void {
     this.zoom = zoom
-    this.fit()
+    this.show()
   }
 
   dispose(): void {
     this.disposed = true
     this.observer.disconnect()
     this.gestures.dispose()
+    this.reflow.dispose()
     this.pane?.dispose()
     this.pane = undefined
     this.pending = undefined
     this.extent.remove()
+    this.page.remove()
   }
 
   private open(cols: number, rows: number, tail: string): void {
@@ -145,13 +161,32 @@ export class CompanionTerminalMount {
     }
     this.pending = undefined
     this.pane = pane
-    this.fit()
+    this.show()
   }
 
   private fail(pending: PendingPane, error: unknown): void {
     if (this.disposed || this.pending !== pending) return
     this.pending = undefined
     this.onFailure(error)
+  }
+
+  private write(data: string): void {
+    this.pane?.write(data)
+    if (this.zoom === 'reflow') this.reflow.schedule()
+  }
+
+  private refreshPage(): void {
+    if (this.zoom === 'reflow') this.reflow.refresh()
+  }
+
+  /** The view in force: the page of text, or the grid scaled into the host. */
+  private show(): void {
+    const reflowing = this.zoom === 'reflow'
+    this.extent.hidden = reflowing
+    this.page.hidden = !reflowing
+    this.gestures.setEnabled(!reflowing)
+    if (reflowing) this.reflow.refresh()
+    else this.fit()
   }
 
   private grid(): HTMLElement | undefined {
@@ -166,8 +201,9 @@ export class CompanionTerminalMount {
     return (grid.offsetHeight / this.rows) * this.scale
   }
 
-  /** Applies the zoom's scale to the surface and sizes the extent to match. */
+  /** Applies a grid view's scale to the surface and sizes the extent to match. */
   private fit(): void {
+    if (this.zoom === 'reflow') return
     const grid = this.grid()
     if (grid === undefined) return
     const scale = mirrorScale(this.zoom, {

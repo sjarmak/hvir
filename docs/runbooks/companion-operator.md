@@ -223,16 +223,21 @@ What the phone shows:
 - The desktop's geometry. The grid is exactly the desktop terminal's columns and rows; only a
   CSS transform scales it, and the phone never resizes the PTY. Every resize on the desktop
   reaches the phone as a geometry frame and the emulator there follows it.
-- Two zooms, toggled by the header button, which names the zoom a tap switches to. **Fill
-  height**, the default, scales the rows to the height of the terminal area and lets you pan
-  sideways across the columns with a finger. **Fit width** scales the whole grid into the
-  phone's width, so a 200-column desktop terminal reads small; narrow the desktop pane to
-  make it readable. The choice is remembered in the phone browser's storage for the site.
-- Scrollback under your finger. A touch drag up or down over the terminal scrolls the
-  emulator's own scrollback by rows, in either zoom, and the page beneath never moves. In a
-  full-screen program (Claude Code, vim, less) there is no scrollback to move, so the drag
-  sends Page Up and Page Down to the program instead, and only while typing is armed
-  (section 8); a disarmed mirror sends nothing. A tap still reaches the terminal.
+- Three views, cycled by the header button, which names the view in force. **Reflow**, the
+  default, reads the emulator's screen and scrollback as text and wraps it to the phone's
+  width at a readable size, so the terminal fills the area and scrolls like a page; a line the
+  desktop broke at its own width is joined back together, colours and cursor are not shown,
+  and the newest output stays in view unless you have scrolled up. **Fit width** shows the
+  whole grid as the desktop draws it, scaled into the phone's width, so a 200-column desktop
+  terminal reads small. **Fill height** scales the rows to the height of the terminal area
+  and lets you pan sideways across the columns with a finger. The choice is remembered in the
+  phone browser's storage for the site. None of the three resizes the PTY.
+- Scrollback under your finger. In the reflow view the page scrolls as any page does. In a
+  grid view a touch drag up or down over the terminal scrolls the emulator's own scrollback
+  by rows, and the page beneath never moves; in a full-screen program (Claude Code, vim, less)
+  there is no scrollback to move, so the drag sends Page Up and Page Down to the program
+  instead, and only while typing is armed (section 8); a disarmed mirror sends nothing. A tap
+  still reaches the terminal.
 - A **Transcript** button in the header on rows that also take answers (an external session
   attached inside an hvir terminal), switching between the mirror and the ADR-049 transcript
   view.
@@ -382,7 +387,9 @@ shows as a prompt without its message until the harness notifies again.
 | A Claude Code permission prompt shows as Ready, or not at all, never as a prompt | The notification channel is not set: put `"preferredNotifChannel": "iterm2"` in `~/.claude/settings.json` or pass `--settings '{"preferredNotifChannel":"iterm2"}'`. If it is set and still nothing arrives, the session is in auto permission mode and the command never prompted; start Claude Code with `--permission-mode default`. Wait the few seconds Claude Code holds before notifying. |
 | A prompt badge shows but no Push arrived for it | The terminal was already in the actionable set as Ready when the prompt arrived; Push fires only when a session enters the set. Or a desktop window was focused. |
 | A touch drag over a full-screen program (vim, less, Claude Code) moves nothing | Page keys are terminal input and pass the typing gate; choose **Arm typing**, then drag. Wheel input from a trackpad follows the same rule. |
-| The mirror is a thin strip of tiny text | The zoom is **Fit width** on a wide desktop grid. Tap the header button to switch to **Fill height** and pan sideways, or narrow the desktop pane. |
+| The mirror is a thin strip of tiny text | The view is **Fit width** on a wide desktop grid. Tap the header button until it says **Reflow** to read the same output wrapped to the phone, or **Fill height** to pan sideways, or narrow the desktop pane. |
+| The mirror reads as a window a few screens wide | The view is **Fill height**. Tap the header button until it says **Reflow**. |
+| The reflow view shows a frame of a full-screen program twice, or a stale line | The text is the emulator's screen and scrollback as they stand; a program that redraws by moving the cursor leaves its earlier frames in the scrollback, as on the desktop. Switch to **Fit width** to see the screen as drawn. |
 
 ## Developer note
 

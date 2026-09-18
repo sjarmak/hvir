@@ -15,6 +15,13 @@ export interface CompanionTerminalPaneEvents {
   onData(cb: (data: string, source: 'user') => void): () => void
 }
 
+/** One row of the emulator's active screen or scrollback, as text. */
+export interface CompanionBufferLine {
+  readonly text: string
+  /** The emulator broke the line before this one at the desktop's width; this row continues it. */
+  readonly wrapped: boolean
+}
+
 export interface CompanionTerminalPane {
   mount(container: HTMLElement): void
   write(data: string): void
@@ -26,6 +33,12 @@ export interface CompanionTerminalPane {
    * program reads for the same distance, sent as input under the same gate.
    */
   scrollLines(amount: number): void
+  /**
+   * The newest `limit` rows of the active screen with its scrollback, oldest
+   * first, for the page to lay out at its own width. Reading never moves the
+   * emulator's view and never touches the desktop.
+   */
+  bufferLines(limit: number): readonly CompanionBufferLine[]
   dispose(): void
   setInputEnabled(enabled: boolean): void
   readonly events: CompanionTerminalPaneEvents

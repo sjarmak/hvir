@@ -223,14 +223,18 @@ pane is writing. A 403 disarms and names Settings; a 409 names the ended termina
   imported only by `ghostty-companion-pane.ts`; ghostty cannot run under happy-dom, so every
   page test fakes `createPane`.
 - **The phone never resizes.** The pane is built with `cols`/`rows` from `opened`, has no fit
-  controller, never subscribes `terminal.onResize`, and follows `geometry` frames. Zoom is a
-  CSS `transform: scale(...)` on the surface (`mirrorScale` in `companion-mirror-zoom.ts`), so
-  the cell grid stays the desktop's: `fill-height`, the default, is `hostHeight / gridHeight`
-  with the host panning sideways (`overflow-x: auto`, `touch-action: pan-x`); `fit-width` is
-  `min(1, hostWidth / gridWidth, hostHeight / gridHeight)`. The extent around the surface takes
-  the scaled size so the host scrolls over exactly the grid. The choice lives in
-  `localStorage` under `hvir-companion-mirror-zoom`, with the default standing in when storage
-  refuses.
+  controller, never subscribes `terminal.onResize`, and follows `geometry` frames. Three views
+  (`companion-mirror-zoom.ts`), none of which resizes: `reflow`, the default, hides the grid
+  and shows a `<pre>` the mount fills from the pane's `bufferLines` (`companion-mirror-reflow.ts`:
+  wrapped rows joined back into one line, lines trimmed, trailing blanks dropped, rebuilt at
+  most every 80 ms while output arrives, a view at the end kept at the end); the browser
+  scrolls it and the touch gestures are off. The grid views are a CSS `transform: scale(...)`
+  on the surface (`mirrorScale`), so the cell grid stays the desktop's: `fill-height` is
+  `hostHeight / gridHeight` with the host panning sideways (`overflow-x: auto`, `touch-action:
+  pan-x`); `fit-width` is `min(1, hostWidth / gridWidth, hostHeight / gridHeight)`. The extent
+  around the surface takes the scaled size so the host scrolls over exactly the grid. The
+  choice lives in `localStorage` under `hvir-companion-mirror-zoom`, with the default standing
+  in when storage refuses.
 - **Touch scrolls the emulator, never the page.** `MirrorScrollGestures` listens on the host
   for touch and pen pointers, converts vertical travel into whole rows through the scaled row
   height (fraction carried, dropped on a direction change), and calls the pane's
