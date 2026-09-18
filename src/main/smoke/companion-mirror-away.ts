@@ -6,10 +6,7 @@
  * produces exactly one Push whose text carries none of the typed bytes.
  */
 
-import type { BrowserWindow } from 'electron'
-
-import { isCompanionSnapshot, type HostPath, type TerminalRecoverySession } from '../../shared'
-import type { ManagedPty } from '../pty/pty-contract'
+import { isCompanionSnapshot } from '../../shared'
 import type { PtySupervisor } from '../pty/pty-supervisor'
 import { RendererEventPublisher } from '../renderer-event-publisher'
 import type { RendererResourceScopes } from '../renderer-resource-scopes'
@@ -27,38 +24,35 @@ import {
   restoreWindow,
   withWindowRestored,
 } from './attention-away-window'
-import type { SmokeAttention } from './attention-smoke'
+import {
+  disableListener,
+  enableAndPair,
+  retainedSmokeSession,
+  SMOKE_PUSH_URL,
+  type CompanionAwayOptions,
+} from './companion-away-pairing'
 import { openEventFrames, type CompanionEventFrames } from './companion-events'
 import { expectStatus, send } from './companion-http'
 import type { SmokeCompanion } from './companion-smoke'
 import { prepareTerminalScenario } from './terminal-scenario-ready'
 
 const MIRROR_SMOKE_TITLE = 'Companion mirror smoke'
-const PUSH_URL = 'https://push.invalid/hvir-smoke'
 const STEP_TIMEOUT_MS = 10_000
 /** The line the phone submits: the shell runs it and goes quiet at its prompt. */
 const MIRROR_PROMPT = "printf '\\r\\nmirror-done\\r\\n'\r"
 const MIRROR_BYTE_MARKERS = ['mirror-done', 'printf'] as const
 
-export interface CompanionMirrorAwayOptions {
-  readonly win: BrowserWindow
-  readonly supervisor: PtySupervisor
-  readonly attention: SmokeAttention
-  readonly resources: Pick<RendererResourceScopes, 'currentOwner' | 'isCurrent'>
-  readonly companion: SmokeCompanion
-  readonly smokeRoot: HostPath
-  /** The smoke store never records a spawn; the row and its Push title need the record. */
-  readonly addRetained: (root: HostPath, session: TerminalRecoverySession) => void
-}
-
 export async function verifyCompanionMirrorAwayScenario(
-  options: CompanionMirrorAwayOptions,
+  options: CompanionAwayOptions,
 ): Promise<string> {
   const { win, supervisor, attention, resources, companion } = options
   await prepareTerminalScenario(win, supervisor)
   const terminal = supervisor.list()[0]
   if (!terminal) throw new Error('mirror away scenario has no terminal to mirror')
-  options.addRetained(options.smokeRoot, retained(terminal, options.smokeRoot))
+  options.addRetained(
+    options.smokeRoot,
+    retainedSmokeSession(terminal, options.smokeRoot, MIRROR_SMOKE_TITLE),
+  )
   const owner = resources.currentOwner(win.webContents.id)
   const onFocus = (): void => attention.setOwnerFocused(owner, true)
   const onBlur = (): void => attention.setOwnerFocused(owner, false)
@@ -87,12 +81,7 @@ export async function verifyCompanionMirrorAwayScenario(
       await verifyOnePush(companion)
       console.log('[smoke] mirror away one push without mirror bytes')
       await verifyRevocationOrder(companion, frames, terminal.id)
-      await companion.settings.save({
-        enabled: false,
-        port: companion.settings.view().port,
-        mirrorInputAllowed: false,
-      })
-      await waitFor(() => !companion.server.listening, STEP_TIMEOUT_MS, 'listener close')
+      await disableListener(companion)
       return `port ${port}, ${formatAwayReadyMeasurement(measurement)}, one push without mirror bytes, ended revoked before closed`
     } finally {
       openFrames?.close()
@@ -108,7 +97,7 @@ export async function verifyCompanionMirrorAwayScenario(
  * submits the prompt through the mirror and measures quiet-to-Ready in main.
  */
 async function submitFromMirrorWhileHidden(
-  { win, attention }: CompanionMirrorAwayOptions,
+  { win, attention }: CompanionAwayOptions,
   frames: CompanionEventFrames,
   terminalId: string,
   listener: { readonly port: number; readonly bearer: Record<string, string> },
@@ -170,27 +159,6 @@ function installSmokeMirrorInputNotice(
   }
 }
 
-async function enableAndPair(
-  companion: SmokeCompanion,
-): Promise<{ port: number; bearer: Record<string, string> }> {
-  const { settings } = companion
-  await settings.save({
-    enabled: true,
-    port: 0,
-    mirrorInputAllowed: true,
-    push: { url: PUSH_URL },
-  })
-  await waitFor(() => settings.view().status.listening, STEP_TIMEOUT_MS, 'listener open')
-  const port = settings.view().status.port
-  if (port === undefined) throw new Error('Companion status reported no port')
-  const code = settings.issuePairing().pairing?.code
-  if (code === undefined) throw new Error('Companion issued no pairing code')
-  const paired = await send(port, 'POST', '/pair', { body: { code } })
-  expectStatus(paired, 200, 'POST /pair')
-  const token = (JSON.parse(paired.body) as { token: string }).token
-  return { port, bearer: { authorization: `Bearer ${token}` } }
-}
-
 /** Waits for the live row, selects it, and waits for the mirror to open at a real geometry. */
 async function selectMirror(
   frames: CompanionEventFrames,
@@ -234,7 +202,7 @@ async function verifyOnePush(companion: SmokeCompanion): Promise<void> {
     throw new Error(`mirror away: expected one Push, saw ${companion.pushes.length}`)
   }
   const push = companion.pushes[0]!
-  if (push.url !== PUSH_URL) throw new Error(`mirror away: Push went to ${push.url}`)
+  if (push.url !== SMOKE_PUSH_URL) throw new Error(`mirror away: Push went to ${push.url}`)
   if (!push.body.includes(MIRROR_SMOKE_TITLE)) {
     throw new Error('mirror away: the Push body does not name the mirrored terminal')
   }
@@ -281,25 +249,6 @@ async function verifyRevocationOrder(
 
 function route(terminalId: string, verb: string): string {
   return `/api/sessions/${encodeURIComponent(terminalId)}/${verb}`
-}
-
-function retained(terminal: ManagedPty, root: HostPath): TerminalRecoverySession {
-  if (terminal.profileId === undefined) {
-    throw new Error('mirror away scenario terminal carries no profile')
-  }
-  return {
-    id: terminal.id,
-    providerId: terminal.providerId,
-    profileId: terminal.profileId,
-    launchRevision: terminal.launchRevision ?? 1,
-    recoverySkipCount: 0,
-    hostId: root.hostId,
-    cwd: terminal.cwd,
-    title: MIRROR_SMOKE_TITLE,
-    position: 0,
-    active: true,
-    updatedAt: Date.now(),
-  }
 }
 
 interface TerminalFrameShape {

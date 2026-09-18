@@ -269,6 +269,11 @@
   font-size: calc(10px * var(--hvir-interface-scale));
 }
 
+.session-fact-detail {
+  color: #a5b0bd;
+  font-weight: 500;
+}
+
 .session-fact.activity dt {
   position: absolute;
   width: 1px;

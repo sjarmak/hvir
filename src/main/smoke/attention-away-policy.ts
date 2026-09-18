@@ -15,6 +15,11 @@ export const AWAY_IDLE_THRESHOLD_MS = 4_000
 export const AWAY_READY_SLACK_MS = 2_000
 /** The terminal stays silent this long after the window changes state, then bursts. */
 export const AWAY_DEFAULT_HOLD_MS = 1_000
+/**
+ * A prompt has no quiet period (ADR-051): the notification is the signal, so
+ * the whole allowance is for a throttled renderer and IPC to carry it to main.
+ */
+export const AWAY_PROMPT_BUDGET_MS = 5_000
 const AWAY_MAX_HIDDEN_HOLD_MS = 3_600_000
 const HIDDEN_HOLD_VARIABLE = 'HVIR_SMOKE_AWAY_HIDDEN_HOLD_MS'
 

@@ -97,6 +97,17 @@ export function terminalAttentionBadgeText(attention: TerminalAttention): string
   return ATTENTION_LABELS[attention].toLowerCase()
 }
 
+/** What a surface reads out: a prompt is named with its message (ADR-051). */
+export function terminalAttentionDescription(
+  attention: TerminalAttention,
+  promptBody: string | undefined,
+): string {
+  const label = ATTENTION_LABELS[attention]
+  return attention === 'prompt' && promptBody !== undefined
+    ? `${label}: ${promptBody}`
+    : label
+}
+
 export function terminalActionableAttentionCount(
   attentions: readonly (TerminalAttention | undefined)[],
 ): number {

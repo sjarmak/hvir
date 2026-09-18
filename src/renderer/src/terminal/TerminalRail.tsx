@@ -7,7 +7,10 @@ import type {
   HarnessProviderId,
   WorkspaceState,
 } from '../../../shared'
-import { terminalAttentionBadgeText, terminalAttentionLabel } from './terminal-attention'
+import {
+  terminalAttentionBadgeText,
+  terminalAttentionDescription,
+} from './terminal-attention'
 import {
   compactHarnessCapabilityLabel,
   type HarnessLaunchMenuState,
@@ -322,8 +325,14 @@ export function TerminalRail({
                 {session.attention ? (
                   <span
                     className={`terminal-attention-badge ${session.attention}`}
-                    aria-label={terminalAttentionLabel(session.attention)}
-                    title={terminalAttentionLabel(session.attention)}
+                    aria-label={terminalAttentionDescription(
+                      session.attention,
+                      session.promptBody,
+                    )}
+                    title={terminalAttentionDescription(
+                      session.attention,
+                      session.promptBody,
+                    )}
                   >
                     {terminalAttentionBadgeText(session.attention)}
                   </span>

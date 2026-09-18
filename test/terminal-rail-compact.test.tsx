@@ -72,6 +72,60 @@ describe('compact terminal rail', () => {
     expect(onCompact).toHaveBeenLastCalledWith(false)
   })
 
+  it('shows a prompt badge that carries the message as its title and label', () => {
+    renderRail({
+      sessions: [
+        session('terminal-prompt', 'prompt', 'Claude needs your permission'),
+        session('terminal-bell', 'bell'),
+      ],
+    })
+
+    const [prompt, bell] = [
+      ...host.querySelectorAll<HTMLElement>('.terminal-attention-badge'),
+    ]
+    expect(prompt?.classList.contains('prompt')).toBe(true)
+    expect(prompt?.textContent).toBe('prompt')
+    expect(prompt?.title).toBe('Prompt: Claude needs your permission')
+    expect(prompt?.getAttribute('aria-label')).toBe('Prompt: Claude needs your permission')
+    expect(bell?.textContent).toBe('bell')
+    expect(bell?.title).toBe('Bell')
+    expect(bell?.getAttribute('aria-label')).toBe('Bell')
+  })
+
+  it('rolls prompts up ahead of Ready and bell and marks them in the compact strip', () => {
+    renderRail({
+      compact: true,
+      sessions: [
+        session('terminal-ready', 'idle'),
+        session('terminal-prompt', 'prompt', 'Claude needs your permission'),
+        session('terminal-bell', 'bell'),
+        session('terminal-prompt-2', 'prompt'),
+      ],
+    })
+
+    const strip = host.querySelector<HTMLElement>('.terminal-rail-compact-strip')
+    const rollups = [...(strip?.querySelectorAll('.terminal-rail-compact-rollup') ?? [])]
+    expect(rollups.map((rollup) => rollup.className)).toEqual([
+      'terminal-rail-compact-rollup prompt',
+      'terminal-rail-compact-rollup idle',
+      'terminal-rail-compact-rollup bell',
+    ])
+    expect(strip?.querySelector('[aria-label="2 terminal prompts"]')?.textContent).toBe(
+      'P2',
+    )
+    expect(
+      strip?.querySelector('.terminal-rail-compact-rollups')?.getAttribute('aria-label'),
+    ).toBe('2 prompts, 1 ready, 1 bell')
+    const markers = markerButtons()
+    expect(markers.map((marker) => marker.textContent)).toEqual(['R', 'P', 'B', 'P'])
+    expect(markers[1]?.dataset.terminalState).toBe('prompt')
+    expect(markers[1]?.getAttribute('aria-label')).toBe(
+      'terminal-prompt, Prompt: Claude needs your permission',
+    )
+    expect(markers[1]?.title).toBe('terminal-prompt, Prompt: Claude needs your permission')
+    expect(markers[3]?.getAttribute('aria-label')).toBe('terminal-prompt-2, Prompt')
+  })
+
   it('keeps separate Ready and bell rollups visible in the compact strip', () => {
     renderRail({
       compact: true,
@@ -208,7 +262,11 @@ function markerButtons(): HTMLButtonElement[] {
   return [...host.querySelectorAll<HTMLButtonElement>('.terminal-rail-compact-marker')]
 }
 
-function session(id: string, attention: TerminalSession['attention']): TerminalSession {
+function session(
+  id: string,
+  attention: TerminalSession['attention'],
+  promptBody?: string,
+): TerminalSession {
   return {
     id,
     providerId: asHarnessProviderId('codex'),
@@ -227,5 +285,6 @@ function session(id: string, attention: TerminalSession['attention']): TerminalS
     pane: 'primary',
     cwd: localPath('/repo'),
     attention,
+    ...(promptBody === undefined ? {} : { promptBody }),
   }
 }

@@ -88,6 +88,11 @@
   color: #7ccc91;
 }
 
+.terminal-attention-badge.prompt {
+  background: #2a1a30;
+  color: #d3a1ea;
+}
+
 .terminal-list-copy {
   min-width: 0;
   flex: 1;

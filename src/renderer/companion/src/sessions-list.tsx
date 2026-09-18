@@ -21,6 +21,12 @@ export function SessionsList({ rows, onSelect }: SessionsListProps) {
             onClick={() => void onSelect(row.handle)}
           >
             <span className="companion-row-title">{row.title}</span>
+            {row.promptBody === undefined ? null : (
+              <span className="companion-row-prompt">
+                <span className="companion-visually-hidden">Prompt: </span>
+                {row.promptBody}
+              </span>
+            )}
             <span className="companion-row-meta">
               {row.project.name} / {row.workspace.name}
               {row.workspace.hostKind === 'ssh' ? ` on ${row.workspace.hostLabel}` : ''}
@@ -38,7 +44,8 @@ export function SessionsList({ rows, onSelect }: SessionsListProps) {
 
 /**
  * Attention as the actionable set reports it. A stale row says so, with the
- * reason the desktop gave; a row nobody watches says nothing at all.
+ * reason the desktop gave; a row nobody watches says nothing at all. A prompt's
+ * message sits under the title, not in the badge (ADR-051).
  */
 function RowBadges({ row }: { readonly row: CompanionRow }) {
   const attention =

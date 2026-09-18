@@ -39,6 +39,8 @@ export type SessionsOverviewCardFactTone =
 export interface SessionsOverviewCardFact {
   readonly label: string
   readonly value: string
+  /** Free text shown beside the value: a prompt's message (ADR-051). */
+  readonly detail?: string
   readonly tone: SessionsOverviewCardFactTone
 }
 
@@ -104,13 +106,7 @@ export function sessionsOverviewCardFacts(
   row: SessionsProjectionRow,
 ): SessionsOverviewCardFacts {
   const activity = [
-    fact(
-      'Attention',
-      row.attention,
-      sentenceCase,
-      (value) => value !== 'none',
-      (value) => value !== 'none',
-    ),
+    attentionFact(row),
     fact(
       'Working',
       row.working,
@@ -137,6 +133,22 @@ export function sessionsOverviewCardFacts(
     fact('Model', row.model, (value) => value.displayName ?? value.id),
   ].filter((candidate): candidate is SessionsOverviewCardFact => candidate !== undefined)
   return { facts: candidates }
+}
+
+/** A prompt shows its message beside the word; nothing else carries a detail (ADR-051). */
+function attentionFact(row: SessionsProjectionRow): SessionsOverviewCardFact | undefined {
+  const attention = fact(
+    'Attention',
+    row.attention,
+    sentenceCase,
+    (value) => value !== 'none',
+    (value) => value !== 'none',
+  )
+  const prompted =
+    row.attention.status === 'available' && row.attention.value === 'prompt'
+  return attention !== undefined && prompted && row.promptBody !== undefined
+    ? { ...attention, detail: row.promptBody }
+    : attention
 }
 
 /** Neutral presence/availability is not actionable attention or provider readiness. */

@@ -7,6 +7,7 @@ import type { RendererResourceScopes } from '../renderer-resource-scopes'
 import type { SmokeAttention } from './attention-smoke'
 import { verifyAttentionAwayThrottlingScenario } from './attention-away-throttling'
 import { verifyCompanionMirrorAwayScenario } from './companion-mirror-away'
+import { verifyCompanionPromptAwayScenario } from './companion-prompt-away'
 import type { SmokeCompanion } from './companion-smoke'
 import type { TerminalMoveSmokeHarness } from './terminal-move'
 import {
@@ -72,6 +73,18 @@ export function terminalScenarioTable({
         addRetained,
       })
       console.log(`[smoke] companion mirror away OK (${result})`)
+    },
+    'companion-prompt-away': async () => {
+      const result = await verifyCompanionPromptAwayScenario({
+        win,
+        supervisor,
+        attention,
+        resources,
+        companion,
+        smokeRoot,
+        addRetained,
+      })
+      console.log(`[smoke] companion prompt away OK (${result})`)
     },
   }
 }

@@ -139,6 +139,11 @@
   color: #e5b65f;
 }
 
+.terminal-rail-compact-rollup.prompt {
+  background: #2a1a30;
+  color: #d3a1ea;
+}
+
 .terminal-rail-compact-markers {
   width: 100%;
   min-height: 0;
@@ -211,6 +216,14 @@
   --terminal-rail-compact-marker-bottom-width: 3px;
 
   color: #e5b65f;
+}
+
+.terminal-rail-compact-marker.prompt {
+  --terminal-rail-compact-marker-background: #2a1a30;
+  --terminal-rail-compact-marker-inline-width: 2px;
+  --terminal-rail-compact-marker-bottom-width: 3px;
+
+  color: #d3a1ea;
 }
 
 .terminal-rail-compact-marker.active::before {

@@ -116,7 +116,15 @@ function Fact({ fact }: { readonly fact: SessionsOverviewCardFact }): ReactEleme
       className={`session-fact ${fact.tone}${fact.label === 'Status' ? ' status activity' : fact.label === 'Attention' || fact.label === 'Working' ? ' activity' : ''}`}
     >
       <dt>{fact.label}</dt>
-      <dd>{fact.value}</dd>
+      <dd>
+        {fact.value}
+        {fact.detail === undefined ? null : (
+          <>
+            {': '}
+            <span className="session-fact-detail">{fact.detail}</span>
+          </>
+        )}
+      </dd>
     </div>
   )
 }

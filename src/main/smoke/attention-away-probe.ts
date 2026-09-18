@@ -1,6 +1,10 @@
 import type { BrowserWindow } from 'electron'
 
-import type { ActionableSnapshot } from '../attention/actionable-attention-set'
+import type { ActionableKind } from '../../shared'
+import type {
+  ActionableSnapshot,
+  MainActionableEntry,
+} from '../attention/actionable-attention-set'
 import { awayReadyBudgetMs } from './attention-away-policy'
 import type { SmokeAttention } from './attention-smoke'
 
@@ -32,23 +36,43 @@ export async function waitFor(
   return false
 }
 
+/** The entry main's set first carried for the terminal as `kind`, and when. */
+export interface ActionableArrival {
+  readonly at: number
+  readonly entry: MainActionableEntry
+}
+
+export async function waitForActionable(
+  attention: SmokeAttention,
+  terminalId: string,
+  kind: ActionableKind,
+  timeoutMs: number,
+): Promise<ActionableArrival> {
+  const carried = (snapshot: ActionableSnapshot): MainActionableEntry | undefined =>
+    snapshot.entries.find((entry) => entry.key === terminalId && entry.kind === kind)
+  const first = carried(attention.set.snapshot())
+  let arrival: ActionableArrival | undefined =
+    first === undefined ? undefined : { at: Date.now(), entry: first }
+  const stop = attention.set.observe((snapshot) => {
+    if (arrival !== undefined) return
+    const entry = carried(snapshot)
+    if (entry !== undefined) arrival = { at: Date.now(), entry }
+  })
+  try {
+    const message = `away probe: ${kind} never reached main within ${timeoutMs}ms`
+    await waitFor(() => arrival !== undefined, timeoutMs, message)
+  } finally {
+    stop()
+  }
+  if (arrival === undefined) throw new Error(`away probe: ${kind} arrival lost`)
+  return arrival
+}
+
 /** Resolves with the time main's set first carried the terminal as Ready. */
 export async function waitForReady(
   attention: SmokeAttention,
   terminalId: string,
 ): Promise<number> {
   const timeoutMs = awayReadyBudgetMs() + 60_000
-  const carriesReady = (snapshot: ActionableSnapshot): boolean =>
-    snapshot.entries.some((entry) => entry.key === terminalId && entry.kind === 'ready')
-  let readyAt = carriesReady(attention.set.snapshot()) ? Date.now() : 0
-  const stop = attention.set.observe((snapshot) => {
-    if (readyAt === 0 && carriesReady(snapshot)) readyAt = Date.now()
-  })
-  try {
-    const message = `away probe: Ready never reached main within ${timeoutMs}ms`
-    await waitFor(() => readyAt !== 0, timeoutMs, message)
-  } finally {
-    stop()
-  }
-  return readyAt
+  return (await waitForActionable(attention, terminalId, 'ready', timeoutMs)).at
 }

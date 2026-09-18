@@ -31,7 +31,8 @@ interface TerminalViewProps {
  * One mirrored terminal (ADR-050): the desktop's screen at its geometry,
  * scaled to the phone, with typing behind an explicit arm control and the
  * keys a phone keyboard lacks. A row that also takes answers offers its
- * transcript beside the mirror.
+ * transcript beside the mirror. While the row carries a prompt, its message
+ * stands in one line above the terminal (ADR-051).
  */
 export function TerminalView(props: TerminalViewProps) {
   const { row, terminal, transcript, arming, onInput } = props
@@ -81,6 +82,11 @@ export function TerminalView(props: TerminalViewProps) {
       {paneFailure === undefined ? null : (
         <p className="companion-error" role="alert">
           {paneFailure}
+        </p>
+      )}
+      {row?.promptBody === undefined ? null : (
+        <p className="companion-mirror-prompt" role="status">
+          {row.promptBody}
         </p>
       )}
       <TerminalSurface

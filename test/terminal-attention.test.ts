@@ -8,6 +8,7 @@ import {
   terminalActionableEntries,
   terminalAttentionAfterSignal,
   terminalAttentionBadgeText,
+  terminalAttentionDescription,
   terminalAttentionLabel,
   terminalIdleAttentionAfterInput,
   terminalInputArmsIdleAttention,
@@ -81,6 +82,17 @@ describe('terminal attention', () => {
       terminalActionableAttentionCount(['working', 'bell', 'idle', 'prompt', undefined]),
     ).toBe(3)
     expect(terminalWorkingCount(['working', 'bell', 'working', undefined])).toBe(2)
+  })
+
+  it('describes a prompt with its message and every other signal by its label', () => {
+    expect(terminalAttentionDescription('prompt', 'Claude needs your permission')).toBe(
+      'Prompt: Claude needs your permission',
+    )
+    expect(terminalAttentionDescription('prompt', undefined)).toBe('Prompt')
+    expect(terminalAttentionDescription('idle', 'Claude needs your permission')).toBe(
+      'Ready',
+    )
+    expect(terminalAttentionDescription('bell', undefined)).toBe('Bell')
   })
 
   it('lists the actionable terminals as fresh entries, in session order', () => {

@@ -1,6 +1,10 @@
 import type { ReactElement } from 'react'
 
-import { terminalAttentionLabel, type TerminalAttention } from './terminal-attention'
+import { terminalAttentionDescription, type TerminalAttention } from './terminal-attention'
+import {
+  compactAttentionRollups,
+  compactAttentionSummary,
+} from './terminal-rail-compact-rollups'
 import type { TerminalSession } from './terminal-workspace-model'
 
 export function TerminalRailCompact({
@@ -16,8 +20,7 @@ export function TerminalRailCompact({
   readonly onFocusSession: (id: string) => void
   readonly onRestore: () => void
 }): ReactElement {
-  const ready = sessions.filter((session) => session.attention === 'idle').length
-  const bell = sessions.filter((session) => session.attention === 'bell').length
+  const rollups = compactAttentionRollups(sessions.map((session) => session.attention))
 
   return (
     <div className="terminal-rail-compact-strip" hidden={hidden}>
@@ -35,28 +38,19 @@ export function TerminalRailCompact({
       <div
         className="terminal-rail-compact-rollups"
         role="status"
-        aria-label={attentionSummary(ready, bell)}
+        aria-label={compactAttentionSummary(rollups)}
       >
-        {ready > 0 ? (
+        {rollups.map((rollup) => (
           <span
-            className="terminal-rail-compact-rollup idle"
-            aria-label={`${ready} ${ready === 1 ? 'terminal' : 'terminals'} ready`}
-            title={`${ready} ${ready === 1 ? 'terminal' : 'terminals'} ready`}
+            key={rollup.state}
+            className={`terminal-rail-compact-rollup ${rollup.state}`}
+            aria-label={rollup.label}
+            title={rollup.label}
           >
-            <span aria-hidden="true">R</span>
-            {ready}
+            <span aria-hidden="true">{rollup.letter}</span>
+            {rollup.count}
           </span>
-        ) : null}
-        {bell > 0 ? (
-          <span
-            className="terminal-rail-compact-rollup bell"
-            aria-label={`${bell} terminal ${bell === 1 ? 'bell' : 'bells'}`}
-            title={`${bell} terminal ${bell === 1 ? 'bell' : 'bells'}`}
-          >
-            <span aria-hidden="true">B</span>
-            {bell}
-          </span>
-        ) : null}
+        ))}
       </div>
       <div
         className="terminal-rail-compact-markers"
@@ -66,7 +60,7 @@ export function TerminalRailCompact({
         {sessions.map((session) => {
           const state = session.attention ?? 'neutral'
           const active = session.id === activeId
-          const label = markerLabel(session.title, state, active)
+          const label = markerLabel(session, state, active)
           return (
             <div
               key={session.id}
@@ -83,7 +77,7 @@ export function TerminalRailCompact({
                 title={label}
                 onClick={() => onFocusSession(session.id)}
               >
-                <span aria-hidden="true">{markerText(state)}</span>
+                <span aria-hidden="true">{MARKER_TEXT[state]}</span>
               </button>
             </div>
           )
@@ -93,30 +87,24 @@ export function TerminalRailCompact({
   )
 }
 
-function attentionSummary(ready: number, bell: number): string {
-  if (ready === 0 && bell === 0) return 'No terminals need attention'
-  return [
-    ready > 0 ? `${ready} ready` : undefined,
-    bell > 0 ? `${bell} ${bell === 1 ? 'bell' : 'bells'}` : undefined,
-  ]
-    .filter((label): label is string => Boolean(label))
-    .join(', ')
-}
-
 type CompactTerminalState = TerminalAttention | 'neutral'
 
+const MARKER_TEXT: Record<CompactTerminalState, string> = {
+  neutral: '',
+  working: '…',
+  idle: 'R',
+  bell: 'B',
+  prompt: 'P',
+}
+
 function markerLabel(
-  title: string,
+  session: TerminalSession,
   state: CompactTerminalState,
   active: boolean,
 ): string {
-  const stateLabel = state === 'neutral' ? 'Neutral' : terminalAttentionLabel(state)
-  return `${title}, ${stateLabel}${active ? ', active terminal' : ''}`
-}
-
-function markerText(state: CompactTerminalState): string {
-  if (state === 'working') return '…'
-  if (state === 'idle') return 'R'
-  if (state === 'bell') return 'B'
-  return ''
+  const stateLabel =
+    state === 'neutral'
+      ? 'Neutral'
+      : terminalAttentionDescription(state, session.promptBody)
+  return `${session.title}, ${stateLabel}${active ? ', active terminal' : ''}`
 }

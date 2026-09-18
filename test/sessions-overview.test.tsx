@@ -49,6 +49,29 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 describe('SessionsOverview', () => {
+  it('renders a prompt fact with its message beside it (ADR-051)', async () => {
+    installApi()
+    const [agent] = rendererSessions()
+    await renderOverview({
+      observation: {
+        snapshot: () => [
+          { ...agent!, attention: 'prompt' as const, promptBody: 'Claude needs your permission' },
+        ],
+        subscribe: () => () => undefined,
+      },
+    })
+
+    const fact = host.querySelector('.session-fact.actionable')
+    expect(fact?.querySelector('dt')?.textContent).toBe('Attention')
+    expect(fact?.querySelector('dd')?.textContent).toBe(
+      'Prompt: Claude needs your permission',
+    )
+    expect(fact?.querySelector('.session-fact-detail')?.textContent).toBe(
+      'Claude needs your permission',
+    )
+    expect(host.querySelectorAll('.session-fact-detail')).toHaveLength(1)
+  })
+
   it('discloses policy, supports keyboard/filter/reset, hides opaque handles, and releases background demand', async () => {
     const api = installApi()
     await renderOverview({

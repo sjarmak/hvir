@@ -114,6 +114,18 @@ describe('createNtfyPushSink', () => {
     )
   })
 
+  it('posts a prompt under its kind with the message as the line (ADR-051)', async () => {
+    const server = await answering(200)
+    const sink = createNtfyPushSink({ url: server.url })
+
+    await sink.send({ ...MESSAGE, kind: 'prompt', line: 'Claude needs your permission' })
+
+    expect(server.requests[0]?.headers['title']).toBe('prompt')
+    expect(server.requests[0]?.body).toBe(
+      'hvir / Claude Code · main\nClaude needs your permission',
+    )
+  })
+
   it('sends the bearer only when a token is configured', async () => {
     const server = await answering(200)
     const sink = createNtfyPushSink({ url: server.url, token: 'tk_secret' })

@@ -122,6 +122,12 @@ const READY_ROW = row({
   title: 'Fix the build',
   attention: { status: 'available', value: 'ready', observedAt: 5 },
 })
+const PROMPT_ROW = row({
+  handle: 'prompt-1',
+  title: 'Needs a decision',
+  attention: { status: 'available', value: 'prompt', observedAt: 5 },
+  promptBody: 'Claude needs your permission',
+})
 const STALE_ROW = row({
   handle: 'stale-1',
   title: 'Waiting on review',
@@ -185,6 +191,25 @@ describe('Companion page', () => {
     expect(quiet?.querySelectorAll('.companion-badge')).toHaveLength(0)
     expect(quiet?.textContent).toContain('Quiet terminal')
     expect(ready?.textContent).toContain('hvir / main')
+  })
+
+  it('shows a prompt row with its badge and the message under the title (ADR-051)', async () => {
+    await renderPaired()
+    await emit('snapshot', snapshot(1, [PROMPT_ROW, READY_ROW]))
+
+    const [prompt, ready] = [...host.querySelectorAll('.companion-row')]
+    const badge = prompt?.querySelector('.companion-badge-attention')
+    expect(badge?.textContent).toBe('prompt')
+    expect(badge?.classList.contains('companion-badge-prompt')).toBe(true)
+    expect(prompt?.querySelector('.companion-row-prompt')?.textContent).toBe(
+      'Prompt: Claude needs your permission',
+    )
+    expect(prompt?.textContent).toContain('Needs a decisionPrompt: Claude needs')
+    expect(prompt?.querySelector('.companion-row-title')?.nextElementSibling).toBe(
+      prompt?.querySelector('.companion-row-prompt'),
+    )
+    expect(ready?.querySelector('.companion-badge-attention')?.textContent).toBe('ready')
+    expect(ready?.querySelector('.companion-row-prompt')).toBeNull()
   })
 
   it('ignores a snapshot revision older than the one it shows', async () => {
@@ -403,6 +428,28 @@ describe('Companion page terminal mirror', () => {
     expect(pane.writes).toEqual(['tail', 'more'])
     await emit('terminal', { type: 'output', handle: 'other', data: 'never' })
     expect(pane.writes).toEqual(['tail', 'more'])
+  })
+
+  it('shows the selected row\'s prompt message above the terminal while it lasts (ADR-051)', async () => {
+    await openMirror()
+    expect(host.querySelector('.companion-mirror-prompt')).toBeNull()
+
+    const prompted = {
+      ...MIRROR_ROW,
+      attention: { status: 'available' as const, value: 'prompt' as const, observedAt: 5 },
+      promptBody: 'Claude needs your permission',
+    }
+    await emit('snapshot', snapshot(2, [prompted]))
+    const line = host.querySelector('.companion-mirror-prompt')
+    expect(line?.textContent).toBe('Claude needs your permission')
+    expect(line?.nextElementSibling?.classList.contains('companion-terminal-host')).toBe(
+      true,
+    )
+    expect(host.querySelector('.companion-terminal')).not.toBeNull()
+
+    await emit('snapshot', snapshot(3, [MIRROR_ROW]))
+    expect(host.querySelector('.companion-mirror-prompt')).toBeNull()
+    expect(host.querySelector('.companion-terminal')).not.toBeNull()
   })
 
   it('an opened frame that lands before the select reply still writes the tail', async () => {

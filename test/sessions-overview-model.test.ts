@@ -244,6 +244,40 @@ describe('Sessions overview policy', () => {
     },
   )
 
+  it('shows a prompt with its message beside it and sorts it with the actionable rows (ADR-051)', () => {
+    const prompt = row('prompt', {
+      lifecycle: 'live',
+      attention: 'prompt',
+      promptBody: 'Claude needs your permission',
+    })
+    expect(sessionsOverviewCardFacts(prompt).facts).toEqual([
+      {
+        label: 'Attention',
+        value: 'Prompt',
+        detail: 'Claude needs your permission',
+        tone: 'actionable',
+      },
+    ])
+    expect(
+      sessionsOverviewCardFacts(row('bare', { lifecycle: 'live', attention: 'prompt' }))
+        .facts,
+    ).toEqual([{ label: 'Attention', value: 'Prompt', tone: 'actionable' }])
+    expect(
+      sessionsOverviewCardFacts(
+        row('bell', { lifecycle: 'live', attention: 'bell', promptBody: 'stale text' }),
+      ).facts,
+    ).toEqual([{ label: 'Attention', value: 'Bell', tone: 'actionable' }])
+
+    const rows = [
+      row('working', { working: true }),
+      row('quiet'),
+      prompt,
+      row('ready', { attention: 'ready' }),
+    ]
+    expect(filtered(rows, 'all')).toEqual(['prompt', 'ready', 'working', 'quiet'])
+    expect(filtered(rows, 'attention')).toEqual(['prompt', 'ready'])
+  })
+
   it('keeps current attention/activity first for live sessions and labels missing facts honestly', () => {
     for (const attention of ['ready', 'bell'] as const) {
       expect(
@@ -362,7 +396,8 @@ function row(
     readonly kind?: 'agent' | 'shell' | 'unknown'
     readonly project?: string
     readonly workspace?: string
-    readonly attention?: 'none' | 'ready' | 'bell'
+    readonly attention?: 'none' | 'ready' | 'bell' | 'prompt'
+    readonly promptBody?: string
     readonly working?: boolean
     readonly lifecycle?: SessionsProjectionRow['lifecycle']
   } = {},
@@ -411,6 +446,7 @@ function row(
     lifecycle: options.lifecycle ?? 'retained',
     connectionState: 'connected',
     attention: { status: 'available', value: options.attention ?? 'none' },
+    ...(options.promptBody === undefined ? {} : { promptBody: options.promptBody }),
     working: { status: 'available', value: options.working ?? false },
     model: unavailable,
     context: unavailable,

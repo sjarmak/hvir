@@ -11,6 +11,7 @@
   --companion-accent-text: #ffffff;
   --companion-ready: #1f8a4c;
   --companion-bell: #b8620a;
+  --companion-prompt: #7a3fb5;
   --companion-stale: #8a6d1f;
   --companion-error: #b42318;
   --companion-error-bg: #fdecec;
@@ -27,6 +28,7 @@
     --companion-accent-text: #0f1114;
     --companion-ready: #4ccb7f;
     --companion-bell: #f0a04a;
+    --companion-prompt: #c89bf0;
     --companion-stale: #d9b75a;
     --companion-error: #ff8a80;
     --companion-error-bg: #3a1d1b;
@@ -180,6 +182,22 @@ body {
   overflow-wrap: anywhere;
 }
 
+/* The prompt's message (ADR-051): one bounded line, under the title, read as
+ * "Prompt: message" so it stays separate from the title in flattened text. */
+.companion-row-prompt {
+  color: var(--companion-prompt);
+  overflow-wrap: anywhere;
+}
+
+.companion-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .companion-row-badges {
   display: flex;
   flex-wrap: wrap;
@@ -200,6 +218,10 @@ body {
 
 .companion-badge-bell {
   color: var(--companion-bell);
+}
+
+.companion-badge-prompt {
+  color: var(--companion-prompt);
 }
 
 .companion-badge-stale {
@@ -304,6 +326,16 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.companion-mirror-prompt {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--companion-prompt);
+  border-radius: 10px;
+  color: var(--companion-prompt);
+  font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 .companion-terminal-host {

@@ -25,6 +25,7 @@ export const ELECTRON_SMOKE_SCENARIOS = [
   'attention-away-throttling',
   'companion',
   'companion-mirror-away',
+  'companion-prompt-away',
   'capacity',
 ] as const
 
