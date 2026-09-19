@@ -9,8 +9,6 @@ import {
   type CompanionResponse,
 } from '../src/renderer/companion/src/companion-client'
 import type {
-  CompanionBufferLine,
-  CompanionCellFont,
   CompanionCellSize,
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
@@ -25,6 +23,7 @@ import {
   type CompanionSnapshot,
   type SessionsMutationResponse,
   type SessionsTranscriptSnapshot,
+  type TerminalWheelEvent,
 } from '../src/shared'
 
 export interface FakeCall {
@@ -213,9 +212,12 @@ export class FakeCompanionPane implements CompanionTerminalPane {
   readonly writes: string[] = []
   readonly resizes: Array<{ readonly cols: number; readonly rows: number }> = []
   readonly inputEnabled: boolean[] = []
-  /** What `bufferLines` reads: a test writes the rows the emulator would hold. */
-  lines: CompanionBufferLine[] = []
-  readonly reads: number[] = []
+  /** Gestures the mount routed here, already in the emulator's own pixels. */
+  readonly gestures: TerminalWheelEvent[] = []
+  /** What `scroll` answers: the pane's pixels the page's own scroller is left to take. */
+  untaken = 0
+  /** Which screen the emulator reports; the page never reads the screen's text. */
+  alternateScreen = false
   mounted?: HTMLElement
   disposed = false
   private readonly listeners = new Set<(data: string, source: 'user') => void>()
@@ -255,13 +257,13 @@ export class FakeCompanionPane implements CompanionTerminalPane {
     this.resizes.push({ cols, rows })
   }
 
-  bufferLines(limit: number): readonly CompanionBufferLine[] {
-    this.reads.push(limit)
-    return this.lines.slice(-limit)
+  scroll(event: TerminalWheelEvent): number {
+    this.gestures.push(event)
+    return this.untaken
   }
 
-  font(): CompanionCellFont {
-    return { family: 'Menlo', size: 15 }
+  isAlternateScreen(): boolean {
+    return this.alternateScreen
   }
 
   /** Like the real pane: no cell metrics until the emulator is mounted. */

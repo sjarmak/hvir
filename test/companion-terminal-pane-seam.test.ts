@@ -15,6 +15,11 @@ import type {
 } from '../src/renderer/companion/src/companion-terminal-pane'
 import type { TerminalPane } from '../src/renderer/src/terminal/terminal-pane'
 
+/**
+ * `scroll` and `isAlternateScreen` stay out of the mirrored subset on purpose:
+ * the desktop pane owns its gesture inside its own engine adapter and has no
+ * counterpart to narrow against (ADR-053).
+ */
 type MirroredPane = Pick<TerminalPane, 'mount' | 'write' | 'resize' | 'dispose'>
 type MirroredEvents = Pick<TerminalPane['events'], 'onData'>
 
@@ -35,8 +40,8 @@ describe('Companion terminal pane seam', () => {
         mount: () => calls.push(`mount ${cols}x${rows}`),
         write: (data) => calls.push(`write ${data.length}`),
         resize: (nextCols, nextRows) => calls.push(`resize ${nextCols}x${nextRows}`),
-        bufferLines: () => [],
-        font: () => ({ family: 'monospace', size: 15 }),
+        scroll: () => 0,
+        isAlternateScreen: () => false,
         cellSize: () => ({ width: 8, height: 16 }),
         dispose: () => calls.push('dispose'),
         setInputEnabled: (enabled) => calls.push(`input ${enabled}`),

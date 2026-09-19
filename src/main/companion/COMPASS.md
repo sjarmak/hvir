@@ -5,7 +5,7 @@ generated: "2026-09-18"
 # Staleness stamp, machine-readable so a refresh can test drift without a model.
 # `sources` are area-relative paths (relative to THIS file's directory). Recompute:
 #   node ~/.claude/skills/project-compass/compass-hash.mjs src/main/companion/COMPASS.md
-sources_hash: "sha256-16:7784c37d39d59c1b"
+sources_hash: "sha256-16:f1b0c3e6913351a0"
 sources:
   - companion-owner.ts
   - companion-sessions.ts
@@ -40,7 +40,7 @@ sources:
   - ../../renderer/companion/src/companion-terminal-fit.ts
   - ../../renderer/companion/src/companion-client.ts
   - ../../renderer/companion/src/companion-mirror-feed.ts
-  - ../../renderer/companion/src/companion-mirror-history.ts
+  - ../../renderer/companion/src/companion-touch-scroll.ts
   - ../../renderer/companion/src/companion-input-arming.ts
   - ../../renderer/companion/src/use-input-arming.ts
   - ../../renderer/companion/src/use-companion-session.ts
@@ -122,8 +122,9 @@ supervisor's doors.
   `companion-mirror-feed.ts` is the page's bounded copy of the mirror stream;
   `terminal-view.tsx` is the fixed column (`mirror-header.tsx`, the terminal area,
   `mirror-controls.tsx`); `companion-terminal-mount.ts` builds the pane at the geometry main
-  publishes and scales it to the host's width, with `companion-mirror-history.ts` drawing the
-  scrollback above the grid and `companion-terminal-fit.ts` deciding when to ask for the
+  publishes and scales it to the host's width, with `companion-touch-scroll.ts` turning a
+  finger over the grid into the shared wheel policy's event shape (ADR-053) and
+  `companion-terminal-fit.ts` deciding when to ask for the
   phone's own grid (ADR-052); `companion-client.ts` is the fetch layer, and `resize` is the
   one verb there that reads a 409 body instead of throwing; `ghostty-companion-pane.ts` is
   the only file that imports ghostty-web and fixes the mirror font at 15 px;
@@ -324,21 +325,48 @@ cycle.
   The one view is a CSS `transform: scale(...)` on the surface at `fitWidthScale` =
   `min(1, hostWidth / gridWidth)`, so the cell grid stays whatever main published: the
   desktop's wide grid shrinks to fit, and the phone's own grid draws at scale 1 (or a hair
-  under, when a cell advance rounds past the host). The scrollback
-  (`bufferLines` minus the screen's rows, `historyText`) is drawn in a `<pre>` above the grid
-  inside the same surface, in the pane's `font()` at the grid's row height, rebuilt at most
-  every 80 ms while output arrives (`MirrorHistory`), and the host scrolls the two vertically
-  as one column (`overflow-y: auto`, `touch-action: pan-y`) with a view at the end kept at
-  the end. The extent around the surface takes the scaled size of what the surface holds and
-  is a flex item with `margin-top: auto`, so a column shorter than the host sits at its bottom
+  under, when a cell advance rounds past the host). The extent around the surface takes the
+  scaled size of the grid, which is all the surface holds, and is a flex item with
+  `margin-top: auto`, so a grid shorter than the host sits at its bottom
   edge and a taller one scrolls; `flex-shrink: 0` keeps the host from squashing it. Any rule
   that sets `display` on a hidden element defeats the `hidden` attribute, which is how the
   old reflow page leaked under the grid; there is no second view to hide now.
-- **Wheel over the grid reaches the emulator.** The pane's custom wheel handler routes through
-  the shared `TerminalWheelController` (`src/shared/terminal-wheel.ts`, moved there from the
-  desktop renderer): the normal screen moves the viewport, the alternate screen gets Page
-  Up/Down, mouse tracking gets SGR. A touch drag is the host's own scroll over the column and
-  never reaches the pane.
+- **The emulator's own viewport is the whole read-back (ADR-053).** The page keeps no second
+  text surface: it asks for no buffer lines and calls no `translateToString`, so colour,
+  attributes, wide characters, and the cursor are exact by construction. There is one gesture
+  and one policy. A wheel notch and a finger drag both reach `pane.scroll`, which routes
+  through the shared `TerminalWheelController` (`src/shared/terminal-wheel.ts`, moved there
+  from the desktop renderer): the alternate screen gets Page Up/Down, mouse tracking gets SGR,
+  and anything the policy leaves alone moves the viewport by `deltaY / charHeight` with its
+  sign kept, which is exactly what ghostty's own wheel path computes (`scrollLines` clamps
+  `viewportY - amount`, so a negative amount reads back). `companion-touch-scroll.ts` owns
+  `touchstart`/`touchmove`/`touchend`/`touchcancel` on the grid box in the capture phase and
+  divides every delta by the mount's current transform scale, or the content crawls at a
+  fraction of the finger's speed under a scaled desktop grid. It stops every `touchend` over
+  the grid before ghostty-web's own canvas `touchend` can focus the hidden textarea, which
+  `disableStdin` does not gate and which on a phone raises the soft keyboard, resizes the
+  viewport, and asks the desktop for a new grid while Away; the mirror's typing surface is
+  `MirrorControls`, so nothing over the grid wants that focus. `scroll` answers the distance
+  the viewport did not take rather than a boolean, which is what keeps the host's own scroller
+  honest: a sub-cell drag at the live edge hands back all of its pixels instead of banking
+  them, and bytes that reached a program move no pixel of the surface, so the whole travel
+  goes back. The mount treats the two scrollers as one strip end to end and fills the nearer
+  one first, the host toward older content and the viewport toward the live edge, so a host
+  scrolled down over a tall grid comes back up the same way. A gesture the policy claimed
+  whose bytes the arming gate dropped is still the viewport's, so the default disarmed mirror
+  reads back under a mouse-tracking program rather than going dead. A reflow moves no
+  viewport, so the pane re-anchors to `getScrollbackLength()` after a resize that shortens it.
+- **The read-back ships one wave ahead of its return-to-live control.** ADR-053's Consequences
+  make that control part of the decision; `hvir-w00.4` owns it and `CompanionTerminalPane`
+  carries neither a verb that returns to the live edge nor one that reports the viewport's
+  position. Until it lands, the only way forward is dragging toward the top of the screen, and
+  the page has no way to say how far back the viewport sits. The two must reach `main`
+  together.
+- **The alternate screen states that it has no history.** `pane.isAlternateScreen()` reads the
+  emulator's mode flag, never the screen's text, and the mount reports the change to
+  `terminal-view.tsx`, which renders one `companion-status` line in the terminal area beside
+  the Away size line. It is not inside `.companion-terminal-extent`, which is `overflow:
+  hidden` at an explicit pixel size the fit writes every frame and would clip it.
 - **The control bar is armed-only.** `MirrorControls` renders the Arm/Disarm button alone
   while disarmed and adds the key strip and the text form only while `armed`; the tests that
   look for `#companion-terminal-text` or the key buttons must arm first.

@@ -9,19 +9,27 @@
  * position) synchronously inside `write`; those replies are the desktop
  * renderer's to send, so they are dropped here rather than sent twice.
  *
- * Wheel input over the grid follows the desktop pane's wheel policy: the
- * emulator's viewport moves on the normal screen and keeps its place while
- * output arrives, a full-screen program receives page keys, and a program
- * tracking the mouse receives SGR reports. Those bytes are user input and
- * pass the same gate as any key, so a disarmed mirror sends nothing.
+ * One gesture over the grid follows the desktop pane's wheel policy, a wheel
+ * notch and a finger drag alike (ADR-053): a full-screen program receives page
+ * keys, a program tracking the mouse receives SGR reports, and anything the
+ * policy leaves alone moves the emulator's own viewport, which is the mirror's
+ * whole read-back. The viewport keeps its place while output arrives. Those
+ * bytes are user input and pass the same gate as any key, so a disarmed mirror
+ * sends nothing, and a gesture the policy claimed whose bytes the gate dropped
+ * is still the viewport's rather than lost. A drag shorter than one cell is
+ * kept as a remainder rather than dropped, so reading back slowly still tracks
+ * the finger; at an edge the viewport cannot pass, nothing is kept and the
+ * whole distance goes back to the page so its own scroller tracks it instead.
+ *
+ * A resize reflows the scrollback without moving the viewport, so a viewport
+ * held further back than the reflowed scrollback reaches is re-anchored to its
+ * oldest row rather than left reporting a position the emulator no longer has.
  */
 import { Terminal, init } from 'ghostty-web'
 import ghosttyWasmUrl from 'ghostty-web/ghostty-vt.wasm?url'
 
 import { TerminalWheelController, type TerminalWheelEvent } from '../../../shared'
 import type {
-  CompanionBufferLine,
-  CompanionCellFont,
   CompanionCellSize,
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
@@ -58,6 +66,8 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
   private readonly disposers: Array<{ dispose(): void }> = []
   private readonly wheel = new TerminalWheelController()
   private writing = 0
+  /** Distance a drag covered that is short of a whole cell, kept for the next move. */
+  private remainder = 0
   private inputEnabled = false
   private disposed = false
 
@@ -74,9 +84,13 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
 
   mount(container: HTMLElement): void {
     if (this.disposed) throw new Error('Cannot mount a disposed Companion pane')
-    this.disposers.push(this.terminal.onData((data) => this.emitUser(data)))
+    this.disposers.push(
+      this.terminal.onData((data) => {
+        this.emitUser(data)
+      }),
+    )
     this.terminal.open(container)
-    this.terminal.attachCustomWheelEventHandler((event) => this.navigate(event))
+    this.terminal.attachCustomWheelEventHandler((event) => this.navigate(event).handled)
   }
 
   write(data: string): void {
@@ -90,25 +104,25 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
 
   resize(cols: number, rows: number): void {
     this.terminal.resize(cols, rows)
+    this.anchorViewport()
   }
 
-  /** Rows from the active buffer's end; `translateToString` keeps the width, the page trims. */
-  bufferLines(limit: number): readonly CompanionBufferLine[] {
-    const buffer = this.terminal.buffer.active
-    const lines: CompanionBufferLine[] = []
-    for (let y = Math.max(0, buffer.length - limit); y < buffer.length; y += 1) {
-      const line = buffer.getLine(y)
-      if (line === undefined) continue
-      lines.push({ text: line.translateToString(false), wrapped: line.isWrapped })
-    }
-    return lines
+  /**
+   * One gesture the shared policy decides, then the viewport for whatever the
+   * policy left alone. The answer is the distance the emulator did not take,
+   * in its own pixels and signed like the gesture. Bytes that reached a
+   * program answer the gesture in that program's terms and move no pixel of
+   * this surface, so the whole distance goes back for the page to scroll a
+   * grid too tall for its host with.
+   */
+  scroll(event: TerminalWheelEvent): number {
+    if (this.navigate(event).emitted) return event.deltaY
+    return this.moveViewport(event)
   }
 
-  font(): CompanionCellFont {
-    return {
-      family: this.terminal.options.fontFamily,
-      size: this.terminal.options.fontSize,
-    }
+  /** The emulator's own mode flag; nothing here reads what the screen says. */
+  isAlternateScreen(): boolean {
+    return this.terminal.wasmTerm?.isAlternateScreen() ?? false
   }
 
   /** The renderer exists once the terminal is open; its cell is the font's measured box. */
@@ -134,10 +148,17 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
   }
 
   /**
-   * The desktop's wheel decision. Unhandled means the emulator's own viewport
-   * takes the gesture; handled means the bytes, if any, were sent as input.
+   * The desktop's decision for one gesture, and the only place its bytes are
+   * emitted, so a gesture is never sent twice however it arrived. `handled` is
+   * the wheel path's answer: false leaves a notch to the emulator's own smooth
+   * scroll. `emitted` is whether a byte actually cleared the arming gate, which
+   * is the narrower question `scroll` asks, since a policy that claimed the
+   * gesture and sent nothing has left the viewport the only thing that can move.
    */
-  private navigate(event: TerminalWheelEvent): boolean {
+  private navigate(event: TerminalWheelEvent): {
+    readonly handled: boolean
+    readonly emitted: boolean
+  } {
     const term = this.terminal.wasmTerm
     const renderer = this.terminal.renderer
     const result = this.wheel.handle(event, {
@@ -149,13 +170,67 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
       cellWidth: renderer?.charWidth ?? 1,
       cellHeight: renderer?.charHeight ?? FALLBACK_CELL_HEIGHT,
     })
-    for (const data of result.data) this.emitUser(data)
-    return result.handled
+    let emitted = false
+    for (const data of result.data) emitted = this.emitUser(data) || emitted
+    return { handled: result.handled, emitted }
+  }
+
+  /**
+   * Wheel-equivalent viewport movement. ghostty's own wheel path scrolls to
+   * `viewportY - deltaY / cellHeight` and `scrollLines` clamps that same
+   * difference, so the amount is the delta in cells with its sign kept: a
+   * negative delta walks away from the live edge at 0 and into the scrollback.
+   * The answer is the distance the viewport did not take. A viewport pinned at
+   * the edge the gesture asks for keeps no remainder and hands every pixel
+   * back, so the page's own scroller tracks the whole finger rather than the
+   * fraction of it that happens to cross a cell.
+   */
+  private moveViewport(event: TerminalWheelEvent): number {
+    if (!Number.isFinite(event.deltaY)) return 0
+    const renderer = this.terminal.renderer
+    if (this.disposed || renderer === undefined) return event.deltaY
+    const cellHeight = renderer.charHeight > 0 ? renderer.charHeight : FALLBACK_CELL_HEIGHT
+    const cells = event.deltaY / cellHeight
+    if (this.pinned(cells)) {
+      this.remainder = 0
+      return event.deltaY
+    }
+    if (this.remainder !== 0 && Math.sign(this.remainder) !== Math.sign(cells)) {
+      this.remainder = 0
+    }
+    const total = this.remainder + cells
+    const lines = Math.trunc(total)
+    if (lines !== 0) {
+      const before = this.terminal.getViewportY()
+      this.terminal.scrollLines(lines)
+      const moved = before - this.terminal.getViewportY()
+      if (moved !== lines) {
+        this.remainder = 0
+        return (total - moved) * cellHeight
+      }
+    }
+    this.remainder = total - lines
+    return 0
+  }
+
+  /** The viewport is pinned when the direction asked for is past the scrollback it has. */
+  private pinned(cells: number): boolean {
+    const viewportY = this.terminal.getViewportY()
+    return cells < 0
+      ? viewportY >= this.terminal.getScrollbackLength()
+      : viewportY <= 0
+  }
+
+  /** A reflow leaves the viewport where it was, which a shortened scrollback no longer reaches. */
+  private anchorViewport(): void {
+    const length = this.terminal.getScrollbackLength()
+    if (this.terminal.getViewportY() > length) this.terminal.scrollToLine(length)
   }
 
   /** The one gate for user bytes: nothing while writing, nothing while disarmed. */
-  private emitUser(data: string): void {
-    if (this.writing > 0 || !this.inputEnabled) return
+  private emitUser(data: string): boolean {
+    if (this.writing > 0 || !this.inputEnabled) return false
     for (const listener of this.listeners) listener(data, 'user')
+    return true
   }
 }

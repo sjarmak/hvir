@@ -240,24 +240,32 @@ What the phone shows:
   to the scaled grid.
 - Why the rule exists. A full-screen program (Claude Code started with `"tui": "fullscreen"`,
   vim, less) draws on the alternate screen, where the emulator keeps no scrollback, so its
-  mirror has nothing above the grid and a scaled desktop grid is a short strip at the bottom
+  mirror has nothing to read back and a scaled desktop grid is a short strip at the bottom
   with black above it. Sized to the phone, the program lays out for the phone and fills it. A
-  shell's mirror keeps its history column at either size.
+  shell's mirror reads back through its own scrollback at either size.
 - The status line `The desktop is focused, so it keeps the terminal size.` under the header
   when the phone asked and a focused desktop refused. The phone asks only while its snapshot
   says Away, so the line appears when a desktop window regained focus before the request
   landed. The mirror stays live at the desktop's grid, and the line goes away when a later
   request is accepted.
-- The scrollback drawn above the grid at the same scale and font, as text without colours, so
-  the area is one column of history and live screen. The grid sits at the bottom of the area
-  just above the controls, with any spare room above the history as in a terminal, and it
-  stays there as output arrives unless you have scrolled up.
-- Scrollback under your finger. The area scrolls as any page does, up through the history
-  and back down to the live screen. Wheel input over the grid itself reaches the emulator: on
-  the normal screen it moves the emulator's own viewport; in a full-screen program (Claude
-  Code, vim, less) there is no scrollback to move, so it sends Page Up and Page Down to the
-  program instead, and only while typing is armed (section 8); a disarmed mirror sends
-  nothing.
+- The session's earlier output in the terminal itself, in full colour. The phone reads back by
+  moving the emulator's own view over the scrollback the session already holds, so what you
+  read is drawn by the same renderer that draws the live screen: colours, bold, box drawing,
+  and wide characters are exactly what the desktop pane shows. The grid sits at the bottom of
+  the area just above the controls, with any spare room above it as in a terminal, and it
+  stays there as output arrives unless you have read back.
+- Reading back under your finger or a wheel. A drag over the grid moves that view: toward the
+  bottom of the screen for earlier output, toward the top to return to the live screen. A
+  wheel notch does the same thing, and both are decided by the one policy, so they never
+  disagree. In a full-screen program (Claude Code, vim, less) there is no scrollback to move,
+  so the gesture sends Page Up and Page Down to the program instead, and only while typing is
+  armed (section 8). A program that asked for mouse reports receives them the same way. A
+  disarmed mirror sends neither, and reads back through its own view instead. A grid taller
+  than the area keeps scrolling under the same drag once the view reaches its own end, so
+  rows below the fold are a continuation of the gesture rather than a separate one.
+- The line `This program draws its whole screen, so there is no history to read back.` under
+  the header while the session is in a full-screen program. Its earlier turns live inside the
+  program, not in the terminal, so ask the program for them.
 - A **Transcript** button in the header on rows that also take answers (an external session
   attached inside an hvir terminal), switching between the mirror and the ADR-049 transcript
   view.
@@ -414,10 +422,11 @@ shows as a prompt without its message until the harness notifies again.
 | An Enter from the phone produced no Ready and no Push | The desktop window was reloading when the key landed, so the renderer never recorded the input, or a desktop window was focused. The next submission arms Ready detection again. |
 | A Claude Code permission prompt shows as Ready, or not at all, never as a prompt | The notification channel is not set: put `"preferredNotifChannel": "iterm2"` in `~/.claude/settings.json` or pass `--settings '{"preferredNotifChannel":"iterm2"}'`. If it is set and still nothing arrives, the session is in auto permission mode and the command never prompted; start Claude Code with `--permission-mode default`. Wait the few seconds Claude Code holds before notifying. |
 | A prompt badge shows but no Push arrived for it | The terminal was already in the actionable set as Ready when the prompt arrived; Push fires only when a session enters the set. Or a desktop window was focused. |
-| Wheel input over a full-screen program (vim, less, Claude Code) moves nothing | Page keys are terminal input and pass the typing gate; choose **Arm typing**, then scroll over the grid. |
-| The mirror is a thin strip at the bottom with black above it | The phone is showing the desktop's grid scaled to its width, and the program draws on the alternate screen, so no history fills the space. A desktop window is focused, or the mirror is not live. With a focused desktop the phone does not ask and shows no line; if it asked just as a desktop window regained focus, the line under the header reads `The desktop is focused, so it keeps the terminal size.` A mirror that ended shows its one sentence instead, so select the row again. Leave the desk, or unfocus every hvir window (switch the desktop to another app), and the phone asks for its own grid. At the desk the remedy is still a narrower desktop pane. |
+| A drag or wheel over a full-screen program (vim, less, Claude Code) moves nothing | Both gestures reach the same policy, which sends Page Up and Page Down there rather than moving a view. Page keys are terminal input and pass the typing gate; choose **Arm typing**, then drag or scroll over the grid. The same holds for a program that asked for mouse reports, on either screen. If the grid is taller than the area, the drag still scrolls it whether or not typing is armed. |
+| The mirror is a thin strip at the bottom with black above it | The phone is showing the desktop's grid scaled to its width, and the program draws on the alternate screen, so there is no history to fill the space, which the mirror says in a line of its own. A desktop window is focused, or the mirror is not live. With a focused desktop the phone does not ask and shows no line; if it asked just as a desktop window regained focus, the line under the header reads `The desktop is focused, so it keeps the terminal size.` A mirror that ended shows its one sentence instead, so select the row again. Leave the desk, or unfocus every hvir window (switch the desktop to another app), and the phone asks for its own grid. At the desk the remedy is still a narrower desktop pane. |
 | The desktop pane shows a small grid in its top-left corner and `Companion holds the size · C×R` | A phone holds the terminal's size because every hvir window was unfocused when its mirror asked. Focus any hvir window and the pane refits to its own size; the phone returns to the scaled view as that geometry reaches it. A pane on a hidden tab refits when the tab is shown. |
-| The history above the grid shows a frame of a full-screen program twice, or a stale line | The history is the emulator's scrollback as it stands; a program that redraws by moving the cursor leaves its earlier frames in the scrollback, as on the desktop. The grid below is the screen as drawn. |
+| Reading back shows a frame of a full-screen program twice, or a stale line | What you read is the terminal's scrollback as it stands; a program that redraws by moving the cursor leaves its earlier frames there, as on the desktop. The live screen is the screen as drawn. |
+| Reading back jumps further back, to the oldest line, after the terminal resizes | A resize reflows the scrollback, and a position further back than the reflowed scrollback reaches is moved to its oldest row. While the desktop is Away the phone asks for its own grid whenever the area changes, so rotating the phone or raising the keyboard can do this. Drag toward the top of the screen to return to the live screen. |
 
 ## Developer note
 

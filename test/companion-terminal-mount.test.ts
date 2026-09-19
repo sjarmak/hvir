@@ -3,10 +3,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  HISTORY_LINE_LIMIT,
-  HISTORY_REFRESH_MS,
-} from '../src/renderer/companion/src/companion-mirror-history'
-import {
   FIT_SETTLE_MS,
   type CompanionResizeAnswer,
 } from '../src/renderer/companion/src/companion-terminal-fit'
@@ -34,6 +30,7 @@ function mountWith(
   readonly inputs: string[]
   readonly resizes: { readonly cols: number; readonly rows: number }[]
   readonly answers: CompanionResizeAnswer[]
+  readonly alternates: boolean[]
 } {
   const host = document.createElement('div')
   document.body.append(host)
@@ -41,6 +38,7 @@ function mountWith(
   const inputs: string[] = []
   const resizes: { readonly cols: number; readonly rows: number }[] = []
   const answers: CompanionResizeAnswer[] = []
+  const alternates: boolean[] = []
   const mount = new CompanionTerminalMount({
     host,
     createPane: create,
@@ -50,9 +48,29 @@ function mountWith(
       return Promise.resolve(answer)
     },
     onResizeAnswered: (answered) => answers.push(answered),
+    onAlternateScreen: (alternate) => alternates.push(alternate),
     onFailure: (error) => failures.push(error),
   })
-  return { mount, host, failures, inputs, resizes, answers }
+  return { mount, host, failures, inputs, resizes, answers, alternates }
+}
+
+/** One finger over the grid, in on-screen pixels as a browser reports them. */
+function dragGrid(within: HTMLElement, from: number, to: number): void {
+  const grid = within.matches('.companion-terminal-grid')
+    ? within
+    : within.querySelector('.companion-terminal-grid')
+  if (grid === null) throw new Error('missing grid box')
+  for (const [type, clientY] of [
+    ['touchstart', from],
+    ['touchmove', to],
+    ['touchend', to],
+  ] as const) {
+    const event = new Event(type, { bubbles: true, cancelable: true })
+    Object.defineProperty(event, 'changedTouches', {
+      value: [{ identifier: 1, clientX: 0, clientY }],
+    })
+    grid.dispatchEvent(event)
+  }
 }
 
 /** happy-dom lays nothing out: the host's size is stated for the fit. */
@@ -205,61 +223,174 @@ describe('CompanionTerminalMount', () => {
     mount.dispose()
   })
 
-  it('draws the scrollback above the grid at its cell metrics and grows the extent with it', async () => {
-    vi.useFakeTimers()
-    try {
-      const panes: FakeCompanionPane[] = []
-      const { mount, host } = mountWith((cols, rows) => {
-        const pane = new FakeCompanionPane(cols, rows)
-        pane.lines = [
-          { text: 'old one', wrapped: false },
-          { text: 'old two ', wrapped: false },
-          { text: 'screen 1', wrapped: false },
-          { text: 'screen 2', wrapped: false },
-        ]
-        panes.push(pane)
-        return Promise.resolve(pane)
-      })
-      layout(host, 400, 1000)
-      const history = host.querySelector<HTMLElement>('.companion-terminal-history')!
-      // happy-dom lays nothing out: the history reports its rows at the cell height.
-      Object.defineProperty(history, 'offsetHeight', {
-        get: () => (history.textContent ?? '').split('\n').length * 16,
-      })
-      mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 2, tail: 'tail' })
-      await vi.advanceTimersByTimeAsync(0)
+  it('a finger over the grid reaches the pane in the emulator pixels the scale hides', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host } = mountWith(create)
+    layout(host, 400, 320)
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
+    await microtasks()
+    expect(
+      host.querySelector<HTMLElement>('.companion-terminal-scale')?.style.transform,
+    ).toBe('scale(0.5)')
+    dragGrid(host, 200, 160)
+    expect(panes[0]?.gestures.map((gesture) => gesture.deltaY)).toEqual([80])
+    mount.dispose()
 
-      // The screen's own rows stay in the grid; every row before them is the history.
-      expect(history.textContent).toBe('old one\nold two ')
-      expect(history.style.fontFamily).toBe('Menlo')
-      expect(history.style.fontSize).toBe('15px')
-      expect(history.style.lineHeight).toBe('16px')
-      expect(panes[0]?.reads).toEqual([HISTORY_LINE_LIMIT + 2])
-      const extent = host.querySelector<HTMLElement>('.companion-terminal-extent')
-      expect(
-        host.querySelector<HTMLElement>('.companion-terminal-scale')?.style.transform,
-      ).toBe('scale(0.5)')
-      expect([extent?.style.width, extent?.style.height]).toEqual(['400px', '32px'])
+    // The same forty on-screen pixels over an unscaled grid are forty emulator pixels.
+    const unscaled = fakePanes()
+    const second = mountWith(unscaled.create)
+    layout(second.host, 800, 640)
+    second.mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
+    await microtasks()
+    expect(
+      second.host.querySelector<HTMLElement>('.companion-terminal-scale')?.style.transform,
+    ).toBe('scale(1)')
+    dragGrid(second.host, 200, 160)
+    expect(unscaled.panes[0]?.gestures.map((gesture) => gesture.deltaY)).toEqual([40])
+    second.mount.dispose()
+  })
 
-      // Output grows the history on the next interval and the extent with it.
-      panes[0]!.lines = [
-        { text: 'old one', wrapped: false },
-        { text: 'old two ', wrapped: false },
-        { text: 'old three', wrapped: false },
-        { text: 'screen 1', wrapped: false },
-        { text: 'screen 2', wrapped: false },
-      ]
-      mount.handle({ type: 'output', handle: ROW, data: 'a' })
-      mount.handle({ type: 'output', handle: ROW, data: 'b' })
-      expect(history.textContent).toBe('old one\nold two ')
-      await vi.advanceTimersByTimeAsync(HISTORY_REFRESH_MS)
-      expect(history.textContent).toBe('old one\nold two \nold three')
-      expect(extent?.style.height).toBe('40px')
-      expect(panes[0]?.resizes).toEqual([])
-      mount.dispose()
-    } finally {
-      vi.useRealTimers()
-    }
+  it('a gesture the viewport cannot take scrolls the host over an overflowing extent', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host } = mountWith(create)
+    layout(host, 400, 320)
+    // A hundred rows at the fake cell scale to an extent well past the host.
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 100, tail: '' })
+    await microtasks()
+    const extent = host.querySelector<HTMLElement>('.companion-terminal-extent')
+    expect([extent?.style.width, extent?.style.height]).toEqual(['400px', '800px'])
+    expect(Number.parseInt(extent?.style.height ?? '0', 10)).toBeGreaterThan(
+      host.clientHeight,
+    )
+
+    panes[0]!.untaken = 80
+    dragGrid(host, 200, 160)
+    expect(panes[0]?.gestures.map((gesture) => gesture.deltaY)).toEqual([80])
+    // Forty on-screen pixels of finger, the same forty pixels of host.
+    expect(host.scrollTop).toBe(40)
+
+    // A pane that takes the gesture leaves the host where it is.
+    panes[0]!.untaken = 0
+    dragGrid(host, 200, 160)
+    expect(host.scrollTop).toBe(40)
+    mount.dispose()
+  })
+
+  it('the host comes back up the way it went down, ahead of the viewport', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host } = mountWith(create)
+    layout(host, 400, 320)
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 100, tail: '' })
+    await microtasks()
+
+    // Down to the bottom of a grid twice the host's height: the viewport is at
+    // the live edge, so the whole gesture reaches the host.
+    panes[0]!.untaken = 80
+    for (let index = 0; index < 20; index += 1) dragGrid(host, 200, 160)
+    expect(host.scrollTop).toBe(480)
+    const afterDown = panes[0]!.gestures.length
+
+    // Back toward older content: the host is what lies that way, so it gives
+    // its travel back before the pane's scrollback is asked for any.
+    dragGrid(host, 160, 200)
+    expect(host.scrollTop).toBe(440)
+    expect(panes[0]?.gestures).toHaveLength(afterDown)
+
+    for (let index = 0; index < 12; index += 1) dragGrid(host, 160, 200)
+    expect(host.scrollTop).toBe(0)
+    // Only once the host is pinned does the gesture reach the emulator.
+    expect(panes[0]?.gestures.length).toBeGreaterThan(afterDown)
+    expect(panes[0]?.gestures.at(-1)?.deltaY).toBe(-80)
+    mount.dispose()
+  })
+
+  it('a full-screen program taking the gesture as keys still leaves the host reachable', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host } = mountWith(create)
+    layout(host, 400, 320)
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 100, tail: '' })
+    await microtasks()
+    panes[0]!.alternateScreen = true
+    // The pane sends page keys and moves no pixel of its own, so it hands the
+    // whole travel back and the rows below the fold stay reachable.
+    panes[0]!.untaken = 80
+    dragGrid(host, 200, 160)
+    expect(host.scrollTop).toBe(40)
+    mount.dispose()
+  })
+
+  it('a disposed mount owns the grid no longer', async () => {
+    const { create } = fakePanes()
+    const { mount, host } = mountWith(create)
+    layout(host, 400, 320)
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 100, tail: '' })
+    await microtasks()
+    const grid = host.querySelector<HTMLElement>('.companion-terminal-grid')!
+    // ghostty-web's own canvas listener sits under the grid; the adapter stops
+    // every touchend above it while it lives, and nothing after it is disposed.
+    const past: string[] = []
+    grid.parentElement?.addEventListener('touchend', () => past.push('touchend'))
+    dragGrid(host, 200, 160)
+    expect(past).toEqual([])
+    mount.dispose()
+    dragGrid(grid, 200, 160)
+    expect(past).toEqual(['touchend'])
+  })
+
+  it('reports the screen the emulator is on so the page can state it has no history', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host, alternates } = mountWith(create)
+    layout(host, 400, 320)
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
+    await microtasks()
+    // Stated rather than assumed: a view holding the notice from an earlier
+    // mirror is corrected by the first report, not left to a later change.
+    expect(alternates).toEqual([false])
+
+    panes[0]!.alternateScreen = true
+    mount.handle({ type: 'output', handle: ROW, data: 'full screen paint' })
+    expect(alternates).toEqual([false, true])
+    mount.handle({ type: 'output', handle: ROW, data: 'more of it' })
+    expect(alternates).toEqual([false, true])
+
+    panes[0]!.alternateScreen = false
+    mount.handle({ type: 'output', handle: ROW, data: 'back to the shell' })
+    expect(alternates).toEqual([false, true, false])
+    mount.dispose()
+  })
+
+  it('a geometry frame that changes the screen reports it without waiting for output', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host, alternates } = mountWith(create)
+    layout(host, 400, 320)
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
+    await microtasks()
+    panes[0]!.alternateScreen = true
+    mount.handle({ type: 'geometry', handle: ROW, cols: 90, rows: 30 })
+    expect(alternates).toEqual([false, true])
+    mount.dispose()
+  })
+
+  it('a session that ends and one that reopens both leave no notice standing', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host, alternates } = mountWith(create)
+    layout(host, 400, 320)
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
+    await microtasks()
+    panes[0]!.alternateScreen = true
+    mount.handle({ type: 'output', handle: ROW, data: 'full screen paint' })
+    expect(alternates).toEqual([false, true])
+
+    mount.handle({ type: 'ended', handle: ROW, reason: 'exited' })
+    expect(alternates).toEqual([false, true, false])
+
+    panes[0]!.alternateScreen = true
+    mount.handle({ type: 'output', handle: ROW, data: 'still painting' })
+    expect(alternates).toEqual([false, true, false, true])
+    // A fresh mirror says so before its pane has even loaded.
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
+    expect(alternates).toEqual([false, true, false, true, false])
+    mount.dispose()
   })
 })
 

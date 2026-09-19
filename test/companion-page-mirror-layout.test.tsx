@@ -4,9 +4,11 @@
  * The mirror fills the phone (hvir-3k2.3): one header line, the terminal in
  * the height that remains, one control bar that shows typing controls only
  * while armed; the terminal is the desktop's grid scaled to the phone's width
- * with its scrollback drawn above it, and nothing sends a resize while the
- * desktop is focused. While the desktop is Away the page asks for its own grid
- * and renders it unscaled once the PTY takes it (ADR-052).
+ * and nothing sends a resize while the desktop is focused. While the desktop
+ * is Away the page asks for its own grid and renders it unscaled once the PTY
+ * takes it (ADR-052). The emulator's own viewport is the whole read-back
+ * (ADR-053), so the area holds the grid and the page's stated states beside
+ * it, never a second surface of text.
  */
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -101,19 +103,13 @@ describe('Companion page mirror layout', () => {
     expect(host.querySelector('.companion-mirror-controls')?.children).toHaveLength(1)
   })
 
-  it('scales the desktop grid to the area width, draws the scrollback above it, and never resizes', async () => {
+  it('scales the desktop grid to the area width and never resizes', async () => {
     await openMirror()
     layoutHost(352, 344)
     const pane = panes.panes[0]!
-    pane.lines = [
-      { text: 'a line the desktop br', wrapped: false },
-      { text: 'oke in two', wrapped: true },
-      ...Array.from({ length: 43 }, (_, i) => ({ text: `screen ${i}`, wrapped: false })),
-    ]
     await emit('terminal', { type: 'output', handle: 'term-1', data: 'x' })
     await act(() => new Promise((resolve) => setTimeout(resolve, 120)))
-    const history = host.querySelector<HTMLElement>('.companion-terminal-history')
-    expect(history?.textContent).toBe('a line the desktop br\noke in two')
+    expect(host.querySelector('.companion-terminal-history')).toBeNull()
     expect(
       host.querySelector<HTMLElement>('.companion-terminal-scale')?.style.transform,
     ).toContain('scale(0.3333')
@@ -122,6 +118,38 @@ describe('Companion page mirror layout', () => {
     expect(pane.resizes).toEqual([])
     expect(server.calls.some((call) => call.url.includes('resize'))).toBe(false)
     expect(server.inputs()).toEqual([])
+  })
+
+  it('states that a full-screen program has no history, outside the box that clips the grid', async () => {
+    await openMirror()
+    layoutHost(352, 344)
+    expect(host.querySelector('.companion-mirror-no-history')).toBeNull()
+
+    panes.panes[0]!.alternateScreen = true
+    await emit('terminal', { type: 'output', handle: 'term-1', data: 'full screen paint' })
+    const notice = host.querySelector<HTMLElement>('.companion-mirror-no-history')
+    expect(notice?.textContent).toBe(
+      'This program draws its whole screen, so there is no history to read back.',
+    )
+    expect(notice?.getAttribute('role')).toBe('status')
+    expect(notice?.closest('.companion-terminal-area')).not.toBeNull()
+    expect(notice?.closest('.companion-terminal-extent')).toBeNull()
+
+    panes.panes[0]!.alternateScreen = false
+    await emit('terminal', { type: 'output', handle: 'term-1', data: '$ ' })
+    expect(host.querySelector('.companion-mirror-no-history')).toBeNull()
+  })
+
+  it('a full-screen session that ends takes its no-history line with it', async () => {
+    await openMirror()
+    layoutHost(352, 344)
+    panes.panes[0]!.alternateScreen = true
+    await emit('terminal', { type: 'output', handle: 'term-1', data: 'full screen paint' })
+    expect(host.querySelector('.companion-mirror-no-history')).not.toBeNull()
+
+    await emit('terminal', { type: 'ended', handle: 'term-1', reason: 'exited' })
+    expect(host.querySelector('.companion-mirror-ended')).not.toBeNull()
+    expect(host.querySelector('.companion-mirror-no-history')).toBeNull()
   })
 })
 

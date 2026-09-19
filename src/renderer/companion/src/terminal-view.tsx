@@ -36,13 +36,18 @@ interface TerminalViewProps {
 
 /** The Away door said no (ADR-052): a status, not an error; the scaled mirror stays. */
 const DESKTOP_KEEPS_SIZE = 'The desktop is focused, so it keeps the terminal size.'
+/** A full-screen program's earlier turns live in the program, not in the emulator (ADR-053). */
+const NO_HISTORY =
+  'This program draws its whole screen, so there is no history to read back.'
 
 /**
  * One mirrored terminal (ADR-050) filling the phone's screen: a one-line
  * header, the terminal in all the height that remains (the desktop's grid
- * scaled to the phone's width, its scrollback drawn above it, or the phone's
- * own grid unscaled while it holds the size), and one compact control bar at
- * the bottom. While the row carries a prompt, its message is the header's
+ * scaled to the phone's width, or the phone's own grid unscaled while it holds
+ * the size), and one compact control bar at the bottom. Reading back is the
+ * emulator's own viewport under a finger or a wheel (ADR-053), so the area
+ * holds the grid and the page's stated states beside it and never a second
+ * surface of text. While the row carries a prompt, its message is the header's
  * second line (ADR-051). A row that also takes answers offers its transcript
  * beside the mirror.
  */
@@ -51,6 +56,7 @@ export function TerminalView(props: TerminalViewProps) {
   const [showTranscript, setShowTranscript] = useState(false)
   const [paneFailure, setPaneFailure] = useState<string>()
   const [sizeStatus, setSizeStatus] = useState<string>()
+  const [alternateScreen, setAlternateScreen] = useState(false)
   const live = terminal.status === 'live'
   if (showTranscript && transcript !== undefined) {
     return (
@@ -87,6 +93,11 @@ export function TerminalView(props: TerminalViewProps) {
             {sizeStatus}
           </p>
         )}
+        {!alternateScreen ? null : (
+          <p className="companion-status companion-mirror-no-history" role="status">
+            {NO_HISTORY}
+          </p>
+        )}
         {paneFailure === undefined ? null : (
           <p className="companion-error" role="alert">
             {paneFailure}
@@ -101,6 +112,7 @@ export function TerminalView(props: TerminalViewProps) {
           onInput={onInput}
           onResize={onResize}
           onResizeAnswered={sizeAnswered}
+          onAlternateScreen={setAlternateScreen}
           onFailure={(error) => setPaneFailure(describeFailure(error))}
         />
       </div>
@@ -123,6 +135,7 @@ function TerminalSurface({
   onInput,
   onResize,
   onResizeAnswered,
+  onAlternateScreen,
   onFailure,
 }: {
   readonly handle: SessionsTerminalHandle
@@ -133,12 +146,25 @@ function TerminalSurface({
   readonly onInput: (data: string) => Promise<void>
   readonly onResize: ResizeVerb
   readonly onResizeAnswered: (answer: CompanionResizeAnswer) => void
+  readonly onAlternateScreen: (alternate: boolean) => void
   readonly onFailure: (error: unknown) => void
 }) {
   const host = useRef<HTMLDivElement>(null)
   const mount = useRef<CompanionTerminalMount>(undefined)
-  const callbacks = useRef({ onInput, onResize, onResizeAnswered, onFailure })
-  callbacks.current = { onInput, onResize, onResizeAnswered, onFailure }
+  const callbacks = useRef({
+    onInput,
+    onResize,
+    onResizeAnswered,
+    onAlternateScreen,
+    onFailure,
+  })
+  callbacks.current = {
+    onInput,
+    onResize,
+    onResizeAnswered,
+    onAlternateScreen,
+    onFailure,
+  }
   const awayNow = useRef(away)
   awayNow.current = away
 
@@ -151,6 +177,7 @@ function TerminalSurface({
       onInput: (data) => void callbacks.current.onInput(data),
       onResize: (cols, rows) => callbacks.current.onResize(cols, rows),
       onResizeAnswered: (answer) => callbacks.current.onResizeAnswered(answer),
+      onAlternateScreen: (alternate) => callbacks.current.onAlternateScreen(alternate),
       onFailure: (error) => callbacks.current.onFailure(error),
     })
     created.setAway(awayNow.current)

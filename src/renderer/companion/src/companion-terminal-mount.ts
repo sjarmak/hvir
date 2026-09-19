@@ -16,22 +16,33 @@
  * keeps its exact cell grid: the desktop's wide grid shrinks to fit, and the
  * phone's own grid, already the host's width, draws at scale 1 (or a hair
  * under when a cell advance rounds past the host, so no column is clipped).
- * The scrollback is drawn above the grid in the same surface, at the grid's
- * cell metrics, and the extent around the surface takes the scaled size of
- * the two, so the host scrolls over exactly one column of history then live
- * screen. Wheel input over the grid reaches the pane directly.
+ * The extent around the surface takes the scaled size of the grid, so the host
+ * scrolls over exactly the screen the emulator draws.
+ *
+ * Read-back is the emulator's viewport and the page holds no text of its own
+ * (ADR-053). There is one read-back gesture: a wheel notch reaches the pane
+ * directly, and a finger over the grid is adapted into the same event shape,
+ * divided by this mount's current scale so the content tracks the finger
+ * rather than the emulator's unscaled pixels. Two scrollers sit end to end
+ * under that one gesture: the emulator's viewport holds everything above the
+ * grid, and this host's own scroll holds the part of a grid too tall for the
+ * phone. Whichever lies in the direction the finger travels takes the distance
+ * first and hands on what it could not take, so a host scrolled down over a
+ * tall grid comes back up the same way it went down, and a program answering
+ * the gesture with keys of its own still leaves the rows below the fold
+ * reachable. The mount also reports which screen the emulator is on, so the
+ * view can say that a full-screen program has no history to read back.
  */
-import type { CompanionTerminalEvent } from '../../../shared'
-import { HISTORY_LINE_LIMIT, MirrorHistory } from './companion-mirror-history'
+import type { CompanionTerminalEvent, TerminalWheelEvent } from '../../../shared'
 import {
   CompanionFitController,
   type CompanionResizeAnswer,
 } from './companion-terminal-fit'
 import type {
-  CompanionBufferLine,
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
 } from './companion-terminal-pane'
+import { CompanionTouchScroll } from './companion-touch-scroll'
 
 interface PendingPane {
   readonly created: Promise<CompanionTerminalPane>
@@ -47,6 +58,8 @@ export interface CompanionTerminalMountOptions {
   readonly onResize: (cols: number, rows: number) => Promise<CompanionResizeAnswer>
   /** The desktop's answer to the latest grid asked for. */
   readonly onResizeAnswered: (answer: CompanionResizeAnswer) => void
+  /** Which screen the emulator is on; an alternate screen keeps no scrollback (ADR-053). */
+  readonly onAlternateScreen: (alternate: boolean) => void
   readonly onFailure: (error: unknown) => void
 }
 
@@ -60,14 +73,17 @@ export class CompanionTerminalMount {
   private pane?: CompanionTerminalPane
   private pending?: PendingPane
   private inputEnabled = false
-  private rows = 0
+  /** Undefined until the first report, so a fresh mount states its screen rather than assuming it. */
+  private alternateScreen?: boolean
+  private scale = 1
+  /** The extent's scaled height, which is what the host has to scroll over. */
+  private extentHeight = 0
   private disposed = false
   private readonly host: HTMLElement
   private readonly extent: HTMLDivElement
   private readonly surface: HTMLDivElement
-  private readonly historyBox: HTMLPreElement
   private readonly gridBox: HTMLDivElement
-  private readonly history: MirrorHistory
+  private readonly touch: CompanionTouchScroll
   private readonly fitter: CompanionFitController
   private readonly observer: ResizeObserver
 
@@ -78,18 +94,15 @@ export class CompanionTerminalMount {
     this.extent.className = 'companion-terminal-extent'
     this.surface = document.createElement('div')
     this.surface.className = 'companion-terminal-scale'
-    this.historyBox = document.createElement('pre')
-    this.historyBox.className = 'companion-terminal-history'
     this.gridBox = document.createElement('div')
     this.gridBox.className = 'companion-terminal-grid'
-    this.surface.append(this.historyBox, this.gridBox)
+    this.surface.append(this.gridBox)
     this.extent.append(this.surface)
     host.append(this.extent)
-    this.history = new MirrorHistory({
-      scroller: host,
-      text: this.historyBox,
-      source: () => this.scrollback(),
-      afterRefresh: () => this.fit(),
+    this.touch = new CompanionTouchScroll({
+      element: this.gridBox,
+      scale: () => this.scale,
+      sink: (event) => this.scrolled(event),
     })
     this.fitter = new CompanionFitController({
       area: () => ({ width: host.clientWidth, height: host.clientHeight }),
@@ -112,23 +125,25 @@ export class CompanionTerminalMount {
       case 'output':
         if (this.pane !== undefined) {
           this.pane.write(event.data)
-          this.history.schedule()
+          this.fit()
+          this.reportScreen()
         } else {
           this.pending?.frames.push(event.data)
         }
         return
       case 'geometry':
         this.fitter.applied({ cols: event.cols, rows: event.rows })
-        this.rows = event.rows
         if (this.pane !== undefined) {
           this.pane.resize(event.cols, event.rows)
-          this.history.refresh()
+          this.fit()
+          this.reportScreen()
         } else if (this.pending !== undefined) {
           this.pending.geometry = { cols: event.cols, rows: event.rows }
         }
         return
       case 'ended':
         this.fitter.setLive(false)
+        this.setAlternateScreen(false)
         return
     }
   }
@@ -146,8 +161,8 @@ export class CompanionTerminalMount {
   dispose(): void {
     this.disposed = true
     this.observer.disconnect()
+    this.touch.dispose()
     this.fitter.dispose()
-    this.history.dispose()
     this.pane?.dispose()
     this.pane = undefined
     this.pending = undefined
@@ -158,8 +173,8 @@ export class CompanionTerminalMount {
     this.fitter.setLive(false)
     this.pane?.dispose()
     this.pane = undefined
-    this.rows = rows
     this.gridBox.replaceChildren()
+    this.setAlternateScreen(false)
     const pending: PendingPane = {
       created: this.options.createPane(cols, rows),
       frames: preamble.length > 0 ? [preamble, tail] : [tail],
@@ -198,10 +213,8 @@ export class CompanionTerminalMount {
     }
     this.pending = undefined
     this.pane = pane
-    const font = pane.font()
-    this.historyBox.style.fontFamily = font.family
-    this.historyBox.style.fontSize = `${font.size}px`
-    this.history.refresh()
+    this.fit()
+    this.reportScreen()
     this.fitter.setLive(true)
   }
 
@@ -211,11 +224,48 @@ export class CompanionTerminalMount {
     this.options.onFailure(error)
   }
 
-  /** The scrollback: every row of the active buffer before the screen's own rows. */
-  private scrollback(): readonly CompanionBufferLine[] {
-    if (this.pane === undefined) return []
-    const lines = this.pane.bufferLines(HISTORY_LINE_LIMIT + this.rows)
-    return lines.slice(0, Math.max(0, lines.length - this.rows))
+  /**
+   * One read-back gesture across two scrollers end to end. Toward older
+   * content the host is the nearer one, so it gives back its own travel before
+   * the emulator's scrollback is asked for any; toward the live edge the
+   * viewport goes first and the host takes whatever is left. Either way the
+   * finger moves the same number of on-screen pixels of content.
+   */
+  private scrolled(event: TerminalWheelEvent): void {
+    const pane = this.pane
+    if (pane === undefined) return
+    if (event.deltaY < 0) {
+      const left = this.hostScroll(event.deltaY)
+      if (left !== 0) pane.scroll({ ...event, deltaY: left })
+      return
+    }
+    this.hostScroll(pane.scroll(event))
+  }
+
+  /**
+   * The host's own scroller, spoken to in the pane's pixels: it takes what its
+   * own range allows and answers the rest. The range is the extent this mount
+   * sized against the host it was given, so it needs no layout of its own.
+   */
+  private hostScroll(delta: number): number {
+    if (delta === 0) return 0
+    const limit = Math.max(0, this.extentHeight - this.host.clientHeight)
+    const before = this.host.scrollTop
+    const next = Math.min(limit, Math.max(0, before + delta * this.scale))
+    this.host.scrollTop = next
+    return delta - (next - before) / this.scale
+  }
+
+  /** The emulator's mode, reported on change; the page never reads the screen itself. */
+  private reportScreen(): void {
+    if (this.pane === undefined) return
+    this.setAlternateScreen(this.pane.isAlternateScreen())
+  }
+
+  private setAlternateScreen(alternate: boolean): void {
+    if (this.alternateScreen === alternate) return
+    this.alternateScreen = alternate
+    this.options.onAlternateScreen(alternate)
   }
 
   private grid(): HTMLElement | undefined {
@@ -224,20 +274,18 @@ export class CompanionTerminalMount {
   }
 
   /**
-   * Scales the surface to the host's width and sizes the extent to what the
-   * surface holds. The history's rows are the grid's columns in the grid's
-   * font and take its row height, so the two read as one column of the
-   * grid's width.
+   * Scales the surface to the host's width and sizes the extent to the scaled
+   * grid, which is the whole of what the surface holds.
    */
   private fit(): void {
     const grid = this.grid()
     if (grid === undefined) return
     const scale = fitWidthScale(this.host.clientWidth, grid.offsetWidth)
     if (scale === undefined) return
-    this.historyBox.style.lineHeight = `${grid.offsetHeight / this.rows}px`
-    const height = grid.offsetHeight + this.historyBox.offsetHeight
+    this.scale = scale
     this.surface.style.transform = `scale(${scale})`
+    this.extentHeight = Math.ceil(grid.offsetHeight * scale)
     this.extent.style.width = `${Math.ceil(grid.offsetWidth * scale)}px`
-    this.extent.style.height = `${Math.ceil(height * scale)}px`
+    this.extent.style.height = `${this.extentHeight}px`
   }
 }

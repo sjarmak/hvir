@@ -413,14 +413,16 @@ body {
   text-overflow: ellipsis;
 }
 
-/* The host scrolls one column: the scrollback, then the live grid, at one
- * scale that sets the desktop's columns to the host's width. The column is a
- * flex item pinned to the host's bottom edge while shorter than the host, so
- * the newest line is always just above the controls and any spare room sits
- * above the history, as in a terminal; a taller column scrolls as any page
- * does (the auto margin resolves to zero once the content overflows). The
- * history takes the emulator's font inline and the grid's row height from the
- * mount, so its rows line up with cells. */
+/* The host holds the live grid at one scale that sets the desktop's columns to
+ * the host's width, pinned to its bottom edge while shorter than the host so
+ * the screen sits just above the controls, as in a terminal; a taller grid
+ * scrolls (the auto margin resolves to zero once the content overflows). That
+ * scroll is the tail of the one read-back gesture, not a second one: the mount
+ * owns a finger over the grid and moves this scroller and the emulator's
+ * viewport as one strip (ADR-053), so a grid taller than the host is reachable
+ * through the gesture rather than through a pan of the browser's. `pan-y`
+ * remains only for the horizontal strip beside a grid narrower than the host,
+ * which the mount's own gesture never covers. */
 .companion-terminal-host {
   flex: 1;
   min-height: 0;
@@ -436,10 +438,10 @@ body {
   overscroll-behavior: contain;
 }
 
-.companion-terminal-history {
-  margin: 0;
-  color: #e8eaee;
-  white-space: pre;
+/* The grid owns every touch over it, so the browser starts no pan of its own
+ * that would race the mount's read-back. */
+.companion-terminal-grid {
+  touch-action: none;
 }
 
 /* The extent has an explicit height and hides its overflow, so flex must not
