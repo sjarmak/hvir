@@ -4,6 +4,7 @@ import type {
   PtyMirrorHandlers,
   PtyMirrorLease,
   PtyMirrorRefusal,
+  PtyRetainedOutput,
 } from './pty-contract'
 
 /** Carries the PTY id and the reason only; mirror bytes and sizes never enter a message. */
@@ -33,7 +34,8 @@ export interface PtyMirrorLeaseSources {
   /** The entry currently registered under `ptyId`, looked up fresh. */
   readonly entry: () => PtyMirrorEntryView | undefined
   readonly attach: (handlers: PtyMirrorHandlers) => Disposer
-  readonly tail: () => string
+  /** The tail and its preamble read together, so the preamble matches this exact tail. */
+  readonly retained: () => PtyRetainedOutput
   readonly geometry: () => PtyGeometry
   /** Fan-out after a write landed on the PTY. */
   readonly onInput: (data: string) => void
@@ -72,7 +74,7 @@ export function createPtyMirrorLease(
   handlers: PtyMirrorHandlers,
 ): PtyMirrorLease {
   let state: PtyMirrorLeaseState = 'live'
-  const tail = sources.tail()
+  const { preamble, tail } = sources.retained()
   const geometry = sources.geometry()
   const detach = sources.attach({
     onData: (data) => {
@@ -91,6 +93,7 @@ export function createPtyMirrorLease(
     ptyId: sources.ptyId,
     instanceId: sources.instanceId,
     tail,
+    preamble,
     geometry,
     get ended() {
       return state !== 'live'

@@ -6,9 +6,12 @@
  * and ends exactly once, whatever ends it: a reselect, the page closing, the
  * PTY exiting, a supervisor release, or the page falling behind. Every end
  * releases the lease and tells the page why. Bytes pass through untouched in
- * both directions; nothing here logs, trims, or composes them. A resize
- * (ADR-052) passes the same lease checks as a write; only the Away door's
- * `desktop-focused` answer is a refusal the mirror survives.
+ * both directions; nothing here logs, trims, or composes them. The one thing an
+ * `opened` carries beyond the lease's own bytes is the sticky-mode preamble
+ * (ADR-054), a distinct field the page writes before the tail, omitted entirely
+ * when the stream set no mode the scanner carries. A resize (ADR-052) passes the
+ * same lease checks as a write; only the Away door's `desktop-focused` answer is
+ * a refusal the mirror survives.
  */
 import type { CompanionMirrorEndReason, CompanionTerminalEvent } from '../../shared'
 import type { SessionsTerminalHandle } from '../../shared'
@@ -88,7 +91,15 @@ export class CompanionPageMirror {
     opened.mirror = { handle, lease }
     this.current = opened.mirror
     const { cols, rows } = lease.geometry
-    this.emit({ type: 'opened', handle, cols, rows, tail: lease.tail })
+    const { preamble } = lease
+    this.emit({
+      type: 'opened',
+      handle,
+      cols,
+      rows,
+      ...(preamble.length > 0 ? { preamble } : {}),
+      tail: lease.tail,
+    })
   }
 
   /** Writes the user's exact bytes; any refusal ends the mirror and rethrows as ended. */

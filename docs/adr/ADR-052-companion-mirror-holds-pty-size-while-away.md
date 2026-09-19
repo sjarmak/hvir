@@ -1,7 +1,8 @@
 # ADR-052: The Companion mirror holds the PTY's size while the desktop is Away
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-050](ADR-050-companion-live-terminal-mirror.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
+> Superseded by: [ADR-053](ADR-053-companion-mirror-reads-back-through-emulator-viewport.md) | partial | The page's own scrollback layer drawing above the grid for a shell's mirror, for the emulator's viewport as the one read-back surface.
 
 ## Context
 

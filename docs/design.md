@@ -530,6 +530,7 @@ drives the badge and away-time Push.
 > Supersedes: [ADR-049](adr/ADR-049-companion-observer-and-away-push.md) | partial | The exclusion of a terminal screen and terminal input from the Companion, for live hvir-owned terminals under a mirror lease.
 > Superseded by: [ADR-051](adr/ADR-051-terminal-notification-prompt-attention.md) | partial | No phone action clearing attention, for a prompt entry on the mirrored terminal.
 > Superseded by: [ADR-052](adr/ADR-052-companion-mirror-holds-pty-size-while-away.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
+> Superseded by: [ADR-054](adr/ADR-054-sticky-terminal-modes-precede-the-replayed-tail.md) | partial | Main not interpreting the bytes it forwards, for a bounded scan of sticky DEC private modes emitted ahead of the replayed tail.
 
 A Companion page holds a mirror lease on one live hvir-owned PTY: main forwards the retained
 output tail, live bytes, and desktop geometry, the phone emulates them with ghostty-web, and
@@ -549,13 +550,37 @@ never comes from reading the screen.
 
 ### [ADR-052 — The Companion mirror holds the PTY's size while the desktop is Away](adr/ADR-052-companion-mirror-holds-pty-size-while-away.md)
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
+> Superseded by: [ADR-053](adr/ADR-053-companion-mirror-reads-back-through-emulator-viewport.md) | partial | The page's own scrollback layer drawing above the grid for a shell's mirror, for the emulator's viewport as the one read-back surface.
 
 While every hvir window is unfocused, a live mirror lease may resize its PTY to the phone's own
 grid so a full-screen program lays out for the phone; the desktop draws the held grid top-left
 with a notice and reclaims the size within one fit cycle when any of its windows gains focus, and
 the most recent phone resize wins when two phones hold one PTY.
+
+### [ADR-053 — The Companion mirror reads back through the emulator's viewport](adr/ADR-053-companion-mirror-reads-back-through-emulator-viewport.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-052](adr/ADR-052-companion-mirror-holds-pty-size-while-away.md) | partial | The page's own scrollback layer drawing above the grid for a shell's mirror, for the emulator's viewport as the one read-back surface.
+
+The phone reads back by moving the emulator's own viewport, so history is drawn by the renderer
+that draws the live screen and the page keeps no second text surface. A finger drag decides
+under the one shared wheel policy, the page reads where the viewport is and never what it says
+so ADR-019 and ADR-051 are untouched, and an alternate-screen session states that it has no
+history instead of showing an empty column.
+
+### [ADR-054 — Sticky terminal modes precede the replayed tail](adr/ADR-054-sticky-terminal-modes-precede-the-replayed-tail.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | Main not interpreting the bytes it forwards, for a bounded scan of sticky DEC private modes emitted ahead of the replayed tail.
+
+Main scans passing PTY output for a closed set of sticky DEC private modes, the alternate screen
+`?1049` and `?47` and nothing else, keeping per mode the last state it saw and where it saw it,
+with no screen model, cursor, or content. Each reader receives as a preamble only the modes the
+window it is about to replay can no longer prove, carried as a distinct wire field rather than a
+prefix, so a full-screen program's first frame is one grid instead of a stack of them. The page
+repeats the same scan over its own buffer, whose window is cut independently and keeps moving.
 
 ## 5. Architecture
 

@@ -101,7 +101,7 @@ describe('createPtyMirrorLease', () => {
           attached = mirror
           return detach
         },
-        tail: () => 'retained',
+        retained: () => ({ preamble: 'sticky', tail: 'retained' }),
         geometry: () => ({ cols: 100, rows: 30 }),
         onInput,
       },
@@ -110,12 +110,13 @@ describe('createPtyMirrorLease', () => {
     return { lease, handlers, detach, onInput, stream: () => attached! }
   }
 
-  it('exposes the tail and geometry at attach and forwards live data', () => {
+  it('exposes the tail, its preamble and geometry at attach and forwards live data', () => {
     const { lease, handlers, stream } = world(() => view())
     expect(lease).toMatchObject({
       ptyId: 'pty-1',
       instanceId: INSTANCE,
       tail: 'retained',
+      preamble: 'sticky',
       geometry: { cols: 100, rows: 30 },
       ended: false,
     })

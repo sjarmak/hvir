@@ -396,7 +396,7 @@ export class PtySupervisor {
         instanceId,
         entry: () => this.mirrorEntryView(id),
         attach: (mirror) => entry.stream.attachMirror(mirror),
-        tail: () => entry.stream.tail,
+        retained: () => entry.stream.retained,
         geometry: () => entry.geometry,
         onInput: (data) => {
           for (const cb of this.mirrorInputListeners) cb(entry.info, data)

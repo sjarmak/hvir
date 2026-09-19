@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import { PTY_OUTPUT_TAIL_CHARS } from '../src/main/pty/pty-output-tail'
+import { STICKY_MODE_PREAMBLE_MAX_CHARS } from '../src/shared/terminal-sticky-modes'
 import {
   MAX_ACTIONABLE_BODY_CHARS,
   MAX_COMPANION_INPUT_CHARS,
   MAX_COMPANION_RESIZE_DIMENSION,
   MAX_COMPANION_ROWS,
+  MAX_COMPANION_TERMINAL_PREAMBLE_CHARS,
   MAX_COMPANION_TERMINAL_TAIL_CHARS,
   MAX_SESSIONS_SUBMIT_MESSAGE,
   MIN_COMPANION_RESIZE_DIMENSION,
@@ -243,6 +245,33 @@ describe('sessions companion contract', () => {
     expect(isCompanionTerminalEvent(null)).toBe(false)
   })
 
+  it('accepts an opened with or without a preamble and rejects a bad one', () => {
+    const opened = {
+      type: 'opened',
+      handle: 't1',
+      cols: 120,
+      rows: 40,
+      tail: '\u001b[2J',
+    }
+    expect(isCompanionTerminalEvent(opened)).toBe(true)
+    expect(isCompanionTerminalEvent({ ...opened, preamble: '\u001b[?1049h' })).toBe(true)
+    expect(isCompanionTerminalEvent({ ...opened, preamble: '' })).toBe(true)
+    expect(isCompanionTerminalEvent({ ...opened, preamble: undefined })).toBe(true)
+    expect(isCompanionTerminalEvent({ ...opened, preamble: 7 })).toBe(false)
+    expect(
+      isCompanionTerminalEvent({
+        ...opened,
+        preamble: 'p'.repeat(MAX_COMPANION_TERMINAL_PREAMBLE_CHARS),
+      }),
+    ).toBe(true)
+    expect(
+      isCompanionTerminalEvent({
+        ...opened,
+        preamble: 'p'.repeat(MAX_COMPANION_TERMINAL_PREAMBLE_CHARS + 1),
+      }),
+    ).toBe(false)
+  })
+
   it('bounds tail and input length', () => {
     const tail = (length: number) => ({
       type: 'opened',
@@ -315,6 +344,10 @@ describe('sessions companion contract', () => {
 
   it('tail bound equals PTY_OUTPUT_TAIL_CHARS', () => {
     expect(MAX_COMPANION_TERMINAL_TAIL_CHARS).toBe(PTY_OUTPUT_TAIL_CHARS)
+  })
+
+  it('preamble bound equals STICKY_MODE_PREAMBLE_MAX_CHARS', () => {
+    expect(MAX_COMPANION_TERMINAL_PREAMBLE_CHARS).toBe(STICKY_MODE_PREAMBLE_MAX_CHARS)
   })
 
   it('accepts an answer and a message of the transcript shapes, without a generation', () => {

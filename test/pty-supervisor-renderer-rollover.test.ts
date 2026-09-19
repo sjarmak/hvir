@@ -57,6 +57,31 @@ describe('PtySupervisor renderer rollover', () => {
     expect(pty.resize).toHaveBeenCalledWith(120, 40)
   })
 
+  it('replays the sticky modes the drained replay no longer carries ahead of it', async () => {
+    const { info, pty, supervisor } = await fixture()
+    pty.emitData('\u001b[?1049hfull screen paint')
+    const first = vi.fn<(data: string) => void>()
+    supervisor.attach(info.id, OWNER_ID, { onData: first }, 4)
+    expect(first.mock.calls.map(([data]) => data)).toEqual([
+      '\u001b[?1049hfull screen paint',
+    ])
+
+    expect(supervisor.transferRendererSession(info.id, OWNER_ID, 4, OWNER_ID, 5)).toBe(
+      true,
+    )
+    const second = vi.fn<(data: string) => void>()
+    supervisor.attach(info.id, OWNER_ID, { onData: second }, 5)
+    expect(second.mock.calls.map(([data]) => data)).toEqual(['\u001b[?1049h'])
+
+    expect(supervisor.transferRendererSession(info.id, OWNER_ID, 5, OWNER_ID, 6)).toBe(
+      true,
+    )
+    pty.emitData('leaving\u001b[?1049l$ ')
+    const third = vi.fn<(data: string) => void>()
+    supervisor.attach(info.id, OWNER_ID, { onData: third }, 6)
+    expect(third.mock.calls.map(([data]) => data)).toEqual(['leaving\u001b[?1049l$ '])
+  })
+
   it('does not transfer a PTY before its renderer stream is attached', async () => {
     const { info, pty, supervisor } = await fixture()
 

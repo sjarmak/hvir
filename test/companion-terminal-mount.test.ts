@@ -105,6 +105,26 @@ describe('fitWidthScale', () => {
 })
 
 describe('CompanionTerminalMount', () => {
+  it('writes the sticky-mode preamble before the tail it precedes', async () => {
+    const panes: FakeCompanionPane[] = []
+    const { mount } = mountWith((cols, rows) => {
+      const pane = new FakeCompanionPane(cols, rows)
+      panes.push(pane)
+      return Promise.resolve(pane)
+    })
+    mount.handle({
+      type: 'opened',
+      handle: ROW,
+      cols: 100,
+      rows: 30,
+      preamble: '\u001b[?1049h',
+      tail: 'full screen paint',
+    })
+    await microtasks()
+    expect(panes[0]?.writes).toEqual(['\u001b[?1049h', 'full screen paint'])
+    mount.dispose()
+  })
+
   it('writes frames queued while the pane loads in order, then live frames', async () => {
     const panes: FakeCompanionPane[] = []
     const { mount, host } = mountWith((cols, rows) => {

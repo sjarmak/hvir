@@ -120,7 +120,12 @@ function isMirrorOutput(frame: CompanionEventFrame): boolean {
 function withoutMirrorBytes(frame: CompanionEventFrame): CompanionEventFrame {
   const type = terminalType(frame)
   if (type !== 'output' && type !== 'opened') return frame
-  const { data: _data, tail: _tail, ...rest } = frame.data as Record<string, unknown>
+  const {
+    data: _data,
+    tail: _tail,
+    preamble: _preamble,
+    ...rest
+  } = frame.data as Record<string, unknown>
   return { event: frame.event, data: rest }
 }
 

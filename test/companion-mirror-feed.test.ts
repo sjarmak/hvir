@@ -14,6 +14,17 @@ function opened(tail: string, cols = 120, rows = 40): CompanionTerminalEvent {
   return { type: 'opened', handle: ROW, cols, rows, tail }
 }
 
+/** The `opened` a fresh consumer is replayed, which is where the preamble is decided. */
+function replayedOpen(
+  feed: CompanionMirrorFeed,
+): Extract<CompanionTerminalEvent, { type: 'opened' }> {
+  const seen: CompanionTerminalEvent[] = []
+  feed.attach(ROW, (event) => seen.push(event))()
+  const first = seen[0]
+  if (first?.type !== 'opened') throw new Error('expected an opened replay')
+  return first
+}
+
 describe('CompanionMirrorFeed', () => {
   it('replays opened and buffered output to a late consumer in order', () => {
     const feed = new CompanionMirrorFeed()
@@ -76,6 +87,66 @@ describe('CompanionMirrorFeed', () => {
     const row: CompanionTerminalEvent[] = []
     feed.attach(ROW, (event) => row.push(event))
     expect(row).toEqual([])
+  })
+
+  it('replays a preamble the listener sent after its own tail has been cut back', () => {
+    const feed = new CompanionMirrorFeed()
+    const live: CompanionTerminalEvent[] = []
+    feed.attach(ROW, (event) => live.push(event))
+    const opening: CompanionTerminalEvent = {
+      type: 'opened',
+      handle: ROW,
+      cols: 120,
+      rows: 40,
+      preamble: '\u001b[?1049h',
+      tail: 'x'.repeat(MAX_COMPANION_TERMINAL_TAIL_CHARS),
+    }
+    feed.push(opening)
+    feed.push({
+      type: 'output',
+      handle: ROW,
+      data: 'y'.repeat(MAX_COMPANION_TERMINAL_TAIL_CHARS + 1),
+    })
+    expect(live[0]).toEqual(opening)
+
+    expect(replayedOpen(feed)).toEqual({
+      type: 'opened',
+      handle: ROW,
+      cols: 120,
+      rows: 40,
+      preamble: '\u001b[?1049h',
+      tail: 'y'.repeat(MAX_COMPANION_TERMINAL_TAIL_CHARS),
+    })
+  })
+
+  it('carries a mode the listener left to the tail once its own tail rolls past it', () => {
+    const feed = new CompanionMirrorFeed()
+    feed.push(opened('$ vim\u001b[?1049hpaint'))
+    feed.push({
+      type: 'output',
+      handle: ROW,
+      data: 'y'.repeat(MAX_COMPANION_TERMINAL_TAIL_CHARS + 100),
+    })
+    expect(replayedOpen(feed).preamble).toBe('\u001b[?1049h')
+  })
+
+  it('drops a preamble the session has since undone in a later frame', () => {
+    const feed = new CompanionMirrorFeed()
+    feed.push({
+      type: 'opened',
+      handle: ROW,
+      cols: 120,
+      rows: 40,
+      preamble: '\u001b[?1049h',
+      tail: 'painting',
+    })
+    feed.push({ type: 'output', handle: ROW, data: '\u001b[?1049l$ ' })
+    feed.push({
+      type: 'output',
+      handle: ROW,
+      data: 'y'.repeat(MAX_COMPANION_TERMINAL_TAIL_CHARS + 100),
+    })
+    expect(replayedOpen(feed).preamble).toBeUndefined()
   })
 
   it('output before any opened is not retained and clear forgets the buffer', () => {

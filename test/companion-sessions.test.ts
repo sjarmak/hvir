@@ -490,12 +490,20 @@ describe('CompanionSessionsService mirrors', () => {
       service.snapshot(page.pageId).rows.map((row) => [row.handle, row.canMirror]),
     ).toContainEqual([LOCAL, true])
 
+    world.mirrors.preamble = '\u001b[?1049h'
     service.select(page.pageId, LOCAL)
     expect(world.mirrors.attaches).toEqual([
       { ptyId: 'local-session', instanceId: 'pty-instance-local-session' },
     ])
     expect(terminal()).toEqual([
-      { type: 'opened', handle: LOCAL, cols: 132, rows: 43, tail: '\u001b[2J$ ' },
+      {
+        type: 'opened',
+        handle: LOCAL,
+        cols: 132,
+        rows: 43,
+        preamble: '\u001b[?1049h',
+        tail: '\u001b[2J$ ',
+      },
     ])
     world.mirrors.leases[0]!.handlers.onData('$ ls\r\n')
     world.mirrors.leases[0]!.handlers.onGeometry({ cols: 80, rows: 24 })

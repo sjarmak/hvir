@@ -1,9 +1,10 @@
-import type { HarnessTelemetry } from '../../shared'
+import { TerminalStickyModes, type HarnessTelemetry } from '../../shared'
 import type { Disposer, PtyExit, PtyProcess } from '../project-host/project-host'
 import type {
   PtyGeometry,
   PtyMirrorEnd,
   PtyMirrorHandlers,
+  PtyRetainedOutput,
   PtyStreamHandlers,
 } from './pty-contract'
 import { PtyOutputTail } from './pty-output-tail'
@@ -11,6 +12,14 @@ import { PtyOutputTail } from './pty-output-tail'
 /**
  * Owns stream subscriptions, the bounded renderer replay, and the always-retained
  * mirror tail; never renderer authority.
+ *
+ * Both retained views are windows over the bytes, so a mode the program set once
+ * at startup outlives them. The sticky-mode scanner runs beside them on the same
+ * chunks and holds that state whole, and each reader takes as a preamble exactly
+ * the modes its own window no longer proves (ADR-054). A window that still
+ * carries the transition gets no preamble for it: asserting one twice would put
+ * the emulator on the alternate screen before the replayed bytes that belong on
+ * the normal one, and lose the scrollback they would have rebuilt.
  */
 export class PtyStreamAttachment {
   private readonly dataListeners = new Set<(data: string) => void>()
@@ -23,6 +32,8 @@ export class PtyStreamAttachment {
   private readonly replay = new PtyOutputTail()
   /** Fed on every byte; read, never drained, by mirrors. */
   private readonly mirrorTail = new PtyOutputTail()
+  /** Fed on every byte; bounded by its mode set rather than by a character budget. */
+  private readonly modes = new TerminalStickyModes()
   private replayPending = true
   private currentTelemetry?: HarnessTelemetry
   private disposeData?: Disposer
@@ -36,8 +47,10 @@ export class PtyStreamAttachment {
     return this.currentTelemetry
   }
 
-  get tail(): string {
-    return this.mirrorTail.text()
+  /** The mirror tail and the sticky modes that exact tail no longer carries. */
+  get retained(): PtyRetainedOutput {
+    const tail = this.mirrorTail.text()
+    return { preamble: this.modes.preamble(tail.length), tail }
   }
 
   start(
@@ -49,6 +62,7 @@ export class PtyStreamAttachment {
       recordLaunchOutput(data)
       if (this.replayPending && !this.attached) this.replay.retain(data)
       this.mirrorTail.retain(data)
+      this.modes.retain(data)
       for (const listener of this.dataListeners) listener(data)
       for (const mirror of this.mirrors) mirror.onData(data)
     })
@@ -62,7 +76,11 @@ export class PtyStreamAttachment {
     if (handlers.onTelemetry) this.telemetryListeners.add(handlers.onTelemetry)
     if (handlers.onData && this.replayPending) {
       this.replayPending = false
-      for (const data of this.replay.drain()) handlers.onData(data)
+      const replay = this.replay.drain()
+      const replayed = replay.reduce((total, data) => total + data.length, 0)
+      const preamble = this.modes.preamble(replayed)
+      if (preamble.length > 0) handlers.onData(preamble)
+      for (const data of replay) handlers.onData(data)
     }
     if (handlers.onTelemetry && this.telemetry) handlers.onTelemetry(this.telemetry)
     return () => {
@@ -107,6 +125,7 @@ export class PtyStreamAttachment {
     this.endMirrors({ kind: 'released' })
     this.replay.clear()
     this.mirrorTail.clear()
+    this.modes.clear()
   }
 
   private endMirrors(end: PtyMirrorEnd): void {

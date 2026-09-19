@@ -79,44 +79,60 @@ describe('PtySupervisor mirror lease', () => {
   it('a mirror attached after the renderer receives the retained tail then live bytes', async () => {
     const { info, pty, supervisor } = await fixture()
     const renderer = vi.fn<(data: string) => void>()
-    pty.emitData('first')
+    pty.emitData('\u001b[?1049hfirst')
     supervisor.attach(info.id, OWNER_ID, { onData: renderer }, 4)
     pty.emitData(' second')
 
     const mirror = handlers()
     const lease = supervisor.attachMirror(info.id, info.instanceId, mirror)
-    expect(lease.tail).toBe('first second')
+    expect(lease.tail).toBe('\u001b[?1049hfirst second')
     expect(lease.ptyId).toBe(info.id)
     expect(lease.instanceId).toBe(info.instanceId)
 
     pty.emitData(' third')
     expect(mirror.onData.mock.calls.map(([data]) => data)).toEqual([' third'])
     expect(renderer.mock.calls.map(([data]) => data)).toEqual([
-      'first',
+      '\u001b[?1049hfirst',
       ' second',
       ' third',
     ])
   })
 
-  it('the mirror tail is bounded at 256K characters independent of replay', async () => {
+  it('neither reader is given a preamble the bytes it replays still carry', async () => {
+    const { info, pty, supervisor } = await fixture()
+    const renderer = vi.fn<(data: string) => void>()
+    pty.emitData('$ vim\r\n\u001b[?1049hfull screen paint')
+    supervisor.attach(info.id, OWNER_ID, { onData: renderer }, 4)
+
+    const lease = supervisor.attachMirror(info.id, info.instanceId, handlers())
+    expect(lease.preamble).toBe('')
+    expect(lease.tail).toBe('$ vim\r\n\u001b[?1049hfull screen paint')
+    expect(renderer.mock.calls.map(([data]) => data)).toEqual([
+      '$ vim\r\n\u001b[?1049hfull screen paint',
+    ])
+  })
+
+  it('the mirror tail is bounded at 256K characters and the preamble is beside it', async () => {
     const { info, pty, supervisor } = await fixture()
     supervisor.attach(info.id, OWNER_ID, { onData: () => undefined }, 4)
-    pty.emitData('abc')
+    pty.emitData('\u001b[?1049habc')
     pty.emitData(`discard${'x'.repeat(PTY_OUTPUT_TAIL_CHARS)}`)
     pty.emitData('tail')
 
     const lease = supervisor.attachMirror(info.id, info.instanceId, handlers())
     expect(lease.tail.length).toBe(PTY_OUTPUT_TAIL_CHARS)
     expect(lease.tail).toBe(`${'x'.repeat(PTY_OUTPUT_TAIL_CHARS - 4)}tail`)
+    expect(lease.preamble).toBe('\u001b[?1049h')
   })
 
   it('a second mirror still receives the full tail after the first attached', async () => {
     const { info, pty, supervisor } = await fixture()
     pty.emitData('before')
     supervisor.attachMirror(info.id, info.instanceId, handlers())
-    pty.emitData(' after')
+    pty.emitData('\u001b[?47h after')
     const second = supervisor.attachMirror(info.id, info.instanceId, handlers())
-    expect(second.tail).toBe('before after')
+    expect(second.tail).toBe('before\u001b[?47h after')
+    expect(second.preamble).toBe('')
   })
 
   it('a mirror does not count as a renderer attachment', async () => {

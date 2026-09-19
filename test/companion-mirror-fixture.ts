@@ -38,6 +38,8 @@ export interface FakeMirrors {
   /** Every attach throws this refusal while set. */
   refuseAttach?: PtyMirrorRefusal
   tail: string
+  /** The sticky modes the tail no longer carries; empty for an ordinary shell. */
+  preamble: string
   geometry: PtyGeometry
   readonly ports: CompanionMirrorPorts
 }
@@ -48,6 +50,7 @@ export function fakeMirrors(): FakeMirrors {
     leases: [],
     typingAllowed: false,
     tail: '\u001b[2J$ ',
+    preamble: '',
     geometry: { cols: 132, rows: 43 },
     ports: {
       attach: (ptyId, instanceId, handlers) => {
@@ -69,7 +72,7 @@ function fakeLease(
   ptyId: string,
   instanceId: string,
   handlers: PtyMirrorHandlers,
-  source: Pick<FakeMirrors, 'tail' | 'geometry'>,
+  source: Pick<FakeMirrors, 'tail' | 'preamble' | 'geometry'>,
 ): FakeMirrorLease {
   let released = false
   let exited = false
@@ -82,6 +85,7 @@ function fakeLease(
     ptyId,
     instanceId,
     tail: source.tail,
+    preamble: source.preamble,
     geometry: source.geometry,
     // Like the real lease: nothing reaches the holder once it let go or the stream ended.
     handlers: {

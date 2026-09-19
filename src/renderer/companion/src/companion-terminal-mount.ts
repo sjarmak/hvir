@@ -1,10 +1,12 @@
 /**
  * One mirror's pane inside the terminal view: created at the geometry the
- * `opened` frame names, fed the tail and every later frame, replaced when a
- * new `opened` arrives, and shown in the host scaled to its width. The pane
- * is built asynchronously (the emulator loads its module first), so frames
- * that land before it is ready are queued in order and written once it
- * mounts.
+ * `opened` frame names, fed the sticky-mode preamble, then the tail and every
+ * later frame, replaced when a new `opened` arrives, and shown in the host
+ * scaled to its width. The preamble puts the fresh emulator on the screen the
+ * session is already on before a byte of the tail lands, and is skipped when the
+ * frame carries none (ADR-054). The pane is built asynchronously (the emulator
+ * loads its module first), so frames that land before it is ready are queued in
+ * order and written once it mounts.
  *
  * The grid is whatever main publishes: geometry frames resize the pane, and
  * the emulator never picks a size of its own. While the desktop is Away the
@@ -105,7 +107,7 @@ export class CompanionTerminalMount {
   handle(event: CompanionTerminalEvent): void {
     switch (event.type) {
       case 'opened':
-        this.open(event.cols, event.rows, event.tail)
+        this.open(event.cols, event.rows, event.preamble ?? '', event.tail)
         return
       case 'output':
         if (this.pane !== undefined) {
@@ -152,7 +154,7 @@ export class CompanionTerminalMount {
     this.extent.remove()
   }
 
-  private open(cols: number, rows: number, tail: string): void {
+  private open(cols: number, rows: number, preamble: string, tail: string): void {
     this.fitter.setLive(false)
     this.pane?.dispose()
     this.pane = undefined
@@ -160,7 +162,7 @@ export class CompanionTerminalMount {
     this.gridBox.replaceChildren()
     const pending: PendingPane = {
       created: this.options.createPane(cols, rows),
-      frames: [tail],
+      frames: preamble.length > 0 ? [preamble, tail] : [tail],
     }
     this.pending = pending
     void pending.created.then(

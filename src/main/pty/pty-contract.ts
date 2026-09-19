@@ -174,6 +174,18 @@ export interface PtyMirrorHandlers {
 }
 
 /**
+ * Retained output and the sticky terminal modes that exact window no longer carries
+ * (ADR-054). The two travel together because the preamble is only right for the tail
+ * it was measured against: a transition the tail still carries is left out of it, so a
+ * reader never applies the same mode twice and never paints normal-screen bytes onto
+ * the alternate one.
+ */
+export interface PtyRetainedOutput {
+  readonly preamble: string
+  readonly tail: string
+}
+
+/**
  * A mirror lease on one exact PTY instance (ADR-050): a second reader, never an owner. It may
  * resize the PTY only under ADR-052's Away rule, while no desktop window is focused; every other
  * lifecycle verb stays with the renderer owner.
@@ -183,6 +195,13 @@ export interface PtyMirrorLease {
   readonly instanceId: string
   /** Retained output at attach; live bytes follow through `onData` only. */
   readonly tail: string
+  /**
+   * The sticky terminal modes this tail no longer carries, as the sets that reach
+   * them (ADR-054). Written before the tail, never inside it: the tail saturates at
+   * its own bound and a prefix would push it past. Empty whenever the tail still
+   * carries the transitions itself.
+   */
+  readonly preamble: string
   /** Geometry at attach; later changes arrive through `onGeometry`. */
   readonly geometry: PtyGeometry
   readonly ended: boolean

@@ -5,7 +5,7 @@ generated: "2026-09-18"
 # Staleness stamp, machine-readable so a refresh can test drift without a model.
 # `sources` are area-relative paths (relative to THIS file's directory). Recompute:
 #   node ~/.claude/skills/project-compass/compass-hash.mjs src/main/companion/COMPASS.md
-sources_hash: "sha256-16:12686548003356c1"
+sources_hash: "sha256-16:7784c37d39d59c1b"
 sources:
   - companion-owner.ts
   - companion-sessions.ts
@@ -32,6 +32,7 @@ sources:
   - ../../shared/companion-settings.ts
   - ../../shared/actionable-attention.ts
   - ../../shared/terminal-wheel.ts
+  - ../../shared/terminal-sticky-modes.ts
   - ../../renderer/companion/index.html
   - ../../renderer/companion/src/companion-terminal-pane.ts
   - ../../renderer/companion/src/ghostty-companion-pane.ts
@@ -148,7 +149,8 @@ supervisor's doors.
 - **Wire contracts** live in `src/shared/sessions-companion.ts` (`CompanionEvent`,
   `CompanionTerminalEvent`, `CompanionMirrorEndReason`, `CompanionSnapshot.away`,
   `CompanionResizeRequest` and `CompanionResizeResponse`, the exact-key guards, the 256K
-  tail, the 4096-character input bound, and the 2..1000 resize dimension bounds) and
+  tail, the 14-character sticky-mode preamble beside it, the 4096-character input bound,
+  and the 2..1000 resize dimension bounds) and
   `src/shared/companion-settings.ts`. Both are
   ownership-guarded: no imports from `./ipc`, `electron`, main, or preload. The attention
   kinds and the prompt message bound come from `src/shared/actionable-attention.ts`:
@@ -169,8 +171,36 @@ page's observation snapshot: a target opens a mirror, no target ends any open on
 `reselected`. `open` first ends the current mirror (`reselected`), then calls the supervisor's
 `attachMirror(ptyId, instanceId, handlers)`. A `PtyMirrorRefusedError` there means the
 instance is already gone, so the page hears `ended exited` and never `opened`; a success emits
-`opened { cols, rows, tail }` with the supervisor's retained tail and last applied geometry,
-then `output` and `geometry` frames as the handlers fire.
+`opened { cols, rows, preamble?, tail }` with the supervisor's retained tail and last applied
+geometry, then `output` and `geometry` frames as the handlers fire.
+
+`preamble` is the one field on the wire that main derived rather than forwarded (ADR-054).
+`PtyOutputTail` is a flat 256K character window, so the alternate-screen enter a full-screen
+program emits once at startup falls out of it and every replay would otherwise begin on the
+normal screen while the session is on the alternate one. `TerminalStickyModes`, in
+`src/shared`, scans the same chunks for a closed set of DEC private modes (1049 and 47, with
+1047 observed as 47) and holds, per mode, the last state it saw and the position it saw it at.
+
+The position is the part that is easy to get wrong. `preamble(windowChars)` names only the
+modes whose last transition falls before the window it is handed, so a reader whose own bytes
+still carry the enter gets nothing: prepending it anyway would switch the emulator to the
+alternate screen before the replayed characters that belong on the normal one land, and the
+desktop pane's scrollback for everything ahead of the full-screen program would be gone. The
+renderer asks against its drained replay, a mirror asks against `lease.tail` through
+`stream.retained`, and the page asks again against its own re-cut tail inside
+`CompanionMirrorFeed`, because that window is cut independently of main's and keeps moving.
+
+Three more constraints hold the field in this shape. It is optional, absent whenever the window
+carries its own transitions, which is every ordinary shell, so such an `opened` is byte-identical
+to what a page built before the field expects. It is never a prefix of `tail`: the tail
+saturates at exactly its bound, so a prefix would push the `opened` past
+`MAX_COMPANION_TERMINAL_TAIL_CHARS` and the guard's rejection kills the whole SSE stream, and
+`CompanionMirrorFeed` re-cuts the tail from the front on every replay, so a prefix that fit
+would vanish on the second paint. And it carries only modes with a steady state that change
+the picture: `?1048` is a cursor save whose replay would let a later restore inside the tail
+move the cursor mid-replay, a dangling `?2026` would freeze the reattaching emulator, and mouse
+tracking would make the page's wheel policy answer a gesture with reports a disarmed mirror
+drops.
 
 The lease ends on exactly these paths, each mapped to a `CompanionMirrorEndReason` the page
 turns into one sentence: the PTY exits or the supervisor releases it (`onEnd` delivers

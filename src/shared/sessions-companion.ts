@@ -38,12 +38,29 @@ import {
   type SessionsTranscriptSubmitRequest,
 } from './sessions-transcript'
 
+/**
+ * The snapshot's shape, compared for strict equality so a page on an older bundle
+ * stops rather than reads a snapshot it misunderstands. It moves only when an
+ * existing snapshot field changes shape or meaning. A purely additive optional
+ * field is exempt in both directions: the page's guard accepts its absence, so
+ * bumping would strand every page that is otherwise fine. Terminal events are not
+ * covered by it at all, since it rides the snapshot alone; their compatibility rule
+ * is the event guard itself, which ignores an unknown event name and refuses a
+ * known name with a shape it does not recognise.
+ */
 export const SESSIONS_COMPANION_VERSION = 1
 
 /** A page shows what the projection shows; it never grows past it. */
 export const MAX_COMPANION_ROWS = MAX_SESSIONS_PROJECTION_ROWS
 /** The retained output a mirror opens with; the PTY supervisor's tail bound. */
 export const MAX_COMPANION_TERMINAL_TAIL_CHARS = 256 * 1024
+/**
+ * The sticky-mode preamble a mirror opens with: the width of the scanner's full
+ * emission, stated here as the wire's own bound and pinned against
+ * `STICKY_MODE_PREAMBLE_MAX_CHARS` by contract test, the way the tail bound is
+ * pinned against the supervisor's (ADR-054).
+ */
+export const MAX_COMPANION_TERMINAL_PREAMBLE_CHARS = 14
 /** One input request carries at most this many characters of the user's bytes. */
 export const MAX_COMPANION_INPUT_CHARS = 4096
 /** A resize request names a grid within the PTY's own dimension bounds (ADR-052). */
@@ -117,6 +134,15 @@ export type CompanionTerminalEvent =
       readonly handle: SessionsTerminalHandle
       readonly cols: number
       readonly rows: number
+      /**
+       * The sticky terminal modes this tail no longer carries, as the sets that
+       * reach them (ADR-054). A page writes it before the tail and never inside
+       * it: the tail saturates at its own bound and a prefix would push it past.
+       * Absent when the tail still carries the transitions itself, which is every
+       * ordinary shell, and which is how a page built before this field existed
+       * keeps opening such a mirror unchanged.
+       */
+      readonly preamble?: string
       /** Retained output at open; live bytes follow as `output`. */
       readonly tail: string
     }
@@ -242,9 +268,10 @@ export function isCompanionTerminalEvent(
   switch (value['type']) {
     case 'opened':
       return (
-        hasExactKeys(value, OPENED_KEYS) &&
+        hasKeys(value, OPENED_KEYS, OPENED_OPTIONAL_KEYS) &&
         isDimension(value['cols']) &&
         isDimension(value['rows']) &&
+        isPreamble(value['preamble']) &&
         typeof value['tail'] === 'string' &&
         value['tail'].length <= MAX_COMPANION_TERMINAL_TAIL_CHARS
       )
@@ -334,6 +361,7 @@ const SUBMIT_KEYS = ['handle', 'message'] as const
 const INPUT_KEYS = ['data'] as const
 const RESIZE_KEYS = ['cols', 'rows'] as const
 const OPENED_KEYS = ['type', 'handle', 'cols', 'rows', 'tail'] as const
+const OPENED_OPTIONAL_KEYS = ['preamble'] as const
 const OUTPUT_KEYS = ['type', 'handle', 'data'] as const
 const GEOMETRY_KEYS = ['type', 'handle', 'cols', 'rows'] as const
 const ENDED_KEYS = ['type', 'handle', 'reason'] as const
@@ -401,6 +429,14 @@ function isResizeDimension(value: unknown): value is number {
     isDimension(value) &&
     value >= MIN_COMPANION_RESIZE_DIMENSION &&
     value <= MAX_COMPANION_RESIZE_DIMENSION
+  )
+}
+
+/** Absent is a stream that set no sticky mode; present is bounded by the scanner. */
+function isPreamble(value: unknown): boolean {
+  if (value === undefined) return true
+  return (
+    typeof value === 'string' && value.length <= MAX_COMPANION_TERMINAL_PREAMBLE_CHARS
   )
 }
 
