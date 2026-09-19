@@ -227,7 +227,9 @@ What the phone shows:
   default, reads the emulator's screen and scrollback as text and wraps it to the phone's
   width at a readable size, so the terminal fills the area and scrolls like a page; a line the
   desktop broke at its own width is joined back together, colours and cursor are not shown,
-  and the newest output stays in view unless you have scrolled up. **Fit width** shows the
+  the newest line sits at the bottom of the area just above the controls (with any spare room
+  above the text, as in a terminal), and it stays there as output arrives unless you have
+  scrolled up. **Fit width** shows the
   whole grid as the desktop draws it, scaled into the phone's width, so a 200-column desktop
   terminal reads small. **Fill height** scales the rows to the height of the terminal area
   and lets you pan sideways across the columns with a finger. The choice is remembered in the

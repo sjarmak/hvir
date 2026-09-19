@@ -39,11 +39,22 @@ export function reflowText(lines: readonly CompanionBufferLine[]): string {
 export class MirrorReflow {
   private timer?: ReturnType<typeof setTimeout>
   private disposed = false
+  /**
+   * The text sits in a child of the scrolling page so it can be pinned to
+   * the page's bottom edge while it is shorter than the page: the newest
+   * line is always just above the controls, as in a terminal, and the text
+   * fills the area from the bottom up.
+   */
+  private readonly text: HTMLElement
 
   constructor(
     private readonly element: HTMLElement,
     private readonly source: () => readonly CompanionBufferLine[],
-  ) {}
+  ) {
+    this.text = document.createElement('span')
+    this.text.className = 'companion-terminal-reflow-text'
+    element.replaceChildren(this.text)
+  }
 
   /** A refresh soon; several requests in one interval make one refresh. */
   schedule(): void {
@@ -60,7 +71,7 @@ export class MirrorReflow {
     const { element } = this
     const following =
       element.scrollTop + element.clientHeight >= element.scrollHeight - FOLLOW_SLACK_PX
-    element.textContent = reflowText(this.source())
+    this.text.textContent = reflowText(this.source())
     if (following) element.scrollTop = element.scrollHeight
   }
 

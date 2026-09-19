@@ -427,13 +427,22 @@ body {
   touch-action: pan-x;
 }
 
-/* The reflow view is a page of its own: the browser scrolls it. */
+/* The reflow view is a page of its own: the browser scrolls it. The page
+ * takes the host's whole height by flex (a percentage height inside nested
+ * flex items is not reliable on iOS), and the text inside is pinned to the
+ * page's bottom edge while shorter than it, so the newest line is always
+ * just above the controls and any spare room sits above the text. */
 .companion-terminal-host[data-zoom='reflow'] {
+  display: flex;
+  flex-direction: column;
   touch-action: pan-y;
 }
 
 .companion-terminal-reflow {
-  height: 100%;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   margin: 0;
   padding: 8px 10px;
   overflow-x: hidden;
@@ -448,6 +457,11 @@ body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   touch-action: pan-y;
+}
+
+.companion-terminal-reflow-text {
+  display: block;
+  margin-top: auto;
 }
 
 .companion-terminal-extent {

@@ -76,6 +76,10 @@ describe('MirrorReflow', () => {
     lines = [line('one')]
     reflow.refresh()
     expect(element.textContent).toBe('one')
+    // The text lives in one child the stylesheet pins to the page's bottom edge.
+    expect(element.children).toHaveLength(1)
+    expect(element.firstElementChild?.className).toBe('companion-terminal-reflow-text')
+    expect(element.firstElementChild?.textContent).toBe('one')
 
     lines = [line('one'), line('two')]
     reflow.schedule()
