@@ -48,14 +48,22 @@ describe('GhosttyTerminalPane held geometry (ADR-052)', () => {
     // Fitting is suspended: a settle period brings no refit back to the pane's own size.
     await settleTerminalFit()
     expect(state.resizes).toEqual([OWN, HELD])
-    expect(container.querySelectorAll(NOTICE)).toHaveLength(1)
+
+    // A second phone grid updates the one notice in place instead of stacking another.
+    pane.setHeldGeometry({ cols: 40, rows: 30 })
+
+    expect(state.resizes).toEqual([OWN, HELD, { cols: 40, rows: 30 }])
+    const notices = container.querySelectorAll(NOTICE)
+    expect(notices).toHaveLength(1)
+    expect(notices[0]?.textContent).toContain('40×30')
+    expect(notices[0]?.textContent).not.toContain('61×23')
 
     pane.setHeldGeometry(undefined)
 
     expect(container.querySelector(NOTICE)).toBeNull()
     expect(surface.style.background).toBe('')
     await settleTerminalFit()
-    expect(state.resizes).toEqual([OWN, HELD, OWN])
+    expect(state.resizes).toEqual([OWN, HELD, { cols: 40, rows: 30 }, OWN])
     pane.dispose()
   })
 

@@ -49,10 +49,10 @@
   right: 8px;
   bottom: 8px;
   padding: 2px 8px;
-  border: 1px solid #3b4654;
+  border: 1px solid var(--border-strong);
   border-radius: 3px;
-  background: color-mix(in srgb, #191e25 92%, transparent);
-  color: #aeb7c3;
+  background: color-mix(in srgb, var(--surface-raised) 94%, transparent);
+  color: var(--text);
   font-size: calc(9px * var(--hvir-interface-scale));
   white-space: nowrap;
   pointer-events: none;
