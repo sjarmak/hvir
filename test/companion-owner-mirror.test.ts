@@ -125,7 +125,7 @@ describe('installApplicationCompanion terminal mirror', () => {
     expect(JSON.parse(accepted.body)).toEqual({ outcome: 'accepted' })
     expect(lease.writes).toEqual(['y\r'])
 
-    lease.refuseWrite = 'ended'
+    lease.refuse = 'ended'
     const ended = await send(port, 'POST', input(LOCAL), {
       headers,
       body: { page, data: '\u0003' },
@@ -189,20 +189,31 @@ describe('installApplicationCompanion terminal mirror', () => {
     const port_ = companion.settings.view().port
 
     expect(await stored()).toBe(false)
-    expect((await send(port, 'POST', input, { headers, body: { page, data: '\r' } })).status)
-      .toBe(403)
+    expect(
+      (await send(port, 'POST', input, { headers, body: { page, data: '\r' } })).status,
+    ).toBe(403)
 
-    await companion.settings.save({ enabled: true, port: port_, mirrorInputAllowed: true })
+    await companion.settings.save({
+      enabled: true,
+      port: port_,
+      mirrorInputAllowed: true,
+    })
     expect(await stored()).toBe(true)
     expect(companion.settings.view().mirrorInputAllowed).toBe(true)
-    expect((await send(port, 'POST', input, { headers, body: { page, data: '\r' } })).status)
-      .toBe(200)
+    expect(
+      (await send(port, 'POST', input, { headers, body: { page, data: '\r' } })).status,
+    ).toBe(200)
     expect(lease.writes).toEqual(['\r'])
 
-    await companion.settings.save({ enabled: true, port: port_, mirrorInputAllowed: false })
+    await companion.settings.save({
+      enabled: true,
+      port: port_,
+      mirrorInputAllowed: false,
+    })
     expect(await stored()).toBe(false)
-    expect((await send(port, 'POST', input, { headers, body: { page, data: 'y' } })).status)
-      .toBe(403)
+    expect(
+      (await send(port, 'POST', input, { headers, body: { page, data: 'y' } })).status,
+    ).toBe(403)
     expect(lease.writes).toEqual(['\r'])
   })
 

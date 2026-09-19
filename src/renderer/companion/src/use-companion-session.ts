@@ -140,6 +140,15 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
 
   const page = connection.phase === 'connected' ? connection.page : undefined
 
+  /** The listener no longer accepts the token: back to pairing, stream closed. */
+  const expire = useCallback(() => {
+    stream.current?.close()
+    stream.current = undefined
+    setState(EMPTY_COMPANION_PAGE)
+    setConnection({ phase: 'unpaired', error: PAIRING_EXPIRED })
+  }, [])
+
+  /** A verb the person asked for: its refusal replaces the notice, and nothing else does. */
   const run = useCallback(
     async <T>(
       verb: (page: string) => Promise<T>,
@@ -154,10 +163,7 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
         return await verb(page)
       } catch (error: unknown) {
         if (error instanceof CompanionUnauthorizedError) {
-          stream.current?.close()
-          stream.current = undefined
-          setState(EMPTY_COMPANION_PAGE)
-          setConnection({ phase: 'unpaired', error: PAIRING_EXPIRED })
+          expire()
         } else {
           setNotice(
             error instanceof CompanionHttpFailure ? refused(error) : describe(error),
@@ -166,7 +172,7 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
         return undefined
       }
     },
-    [page],
+    [page, expire],
   )
 
   const pair = useCallback(
@@ -266,15 +272,21 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
     [client, run, armed, mirrorHandle, touch, disarm],
   )
 
+  // The page asks for this on its own, so it never touches the notice a verb
+  // the person sent may be showing. A 409 here means the mirror ended, and the
+  // stream's `ended` frame says so; any other failure leaves the desktop's
+  // geometry in place, which the scaled view already shows.
   const resize = useCallback(
     async (cols: number, rows: number) => {
-      if (mirrorHandle === undefined) return undefined
-      return run(
-        (current) => client.resize(current, mirrorHandle, { cols, rows }),
-        (failure) => (failure.status === 409 ? MIRROR_ENDED : failure.message),
-      )
+      if (page === undefined || mirrorHandle === undefined) return undefined
+      try {
+        return await client.resize(page, mirrorHandle, { cols, rows })
+      } catch (error: unknown) {
+        if (error instanceof CompanionUnauthorizedError) expire()
+        return undefined
+      }
     },
-    [client, run, mirrorHandle],
+    [client, page, mirrorHandle, expire],
   )
 
   return {

@@ -9,19 +9,22 @@
  * The grid is whatever main publishes: geometry frames resize the pane, and
  * the emulator never picks a size of its own. While the desktop is Away the
  * mount asks for the grid the host's area holds at the pane's cell size
- * (ADR-052); a geometry frame equal to that request means the phone holds the
- * size, and the surface renders at scale 1. Any other geometry is the
- * desktop's, drawn as a CSS transform on the pane's surface that sets its
- * columns to the host's width and never enlarges, so the emulator keeps its
- * exact cell grid either way. The scrollback is drawn above the grid in the
- * same surface, at the grid's cell metrics, and the extent around the surface
- * takes the scaled size of the two, so the host scrolls over exactly one
- * column of history then live screen. Wheel input over the grid reaches the
- * pane directly.
+ * (ADR-052). The view is a CSS transform on the pane's surface that sets the
+ * grid's columns to the host's width and never enlarges, so the emulator
+ * keeps its exact cell grid: the desktop's wide grid shrinks to fit, and the
+ * phone's own grid, already the host's width, draws at scale 1 (or a hair
+ * under when a cell advance rounds past the host, so no column is clipped).
+ * The scrollback is drawn above the grid in the same surface, at the grid's
+ * cell metrics, and the extent around the surface takes the scaled size of
+ * the two, so the host scrolls over exactly one column of history then live
+ * screen. Wheel input over the grid reaches the pane directly.
  */
 import type { CompanionTerminalEvent } from '../../../shared'
 import { HISTORY_LINE_LIMIT, MirrorHistory } from './companion-mirror-history'
-import { CompanionFitController } from './companion-terminal-fit'
+import {
+  CompanionFitController,
+  type CompanionResizeAnswer,
+} from './companion-terminal-fit'
 import type {
   CompanionBufferLine,
   CompanionTerminalPane,
@@ -39,7 +42,9 @@ export interface CompanionTerminalMountOptions {
   readonly createPane: CompanionTerminalPaneFactory
   readonly onInput: (data: string) => void
   /** The grid the host holds, asked for only while the mirror is live and the desktop is Away. */
-  readonly onResize: (cols: number, rows: number) => void
+  readonly onResize: (cols: number, rows: number) => Promise<CompanionResizeAnswer>
+  /** The desktop's answer to the latest grid asked for. */
+  readonly onResizeAnswered: (answer: CompanionResizeAnswer) => void
   readonly onFailure: (error: unknown) => void
 }
 
@@ -54,8 +59,6 @@ export class CompanionTerminalMount {
   private pending?: PendingPane
   private inputEnabled = false
   private rows = 0
-  /** The grid is the one this mount asked for (ADR-052): drawn at scale 1. */
-  private held = false
   private disposed = false
   private readonly host: HTMLElement
   private readonly extent: HTMLDivElement
@@ -90,6 +93,7 @@ export class CompanionTerminalMount {
       area: () => ({ width: host.clientWidth, height: host.clientHeight }),
       cell: () => this.pane?.cellSize(),
       request: ({ cols, rows }) => options.onResize(cols, rows),
+      answered: (answer) => options.onResizeAnswered(answer),
     })
     this.observer = new ResizeObserver(() => {
       this.fit()
@@ -112,7 +116,7 @@ export class CompanionTerminalMount {
         }
         return
       case 'geometry':
-        this.held = this.fitter.applied({ cols: event.cols, rows: event.rows })
+        this.fitter.applied({ cols: event.cols, rows: event.rows })
         this.rows = event.rows
         if (this.pane !== undefined) {
           this.pane.resize(event.cols, event.rows)
@@ -150,7 +154,6 @@ export class CompanionTerminalMount {
 
   private open(cols: number, rows: number, tail: string): void {
     this.fitter.setLive(false)
-    this.held = false
     this.pane?.dispose()
     this.pane = undefined
     this.rows = rows
@@ -219,19 +222,18 @@ export class CompanionTerminalMount {
   }
 
   /**
-   * Scales the surface to the host's width, or not at all while the phone
-   * holds the size, and sizes the extent to what the surface holds. The
-   * history's rows are the grid's columns in the grid's font and take its row
-   * height, so the two read as one column of the grid's width.
+   * Scales the surface to the host's width and sizes the extent to what the
+   * surface holds. The history's rows are the grid's columns in the grid's
+   * font and take its row height, so the two read as one column of the
+   * grid's width.
    */
   private fit(): void {
     const grid = this.grid()
     if (grid === undefined) return
-    const scale = this.held ? 1 : fitWidthScale(this.host.clientWidth, grid.offsetWidth)
+    const scale = fitWidthScale(this.host.clientWidth, grid.offsetWidth)
     if (scale === undefined) return
     this.historyBox.style.lineHeight = `${grid.offsetHeight / this.rows}px`
     const height = grid.offsetHeight + this.historyBox.offsetHeight
-    this.surface.dataset['fit'] = this.held ? 'held' : 'scaled'
     this.surface.style.transform = `scale(${scale})`
     this.extent.style.width = `${Math.ceil(grid.offsetWidth * scale)}px`
     this.extent.style.height = `${Math.ceil(height * scale)}px`

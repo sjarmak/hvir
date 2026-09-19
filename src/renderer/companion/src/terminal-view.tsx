@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 
 import type {
-  CompanionResizeResponse,
   CompanionRow,
   SessionsTerminalHandle,
   SessionsTranscriptSnapshot,
 } from '../../../shared'
 import type { CompanionMirrorFeed } from './companion-mirror-feed'
 import { companionMirrorEndMessage, type CompanionTerminalState } from './companion-store'
+import type { CompanionResizeAnswer } from './companion-terminal-fit'
 import { CompanionTerminalMount } from './companion-terminal-mount'
 import type { CompanionTerminalPaneFactory } from './companion-terminal-pane'
 import { MirrorControls } from './mirror-controls'
@@ -15,10 +15,7 @@ import { MirrorHeader } from './mirror-header'
 import { TranscriptView } from './transcript-view'
 import type { CompanionInputArmingControl } from './use-input-arming'
 
-type ResizeVerb = (
-  cols: number,
-  rows: number,
-) => Promise<CompanionResizeResponse | undefined>
+type ResizeVerb = (cols: number, rows: number) => Promise<CompanionResizeAnswer>
 
 interface TerminalViewProps {
   readonly row: CompanionRow | undefined
@@ -68,10 +65,8 @@ export function TerminalView(props: TerminalViewProps) {
       />
     )
   }
-  const requestSize = async (cols: number, rows: number): Promise<void> => {
-    const outcome = await onResize(cols, rows)
-    setSizeStatus(outcome?.outcome === 'refused' ? DESKTOP_KEEPS_SIZE : undefined)
-  }
+  const sizeAnswered = (answer: CompanionResizeAnswer): void =>
+    setSizeStatus(answer?.outcome === 'refused' ? DESKTOP_KEEPS_SIZE : undefined)
   return (
     <section className="companion-terminal">
       <MirrorHeader
@@ -104,7 +99,8 @@ export function TerminalView(props: TerminalViewProps) {
           inputEnabled={arming.armed}
           away={props.away}
           onInput={onInput}
-          onResize={requestSize}
+          onResize={onResize}
+          onResizeAnswered={sizeAnswered}
           onFailure={(error) => setPaneFailure(describeFailure(error))}
         />
       </div>
@@ -113,7 +109,11 @@ export function TerminalView(props: TerminalViewProps) {
   )
 }
 
-/** The pane's host: attached to the feed for this row while mounted. */
+/**
+ * The pane's host: attached to the feed for this row while mounted. A mount
+ * built while the desktop is already Away learns that at once; later flips
+ * reach it through the effect below.
+ */
 function TerminalSurface({
   handle,
   feed,
@@ -122,6 +122,7 @@ function TerminalSurface({
   away,
   onInput,
   onResize,
+  onResizeAnswered,
   onFailure,
 }: {
   readonly handle: SessionsTerminalHandle
@@ -130,13 +131,16 @@ function TerminalSurface({
   readonly inputEnabled: boolean
   readonly away: boolean
   readonly onInput: (data: string) => Promise<void>
-  readonly onResize: (cols: number, rows: number) => Promise<void>
+  readonly onResize: ResizeVerb
+  readonly onResizeAnswered: (answer: CompanionResizeAnswer) => void
   readonly onFailure: (error: unknown) => void
 }) {
   const host = useRef<HTMLDivElement>(null)
   const mount = useRef<CompanionTerminalMount>(undefined)
-  const callbacks = useRef({ onInput, onResize, onFailure })
-  callbacks.current = { onInput, onResize, onFailure }
+  const callbacks = useRef({ onInput, onResize, onResizeAnswered, onFailure })
+  callbacks.current = { onInput, onResize, onResizeAnswered, onFailure }
+  const awayNow = useRef(away)
+  awayNow.current = away
 
   useEffect(() => {
     const element = host.current
@@ -145,9 +149,11 @@ function TerminalSurface({
       host: element,
       createPane,
       onInput: (data) => void callbacks.current.onInput(data),
-      onResize: (cols, rows) => void callbacks.current.onResize(cols, rows),
+      onResize: (cols, rows) => callbacks.current.onResize(cols, rows),
+      onResizeAnswered: (answer) => callbacks.current.onResizeAnswered(answer),
       onFailure: (error) => callbacks.current.onFailure(error),
     })
+    created.setAway(awayNow.current)
     mount.current = created
     const detach = feed.attach(handle, (event) => created.handle(event))
     return () => {

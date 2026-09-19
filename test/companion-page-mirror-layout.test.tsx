@@ -8,11 +8,18 @@
  * desktop is focused. While the desktop is Away the page asks for its own grid
  * and renders it unscaled once the PTY takes it (ADR-052).
  */
-import { act } from 'react'
+import { act, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
 import { describe, expect, it } from 'vitest'
 
-import { FIT_SETTLE_MS } from '../src/renderer/companion/src/companion-terminal-fit'
-import { snapshot } from './companion-page-fixture'
+import { CompanionMirrorFeed } from '../src/renderer/companion/src/companion-mirror-feed'
+import {
+  FIT_SETTLE_MS,
+  type CompanionResizeAnswer,
+} from '../src/renderer/companion/src/companion-terminal-fit'
+import { TerminalView } from '../src/renderer/companion/src/terminal-view'
+import { asSessionsTerminalHandle } from '../src/shared'
+import { fakePaneFactory, snapshot } from './companion-page-fixture'
 import {
   MIRROR_ROW,
   armButton,
@@ -184,5 +191,94 @@ describe('Companion page mirror while the desktop is Away (ADR-052)', () => {
     await emit('snapshot', snapshot(4, [MIRROR_ROW], { away: true }))
     await settleFit()
     expect(server.resizes()).toHaveLength(1)
+  })
+
+  it('an automatic resize leaves the notice a refused keystroke is showing', async () => {
+    await openMirror()
+    layoutHost(376, 496)
+    await click(armButton())
+    server.inputStatus = 403
+    server.inputError = 'Typing from the Companion is off in Settings'
+    await act(async () => {
+      panes.panes[0]!.emitData('\r')
+      await Promise.resolve()
+    })
+    await settleFit()
+    expect(server.inputs()).toEqual([{ page: 'page-1', data: '\r' }])
+    const notice = () => host.querySelector('.companion-error')?.textContent
+    expect(notice()).toBe('Typing from the Companion is off in Settings')
+
+    await emit('snapshot', snapshot(2, [MIRROR_ROW], { away: true }))
+    await settleFit()
+    expect(server.resizes()).toEqual([{ page: 'page-1', cols: 47, rows: 31 }])
+    expect(notice()).toBe('Typing from the Companion is off in Settings')
+  })
+
+  it('a surface rebuilt for another row while the desktop is already Away asks for its grid', async () => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    Object.defineProperty(root, 'clientWidth', { get: () => 376 })
+    Object.defineProperty(root, 'clientHeight', { get: () => 496 })
+    const reactRoot = createRoot(root)
+    const feed = new CompanionMirrorFeed()
+    const factory = fakePaneFactory()
+    const resizes: {
+      readonly handle: string
+      readonly cols: number
+      readonly rows: number
+    }[] = []
+    const first = asSessionsTerminalHandle('term-1')
+    const second = asSessionsTerminalHandle('term-2')
+    const render = (handle: typeof first): Promise<void> =>
+      act(async () => {
+        reactRoot.render(
+          createElement(TerminalView, {
+            row: undefined,
+            terminal: { handle, status: 'live', cols: 132, rows: 43 },
+            transcript: undefined,
+            feed,
+            createPane: factory.createPane,
+            arming: { armed: false, arm: () => {}, disarm: () => {}, touch: () => {} },
+            away: true,
+            onInput: () => Promise.resolve(),
+            onResize: (cols, rows): Promise<CompanionResizeAnswer> => {
+              resizes.push({ handle, cols, rows })
+              return Promise.resolve({ outcome: 'accepted' })
+            },
+            onBack: () => {},
+            onResume: () => Promise.resolve(),
+            onRespond: () => Promise.resolve(),
+            onSubmit: () => Promise.resolve(true),
+          }),
+        )
+        await Promise.resolve()
+      })
+    try {
+      await render(first)
+      const terminalHost = root.querySelector<HTMLElement>('.companion-terminal-host')!
+      Object.defineProperty(terminalHost, 'clientWidth', { get: () => 376 })
+      Object.defineProperty(terminalHost, 'clientHeight', { get: () => 496 })
+      await act(async () => {
+        feed.push({ type: 'opened', handle: first, cols: 132, rows: 43, tail: '' })
+        await Promise.resolve()
+      })
+      await settleFit()
+      expect(resizes).toEqual([{ handle: first, cols: 47, rows: 31 }])
+
+      // The same TerminalView, a new row: the surface is rebuilt while `away` never changed.
+      await render(second)
+      await act(async () => {
+        feed.push({ type: 'opened', handle: second, cols: 132, rows: 43, tail: '' })
+        await Promise.resolve()
+      })
+      await settleFit()
+      expect(resizes).toEqual([
+        { handle: first, cols: 47, rows: 31 },
+        { handle: second, cols: 47, rows: 31 },
+      ])
+    } finally {
+      act(() => reactRoot.unmount())
+      root.remove()
+    }
   })
 })

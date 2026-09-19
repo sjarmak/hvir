@@ -6,7 +6,10 @@ import {
   HISTORY_LINE_LIMIT,
   HISTORY_REFRESH_MS,
 } from '../src/renderer/companion/src/companion-mirror-history'
-import { FIT_SETTLE_MS } from '../src/renderer/companion/src/companion-terminal-fit'
+import {
+  FIT_SETTLE_MS,
+  type CompanionResizeAnswer,
+} from '../src/renderer/companion/src/companion-terminal-fit'
 import {
   CompanionTerminalMount,
   fitWidthScale,
@@ -23,26 +26,33 @@ async function microtasks(): Promise<void> {
 
 function mountWith(
   create: (cols: number, rows: number) => Promise<CompanionTerminalPane>,
+  answer: CompanionResizeAnswer = { outcome: 'accepted' },
 ): {
   readonly mount: CompanionTerminalMount
   readonly host: HTMLDivElement
   readonly failures: unknown[]
   readonly inputs: string[]
   readonly resizes: { readonly cols: number; readonly rows: number }[]
+  readonly answers: CompanionResizeAnswer[]
 } {
   const host = document.createElement('div')
   document.body.append(host)
   const failures: unknown[] = []
   const inputs: string[] = []
   const resizes: { readonly cols: number; readonly rows: number }[] = []
+  const answers: CompanionResizeAnswer[] = []
   const mount = new CompanionTerminalMount({
     host,
     createPane: create,
     onInput: (data) => inputs.push(data),
-    onResize: (cols, rows) => resizes.push({ cols, rows }),
+    onResize: (cols, rows) => {
+      resizes.push({ cols, rows })
+      return Promise.resolve(answer)
+    },
+    onResizeAnswered: (answered) => answers.push(answered),
     onFailure: (error) => failures.push(error),
   })
-  return { mount, host, failures, inputs, resizes }
+  return { mount, host, failures, inputs, resizes, answers }
 }
 
 /** happy-dom lays nothing out: the host's size is stated for the fit. */
@@ -245,7 +255,10 @@ describe('CompanionTerminalMount while the desktop is Away (ADR-052)', () => {
 
   it('asks for the phone grid once after opening and renders it unscaled when it lands', async () => {
     const { panes, create } = fakePanes()
-    const { mount, host, resizes } = mountWith(create)
+    const { mount, host, resizes, answers } = mountWith(create, {
+      outcome: 'refused',
+      reason: 'desktop-focused',
+    })
     layout(host, 376, 496)
     mount.setAway(true)
     mount.handle({ type: 'opened', handle: ROW, cols: 132, rows: 43, tail: '' })
@@ -254,28 +267,42 @@ describe('CompanionTerminalMount while the desktop is Away (ADR-052)', () => {
     const extent = host.querySelector<HTMLElement>('.companion-terminal-extent')!
     expect(resizes).toEqual([])
     expect(surface.style.transform).toBe(`scale(${376 / (132 * 8)})`)
-    expect(surface.dataset['fit']).toBe('scaled')
 
     await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS)
     expect(resizes).toEqual([{ cols: 47, rows: 31 }])
+    expect(answers).toEqual([{ outcome: 'refused', reason: 'desktop-focused' }])
     await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS * 4)
     expect(resizes).toHaveLength(1)
     // The grid is still the desktop's until main says otherwise.
     expect(panes[0]?.resizes).toEqual([])
-    expect(surface.dataset['fit']).toBe('scaled')
+    expect(surface.style.transform).toBe(`scale(${376 / (132 * 8)})`)
 
     mount.handle({ type: 'geometry', handle: ROW, cols: 47, rows: 31 })
     expect(panes[0]?.resizes).toEqual([{ cols: 47, rows: 31 }])
     expect(surface.style.transform).toBe('scale(1)')
-    expect(surface.dataset['fit']).toBe('held')
     expect([extent.style.width, extent.style.height]).toEqual(['376px', '496px'])
 
     // The desktop reclaimed: back to the scaled column, and nothing is asked again by itself.
     mount.handle({ type: 'geometry', handle: ROW, cols: 132, rows: 43 })
     expect(surface.style.transform).toBe(`scale(${376 / (132 * 8)})`)
-    expect(surface.dataset['fit']).toBe('scaled')
     await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS * 2)
     expect(resizes).toHaveLength(1)
+    expect(answers).toHaveLength(1)
+    mount.dispose()
+  })
+
+  it('a held grid whose cells round past the host width shrinks a hair rather than clipping a column', async () => {
+    const { create } = fakePanes()
+    const { mount, host } = mountWith(create)
+    // 47 fake cells are 376px wide; the host is one pixel narrower.
+    layout(host, 375, 496)
+    mount.setAway(true)
+    mount.handle({ type: 'opened', handle: ROW, cols: 47, rows: 31, tail: '' })
+    await vi.advanceTimersByTimeAsync(0)
+    const surface = host.querySelector<HTMLElement>('.companion-terminal-scale')!
+    const extent = host.querySelector<HTMLElement>('.companion-terminal-extent')!
+    expect(surface.style.transform).toBe(`scale(${375 / 376})`)
+    expect(extent.style.width).toBe('375px')
     mount.dispose()
   })
 

@@ -20,8 +20,8 @@ export interface FakeMirrorLease extends PtyMirrorLease {
   /** Exact sizes handed to `resize`, in order. */
   readonly resizes: PtyGeometry[]
   readonly released: boolean
-  /** The next `write` or `resize` throws this refusal instead of recording. */
-  refuseWrite?: PtyMirrorRefusal
+  /** Every `write` and `resize` throws this refusal instead of recording, while set. */
+  refuse?: PtyMirrorRefusal
   /** Ends the lease the way a PTY exit does: `onEnd` once, then writes refuse. */
   exit(exit: PtyExit): void
 }
@@ -75,8 +75,7 @@ function fakeLease(
   let exited = false
   const live = () => !released && !exited
   const admit = (): void => {
-    const refusal =
-      lease.refuseWrite ?? (released ? 'ended' : exited ? 'exited' : undefined)
+    const refusal = lease.refuse ?? (released ? 'ended' : exited ? 'exited' : undefined)
     if (refusal !== undefined) throw new PtyMirrorRefusedError(refusal, ptyId)
   }
   const lease: FakeMirrorLease = {

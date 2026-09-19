@@ -138,16 +138,14 @@ interface AuthorizedRequest {
   readonly body?: unknown
   readonly headers?: Readonly<Record<string, string>>
   readonly signal?: AbortSignal
+  /** A 409 reply is handed back for the verb to read, not thrown: resize's refusal carries a body. */
+  readonly readConflict?: boolean
 }
 
 export function createCompanionClient(options: CompanionClientOptions): CompanionClient {
   const { fetch, tokens } = options
 
-  /** `tolerated` names a non-2xx status the verb reads a body from instead of failing. */
-  async function authorized(
-    request: AuthorizedRequest,
-    tolerated?: number,
-  ): Promise<CompanionResponse> {
+  async function authorized(request: AuthorizedRequest): Promise<CompanionResponse> {
     const token = tokens.read()
     if (token === undefined) throw new CompanionUnauthorizedError()
     const withBody = request.body !== undefined
@@ -166,9 +164,8 @@ export function createCompanionClient(options: CompanionClientOptions): Companio
       tokens.clear()
       throw new CompanionUnauthorizedError()
     }
-    if (!isSuccess(response.status) && response.status !== tolerated) {
-      throw await failure(response)
-    }
+    const conflictRead = request.readConflict === true && response.status === 409
+    if (!isSuccess(response.status) && !conflictRead) throw await failure(response)
     return response
   }
 
@@ -232,10 +229,12 @@ export function createCompanionClient(options: CompanionClientOptions): Companio
     handle: SessionsTerminalHandle,
     request: CompanionResizeRequest,
   ): Promise<CompanionResizeResponse> {
-    const response = await authorized(
-      { method: 'POST', url: route(handle, 'resize'), body: { page, ...request } },
-      409,
-    )
+    const response = await authorized({
+      method: 'POST',
+      url: route(handle, 'resize'),
+      body: { page, ...request },
+      readConflict: true,
+    })
     const reply: unknown = await response.json()
     if (isCompanionResizeResponse(reply)) return reply
     if (response.status === 409) throw failureOf(response.status, reply)

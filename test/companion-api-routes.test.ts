@@ -212,7 +212,7 @@ describe('Companion POST resize (ADR-052)', () => {
     const { world, service, router, response } = await streamed()
     service.select('page-1', LOCAL)
     const lease = world.mirrors.leases[0]!
-    lease.refuseWrite = 'desktop-focused'
+    lease.refuse = 'desktop-focused'
     expect(await post(router, RESIZE, { page: 'page-1', cols: 47, rows: 31 })).toEqual({
       status: 409,
       body: { outcome: 'refused', reason: 'desktop-focused' },
@@ -230,7 +230,7 @@ describe('Companion POST resize (ADR-052)', () => {
     const { world, service, router, response } = await streamed()
     service.select('page-1', LOCAL)
     const lease = world.mirrors.leases[0]!
-    lease.refuseWrite = 'instance-changed'
+    lease.refuse = 'instance-changed'
     expect(await post(router, RESIZE, { page: 'page-1', cols: 47, rows: 31 })).toEqual({
       status: 409,
       body: { error: 'The mirrored terminal ended or changed' },

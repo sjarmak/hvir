@@ -13,6 +13,7 @@ import {
   compareCompanionRows,
   isCompanionInputRequest,
   isCompanionResizeRequest,
+  isCompanionResizeResponse,
   isCompanionRespondRequest,
   isCompanionRow,
   isCompanionSnapshot,
@@ -289,6 +290,26 @@ describe('sessions companion contract', () => {
       '47x31',
     ]) {
       expect(isCompanionResizeRequest(request), JSON.stringify(request)).toBe(false)
+    }
+  })
+
+  it('a resize answer is accepted alone, or refused with the one reason the Away door gives', () => {
+    expect(isCompanionResizeResponse({ outcome: 'accepted' })).toBe(true)
+    expect(
+      isCompanionResizeResponse({ outcome: 'refused', reason: 'desktop-focused' }),
+    ).toBe(true)
+    for (const reply of [
+      { outcome: 'accepted', reason: 'desktop-focused' },
+      { outcome: 'accepted', cols: 47 },
+      { outcome: 'refused' },
+      { outcome: 'refused', reason: 'ended' },
+      { outcome: 'refused', reason: 'desktop-focused', rows: 31 },
+      { outcome: 'unavailable', reason: 'desktop-focused' },
+      { error: 'The mirrored terminal ended or changed' },
+      'accepted',
+      null,
+    ]) {
+      expect(isCompanionResizeResponse(reply), JSON.stringify(reply)).toBe(false)
     }
   })
 

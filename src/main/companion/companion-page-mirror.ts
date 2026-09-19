@@ -12,7 +12,11 @@
  */
 import type { CompanionMirrorEndReason, CompanionTerminalEvent } from '../../shared'
 import type { SessionsTerminalHandle } from '../../shared'
-import type { PtyMirrorHandlers, PtyMirrorLease } from '../pty/pty-contract'
+import type {
+  PtyMirrorHandlers,
+  PtyMirrorLease,
+  PtyMirrorRefusal,
+} from '../pty/pty-contract'
 import { PtyMirrorRefusedError } from '../pty/pty-mirror-lease'
 import type { CompanionMirrorTarget } from './companion-mirror-target'
 
@@ -87,7 +91,7 @@ export class CompanionPageMirror {
     this.emit({ type: 'opened', handle, cols, rows, tail: lease.tail })
   }
 
-  /** Writes the user's exact bytes; a refusal ends the mirror and rethrows as ended. */
+  /** Writes the user's exact bytes; any refusal ends the mirror and rethrows as ended. */
   write(data: string): void {
     this.admit((lease) => lease.write(data))
   }
@@ -98,17 +102,27 @@ export class CompanionPageMirror {
    * refusal means the lease is dead and ends the mirror as a write would.
    */
   resize(cols: number, rows: number): void {
-    this.admit((lease) => lease.resize(cols, rows))
+    const refused = this.admit((lease) => lease.resize(cols, rows), 'desktop-focused')
+    if (refused !== undefined) throw new CompanionResizeRefusedError()
   }
 
-  private admit(verb: (lease: PtyMirrorLease) => void): void {
+  /**
+   * Runs one lease verb. Returns `survivable` when the lease refused with exactly
+   * that reason and the mirror stays open; any other refusal ends the mirror
+   * and throws as ended. A verb that names no survivable refusal never returns one.
+   */
+  private admit(
+    verb: (lease: PtyMirrorLease) => void,
+    survivable?: PtyMirrorRefusal,
+  ): PtyMirrorRefusal | undefined {
     const current = this.current
     if (current === undefined) throw new CompanionMirrorEndedError()
     try {
       verb(current.lease)
+      return undefined
     } catch (error) {
       if (!(error instanceof PtyMirrorRefusedError)) throw error
-      if (error.reason === 'desktop-focused') throw new CompanionResizeRefusedError()
+      if (survivable !== undefined && error.reason === survivable) return survivable
       this.end('exited')
       throw new CompanionMirrorEndedError()
     }
