@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 
 import type {
   CompanionRow,
@@ -10,7 +10,7 @@ import { companionMirrorEndMessage, type CompanionTerminalState } from './compan
 import type { CompanionResizeAnswer } from './companion-terminal-fit'
 import { CompanionTerminalMount } from './companion-terminal-mount'
 import type { CompanionTerminalPaneFactory } from './companion-terminal-pane'
-import { MirrorControls } from './mirror-controls'
+import { MirrorControls, ReturnToLive } from './mirror-controls'
 import { MirrorHeader } from './mirror-header'
 import { TranscriptView } from './transcript-view'
 import type { CompanionInputArmingControl } from './use-input-arming'
@@ -47,9 +47,14 @@ const NO_HISTORY =
  * the size), and one compact control bar at the bottom. Reading back is the
  * emulator's own viewport under a finger or a wheel (ADR-053), so the area
  * holds the grid and the page's stated states beside it and never a second
- * surface of text. While the row carries a prompt, its message is the header's
- * second line (ADR-051). A row that also takes answers offers its transcript
- * beside the mirror.
+ * surface of text. A viewport left behind the newest output puts the way back
+ * over that area, outside the host's own scroller so it keeps its place over a
+ * grid taller than the phone. A full-screen program has no scrollback for a
+ * viewport to be behind, so it is offered the way back under no condition and
+ * the record's promise of no affordance that moves nothing holds here rather
+ * than in the emulator. While the row carries a prompt, its message is
+ * the header's second line (ADR-051). A row that also takes answers offers its
+ * transcript beside the mirror.
  */
 export function TerminalView(props: TerminalViewProps) {
   const { row, terminal, transcript, arming, onInput, onResize } = props
@@ -57,6 +62,8 @@ export function TerminalView(props: TerminalViewProps) {
   const [paneFailure, setPaneFailure] = useState<string>()
   const [sizeStatus, setSizeStatus] = useState<string>()
   const [alternateScreen, setAlternateScreen] = useState(false)
+  const [readingBack, setReadingBack] = useState(false)
+  const mirror = useRef<CompanionTerminalMount>(undefined)
   const live = terminal.status === 'live'
   if (showTranscript && transcript !== undefined) {
     return (
@@ -109,12 +116,17 @@ export function TerminalView(props: TerminalViewProps) {
           createPane={props.createPane}
           inputEnabled={arming.armed}
           away={props.away}
+          mirror={mirror}
           onInput={onInput}
           onResize={onResize}
           onResizeAnswered={sizeAnswered}
           onAlternateScreen={setAlternateScreen}
+          onReadingBack={setReadingBack}
           onFailure={(error) => setPaneFailure(describeFailure(error))}
         />
+        {alternateScreen || !readingBack ? null : (
+          <ReturnToLive onReturn={() => mirror.current?.returnToLive()} />
+        )}
       </div>
       <MirrorControls live={live} arming={arming} onInput={onInput} />
     </section>
@@ -132,10 +144,12 @@ function TerminalSurface({
   createPane,
   inputEnabled,
   away,
+  mirror,
   onInput,
   onResize,
   onResizeAnswered,
   onAlternateScreen,
+  onReadingBack,
   onFailure,
 }: {
   readonly handle: SessionsTerminalHandle
@@ -143,19 +157,22 @@ function TerminalSurface({
   readonly createPane: CompanionTerminalPaneFactory
   readonly inputEnabled: boolean
   readonly away: boolean
+  /** The mount the view holds, so the way back reaches the pane this surface owns. */
+  readonly mirror: RefObject<CompanionTerminalMount | undefined>
   readonly onInput: (data: string) => Promise<void>
   readonly onResize: ResizeVerb
   readonly onResizeAnswered: (answer: CompanionResizeAnswer) => void
   readonly onAlternateScreen: (alternate: boolean) => void
+  readonly onReadingBack: (readingBack: boolean) => void
   readonly onFailure: (error: unknown) => void
 }) {
   const host = useRef<HTMLDivElement>(null)
-  const mount = useRef<CompanionTerminalMount>(undefined)
   const callbacks = useRef({
     onInput,
     onResize,
     onResizeAnswered,
     onAlternateScreen,
+    onReadingBack,
     onFailure,
   })
   callbacks.current = {
@@ -163,6 +180,7 @@ function TerminalSurface({
     onResize,
     onResizeAnswered,
     onAlternateScreen,
+    onReadingBack,
     onFailure,
   }
   const awayNow = useRef(away)
@@ -178,25 +196,29 @@ function TerminalSurface({
       onResize: (cols, rows) => callbacks.current.onResize(cols, rows),
       onResizeAnswered: (answer) => callbacks.current.onResizeAnswered(answer),
       onAlternateScreen: (alternate) => callbacks.current.onAlternateScreen(alternate),
+      onReadingBack: (readingBack) => callbacks.current.onReadingBack(readingBack),
       onFailure: (error) => callbacks.current.onFailure(error),
     })
     created.setAway(awayNow.current)
-    mount.current = created
+    mirror.current = created
     const detach = feed.attach(handle, (event) => created.handle(event))
     return () => {
       detach()
       created.dispose()
-      mount.current = undefined
+      mirror.current = undefined
+      // A surface rebuilt for another row leaves no way back to the one before
+      // it: there is no mount to answer the tap until the next mirror opens.
+      callbacks.current.onReadingBack(false)
     }
-  }, [handle, feed, createPane])
+  }, [handle, feed, createPane, mirror])
 
   useEffect(() => {
-    mount.current?.setInputEnabled(inputEnabled)
-  }, [inputEnabled])
+    mirror.current?.setInputEnabled(inputEnabled)
+  }, [inputEnabled, mirror])
 
   useEffect(() => {
-    mount.current?.setAway(away)
-  }, [away])
+    mirror.current?.setAway(away)
+  }, [away, mirror])
 
   return <div ref={host} className="companion-terminal-host" />
 }

@@ -24,6 +24,14 @@
  * A resize reflows the scrollback without moving the viewport, so a viewport
  * held further back than the reflowed scrollback reaches is re-anchored to its
  * oldest row rather than left reporting a position the emulator no longer has.
+ *
+ * Where that viewport moves to is the one thing this file reports about the
+ * screen, and it reports it from the emulator's own position and its own scroll
+ * event: the page uses it to offer a way back to the live edge and asks nothing
+ * about what any row says. Output arriving while the viewport is held behind
+ * the live edge advances the position by the rows the scrollback grew, which is
+ * how the emulator keeps the person on the rows they were reading, so the
+ * position changes while the reading does not.
  */
 import { Terminal, init } from 'ghostty-web'
 import ghosttyWasmUrl from 'ghostty-web/ghostty-vt.wasm?url'
@@ -63,6 +71,7 @@ export const createGhosttyCompanionPane: CompanionTerminalPaneFactory = async (
 
 class GhosttyCompanionPane implements CompanionTerminalPane {
   private readonly listeners = new Set<(data: string, source: 'user') => void>()
+  private readonly viewportListeners = new Set<(offset: number) => void>()
   private readonly disposers: Array<{ dispose(): void }> = []
   private readonly wheel = new TerminalWheelController()
   private writing = 0
@@ -80,6 +89,12 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
         this.listeners.delete(listener)
       }
     },
+    onViewport: (listener: (offset: number) => void) => {
+      this.viewportListeners.add(listener)
+      return () => {
+        this.viewportListeners.delete(listener)
+      }
+    },
   }
 
   mount(container: HTMLElement): void {
@@ -87,6 +102,14 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
     this.disposers.push(
       this.terminal.onData((data) => {
         this.emitUser(data)
+      }),
+      // The emulator's own event, not the number it carries: a smooth scroll
+      // fires a floored value while the viewport rests on a fraction of a row,
+      // which would read as the live edge four tenths of a row short of it.
+      this.terminal.onScroll(() => {
+        for (const listener of this.viewportListeners) {
+          listener(this.terminal.getViewportY())
+        }
       }),
     )
     this.terminal.open(container)
@@ -125,6 +148,19 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
     return this.terminal.wasmTerm?.isAlternateScreen() ?? false
   }
 
+  /**
+   * ghostty's own way home, which cancels a smooth scroll in flight and fires
+   * the scroll event once, so the page hears about it through the same path as
+   * every other move rather than being told twice. The jump ends whatever drag
+   * was in progress, so the sub-cell carry goes with it: a fraction of a row
+   * kept from before the tap would otherwise let the next brush of the grid
+   * move a whole row and put the way back on screen again unasked.
+   */
+  returnToLive(): void {
+    this.remainder = 0
+    this.terminal.scrollToBottom()
+  }
+
   /** The renderer exists once the terminal is open; its cell is the font's measured box. */
   cellSize(): CompanionCellSize | undefined {
     const renderer = this.terminal.renderer
@@ -144,6 +180,7 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
     this.disposed = true
     for (const disposer of this.disposers.splice(0)) disposer.dispose()
     this.listeners.clear()
+    this.viewportListeners.clear()
     this.terminal.dispose()
   }
 

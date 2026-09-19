@@ -153,3 +153,28 @@ describe('renderer style ownership', () => {
     expect(diffView).toContain('var(--hvir-interface-scale)')
   })
 })
+
+/**
+ * The Companion page ships one stylesheet, and two of its declarations are the
+ * layout contract of the way back rather than its look: happy-dom applies no
+ * stylesheet, so the rendered tests can prove the control's ancestry and never
+ * how it is positioned. Both are asserted here as text, where a mutant shows.
+ */
+describe('Companion page style ownership', () => {
+  it('keeps the way back over the terminal area rather than inside its flow', () => {
+    const styles = readFileSync(
+      join(process.cwd(), 'src/renderer/companion/src/styles.css'),
+      'utf8',
+    )
+
+    // In the area's column flex flow the control would take height, and the
+    // area is what the fit measures its grid against, so every appearance
+    // while Away would cost a PTY resize round-trip.
+    expect(styles).toMatch(/\.companion-return-live \{\n {2}position: absolute;/u)
+    // The containing block it resolves against. Without it the control lands
+    // in the viewport's corner, over the control bar.
+    expect(styles).toMatch(/\.companion-terminal-area \{\n {2}position: relative;/u)
+    // `hidden` is the page's one toggle, so no rule may set display here.
+    expect(styles).not.toMatch(/\.companion-return-live \{[^}]*display:/u)
+  })
+})

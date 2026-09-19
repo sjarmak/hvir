@@ -16,9 +16,12 @@ import type {
 import type { TerminalPane } from '../src/renderer/src/terminal/terminal-pane'
 
 /**
- * `scroll` and `isAlternateScreen` stay out of the mirrored subset on purpose:
- * the desktop pane owns its gesture inside its own engine adapter and has no
- * counterpart to narrow against (ADR-053).
+ * `scroll`, `isAlternateScreen`, `returnToLive` and the viewport subscription
+ * stay out of the mirrored subset on purpose: the desktop pane owns its gesture
+ * inside its own engine adapter, and it has a scrollbar where the phone has a
+ * control that returns to the live edge, so there is no counterpart to narrow
+ * against (ADR-053). They are stubbed inert here rather than recorded, since
+ * this test's subject is the narrowed subset and never the verbs beside it.
  */
 type MirroredPane = Pick<TerminalPane, 'mount' | 'write' | 'resize' | 'dispose'>
 type MirroredEvents = Pick<TerminalPane['events'], 'onData'>
@@ -42,6 +45,7 @@ describe('Companion terminal pane seam', () => {
         resize: (nextCols, nextRows) => calls.push(`resize ${nextCols}x${nextRows}`),
         scroll: () => 0,
         isAlternateScreen: () => false,
+        returnToLive: () => undefined,
         cellSize: () => ({ width: 8, height: 16 }),
         dispose: () => calls.push('dispose'),
         setInputEnabled: (enabled) => calls.push(`input ${enabled}`),
@@ -49,6 +53,7 @@ describe('Companion terminal pane seam', () => {
           onData: () => () => {
             calls.push('off')
           },
+          onViewport: () => () => undefined,
         },
       })
     const { pane, events } = conforms(await factory(80, 24))

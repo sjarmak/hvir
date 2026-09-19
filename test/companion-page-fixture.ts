@@ -218,9 +218,16 @@ export class FakeCompanionPane implements CompanionTerminalPane {
   untaken = 0
   /** Which screen the emulator reports; the page never reads the screen's text. */
   alternateScreen = false
+  /** Rows the viewport sits back from the newest output; the test drives it with `moveViewport`. */
+  offset = 0
+  /** Times the page asked for the live edge back. */
+  returns = 0
+  /** Where a reflow at the next `resize` leaves a viewport it no longer reaches. */
+  reflowOffset?: number
   mounted?: HTMLElement
   disposed = false
   private readonly listeners = new Set<(data: string, source: 'user') => void>()
+  private readonly viewportListeners = new Set<(offset: number) => void>()
 
   constructor(
     readonly cols: number,
@@ -234,6 +241,23 @@ export class FakeCompanionPane implements CompanionTerminalPane {
         this.listeners.delete(listener)
       }
     },
+    onViewport: (listener: (offset: number) => void) => {
+      this.viewportListeners.add(listener)
+      return () => {
+        this.viewportListeners.delete(listener)
+      }
+    },
+  }
+
+  /** How many listeners this pane is holding, so a mirror let go of can be proved silent. */
+  viewportSubscriptions(): number {
+    return this.viewportListeners.size
+  }
+
+  /** The emulator moving its own viewport, however it was moved. */
+  moveViewport(offset: number): void {
+    this.offset = offset
+    for (const listener of this.viewportListeners) listener(offset)
   }
 
   mount(container: HTMLElement): void {
@@ -253,8 +277,16 @@ export class FakeCompanionPane implements CompanionTerminalPane {
     this.writes.push(data)
   }
 
+  /**
+   * Like the real pane: a reflow leaves the viewport where it was unless the
+   * shortened scrollback no longer reaches it, and then re-anchors it to the
+   * oldest row that is left. Only ever toward the live edge, which is the only
+   * direction `anchorViewport` can move a viewport.
+   */
   resize(cols: number, rows: number): void {
     this.resizes.push({ cols, rows })
+    const reflowed = this.reflowOffset
+    if (reflowed !== undefined && reflowed < this.offset) this.moveViewport(reflowed)
   }
 
   scroll(event: TerminalWheelEvent): number {
@@ -264,6 +296,11 @@ export class FakeCompanionPane implements CompanionTerminalPane {
 
   isAlternateScreen(): boolean {
     return this.alternateScreen
+  }
+
+  returnToLive(): void {
+    this.returns += 1
+    this.moveViewport(0)
   }
 
   /** Like the real pane: no cell metrics until the emulator is mounted. */
@@ -276,8 +313,11 @@ export class FakeCompanionPane implements CompanionTerminalPane {
     this.inputEnabled.push(enabled)
   }
 
+  /** The port's contract: a disposed pane holds on to nobody's subscription. */
   dispose(): void {
     this.disposed = true
+    this.listeners.clear()
+    this.viewportListeners.clear()
   }
 
   emitData(data: string): void {

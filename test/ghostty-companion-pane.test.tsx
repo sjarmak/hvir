@@ -15,9 +15,27 @@ interface FakeTerminalState {
   /** Lines the viewport sits behind the live edge, clamped as ghostty clamps it. */
   viewportY: number
   scrollbackLength: number
+  /** Times `scrollToBottom` put the viewport back on the newest output. */
+  returns: number
   /** What the next `resize` reflows the scrollback down to, so the reflow is what shortens it. */
   reflowedScrollbackLength?: number
+  /** Rows each write adds to the scrollback, as output on the normal screen does. */
+  growOnWrite: number
+  /** The screen the next write switches to, so a transition happens inside `write`. */
+  screenOnWrite?: boolean
+  /** Every call that would read what the screen says; the position path must add none. */
+  readonly textReads: string[]
   onResizeSubscriptions: number
+  /** Listeners the pane holds on the emulator's own scroll event. */
+  scrollSubscriptions: number
+  /** Fires `onScroll` with the value ghostty would carry, which is not always `viewportY`. */
+  fireScroll: (value: number) => void
+  /**
+   * Fires every handler ever registered, disposed ones included, which models
+   * an emitter that does not honour its own disposer. Nothing reaches a
+   * subscriber unless the pane also let go of the subscribers it holds.
+   */
+  fireScrollPastDisposal: (value: number) => void
   opened?: HTMLElement
   disposed: boolean
   alternateScreen: boolean
@@ -38,6 +56,8 @@ vi.mock('ghostty-web', () => {
     readonly cols: number
     readonly rows: number
     private readonly dataListeners = new Set<(data: string) => void>()
+    private readonly scrollListeners = new Set<(value: number) => void>()
+    private readonly everyScrollListener = new Set<(value: number) => void>()
     private readonly state: FakeTerminalState
     element?: HTMLElement
 
@@ -53,7 +73,11 @@ vi.mock('ghostty-web', () => {
         anchors: [],
         viewportY: 0,
         scrollbackLength: 0,
+        returns: 0,
+        growOnWrite: 0,
+        textReads: [],
         onResizeSubscriptions: 0,
+        scrollSubscriptions: 0,
         disposed: false,
         alternateScreen: false,
         mouseTracking: false,
@@ -61,15 +85,35 @@ vi.mock('ghostty-web', () => {
         emitData: (data) => {
           for (const listener of this.dataListeners) listener(data)
         },
+        fireScroll: (value) => {
+          for (const listener of this.scrollListeners) listener(value)
+        },
+        fireScrollPastDisposal: (value) => {
+          for (const listener of this.everyScrollListener) listener(value)
+        },
       }
       this.state = state
       fakes.push(state)
     }
 
+    // The mode flags the pane is allowed to ask for, beside every cell-reading
+    // call the real `wasmTerm` offers (ghostty.d.ts:146-270). That route is the
+    // idiomatic one in this repo, so it is the route the negative assertion has
+    // to cover: a read added here must show up in `textReads`.
     readonly wasmTerm = {
       isAlternateScreen: () => this.state.alternateScreen,
       hasMouseTracking: () => this.state.mouseTracking,
       getMode: () => this.state.sgrMouse,
+      getViewport: () => this.readsText('wasmTerm.getViewport', []),
+      getLine: (y: number) => this.readsText(`wasmTerm.getLine ${y}`, null),
+      getBufferLine: (type: string, y: number) =>
+        this.readsText(`wasmTerm.getBufferLine ${type} ${y}`, null),
+      getScrollbackLine: (offset: number) =>
+        this.readsText(`wasmTerm.getScrollbackLine ${offset}`, null),
+      getScrollbackViewport: (start: number, rows: number) =>
+        this.readsText(`wasmTerm.getScrollbackViewport ${start} ${rows}`, null),
+      getScrollbackGraphemeString: (offset: number, col: number) =>
+        this.readsText(`wasmTerm.getScrollbackGraphemeString ${offset} ${col}`, ''),
     }
 
     readonly renderer = { charWidth: 8, charHeight: 16 }
@@ -84,6 +128,50 @@ vi.mock('ghostty-web', () => {
       return { dispose: () => undefined }
     }
 
+    readonly onScroll = (listener: (value: number) => void) => {
+      this.scrollListeners.add(listener)
+      this.everyScrollListener.add(listener)
+      this.state.scrollSubscriptions += 1
+      return {
+        dispose: () => {
+          this.scrollListeners.delete(listener)
+          this.state.scrollSubscriptions -= 1
+        },
+      }
+    }
+
+    /** Records the call and answers it, so a text read is visible rather than absent. */
+    private readsText<T>(call: string, answer: T): T {
+      this.state.textReads.push(call)
+      return answer
+    }
+
+    // What the pane would be reading if it asked what the screen says
+    // (terminal.d.ts:22, 215-251, 376).
+    get buffer(): unknown {
+      return this.readsText('buffer', {})
+    }
+
+    getSelection(): string {
+      return this.readsText('getSelection', '')
+    }
+
+    hasSelection(): boolean {
+      return this.readsText('hasSelection', false)
+    }
+
+    getSelectionPosition(): unknown {
+      return this.readsText('getSelectionPosition', undefined)
+    }
+
+    selectAll(): void {
+      this.readsText('selectAll', undefined)
+    }
+
+    getScrollbackLine(offset: number): unknown {
+      return this.readsText(`getScrollbackLine ${offset}`, null)
+    }
+
     open(parent: HTMLElement): void {
       this.element = document.createElement('div')
       this.element.className = 'fake-ghostty'
@@ -95,8 +183,28 @@ vi.mock('ghostty-web', () => {
       this.state.wheelHandler = handler
     }
 
+    // ghostty-web.js:4796-4810. A viewport held behind the live edge on the
+    // normal screen keeps the rows it is showing: the write advances viewportY
+    // by whatever the scrollback grew, and fires the scroll event with the new
+    // number. Anything else (the live edge, the alternate screen, a screen
+    // transition) puts the viewport back on the newest output.
     write(data: string): void {
       this.state.writes.push(data)
+      const before = this.state.viewportY
+      const wasAlternate = this.state.alternateScreen
+      const lengthBefore = this.state.scrollbackLength
+      const screen = this.state.screenOnWrite
+      if (screen !== undefined) this.state.alternateScreen = screen
+      if (!this.state.alternateScreen) {
+        this.state.scrollbackLength = lengthBefore + this.state.growOnWrite
+      }
+      if (this.state.alternateScreen !== wasAlternate) this.resetViewport()
+      if (before > 0 && !wasAlternate && !this.state.alternateScreen) {
+        const grew = Math.max(0, this.state.scrollbackLength - lengthBefore)
+        this.setViewport(before + grew)
+      } else if (this.state.viewportY !== 0) {
+        this.scrollToBottom()
+      }
       const reply = this.state.replyOnWrite
       if (reply !== undefined) this.state.emitData(reply)
     }
@@ -113,12 +221,17 @@ vi.mock('ghostty-web', () => {
     // amount walks toward the live edge at 0 (ghostty-web.js:5056-5062).
     scrollLines(amount: number): void {
       this.state.scrolls.push(amount)
-      this.state.viewportY = this.clamp(this.state.viewportY - amount)
+      this.setViewport(this.state.viewportY - amount)
     }
 
     scrollToLine(line: number): void {
       this.state.anchors.push(line)
-      this.state.viewportY = this.clamp(line)
+      this.setViewport(line)
+    }
+
+    scrollToBottom(): void {
+      this.state.returns += 1
+      this.setViewport(0)
     }
 
     getViewportY(): number {
@@ -129,8 +242,16 @@ vi.mock('ghostty-web', () => {
       return this.state.scrollbackLength
     }
 
-    private clamp(line: number): number {
-      return Math.max(0, Math.min(this.state.scrollbackLength, line))
+    private resetViewport(): void {
+      this.setViewport(0)
+    }
+
+    /** Every mover clamps into the scrollback and fires only on a change. */
+    private setViewport(line: number): void {
+      const next = Math.max(0, Math.min(this.state.scrollbackLength, line))
+      if (next === this.state.viewportY) return
+      this.state.viewportY = next
+      this.state.fireScroll(next)
     }
 
     dispose(): void {
@@ -439,6 +560,154 @@ describe('ghostty companion pane', () => {
     expect(wheel(fake, -96)).toBe(true)
     expect(seen).toEqual([PAGE_DOWN, PAGE_UP])
     expect(fake.scrolls).toEqual([])
+  })
+
+  it('a viewport subscriber is told where the viewport is, not what the event carries', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    const offsets: number[] = []
+    pane.events.onViewport((offset) => offsets.push(offset))
+    fake.scrollbackLength = 500
+    // ghostty floors the number its event carries during a smooth scroll
+    // (ghostty-web.js:5126), so a viewport four tenths of a row off the live
+    // edge would arrive as zero and read as live.
+    fake.viewportY = 0.4
+    fake.fireScroll(0)
+    expect(offsets).toEqual([0.4])
+  })
+
+  it('returning to live puts the viewport on the newest output and says so once', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    const offsets: number[] = []
+    pane.events.onViewport((offset) => offsets.push(offset))
+    fake.scrollbackLength = 500
+    fake.viewportY = 40
+    pane.returnToLive()
+    expect(fake.returns).toBe(1)
+    expect(fake.viewportY).toBe(0)
+    expect(offsets).toEqual([0])
+    // Already live: ghostty fires nothing and neither does the pane.
+    pane.returnToLive()
+    expect(offsets).toEqual([0])
+  })
+
+  it('the way back ends the drag that preceded it rather than carrying its fraction', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    fake.scrollbackLength = 500
+    // Nine tenths of a row of finger: too little to move a row, kept for the
+    // rest of the gesture.
+    pane.scroll(drag(-14.4))
+    expect(fake.scrolls).toEqual([])
+    pane.returnToLive()
+    expect(fake.viewportY).toBe(0)
+
+    // A fifth of a row afterwards is its own gesture and moves no row. Kept,
+    // the earlier nine tenths would carry it past a whole one.
+    pane.scroll(drag(-3.2))
+    expect(fake.scrolls).toEqual([])
+    expect(fake.viewportY).toBe(0)
+  })
+
+  it('the pane stops listening to the emulator when it is disposed', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    const offsets: number[] = []
+    pane.events.onViewport((offset) => offsets.push(offset))
+    expect(fake.scrollSubscriptions).toBe(1)
+    pane.dispose()
+    expect(fake.scrollSubscriptions).toBe(0)
+    fake.fireScroll(9)
+    expect(offsets).toEqual([])
+  })
+
+  it('a disposed pane notifies nobody even from a handler it could not unregister', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    const offsets: number[] = []
+    pane.events.onViewport((offset) => offsets.push(offset))
+    fake.scrollbackLength = 500
+    fake.viewportY = 40
+    pane.dispose()
+    // The second guarantee, independent of the emulator's own disposer: the
+    // pane lets go of the subscribers it holds, so a page that kept one is
+    // told nothing by a pane that is gone.
+    fake.fireScrollPastDisposal(40)
+    expect(offsets).toEqual([])
+  })
+
+  it('output arriving while the viewport is read back keeps the rows it is showing', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    const offsets: number[] = []
+    pane.events.onViewport((offset) => offsets.push(offset))
+    fake.scrollbackLength = 100
+    fake.viewportY = 20
+    // The row the person is reading, counted from the oldest row the emulator
+    // still holds, which is what must not move under them.
+    const reading = fake.scrollbackLength - fake.viewportY
+    fake.growOnWrite = 5
+    pane.write('a line of output')
+    pane.write('and another')
+    expect(fake.scrollbackLength - fake.viewportY).toBe(reading)
+    expect(fake.viewportY).toBe(30)
+    expect(fake.returns).toBe(0)
+    // Off the live edge throughout, so the way back never blinks away.
+    expect(offsets).toEqual([25, 30])
+  })
+
+  it('output arriving at the live edge leaves the viewport there', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    const offsets: number[] = []
+    pane.events.onViewport((offset) => offsets.push(offset))
+    fake.growOnWrite = 5
+    pane.write('a line of output')
+    expect(fake.viewportY).toBe(0)
+    expect(offsets).toEqual([])
+  })
+
+  it('a program taking the whole screen leaves no viewport off the live edge', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    const offsets: number[] = []
+    pane.events.onViewport((offset) => offsets.push(offset))
+    fake.scrollbackLength = 100
+    fake.viewportY = 20
+    // The write that switches to the alternate screen resets the viewport
+    // (ghostty-web.js:4801), and the alternate screen keeps no scrollback.
+    fake.screenOnWrite = true
+    pane.write('[?1049h')
+    expect(fake.viewportY).toBe(0)
+    expect(offsets).toEqual([0])
+    pane.write('full screen paint')
+    expect(fake.viewportY).toBe(0)
+    expect(offsets).toEqual([0])
+  })
+
+  it('the whole viewport path asks where the view is and never what it says', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    pane.events.onViewport(() => undefined)
+    fake.scrollbackLength = 200
+    fake.viewportY = 30
+    fake.growOnWrite = 2
+    pane.write('output while read back')
+    pane.scroll(drag(-64))
+    fake.fireScroll(12)
+    pane.returnToLive()
+    pane.resize(90, 30)
+    expect(fake.textReads).toEqual([])
   })
 
   it('loads the wasm through a bundle url once per document', async () => {

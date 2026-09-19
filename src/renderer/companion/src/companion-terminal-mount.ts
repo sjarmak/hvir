@@ -30,8 +30,16 @@
  * first and hands on what it could not take, so a host scrolled down over a
  * tall grid comes back up the same way it went down, and a program answering
  * the gesture with keys of its own still leaves the rows below the fold
- * reachable. The mount also reports which screen the emulator is on, so the
- * view can say that a full-screen program has no history to read back.
+ * reachable. The way back is that same strip travelled at once rather than a
+ * second route through it, so both scrollers land on the newest output
+ * together. The mount also reports which screen the emulator is on, so the
+ * view can say that a full-screen program has no history to read back, and
+ * whether the viewport sits behind the newest output, so the view can offer the
+ * one tap back to it. That second report is a subscription and never a sample:
+ * a wheel notch the policy leaves alone is scrolled by the emulator itself and
+ * reaches this mount through no call of its own, and the subscription is in
+ * place before the first queued frame is written. It is a position and never a
+ * line of text.
  */
 import type { CompanionTerminalEvent, TerminalWheelEvent } from '../../../shared'
 import {
@@ -60,6 +68,8 @@ export interface CompanionTerminalMountOptions {
   readonly onResizeAnswered: (answer: CompanionResizeAnswer) => void
   /** Which screen the emulator is on; an alternate screen keeps no scrollback (ADR-053). */
   readonly onAlternateScreen: (alternate: boolean) => void
+  /** Whether the viewport sits behind the newest output, which is when the way back is offered. */
+  readonly onReadingBack: (readingBack: boolean) => void
   readonly onFailure: (error: unknown) => void
 }
 
@@ -75,6 +85,8 @@ export class CompanionTerminalMount {
   private inputEnabled = false
   /** Undefined until the first report, so a fresh mount states its screen rather than assuming it. */
   private alternateScreen?: boolean
+  /** Undefined until the first report, stated for the same reason as the screen. */
+  private readingBack?: boolean
   private scale = 1
   /** The extent's scaled height, which is what the host has to scroll over. */
   private extentHeight = 0
@@ -158,23 +170,36 @@ export class CompanionTerminalMount {
     this.fitter.setAway(away)
   }
 
+  /**
+   * The one tap back to the newest output, which is the far end of the strip
+   * the gesture travels rather than the viewport alone: the emulator returns
+   * to its live edge and this host runs to the bottom of the grid, so a grid
+   * taller than the phone lands on its newest rows and not on its first. An
+   * ended session still has a viewport and still has a newest output, so this
+   * stays answerable for as long as the pane does.
+   */
+  returnToLive(): void {
+    if (this.pane === undefined) return
+    this.pane.returnToLive()
+    this.host.scrollTop = this.hostLimit()
+  }
+
   dispose(): void {
     this.disposed = true
     this.observer.disconnect()
     this.touch.dispose()
     this.fitter.dispose()
-    this.pane?.dispose()
-    this.pane = undefined
+    this.releaseMirror()
     this.pending = undefined
     this.extent.remove()
   }
 
   private open(cols: number, rows: number, preamble: string, tail: string): void {
     this.fitter.setLive(false)
-    this.pane?.dispose()
-    this.pane = undefined
+    this.releaseMirror()
     this.gridBox.replaceChildren()
     this.setAlternateScreen(false)
+    this.setReadingBack(false)
     const pending: PendingPane = {
       created: this.options.createPane(cols, rows),
       frames: preamble.length > 0 ? [preamble, tail] : [tail],
@@ -200,6 +225,9 @@ export class CompanionTerminalMount {
     try {
       pane.mount(this.gridBox)
       pane.events.onData((data) => this.options.onInput(data))
+      // Before the queued frames, so a write that moves the viewport is heard
+      // rather than missed and then sampled for.
+      pane.events.onViewport((offset) => this.setReadingBack(offset !== 0))
       pane.setInputEnabled(this.inputEnabled)
       for (const frame of pending.frames) pane.write(frame)
       if (pending.geometry !== undefined) {
@@ -249,11 +277,15 @@ export class CompanionTerminalMount {
    */
   private hostScroll(delta: number): number {
     if (delta === 0) return 0
-    const limit = Math.max(0, this.extentHeight - this.host.clientHeight)
     const before = this.host.scrollTop
-    const next = Math.min(limit, Math.max(0, before + delta * this.scale))
+    const next = Math.min(this.hostLimit(), Math.max(0, before + delta * this.scale))
     this.host.scrollTop = next
     return delta - (next - before) / this.scale
+  }
+
+  /** How far this host can travel over the extent the fit sized for it. */
+  private hostLimit(): number {
+    return Math.max(0, this.extentHeight - this.host.clientHeight)
   }
 
   /** The emulator's mode, reported on change; the page never reads the screen itself. */
@@ -266,6 +298,22 @@ export class CompanionTerminalMount {
     if (this.alternateScreen === alternate) return
     this.alternateScreen = alternate
     this.options.onAlternateScreen(alternate)
+  }
+
+  /**
+   * Zero is the live edge exactly: every mover the emulator has clamps there,
+   * so a viewport resting a fraction of a row behind it is behind it.
+   */
+  private setReadingBack(readingBack: boolean): void {
+    if (this.readingBack === readingBack) return
+    this.readingBack = readingBack
+    this.options.onReadingBack(readingBack)
+  }
+
+  /** Lets go of the mirror; disposing a pane releases every subscription it handed out. */
+  private releaseMirror(): void {
+    this.pane?.dispose()
+    this.pane = undefined
   }
 
   private grid(): HTMLElement | undefined {

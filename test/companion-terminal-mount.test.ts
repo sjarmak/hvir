@@ -31,6 +31,7 @@ function mountWith(
   readonly resizes: { readonly cols: number; readonly rows: number }[]
   readonly answers: CompanionResizeAnswer[]
   readonly alternates: boolean[]
+  readonly readingBacks: boolean[]
 } {
   const host = document.createElement('div')
   document.body.append(host)
@@ -39,6 +40,7 @@ function mountWith(
   const resizes: { readonly cols: number; readonly rows: number }[] = []
   const answers: CompanionResizeAnswer[] = []
   const alternates: boolean[] = []
+  const readingBacks: boolean[] = []
   const mount = new CompanionTerminalMount({
     host,
     createPane: create,
@@ -49,9 +51,10 @@ function mountWith(
     },
     onResizeAnswered: (answered) => answers.push(answered),
     onAlternateScreen: (alternate) => alternates.push(alternate),
+    onReadingBack: (readingBack) => readingBacks.push(readingBack),
     onFailure: (error) => failures.push(error),
   })
-  return { mount, host, failures, inputs, resizes, answers, alternates }
+  return { mount, host, failures, inputs, resizes, answers, alternates, readingBacks }
 }
 
 /** One finger over the grid, in on-screen pixels as a browser reports them. */
@@ -107,6 +110,18 @@ function fakePanes(): {
       panes.push(pane)
       return Promise.resolve(pane)
     },
+  }
+}
+
+/**
+ * A pane whose own write moves the viewport, the way output landing while the
+ * emulator holds a read-back position advances it. The mount hears it only if
+ * it subscribed before it wrote.
+ */
+class MovingPane extends FakeCompanionPane {
+  override write(data: string): void {
+    super.write(data)
+    this.moveViewport(this.offset + 3)
   }
 }
 
@@ -391,6 +406,180 @@ describe('CompanionTerminalMount', () => {
     mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
     expect(alternates).toEqual([false, true, false, true, false])
     mount.dispose()
+  })
+
+  it('states the viewport is at the live edge without waiting for it to move', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host, readingBacks } = mountWith(create)
+    layout(host, 400, 320)
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
+    await microtasks()
+    // The emulator fires nothing at construction, so the first word is read.
+    expect(readingBacks).toEqual([false])
+    expect(panes[0]?.viewportSubscriptions()).toBe(1)
+    mount.dispose()
+  })
+
+  it('a viewport moved by the queued frames themselves is reported, not missed', async () => {
+    const panes: MovingPane[] = []
+    const { mount, host, readingBacks } = mountWith((cols, rows) => {
+      const pane = new MovingPane(cols, rows)
+      panes.push(pane)
+      return Promise.resolve(pane)
+    })
+    layout(host, 400, 320)
+    // The subscription is in place before the preamble and the tail are
+    // written, so a pane whose own write moves the viewport is heard.
+    mount.handle({
+      type: 'opened',
+      handle: ROW,
+      cols: 100,
+      rows: 40,
+      preamble: '\x1b[?1049h',
+      tail: 'earlier output',
+    })
+    await microtasks()
+    expect(panes[0]?.writes).toEqual(['\x1b[?1049h', 'earlier output'])
+    expect(readingBacks).toEqual([false, true])
+    mount.dispose()
+  })
+
+  it('reports the viewport leaving the live edge and reaching it again, once each', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host, readingBacks } = mountWith(create)
+    layout(host, 400, 320)
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
+    await microtasks()
+    panes[0]!.moveViewport(6)
+    expect(readingBacks).toEqual([false, true])
+    // Further back, and a fraction of a row short of live: still read back.
+    panes[0]!.moveViewport(40)
+    panes[0]!.moveViewport(0.4)
+    expect(readingBacks).toEqual([false, true])
+    panes[0]!.moveViewport(0)
+    expect(readingBacks).toEqual([false, true, false])
+    mount.dispose()
+  })
+
+  it('the way back reaches the pane and nothing else', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host, readingBacks, resizes } = mountWith(create)
+    layout(host, 400, 320)
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
+    await microtasks()
+    panes[0]!.moveViewport(6)
+    mount.returnToLive()
+    expect(panes[0]?.returns).toBe(1)
+    expect(readingBacks).toEqual([false, true, false])
+    expect(panes[0]?.writes).toEqual([''])
+    expect(resizes).toEqual([])
+    mount.dispose()
+  })
+
+  it('the way back travels the whole strip over a grid taller than the host', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host, readingBacks } = mountWith(create)
+    layout(host, 400, 320)
+    // A hundred rows scale to an 800px extent in a 320px host: 480px of the
+    // grid, the newest rows among them, live below the fold.
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 100, tail: '' })
+    await microtasks()
+
+    panes[0]!.untaken = 80
+    for (let index = 0; index < 20; index += 1) dragGrid(host, 200, 160)
+    expect(host.scrollTop).toBe(480)
+    // Toward older output the host gives back its travel first, so by the time
+    // the viewport leaves the live edge the host is at the top of the grid.
+    for (let index = 0; index < 13; index += 1) dragGrid(host, 160, 200)
+    expect(host.scrollTop).toBe(0)
+    panes[0]!.moveViewport(40)
+    expect(readingBacks).toEqual([false, true])
+
+    mount.returnToLive()
+    expect(panes[0]?.returns).toBe(1)
+    expect(readingBacks).toEqual([false, true, false])
+    // Both scrollers home: the viewport on the newest output and the host at
+    // the bottom of the grid that holds it, which is what one tap promises.
+    expect(host.scrollTop).toBe(480)
+    mount.dispose()
+  })
+
+  it('the way back leaves a grid the host already holds whole where it is', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host, readingBacks } = mountWith(create)
+    layout(host, 400, 320)
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 20, tail: '' })
+    await microtasks()
+    panes[0]!.moveViewport(6)
+    mount.returnToLive()
+    expect(readingBacks).toEqual([false, true, false])
+    // A 160px extent inside a 320px host has no travel to run.
+    expect(host.scrollTop).toBe(0)
+    mount.dispose()
+  })
+
+  it('a reflow that re-anchors a held viewport is followed rather than reported stale', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host, readingBacks } = mountWith(create)
+    layout(host, 400, 320)
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
+    await microtasks()
+    panes[0]!.moveViewport(320)
+    expect(readingBacks).toEqual([false, true])
+    // The desktop publishes a narrower grid; the reflow leaves fewer rows
+    // behind the live edge than the viewport held, and the pane re-anchors to
+    // the oldest row that is left. Still behind the newest output, so the way
+    // back stands: only an emptied scrollback re-anchors all the way to live.
+    panes[0]!.reflowOffset = 80
+    mount.handle({ type: 'geometry', handle: ROW, cols: 47, rows: 31 })
+    expect(readingBacks).toEqual([false, true])
+
+    panes[0]!.reflowOffset = 0
+    mount.handle({ type: 'geometry', handle: ROW, cols: 40, rows: 24 })
+    expect(readingBacks).toEqual([false, true, false])
+    mount.dispose()
+  })
+
+  it('a session that ends keeps the way back while the viewport is still behind it', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host, readingBacks } = mountWith(create)
+    layout(host, 400, 320)
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
+    await microtasks()
+    panes[0]!.moveViewport(6)
+    mount.handle({ type: 'ended', handle: ROW, reason: 'exited' })
+    // The emulator still holds the screen, so the newest output is still
+    // somewhere to get back to and the control must not vanish under a finger.
+    expect(readingBacks).toEqual([false, true])
+    mount.returnToLive()
+    expect(panes[0]?.returns).toBe(1)
+    expect(readingBacks).toEqual([false, true, false])
+    mount.dispose()
+  })
+
+  it('a fresh mirror and a disposed one both leave no way back standing', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host, readingBacks } = mountWith(create)
+    layout(host, 400, 320)
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
+    await microtasks()
+    panes[0]!.moveViewport(6)
+    expect(readingBacks).toEqual([false, true])
+
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
+    expect(readingBacks).toEqual([false, true, false])
+    // The replaced pane is nobody's: its viewport moves reach no one.
+    expect(panes[0]?.viewportSubscriptions()).toBe(0)
+    panes[0]!.moveViewport(9)
+    expect(readingBacks).toEqual([false, true, false])
+
+    await microtasks()
+    panes[1]!.moveViewport(9)
+    expect(readingBacks).toEqual([false, true, false, true])
+    mount.dispose()
+    expect(panes[1]?.viewportSubscriptions()).toBe(0)
+    panes[1]!.moveViewport(0)
+    expect(readingBacks).toEqual([false, true, false, true])
   })
 })
 

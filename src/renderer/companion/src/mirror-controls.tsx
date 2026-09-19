@@ -9,11 +9,16 @@ interface MirrorControlsProps {
   readonly onInput: (data: string) => Promise<void>
 }
 
+/** Says the session moved rather than only offering a jump, and does both in one tap. */
+const RETURN_TO_LIVE = 'The session has moved on. Back to live.'
+
 /**
- * The bar under the mirror (ADR-050): the arm control alone while disarmed;
- * while armed, the keys a phone keyboard lacks in one strip that scrolls
- * sideways, and free text with Send on a second row. An arming is bound to
- * the live mirror, so `armed` already implies `live`.
+ * The mirror's controls. `MirrorControls` is the bar under it (ADR-050): the
+ * arm control alone while disarmed; while armed, the keys a phone keyboard
+ * lacks in one strip that scrolls sideways, and free text with Send on a second
+ * row. An arming is bound to the live mirror, so `armed` already implies
+ * `live`. `ReturnToLive` below is the one control that does not live in the
+ * bar, because it belongs over the screen it returns.
  */
 export function MirrorControls({ live, arming, onInput }: MirrorControlsProps) {
   const { armed } = arming
@@ -47,6 +52,27 @@ export function MirrorControls({ live, arming, onInput }: MirrorControlsProps) {
       </div>
       {armed ? <TerminalTextForm onInput={onInput} /> : null}
     </div>
+  )
+}
+
+/**
+ * The way back to the newest output (ADR-053), rendered over the terminal area
+ * only while the emulator's viewport sits behind it on a screen that keeps
+ * scrollback for it to sit behind. A phone has no scrollbar
+ * to read a position off and a scrollback bounded by bytes rather than rows, so
+ * without this the only way forward is a long series of drags with no sense of
+ * how far. It overlays the area instead of joining any flow, since a control
+ * that took height would change the area the phone measures its grid against.
+ */
+export function ReturnToLive({ onReturn }: { readonly onReturn: () => void }) {
+  return (
+    <button
+      type="button"
+      className="companion-button companion-button-compact companion-return-live"
+      onClick={onReturn}
+    >
+      {RETURN_TO_LIVE}
+    </button>
   )
 }
 

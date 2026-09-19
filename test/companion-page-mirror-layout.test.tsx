@@ -140,6 +140,58 @@ describe('Companion page mirror layout', () => {
     expect(host.querySelector('.companion-mirror-no-history')).toBeNull()
   })
 
+  it('offers no way back while the mirror is showing the newest output', async () => {
+    await openMirror()
+    layoutHost(352, 344)
+    await emit('terminal', { type: 'output', handle: 'term-1', data: 'x' })
+    expect(host.querySelector('.companion-return-live')).toBeNull()
+  })
+
+  it('a viewport read back says the session moved on and returns to live in one tap', async () => {
+    await openMirror()
+    layoutHost(352, 344)
+    await act(async () => {
+      panes.panes[0]!.moveViewport(24)
+      await Promise.resolve()
+    })
+    const control = host.querySelector<HTMLButtonElement>('.companion-return-live')
+    expect(control?.textContent).toBe('The session has moved on. Back to live.')
+    expect(control?.tagName).toBe('BUTTON')
+
+    // Outside the host's own scroller: an absolutely positioned descendant of
+    // a scroll container travels with its content, so over a grid taller than
+    // the phone the one way back would scroll out of reach.
+    expect(control?.closest('.companion-terminal-area')).not.toBeNull()
+    expect(control?.closest('.companion-terminal-host')).toBeNull()
+    expect(control?.closest('.companion-terminal-extent')).toBeNull()
+
+    await click(control!)
+    expect(panes.panes[0]?.returns).toBe(1)
+    expect(host.querySelector('.companion-return-live')).toBeNull()
+    expect(server.inputs()).toEqual([])
+  })
+
+  it('a full-screen program offers no way back, since there is nothing to be behind', async () => {
+    await openMirror()
+    layoutHost(352, 344)
+    panes.panes[0]!.alternateScreen = true
+    await act(async () => {
+      // A viewport the emulator has not yet re-anchored, which is the only way
+      // the two states meet: ADR-053 forbids an affordance that moves nothing,
+      // so the page states that rather than leaving it to the emulator.
+      panes.panes[0]!.moveViewport(24)
+      await Promise.resolve()
+    })
+    await emit('terminal', { type: 'output', handle: 'term-1', data: 'full screen paint' })
+    expect(host.querySelector('.companion-mirror-no-history')).not.toBeNull()
+    expect(host.querySelector('.companion-return-live')).toBeNull()
+
+    // Back on the normal screen the same held viewport does offer it.
+    panes.panes[0]!.alternateScreen = false
+    await emit('terminal', { type: 'output', handle: 'term-1', data: '$ ' })
+    expect(host.querySelector('.companion-return-live')).not.toBeNull()
+  })
+
   it('a full-screen session that ends takes its no-history line with it', async () => {
     await openMirror()
     layoutHost(352, 344)
@@ -292,9 +344,17 @@ describe('Companion page mirror while the desktop is Away (ADR-052)', () => {
       })
       await settleFit()
       expect(resizes).toEqual([{ handle: first, cols: 47, rows: 31 }])
+      await act(async () => {
+        factory.panes[0]!.moveViewport(18)
+        await Promise.resolve()
+      })
+      expect(root.querySelector('.companion-return-live')).not.toBeNull()
 
       // The same TerminalView, a new row: the surface is rebuilt while `away` never changed.
       await render(second)
+      // The way back belonged to the row that is gone, and the new mirror has
+      // not opened yet, so nothing stands over the area offering it.
+      expect(root.querySelector('.companion-return-live')).toBeNull()
       await act(async () => {
         feed.push({ type: 'opened', handle: second, cols: 132, rows: 43, tail: '' })
         await Promise.resolve()

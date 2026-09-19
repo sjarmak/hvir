@@ -12,16 +12,26 @@
  * key bytes, uncomposed.
  *
  * Reading back is the emulator's own viewport and the page keeps no text of
- * its own (ADR-053), so the two members this record adds past the ones the
- * desktop's own seam has are a gesture the emulator decides and the screen it
- * is on. Moving that viewport never touches the desktop, and the page asks
- * which screen is current without ever asking what either screen says.
+ * its own (ADR-053), so the members this record adds past the ones the
+ * desktop's own seam has are a gesture the emulator decides, the screen it is
+ * on, where that viewport moves to, and the way back to the live edge. Moving
+ * the viewport never touches the desktop, and every question here is about
+ * position and mode: the page asks which screen is current and how far back the
+ * view is without ever asking what either screen says. Position is reported and
+ * never sampled, so the seam carries the subscription and no reader beside it.
  */
 import type { TerminalWheelEvent } from '../../../shared'
 
 export interface CompanionTerminalPaneEvents {
   /** The user's exact key bytes; nothing the emulator answers on its own. */
   onData(cb: (data: string, source: 'user') => void): () => void
+  /**
+   * Every move of the viewport, whatever moved it: a gesture, the page's own
+   * way back, a reflow re-anchoring it, output pushing a held position along.
+   * The offset is read from the emulator rather than taken from the event,
+   * which carries a whole number even where the viewport rests on a fraction.
+   */
+  onViewport(cb: (offset: number) => void): () => void
 }
 
 /** One cell's box in CSS pixels at the pane's font; what the page divides its area by. */
@@ -48,8 +58,11 @@ export interface CompanionTerminalPane {
   scroll(event: TerminalWheelEvent): number
   /** The alternate screen keeps no scrollback, so it offers no read-back at all. */
   isAlternateScreen(): boolean
+  /** Puts the viewport back on the newest output, which is the page's one tap. */
+  returnToLive(): void
   /** The cell's measured size once mounted; nothing before the emulator has drawn. */
   cellSize(): CompanionCellSize | undefined
+  /** Ends the pane and releases every subscription it handed out, so no caller need. */
   dispose(): void
   setInputEnabled(enabled: boolean): void
   readonly events: CompanionTerminalPaneEvents

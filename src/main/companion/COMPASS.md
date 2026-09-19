@@ -5,7 +5,7 @@ generated: "2026-09-18"
 # Staleness stamp, machine-readable so a refresh can test drift without a model.
 # `sources` are area-relative paths (relative to THIS file's directory). Recompute:
 #   node ~/.claude/skills/project-compass/compass-hash.mjs src/main/companion/COMPASS.md
-sources_hash: "sha256-16:f1b0c3e6913351a0"
+sources_hash: "sha256-16:b0e95ed5bf564e68"
 sources:
   - companion-owner.ts
   - companion-sessions.ts
@@ -121,7 +121,9 @@ supervisor's doors.
   by `companion-row-groups.ts` (groups in name order, rows in the desktop's order within);
   `companion-mirror-feed.ts` is the page's bounded copy of the mirror stream;
   `terminal-view.tsx` is the fixed column (`mirror-header.tsx`, the terminal area,
-  `mirror-controls.tsx`); `companion-terminal-mount.ts` builds the pane at the geometry main
+  `mirror-controls.tsx`), and it holds the mount so `mirror-controls.tsx`'s `ReturnToLive`,
+  the one control that sits over the terminal area rather than in the bar, can hand a tap
+  back to the pane; `companion-terminal-mount.ts` builds the pane at the geometry main
   publishes and scales it to the host's width, with `companion-touch-scroll.ts` turning a
   finger over the grid into the shared wheel policy's event shape (ADR-053) and
   `companion-terminal-fit.ts` deciding when to ask for the
@@ -356,12 +358,36 @@ cycle.
   whose bytes the arming gate dropped is still the viewport's, so the default disarmed mirror
   reads back under a mouse-tracking program rather than going dead. A reflow moves no
   viewport, so the pane re-anchors to `getScrollbackLength()` after a resize that shortens it.
-- **The read-back ships one wave ahead of its return-to-live control.** ADR-053's Consequences
-  make that control part of the decision; `hvir-w00.4` owns it and `CompanionTerminalPane`
-  carries neither a verb that returns to the live edge nor one that reports the viewport's
-  position. Until it lands, the only way forward is dragging toward the top of the screen, and
-  the page has no way to say how far back the viewport sits. The two must reach `main`
-  together.
+- **One control returns the strip to the live edge, and position is all it knows.**
+  `returnToLive()` on the pane is `scrollToBottom()`, and the position it answers about
+  arrives through `events.onViewport` alone, which is the emulator's own `onScroll` read for
+  `getViewportY()` rather than for the number the event carries, because a smooth scroll fires
+  a floored value while the viewport rests on a fraction of a row. A subscription and no
+  reader beside it: a wheel notch the policy leaves alone is scrolled by the emulator itself
+  and reaches the mount through no call of its own, and the mount subscribes before it writes
+  the queued frames, so a fresh pane needs no sample of a position it cannot yet have moved
+  from. Zero is the live edge exactly, since every mover clamps with `Math.max(0, …)`, so the
+  test is `offset !== 0` and never a floor. `CompanionTerminalMount.returnToLive()` is the
+  mount's own verb and means the whole strip, not the viewport alone: it returns the emulator
+  and then runs the host to the end of the extent, because over a grid taller than the phone
+  the viewport's own live edge is still 480px above the newest rows. The mount reports the
+  state outward the way it reports the screen, and `terminal-view.tsx` renders `ReturnToLive`
+  over `.companion-terminal-area`: absolutely positioned, outside `.companion-terminal-host`,
+  which is `overflow-y: auto` and would carry an absolutely positioned descendant away with its
+  own scrolled content in exactly the tall-grid case that needs the control, and out of the
+  area's flex flow, because a control that took height would cost a PTY resize round-trip every
+  time it appeared while Away. Both declarations are text-asserted in
+  `test/style-ownership.test.ts`, since happy-dom applies no stylesheet and the rendered tests
+  can only prove ancestry. The alternate screen is a condition of the render and not only of
+  the emulator: ADR-053 forbids an affordance that moves nothing, so the view withholds the
+  control on the alternate screen rather than trusting ghostty's own viewport reset to have
+  landed first. Output arriving on a held viewport moves no row the person is
+  reading: ghostty advances `viewportY` by whatever the scrollback grew, so the number changes
+  and the reading does not, and the control correctly stays. An ended session keeps it, since
+  the emulator still holds a screen and a newest output to get back to; a replaced or disposed
+  mirror does not, and a surface rebuilt for another row clears it from the view. Disposing a
+  pane releases every subscription it handed out, which the port states, so the mount holds no
+  unsubscriber of its own for either `onData` or `onViewport`.
 - **The alternate screen states that it has no history.** `pane.isAlternateScreen()` reads the
   emulator's mode flag, never the screen's text, and the mount reports the change to
   `terminal-view.tsx`, which renders one `companion-status` line in the terminal area beside
