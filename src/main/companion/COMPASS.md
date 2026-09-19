@@ -5,7 +5,7 @@ generated: "2026-09-18"
 # Staleness stamp, machine-readable so a refresh can test drift without a model.
 # `sources` are area-relative paths (relative to THIS file's directory). Recompute:
 #   node ~/.claude/skills/project-compass/compass-hash.mjs src/main/companion/COMPASS.md
-sources_hash: "sha256-16:8c48367945bf718e"
+sources_hash: "sha256-16:b6f3582d23136dda"
 sources:
   - companion-owner.ts
   - companion-sessions.ts
@@ -36,8 +36,7 @@ sources:
   - ../../renderer/companion/src/ghostty-companion-pane.ts
   - ../../renderer/companion/src/companion-terminal-mount.ts
   - ../../renderer/companion/src/companion-mirror-feed.ts
-  - ../../renderer/companion/src/companion-mirror-scroll.ts
-  - ../../renderer/companion/src/companion-mirror-zoom.ts
+  - ../../renderer/companion/src/companion-mirror-history.ts
   - ../../renderer/companion/src/companion-input-arming.ts
   - ../../renderer/companion/src/use-input-arming.ts
   - ../../renderer/companion/src/use-companion-session.ts
@@ -113,8 +112,8 @@ supervisor's doors.
   `companion-mirror-feed.ts` is the page's bounded copy of the mirror stream;
   `terminal-view.tsx` is the fixed column (`mirror-header.tsx`, the terminal area,
   `mirror-controls.tsx`); `companion-terminal-mount.ts` builds the pane at the desktop
-  geometry and scales it by `companion-mirror-zoom.ts`; `companion-mirror-scroll.ts` turns a
-  touch drag over the host into rows; `ghostty-companion-pane.ts` is the only file that
+  geometry and scales it to the host's width, with `companion-mirror-history.ts` drawing the
+  scrollback above the grid; `ghostty-companion-pane.ts` is the only file that
   imports ghostty-web; `use-input-arming.ts` and `companion-input-arming.ts` are the arming
   state.
 
@@ -223,29 +222,23 @@ pane is writing. A 403 disarms and names Settings; a 409 names the ended termina
   imported only by `ghostty-companion-pane.ts`; ghostty cannot run under happy-dom, so every
   page test fakes `createPane`.
 - **The phone never resizes.** The pane is built with `cols`/`rows` from `opened`, has no fit
-  controller, never subscribes `terminal.onResize`, and follows `geometry` frames. Three views
-  (`companion-mirror-zoom.ts`), none of which resizes: `reflow`, the default, hides the grid
-  and shows a `<pre>` the mount fills from the pane's `bufferLines` (`companion-mirror-reflow.ts`:
-  wrapped rows joined back into one line, lines trimmed, trailing blanks dropped, rebuilt at
-  most every 80 ms while output arrives, a view at the end kept at the end); the browser
-  scrolls it and the touch gestures are off. The grid views are a CSS `transform: scale(...)`
-  on the surface (`mirrorScale`), so the cell grid stays the desktop's: `fill-height` is
-  `hostHeight / gridHeight` with the host panning sideways (`overflow-x: auto`, `touch-action:
-  pan-x`) and the touch drag scrolling the pane by rows; `fit-width` is
-  `min(1, hostWidth / gridWidth)`, with the scrollback (`bufferLines` minus the screen's rows,
-  `historyText`) drawn in a `<pre>` above the grid inside the same surface, in the pane's
-  `font()` at the grid's row height, and the host scrolling the two vertically. The extent
-  around the surface takes the scaled size of what the surface holds. The choice lives in
-  `localStorage` under `hvir-companion-mirror-zoom`, with the default standing in when storage
-  refuses.
-- **Touch scrolls the emulator, never the page.** `MirrorScrollGestures` listens on the host
-  for touch and pen pointers, converts vertical travel into whole rows through the scaled row
-  height (fraction carried, dropped on a direction change), and calls the pane's
-  `scrollLines`, which routes through the shared `TerminalWheelController`
-  (`src/shared/terminal-wheel.ts`, moved there from the desktop renderer): the normal screen
-  moves the viewport, the alternate screen gets Page Up/Down, mouse tracking gets SGR. The
-  `touchend` that closes a gesture is stopped in capture before the emulator's canvas takes it
-  for a tap and raises the phone keyboard; a tap still passes.
+  controller, never subscribes `terminal.onResize`, and follows `geometry` frames. The one
+  view is a CSS `transform: scale(...)` on the surface at `fitWidthScale` =
+  `min(1, hostWidth / gridWidth)`, so the cell grid stays the desktop's. The scrollback
+  (`bufferLines` minus the screen's rows, `historyText`) is drawn in a `<pre>` above the grid
+  inside the same surface, in the pane's `font()` at the grid's row height, rebuilt at most
+  every 80 ms while output arrives (`MirrorHistory`), and the host scrolls the two vertically
+  as one column (`overflow-y: auto`, `touch-action: pan-y`) with a view at the end kept at
+  the end. The extent around the surface takes the scaled size of what the surface holds and
+  is a flex item with `margin-top: auto`, so a column shorter than the host sits at its bottom
+  edge and a taller one scrolls; `flex-shrink: 0` keeps the host from squashing it. Any rule
+  that sets `display` on a hidden element defeats the `hidden` attribute, which is how the
+  old reflow page leaked under the grid; there is no second view to hide now.
+- **Wheel over the grid reaches the emulator.** The pane's custom wheel handler routes through
+  the shared `TerminalWheelController` (`src/shared/terminal-wheel.ts`, moved there from the
+  desktop renderer): the normal screen moves the viewport, the alternate screen gets Page
+  Up/Down, mouse tracking gets SGR. A touch drag is the host's own scroll over the column and
+  never reaches the pane.
 - **The control bar is armed-only.** `MirrorControls` renders the Arm/Disarm button alone
   while disarmed and adds the key strip and the text form only while `armed`; the tests that
   look for `#companion-terminal-text` or the key buttons must arm first.

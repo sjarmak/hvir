@@ -1,36 +1,22 @@
 /**
  * One mirror's pane inside the terminal view: created at the geometry the
  * `opened` frame names, fed the tail and every later frame, replaced when a
- * new `opened` arrives, and shown in the host by the view in force. The pane
+ * new `opened` arrives, and shown in the host scaled to its width. The pane
  * is built asynchronously (the emulator loads its module first), so frames
  * that land before it is ready are queued in order and written once it
  * mounts.
  *
  * The grid is the desktop's: geometry frames resize the pane, and nothing
- * here ever reports a size back. The reflow view hides the grid and shows the
- * emulator's text at the phone's width in a page of its own, which the
- * browser scrolls. A grid view is a CSS transform on the pane's surface, so
- * the emulator keeps its exact cell grid; the extent around the surface takes
- * the scaled size, so the host scrolls over exactly what the surface holds.
- * Fit-width draws the scrollback above the grid in the same surface, at the
- * grid's cell metrics, and the host scrolls the two as one column; fill-height
- * shows the grid alone, panning sideways, and a touch drag over it scrolls the
- * pane by rows. Wheel input reaches the pane directly in every view.
+ * here ever reports a size back. The view is a CSS transform on the pane's
+ * surface that sets the desktop's columns to the host's width and never
+ * enlarges, so the emulator keeps its exact cell grid. The scrollback is
+ * drawn above the grid in the same surface, at the grid's cell metrics, and
+ * the extent around the surface takes the scaled size of the two, so the
+ * host scrolls over exactly one column of history then live screen. Wheel
+ * input over the grid reaches the pane directly.
  */
 import type { CompanionTerminalEvent } from '../../../shared'
-import {
-  HISTORY_LINE_LIMIT,
-  MirrorText,
-  REFLOW_LINE_LIMIT,
-  historyText,
-  reflowText,
-} from './companion-mirror-reflow'
-import { MirrorScrollGestures } from './companion-mirror-scroll'
-import {
-  DEFAULT_MIRROR_ZOOM,
-  mirrorScale,
-  type CompanionMirrorZoom,
-} from './companion-mirror-zoom'
+import { HISTORY_LINE_LIMIT, MirrorHistory } from './companion-mirror-history'
 import type {
   CompanionBufferLine,
   CompanionTerminalPane,
@@ -43,24 +29,24 @@ interface PendingPane {
   geometry?: { readonly cols: number; readonly rows: number }
 }
 
+/** The scale that sets the grid's width to the host's, never above 1; nothing while either has no layout. */
+export function fitWidthScale(hostWidth: number, gridWidth: number): number | undefined {
+  if (hostWidth <= 0 || gridWidth <= 0) return undefined
+  return Math.min(1, hostWidth / gridWidth)
+}
+
 export class CompanionTerminalMount {
   private pane?: CompanionTerminalPane
   private pending?: PendingPane
   private inputEnabled = false
-  private zoom: CompanionMirrorZoom = DEFAULT_MIRROR_ZOOM
   private rows = 0
-  private scale = 1
   private disposed = false
   private readonly extent: HTMLDivElement
   private readonly surface: HTMLDivElement
   private readonly historyBox: HTMLPreElement
   private readonly gridBox: HTMLDivElement
-  private readonly page: HTMLPreElement
-  private readonly pageText: HTMLSpanElement
-  private readonly reflow: MirrorText
-  private readonly history: MirrorText
+  private readonly history: MirrorHistory
   private readonly observer: ResizeObserver
-  private readonly gestures: MirrorScrollGestures
 
   constructor(
     private readonly host: HTMLElement,
@@ -78,34 +64,15 @@ export class CompanionTerminalMount {
     this.gridBox.className = 'companion-terminal-grid'
     this.surface.append(this.historyBox, this.gridBox)
     this.extent.append(this.surface)
-    this.page = document.createElement('pre')
-    this.page.className = 'companion-terminal-reflow'
-    // The text sits in a child of the page so the stylesheet can pin it to
-    // the page's bottom edge while it is shorter than the page.
-    this.pageText = document.createElement('span')
-    this.pageText.className = 'companion-terminal-reflow-text'
-    this.page.append(this.pageText)
-    host.append(this.extent, this.page)
-    this.reflow = new MirrorText({
-      scroller: this.page,
-      text: this.pageText,
-      source: () => this.pane?.bufferLines(REFLOW_LINE_LIMIT) ?? [],
-      format: reflowText,
-    })
-    this.history = new MirrorText({
+    host.append(this.extent)
+    this.history = new MirrorHistory({
       scroller: host,
       text: this.historyBox,
       source: () => this.scrollback(),
-      format: historyText,
       afterRefresh: () => this.fit(),
     })
     this.observer = new ResizeObserver(() => this.fit())
     this.observer.observe(host)
-    this.gestures = new MirrorScrollGestures(host, {
-      rowHeight: () => this.rowHeight(),
-      scrollLines: (lines) => this.pane?.scrollLines(lines),
-    })
-    this.show()
   }
 
   handle(event: CompanionTerminalEvent): void {
@@ -114,15 +81,18 @@ export class CompanionTerminalMount {
         this.open(event.cols, event.rows, event.tail)
         return
       case 'output':
-        if (this.pane !== undefined) this.write(event.data)
-        else this.pending?.frames.push(event.data)
+        if (this.pane !== undefined) {
+          this.pane.write(event.data)
+          this.history.schedule()
+        } else {
+          this.pending?.frames.push(event.data)
+        }
         return
       case 'geometry':
         this.rows = event.rows
         if (this.pane !== undefined) {
           this.pane.resize(event.cols, event.rows)
-          this.refreshText()
-          this.fit()
+          this.history.refresh()
         } else if (this.pending !== undefined) {
           this.pending.geometry = { cols: event.cols, rows: event.rows }
         }
@@ -137,22 +107,14 @@ export class CompanionTerminalMount {
     this.pane?.setInputEnabled(enabled)
   }
 
-  setZoom(zoom: CompanionMirrorZoom): void {
-    this.zoom = zoom
-    this.show()
-  }
-
   dispose(): void {
     this.disposed = true
     this.observer.disconnect()
-    this.gestures.dispose()
-    this.reflow.dispose()
     this.history.dispose()
     this.pane?.dispose()
     this.pane = undefined
     this.pending = undefined
     this.extent.remove()
-    this.page.remove()
   }
 
   private open(cols: number, rows: number, tail: string): void {
@@ -197,24 +159,13 @@ export class CompanionTerminalMount {
     const font = pane.font()
     this.historyBox.style.fontFamily = font.family
     this.historyBox.style.fontSize = `${font.size}px`
-    this.show()
+    this.history.refresh()
   }
 
   private fail(pending: PendingPane, error: unknown): void {
     if (this.disposed || this.pending !== pending) return
     this.pending = undefined
     this.onFailure(error)
-  }
-
-  private write(data: string): void {
-    this.pane?.write(data)
-    if (this.zoom === 'reflow') this.reflow.schedule()
-    else if (this.zoom === 'fit-width') this.history.schedule()
-  }
-
-  private refreshText(): void {
-    if (this.zoom === 'reflow') this.reflow.refresh()
-    else if (this.zoom === 'fit-width') this.history.refresh()
   }
 
   /** The scrollback: every row of the active buffer before the screen's own rows. */
@@ -224,52 +175,26 @@ export class CompanionTerminalMount {
     return lines.slice(0, Math.max(0, lines.length - this.rows))
   }
 
-  /** The view in force: the page of text, or the grid scaled into the host. */
-  private show(): void {
-    const reflowing = this.zoom === 'reflow'
-    this.extent.hidden = reflowing
-    this.page.hidden = !reflowing
-    this.historyBox.hidden = this.zoom !== 'fit-width'
-    this.gestures.setEnabled(this.zoom === 'fill-height')
-    this.refreshText()
-    this.fit()
-  }
-
   private grid(): HTMLElement | undefined {
     const grid = this.gridBox.firstElementChild
     return grid instanceof HTMLElement ? grid : undefined
   }
 
-  /** One row's height on screen: the grid's unscaled height per row, scaled. */
-  private rowHeight(): number {
-    const grid = this.grid()
-    if (grid === undefined || this.rows <= 0) return 0
-    return (grid.offsetHeight / this.rows) * this.scale
-  }
-
   /**
-   * Applies a grid view's scale to the surface and sizes the extent to what
-   * the surface holds. The history's rows take the grid's row height so the
-   * two read as one column.
+   * Scales the surface to the host's width and sizes the extent to what the
+   * surface holds. The history's rows are the grid's columns in the grid's
+   * font and take its row height, so the two read as one column of the
+   * grid's width.
    */
   private fit(): void {
-    if (this.zoom === 'reflow') return
     const grid = this.grid()
     if (grid === undefined) return
-    const scale = mirrorScale(this.zoom, {
-      hostWidth: this.host.clientWidth,
-      hostHeight: this.host.clientHeight,
-      gridWidth: grid.offsetWidth,
-      gridHeight: grid.offsetHeight,
-    })
+    const scale = fitWidthScale(this.host.clientWidth, grid.offsetWidth)
     if (scale === undefined) return
-    this.scale = scale
-    if (this.rows > 0)
-      this.historyBox.style.lineHeight = `${grid.offsetHeight / this.rows}px`
-    const historyWidth = this.historyBox.hidden ? 0 : this.historyBox.offsetWidth
-    const historyHeight = this.historyBox.hidden ? 0 : this.historyBox.offsetHeight
+    this.historyBox.style.lineHeight = `${grid.offsetHeight / this.rows}px`
+    const height = grid.offsetHeight + this.historyBox.offsetHeight
     this.surface.style.transform = `scale(${scale})`
-    this.extent.style.width = `${Math.ceil(Math.max(grid.offsetWidth, historyWidth) * scale)}px`
-    this.extent.style.height = `${Math.ceil((grid.offsetHeight + historyHeight) * scale)}px`
+    this.extent.style.width = `${Math.ceil(grid.offsetWidth * scale)}px`
+    this.extent.style.height = `${Math.ceil(height * scale)}px`
   }
 }

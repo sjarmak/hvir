@@ -208,8 +208,9 @@ A row mirrors when the desktop would offer Interact for it: the session is live,
 connected, and hvir owns the PTY behind it. That covers a shell running Claude Code or Codex,
 a `gc session attach` terminal, and a terminal on an SSH host alike. Select such a row and the
 page becomes a fixed column, rendered on the phone by the same ghostty-web emulator the
-desktop uses: one header line with **Sessions**, the row's title, and the view controls; the
-terminal taking every pixel that remains; and one control bar at the bottom (section 8).
+desktop uses: one header line with **Sessions** and the row's title (and **Transcript** on a
+row that takes answers); the terminal taking every pixel that remains; and one control bar at
+the bottom (section 8).
 While the row carries a prompt, the header shows its message under the title (section 9).
 
 What the phone shows:
@@ -223,26 +224,18 @@ What the phone shows:
 - The desktop's geometry. The grid is exactly the desktop terminal's columns and rows; only a
   CSS transform scales it, and the phone never resizes the PTY. Every resize on the desktop
   reaches the phone as a geometry frame and the emulator there follows it.
-- Three views, cycled by the header button, which names the view in force. **Reflow**, the
-  default, reads the emulator's screen and scrollback as text and wraps it to the phone's
-  width at a readable size, so the terminal fills the area and scrolls like a page; a line the
-  desktop broke at its own width is joined back together, colours and cursor are not shown,
-  the newest line sits at the bottom of the area just above the controls (with any spare room
-  above the text, as in a terminal), and it stays there as output arrives unless you have
-  scrolled up. **Fit width** shows the
-  whole grid as the desktop draws it, scaled into the phone's width, so a 200-column desktop
-  terminal reads small; the scrollback is drawn above the grid at the same scale and font, so
-  the area is one column of history and live screen that scrolls up and down, opened at the
-  live screen. **Fill height** scales the rows to the height of the terminal area and lets
-  you pan sideways across the columns with a finger. The choice is remembered in the phone
-  browser's storage for the site. None of the three resizes the PTY.
-- Scrollback under your finger. In the reflow and fit-width views the area scrolls as any
-  page does; the history above the grid in fit width is text, without colours. In fill height
-  a touch drag up or down over the terminal scrolls the emulator's own scrollback by rows,
-  and the page beneath never moves; in a full-screen program (Claude Code, vim, less) there
-  is no scrollback to move, so the drag sends Page Up and Page Down to the program instead,
-  and only while typing is armed (section 8); a disarmed mirror sends nothing. A tap still
-  reaches the terminal.
+- The whole grid as the desktop draws it, scaled into the phone's width, so a 200-column
+  desktop terminal reads small and the remedy is a narrower desktop pane. The scrollback is
+  drawn above the grid at the same scale and font, as text without colours, so the area is
+  one column of history and live screen. The grid sits at the bottom of the area just above
+  the controls, with any spare room above the history as in a terminal, and it stays there as
+  output arrives unless you have scrolled up.
+- Scrollback under your finger. The area scrolls as any page does, up through the history
+  and back down to the live screen. Wheel input over the grid itself reaches the emulator: on
+  the normal screen it moves the emulator's own viewport; in a full-screen program (Claude
+  Code, vim, less) there is no scrollback to move, so it sends Page Up and Page Down to the
+  program instead, and only while typing is armed (section 8); a disarmed mirror sends
+  nothing.
 - A **Transcript** button in the header on rows that also take answers (an external session
   attached inside an hvir terminal), switching between the mirror and the ADR-049 transcript
   view.
@@ -391,10 +384,9 @@ shows as a prompt without its message until the harness notifies again.
 | An Enter from the phone produced no Ready and no Push | The desktop window was reloading when the key landed, so the renderer never recorded the input, or a desktop window was focused. The next submission arms Ready detection again. |
 | A Claude Code permission prompt shows as Ready, or not at all, never as a prompt | The notification channel is not set: put `"preferredNotifChannel": "iterm2"` in `~/.claude/settings.json` or pass `--settings '{"preferredNotifChannel":"iterm2"}'`. If it is set and still nothing arrives, the session is in auto permission mode and the command never prompted; start Claude Code with `--permission-mode default`. Wait the few seconds Claude Code holds before notifying. |
 | A prompt badge shows but no Push arrived for it | The terminal was already in the actionable set as Ready when the prompt arrived; Push fires only when a session enters the set. Or a desktop window was focused. |
-| A touch drag over a full-screen program (vim, less, Claude Code) moves nothing | Page keys are terminal input and pass the typing gate; choose **Arm typing**, then drag. Wheel input from a trackpad follows the same rule. |
-| The mirror is a thin strip of tiny text | The view is **Fit width** on a wide desktop grid. Tap the header button until it says **Reflow** to read the same output wrapped to the phone, or **Fill height** to pan sideways, or narrow the desktop pane. |
-| The mirror reads as a window a few screens wide | The view is **Fill height**. Tap the header button until it says **Reflow**. |
-| The reflow view shows a frame of a full-screen program twice, or a stale line | The text is the emulator's screen and scrollback as they stand; a program that redraws by moving the cursor leaves its earlier frames in the scrollback, as on the desktop. Switch to **Fit width** to see the screen as drawn. |
+| Wheel input over a full-screen program (vim, less, Claude Code) moves nothing | Page keys are terminal input and pass the typing gate; choose **Arm typing**, then scroll over the grid. |
+| The mirror is a thin strip of tiny text | The desktop grid is wide; the phone scales it to its width. Narrow the desktop pane. |
+| The history above the grid shows a frame of a full-screen program twice, or a stale line | The history is the emulator's scrollback as it stands; a program that redraws by moving the cursor leaves its earlier frames in the scrollback, as on the desktop. The grid below is the screen as drawn. |
 
 ## Developer note
 

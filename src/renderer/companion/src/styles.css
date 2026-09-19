@@ -406,34 +406,27 @@ body {
   gap: 8px;
 }
 
-/* The host is the scroll gesture surface. Fit-to-width owns every touch so a
- * drag reaches the scrollback; fill-height leaves sideways panning to the
- * browser and takes the vertical drags. */
+/* The host scrolls one column: the scrollback, then the live grid, at one
+ * scale that sets the desktop's columns to the host's width. The column is a
+ * flex item pinned to the host's bottom edge while shorter than the host, so
+ * the newest line is always just above the controls and any spare room sits
+ * above the history, as in a terminal; a taller column scrolls as any page
+ * does (the auto margin resolves to zero once the content overflows). The
+ * history takes the emulator's font inline and the grid's row height from the
+ * mount, so its rows line up with cells. */
 .companion-terminal-host {
   flex: 1;
   min-height: 0;
   width: 100%;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 1px solid var(--companion-border);
   border-radius: 10px;
   background: #000;
-  touch-action: none;
-  overscroll-behavior: contain;
-}
-
-.companion-terminal-host[data-zoom='fill-height'] {
-  overflow-x: auto;
-  overflow-y: hidden;
-  touch-action: pan-x;
-}
-
-/* Fit-width is one column of scrollback then the live grid, at one scale; the
- * host scrolls it up and down. The history takes the emulator's font inline
- * and the grid's row height from the mount, so its rows line up with cells. */
-.companion-terminal-host[data-zoom='fit-width'] {
-  overflow-x: hidden;
-  overflow-y: auto;
   touch-action: pan-y;
+  overscroll-behavior: contain;
 }
 
 .companion-terminal-history {
@@ -442,45 +435,12 @@ body {
   white-space: pre;
 }
 
-/* The reflow view is a page of its own: the browser scrolls it. The page
- * takes the host's whole height by flex (a percentage height inside nested
- * flex items is not reliable on iOS), and the text inside is pinned to the
- * page's bottom edge while shorter than it, so the newest line is always
- * just above the controls and any spare room sits above the text. */
-.companion-terminal-host[data-zoom='reflow'] {
-  display: flex;
-  flex-direction: column;
-  touch-action: pan-y;
-}
-
-.companion-terminal-reflow {
-  flex: 1 1 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 8px 10px;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  color: #e8eaee;
-  font:
-    13px/1.4 ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    monospace;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  touch-action: pan-y;
-}
-
-.companion-terminal-reflow-text {
-  display: block;
-  margin-top: auto;
-}
-
+/* The extent has an explicit height and hides its overflow, so flex must not
+ * shrink it to the host: its own size is what the host scrolls over. */
 .companion-terminal-extent {
   position: relative;
+  flex-shrink: 0;
+  margin-top: auto;
   overflow: hidden;
 }
 

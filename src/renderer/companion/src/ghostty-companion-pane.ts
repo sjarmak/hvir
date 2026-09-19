@@ -9,12 +9,11 @@
  * position) synchronously inside `write`; those replies are the desktop
  * renderer's to send, so they are dropped here rather than sent twice.
  *
- * Scrolling, by wheel or by rows from a touch drag, follows the desktop
- * pane's wheel policy: the emulator's viewport moves on the normal screen and
- * keeps its place while output arrives, a full-screen program receives page
- * keys, and a program tracking the mouse receives SGR reports. Those bytes
- * are user input and pass the same gate as any key, so a disarmed mirror
- * sends nothing.
+ * Wheel input over the grid follows the desktop pane's wheel policy: the
+ * emulator's viewport moves on the normal screen and keeps its place while
+ * output arrives, a full-screen program receives page keys, and a program
+ * tracking the mouse receives SGR reports. Those bytes are user input and
+ * pass the same gate as any key, so a disarmed mirror sends nothing.
  */
 import { Terminal, init } from 'ghostty-web'
 import ghosttyWasmUrl from 'ghostty-web/ghostty-vt.wasm?url'
@@ -28,7 +27,6 @@ import type {
 } from './companion-terminal-pane'
 
 const MIRROR_SCROLLBACK_BYTES = 1_000_000
-const DOM_DELTA_LINE = 1
 const FALLBACK_CELL_HEIGHT = 16
 
 let initializeGhostty: Promise<void> | undefined
@@ -88,20 +86,6 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
 
   resize(cols: number, rows: number): void {
     this.terminal.resize(cols, rows)
-  }
-
-  /** Rows from a touch drag, decided like a wheel of as many lines. */
-  scrollLines(amount: number): void {
-    const handled = this.navigate({
-      deltaY: amount,
-      deltaMode: DOM_DELTA_LINE,
-      offsetX: 0,
-      offsetY: 0,
-      shiftKey: false,
-      altKey: false,
-      ctrlKey: false,
-    })
-    if (!handled) this.terminal.scrollLines(amount)
   }
 
   /** Rows from the active buffer's end; `translateToString` keeps the width, the page trims. */

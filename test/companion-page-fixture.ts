@@ -196,7 +196,6 @@ export class FakeCompanionPane implements CompanionTerminalPane {
   readonly writes: string[] = []
   readonly resizes: Array<{ readonly cols: number; readonly rows: number }> = []
   readonly inputEnabled: boolean[] = []
-  readonly scrolls: number[] = []
   /** What `bufferLines` reads: a test writes the rows the emulator would hold. */
   lines: CompanionBufferLine[] = []
   readonly reads: number[] = []
@@ -237,10 +236,6 @@ export class FakeCompanionPane implements CompanionTerminalPane {
 
   resize(cols: number, rows: number): void {
     this.resizes.push({ cols, rows })
-  }
-
-  scrollLines(amount: number): void {
-    this.scrolls.push(amount)
   }
 
   bufferLines(limit: number): readonly CompanionBufferLine[] {

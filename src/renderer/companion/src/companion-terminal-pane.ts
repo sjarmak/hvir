@@ -34,12 +34,6 @@ export interface CompanionTerminalPane {
   /** Follows the desktop's grid; the pane never asks for a size of its own. */
   resize(cols: number, rows: number): void
   /**
-   * Moves the reader's view `amount` rows, positive toward live output: the
-   * scrollback viewport on the normal screen, or the keys a full-screen
-   * program reads for the same distance, sent as input under the same gate.
-   */
-  scrollLines(amount: number): void
-  /**
    * The newest `limit` rows of the active screen with its scrollback, oldest
    * first, for the page to lay out at its own width. Reading never moves the
    * emulator's view and never touches the desktop.

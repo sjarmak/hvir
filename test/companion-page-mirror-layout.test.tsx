@@ -3,17 +3,14 @@
 /**
  * The mirror fills the phone (hvir-3k2.3): one header line, the terminal in
  * the height that remains, one control bar that shows typing controls only
- * while armed; the reflow view reads the pane as a page, a grid view is a
- * transform of the desktop's grid with touch scrolling its scrollback, and no
- * view ever sends a resize.
+ * while armed; the terminal is the desktop's grid scaled to the phone's width
+ * with its scrollback drawn above it, and nothing ever sends a resize.
  */
 import { act } from 'react'
 import { describe, expect, it } from 'vitest'
 
-import { COMPANION_MIRROR_ZOOM_STORAGE_KEY } from '../src/renderer/companion/src/companion-mirror-zoom'
 import {
   armButton,
-  button,
   click,
   emit,
   host,
@@ -41,27 +38,6 @@ function layoutHost(width: number, height: number): void {
   })
 }
 
-async function touchDrag(from: number, to: number): Promise<void> {
-  await act(async () => {
-    const element = terminalHost()
-    for (const [type, clientY] of [
-      ['pointerdown', from],
-      ['pointermove', to],
-      ['pointerup', to],
-    ] as const) {
-      element.dispatchEvent(
-        new PointerEvent(type, {
-          pointerId: 1,
-          pointerType: 'touch',
-          clientY,
-          bubbles: true,
-        }),
-      )
-    }
-    await Promise.resolve()
-  })
-}
-
 describe('Companion page mirror layout', () => {
   it('lays the mirror out as one header, the terminal area, then a control bar with nothing after it', async () => {
     await openMirror()
@@ -76,10 +52,10 @@ describe('Companion page mirror layout', () => {
     expect(header?.querySelector('.companion-mirror-title')?.textContent).toBe(
       'claude in shell',
     )
-    expect(header?.querySelector('.companion-back')?.textContent).toBe('Sessions')
-    expect(header?.querySelector('.companion-zoom')).not.toBeNull()
+    expect(
+      [...(header?.querySelectorAll('button') ?? [])].map((b) => b.textContent),
+    ).toEqual(['Sessions'])
     expect(terminalHost().closest('.companion-terminal-area')).not.toBeNull()
-    expect(terminalHost().dataset['zoom']).toBe('reflow')
     const controls = section?.querySelector('.companion-mirror-controls')
     expect(
       [...(controls?.querySelectorAll('button') ?? [])].map((b) => b.textContent),
@@ -102,84 +78,26 @@ describe('Companion page mirror layout', () => {
     expect(host.querySelector('.companion-mirror-controls')?.children).toHaveLength(1)
   })
 
-  it('a touch drag over fill-height scrolls the pane by rows and sends nothing to the desktop', async () => {
-    localStorage.setItem(COMPANION_MIRROR_ZOOM_STORAGE_KEY, 'fill-height')
+  it('scales the desktop grid to the area width, draws the scrollback above it, and never resizes', async () => {
     await openMirror()
-    const pane = panes.panes[0]!
-    await touchDrag(300, 252)
-    expect(pane.scrolls).toEqual([3])
-    await touchDrag(100, 132)
-    expect(pane.scrolls).toEqual([3, -2])
-    expect(server.calls.some((call) => call.url.includes('resize'))).toBe(false)
-    expect(server.inputs()).toEqual([])
-  })
-
-  it('opens in the reflow view: the pane text as a page, the grid hidden, nothing resized', async () => {
-    await openMirror()
+    layoutHost(352, 344)
     const pane = panes.panes[0]!
     pane.lines = [
-      { text: 'a long line the desktop br', wrapped: false },
+      { text: 'a line the desktop br', wrapped: false },
       { text: 'oke in two', wrapped: true },
-      { text: '$ ', wrapped: false },
+      ...Array.from({ length: 43 }, (_, i) => ({ text: `screen ${i}`, wrapped: false })),
     ]
     await emit('terminal', { type: 'output', handle: 'term-1', data: 'x' })
     await act(() => new Promise((resolve) => setTimeout(resolve, 120)))
-    const page = host.querySelector<HTMLElement>('.companion-terminal-reflow')
-    expect(page?.hidden).toBe(false)
-    expect(page?.textContent).toBe('a long line the desktop broke in two\n$')
-    expect(host.querySelector<HTMLElement>('.companion-terminal-extent')?.hidden).toBe(
-      true,
-    )
+    const history = host.querySelector<HTMLElement>('.companion-terminal-history')
+    expect(history?.textContent).toBe('a line the desktop br\noke in two')
+    expect(
+      host.querySelector<HTMLElement>('.companion-terminal-scale')?.style.transform,
+    ).toContain('scale(0.3333')
+    const extent = host.querySelector<HTMLElement>('.companion-terminal-extent')
+    expect(extent?.style.width).toBe('352px')
     expect(pane.resizes).toEqual([])
     expect(server.calls.some((call) => call.url.includes('resize'))).toBe(false)
     expect(server.inputs()).toEqual([])
-  })
-
-  it('the view control cycles reflow, fit width and fill height, and persists the choice', async () => {
-    await openMirror()
-    layoutHost(352, 344)
-    const surface = (): string =>
-      host.querySelector<HTMLElement>('.companion-terminal-scale')?.style.transform ?? ''
-    const extent = (): [string, string] => {
-      const element = host.querySelector<HTMLElement>('.companion-terminal-extent')
-      return [element?.style.width ?? '', element?.style.height ?? '']
-    }
-    const control = button('Reflow')
-    expect(control.classList.contains('companion-zoom')).toBe(true)
-    expect(control.getAttribute('aria-label')).toBe('View: Reflow. Switch to Fit width')
-
-    await click(button('Reflow'))
-    expect(terminalHost().dataset['zoom']).toBe('fit-width')
-    expect(host.querySelector<HTMLElement>('.companion-terminal-reflow')?.hidden).toBe(
-      true,
-    )
-    expect(surface()).toContain('scale(0.3333')
-    expect(extent()).toEqual(['352px', '230px'])
-    expect(localStorage.getItem(COMPANION_MIRROR_ZOOM_STORAGE_KEY)).toBe('fit-width')
-
-    await click(button('Fit width'))
-    expect(terminalHost().dataset['zoom']).toBe('fill-height')
-    expect(surface()).toBe('scale(0.5)')
-    expect(extent()).toEqual(['528px', '344px'])
-    expect(localStorage.getItem(COMPANION_MIRROR_ZOOM_STORAGE_KEY)).toBe('fill-height')
-
-    await click(button('Fill height'))
-    expect(terminalHost().dataset['zoom']).toBe('reflow')
-    expect(host.querySelector<HTMLElement>('.companion-terminal-reflow')?.hidden).toBe(
-      false,
-    )
-    expect(localStorage.getItem(COMPANION_MIRROR_ZOOM_STORAGE_KEY)).toBe('reflow')
-    expect(panes.panes[0]?.resizes).toEqual([])
-    expect(server.calls.some((call) => call.url.includes('resize'))).toBe(false)
-  })
-
-  it('a stored grid view is honored when a mirror opens', async () => {
-    localStorage.setItem(COMPANION_MIRROR_ZOOM_STORAGE_KEY, 'fit-width')
-    await openMirror()
-    expect(terminalHost().dataset['zoom']).toBe('fit-width')
-    expect(button('Fit width').classList.contains('companion-zoom')).toBe(true)
-    expect(host.querySelector<HTMLElement>('.companion-terminal-reflow')?.hidden).toBe(
-      true,
-    )
   })
 })

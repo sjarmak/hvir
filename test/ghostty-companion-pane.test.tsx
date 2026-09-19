@@ -185,18 +185,6 @@ describe('ghostty companion pane', () => {
     expect(fake.onResizeSubscriptions).toBe(0)
   })
 
-  it('scrollLines moves the emulator viewport on the normal screen', async () => {
-    const pane = await createGhosttyCompanionPane(80, 24)
-    const fake = fakes[0]!
-    pane.mount(document.createElement('div'))
-    const seen: string[] = []
-    pane.events.onData((data) => seen.push(data))
-    pane.scrollLines(-3)
-    pane.scrollLines(2)
-    expect(fake.scrolls).toEqual([-3, 2])
-    expect(seen).toEqual([])
-  })
-
   it('wheel on the normal screen is left to the emulator viewport', async () => {
     const pane = await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!
@@ -221,25 +209,6 @@ describe('ghostty companion pane', () => {
     pane.setInputEnabled(true)
     expect(wheel(fake, 96)).toBe(true)
     expect(wheel(fake, -96)).toBe(true)
-    expect(seen).toEqual([PAGE_DOWN, PAGE_UP])
-    expect(fake.scrolls).toEqual([])
-  })
-
-  it('rows on the alternate screen send nothing while disarmed and page keys while armed', async () => {
-    const pane = await createGhosttyCompanionPane(80, 24)
-    const fake = fakes[0]!
-    pane.mount(document.createElement('div'))
-    fake.alternateScreen = true
-    const seen: string[] = []
-    pane.events.onData((data) => seen.push(data))
-    pane.scrollLines(3)
-    expect(seen).toEqual([])
-    expect(fake.scrolls).toEqual([])
-    pane.setInputEnabled(true)
-    pane.scrollLines(1)
-    pane.scrollLines(1)
-    pane.scrollLines(1)
-    pane.scrollLines(-3)
     expect(seen).toEqual([PAGE_DOWN, PAGE_UP])
     expect(fake.scrolls).toEqual([])
   })
