@@ -529,6 +529,7 @@ drives the badge and away-time Push.
 > Lifecycle: Partially superseded
 > Supersedes: [ADR-049](adr/ADR-049-companion-observer-and-away-push.md) | partial | The exclusion of a terminal screen and terminal input from the Companion, for live hvir-owned terminals under a mirror lease.
 > Superseded by: [ADR-051](adr/ADR-051-terminal-notification-prompt-attention.md) | partial | No phone action clearing attention, for a prompt entry on the mirrored terminal.
+> Superseded by: [ADR-052](adr/ADR-052-companion-mirror-holds-pty-size-while-away.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
 
 A Companion page holds a mirror lease on one live hvir-owned PTY: main forwards the retained
 output tail, live bytes, and desktop geometry, the phone emulates them with ghostty-web, and
@@ -545,6 +546,16 @@ A terminal's OSC 9 or OSC 777 notification raises a prompt attention at once, ca
 harness's own bounded message through every attention surface and the Push line; it outranks
 Ready and Bell, is cleared by desktop focus or by an answer sent from the Companion mirror, and
 never comes from reading the screen.
+
+### [ADR-052 — The Companion mirror holds the PTY's size while the desktop is Away](adr/ADR-052-companion-mirror-holds-pty-size-while-away.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
+
+While every hvir window is unfocused, a live mirror lease may resize its PTY to the phone's own
+grid so a full-screen program lays out for the phone; the desktop draws the held grid top-left
+with a notice and reclaims the size within one fit cycle when any of its windows gains focus, and
+the most recent phone resize wins when two phones hold one PTY.
 
 ## 5. Architecture
 

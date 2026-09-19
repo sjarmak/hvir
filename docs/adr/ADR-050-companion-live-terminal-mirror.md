@@ -3,6 +3,7 @@
 > Lifecycle: Partially superseded
 > Supersedes: [ADR-049](ADR-049-companion-observer-and-away-push.md) | partial | The exclusion of a terminal screen and terminal input from the Companion, for live hvir-owned terminals under a mirror lease.
 > Superseded by: [ADR-051](ADR-051-terminal-notification-prompt-attention.md) | partial | No phone action clearing attention, for a prompt entry on the mirrored terminal.
+> Superseded by: [ADR-052](ADR-052-companion-mirror-holds-pty-size-while-away.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
 
 ## Context
 

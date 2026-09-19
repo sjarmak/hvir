@@ -117,7 +117,10 @@ export interface PtyStreamHandlers {
   onTelemetry?: (telemetry: HarnessTelemetry | undefined) => void
 }
 
-/** The desktop's last applied terminal size; a mirror renders at it and never changes it. */
+/**
+ * The PTY's last applied terminal size. The desktop sets it; a mirror renders at it and may
+ * set it only while the desktop is Away (ADR-052).
+ */
 export interface PtyGeometry {
   readonly cols: number
   readonly rows: number
@@ -135,6 +138,11 @@ export interface PtyMirrorHandlers {
   readonly onEnd: (end: PtyMirrorEnd) => void
 }
 
+/**
+ * A mirror lease on one exact PTY instance (ADR-050): a second reader, never an owner. It may
+ * resize the PTY only under ADR-052's Away rule, while no desktop window is focused; every other
+ * lifecycle verb stays with the renderer owner.
+ */
 export interface PtyMirrorLease {
   readonly ptyId: string
   readonly instanceId: string
@@ -145,7 +153,7 @@ export interface PtyMirrorLease {
   readonly ended: boolean
   /** Writes the user's exact bytes to this instance or throws `PtyMirrorRefusedError`. */
   write(data: string): void
-  /** Idempotent. Detaches the mirror; never kills, resizes, or transfers the PTY. */
+  /** Idempotent. Detaches the mirror; never kills or transfers the PTY, and leaves its size as it is. */
   release(): void
 }
 
