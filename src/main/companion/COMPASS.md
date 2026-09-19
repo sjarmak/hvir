@@ -231,10 +231,13 @@ pane is writing. A 403 disarms and names Settings; a 409 names the ended termina
   scrolls it and the touch gestures are off. The grid views are a CSS `transform: scale(...)`
   on the surface (`mirrorScale`), so the cell grid stays the desktop's: `fill-height` is
   `hostHeight / gridHeight` with the host panning sideways (`overflow-x: auto`, `touch-action:
-  pan-x`); `fit-width` is `min(1, hostWidth / gridWidth, hostHeight / gridHeight)`. The extent
-  around the surface takes the scaled size so the host scrolls over exactly the grid. The
-  choice lives in `localStorage` under `hvir-companion-mirror-zoom`, with the default standing
-  in when storage refuses.
+  pan-x`) and the touch drag scrolling the pane by rows; `fit-width` is
+  `min(1, hostWidth / gridWidth)`, with the scrollback (`bufferLines` minus the screen's rows,
+  `historyText`) drawn in a `<pre>` above the grid inside the same surface, in the pane's
+  `font()` at the grid's row height, and the host scrolling the two vertically. The extent
+  around the surface takes the scaled size of what the surface holds. The choice lives in
+  `localStorage` under `hvir-companion-mirror-zoom`, with the default standing in when storage
+  refuses.
 - **Touch scrolls the emulator, never the page.** `MirrorScrollGestures` listens on the host
   for touch and pen pointers, converts vertical travel into whole rows through the scaled row
   height (fraction carried, dropped on a direction change), and calls the pane's

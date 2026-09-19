@@ -51,7 +51,7 @@ describe('Companion mirror zoom', () => {
     expect(isCompanionMirrorZoom(7)).toBe(false)
   })
 
-  it('fit-to-width scales down to the host width, never up, and never past the host height', () => {
+  it('fit-to-width scales down to the host width, never up, whatever the host height', () => {
     const grid = { gridWidth: 1000, gridHeight: 500 }
     expect(mirrorScale('fit-width', { hostWidth: 400, hostHeight: 900, ...grid })).toBe(
       0.4,
@@ -59,8 +59,9 @@ describe('Companion mirror zoom', () => {
     expect(mirrorScale('fit-width', { hostWidth: 2000, hostHeight: 900, ...grid })).toBe(
       1,
     )
+    // The rows may run past the area: the scrollback above the grid fills it and it scrolls.
     expect(mirrorScale('fit-width', { hostWidth: 400, hostHeight: 100, ...grid })).toBe(
-      0.2,
+      0.4,
     )
   })
 

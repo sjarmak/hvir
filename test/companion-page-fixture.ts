@@ -10,6 +10,7 @@ import {
 } from '../src/renderer/companion/src/companion-client'
 import type {
   CompanionBufferLine,
+  CompanionCellFont,
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
 } from '../src/renderer/companion/src/companion-terminal-pane'
@@ -245,6 +246,10 @@ export class FakeCompanionPane implements CompanionTerminalPane {
   bufferLines(limit: number): readonly CompanionBufferLine[] {
     this.reads.push(limit)
     return this.lines.slice(-limit)
+  }
+
+  font(): CompanionCellFont {
+    return { family: 'Menlo', size: 15 }
   }
 
   setInputEnabled(enabled: boolean): void {

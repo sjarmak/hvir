@@ -231,15 +231,18 @@ What the phone shows:
   above the text, as in a terminal), and it stays there as output arrives unless you have
   scrolled up. **Fit width** shows the
   whole grid as the desktop draws it, scaled into the phone's width, so a 200-column desktop
-  terminal reads small. **Fill height** scales the rows to the height of the terminal area
-  and lets you pan sideways across the columns with a finger. The choice is remembered in the
-  phone browser's storage for the site. None of the three resizes the PTY.
-- Scrollback under your finger. In the reflow view the page scrolls as any page does. In a
-  grid view a touch drag up or down over the terminal scrolls the emulator's own scrollback
-  by rows, and the page beneath never moves; in a full-screen program (Claude Code, vim, less)
-  there is no scrollback to move, so the drag sends Page Up and Page Down to the program
-  instead, and only while typing is armed (section 8); a disarmed mirror sends nothing. A tap
-  still reaches the terminal.
+  terminal reads small; the scrollback is drawn above the grid at the same scale and font, so
+  the area is one column of history and live screen that scrolls up and down, opened at the
+  live screen. **Fill height** scales the rows to the height of the terminal area and lets
+  you pan sideways across the columns with a finger. The choice is remembered in the phone
+  browser's storage for the site. None of the three resizes the PTY.
+- Scrollback under your finger. In the reflow and fit-width views the area scrolls as any
+  page does; the history above the grid in fit width is text, without colours. In fill height
+  a touch drag up or down over the terminal scrolls the emulator's own scrollback by rows,
+  and the page beneath never moves; in a full-screen program (Claude Code, vim, less) there
+  is no scrollback to move, so the drag sends Page Up and Page Down to the program instead,
+  and only while typing is armed (section 8); a disarmed mirror sends nothing. A tap still
+  reaches the terminal.
 - A **Transcript** button in the header on rows that also take answers (an external session
   attached inside an hvir terminal), switching between the mirror and the ADR-049 transcript
   view.

@@ -52,9 +52,10 @@ export interface MirrorGeometry {
 
 /**
  * The transform scale for a grid view, or nothing while either box has no
- * layout. Fit-to-width never enlarges and never lets the rows run past the
- * area; fill-height sets the rows to the area's height whatever the width
- * becomes.
+ * layout. Fit-to-width sets the columns to the area's width and never
+ * enlarges; the scrollback drawn above the grid takes the height the grid
+ * leaves, and the area scrolls over the two. Fill-height sets the rows to the
+ * area's height whatever the width becomes.
  */
 export function mirrorScale(
   zoom: CompanionMirrorGridZoom,
@@ -66,7 +67,7 @@ export function mirrorScale(
   }
   return zoom === 'fill-height'
     ? hostHeight / gridHeight
-    : Math.min(1, hostWidth / gridWidth, hostHeight / gridHeight)
+    : Math.min(1, hostWidth / gridWidth)
 }
 
 /** Storage can be absent or refuse (private browsing): the default stands in. */

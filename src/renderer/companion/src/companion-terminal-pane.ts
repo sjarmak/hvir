@@ -22,6 +22,12 @@ export interface CompanionBufferLine {
   readonly wrapped: boolean
 }
 
+/** The font the emulator draws cells with, so text laid out beside the grid lines up with it. */
+export interface CompanionCellFont {
+  readonly family: string
+  readonly size: number
+}
+
 export interface CompanionTerminalPane {
   mount(container: HTMLElement): void
   write(data: string): void
@@ -39,6 +45,8 @@ export interface CompanionTerminalPane {
    * emulator's view and never touches the desktop.
    */
   bufferLines(limit: number): readonly CompanionBufferLine[]
+  /** The cell font, fixed for the pane's life. */
+  font(): CompanionCellFont
   dispose(): void
   setInputEnabled(enabled: boolean): void
   readonly events: CompanionTerminalPaneEvents

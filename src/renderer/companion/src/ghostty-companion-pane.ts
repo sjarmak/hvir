@@ -22,6 +22,7 @@ import ghosttyWasmUrl from 'ghostty-web/ghostty-vt.wasm?url'
 import { TerminalWheelController, type TerminalWheelEvent } from '../../../shared'
 import type {
   CompanionBufferLine,
+  CompanionCellFont,
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
 } from './companion-terminal-pane'
@@ -113,6 +114,13 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
       lines.push({ text: line.translateToString(false), wrapped: line.isWrapped })
     }
     return lines
+  }
+
+  font(): CompanionCellFont {
+    return {
+      family: this.terminal.options.fontFamily,
+      size: this.terminal.options.fontSize,
+    }
   }
 
   setInputEnabled(enabled: boolean): void {

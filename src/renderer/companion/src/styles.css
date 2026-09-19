@@ -427,6 +427,21 @@ body {
   touch-action: pan-x;
 }
 
+/* Fit-width is one column of scrollback then the live grid, at one scale; the
+ * host scrolls it up and down. The history takes the emulator's font inline
+ * and the grid's row height from the mount, so its rows line up with cells. */
+.companion-terminal-host[data-zoom='fit-width'] {
+  overflow-x: hidden;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+.companion-terminal-history {
+  margin: 0;
+  color: #e8eaee;
+  white-space: pre;
+}
+
 /* The reflow view is a page of its own: the browser scrolls it. The page
  * takes the host's whole height by flex (a percentage height inside nested
  * flex items is not reliable on iOS), and the text inside is pinned to the

@@ -102,8 +102,8 @@ describe('Companion page mirror layout', () => {
     expect(host.querySelector('.companion-mirror-controls')?.children).toHaveLength(1)
   })
 
-  it('a touch drag over a grid view scrolls the pane by rows and sends nothing to the desktop', async () => {
-    localStorage.setItem(COMPANION_MIRROR_ZOOM_STORAGE_KEY, 'fit-width')
+  it('a touch drag over fill-height scrolls the pane by rows and sends nothing to the desktop', async () => {
+    localStorage.setItem(COMPANION_MIRROR_ZOOM_STORAGE_KEY, 'fill-height')
     await openMirror()
     const pane = panes.panes[0]!
     await touchDrag(300, 252)

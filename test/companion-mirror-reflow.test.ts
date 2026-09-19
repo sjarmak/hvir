@@ -3,8 +3,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  MirrorReflow,
+  MirrorText,
   REFLOW_REFRESH_MS,
+  historyText,
   reflowText,
 } from '../src/renderer/companion/src/companion-mirror-reflow'
 import type { CompanionBufferLine } from '../src/renderer/companion/src/companion-terminal-pane'
@@ -42,84 +43,103 @@ describe('reflowText', () => {
   })
 })
 
-describe('MirrorReflow', () => {
-  let element: HTMLPreElement
+describe('historyText', () => {
+  it('keeps every row as the grid holds it, wrapped rows and blanks included', () => {
+    expect(
+      historyText([line('one  '), line('two', true), line(''), line('  four')]),
+    ).toBe('one  \ntwo\n\n  four')
+    expect(historyText([])).toBe('')
+  })
+})
+
+describe('MirrorText', () => {
+  let scroller: HTMLPreElement
+  let text: HTMLElement
   let lines: CompanionBufferLine[]
-  let reflow: MirrorReflow
+  let mirror: MirrorText
   let scrollTop: number
+  let after: string[]
 
   beforeEach(() => {
     vi.useFakeTimers()
-    element = document.createElement('pre')
+    scroller = document.createElement('pre')
+    text = document.createElement('span')
+    scroller.append(text)
     lines = []
     scrollTop = 0
+    after = []
     // happy-dom lays nothing out: the page is 100px tall and each character 100px of text.
-    Object.defineProperty(element, 'clientHeight', { get: () => 100 })
-    Object.defineProperty(element, 'scrollHeight', {
-      get: () => (element.textContent ?? '').length * 100,
+    Object.defineProperty(scroller, 'clientHeight', { get: () => 100 })
+    Object.defineProperty(scroller, 'scrollHeight', {
+      get: () => (scroller.textContent ?? '').length * 100,
     })
-    Object.defineProperty(element, 'scrollTop', {
+    Object.defineProperty(scroller, 'scrollTop', {
       get: () => scrollTop,
       set: (value: number) => {
         scrollTop = value
       },
     })
-    reflow = new MirrorReflow(element, () => lines)
+    mirror = new MirrorText({
+      scroller,
+      text,
+      source: () => lines,
+      format: reflowText,
+      afterRefresh: () => after.push(text.textContent ?? ''),
+    })
   })
 
   afterEach(() => {
-    reflow.dispose()
+    mirror.dispose()
     vi.useRealTimers()
   })
 
   it('refresh writes the text now; schedule coalesces requests into one refresh later', () => {
     lines = [line('one')]
-    reflow.refresh()
-    expect(element.textContent).toBe('one')
-    // The text lives in one child the stylesheet pins to the page's bottom edge.
-    expect(element.children).toHaveLength(1)
-    expect(element.firstElementChild?.className).toBe('companion-terminal-reflow-text')
-    expect(element.firstElementChild?.textContent).toBe('one')
+    mirror.refresh()
+    expect(text.textContent).toBe('one')
+    expect(after).toEqual(['one'])
 
     lines = [line('one'), line('two')]
-    reflow.schedule()
-    reflow.schedule()
-    expect(element.textContent).toBe('one')
+    mirror.schedule()
+    mirror.schedule()
+    expect(text.textContent).toBe('one')
     vi.advanceTimersByTime(REFLOW_REFRESH_MS - 1)
-    expect(element.textContent).toBe('one')
+    expect(text.textContent).toBe('one')
     vi.advanceTimersByTime(1)
-    expect(element.textContent).toBe('one\ntwo')
+    expect(text.textContent).toBe('one\ntwo')
 
     // The interval is over: the next request is a new refresh.
     lines = [line('three')]
-    reflow.schedule()
+    mirror.schedule()
     vi.advanceTimersByTime(REFLOW_REFRESH_MS)
-    expect(element.textContent).toBe('three')
+    expect(text.textContent).toBe('three')
+    expect(after).toEqual(['one', 'one\ntwo', 'three'])
   })
 
-  it('keeps a view at the end at the end, and leaves one scrolled up where it is', () => {
+  it('keeps a view at the end at the end, after the extent had its say, and leaves one scrolled up', () => {
     lines = [line('ab')]
-    reflow.refresh()
+    mirror.refresh()
     expect(scrollTop).toBe(200)
 
     // At the end (200 + 100 reaches 200): the grown page is followed to its new end.
     lines = [line('abcdef')]
-    reflow.refresh()
+    mirror.refresh()
     expect(scrollTop).toBe(600)
 
     // Scrolled up to read: the page grows underneath and the view stays put.
     scrollTop = 100
     lines = [line('abcdefghij')]
-    reflow.refresh()
+    mirror.refresh()
     expect(scrollTop).toBe(100)
   })
 
   it('does nothing after dispose, and a scheduled refresh never fires', () => {
     lines = [line('late')]
-    reflow.schedule()
-    reflow.dispose()
+    mirror.schedule()
+    mirror.dispose()
     vi.advanceTimersByTime(REFLOW_REFRESH_MS)
-    reflow.refresh()
-    expect(element.textContent).toBe('')
+    mirror.refresh()
+    expect(text.textContent).toBe('')
+    expect(after).toEqual([])
   })
 })

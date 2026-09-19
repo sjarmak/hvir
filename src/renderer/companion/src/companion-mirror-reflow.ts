@@ -1,16 +1,21 @@
 /**
- * The mirror as a page of text (ADR-050, the reflow view): the emulator's
- * screen and scrollback read as lines and laid out at the phone's width, so
- * a wide desktop grid reads at a readable size and scrolls like a document.
+ * The mirror's text layers (ADR-050): what the page lays out from the
+ * emulator's rows, beside or instead of the grid. The reflow view shows the
+ * screen and scrollback as lines wrapped to the phone's width, so a wide
+ * desktop grid reads at a readable size and scrolls like a document; the
+ * fit-width view draws the scrollback as rows above the grid, at the grid's
+ * cell metrics, so the area shows history and the live screen as one column.
  * The emulator keeps the desktop's grid underneath; only what the person
- * reads changes. Output refreshes the text a bounded number of times a
- * second, and a view that was at the newest line stays there.
+ * reads changes. Output refreshes a layer a bounded number of times a second,
+ * and a view that was at the newest line stays there.
  */
 import type { CompanionBufferLine } from './companion-terminal-pane'
 
-/** Rows read from the emulator's end; enough scrollback to read back through a turn. */
+/** Rows read from the emulator's end for reflow; enough scrollback to read back through a turn. */
 export const REFLOW_LINE_LIMIT = 2000
-/** Output frames arrive many times a second; the text is rebuilt at most this often. */
+/** Scrollback rows drawn above the grid in fit-width. */
+export const HISTORY_LINE_LIMIT = 1000
+/** Output frames arrive many times a second; a layer is rebuilt at most this often. */
 export const REFLOW_REFRESH_MS = 80
 /** Within this many pixels of the end counts as reading the newest line. */
 const FOLLOW_SLACK_PX = 24
@@ -36,25 +41,27 @@ export function reflowText(lines: readonly CompanionBufferLine[]): string {
   return trimmed.slice(0, end).join('\n')
 }
 
-export class MirrorReflow {
+/** Rows as the grid holds them, one per line at the desktop's width, for the history above it. */
+export function historyText(lines: readonly CompanionBufferLine[]): string {
+  return lines.map((line) => line.text).join('\n')
+}
+
+export interface MirrorTextOptions {
+  /** The box that scrolls over the text; a view at its end is kept at its end. */
+  readonly scroller: HTMLElement
+  /** The element the text is written into. */
+  readonly text: HTMLElement
+  readonly source: () => readonly CompanionBufferLine[]
+  readonly format: (lines: readonly CompanionBufferLine[]) => string
+  /** Runs after the text changed and before the end is followed: the scroller's extent may size itself. */
+  readonly afterRefresh?: () => void
+}
+
+export class MirrorText {
   private timer?: ReturnType<typeof setTimeout>
   private disposed = false
-  /**
-   * The text sits in a child of the scrolling page so it can be pinned to
-   * the page's bottom edge while it is shorter than the page: the newest
-   * line is always just above the controls, as in a terminal, and the text
-   * fills the area from the bottom up.
-   */
-  private readonly text: HTMLElement
 
-  constructor(
-    private readonly element: HTMLElement,
-    private readonly source: () => readonly CompanionBufferLine[],
-  ) {
-    this.text = document.createElement('span')
-    this.text.className = 'companion-terminal-reflow-text'
-    element.replaceChildren(this.text)
-  }
+  constructor(private readonly options: MirrorTextOptions) {}
 
   /** A refresh soon; several requests in one interval make one refresh. */
   schedule(): void {
@@ -68,11 +75,13 @@ export class MirrorReflow {
   /** Rebuilds the text now and keeps a view at the end at the end. */
   refresh(): void {
     if (this.disposed) return
-    const { element } = this
+    const { scroller, text, source, format, afterRefresh } = this.options
     const following =
-      element.scrollTop + element.clientHeight >= element.scrollHeight - FOLLOW_SLACK_PX
-    this.text.textContent = reflowText(this.source())
-    if (following) element.scrollTop = element.scrollHeight
+      scroller.scrollTop + scroller.clientHeight >=
+      scroller.scrollHeight - FOLLOW_SLACK_PX
+    text.textContent = format(source())
+    afterRefresh?.()
+    if (following) scroller.scrollTop = scroller.scrollHeight
   }
 
   dispose(): void {
