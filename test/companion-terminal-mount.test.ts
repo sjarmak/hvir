@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   HISTORY_LINE_LIMIT,
   HISTORY_REFRESH_MS,
 } from '../src/renderer/companion/src/companion-mirror-history'
+import { FIT_SETTLE_MS } from '../src/renderer/companion/src/companion-terminal-fit'
 import {
   CompanionTerminalMount,
   fitWidthScale,
@@ -27,24 +28,58 @@ function mountWith(
   readonly host: HTMLDivElement
   readonly failures: unknown[]
   readonly inputs: string[]
+  readonly resizes: { readonly cols: number; readonly rows: number }[]
 } {
   const host = document.createElement('div')
   document.body.append(host)
   const failures: unknown[] = []
   const inputs: string[] = []
-  const mount = new CompanionTerminalMount(
+  const resizes: { readonly cols: number; readonly rows: number }[] = []
+  const mount = new CompanionTerminalMount({
     host,
-    create,
-    (data) => inputs.push(data),
-    (error) => failures.push(error),
-  )
-  return { mount, host, failures, inputs }
+    createPane: create,
+    onInput: (data) => inputs.push(data),
+    onResize: (cols, rows) => resizes.push({ cols, rows }),
+    onFailure: (error) => failures.push(error),
+  })
+  return { mount, host, failures, inputs, resizes }
 }
 
 /** happy-dom lays nothing out: the host's size is stated for the fit. */
 function layout(host: HTMLElement, width: number, height: number): void {
-  Object.defineProperty(host, 'clientWidth', { get: () => width })
-  Object.defineProperty(host, 'clientHeight', { get: () => height })
+  Object.defineProperty(host, 'clientWidth', { configurable: true, get: () => width })
+  Object.defineProperty(host, 'clientHeight', { configurable: true, get: () => height })
+}
+
+/** happy-dom's ResizeObserver never fires: this one is fired by the test. */
+function observedResizes(): { readonly fire: () => void } {
+  const callbacks: (() => void)[] = []
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(callback: () => void) {
+        callbacks.push(callback)
+      }
+      observe(): void {}
+      disconnect(): void {}
+    },
+  )
+  return { fire: () => callbacks.forEach((callback) => callback()) }
+}
+
+function fakePanes(): {
+  readonly panes: FakeCompanionPane[]
+  readonly create: (cols: number, rows: number) => Promise<CompanionTerminalPane>
+} {
+  const panes: FakeCompanionPane[] = []
+  return {
+    panes,
+    create: (cols, rows) => {
+      const pane = new FakeCompanionPane(cols, rows)
+      panes.push(pane)
+      return Promise.resolve(pane)
+    },
+  }
 }
 
 describe('fitWidthScale', () => {
@@ -195,5 +230,105 @@ describe('CompanionTerminalMount', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('CompanionTerminalMount while the desktop is Away (ADR-052)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('asks for the phone grid once after opening and renders it unscaled when it lands', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host, resizes } = mountWith(create)
+    layout(host, 376, 496)
+    mount.setAway(true)
+    mount.handle({ type: 'opened', handle: ROW, cols: 132, rows: 43, tail: '' })
+    await vi.advanceTimersByTimeAsync(0)
+    const surface = host.querySelector<HTMLElement>('.companion-terminal-scale')!
+    const extent = host.querySelector<HTMLElement>('.companion-terminal-extent')!
+    expect(resizes).toEqual([])
+    expect(surface.style.transform).toBe(`scale(${376 / (132 * 8)})`)
+    expect(surface.dataset['fit']).toBe('scaled')
+
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS)
+    expect(resizes).toEqual([{ cols: 47, rows: 31 }])
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS * 4)
+    expect(resizes).toHaveLength(1)
+    // The grid is still the desktop's until main says otherwise.
+    expect(panes[0]?.resizes).toEqual([])
+    expect(surface.dataset['fit']).toBe('scaled')
+
+    mount.handle({ type: 'geometry', handle: ROW, cols: 47, rows: 31 })
+    expect(panes[0]?.resizes).toEqual([{ cols: 47, rows: 31 }])
+    expect(surface.style.transform).toBe('scale(1)')
+    expect(surface.dataset['fit']).toBe('held')
+    expect([extent.style.width, extent.style.height]).toEqual(['376px', '496px'])
+
+    // The desktop reclaimed: back to the scaled column, and nothing is asked again by itself.
+    mount.handle({ type: 'geometry', handle: ROW, cols: 132, rows: 43 })
+    expect(surface.style.transform).toBe(`scale(${376 / (132 * 8)})`)
+    expect(surface.dataset['fit']).toBe('scaled')
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS * 2)
+    expect(resizes).toHaveLength(1)
+    mount.dispose()
+  })
+
+  it('asks nothing while the desktop is focused, once when it goes Away, and nothing after ended', async () => {
+    const { create } = fakePanes()
+    const { mount, host, resizes } = mountWith(create)
+    layout(host, 376, 496)
+    mount.handle({ type: 'opened', handle: ROW, cols: 132, rows: 43, tail: '' })
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS * 2)
+    expect(resizes).toEqual([])
+
+    mount.setAway(true)
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS)
+    expect(resizes).toEqual([{ cols: 47, rows: 31 }])
+
+    mount.handle({ type: 'ended', handle: ROW, reason: 'exited' })
+    mount.setAway(false)
+    mount.setAway(true)
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS * 2)
+    expect(resizes).toHaveLength(1)
+    mount.dispose()
+  })
+
+  it('a settled area change asks again, and a change that fits the same grid does not', async () => {
+    const observer = observedResizes()
+    const { create } = fakePanes()
+    const { mount, host, resizes } = mountWith(create)
+    layout(host, 376, 496)
+    mount.setAway(true)
+    mount.handle({ type: 'opened', handle: ROW, cols: 132, rows: 43, tail: '' })
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS)
+    expect(resizes).toEqual([{ cols: 47, rows: 31 }])
+
+    layout(host, 383, 500)
+    observer.fire()
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS)
+    expect(resizes).toHaveLength(1)
+
+    layout(host, 240, 320)
+    observer.fire()
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS - 1)
+    layout(host, 240, 336)
+    observer.fire()
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS - 1)
+    expect(resizes).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(resizes).toEqual([
+      { cols: 47, rows: 31 },
+      { cols: 30, rows: 21 },
+    ])
+    mount.dispose()
+    observer.fire()
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS)
+    expect(resizes).toHaveLength(2)
   })
 })

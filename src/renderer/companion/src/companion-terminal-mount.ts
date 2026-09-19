@@ -6,17 +6,22 @@
  * that land before it is ready are queued in order and written once it
  * mounts.
  *
- * The grid is the desktop's: geometry frames resize the pane, and nothing
- * here ever reports a size back. The view is a CSS transform on the pane's
- * surface that sets the desktop's columns to the host's width and never
- * enlarges, so the emulator keeps its exact cell grid. The scrollback is
- * drawn above the grid in the same surface, at the grid's cell metrics, and
- * the extent around the surface takes the scaled size of the two, so the
- * host scrolls over exactly one column of history then live screen. Wheel
- * input over the grid reaches the pane directly.
+ * The grid is whatever main publishes: geometry frames resize the pane, and
+ * the emulator never picks a size of its own. While the desktop is Away the
+ * mount asks for the grid the host's area holds at the pane's cell size
+ * (ADR-052); a geometry frame equal to that request means the phone holds the
+ * size, and the surface renders at scale 1. Any other geometry is the
+ * desktop's, drawn as a CSS transform on the pane's surface that sets its
+ * columns to the host's width and never enlarges, so the emulator keeps its
+ * exact cell grid either way. The scrollback is drawn above the grid in the
+ * same surface, at the grid's cell metrics, and the extent around the surface
+ * takes the scaled size of the two, so the host scrolls over exactly one
+ * column of history then live screen. Wheel input over the grid reaches the
+ * pane directly.
  */
 import type { CompanionTerminalEvent } from '../../../shared'
 import { HISTORY_LINE_LIMIT, MirrorHistory } from './companion-mirror-history'
+import { CompanionFitController } from './companion-terminal-fit'
 import type {
   CompanionBufferLine,
   CompanionTerminalPane,
@@ -27,6 +32,15 @@ interface PendingPane {
   readonly created: Promise<CompanionTerminalPane>
   readonly frames: string[]
   geometry?: { readonly cols: number; readonly rows: number }
+}
+
+export interface CompanionTerminalMountOptions {
+  readonly host: HTMLElement
+  readonly createPane: CompanionTerminalPaneFactory
+  readonly onInput: (data: string) => void
+  /** The grid the host holds, asked for only while the mirror is live and the desktop is Away. */
+  readonly onResize: (cols: number, rows: number) => void
+  readonly onFailure: (error: unknown) => void
 }
 
 /** The scale that sets the grid's width to the host's, never above 1; nothing while either has no layout. */
@@ -40,20 +54,21 @@ export class CompanionTerminalMount {
   private pending?: PendingPane
   private inputEnabled = false
   private rows = 0
+  /** The grid is the one this mount asked for (ADR-052): drawn at scale 1. */
+  private held = false
   private disposed = false
+  private readonly host: HTMLElement
   private readonly extent: HTMLDivElement
   private readonly surface: HTMLDivElement
   private readonly historyBox: HTMLPreElement
   private readonly gridBox: HTMLDivElement
   private readonly history: MirrorHistory
+  private readonly fitter: CompanionFitController
   private readonly observer: ResizeObserver
 
-  constructor(
-    private readonly host: HTMLElement,
-    private readonly createPane: CompanionTerminalPaneFactory,
-    private readonly onInput: (data: string) => void,
-    private readonly onFailure: (error: unknown) => void,
-  ) {
+  constructor(private readonly options: CompanionTerminalMountOptions) {
+    const { host } = options
+    this.host = host
     this.extent = document.createElement('div')
     this.extent.className = 'companion-terminal-extent'
     this.surface = document.createElement('div')
@@ -71,7 +86,15 @@ export class CompanionTerminalMount {
       source: () => this.scrollback(),
       afterRefresh: () => this.fit(),
     })
-    this.observer = new ResizeObserver(() => this.fit())
+    this.fitter = new CompanionFitController({
+      area: () => ({ width: host.clientWidth, height: host.clientHeight }),
+      cell: () => this.pane?.cellSize(),
+      request: ({ cols, rows }) => options.onResize(cols, rows),
+    })
+    this.observer = new ResizeObserver(() => {
+      this.fit()
+      this.fitter.areaChanged()
+    })
     this.observer.observe(host)
   }
 
@@ -89,6 +112,7 @@ export class CompanionTerminalMount {
         }
         return
       case 'geometry':
+        this.held = this.fitter.applied({ cols: event.cols, rows: event.rows })
         this.rows = event.rows
         if (this.pane !== undefined) {
           this.pane.resize(event.cols, event.rows)
@@ -98,6 +122,7 @@ export class CompanionTerminalMount {
         }
         return
       case 'ended':
+        this.fitter.setLive(false)
         return
     }
   }
@@ -107,9 +132,15 @@ export class CompanionTerminalMount {
     this.pane?.setInputEnabled(enabled)
   }
 
+  /** What the snapshot says about the desktop's focus (ADR-049); the fit asks only while Away. */
+  setAway(away: boolean): void {
+    this.fitter.setAway(away)
+  }
+
   dispose(): void {
     this.disposed = true
     this.observer.disconnect()
+    this.fitter.dispose()
     this.history.dispose()
     this.pane?.dispose()
     this.pane = undefined
@@ -118,11 +149,16 @@ export class CompanionTerminalMount {
   }
 
   private open(cols: number, rows: number, tail: string): void {
+    this.fitter.setLive(false)
+    this.held = false
     this.pane?.dispose()
     this.pane = undefined
     this.rows = rows
     this.gridBox.replaceChildren()
-    const pending: PendingPane = { created: this.createPane(cols, rows), frames: [tail] }
+    const pending: PendingPane = {
+      created: this.options.createPane(cols, rows),
+      frames: [tail],
+    }
     this.pending = pending
     void pending.created.then(
       (pane) => this.mountReady(pending, pane),
@@ -133,7 +169,8 @@ export class CompanionTerminalMount {
   /**
    * The queued frames are PTY bytes the emulator has never seen; a throw
    * while mounting or writing them is a failure of this pane, reported like a
-   * pane that never loaded rather than left as an unhandled rejection.
+   * pane that never loaded rather than left as an unhandled rejection. The
+   * fit goes live only here, once there is a mounted pane to measure.
    */
   private mountReady(pending: PendingPane, pane: CompanionTerminalPane): void {
     if (this.disposed || this.pending !== pending) {
@@ -142,7 +179,7 @@ export class CompanionTerminalMount {
     }
     try {
       pane.mount(this.gridBox)
-      pane.events.onData((data) => this.onInput(data))
+      pane.events.onData((data) => this.options.onInput(data))
       pane.setInputEnabled(this.inputEnabled)
       for (const frame of pending.frames) pane.write(frame)
       if (pending.geometry !== undefined) {
@@ -160,12 +197,13 @@ export class CompanionTerminalMount {
     this.historyBox.style.fontFamily = font.family
     this.historyBox.style.fontSize = `${font.size}px`
     this.history.refresh()
+    this.fitter.setLive(true)
   }
 
   private fail(pending: PendingPane, error: unknown): void {
     if (this.disposed || this.pending !== pending) return
     this.pending = undefined
-    this.onFailure(error)
+    this.options.onFailure(error)
   }
 
   /** The scrollback: every row of the active buffer before the screen's own rows. */
@@ -181,18 +219,19 @@ export class CompanionTerminalMount {
   }
 
   /**
-   * Scales the surface to the host's width and sizes the extent to what the
-   * surface holds. The history's rows are the grid's columns in the grid's
-   * font and take its row height, so the two read as one column of the
-   * grid's width.
+   * Scales the surface to the host's width, or not at all while the phone
+   * holds the size, and sizes the extent to what the surface holds. The
+   * history's rows are the grid's columns in the grid's font and take its row
+   * height, so the two read as one column of the grid's width.
    */
   private fit(): void {
     const grid = this.grid()
     if (grid === undefined) return
-    const scale = fitWidthScale(this.host.clientWidth, grid.offsetWidth)
+    const scale = this.held ? 1 : fitWidthScale(this.host.clientWidth, grid.offsetWidth)
     if (scale === undefined) return
     this.historyBox.style.lineHeight = `${grid.offsetHeight / this.rows}px`
     const height = grid.offsetHeight + this.historyBox.offsetHeight
+    this.surface.dataset['fit'] = this.held ? 'held' : 'scaled'
     this.surface.style.transform = `scale(${scale})`
     this.extent.style.width = `${Math.ceil(grid.offsetWidth * scale)}px`
     this.extent.style.height = `${Math.ceil(height * scale)}px`

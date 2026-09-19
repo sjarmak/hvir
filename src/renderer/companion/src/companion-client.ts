@@ -7,6 +7,8 @@
  */
 import type {
   CompanionEvent,
+  CompanionResizeRequest,
+  CompanionResizeResponse,
   CompanionRespondRequest,
   CompanionSnapshot,
   CompanionSubmitRequest,
@@ -14,7 +16,7 @@ import type {
   SessionsTerminalHandle,
   SessionsTranscriptSnapshot,
 } from '../../../shared'
-import { isCompanionSnapshot } from '../../../shared'
+import { isCompanionResizeResponse, isCompanionSnapshot } from '../../../shared'
 import {
   CompanionProtocolError,
   SseFrameParser,
@@ -114,6 +116,15 @@ export interface CompanionClient {
     handle: SessionsTerminalHandle,
     data: string,
   ): Promise<SessionsMutationResponse>
+  /**
+   * The phone's grid for the mirrored row (ADR-052). A `desktop-focused`
+   * refusal is an outcome, not a failure; an ended mirror still throws.
+   */
+  resize(
+    page: string,
+    handle: SessionsTerminalHandle,
+    request: CompanionResizeRequest,
+  ): Promise<CompanionResizeResponse>
 }
 
 export interface CompanionClientOptions {
@@ -132,7 +143,11 @@ interface AuthorizedRequest {
 export function createCompanionClient(options: CompanionClientOptions): CompanionClient {
   const { fetch, tokens } = options
 
-  async function authorized(request: AuthorizedRequest): Promise<CompanionResponse> {
+  /** `tolerated` names a non-2xx status the verb reads a body from instead of failing. */
+  async function authorized(
+    request: AuthorizedRequest,
+    tolerated?: number,
+  ): Promise<CompanionResponse> {
     const token = tokens.read()
     if (token === undefined) throw new CompanionUnauthorizedError()
     const withBody = request.body !== undefined
@@ -151,7 +166,9 @@ export function createCompanionClient(options: CompanionClientOptions): Companio
       tokens.clear()
       throw new CompanionUnauthorizedError()
     }
-    if (!isSuccess(response.status)) throw await failure(response)
+    if (!isSuccess(response.status) && response.status !== tolerated) {
+      throw await failure(response)
+    }
     return response
   }
 
@@ -209,6 +226,22 @@ export function createCompanionClient(options: CompanionClientOptions): Companio
     return reply
   }
 
+  /** A 409 is read: the Away door's refusal carries its reason, an ended mirror its error. */
+  async function resize(
+    page: string,
+    handle: SessionsTerminalHandle,
+    request: CompanionResizeRequest,
+  ): Promise<CompanionResizeResponse> {
+    const response = await authorized(
+      { method: 'POST', url: route(handle, 'resize'), body: { page, ...request } },
+      409,
+    )
+    const reply: unknown = await response.json()
+    if (isCompanionResizeResponse(reply)) return reply
+    if (response.status === 409) throw failureOf(response.status, reply)
+    throw new Error('The listener answered with no resize outcome')
+  }
+
   return {
     paired: () => tokens.read() !== undefined,
     pair,
@@ -240,6 +273,7 @@ export function createCompanionClient(options: CompanionClientOptions): Companio
         isSessionsMutationResponse,
         'mutation outcome',
       ),
+    resize,
   }
 }
 
@@ -256,14 +290,21 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 async function failure(response: CompanionResponse): Promise<CompanionHttpFailure> {
-  let message = `The listener answered ${response.status}`
+  let body: unknown
   try {
-    const body: unknown = await response.json()
-    if (isRecord(body) && typeof body['error'] === 'string') message = body['error']
+    body = await response.json()
   } catch {
     // A failure without a JSON body keeps the status-only message.
   }
-  return new CompanionHttpFailure(response.status, message)
+  return failureOf(response.status, body)
+}
+
+function failureOf(status: number, body: unknown): CompanionHttpFailure {
+  const message =
+    isRecord(body) && typeof body['error'] === 'string'
+      ? body['error']
+      : `The listener answered ${status}`
+  return new CompanionHttpFailure(status, message)
 }
 
 async function pump(

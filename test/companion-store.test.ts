@@ -24,6 +24,7 @@ const SNAPSHOT: CompanionSnapshot = {
   version: SESSIONS_COMPANION_VERSION,
   revision: 1,
   demandGeneration: 1,
+  away: false,
   rows: [],
 }
 const TRANSCRIPT: SessionsTranscriptSnapshot = {

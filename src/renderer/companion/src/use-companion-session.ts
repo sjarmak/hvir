@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   sessionsMutationUnavailableMessage,
+  type CompanionResizeResponse,
   type SessionsMutationResponse,
   type SessionsTerminalHandle,
 } from '../../../shared'
@@ -54,6 +55,14 @@ export interface CompanionSession {
   readonly submit: (message: string) => Promise<boolean>
   /** Exact bytes for the mirrored row; dropped here unless armed on a live mirror. */
   readonly input: (data: string) => Promise<void>
+  /**
+   * The phone's grid for the live mirror (ADR-052). Resolves the listener's
+   * answer, or nothing when there is no live mirror or the verb failed.
+   */
+  readonly resize: (
+    cols: number,
+    rows: number,
+  ) => Promise<CompanionResizeResponse | undefined>
 }
 
 const PAIRING_EXPIRED = 'The desktop no longer accepts this pairing; pair again'
@@ -257,6 +266,17 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
     [client, run, armed, mirrorHandle, touch, disarm],
   )
 
+  const resize = useCallback(
+    async (cols: number, rows: number) => {
+      if (mirrorHandle === undefined) return undefined
+      return run(
+        (current) => client.resize(current, mirrorHandle, { cols, rows }),
+        (failure) => (failure.status === 409 ? MIRROR_ENDED : failure.message),
+      )
+    },
+    [client, run, mirrorHandle],
+  )
+
   return {
     connection,
     state,
@@ -271,6 +291,7 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
     respond,
     submit,
     input,
+    resize,
   }
 }
 

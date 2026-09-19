@@ -1,20 +1,24 @@
 /**
- * The Companion's /api rows (ADR-049, ADR-050), bound onto the server's
- * router: one event stream per page, the page's rows on demand, the four
- * Sessions verbs, and terminal input. Bodies are validated with the shared
- * guards before any port is asked; a page the service does not hold is 404, a
- * transcript verb before a selection is 409, typing while Settings forbids it
- * is 403, input for a row without a mirror or after the mirror ended is 409,
- * and every other shape mismatch is 400. Mirror output rides the
- * page stream as `terminal` frames; a stream that cannot drain them ends the
- * mirror instead of buffering without bound.
+ * The Companion's /api rows (ADR-049, ADR-050, ADR-052), bound onto the
+ * server's router: one event stream per page, the page's rows on demand, the
+ * four Sessions verbs, terminal input, and the mirror's resize. Bodies are
+ * validated with the shared guards before any port is asked; a page the
+ * service does not hold is 404, a transcript verb before a selection is 409,
+ * typing while Settings forbids it is 403, input or resize for a row without a
+ * mirror or after the mirror ended is 409, a resize the Away door refuses is
+ * 409 with `{outcome: "refused", reason}` so the page can tell it from an
+ * ended mirror, and every other shape mismatch is 400. Mirror output rides
+ * the page stream as `terminal` frames; a stream that cannot drain them ends
+ * the mirror instead of buffering without bound.
  */
 import {
   asSessionsTerminalHandle,
   isCompanionInputRequest,
+  isCompanionResizeRequest,
   isCompanionRespondRequest,
   isCompanionSubmitRequest,
   type CompanionEvent,
+  type CompanionResizeResponse,
   type CompanionTerminalEvent,
   type SessionsMutationResponse,
   type SessionsTerminalHandle,
@@ -26,7 +30,10 @@ import {
   readJsonBody,
   type SseWriter,
 } from './companion-http'
-import { CompanionMirrorEndedError } from './companion-page-mirror'
+import {
+  CompanionMirrorEndedError,
+  CompanionResizeRefusedError,
+} from './companion-page-mirror'
 import type { CompanionRequestContext, CompanionRouter } from './companion-router'
 import {
   CompanionNoMirrorError,
@@ -65,6 +72,7 @@ export function bindCompanionApi(
   bind('POST', '/api/sessions/:handle/respond', (context) => respond(context, sessions))
   bind('POST', '/api/sessions/:handle/message', (context) => message(context, sessions))
   bind('POST', '/api/sessions/:handle/input', (context) => input(context, sessions))
+  bind('POST', '/api/sessions/:handle/resize', (context) => resize(context, sessions))
 }
 
 async function respond(
@@ -105,6 +113,25 @@ async function input(
   sessions.input(page, handleParam(context), rest.data)
   const accepted: SessionsMutationResponse = { outcome: 'accepted' }
   json(context.response, 200, accepted)
+}
+
+/** The Away door's refusal is answered here with its reason; the rest translate as input does. */
+async function resize(
+  context: CompanionRequestContext,
+  sessions: CompanionSessionsService,
+): Promise<void> {
+  const { page, rest } = await verbBody(context)
+  if (!isCompanionResizeRequest(rest)) {
+    throw new CompanionHttpError(400, 'Expected {"page", "cols", "rows"}')
+  }
+  let reply: CompanionResizeResponse = { outcome: 'accepted' }
+  try {
+    sessions.resize(page, handleParam(context), rest.cols, rest.rows)
+  } catch (error) {
+    if (!(error instanceof CompanionResizeRefusedError)) throw error
+    reply = { outcome: 'refused', reason: error.reason }
+  }
+  json(context.response, reply.outcome === 'accepted' ? 200 : 409, reply)
 }
 
 async function translate(run: () => Promise<void> | void): Promise<void> {

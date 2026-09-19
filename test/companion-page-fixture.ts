@@ -11,6 +11,7 @@ import {
 import type {
   CompanionBufferLine,
   CompanionCellFont,
+  CompanionCellSize,
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
 } from '../src/renderer/companion/src/companion-terminal-pane'
@@ -60,9 +61,15 @@ export function row(overrides: Unbranded<CompanionRow>): CompanionRow {
 export function snapshot(
   revision: number,
   rows: readonly CompanionRow[],
-  demandGeneration = 1,
+  options: { readonly demandGeneration?: number; readonly away?: boolean } = {},
 ): CompanionSnapshot {
-  return { version: SESSIONS_COMPANION_VERSION, revision, demandGeneration, rows }
+  return {
+    version: SESSIONS_COMPANION_VERSION,
+    revision,
+    demandGeneration: options.demandGeneration ?? 1,
+    away: options.away ?? false,
+    rows,
+  }
 }
 
 export function transcript(
@@ -91,6 +98,9 @@ export class FakeCompanionServer {
   /** The status POST input answers; anything but 200 carries `inputError`. */
   inputStatus = 200
   inputError = 'Refused'
+  /** What POST resize answers, status and body as the listener would send them. */
+  resizeStatus = 200
+  resizeReply: unknown = { outcome: 'accepted' }
   /** While true, select replies wait until `releaseSelect` is called. */
   holdSelect = false
   transcriptReply: SessionsTranscriptSnapshot = transcript({ handle: 'none' })
@@ -116,6 +126,12 @@ export class FakeCompanionServer {
   inputs(): unknown[] {
     return this.calls
       .filter((call) => call.url.endsWith('/input'))
+      .map((call) => call.body)
+  }
+
+  resizes(): unknown[] {
+    return this.calls
+      .filter((call) => call.url.endsWith('/resize'))
       .map((call) => call.body)
   }
 
@@ -164,6 +180,7 @@ export class FakeCompanionServer {
         ? json(200, { outcome: 'accepted' })
         : json(this.inputStatus, { error: this.inputError })
     }
+    if (url.endsWith('/resize')) return json(this.resizeStatus, this.resizeReply)
     return json(200, this.mutationReply)
   }
 
@@ -245,6 +262,12 @@ export class FakeCompanionPane implements CompanionTerminalPane {
 
   font(): CompanionCellFont {
     return { family: 'Menlo', size: 15 }
+  }
+
+  /** Like the real pane: no cell metrics until the emulator is mounted. */
+  cellSize(): CompanionCellSize | undefined {
+    if (this.mounted === undefined) return undefined
+    return { width: FAKE_CELL_WIDTH, height: FAKE_CELL_HEIGHT }
   }
 
   setInputEnabled(enabled: boolean): void {

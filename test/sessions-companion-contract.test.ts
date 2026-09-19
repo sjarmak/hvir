@@ -4,12 +4,15 @@ import { PTY_OUTPUT_TAIL_CHARS } from '../src/main/pty/pty-output-tail'
 import {
   MAX_ACTIONABLE_BODY_CHARS,
   MAX_COMPANION_INPUT_CHARS,
+  MAX_COMPANION_RESIZE_DIMENSION,
   MAX_COMPANION_ROWS,
   MAX_COMPANION_TERMINAL_TAIL_CHARS,
   MAX_SESSIONS_SUBMIT_MESSAGE,
+  MIN_COMPANION_RESIZE_DIMENSION,
   SESSIONS_COMPANION_VERSION,
   compareCompanionRows,
   isCompanionInputRequest,
+  isCompanionResizeRequest,
   isCompanionRespondRequest,
   isCompanionRow,
   isCompanionSnapshot,
@@ -42,6 +45,7 @@ const snapshot = (rows: readonly unknown[], extra: Record<string, unknown> = {})
   version: SESSIONS_COMPANION_VERSION,
   revision: 0,
   demandGeneration: 1,
+  away: false,
   rows,
   ...extra,
 })
@@ -87,6 +91,11 @@ describe('sessions companion contract', () => {
     expect(isCompanionSnapshot(snapshot([], { activeProject: 'p' }))).toBe(false)
     expect(isCompanionSnapshot(snapshot([], { version: 2 }))).toBe(false)
     expect(isCompanionSnapshot(snapshot([], { demandGeneration: 0 }))).toBe(false)
+    expect(isCompanionSnapshot(snapshot([], { away: true }))).toBe(true)
+    expect(isCompanionSnapshot(snapshot([], { away: 'yes' }))).toBe(false)
+    expect(isCompanionSnapshot(snapshot([], { away: undefined }))).toBe(false)
+    const { away: _away, ...withoutAway } = snapshot([])
+    expect(isCompanionSnapshot(withoutAway)).toBe(false)
     expect(isCompanionSnapshot(snapshot([row(), row()]))).toBe(false)
     expect(
       isCompanionSnapshot(snapshot(Array.from({ length: MAX_COMPANION_ROWS + 1 }, row))),
@@ -133,29 +142,36 @@ describe('sessions companion contract', () => {
     expect(isCompanionRow(prompt(''))).toBe(false)
     expect(isCompanionRow(prompt(7))).toBe(false)
     expect(isCompanionRow(prompt(null))).toBe(false)
-    expect(
-      isCompanionSnapshot(snapshot([prompt('Claude needs your permission')])),
-    ).toBe(true)
+    expect(isCompanionSnapshot(snapshot([prompt('Claude needs your permission')]))).toBe(
+      true,
+    )
   })
 
   it('rejects a promptBody on any row whose attention is not an available prompt', () => {
     const promptBody = 'Claude needs your permission'
     expect(isCompanionRow(row({ promptBody }))).toBe(false)
     expect(
-      isCompanionRow(row({ attention: { status: 'available', value: 'bell' }, promptBody })),
+      isCompanionRow(
+        row({ attention: { status: 'available', value: 'bell' }, promptBody }),
+      ),
     ).toBe(false)
     expect(
       isCompanionRow(
         row({ attention: { status: 'unavailable', reason: 'source-stale' }, promptBody }),
       ),
     ).toBe(false)
-    expect(isCompanionRow(row({ attention: { status: 'unsupported' }, promptBody }))).toBe(
-      false,
-    )
+    expect(
+      isCompanionRow(row({ attention: { status: 'unsupported' }, promptBody })),
+    ).toBe(false)
     expect(
       isCompanionRow(
         row({
-          attention: { status: 'stale', value: 'prompt', observedAt: 5, reason: 'source-stale' },
+          attention: {
+            status: 'stale',
+            value: 'prompt',
+            observedAt: 5,
+            reason: 'source-stale',
+          },
           freshness: 'stale',
           reason: 'closed',
           promptBody,
@@ -163,7 +179,9 @@ describe('sessions companion contract', () => {
       ),
     ).toBe(false)
     expect(
-      isCompanionRow(row({ attention: { status: 'available', value: 'prompt' }, promptBody })),
+      isCompanionRow(
+        row({ attention: { status: 'available', value: 'prompt' }, promptBody }),
+      ),
     ).toBe(true)
   })
 
@@ -247,6 +265,31 @@ describe('sessions companion contract', () => {
     expect(isCompanionInputRequest({ data: '\r', handle: 't1' })).toBe(false)
     expect(isCompanionInputRequest({})).toBe(false)
     expect(isCompanionInputRequest('\r')).toBe(false)
+  })
+
+  it('a resize request is two integers within the PTY dimension bounds and nothing else (ADR-052)', () => {
+    expect([MIN_COMPANION_RESIZE_DIMENSION, MAX_COMPANION_RESIZE_DIMENSION]).toEqual([
+      2, 1000,
+    ])
+    expect(isCompanionResizeRequest({ cols: 47, rows: 31 })).toBe(true)
+    expect(isCompanionResizeRequest({ cols: 2, rows: 1000 })).toBe(true)
+    for (const request of [
+      { cols: 1, rows: 31 },
+      { cols: 47, rows: 1001 },
+      { cols: 47.5, rows: 31 },
+      { cols: 47, rows: Number.NaN },
+      { cols: 47, rows: Number.POSITIVE_INFINITY },
+      { cols: '47', rows: 31 },
+      { cols: 47 },
+      { rows: 31 },
+      { cols: 47, rows: 31, handle: 't1' },
+      {},
+      [47, 31],
+      null,
+      '47x31',
+    ]) {
+      expect(isCompanionResizeRequest(request), JSON.stringify(request)).toBe(false)
+    }
   })
 
   it('tail bound equals PTY_OUTPUT_TAIL_CHARS', () => {

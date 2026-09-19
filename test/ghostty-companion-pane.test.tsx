@@ -144,6 +144,15 @@ describe('ghostty companion pane', () => {
     expect(fake.disposed).toBe(true)
   })
 
+  it('draws a fixed readable font and reports its cell size from the renderer (ADR-052)', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    expect(fake.options['fontSize']).toBe(15)
+    expect(pane.font()).toEqual({ family: fake.options['fontFamily'], size: 15 })
+    pane.mount(document.createElement('div'))
+    expect(pane.cellSize()).toEqual({ width: 8, height: 16 })
+  })
+
   it('data emitted during write never reaches onData', async () => {
     const pane = await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!

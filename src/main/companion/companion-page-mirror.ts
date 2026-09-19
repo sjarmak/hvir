@@ -6,7 +6,9 @@
  * and ends exactly once, whatever ends it: a reselect, the page closing, the
  * PTY exiting, a supervisor release, or the page falling behind. Every end
  * releases the lease and tells the page why. Bytes pass through untouched in
- * both directions; nothing here logs, trims, or composes them.
+ * both directions; nothing here logs, trims, or composes them. A resize
+ * (ADR-052) passes the same lease checks as a write; only the Away door's
+ * `desktop-focused` answer is a refusal the mirror survives.
  */
 import type { CompanionMirrorEndReason, CompanionTerminalEvent } from '../../shared'
 import type { SessionsTerminalHandle } from '../../shared'
@@ -19,6 +21,16 @@ export class CompanionMirrorEndedError extends Error {
   constructor() {
     super('The mirrored terminal ended or changed')
     this.name = 'CompanionMirrorEndedError'
+  }
+}
+
+/** The desktop is not Away, so the PTY keeps the desktop's size; the mirror stays live. */
+export class CompanionResizeRefusedError extends Error {
+  readonly reason = 'desktop-focused'
+
+  constructor() {
+    super('The desktop is focused and holds the terminal size')
+    this.name = 'CompanionResizeRefusedError'
   }
 }
 
@@ -77,12 +89,26 @@ export class CompanionPageMirror {
 
   /** Writes the user's exact bytes; a refusal ends the mirror and rethrows as ended. */
   write(data: string): void {
+    this.admit((lease) => lease.write(data))
+  }
+
+  /**
+   * Asks the PTY to take the phone's grid (ADR-052). `desktop-focused` is the
+   * Away door saying not now and leaves the mirror as it is; every other
+   * refusal means the lease is dead and ends the mirror as a write would.
+   */
+  resize(cols: number, rows: number): void {
+    this.admit((lease) => lease.resize(cols, rows))
+  }
+
+  private admit(verb: (lease: PtyMirrorLease) => void): void {
     const current = this.current
     if (current === undefined) throw new CompanionMirrorEndedError()
     try {
-      current.lease.write(data)
+      verb(current.lease)
     } catch (error) {
       if (!(error instanceof PtyMirrorRefusedError)) throw error
+      if (error.reason === 'desktop-focused') throw new CompanionResizeRefusedError()
       this.end('exited')
       throw new CompanionMirrorEndedError()
     }

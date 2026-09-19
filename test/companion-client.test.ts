@@ -82,6 +82,7 @@ const SNAPSHOT: CompanionSnapshot = {
   version: SESSIONS_COMPANION_VERSION,
   revision: 1,
   demandGeneration: 3,
+  away: true,
   rows: [],
 }
 
@@ -256,6 +257,48 @@ describe('companion client', () => {
       status: 403,
       message: 'Typing from the Companion is off in Settings',
     })
+  })
+
+  it('resize posts the grid with the page and reads accepted or the refusal reason (ADR-052)', async () => {
+    const accepted = harness(() => jsonResponse(200, { outcome: 'accepted' }), 'tok-1')
+    expect(await accepted.client.resize('page-1', ROW, { cols: 47, rows: 31 })).toEqual({
+      outcome: 'accepted',
+    })
+    expect(accepted.calls.map((call) => [call.url, call.init.method])).toEqual([
+      ['/api/sessions/row%2F1/resize', 'POST'],
+    ])
+    expect(JSON.parse(accepted.calls[0]?.init.body ?? '')).toEqual({
+      page: 'page-1',
+      cols: 47,
+      rows: 31,
+    })
+    expect(accepted.calls[0]?.init.headers['authorization']).toBe('Bearer tok-1')
+
+    const refused = harness(
+      () => jsonResponse(409, { outcome: 'refused', reason: 'desktop-focused' }),
+      'tok-1',
+    )
+    expect(await refused.client.resize('page-1', ROW, { cols: 47, rows: 31 })).toEqual({
+      outcome: 'refused',
+      reason: 'desktop-focused',
+    })
+  })
+
+  it('a resize answered 409 without a refusal is the ended mirror it says it is', async () => {
+    const { client } = harness(
+      () => jsonResponse(409, { error: 'The mirrored terminal ended or changed' }),
+      'tok-1',
+    )
+    await expect(
+      client.resize('page-1', ROW, { cols: 47, rows: 31 }),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: 'The mirrored terminal ended or changed',
+    })
+    const malformed = harness(() => jsonResponse(200, { outcome: 'maybe' }), 'tok-1')
+    await expect(
+      malformed.client.resize('page-1', ROW, { cols: 47, rows: 31 }),
+    ).rejects.toThrow(/resize/)
   })
 
   it('refuses a mutation reply that is not a mutation response', async () => {

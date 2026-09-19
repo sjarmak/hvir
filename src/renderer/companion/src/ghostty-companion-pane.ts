@@ -22,12 +22,15 @@ import { TerminalWheelController, type TerminalWheelEvent } from '../../../share
 import type {
   CompanionBufferLine,
   CompanionCellFont,
+  CompanionCellSize,
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
 } from './companion-terminal-pane'
 
 const MIRROR_SCROLLBACK_BYTES = 1_000_000
 const FALLBACK_CELL_HEIGHT = 16
+/** The phone's fixed readable font (ADR-052); the grid asked for is what this leaves room for. */
+const MIRROR_FONT_SIZE = 15
 
 let initializeGhostty: Promise<void> | undefined
 
@@ -41,6 +44,7 @@ export const createGhosttyCompanionPane: CompanionTerminalPaneFactory = async (
     new Terminal({
       cols,
       rows,
+      fontSize: MIRROR_FONT_SIZE,
       scrollbackBytes: MIRROR_SCROLLBACK_BYTES,
       disableStdin: true,
       disableContextMenu: true,
@@ -105,6 +109,14 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
       family: this.terminal.options.fontFamily,
       size: this.terminal.options.fontSize,
     }
+  }
+
+  /** The renderer exists once the terminal is open; its cell is the font's measured box. */
+  cellSize(): CompanionCellSize | undefined {
+    const renderer = this.terminal.renderer
+    if (renderer === undefined) return undefined
+    const { charWidth: width, charHeight: height } = renderer
+    return width > 0 && height > 0 ? { width, height } : undefined
   }
 
   setInputEnabled(enabled: boolean): void {

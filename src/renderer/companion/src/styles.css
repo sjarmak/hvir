@@ -406,6 +406,13 @@ body {
   gap: 8px;
 }
 
+/* The Away rule's answer (ADR-052): one line while the desktop keeps the size. */
+.companion-mirror-size {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* The host scrolls one column: the scrollback, then the live grid, at one
  * scale that sets the desktop's columns to the host's width. The column is a
  * flex item pinned to the host's bottom edge while shorter than the host, so

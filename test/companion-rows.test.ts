@@ -75,7 +75,13 @@ describe('companion rows', () => {
       ['terminal-2', false],
     ])
     expect(
-      isCompanionSnapshot({ version: 1, revision: 1, demandGeneration: 1, rows }),
+      isCompanionSnapshot({
+        version: 1,
+        revision: 1,
+        demandGeneration: 1,
+        away: true,
+        rows,
+      }),
     ).toBe(true)
   })
 
@@ -99,7 +105,13 @@ describe('companion rows', () => {
       promptBody: 'Claude needs your permission',
     })
     expect(
-      isCompanionSnapshot({ version: 1, revision: 1, demandGeneration: 1, rows }),
+      isCompanionSnapshot({
+        version: 1,
+        revision: 1,
+        demandGeneration: 1,
+        away: true,
+        rows,
+      }),
     ).toBe(true)
   })
 
@@ -123,7 +135,13 @@ describe('companion rows', () => {
     expect(rows[0]?.attention).toEqual({ status: 'unavailable', reason: 'source-stale' })
     expect(rows[0]).not.toHaveProperty('promptBody')
     expect(
-      isCompanionSnapshot({ version: 1, revision: 1, demandGeneration: 1, rows }),
+      isCompanionSnapshot({
+        version: 1,
+        revision: 1,
+        demandGeneration: 1,
+        away: true,
+        rows,
+      }),
     ).toBe(true)
   })
 
@@ -325,7 +343,13 @@ describe('companion rows', () => {
       expect(serialized, secret).not.toContain(secret)
     }
     expect(
-      isCompanionSnapshot({ version: 1, revision: 1, demandGeneration: 1, rows }),
+      isCompanionSnapshot({
+        version: 1,
+        revision: 1,
+        demandGeneration: 1,
+        away: true,
+        rows,
+      }),
     ).toBe(true)
   })
 })

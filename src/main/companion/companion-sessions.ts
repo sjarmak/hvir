@@ -152,6 +152,7 @@ export class CompanionSessionsService {
         version: SESSIONS_COMPANION_VERSION,
         revision: 0,
         demandGeneration: generation,
+        away: this.ports.actionable.snapshot().away,
         rows: [],
       },
     }
@@ -194,6 +195,21 @@ export class CompanionSessionsService {
     if (!this.ports.mirrors.typingAllowed()) throw new CompanionTypingDisallowedError()
     if (page.mirror.handle !== handle) throw new CompanionNoMirrorError()
     page.mirror.write(data)
+  }
+
+  /**
+   * The phone's grid for the mirrored row (ADR-052). Resizing is not input, so
+   * the typing permission does not gate it; the supervisor's Away door does.
+   */
+  resize(
+    pageId: string,
+    handle: SessionsTerminalHandle,
+    cols: number,
+    rows: number,
+  ): void {
+    const page = this.page(pageId)
+    if (page.mirror.handle !== handle) throw new CompanionNoMirrorError()
+    page.mirror.resize(cols, rows)
   }
 
   /** The stream fell behind: the route ends the mirror rather than the page. */
@@ -319,6 +335,7 @@ export class CompanionSessionsService {
     }
   }
 
+  /** Rows and Away are what a page sees; a change to either is a new revision. */
   private refresh(page: CompanionPage, observed: SessionsObservationSnapshot): boolean {
     const actionable = this.ports.actionable.snapshot()
     const rows = companionRows({
@@ -327,13 +344,15 @@ export class CompanionSessionsService {
       working: actionable.working,
       resolveExternal: (handle) => this.resolveExternal(page, handle),
     })
-    const fingerprint = JSON.stringify(rows)
+    const { away } = actionable
+    const fingerprint = JSON.stringify({ away, rows })
     if (fingerprint === page.fingerprint) return false
     page.fingerprint = fingerprint
     page.snapshot = {
       version: SESSIONS_COMPANION_VERSION,
       revision: page.snapshot.revision + 1,
       demandGeneration: page.owner.generation,
+      away,
       rows,
     }
     return true
