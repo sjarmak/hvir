@@ -5,7 +5,7 @@ generated: "2026-09-18"
 # Staleness stamp, machine-readable so a refresh can test drift without a model.
 # `sources` are area-relative paths (relative to THIS file's directory). Recompute:
 #   node ~/.claude/skills/project-compass/compass-hash.mjs src/main/companion/COMPASS.md
-sources_hash: "sha256-16:b6f3582d23136dda"
+sources_hash: "sha256-16:12686548003356c1"
 sources:
   - companion-owner.ts
   - companion-sessions.ts
@@ -27,6 +27,7 @@ sources:
   - push-sink.ts
   - ../pty/pty-mirror-lease.ts
   - ../terminal/mirror-input-notice.ts
+  - ../terminal/mirror-geometry-notice.ts
   - ../../shared/sessions-companion.ts
   - ../../shared/companion-settings.ts
   - ../../shared/actionable-attention.ts
@@ -35,6 +36,8 @@ sources:
   - ../../renderer/companion/src/companion-terminal-pane.ts
   - ../../renderer/companion/src/ghostty-companion-pane.ts
   - ../../renderer/companion/src/companion-terminal-mount.ts
+  - ../../renderer/companion/src/companion-terminal-fit.ts
+  - ../../renderer/companion/src/companion-client.ts
   - ../../renderer/companion/src/companion-mirror-feed.ts
   - ../../renderer/companion/src/companion-mirror-history.ts
   - ../../renderer/companion/src/companion-input-arming.ts
@@ -52,8 +55,9 @@ sources:
 > Tribal-knowledge map for `src/main/companion/` and the phone page under
 > `src/renderer/companion/` that it serves. The *why* and the *gotchas*, not the *what*.
 > Canonical decisions: `docs/adr/ADR-049-companion-observer-and-away-push.md`,
-> `docs/adr/ADR-050-companion-live-terminal-mirror.md`, and
-> `docs/adr/ADR-051-terminal-notification-prompt-attention.md`. Operator view:
+> `docs/adr/ADR-050-companion-live-terminal-mirror.md`,
+> `docs/adr/ADR-051-terminal-notification-prompt-attention.md`, and
+> `docs/adr/ADR-052-companion-mirror-holds-pty-size-while-away.md`. Operator view:
 > `docs/runbooks/companion-operator.md`.
 
 ## Purpose
@@ -63,7 +67,9 @@ prohibition): a `node:http` server bound to `127.0.0.1` only, serving a second V
 phone-sized page and a small `/api` behind a paired bearer credential. The page reads the same
 Sessions projection the desktop reads, answers external sessions through the same transcript
 port, and, under ADR-050, mirrors one live hvir-owned terminal per page and carries the user's
-keystrokes back to it. Away-time Push rides the same actionable set that drives the OS badge.
+keystrokes back to it. Under ADR-052 that mirror also holds the PTY's size while the desktop is
+Away. Away-time Push rides the same actionable set that drives the OS badge, and the same
+`away()` opens the supervisor's resize door to a mirror.
 Nothing here is a second session authority: every lease is a companion demand owner the
 Sessions ports already understand, and every PTY byte enters and leaves through the PTY
 supervisor's doors.
@@ -81,12 +87,15 @@ supervisor's doors.
   `CompanionPageMirror`. Registers the single companion sink and routes each change to the
   page whose owner and generation it names.
 - **`companion-page-mirror.ts`**: the mirror lease owner. One per page, at most one lease at
-  a time, ends exactly once with a reason.
+  a time, ends exactly once with a reason. `write` and `resize` run through one `admit`:
+  every lease refusal ends the mirror as `exited`, except a resize's `desktop-focused`, which
+  surfaces as `CompanionResizeRefusedError` and leaves the mirror live.
 - **`companion-mirror-target.ts`**: pure eligibility and identity. Live lifecycle, connected
   host, live PTY, workspace neither closed nor missing: the desktop's Interact gate verbatim.
   Row handle is the PTY `id`; `livePty.handle` is the PTY `instanceId`; both are plain casts.
 - **`companion-api-routes.ts`**: `bindCompanionApi`. The SSE stream per page, the Sessions
-  verbs, `POST /api/sessions/:handle/input`, and the error-to-status translation.
+  verbs, `POST /api/sessions/:handle/input`, `POST /api/sessions/:handle/resize`, and the
+  error-to-status translation.
 - **`companion-server.ts`**, **`companion-router.ts`**, **`companion-http.ts`**: transport.
   32 sockets, a closed route table, 64 KiB bodies, `SseWriter` with a 25 s heartbeat and a
   `backlog` getter over `writableLength`.
@@ -111,11 +120,13 @@ supervisor's doors.
   by `companion-row-groups.ts` (groups in name order, rows in the desktop's order within);
   `companion-mirror-feed.ts` is the page's bounded copy of the mirror stream;
   `terminal-view.tsx` is the fixed column (`mirror-header.tsx`, the terminal area,
-  `mirror-controls.tsx`); `companion-terminal-mount.ts` builds the pane at the desktop
-  geometry and scales it to the host's width, with `companion-mirror-history.ts` drawing the
-  scrollback above the grid; `ghostty-companion-pane.ts` is the only file that
-  imports ghostty-web; `use-input-arming.ts` and `companion-input-arming.ts` are the arming
-  state.
+  `mirror-controls.tsx`); `companion-terminal-mount.ts` builds the pane at the geometry main
+  publishes and scales it to the host's width, with `companion-mirror-history.ts` drawing the
+  scrollback above the grid and `companion-terminal-fit.ts` deciding when to ask for the
+  phone's own grid (ADR-052); `companion-client.ts` is the fetch layer, and `resize` is the
+  one verb there that reads a 409 body instead of throwing; `ghostty-companion-pane.ts` is
+  the only file that imports ghostty-web and fixes the mirror font at 15 px;
+  `use-input-arming.ts` and `companion-input-arming.ts` are the arming state.
 
 ## How it connects
 
@@ -123,14 +134,22 @@ supervisor's doors.
   `actionable: attention.set`, `mirrors: ptySupervisor`, the asset reader over the built
   renderer root, and `onDiagnostic` to `console.warn('[companion]', ...)`. The same root
   installs `terminal/mirror-input-notice.ts`, which forwards `PtySupervisor.onMirrorInput`
-  to the owning renderer as `pty:mirror-input` through `RendererEventPublisher.toRenderer`.
+  to the owning renderer as `pty:mirror-input` through `RendererEventPublisher.toRenderer`,
+  and `terminal/mirror-geometry-notice.ts`, which forwards `onMirrorGeometry` (`held` with
+  the grid, or `reclaim`) as `pty:mirror-geometry` the same way. The supervisor itself is
+  built with `attention: attention.set`, so `ApplicationAttention` must exist before the
+  `PtySupervisor` in `index.ts`; that ordering is the whole reason the two blocks swapped.
 - **Downstream:** `sessions/sessions-observation-port.ts` (leases, snapshot, external
   resolution), `sessions/sessions-transcript-port.ts`, `sessions/sessions-companion-sinks.ts`
   (one sink per app), `attention/actionable-attention-set.ts`, and the PTY supervisor's
   `attachMirror` door, which bypasses the renderer owner gate and checks `(id, instanceId)`.
+  The lease's `resize` is a second door beside the renderer's, gated on the supervisor's
+  `PtyAwaySource` rather than on ownership.
 - **Wire contracts** live in `src/shared/sessions-companion.ts` (`CompanionEvent`,
-  `CompanionTerminalEvent`, `CompanionMirrorEndReason`, the exact-key guards, the 256K tail
-  and 4096-character input bounds) and `src/shared/companion-settings.ts`. Both are
+  `CompanionTerminalEvent`, `CompanionMirrorEndReason`, `CompanionSnapshot.away`,
+  `CompanionResizeRequest` and `CompanionResizeResponse`, the exact-key guards, the 256K
+  tail, the 4096-character input bound, and the 2..1000 resize dimension bounds) and
+  `src/shared/companion-settings.ts`. Both are
   ownership-guarded: no imports from `./ipc`, `electron`, main, or preload. The attention
   kinds and the prompt message bound come from `src/shared/actionable-attention.ts`:
   `ActionableKind = 'ready' | 'bell' | 'prompt'` and `MAX_ACTIONABLE_BODY_CHARS = 120`.
@@ -194,6 +213,42 @@ while disarmed. The pane gates the same way for bytes it makes itself: the wheel
 keys and SGR reports go through `emitUser`, which sends nothing while disarmed or while the
 pane is writing. A 403 disarms and names Settings; a 409 names the ended terminal.
 
+## The Away size rule (ADR-052)
+
+The phone owns the PTY's size only while `ActionableAttentionSet.away()` is true, the same
+predicate that admits Push, and the desktop takes it back on the first focus. Nothing is
+negotiated: a renderer `resize` is accepted whenever the owner asks and ends a mirror's hold
+without a `reclaim`; a mirror `resize` is refused `desktop-focused` whenever any hvir window is
+focused, and always when the supervisor has no `attention` source at all (a bare
+`new PtySupervisor()` in a test; `index.ts` and the smoke both pass one). The supervisor records `geometrySource` beside `geometry`, applies
+the host resize before it replaces either, and publishes the new geometry to every mirror as it
+does for a desktop resize, so the phone learns its own size through the ordinary `geometry`
+frame. When the set stops being Away, `reclaimMirrorGeometry` flips every live entry a mirror
+holds back to `renderer` and publishes one `reclaim` each; an entry whose lifetime already
+ended is skipped, because an exit listener can settle attention while the dead entry is still
+registered. Two phones on one PTY are not arbitrated: the most recent admitted resize wins.
+
+`POST /api/sessions/:handle/resize` takes exactly `{ page, cols, rows }` with both dimensions
+integers in 2..1000 (`isCompanionResizeRequest`; the supervisor clamps again with
+`terminalDimension`). The service checks only that the page's mirror is on `:handle`
+(`CompanionNoMirrorError`, 409 `{error}`); the typing permission is not consulted, because
+sizing is not input, so a read-only mirror still sizes the PTY while Away. The route answers
+200 `{outcome: 'accepted'}`, 409 `{outcome: 'refused', reason: 'desktop-focused'}` with the
+mirror still live, or 409 `{error}` when the lease refused for any other reason, in which case
+the mirror has already ended `exited` and the stream says so. The snapshot carries
+`away: boolean`, and a change to it alone is a new revision, so the phone can start asking the
+moment the desktop leaves.
+
+On the desktop, `pty:mirror-geometry` reaches the owning renderer's `TerminalEventRouter`, and
+`TerminalSurfaceAttachment.holdGeometry` hands it to the pane. `ownsGeometry()` is
+`canFocus() && held === undefined`, and it gates the runtime's debounced `pty:resize`, so a
+held pane's fit never fights the phone and a hidden tab's reclaim sends nothing until that tab
+is shown. `GhosttyTerminalPane.setHeldGeometry` suspends the fit, resizes the emulator to the
+held grid, and puts on `TerminalHeldGeometryMark`: the surface takes the theme background and
+a `.terminal-held-geometry-notice` reads `Companion holds the size · C×R`. Clearing it lets
+`revealAfterSettledFit` resume the fit, which re-asserts the pane's own size within one fit
+cycle.
+
 ## Gotchas & non-obvious constraints
 
 - **Mirror bytes are never in a message.** No `console.*`, diagnostic, thrown `Error`, push
@@ -214,17 +269,32 @@ pane is writing. A 403 disarms and names Settings; a 409 names the ended termina
   pins the exact CSP string in `src/renderer/companion/index.html`. Any reverse proxy in
   front of the listener must pass `application/wasm` through unchanged.
 - **The phone pane is `TerminalPane`-shaped by conformance, not by import.** The boundary
-  test forbids the page tree from importing `src/renderer/src/`, and the desktop adapter
-  cannot render at a fixed grid anyway (it always fits). `CompanionTerminalPane` keeps the
-  `mount`/`write`/`resize`/`dispose` names and the `events.onData` shape, and
+  test forbids the page tree from importing `src/renderer/src/`, and the desktop adapter fits
+  its own pane except while a Companion holds the size (ADR-052). `CompanionTerminalPane`
+  keeps the `mount`/`write`/`resize`/`dispose` names and the `events.onData` shape, and
   `test/companion-terminal-pane-seam.test.ts`, outside the page tree, assigns it to
   `Pick<TerminalPane, ...>` so `npm run typecheck` enforces the narrowing. ghostty-web is
   imported only by `ghostty-companion-pane.ts`; ghostty cannot run under happy-dom, so every
   page test fakes `createPane`.
-- **The phone never resizes.** The pane is built with `cols`/`rows` from `opened`, has no fit
-  controller, never subscribes `terminal.onResize`, and follows `geometry` frames. The one
-  view is a CSS `transform: scale(...)` on the surface at `fitWidthScale` =
-  `min(1, hostWidth / gridWidth)`, so the cell grid stays the desktop's. The scrollback
+- **The phone asks for a size; it never takes one.** The pane is built with `cols`/`rows`
+  from `opened`, never subscribes `terminal.onResize`, and changes size only through
+  `geometry` frames, whoever caused them. `CompanionFitController` (`companion-terminal-fit.ts`)
+  is the only thing that asks: it divides the host's content box by the pane's measured cell
+  (`cellSize()`, from ghostty's renderer, so nothing before the emulator has drawn) and posts
+  the grid only while the mirror is live and the snapshot says Away, once when both hold and
+  once more after a 75 ms settle (`FIT_SETTLE_MS`) on every `ResizeObserver` change, which is
+  how rotation and the soft keyboard each produce one request. A fresh Away forgets and asks
+  again even for a grid asked before, and `applied` forgets the request when a geometry frame
+  differs from it, so the next fit asks rather than assuming the PTY still has the phone's
+  grid. One
+  request is in flight at a time and a later grid waits behind it, and only the answer to the
+  latest grid reaches the view: a `refused` outcome shows
+  `The desktop is focused, so it keeps the terminal size.` as a status line, an accepted one
+  or a failed verb clears it. The verb never touches the notice a person's own action shows.
+  The one view is a CSS `transform: scale(...)` on the surface at `fitWidthScale` =
+  `min(1, hostWidth / gridWidth)`, so the cell grid stays whatever main published: the
+  desktop's wide grid shrinks to fit, and the phone's own grid draws at scale 1 (or a hair
+  under, when a cell advance rounds past the host). The scrollback
   (`bufferLines` minus the screen's rows, `historyText`) is drawn in a `<pre>` above the grid
   inside the same surface, in the pane's `font()` at the grid's row height, rebuilt at most
   every 80 ms while output arrives (`MirrorHistory`), and the host scrolls the two vertically

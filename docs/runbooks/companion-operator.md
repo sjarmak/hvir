@@ -7,7 +7,9 @@ message from the phone. While every hvir window is unfocused (Away), hvir also p
 per session that enters the actionable set to a notification sink you declare. For a terminal
 hvir launched itself, the page mirrors the desktop's screen and, once you allow it in Settings
 and arm it on the page, carries your keystrokes back to that terminal
-([ADR-050](../adr/ADR-050-companion-live-terminal-mirror.md)).
+([ADR-050](../adr/ADR-050-companion-live-terminal-mirror.md)). While every hvir window is
+unfocused, the mirror also sizes that terminal to the phone
+([ADR-052](../adr/ADR-052-companion-mirror-holds-pty-size-while-away.md)).
 
 hvir owns the listener, the pairing credential, and the outbound post. Everything that makes
 the port reachable from a phone, and everything that turns a post into a notification on the
@@ -24,8 +26,9 @@ to iOS.
 - Send Push while a desktop window is focused, or for a row whose attention is stale.
 - Treat network reachability as authentication. A paired credential is required inside the
   tailnet too, because every local process can reach loopback.
-- Resize a terminal from the phone. The phone renders the desktop's columns and rows and
-  scales them to fit; only the desktop pane changes the grid.
+- Resize a terminal from the phone while a desktop window is focused. The phone asks for its
+  own grid only while every hvir window is unfocused (Away, the same signal that gates Push),
+  and the desktop takes the size back the moment one of its windows gains focus (section 7).
 - Clear Ready or Bell from a phone action. Viewing a mirror, typing into it, and answering an
   external session's pending interaction from the phone all leave those where they are;
   focusing the terminal on the desktop is still the rule that clears them. The one exception
@@ -221,15 +224,34 @@ What the phone shows:
   partially overwritten line can look wrong; a full-screen program such as Claude Code
   redraws on its next output, and a shell prompt is right after its next Enter. The Claude
   Code permission prompt that is on the desktop's screen is on the phone's.
-- The desktop's geometry. The grid is exactly the desktop terminal's columns and rows; only a
-  CSS transform scales it, and the phone never resizes the PTY. Every resize on the desktop
-  reaches the phone as a geometry frame and the emulator there follows it.
-- The whole grid as the desktop draws it, scaled into the phone's width, so a 200-column
-  desktop terminal reads small and the remedy is a narrower desktop pane. The scrollback is
-  drawn above the grid at the same scale and font, as text without colours, so the area is
-  one column of history and live screen. The grid sits at the bottom of the area just above
-  the controls, with any spare room above the history as in a terminal, and it stays there as
-  output arrives unless you have scrolled up.
+- The grid hvir publishes, in a fixed 15 px font. While a desktop window is focused that is
+  the desktop terminal's columns and rows, and a CSS transform scales it into the phone's
+  width, so a 200-column desktop terminal reads small and the remedy at the desk is a narrower
+  desktop pane. Every resize on the desktop reaches the phone as a geometry frame and the
+  emulator there follows it.
+- The phone's own grid while the desktop is Away. With every hvir window unfocused, the phone
+  measures its terminal area, asks hvir to size the terminal to the columns and rows that area
+  holds, and draws that grid unscaled, edge to edge. It asks once when the mirror is live and
+  the desktop is Away, and once more after the area settles following a rotation or the soft
+  keyboard appearing or leaving; one request is in flight at a time and a later grid waits
+  behind it, so the terminal ends at the latest one. Typing permission does not gate this: a
+  mirror that cannot type still sizes the terminal while Away. When a desktop window gains
+  focus the desktop reclaims, its geometry frame arrives like any other, and the phone returns
+  to the scaled grid.
+- Why the rule exists. A full-screen program (Claude Code started with `"tui": "fullscreen"`,
+  vim, less) draws on the alternate screen, where the emulator keeps no scrollback, so its
+  mirror has nothing above the grid and a scaled desktop grid is a short strip at the bottom
+  with black above it. Sized to the phone, the program lays out for the phone and fills it. A
+  shell's mirror keeps its history column at either size.
+- The status line `The desktop is focused, so it keeps the terminal size.` under the header
+  when the phone asked and a focused desktop refused. The phone asks only while its snapshot
+  says Away, so the line appears when a desktop window regained focus before the request
+  landed. The mirror stays live at the desktop's grid, and the line goes away when a later
+  request is accepted.
+- The scrollback drawn above the grid at the same scale and font, as text without colours, so
+  the area is one column of history and live screen. The grid sits at the bottom of the area
+  just above the controls, with any spare room above the history as in a terminal, and it
+  stays there as output arrives unless you have scrolled up.
 - Scrollback under your finger. The area scrolls as any page does, up through the history
   and back down to the live screen. Wheel input over the grid itself reaches the emulator: on
   the normal screen it moves the emulator's own viewport; in a full-screen program (Claude
@@ -239,6 +261,14 @@ What the phone shows:
 - A **Transcript** button in the header on rows that also take answers (an external session
   attached inside an hvir terminal), switching between the mirror and the ADR-049 transcript
   view.
+
+What the desktop shows while a phone holds the size: the pane draws the grid at the phone's
+columns and rows in its top-left corner, leaves the rest of the pane blank, and shows one line
+in its bottom-right corner, `Companion holds the size · C×R`. The pane does not fit, scale, or
+crop that grid. Focus any hvir window and the desktop reclaims: the visible pane refits to its
+own size within one fit cycle and the phone returns to the scaled view as that geometry reaches
+it. A pane on a hidden tab refits when the tab is shown. Two phones mirroring one terminal both hold
+it, and the most recent resize wins.
 
 The mirror survives a reload of the desktop window, because it is bound to the PTY instance
 and not to the renderer document. It ends, with one sentence on the page, when the terminal
@@ -385,7 +415,8 @@ shows as a prompt without its message until the harness notifies again.
 | A Claude Code permission prompt shows as Ready, or not at all, never as a prompt | The notification channel is not set: put `"preferredNotifChannel": "iterm2"` in `~/.claude/settings.json` or pass `--settings '{"preferredNotifChannel":"iterm2"}'`. If it is set and still nothing arrives, the session is in auto permission mode and the command never prompted; start Claude Code with `--permission-mode default`. Wait the few seconds Claude Code holds before notifying. |
 | A prompt badge shows but no Push arrived for it | The terminal was already in the actionable set as Ready when the prompt arrived; Push fires only when a session enters the set. Or a desktop window was focused. |
 | Wheel input over a full-screen program (vim, less, Claude Code) moves nothing | Page keys are terminal input and pass the typing gate; choose **Arm typing**, then scroll over the grid. |
-| The mirror is a thin strip of tiny text | The desktop grid is wide; the phone scales it to its width. Narrow the desktop pane. |
+| The mirror is a thin strip at the bottom with black above it | The phone is showing the desktop's grid scaled to its width, and the program draws on the alternate screen, so no history fills the space. A desktop window is focused, or the mirror is not live. With a focused desktop the phone does not ask and shows no line; if it asked just as a desktop window regained focus, the line under the header reads `The desktop is focused, so it keeps the terminal size.` A mirror that ended shows its one sentence instead, so select the row again. Leave the desk, or unfocus every hvir window (switch the desktop to another app), and the phone asks for its own grid. At the desk the remedy is still a narrower desktop pane. |
+| The desktop pane shows a small grid in its top-left corner and `Companion holds the size · C×R` | A phone holds the terminal's size because every hvir window was unfocused when its mirror asked. Focus any hvir window and the pane refits to its own size; the phone returns to the scaled view as that geometry reaches it. A pane on a hidden tab refits when the tab is shown. |
 | The history above the grid shows a frame of a full-screen program twice, or a stale line | The history is the emulator's scrollback as it stands; a program that redraws by moving the cursor leaves its earlier frames in the scrollback, as on the desktop. The grid below is the screen as drawn. |
 
 ## Developer note
