@@ -69,6 +69,9 @@ describe('CompanionTouchScroll', () => {
     expect(gestures.map((gesture) => gesture.deltaY)).toEqual([-40, 30])
     expect(gestures[0]?.deltaMode).toBe(0)
     expect(gestures[0]).toMatchObject({ shiftKey: false, altKey: false, ctrlKey: false })
+    // Continuous distance, not a notch of intent: the policy reads this to
+    // charge a page key half a screen of travel rather than three lines.
+    expect(gestures.map((gesture) => gesture.gesture)).toEqual(['drag', 'drag'])
     touchScroll.dispose()
   })
 

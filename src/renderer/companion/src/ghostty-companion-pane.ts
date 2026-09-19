@@ -41,6 +41,7 @@ import ghosttyWasmUrl from 'ghostty-web/ghostty-vt.wasm?url'
 import {
   TerminalWheelController,
   isTerminalPageKey,
+  terminalWheelNotch,
   type TerminalWheelEvent,
 } from '../../../shared'
 import type {
@@ -126,7 +127,9 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
       }),
     )
     this.terminal.open(container)
-    this.terminal.attachCustomWheelEventHandler((event) => this.navigate(event).handled)
+    this.terminal.attachCustomWheelEventHandler(
+      (event) => this.navigate(terminalWheelNotch(event)).handled,
+    )
   }
 
   write(data: string): void {

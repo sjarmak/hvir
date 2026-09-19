@@ -2,7 +2,9 @@
  * A finger over the mirror's grid, adapted into the event shape the shared
  * wheel policy already decides (ADR-053). The page grows no second policy for
  * touch: one gesture is described once here, and what it means is settled
- * where a wheel notch's meaning is settled.
+ * where a wheel notch's meaning is settled. What it carries that a notch does
+ * not is that it is a drag, which the policy reads to decide how much travel
+ * one step costs rather than what the step is.
  *
  * Two facts about the surface shape the adapter. Touch deltas arrive in
  * on-screen pixels while the emulator's cell metrics are its own unscaled
@@ -76,6 +78,10 @@ export class CompanionTouchScroll {
     const scale = this.options.scale()
     const bounds = this.options.element.getBoundingClientRect()
     this.options.sink({
+      // A finger is continuous distance, not a notch of intent, which is what
+      // decides the travel one page key costs (ADR-053's one policy, ADR-055's
+      // page keys).
+      gesture: 'drag',
       deltaY: screenDelta / scale,
       deltaMode: 0,
       offsetX: (touch.clientX - bounds.left) / scale,

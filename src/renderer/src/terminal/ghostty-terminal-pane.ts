@@ -14,6 +14,7 @@ import ghosttyWasmUrl from 'ghostty-web/ghostty-vt.wasm?url'
 
 import {
   TerminalWheelController,
+  terminalWheelNotch,
   type ComposerSubmitMode,
   type Disposer,
   type HarnessModifiedKeyProtocol,
@@ -636,7 +637,7 @@ class GhosttyTerminalPane implements TerminalPane {
   private handleWheel(event: WheelEvent): boolean {
     const term = this.terminal.wasmTerm
     const renderer = this.terminal.renderer
-    const result = this.wheel.handle(event, {
+    const result = this.wheel.handle(terminalWheelNotch(event), {
       alternateScreen: term?.isAlternateScreen() ?? false,
       mouseTracking: term?.hasMouseTracking() ?? false,
       sgrMouse: term?.getMode(1006) ?? false,

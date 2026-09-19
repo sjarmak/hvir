@@ -259,7 +259,9 @@ What the phone shows:
   bottom of the screen for earlier output, toward the top to return to the live screen, or one
   tap on the way-back button described below for the whole distance at once. A
   wheel notch does the same thing, and both are decided by the one policy, so they never
-  disagree. In a full-screen program (Claude Code, vim, less) the emulator keeps no scrollback
+  disagree. How far one step travels does differ, because a notch is a discrete step of intent
+  and a finger is distance: a page key costs a drag half the rows on screen, so dragging half
+  the terminal moves it by a screen. In a full-screen program (Claude Code, vim, less) the emulator keeps no scrollback
   to move, so the gesture sends Page Up and Page Down to the program instead, which is how the
   desktop pane scrolls the same session. Those two keys are not typing: they need the Settings
   permission (section 8) but not the per-mirror arm, so reading back works on a mirror you

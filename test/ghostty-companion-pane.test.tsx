@@ -287,6 +287,7 @@ function wheel(fake: FakeTerminalState, deltaY: number): boolean {
 /** One move of a finger over the grid, already in the emulator's own pixels. */
 function drag(deltaY: number): TerminalWheelEvent {
   return {
+    gesture: 'drag',
     deltaY,
     deltaMode: 0,
     offsetX: 0,
@@ -460,9 +461,11 @@ describe('ghostty companion pane', () => {
     const paged: string[] = []
     pane.events.onData((data) => typed.push(data))
     pane.events.onNavigation((data) => paged.push(data))
-    // The program answers the gesture in its own terms; this surface moved no
-    // pixel, so the whole travel is the page's to scroll a too-tall grid with.
-    expect(pane.scroll(drag(-96))).toBe(-96)
+    // Half the 24 rows at 16px is what one page costs a finger, so this is
+    // exactly one. The program answers the gesture in its own terms and this
+    // surface moved no pixel, so the whole travel is the page's to scroll a
+    // too-tall grid with.
+    expect(pane.scroll(drag(-192))).toBe(-192)
     expect(paged).toEqual([PAGE_UP])
     expect(typed).toEqual([])
     expect(fake.scrolls).toEqual([])
@@ -480,7 +483,7 @@ describe('ghostty companion pane', () => {
     pane.events.onNavigation((data) => paged.push(data))
     // The arm stops an unattended phone typing; a finger on the grid is not
     // that, so reading back leaves a mirror nobody armed.
-    expect(pane.scroll(drag(-96))).toBe(-96)
+    expect(pane.scroll(drag(-192))).toBe(-192)
     expect(paged).toEqual([PAGE_UP])
     expect(typed).toEqual([])
     expect(fake.scrolls).toEqual([])
@@ -591,6 +594,29 @@ describe('ghostty companion pane', () => {
     pane.scroll(drag(-64))
     expect(typed).toEqual(['\x1b[<64;1;1M'])
     expect(paged).toEqual([])
+  })
+
+  it('a drag pays half the screen for a page and a wheel notch still pays three lines', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    fake.alternateScreen = true
+    const paged: string[] = []
+    pane.events.onNavigation((data) => paged.push(data))
+
+    // Half of 24 rows at 16px: a page short of that sends nothing and banks it.
+    pane.scroll(drag(-176))
+    expect(paged).toEqual([])
+    pane.scroll(drag(-16))
+    expect(paged).toEqual([PAGE_UP])
+
+    // The same distance as a notch is worth four pages, because a notch is
+    // three lines of intent rather than a distance across the screen. One goes
+    // now and the rest is banked, which is the rate limit and not a loss.
+    wheel(fake, -192)
+    expect(paged).toEqual([PAGE_UP, PAGE_UP])
+    wheel(fake, -1)
+    expect(paged).toEqual([PAGE_UP, PAGE_UP, PAGE_UP])
   })
 
   it('a viewport subscriber is told where the viewport is, not what the event carries', async () => {

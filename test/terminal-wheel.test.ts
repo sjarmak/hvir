@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   TerminalWheelController,
+  terminalWheelNotch,
   type TerminalWheelEvent,
   type TerminalWheelState,
 } from '../src/shared/terminal-wheel'
@@ -21,6 +22,7 @@ function wheel(
   overrides: Partial<TerminalWheelEvent> = {},
 ): TerminalWheelEvent {
   return {
+    gesture: 'notch',
     deltaY,
     deltaMode: 1,
     offsetX: 0,
@@ -34,6 +36,14 @@ function wheel(
 
 function state(overrides: Partial<TerminalWheelState> = {}): TerminalWheelState {
   return { ...baseState, ...overrides }
+}
+
+/** One move of a finger, in the surface's own pixels; always continuous distance. */
+function drag(
+  deltaY: number,
+  overrides: Partial<TerminalWheelEvent> = {},
+): TerminalWheelEvent {
+  return wheel(deltaY, { gesture: 'drag', deltaMode: 0, ...overrides })
 }
 
 describe('terminal wheel behavior', () => {
@@ -78,6 +88,86 @@ describe('terminal wheel behavior', () => {
       handled: true,
       data: ['\x1b[5~'],
     })
+  })
+
+  it('builds a notch by reading the fields out, since a browser event holds none of its own', () => {
+    // A WheelEvent keeps deltaY and the rest as accessors on its prototype, so
+    // a spread of one copies nothing. This is the shape that trap has.
+    const browserEvent: Omit<TerminalWheelEvent, 'gesture'> = Object.create({
+      deltaY: 42,
+      deltaMode: 1,
+      offsetX: 7,
+      offsetY: 9,
+      shiftKey: true,
+      altKey: false,
+      ctrlKey: true,
+    }) as Omit<TerminalWheelEvent, 'gesture'>
+    expect(Object.keys(browserEvent)).toEqual([])
+    expect(terminalWheelNotch(browserEvent)).toEqual({
+      gesture: 'notch',
+      deltaY: 42,
+      deltaMode: 1,
+      offsetX: 7,
+      offsetY: 9,
+      shiftKey: true,
+      altKey: false,
+      ctrlKey: true,
+    })
+  })
+
+  it('charges a drag half the screen for a page and a notch three lines', () => {
+    const alternate = state({ alternateScreen: true })
+    // 24 rows of 10px: a notch pays 30px for a page, a finger pays 120px, so
+    // the same travel that is one page under a finger is four under a wheel.
+    const dragging = new TerminalWheelController()
+    expect(dragging.handle(drag(119), alternate).data).toEqual([])
+    expect(dragging.handle(drag(1), alternate).data).toEqual(['\x1b[6~'])
+
+    const notching = new TerminalWheelController()
+    expect(notching.handle(wheel(30, { deltaMode: 0 }), alternate).data).toEqual([
+      '\x1b[6~',
+    ])
+  })
+
+  it('a drag pays a notch for an SGR report, which stands for a notch and not a screen', () => {
+    const controller = new TerminalWheelController()
+    const mouse = state({ mouseTracking: true, sgrMouse: true })
+    // The exempt-from-the-arm page key is the screen-sized step; a report is
+    // someone else's notch, so a finger buys one with three lines as ever.
+    expect(controller.handle(drag(30), mouse).data).toHaveLength(1)
+  })
+
+  it('a taller screen costs a drag more travel per page, and a tiny one never less than a notch', () => {
+    const tall = new TerminalWheelController()
+    expect(
+      tall.handle(drag(120), state({ alternateScreen: true, rows: 48 })).data,
+    ).toEqual([])
+    expect(
+      tall.handle(drag(120), state({ alternateScreen: true, rows: 48 })).data,
+    ).toEqual(['\x1b[6~'])
+
+    const tiny = new TerminalWheelController()
+    expect(tiny.handle(drag(30), state({ alternateScreen: true, rows: 4 })).data).toEqual(
+      ['\x1b[6~'],
+    )
+  })
+
+  it('banks the steps one event may not carry instead of dropping them', () => {
+    const controller = new TerminalWheelController()
+    const alternate = state({ alternateScreen: true })
+    // Four pages of travel in one event. The route delivers one per event, and
+    // the next event finds the rest waiting rather than gone, so how far a
+    // gesture travels follows its distance and not the browser's batching.
+    expect(controller.handle(drag(480), alternate).data).toEqual(['\x1b[6~'])
+    expect(controller.handle(drag(1), alternate).data).toEqual(['\x1b[6~'])
+  })
+
+  it('banks one event\u2019s worth and no more, so an absurd delta is rate limited', () => {
+    const controller = new TerminalWheelController()
+    const alternate = state({ alternateScreen: true })
+    expect(controller.handle(drag(120000), alternate).data).toEqual(['\x1b[6~'])
+    expect(controller.handle(drag(1), alternate).data).toEqual(['\x1b[6~'])
+    expect(controller.handle(drag(1), alternate).data).toEqual([])
   })
 
   it('drops partial momentum when wheel direction reverses', () => {

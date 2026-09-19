@@ -3,6 +3,15 @@
  * both decide it: the viewport owns a normal-screen gesture, an alternate
  * screen program receives page keys, and a program tracking the mouse
  * receives SGR reports. Pure: no DOM, no emulator.
+ *
+ * What a gesture means is decided once here for every surface. What one step of
+ * it costs in travel is not the same question, because the steps are not the
+ * same size: a viewport step is a row, an SGR report is a notch of someone
+ * else's scrolling, and a page key is the whole screen. A notch is a discrete
+ * unit of intent and is read in lines whatever it drives; a drag is continuous
+ * distance, so a page costs it half the rows it moves and dragging half a
+ * screen moves a screen. The gesture says which it is: `deltaMode` cannot, since
+ * Chrome reports pixel deltas for plain mouse wheels too.
  */
 const DOM_DELTA_PIXEL = 0
 const DOM_DELTA_LINE = 1
@@ -10,6 +19,9 @@ const DOM_DELTA_PAGE = 2
 const LINES_PER_WHEEL_STEP = 3
 const FALLBACK_CELL_HEIGHT = 16
 const MAX_SGR_REPORTS_PER_EVENT = 5
+
+/** How the gesture was produced, which is what one step of travel costs. */
+export type TerminalGesture = 'notch' | 'drag'
 
 const PAGE_UP = '\x1b[5~'
 const PAGE_DOWN = '\x1b[6~'
@@ -25,6 +37,7 @@ export function isTerminalPageKey(data: string): boolean {
 }
 
 export interface TerminalWheelEvent {
+  readonly gesture: TerminalGesture
   readonly deltaY: number
   readonly deltaMode: number
   readonly offsetX: number
@@ -32,6 +45,26 @@ export interface TerminalWheelEvent {
   readonly shiftKey: boolean
   readonly altKey: boolean
   readonly ctrlKey: boolean
+}
+
+/**
+ * A browser wheel event as one notch of this policy's own shape. The fields are
+ * read out one by one rather than spread: they are prototype accessors on
+ * `WheelEvent`, so a spread copies none of them.
+ */
+export function terminalWheelNotch(
+  event: Omit<TerminalWheelEvent, 'gesture'>,
+): TerminalWheelEvent {
+  return {
+    gesture: 'notch',
+    deltaY: event.deltaY,
+    deltaMode: event.deltaMode,
+    offsetX: event.offsetX,
+    offsetY: event.offsetY,
+    shiftKey: event.shiftKey,
+    altKey: event.altKey,
+    ctrlKey: event.ctrlKey,
+  }
 }
 
 export interface TerminalWheelState {
@@ -77,7 +110,7 @@ export class TerminalWheelController {
         return consumed
       }
 
-      const steps = this.consumeSteps(event, state.cellHeight, 'sgr')
+      const steps = this.consumeSteps(event, state, 'sgr')
       if (steps === 0) return consumed
       const { col, row } = wheelCell(event, state)
       const modifier =
@@ -91,7 +124,7 @@ export class TerminalWheelController {
     }
 
     if (state.alternateScreen) {
-      const steps = this.consumeSteps(event, state.cellHeight, 'page')
+      const steps = this.consumeSteps(event, state, 'page')
       if (steps === 0) return consumed
       return { handled: true, data: [steps > 0 ? PAGE_DOWN : PAGE_UP] }
     }
@@ -104,7 +137,7 @@ export class TerminalWheelController {
 
   private consumeSteps(
     event: TerminalWheelEvent,
-    cellHeight: number,
+    state: TerminalWheelState,
     route: WheelRoute,
   ): number {
     if (this.route !== route) {
@@ -112,7 +145,11 @@ export class TerminalWheelController {
       this.route = route
     }
 
-    const delta = normalizedWheelDelta(event, cellHeight)
+    const delta = normalizedWheelDelta(
+      event,
+      state.cellHeight,
+      stepCells(event, state, route),
+    )
     if (this.remainder !== 0 && Math.sign(this.remainder) !== Math.sign(delta)) {
       this.remainder = 0
     }
@@ -124,12 +161,16 @@ export class TerminalWheelController {
       return 0
     }
 
-    // Retain only the fractional distance. Very large synthetic or accelerated
-    // events are bounded here rather than leaking their overflow into later
-    // browser events.
-    this.remainder = total - wholeSteps
     const limit = route === 'page' ? 1 : MAX_SGR_REPORTS_PER_EVENT
-    return Math.max(-limit, Math.min(wholeSteps, limit))
+    const steps = clampSteps(wholeSteps, limit)
+    // Bank the steps this event may not carry, along with the sub-step
+    // fraction, so how far a gesture travels follows the distance it covered
+    // rather than how the browser batched it into events. The bank is itself
+    // one event's worth: a source producing faster than the policy will deliver
+    // is rate limited rather than queued, which is what bounds a very large
+    // synthetic or accelerated delta.
+    this.remainder = clampSteps(wholeSteps - steps, limit) + (total - wholeSteps)
+    return steps
   }
 
   private reset(): void {
@@ -138,17 +179,41 @@ export class TerminalWheelController {
   }
 }
 
-function normalizedWheelDelta(event: TerminalWheelEvent, cellHeight: number): number {
+function clampSteps(steps: number, limit: number): number {
+  return Math.max(-limit, Math.min(steps, limit))
+}
+
+/**
+ * Cells of travel one step costs. A notch is three lines of intent whatever it
+ * drives, and an SGR report stands for a notch rather than for a screen, so it
+ * is three lines under a finger too. A page key is the whole screen, so a drag
+ * pays half the rows it moves for one and never less than a notch would.
+ */
+function stepCells(
+  event: TerminalWheelEvent,
+  state: TerminalWheelState,
+  route: WheelRoute,
+): number {
+  if (event.gesture === 'notch' || route === 'sgr') return LINES_PER_WHEEL_STEP
+  const rows = Number.isFinite(state.rows) ? Math.trunc(state.rows) : 0
+  return Math.max(LINES_PER_WHEEL_STEP, Math.floor(rows / 2))
+}
+
+function normalizedWheelDelta(
+  event: TerminalWheelEvent,
+  cellHeight: number,
+  stepCells: number,
+): number {
   switch (event.deltaMode) {
     case DOM_DELTA_PAGE:
       return event.deltaY
     case DOM_DELTA_LINE:
-      return event.deltaY / LINES_PER_WHEEL_STEP
+      return event.deltaY / stepCells
     case DOM_DELTA_PIXEL:
     default: {
       const rowHeight =
         Number.isFinite(cellHeight) && cellHeight > 0 ? cellHeight : FALLBACK_CELL_HEIGHT
-      return event.deltaY / (rowHeight * LINES_PER_WHEEL_STEP)
+      return event.deltaY / (rowHeight * stepCells)
     }
   }
 }

@@ -5,7 +5,7 @@ generated: "2026-09-19"
 # Staleness stamp, machine-readable so a refresh can test drift without a model.
 # `sources` are area-relative paths (relative to THIS file's directory). Recompute:
 #   node ~/.claude/skills/project-compass/compass-hash.mjs src/main/companion/COMPASS.md
-sources_hash: "sha256-16:2fc48a803658f655"
+sources_hash: "sha256-16:0f14606b981461e4"
 sources:
   - companion-owner.ts
   - companion-sessions.ts
@@ -360,6 +360,22 @@ cycle.
   pages a program that owns its history, because those bytes are not held by the arm. A reflow
   moves no viewport, so the pane re-anchors to `getScrollbackLength()` after a resize that
   shortens it.
+- **What a gesture means is shared; what one step of it costs is not.** The steps are not the
+  same size, so charging them all three lines is what made phone read-back jumpy: a viewport
+  step is a row, but a page key is the whole screen, and at a scaled desktop grid three cells
+  of finger came to roughly twenty on-screen pixels per PageUp, about thirty pages to a swipe.
+  `stepCells` charges a drag half the rows it moves for a page and never less than a notch
+  would, so dragging half a screen moves a screen; a notch keeps its three lines whatever it
+  drives, and an SGR report stands for someone else's notch rather than for a screen, so it
+  keeps them under a finger too. Which one this is travels on the event as `gesture`, set by
+  `companion-touch-scroll.ts` for a finger and by `terminalWheelNotch` for everything else.
+  Do not try to infer it from `deltaMode`: Chrome reports pixel deltas for plain mouse wheels
+  on macOS, so it separates nothing. `terminalWheelNotch` reads the browser event's fields out
+  one at a time because they are prototype accessors on `WheelEvent` and a spread copies none
+  of them. `consumeSteps` banks the steps a clamped event could not carry, bounded by one
+  event's worth, so distance decides how far a gesture travels rather than how the browser
+  batched `touchmove`; it used to drop that overflow, which made the same drag land
+  differently depending on batching.
 - **One control returns the strip to the live edge, and position is all it knows.**
   `returnToLive()` on the pane is `scrollToBottom()`, and the position it answers about
   arrives through `events.onViewport` alone, which is the emulator's own `onScroll` read for
