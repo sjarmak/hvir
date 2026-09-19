@@ -186,7 +186,9 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     const filenameSearch = createFilenameSearchCoordinator(git)
     cleanup.defer('filename search', () => filenameSearch.dispose())
     const externalMoveSmoke = createExternalMoveSmokeControl()
-    const supervisor = new PtySupervisor()
+    const smokeAttention = createSmokeAttention()
+    cleanup.defer('attention', () => smokeAttention.dispose())
+    const supervisor = new PtySupervisor({ attention: smokeAttention.set })
     smokeSupervisor = supervisor
     cleanup.defer('supervised terminals', () => supervisor.disposeAllAndWait())
     const smokeCloseableRoot = joinHostPath(smokeRoot, '.hvir-smoke-closed-project')
@@ -303,8 +305,6 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     const smokeGasCity = new GasCityService({
       getProject: () => ({ host, root: smokeRoot }),
     })
-    const smokeAttention = createSmokeAttention()
-    cleanup.defer('attention', () => smokeAttention.dispose())
     const smokeCompanion = await installSmokeCompanion({
       host,
       rendererRoot,

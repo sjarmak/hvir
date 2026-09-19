@@ -2,19 +2,30 @@ import { describe, expect, it, vi, type Mock } from 'vitest'
 
 import { PTY_OUTPUT_TAIL_CHARS } from '../src/main/pty/pty-output-tail'
 import { PtyMirrorRefusedError } from '../src/main/pty/pty-mirror-lease'
-import type { PtyMirrorHandlers } from '../src/main/pty/pty-supervisor'
+import type {
+  PtyMirrorGeometryEvent,
+  PtyMirrorHandlers,
+} from '../src/main/pty/pty-supervisor'
 import {
   createPtySupervisorFixture,
+  fakePtyAwaySource,
   plainShellProvider,
   PTY_FIXTURE_OWNER_ID,
   TestPtyProcess,
+  type FakePtyAwaySource,
 } from './fixtures/pty-supervisor-fixture'
 
 const OWNER_ID = PTY_FIXTURE_OWNER_ID
 const SESSION_ID = 'mirrored-session'
 
-async function fixture(overrides: { cols?: number; rows?: number } = {}) {
-  const ptyFixture = createPtySupervisorFixture({ provider: plainShellProvider })
+async function fixture(
+  overrides: { cols?: number; rows?: number } = {},
+  attention?: FakePtyAwaySource,
+) {
+  const ptyFixture = createPtySupervisorFixture({
+    provider: plainShellProvider,
+    supervisor: attention === undefined ? {} : { attention },
+  })
   const info = await ptyFixture.spawn({
     provider: plainShellProvider,
     ownerId: OWNER_ID,
@@ -23,6 +34,21 @@ async function fixture(overrides: { cols?: number; rows?: number } = {}) {
     ...overrides,
   })
   return { info, pty: ptyFixture.pty, supervisor: ptyFixture.supervisor, ptyFixture }
+}
+
+/** A mirrored PTY whose desktop is Away, with a mirror lease and a geometry-event log. */
+async function awayFixture(overrides: { cols?: number; rows?: number } = {}) {
+  const attention = fakePtyAwaySource(true)
+  const world = await fixture(overrides, attention)
+  const mirror = handlers()
+  const lease = world.supervisor.attachMirror(
+    world.info.id,
+    world.info.instanceId,
+    mirror,
+  )
+  const events: PtyMirrorGeometryEvent[] = []
+  world.supervisor.onMirrorGeometry((event) => events.push(event))
+  return { ...world, attention, mirror, lease, events }
 }
 
 interface MockedMirrorHandlers extends PtyMirrorHandlers {
@@ -233,12 +259,12 @@ describe('PtySupervisor mirror lease', () => {
     expect(pty.write).not.toHaveBeenCalled()
   })
 
-  it('geometry defaults to 80x24 when spawn carries none and follows renderer resize; the lease has no resize', async () => {
+  it('geometry defaults to 80x24 when spawn carries none and follows renderer resize; the lease resizes but never kills', async () => {
     const { info, pty, supervisor } = await fixture()
     const mirror = handlers()
     const lease = supervisor.attachMirror(info.id, info.instanceId, mirror)
     expect(lease.geometry).toEqual({ cols: 80, rows: 24 })
-    expect('resize' in lease).toBe(false)
+    expect(typeof lease.resize).toBe('function')
     expect('kill' in lease).toBe(false)
 
     supervisor.resize(info.id, OWNER_ID, 120, 40, 4)
@@ -363,5 +389,224 @@ describe('PtySupervisor mirror lease', () => {
     expect(again).not.toHaveBeenCalled()
     const lease = supervisor.attachMirror(info.id, info.instanceId, handlers())
     expect(lease.tail).toBe('x'.repeat(PTY_OUTPUT_TAIL_CHARS))
+  })
+})
+
+describe('PtySupervisor mirror lease holds the PTY size while the desktop is Away (ADR-052)', () => {
+  it('a mirror resize while Away clamps, applies, publishes to every mirror and reports the hold', async () => {
+    const { info, pty, supervisor, mirror, lease, events } = await awayFixture()
+    const other = handlers()
+    supervisor.attachMirror(info.id, info.instanceId, other)
+
+    lease.resize(52.7, 1)
+    expect(pty.resize).toHaveBeenCalledExactlyOnceWith(52, 2)
+    expect(mirror.onGeometry).toHaveBeenCalledExactlyOnceWith({ cols: 52, rows: 2 })
+    expect(other.onGeometry).toHaveBeenCalledExactlyOnceWith({ cols: 52, rows: 2 })
+    expect(
+      supervisor.attachMirror(info.id, info.instanceId, handlers()).geometry,
+    ).toEqual({
+      cols: 52,
+      rows: 2,
+    })
+    expect(events).toEqual([
+      {
+        kind: 'held',
+        id: info.id,
+        ownerId: OWNER_ID,
+        ownerGeneration: 4,
+        geometry: { cols: 52, rows: 2 },
+      },
+    ])
+  })
+
+  it('the most recent mirror resize wins across two mirrors', async () => {
+    const { info, pty, supervisor, lease, events } = await awayFixture()
+    const second = supervisor.attachMirror(info.id, info.instanceId, handlers())
+    lease.resize(50, 40)
+    second.resize(60, 30)
+    expect(pty.resize.mock.calls).toEqual([
+      [50, 40],
+      [60, 30],
+    ])
+    expect(events.map((event) => event.kind)).toEqual(['held', 'held'])
+  })
+
+  it('is refused as desktop-focused while a window is focused and nothing is applied', async () => {
+    const { pty, mirror, lease, events, attention } = await awayFixture()
+    attention.setAway(false)
+    expect(refusal(() => lease.resize(50, 40))).toBe('desktop-focused')
+    expect(pty.resize).not.toHaveBeenCalled()
+    expect(mirror.onGeometry).not.toHaveBeenCalled()
+    expect(events).toEqual([])
+  })
+
+  it('is refused as desktop-focused when the supervisor has no Away source', async () => {
+    const { info, pty, supervisor } = await fixture()
+    const lease = supervisor.attachMirror(info.id, info.instanceId, handlers())
+    expect(refusal(() => lease.resize(50, 40))).toBe('desktop-focused')
+    expect(pty.resize).not.toHaveBeenCalled()
+  })
+
+  it('is refused as ended after release even while Away', async () => {
+    const { pty, lease } = await awayFixture()
+    lease.release()
+    expect(refusal(() => lease.resize(50, 40))).toBe('ended')
+    expect(pty.resize).not.toHaveBeenCalled()
+  })
+
+  it('is refused as exited after the PTY exits', async () => {
+    const { pty, lease } = await awayFixture()
+    pty.emitExit({ exitCode: 0, signal: undefined })
+    expect(refusal(() => lease.resize(50, 40))).toBe('exited')
+    expect(pty.resize).not.toHaveBeenCalled()
+  })
+
+  it('is refused as instance-changed after a respawn under the same id and the new process keeps its size', async () => {
+    const { info, pty, lease, ptyFixture } = await awayFixture()
+    pty.emitExit({ exitCode: 0, signal: undefined })
+    const respawn = new TestPtyProcess()
+    const deferred = ptyFixture.deferNextSpawn(respawn)
+    const spawning = ptyFixture.spawn({
+      provider: plainShellProvider,
+      ownerId: OWNER_ID,
+      ownerGeneration: 4,
+      sessionId: SESSION_ID,
+    })
+    deferred.resolve()
+    const next = await spawning
+    expect(next.instanceId).not.toBe(info.instanceId)
+
+    expect(refusal(() => lease.resize(50, 40))).toBe('instance-changed')
+    expect(respawn.resize).not.toHaveBeenCalled()
+    expect(pty.resize).not.toHaveBeenCalled()
+  })
+
+  it('a renderer resize while a mirror holds the size is accepted, publishes, and ends the hold silently', async () => {
+    const { info, pty, supervisor, mirror, lease, events, attention } =
+      await awayFixture()
+    lease.resize(50, 40)
+    supervisor.resize(info.id, OWNER_ID, 200, 60, 4)
+    expect(pty.resize).toHaveBeenLastCalledWith(200, 60)
+    expect(mirror.onGeometry).toHaveBeenLastCalledWith({ cols: 200, rows: 60 })
+
+    attention.setAway(false)
+    expect(events.map((event) => event.kind)).toEqual(['held'])
+  })
+
+  it('away to focused reclaims exactly once per hold, naming the owning renderer', async () => {
+    const { info, supervisor, lease, events, attention } = await awayFixture()
+    supervisor.attach(info.id, OWNER_ID, { onData: () => undefined }, 4)
+    expect(supervisor.transferRendererSession(info.id, OWNER_ID, 4, OWNER_ID, 5)).toBe(
+      true,
+    )
+    lease.resize(50, 40)
+    lease.resize(51, 41)
+
+    attention.setAway(false)
+    attention.setAway(false)
+    attention.setAway(true)
+    attention.setAway(false)
+    expect(events).toEqual([
+      {
+        kind: 'held',
+        id: info.id,
+        ownerId: OWNER_ID,
+        ownerGeneration: 5,
+        geometry: { cols: 50, rows: 40 },
+      },
+      {
+        kind: 'held',
+        id: info.id,
+        ownerId: OWNER_ID,
+        ownerGeneration: 5,
+        geometry: { cols: 51, rows: 41 },
+      },
+      { kind: 'reclaim', id: info.id, ownerId: OWNER_ID, ownerGeneration: 5 },
+    ])
+
+    attention.setAway(true)
+    lease.resize(52, 42)
+    attention.setAway(false)
+    expect(events.slice(3)).toEqual([
+      {
+        kind: 'held',
+        id: info.id,
+        ownerId: OWNER_ID,
+        ownerGeneration: 5,
+        geometry: { cols: 52, rows: 42 },
+      },
+      { kind: 'reclaim', id: info.id, ownerId: OWNER_ID, ownerGeneration: 5 },
+    ])
+  })
+
+  it('focus changes without a hold reclaim nothing', async () => {
+    const { events, attention } = await awayFixture()
+    attention.setAway(false)
+    attention.setAway(true)
+    attention.setAway(false)
+    expect(events).toEqual([])
+  })
+
+  it('a reclaim leaves the PTY at the phone size until the renderer refits', async () => {
+    const { info, pty, supervisor, lease, attention } = await awayFixture()
+    lease.resize(50, 40)
+    attention.setAway(false)
+    expect(pty.resize).toHaveBeenCalledExactlyOnceWith(50, 40)
+    expect(
+      supervisor.attachMirror(info.id, info.instanceId, handlers()).geometry,
+    ).toEqual({
+      cols: 50,
+      rows: 40,
+    })
+  })
+
+  it('a resize the PTY refuses reports no hold and keeps the last applied size', async () => {
+    const { info, pty, supervisor, mirror, lease, events } = await awayFixture({
+      cols: 100,
+      rows: 30,
+    })
+    pty.resize.mockImplementationOnce(() => {
+      throw new Error('Cannot resize a pty that has already exited')
+    })
+    expect(() => lease.resize(50, 40)).toThrow(
+      'Cannot resize a pty that has already exited',
+    )
+    expect(mirror.onGeometry).not.toHaveBeenCalled()
+    expect(events).toEqual([])
+    expect(
+      supervisor.attachMirror(info.id, info.instanceId, handlers()).geometry,
+    ).toEqual({
+      cols: 100,
+      rows: 30,
+    })
+  })
+
+  it('onMirrorGeometry unsubscribes and disposeAll drops the Away subscription', async () => {
+    const { supervisor, lease, events, attention } = await awayFixture()
+    const late = vi.fn<(event: PtyMirrorGeometryEvent) => void>()
+    const stop = supervisor.onMirrorGeometry(late)
+    void stop()
+    lease.resize(50, 40)
+    expect(late).not.toHaveBeenCalled()
+    expect(events).toHaveLength(1)
+
+    expect(attention.listeners).toBe(1)
+    supervisor.disposeAll()
+    expect(attention.listeners).toBe(0)
+  })
+
+  it('refusal messages carry the id and reason only', async () => {
+    const { info, lease, attention } = await awayFixture()
+    attention.setAway(false)
+    let refused: unknown
+    try {
+      lease.resize(50, 40)
+    } catch (error) {
+      refused = error
+    }
+    expect(refused).toBeInstanceOf(PtyMirrorRefusedError)
+    const error = refused as PtyMirrorRefusedError
+    expect(error.message).toBe(`PTY mirror on '${info.id}' refused: desktop-focused`)
+    expect(error.message).not.toContain('50')
   })
 })

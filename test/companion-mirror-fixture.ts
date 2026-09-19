@@ -17,8 +17,10 @@ export interface FakeMirrorLease extends PtyMirrorLease {
   readonly handlers: PtyMirrorHandlers
   /** Exact strings handed to `write`, in order. */
   readonly writes: string[]
+  /** Exact sizes handed to `resize`, in order. */
+  readonly resizes: PtyGeometry[]
   readonly released: boolean
-  /** The next `write` throws this refusal instead of recording. */
+  /** The next `write` or `resize` throws this refusal instead of recording. */
   refuseWrite?: PtyMirrorRefusal
   /** Ends the lease the way a PTY exit does: `onEnd` once, then writes refuse. */
   exit(exit: PtyExit): void
@@ -72,6 +74,11 @@ function fakeLease(
   let released = false
   let exited = false
   const live = () => !released && !exited
+  const admit = (): void => {
+    const refusal =
+      lease.refuseWrite ?? (released ? 'ended' : exited ? 'exited' : undefined)
+    if (refusal !== undefined) throw new PtyMirrorRefusedError(refusal, ptyId)
+  }
   const lease: FakeMirrorLease = {
     ptyId,
     instanceId,
@@ -92,6 +99,7 @@ function fakeLease(
       },
     },
     writes: [],
+    resizes: [],
     get ended() {
       return released || exited
     },
@@ -99,10 +107,12 @@ function fakeLease(
       return released
     },
     write(data) {
-      const refusal =
-        lease.refuseWrite ?? (released ? 'ended' : exited ? 'exited' : undefined)
-      if (refusal !== undefined) throw new PtyMirrorRefusedError(refusal, ptyId)
+      admit()
       lease.writes.push(data)
+    },
+    resize(cols, rows) {
+      admit()
+      lease.resizes.push({ cols, rows })
     },
     release() {
       released = true

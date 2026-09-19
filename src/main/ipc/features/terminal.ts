@@ -23,6 +23,7 @@ import {
 } from '../../terminal/terminal-launch-admission'
 import { terminalStartedResponse } from '../../terminal/terminal-start-response'
 import { PtyStartUnavailableError } from '../../pty/pty-supervisor'
+import { terminalDimension } from '../../pty/terminal-dimension'
 import type { RendererOwner } from '../../renderer-resource-scopes'
 import type { IpcRegistrar } from '../authority-router'
 import type { IpcDeps } from '../deps'
@@ -524,11 +525,6 @@ function isClassifiedHarnessLaunchFailure(reason: unknown): boolean {
 
 function isUnknownRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-}
-
-function terminalDimension(value: number): number {
-  if (!Number.isFinite(value)) return 80
-  return Math.max(2, Math.min(1000, Math.floor(value)))
 }
 
 /**

@@ -233,17 +233,6 @@ function createWorkbenchEntry(): void {
       createProjectFileOperationCoordinator(registry, hostCatalog, rendererScopes),
       (operations) => operations.dispose(),
     )
-    ptySupervisor = runtime.own(
-      'PTY supervisor',
-      new PtySupervisor({
-        onDiagnostic: (event) => diagnostics.recordPty(event),
-        registerSessionIdentity: (terminalId, harnessSessionId) =>
-          terminalSessionRegistry!.recordIdentity(terminalId, harnessSessionId),
-        cancelSessionIdentityRegistration: (terminalId) =>
-          terminalSessionRegistry!.cancelIdentityRegistration(terminalId),
-      }),
-      (supervisor) => supervisor.disposeAllAndWait(),
-    )
     const gasCity = ownGasCityRuntime(
       runtime,
       { projects: projectRegistry, hosts: hostCatalog },
@@ -253,6 +242,18 @@ function createWorkbenchEntry(): void {
       gasCityAttention: gasCity.attention,
       setBadgeCount: (count) => app.setBadgeCount(count),
     })
+    ptySupervisor = runtime.own(
+      'PTY supervisor',
+      new PtySupervisor({
+        onDiagnostic: (event) => diagnostics.recordPty(event),
+        registerSessionIdentity: (terminalId, harnessSessionId) =>
+          terminalSessionRegistry!.recordIdentity(terminalId, harnessSessionId),
+        cancelSessionIdentityRegistration: (terminalId) =>
+          terminalSessionRegistry!.cancelIdentityRegistration(terminalId),
+        attention: attention.set,
+      }),
+      (supervisor) => supervisor.disposeAllAndWait(),
+    )
     const sessionsPorts = installApplicationSessionsObservation(
       runtime,
       projectRegistry,

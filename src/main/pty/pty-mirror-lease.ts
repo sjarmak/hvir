@@ -6,7 +6,7 @@ import type {
   PtyMirrorRefusal,
 } from './pty-contract'
 
-/** Carries the PTY id and the reason only; mirror bytes never enter a message. */
+/** Carries the PTY id and the reason only; mirror bytes and sizes never enter a message. */
 export class PtyMirrorRefusedError extends Error {
   override readonly name = 'PtyMirrorRefusedError'
 
@@ -23,6 +23,8 @@ export interface PtyMirrorEntryView {
   readonly current: boolean
   readonly instanceId: string
   write(data: string): void
+  /** The supervisor's Away door (ADR-052); throws `desktop-focused` when the desktop is not Away. */
+  resize(cols: number, rows: number): void
 }
 
 export interface PtyMirrorLeaseSources {
@@ -40,7 +42,8 @@ export interface PtyMirrorLeaseSources {
 /** `released`: the holder let go. `ended`: the stream delivered `onEnd`. */
 export type PtyMirrorLeaseState = 'live' | 'released' | 'ended'
 
-export function mirrorWriteRefusal(
+/** The lease-state and instance checks every mirror verb passes before the entry's own door. */
+export function mirrorRefusal(
   state: PtyMirrorLeaseState,
   current: PtyMirrorEntryView | undefined,
   instanceId: string,
@@ -52,12 +55,12 @@ export function mirrorWriteRefusal(
   return undefined
 }
 
-function admitMirrorWrite(
+function admitMirror(
   state: PtyMirrorLeaseState,
   current: PtyMirrorEntryView | undefined,
   sources: Pick<PtyMirrorLeaseSources, 'ptyId' | 'instanceId'>,
 ): PtyMirrorEntryView {
-  const refusal = mirrorWriteRefusal(state, current, sources.instanceId)
+  const refusal = mirrorRefusal(state, current, sources.instanceId)
   if (refusal !== undefined || current === undefined) {
     throw new PtyMirrorRefusedError(refusal ?? 'exited', sources.ptyId)
   }
@@ -93,8 +96,11 @@ export function createPtyMirrorLease(
       return state !== 'live'
     },
     write(data) {
-      admitMirrorWrite(state, sources.entry(), sources).write(data)
+      admitMirror(state, sources.entry(), sources).write(data)
       sources.onInput(data)
+    },
+    resize(cols, rows) {
+      admitMirror(state, sources.entry(), sources).resize(cols, rows)
     },
     release() {
       if (state !== 'live') return

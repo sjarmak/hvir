@@ -126,6 +126,41 @@ export interface PtyGeometry {
   readonly rows: number
 }
 
+/**
+ * Who holds a PTY's size (ADR-052): the renderer, or a mirror while the desktop is Away. The
+ * desktop takes it back the moment a window gains focus, before its fit controller refits.
+ */
+export type PtyGeometrySource = 'renderer' | 'mirror'
+
+/**
+ * A mirror's hold on a PTY's size, addressed to the renderer owning that PTY. `held` follows
+ * every admitted mirror resize; `reclaim` fires once when the desktop stops being Away while a
+ * mirror holds the size, so the owner refits to its own pane.
+ */
+export type PtyMirrorGeometryEvent =
+  | {
+      readonly kind: 'held'
+      readonly id: string
+      readonly ownerId: number
+      readonly ownerGeneration: number
+      readonly geometry: PtyGeometry
+    }
+  | {
+      readonly kind: 'reclaim'
+      readonly id: string
+      readonly ownerId: number
+      readonly ownerGeneration: number
+    }
+
+/**
+ * The Away predicate a mirror resize is gated on (ADR-049, ADR-052): no hvir window focused.
+ * `ActionableAttentionSet` satisfies it; the supervisor never learns what else the set holds.
+ */
+export interface PtyAwaySource {
+  away(): boolean
+  observe(listener: (snapshot: { readonly away: boolean }) => void): () => void
+}
+
 export type PtyMirrorEnd =
   | { readonly kind: 'exited'; readonly exit: PtyExit }
   /** The supervisor released the session: revocation, workspace close, or shutdown. */
@@ -153,11 +188,23 @@ export interface PtyMirrorLease {
   readonly ended: boolean
   /** Writes the user's exact bytes to this instance or throws `PtyMirrorRefusedError`. */
   write(data: string): void
+  /**
+   * Sizes this instance to the mirror's grid while the desktop is Away, or throws
+   * `PtyMirrorRefusedError` (`desktop-focused` while any window is focused). Dimensions are
+   * clamped as the renderer's are; the most recent admitted resize wins.
+   */
+  resize(cols: number, rows: number): void
   /** Idempotent. Detaches the mirror; never kills or transfers the PTY, and leaves its size as it is. */
   release(): void
 }
 
-export type PtyMirrorRefusal = 'no-session' | 'instance-changed' | 'exited' | 'ended'
+export type PtyMirrorRefusal =
+  | 'no-session'
+  | 'instance-changed'
+  | 'exited'
+  | 'ended'
+  /** A resize while some hvir window is focused, or with no Away source at all. */
+  | 'desktop-focused'
 
 export type PtySupervisorDiagnostic =
   | {
@@ -181,6 +228,8 @@ export interface PtySupervisorOptions {
     harnessSessionId: string,
   ) => Promise<boolean>
   readonly cancelSessionIdentityRegistration?: (terminalId: string) => void
+  /** Admits mirror resizes while Away (ADR-052). Absent, every mirror resize is refused. */
+  readonly attention?: PtyAwaySource
 }
 
 export type PtyStartUnavailableReason = 'identity-baseline-unavailable'

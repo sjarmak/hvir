@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   PtyMirrorRefusedError,
   createPtyMirrorLease,
-  mirrorWriteRefusal,
+  mirrorRefusal,
   type PtyMirrorEntryView,
   type PtyMirrorLeaseState,
 } from '../src/main/pty/pty-mirror-lease'
@@ -12,10 +12,16 @@ import type { PtyMirrorHandlers } from '../src/main/pty/pty-contract'
 const INSTANCE = 'instance-a'
 
 function view(overrides: Partial<PtyMirrorEntryView> = {}): PtyMirrorEntryView {
-  return { current: true, instanceId: INSTANCE, write: () => undefined, ...overrides }
+  return {
+    current: true,
+    instanceId: INSTANCE,
+    write: () => undefined,
+    resize: () => undefined,
+    ...overrides,
+  }
 }
 
-describe('mirrorWriteRefusal', () => {
+describe('mirrorRefusal', () => {
   it.each<{
     readonly name: string
     readonly state: PtyMirrorLeaseState
@@ -72,7 +78,7 @@ describe('mirrorWriteRefusal', () => {
       refusal: 'exited',
     },
   ])('decides $name', ({ state, current, refusal }) => {
-    expect(mirrorWriteRefusal(state, current, INSTANCE)).toBe(refusal)
+    expect(mirrorRefusal(state, current, INSTANCE)).toBe(refusal)
   })
 })
 
@@ -145,9 +151,43 @@ describe('createPtyMirrorLease', () => {
     expect(onInput).not.toHaveBeenCalled()
   })
 
-  it('release detaches once, ends the lease and refuses later writes as ended', () => {
+  it('resizes through the current entry with the exact dimensions and fans no input out', () => {
+    const resize = vi.fn<(cols: number, rows: number) => void>()
+    const { lease, onInput } = world(() => view({ resize }))
+    lease.resize(52, 38)
+    expect(resize).toHaveBeenCalledExactlyOnceWith(52, 38)
+    expect(onInput).not.toHaveBeenCalled()
+  })
+
+  it('refuses a resize under the same lease and instance rules as a write', () => {
+    const resize = vi.fn<(cols: number, rows: number) => void>()
+    const { lease } = world(() => view({ resize, instanceId: 'instance-b' }))
+    expect(() => lease.resize(52, 38)).toThrow(
+      expect.objectContaining({
+        reason: 'instance-changed',
+        ptyId: 'pty-1',
+      }) as PtyMirrorRefusedError,
+    )
+    expect(resize).not.toHaveBeenCalled()
+  })
+
+  it('lets the entry refuse a resize as desktop-focused', () => {
+    const { lease } = world(() =>
+      view({
+        resize: () => {
+          throw new PtyMirrorRefusedError('desktop-focused', 'pty-1')
+        },
+      }),
+    )
+    expect(() => lease.resize(52, 38)).toThrow(
+      expect.objectContaining({ reason: 'desktop-focused' }) as PtyMirrorRefusedError,
+    )
+  })
+
+  it('release detaches once, ends the lease and refuses later writes and resizes as ended', () => {
     const write = vi.fn<(data: string) => void>()
-    const { lease, handlers, detach, stream } = world(() => view({ write }))
+    const resize = vi.fn<(cols: number, rows: number) => void>()
+    const { lease, handlers, detach, stream } = world(() => view({ write, resize }))
     lease.release()
     lease.release()
     expect(detach).toHaveBeenCalledOnce()
@@ -156,7 +196,11 @@ describe('createPtyMirrorLease', () => {
     expect(() => lease.write('x')).toThrow(
       expect.objectContaining({ reason: 'ended' }) as PtyMirrorRefusedError,
     )
+    expect(() => lease.resize(52, 38)).toThrow(
+      expect.objectContaining({ reason: 'ended' }) as PtyMirrorRefusedError,
+    )
     expect(write).not.toHaveBeenCalled()
+    expect(resize).not.toHaveBeenCalled()
     stream().onData('after release')
     expect(handlers.onData).not.toHaveBeenCalled()
   })
@@ -172,6 +216,9 @@ describe('createPtyMirrorLease', () => {
     expect(handlers.onGeometry).not.toHaveBeenCalled()
     expect(lease.ended).toBe(true)
     expect(() => lease.write('x')).toThrow(
+      expect.objectContaining({ reason: 'exited' }) as PtyMirrorRefusedError,
+    )
+    expect(() => lease.resize(52, 38)).toThrow(
       expect.objectContaining({ reason: 'exited' }) as PtyMirrorRefusedError,
     )
   })
