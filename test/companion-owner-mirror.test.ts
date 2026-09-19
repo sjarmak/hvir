@@ -101,6 +101,9 @@ describe('installApplicationCompanion terminal mirror', () => {
       { page, data: 'x'.repeat(4097) },
       { page, data: 'y', handle: LOCAL },
       { page, data: 7 },
+      // A navigation claim on anything but a read-back page key (ADR-055).
+      { page, data: 'y', navigation: true },
+      { page, data: '\u001b[5~', navigation: 'true' },
     ]) {
       expect(
         (await send(port, 'POST', input(LOCAL), { headers, body })).status,
@@ -123,6 +126,16 @@ describe('installApplicationCompanion terminal mirror', () => {
     })
     expect(accepted.status).toBe(200)
     expect(JSON.parse(accepted.body)).toEqual({ outcome: 'accepted' })
+    expect(lease.writes).toEqual(['y\r'])
+
+    // A read-back page key takes the other verb on the same lease (ADR-055),
+    // which is the one the renderer's input record never hears about.
+    const paged = await send(port, 'POST', input(LOCAL), {
+      headers,
+      body: { page, data: '\u001b[5~', navigation: true },
+    })
+    expect(paged.status).toBe(200)
+    expect(lease.navigations).toEqual(['\u001b[5~'])
     expect(lease.writes).toEqual(['y\r'])
 
     lease.refuse = 'ended'

@@ -37,6 +37,7 @@ import {
   type SessionsTranscriptSnapshot,
   type SessionsTranscriptSubmitRequest,
 } from './sessions-transcript'
+import { isTerminalPageKey } from './terminal-wheel'
 
 /**
  * The snapshot's shape, compared for strict equality so a page on an older bundle
@@ -172,6 +173,14 @@ export type CompanionEvent =
 /** The user's exact bytes for the mirrored terminal: uncomposed, unappended. */
 export interface CompanionInputRequest {
   readonly data: string
+  /**
+   * The bytes are read-back navigation rather than typing (ADR-055): the
+   * owner's permission still gates them, the per-mirror arm does not, and they
+   * are not recorded as terminal input. The claim is bounded here rather than
+   * trusted: it is admitted only for the closed set of page keys the shared
+   * wheel policy sends a program that owns its history.
+   */
+  readonly navigation?: true
 }
 
 /** The phone's own grid, asked for the mirrored PTY while the desktop is Away (ADR-052). */
@@ -294,13 +303,17 @@ export function isCompanionTerminalEvent(
 }
 
 export function isCompanionInputRequest(value: unknown): value is CompanionInputRequest {
-  if (!isRecord(value) || !hasExactKeys(value, INPUT_KEYS)) return false
+  if (!isRecord(value) || !hasKeys(value, INPUT_KEYS, INPUT_OPTIONAL_KEYS)) return false
   const data = value['data']
-  return (
-    typeof data === 'string' &&
-    data.length > 0 &&
-    data.length <= MAX_COMPANION_INPUT_CHARS
-  )
+  if (
+    typeof data !== 'string' ||
+    data.length === 0 ||
+    data.length > MAX_COMPANION_INPUT_CHARS
+  ) {
+    return false
+  }
+  const navigation = value['navigation']
+  return navigation === undefined || (navigation === true && isTerminalPageKey(data))
 }
 
 export function isCompanionResizeRequest(
@@ -359,6 +372,7 @@ const ROW_OPTIONAL_KEYS = ['reason', 'promptBody'] as const
 const RESPOND_KEYS = ['handle', 'pendingRevision', 'optionOrdinal'] as const
 const SUBMIT_KEYS = ['handle', 'message'] as const
 const INPUT_KEYS = ['data'] as const
+const INPUT_OPTIONAL_KEYS = ['navigation'] as const
 const RESIZE_KEYS = ['cols', 'rows'] as const
 const OPENED_KEYS = ['type', 'handle', 'cols', 'rows', 'tail'] as const
 const OPENED_OPTIONAL_KEYS = ['preamble'] as const

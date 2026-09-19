@@ -110,11 +110,16 @@ export interface CompanionClient {
     request: CompanionRespondRequest,
   ): Promise<SessionsMutationResponse>
   submit(page: string, request: CompanionSubmitRequest): Promise<SessionsMutationResponse>
-  /** The user's exact bytes for the mirrored row; nothing is appended. */
+  /**
+   * The user's exact bytes for the mirrored row; nothing is appended. A read-back
+   * gesture names itself with `navigation` (ADR-055), which the desktop admits
+   * only for the page keys it sends a program that owns its history.
+   */
   input(
     page: string,
     handle: SessionsTerminalHandle,
     data: string,
+    navigation?: boolean,
   ): Promise<SessionsMutationResponse>
   /**
    * The phone's grid for the mirrored row (ADR-052). A `desktop-focused`
@@ -265,10 +270,10 @@ export function createCompanionClient(options: CompanionClientOptions): Companio
         isSessionsMutationResponse,
         'mutation outcome',
       ),
-    input: (page, handle, data) =>
+    input: (page, handle, data, navigation) =>
       post(
         route(handle, 'input'),
-        { page, data },
+        { page, data, ...(navigation === true ? { navigation: true } : {}) },
         isSessionsMutationResponse,
         'mutation outcome',
       ),

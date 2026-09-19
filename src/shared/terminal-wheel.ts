@@ -14,6 +14,16 @@ const MAX_SGR_REPORTS_PER_EVENT = 5
 const PAGE_UP = '\x1b[5~'
 const PAGE_DOWN = '\x1b[6~'
 
+/**
+ * The complete output of the alternate-screen route above, which is what a
+ * read-back gesture sends a program that owns its history. It is the closed set
+ * ADR-055 exempts from the per-mirror arm and from the terminal input record,
+ * so the exemption is defined by the route rather than by a list beside it.
+ */
+export function isTerminalPageKey(data: string): boolean {
+  return data === PAGE_UP || data === PAGE_DOWN
+}
+
 export interface TerminalWheelEvent {
   readonly deltaY: number
   readonly deltaMode: number

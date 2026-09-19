@@ -152,6 +152,28 @@ describe('createPtyMirrorLease', () => {
     expect(onInput).not.toHaveBeenCalled()
   })
 
+  it('read-back navigation writes through the entry and fans no input out (ADR-055)', () => {
+    const write = vi.fn<(data: string) => void>()
+    const { lease, onInput } = world(() => view({ write }))
+    lease.navigate('\x1b[5~')
+    // The bytes reach the PTY exactly as a write does; the renderer's input
+    // record is what they stay out of, so paging arms no attention.
+    expect(write).toHaveBeenCalledExactlyOnceWith('\x1b[5~')
+    expect(onInput).not.toHaveBeenCalled()
+  })
+
+  it('refuses read-back navigation under the same rules as a write', () => {
+    const write = vi.fn<(data: string) => void>()
+    const { lease } = world(() => view({ write, instanceId: 'instance-b' }))
+    expect(() => lease.navigate('\x1b[5~')).toThrow(
+      expect.objectContaining({
+        reason: 'instance-changed',
+        ptyId: 'pty-1',
+      }) as PtyMirrorRefusedError,
+    )
+    expect(write).not.toHaveBeenCalled()
+  })
+
   it('resizes through the current entry with the exact dimensions and fans no input out', () => {
     const resize = vi.fn<(cols: number, rows: number) => void>()
     const { lease, onInput } = world(() => view({ resize }))
@@ -185,7 +207,7 @@ describe('createPtyMirrorLease', () => {
     )
   })
 
-  it('release detaches once, ends the lease and refuses later writes and resizes as ended', () => {
+  it('release detaches once, ends the lease and refuses later writes, navigation and resizes as ended', () => {
     const write = vi.fn<(data: string) => void>()
     const resize = vi.fn<(cols: number, rows: number) => void>()
     const { lease, handlers, detach, stream } = world(() => view({ write, resize }))
@@ -195,6 +217,9 @@ describe('createPtyMirrorLease', () => {
     expect(lease.ended).toBe(true)
     expect(handlers.onEnd).not.toHaveBeenCalled()
     expect(() => lease.write('x')).toThrow(
+      expect.objectContaining({ reason: 'ended' }) as PtyMirrorRefusedError,
+    )
+    expect(() => lease.navigate('\x1b[5~')).toThrow(
       expect.objectContaining({ reason: 'ended' }) as PtyMirrorRefusedError,
     )
     expect(() => lease.resize(52, 38)).toThrow(

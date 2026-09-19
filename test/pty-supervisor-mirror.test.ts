@@ -359,6 +359,19 @@ describe('PtySupervisor mirror lease', () => {
     expect(pty.write).toHaveBeenCalledTimes(2)
   })
 
+  it('read-back navigation reaches the PTY and never onMirrorInput (ADR-055)', async () => {
+    const { info, pty, supervisor } = await fixture()
+    const seen = vi.fn()
+    supervisor.onMirrorInput(seen)
+    const lease = supervisor.attachMirror(info.id, info.instanceId, handlers())
+
+    lease.navigate('\x1b[5~')
+    // The renderer records what it hears here as terminal input, which arms
+    // ADR-019 and sends the next Push; paging back must arm nothing.
+    expect(pty.write.mock.calls).toEqual([['\x1b[5~']])
+    expect(seen).not.toHaveBeenCalled()
+  })
+
   it('a refused write never reaches onMirrorInput', async () => {
     const { info, supervisor } = await fixture()
     const seen = vi.fn()

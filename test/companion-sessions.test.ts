@@ -827,6 +827,34 @@ describe('CompanionSessionsService mirrors', () => {
     service.dispose()
   })
 
+  it('read-back navigation reaches lease.navigate, which the input record never sees', () => {
+    const { world, service, page, terminal } = mirrorWorld()
+    world.mirrors.typingAllowed = true
+    service.select(page.pageId, LOCAL)
+    service.input(page.pageId, LOCAL, '\x1b[5~', 'navigation')
+    service.input(page.pageId, LOCAL, '\x1b[6~', 'navigation')
+    const lease = world.mirrors.leases[0]!
+    expect(lease.navigations).toEqual(['\x1b[5~', '\x1b[6~'])
+    expect(lease.writes).toEqual([])
+    expect(terminal().map((event) => event.type)).toEqual(['opened'])
+    service.dispose()
+  })
+
+  it('read-back navigation passes the owner permission, which is the gate it keeps', () => {
+    const { world, service, page } = mirrorWorld()
+    service.select(page.pageId, LOCAL)
+    // The per-mirror arm is the page's own gate (ADR-055); this one is the
+    // desktop's setting, and navigation is refused by it exactly as typing is.
+    expect(() => service.input(page.pageId, LOCAL, '\x1b[5~', 'navigation')).toThrow(
+      CompanionTypingDisallowedError,
+    )
+    expect(world.mirrors.leases[0]!.navigations).toEqual([])
+    expect(() => service.input(page.pageId, REMOTE, '\x1b[5~', 'navigation')).toThrow(
+      CompanionTypingDisallowedError,
+    )
+    service.dispose()
+  })
+
   it('accepted input reaches lease.write unchanged', () => {
     const { world, service, page, terminal } = mirrorWorld()
     world.mirrors.typingAllowed = true

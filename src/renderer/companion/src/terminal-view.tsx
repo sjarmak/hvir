@@ -13,6 +13,7 @@ import type { CompanionTerminalPaneFactory } from './companion-terminal-pane'
 import { MirrorControls, ReturnToLive } from './mirror-controls'
 import { MirrorHeader } from './mirror-header'
 import { TranscriptView } from './transcript-view'
+import type { CompanionInputVerb } from './use-companion-session'
 import type { CompanionInputArmingControl } from './use-input-arming'
 
 type ResizeVerb = (cols: number, rows: number) => Promise<CompanionResizeAnswer>
@@ -26,7 +27,7 @@ interface TerminalViewProps {
   readonly arming: CompanionInputArmingControl
   /** The snapshot's word on the desktop's focus; the pane asks for its size only while Away. */
   readonly away: boolean
-  readonly onInput: (data: string) => Promise<void>
+  readonly onInput: CompanionInputVerb
   readonly onResize: ResizeVerb
   readonly onBack: () => void
   readonly onResume: () => Promise<void>
@@ -36,9 +37,12 @@ interface TerminalViewProps {
 
 /** The Away door said no (ADR-052): a status, not an error; the scaled mirror stays. */
 const DESKTOP_KEEPS_SIZE = 'The desktop is focused, so it keeps the terminal size.'
-/** A full-screen program's earlier turns live in the program, not in the emulator (ADR-053). */
-const NO_HISTORY =
-  'This program draws its whole screen, so there is no history to read back.'
+/**
+ * A full-screen program's earlier turns live in the program rather than in the
+ * emulator, so a drag pages the program through them (ADR-055). The emulator
+ * has no scrollback here; the session is not without history.
+ */
+const OWN_HISTORY = 'This program keeps its own history. Drag to page back through it.'
 
 /**
  * One mirrored terminal (ADR-050) filling the phone's screen: a one-line
@@ -101,8 +105,8 @@ export function TerminalView(props: TerminalViewProps) {
           </p>
         )}
         {!alternateScreen ? null : (
-          <p className="companion-status companion-mirror-no-history" role="status">
-            {NO_HISTORY}
+          <p className="companion-status companion-mirror-own-history" role="status">
+            {OWN_HISTORY}
           </p>
         )}
         {paneFailure === undefined ? null : (
@@ -159,7 +163,7 @@ function TerminalSurface({
   readonly away: boolean
   /** The mount the view holds, so the way back reaches the pane this surface owns. */
   readonly mirror: RefObject<CompanionTerminalMount | undefined>
-  readonly onInput: (data: string) => Promise<void>
+  readonly onInput: CompanionInputVerb
   readonly onResize: ResizeVerb
   readonly onResizeAnswered: (answer: CompanionResizeAnswer) => void
   readonly onAlternateScreen: (alternate: boolean) => void
@@ -192,7 +196,7 @@ function TerminalSurface({
     const created = new CompanionTerminalMount({
       host: element,
       createPane,
-      onInput: (data) => void callbacks.current.onInput(data),
+      onInput: (data, source) => void callbacks.current.onInput(data, source),
       onResize: (cols, rows) => callbacks.current.onResize(cols, rows),
       onResizeAnswered: (answer) => callbacks.current.onResizeAnswered(answer),
       onAlternateScreen: (alternate) => callbacks.current.onAlternateScreen(alternate),

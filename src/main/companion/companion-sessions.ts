@@ -42,6 +42,9 @@ import { companionMirrorTarget } from './companion-mirror-target'
 import { CompanionPageMirror, type CompanionMirrorAttach } from './companion-page-mirror'
 import { companionRows } from './companion-rows'
 
+/** What a phone's bytes are: the person typing, or a read-back gesture paging (ADR-055). */
+export type CompanionInputKind = 'typing' | 'navigation'
+
 /** The PTY supervisor's mirror door and the Settings permission, as ports. */
 export interface CompanionMirrorPorts {
   readonly attach: CompanionMirrorAttach
@@ -189,12 +192,25 @@ export class CompanionSessionsService {
     return snapshot
   }
 
-  /** The user's exact bytes to the mirrored row; refused before the lease is asked. */
-  input(pageId: string, handle: SessionsTerminalHandle, data: string): void {
+  /**
+   * The user's exact bytes to the mirrored row; refused before the lease is
+   * asked. `navigation` is a read-back gesture paging a program through its own
+   * history (ADR-055): the owner's permission gates it the same way, and it
+   * reaches the PTY without being recorded as terminal input. The page's
+   * per-mirror arm, which typing also passes, is the page's own gate and was
+   * never this one.
+   */
+  input(
+    pageId: string,
+    handle: SessionsTerminalHandle,
+    data: string,
+    kind: CompanionInputKind = 'typing',
+  ): void {
     const page = this.page(pageId)
     if (!this.ports.mirrors.typingAllowed()) throw new CompanionTypingDisallowedError()
     if (page.mirror.handle !== handle) throw new CompanionNoMirrorError()
-    page.mirror.write(data)
+    if (kind === 'navigation') page.mirror.navigate(data)
+    else page.mirror.write(data)
   }
 
   /**

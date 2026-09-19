@@ -227,6 +227,7 @@ export class FakeCompanionPane implements CompanionTerminalPane {
   mounted?: HTMLElement
   disposed = false
   private readonly listeners = new Set<(data: string, source: 'user') => void>()
+  private readonly navigationListeners = new Set<(data: string) => void>()
   private readonly viewportListeners = new Set<(offset: number) => void>()
 
   constructor(
@@ -239,6 +240,12 @@ export class FakeCompanionPane implements CompanionTerminalPane {
       this.listeners.add(listener)
       return () => {
         this.listeners.delete(listener)
+      }
+    },
+    onNavigation: (listener: (data: string) => void) => {
+      this.navigationListeners.add(listener)
+      return () => {
+        this.navigationListeners.delete(listener)
       }
     },
     onViewport: (listener: (offset: number) => void) => {
@@ -317,11 +324,17 @@ export class FakeCompanionPane implements CompanionTerminalPane {
   dispose(): void {
     this.disposed = true
     this.listeners.clear()
+    this.navigationListeners.clear()
     this.viewportListeners.clear()
   }
 
   emitData(data: string): void {
     for (const listener of this.listeners) listener(data, 'user')
+  }
+
+  /** A read-back gesture's page key, which the real pane emits past the arm (ADR-055). */
+  emitNavigation(data: string): void {
+    for (const listener of this.navigationListeners) listener(data)
   }
 }
 

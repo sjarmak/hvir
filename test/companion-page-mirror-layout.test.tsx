@@ -31,8 +31,13 @@ import {
   openMirror,
   panes,
   server,
+  settle,
   useCompanionPage,
 } from './companion-page-harness'
+
+/** What the shared wheel policy sends an alternate-screen program (ADR-053). */
+const PAGE_UP = '\x1b[5~'
+const PAGE_DOWN = '\x1b[6~'
 
 useCompanionPage()
 
@@ -120,16 +125,18 @@ describe('Companion page mirror layout', () => {
     expect(server.inputs()).toEqual([])
   })
 
-  it('states that a full-screen program has no history, outside the box that clips the grid', async () => {
+  it('says a full-screen program keeps its own history, outside the box that clips the grid', async () => {
     await openMirror()
     layoutHost(352, 344)
-    expect(host.querySelector('.companion-mirror-no-history')).toBeNull()
+    expect(host.querySelector('.companion-mirror-own-history')).toBeNull()
 
     panes.panes[0]!.alternateScreen = true
     await emit('terminal', { type: 'output', handle: 'term-1', data: 'full screen paint' })
-    const notice = host.querySelector<HTMLElement>('.companion-mirror-no-history')
+    const notice = host.querySelector<HTMLElement>('.companion-mirror-own-history')
+    // Never that the session has none: tmux and a pager hold a full history
+    // the emulator has no scrollback for (ADR-055).
     expect(notice?.textContent).toBe(
-      'This program draws its whole screen, so there is no history to read back.',
+      'This program keeps its own history. Drag to page back through it.',
     )
     expect(notice?.getAttribute('role')).toBe('status')
     expect(notice?.closest('.companion-terminal-area')).not.toBeNull()
@@ -137,7 +144,56 @@ describe('Companion page mirror layout', () => {
 
     panes.panes[0]!.alternateScreen = false
     await emit('terminal', { type: 'output', handle: 'term-1', data: '$ ' })
-    expect(host.querySelector('.companion-mirror-no-history')).toBeNull()
+    expect(host.querySelector('.companion-mirror-own-history')).toBeNull()
+  })
+
+  it('pages a program through its own history from a disarmed mirror (ADR-055)', async () => {
+    await openMirror()
+    layoutHost(352, 344)
+    panes.panes[0]!.alternateScreen = true
+    await emit('terminal', { type: 'output', handle: 'term-1', data: 'full screen paint' })
+    expect(armButton().textContent).toBe('Arm typing')
+
+    await act(async () => {
+      panes.panes[0]!.emitNavigation(PAGE_UP)
+      await Promise.resolve()
+    })
+    await settle()
+    expect(server.inputs()).toEqual([
+      { page: 'page-1', data: PAGE_UP, navigation: true },
+    ])
+    // Reading back is not typing, so it arms nothing and shows no banner.
+    expect(armButton().textContent).toBe('Arm typing')
+    expect(host.querySelector('.companion-error')).toBeNull()
+  })
+
+  it('says why when the desktop does not allow input from a phone', async () => {
+    await openMirror()
+    layoutHost(352, 344)
+    panes.panes[0]!.alternateScreen = true
+    await emit('terminal', { type: 'output', handle: 'term-1', data: 'full screen paint' })
+    server.inputStatus = 403
+    server.inputError = 'Typing from the Companion is off'
+
+    await act(async () => {
+      panes.panes[0]!.emitNavigation(PAGE_UP)
+      await Promise.resolve()
+    })
+    await settle()
+    expect(host.textContent).toContain(
+      'Input from the Companion is off in Settings, so this program cannot be paged',
+    )
+
+    // The setting is the desktop's to change, so the next drag asks again
+    // rather than leaving the page stuck on a refusal it cached.
+    server.inputStatus = 200
+    await act(async () => {
+      panes.panes[0]!.emitNavigation(PAGE_DOWN)
+      await Promise.resolve()
+    })
+    await settle()
+    expect(host.textContent).not.toContain('so this program cannot be paged')
+    expect(server.inputs()).toHaveLength(2)
   })
 
   it('offers no way back while the mirror is showing the newest output', async () => {
@@ -183,7 +239,7 @@ describe('Companion page mirror layout', () => {
       await Promise.resolve()
     })
     await emit('terminal', { type: 'output', handle: 'term-1', data: 'full screen paint' })
-    expect(host.querySelector('.companion-mirror-no-history')).not.toBeNull()
+    expect(host.querySelector('.companion-mirror-own-history')).not.toBeNull()
     expect(host.querySelector('.companion-return-live')).toBeNull()
 
     // Back on the normal screen the same held viewport does offer it.
@@ -192,16 +248,16 @@ describe('Companion page mirror layout', () => {
     expect(host.querySelector('.companion-return-live')).not.toBeNull()
   })
 
-  it('a full-screen session that ends takes its no-history line with it', async () => {
+  it('a full-screen session that ends takes its own-history line with it', async () => {
     await openMirror()
     layoutHost(352, 344)
     panes.panes[0]!.alternateScreen = true
     await emit('terminal', { type: 'output', handle: 'term-1', data: 'full screen paint' })
-    expect(host.querySelector('.companion-mirror-no-history')).not.toBeNull()
+    expect(host.querySelector('.companion-mirror-own-history')).not.toBeNull()
 
     await emit('terminal', { type: 'ended', handle: 'term-1', reason: 'exited' })
     expect(host.querySelector('.companion-mirror-ended')).not.toBeNull()
-    expect(host.querySelector('.companion-mirror-no-history')).toBeNull()
+    expect(host.querySelector('.companion-mirror-own-history')).toBeNull()
   })
 })
 

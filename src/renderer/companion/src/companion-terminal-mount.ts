@@ -33,9 +33,10 @@
  * reachable. The way back is that same strip travelled at once rather than a
  * second route through it, so both scrollers land on the newest output
  * together. The mount also reports which screen the emulator is on, so the
- * view can say that a full-screen program has no history to read back, and
- * whether the viewport sits behind the newest output, so the view can offer the
- * one tap back to it. That second report is a subscription and never a sample:
+ * view can say that a full-screen program keeps its own history and a drag
+ * pages through it (ADR-055), and whether the viewport sits behind the newest
+ * output, so the view can offer the one tap back to it. That second report is a
+ * subscription and never a sample:
  * a wheel notch the policy leaves alone is scrolled by the emulator itself and
  * reaches this mount through no call of its own, and the subscription is in
  * place before the first queued frame is written. It is a position and never a
@@ -58,15 +59,23 @@ interface PendingPane {
   geometry?: { readonly cols: number; readonly rows: number }
 }
 
+/**
+ * Why the mirror is sending bytes: the person typing, or a read-back gesture
+ * paging a program through its own history (ADR-055). They pass different gates
+ * on the page and on the desktop, so the word travels with the bytes.
+ */
+export type CompanionInputSource = 'user' | 'navigation'
+
 export interface CompanionTerminalMountOptions {
   readonly host: HTMLElement
   readonly createPane: CompanionTerminalPaneFactory
-  readonly onInput: (data: string) => void
+  /** The pane's bytes with what produced them, since the two are gated apart (ADR-055). */
+  readonly onInput: (data: string, source: CompanionInputSource) => void
   /** The grid the host holds, asked for only while the mirror is live and the desktop is Away. */
   readonly onResize: (cols: number, rows: number) => Promise<CompanionResizeAnswer>
   /** The desktop's answer to the latest grid asked for. */
   readonly onResizeAnswered: (answer: CompanionResizeAnswer) => void
-  /** Which screen the emulator is on; an alternate screen keeps no scrollback (ADR-053). */
+  /** Which screen the emulator is on; an alternate screen is paged rather than scrolled (ADR-055). */
   readonly onAlternateScreen: (alternate: boolean) => void
   /** Whether the viewport sits behind the newest output, which is when the way back is offered. */
   readonly onReadingBack: (readingBack: boolean) => void
@@ -224,7 +233,8 @@ export class CompanionTerminalMount {
     }
     try {
       pane.mount(this.gridBox)
-      pane.events.onData((data) => this.options.onInput(data))
+      pane.events.onData((data) => this.options.onInput(data, 'user'))
+      pane.events.onNavigation((data) => this.options.onInput(data, 'navigation'))
       // Before the queued frames, so a write that moves the viewport is heard
       // rather than missed and then sampled for.
       pane.events.onViewport((offset) => this.setReadingBack(offset !== 0))

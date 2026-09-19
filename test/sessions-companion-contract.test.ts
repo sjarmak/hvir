@@ -297,6 +297,18 @@ describe('sessions companion contract', () => {
     expect(isCompanionInputRequest('\r')).toBe(false)
   })
 
+  it('a navigation claim is admitted only for the page keys a read-back gesture sends (ADR-055)', () => {
+    expect(isCompanionInputRequest({ data: '\x1b[5~', navigation: true })).toBe(true)
+    expect(isCompanionInputRequest({ data: '\x1b[6~', navigation: true })).toBe(true)
+    // Every other byte is typing, whatever the page calls it.
+    for (const data of ['\r', 'y', '\x1b[A', '\x1b[<64;1;1M', '\x1b[5~\x1b[5~']) {
+      expect(isCompanionInputRequest({ data, navigation: true })).toBe(false)
+      expect(isCompanionInputRequest({ data })).toBe(true)
+    }
+    expect(isCompanionInputRequest({ data: '\x1b[5~', navigation: false })).toBe(false)
+    expect(isCompanionInputRequest({ data: '\x1b[5~', navigation: 'true' })).toBe(false)
+  })
+
   it('a resize request is two integers within the PTY dimension bounds and nothing else (ADR-052)', () => {
     expect([MIN_COMPANION_RESIZE_DIMENSION, MAX_COMPANION_RESIZE_DIMENSION]).toEqual([
       2, 1000,

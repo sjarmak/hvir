@@ -449,32 +449,40 @@ describe('ghostty companion pane', () => {
     expect(fake.viewportY).toBe(2)
   })
 
-  it('a drag on the alternate screen sends one page key and moves no viewport', async () => {
+  it('a drag on the alternate screen pages the program and moves no viewport', async () => {
     const pane = await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!
     pane.mount(document.createElement('div'))
     fake.alternateScreen = true
     fake.scrollbackLength = 500
     pane.setInputEnabled(true)
-    const seen: string[] = []
-    pane.events.onData((data) => seen.push(data))
+    const typed: string[] = []
+    const paged: string[] = []
+    pane.events.onData((data) => typed.push(data))
+    pane.events.onNavigation((data) => paged.push(data))
     // The program answers the gesture in its own terms; this surface moved no
     // pixel, so the whole travel is the page's to scroll a too-tall grid with.
     expect(pane.scroll(drag(-96))).toBe(-96)
-    expect(seen).toEqual([PAGE_UP])
+    expect(paged).toEqual([PAGE_UP])
+    expect(typed).toEqual([])
     expect(fake.scrolls).toEqual([])
     expect(fake.viewportY).toBe(0)
   })
 
-  it('a disarmed mirror sends nothing from a drag on the alternate screen', async () => {
+  it('a disarmed mirror still pages a program through its own history (ADR-055)', async () => {
     const pane = await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!
     pane.mount(document.createElement('div'))
     fake.alternateScreen = true
-    const seen: string[] = []
-    pane.events.onData((data) => seen.push(data))
+    const typed: string[] = []
+    const paged: string[] = []
+    pane.events.onData((data) => typed.push(data))
+    pane.events.onNavigation((data) => paged.push(data))
+    // The arm stops an unattended phone typing; a finger on the grid is not
+    // that, so reading back leaves a mirror nobody armed.
     expect(pane.scroll(drag(-96))).toBe(-96)
-    expect(seen).toEqual([])
+    expect(paged).toEqual([PAGE_UP])
+    expect(typed).toEqual([])
     expect(fake.scrolls).toEqual([])
   })
 
@@ -546,20 +554,43 @@ describe('ghostty companion pane', () => {
     expect(fake.scrolls).toEqual([])
   })
 
-  it('wheel on the alternate screen sends page keys through the input gate and never scrolls the viewport', async () => {
+  it('wheel on the alternate screen pages the program armed or not, and never scrolls the viewport', async () => {
     const pane = await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!
     pane.mount(document.createElement('div'))
     fake.alternateScreen = true
-    const seen: string[] = []
-    pane.events.onData((data) => seen.push(data))
+    const typed: string[] = []
+    const paged: string[] = []
+    pane.events.onData((data) => typed.push(data))
+    pane.events.onNavigation((data) => paged.push(data))
     expect(wheel(fake, 96)).toBe(true)
-    expect(seen).toEqual([])
+    expect(paged).toEqual([PAGE_DOWN])
     pane.setInputEnabled(true)
-    expect(wheel(fake, 96)).toBe(true)
     expect(wheel(fake, -96)).toBe(true)
-    expect(seen).toEqual([PAGE_DOWN, PAGE_UP])
+    expect(paged).toEqual([PAGE_DOWN, PAGE_UP])
+    expect(typed).toEqual([])
     expect(fake.scrolls).toEqual([])
+  })
+
+  it('an SGR report from a gesture is typing and stays behind the arm', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    // A mouse report carries a button and a position, so ADR-055 leaves it
+    // outside the exempt set: a disarmed mirror sends none of it.
+    fake.mouseTracking = true
+    fake.sgrMouse = true
+    const typed: string[] = []
+    const paged: string[] = []
+    pane.events.onData((data) => typed.push(data))
+    pane.events.onNavigation((data) => paged.push(data))
+    pane.scroll(drag(-64))
+    expect(typed).toEqual([])
+    expect(paged).toEqual([])
+    pane.setInputEnabled(true)
+    pane.scroll(drag(-64))
+    expect(typed).toEqual(['\x1b[<64;1;1M'])
+    expect(paged).toEqual([])
   })
 
   it('a viewport subscriber is told where the viewport is, not what the event carries', async () => {

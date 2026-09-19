@@ -13,13 +13,15 @@
  * notch and a finger drag alike (ADR-053): a full-screen program receives page
  * keys, a program tracking the mouse receives SGR reports, and anything the
  * policy leaves alone moves the emulator's own viewport, which is the mirror's
- * whole read-back. The viewport keeps its place while output arrives. Those
- * bytes are user input and pass the same gate as any key, so a disarmed mirror
- * sends nothing, and a gesture the policy claimed whose bytes the gate dropped
- * is still the viewport's rather than lost. A drag shorter than one cell is
- * kept as a remainder rather than dropped, so reading back slowly still tracks
- * the finger; at an edge the viewport cannot pass, nothing is kept and the
- * whole distance goes back to the page so its own scroller tracks it instead.
+ * whole read-back. The viewport keeps its place while output arrives. The page
+ * keys are read-back navigation and leave a disarmed mirror on their own event
+ * (ADR-055); every other byte a gesture produces is user input and passes the
+ * same gate as a key, so a disarmed mirror sends nothing and a gesture the
+ * policy claimed whose bytes the gate dropped is still the viewport's rather
+ * than lost. A drag shorter than one cell is kept as a remainder rather than
+ * dropped, so reading back slowly still tracks the finger; at an edge the
+ * viewport cannot pass, nothing is kept and the whole distance goes back to the
+ * page so its own scroller tracks it instead.
  *
  * A resize reflows the scrollback without moving the viewport, so a viewport
  * held further back than the reflowed scrollback reaches is re-anchored to its
@@ -36,7 +38,11 @@
 import { Terminal, init } from 'ghostty-web'
 import ghosttyWasmUrl from 'ghostty-web/ghostty-vt.wasm?url'
 
-import { TerminalWheelController, type TerminalWheelEvent } from '../../../shared'
+import {
+  TerminalWheelController,
+  isTerminalPageKey,
+  type TerminalWheelEvent,
+} from '../../../shared'
 import type {
   CompanionCellSize,
   CompanionTerminalPane,
@@ -71,6 +77,7 @@ export const createGhosttyCompanionPane: CompanionTerminalPaneFactory = async (
 
 class GhosttyCompanionPane implements CompanionTerminalPane {
   private readonly listeners = new Set<(data: string, source: 'user') => void>()
+  private readonly navigationListeners = new Set<(data: string) => void>()
   private readonly viewportListeners = new Set<(offset: number) => void>()
   private readonly disposers: Array<{ dispose(): void }> = []
   private readonly wheel = new TerminalWheelController()
@@ -87,6 +94,12 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
       this.listeners.add(listener)
       return () => {
         this.listeners.delete(listener)
+      }
+    },
+    onNavigation: (listener: (data: string) => void) => {
+      this.navigationListeners.add(listener)
+      return () => {
+        this.navigationListeners.delete(listener)
       }
     },
     onViewport: (listener: (offset: number) => void) => {
@@ -180,6 +193,7 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
     this.disposed = true
     for (const disposer of this.disposers.splice(0)) disposer.dispose()
     this.listeners.clear()
+    this.navigationListeners.clear()
     this.viewportListeners.clear()
     this.terminal.dispose()
   }
@@ -208,7 +222,12 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
       cellHeight: renderer?.charHeight ?? FALLBACK_CELL_HEIGHT,
     })
     let emitted = false
-    for (const data of result.data) emitted = this.emitUser(data) || emitted
+    for (const data of result.data) {
+      const sent = isTerminalPageKey(data)
+        ? this.emitNavigation(data)
+        : this.emitUser(data)
+      emitted = sent || emitted
+    }
     return { handled: result.handled, emitted }
   }
 
@@ -262,6 +281,18 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
   private anchorViewport(): void {
     const length = this.terminal.getScrollbackLength()
     if (this.terminal.getViewportY() > length) this.terminal.scrollToLine(length)
+  }
+
+  /**
+   * Read-back navigation (ADR-055): the page keys the policy sends a program
+   * that owns its history leave a disarmed mirror, because the arm exists to
+   * stop an unattended phone typing and a finger on the grid is neither. The
+   * desktop's own permission still decides, and refuses these the same way it
+   * refuses a key.
+   */
+  private emitNavigation(data: string): boolean {
+    for (const listener of this.navigationListeners) listener(data)
+    return true
   }
 
   /** The one gate for user bytes: nothing while writing, nothing while disarmed. */

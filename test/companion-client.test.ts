@@ -248,6 +248,21 @@ describe('companion client', () => {
     expect(calls[0]?.init.headers['authorization']).toBe('Bearer tok-1')
   })
 
+  it('a read-back gesture names itself and typing carries no such field (ADR-055)', () => {
+    const { client, calls } = harness(
+      () => jsonResponse(200, { outcome: 'accepted' }),
+      'tok-1',
+    )
+    void client.input('page-1', ROW, '\x1b[5~', true)
+    void client.input('page-1', ROW, '\r', false)
+    expect(
+      calls.map((call) => JSON.parse(call.init.body ?? '') as Record<string, unknown>),
+    ).toEqual([
+      { page: 'page-1', data: '\x1b[5~', navigation: true },
+      { page: 'page-1', data: '\r' },
+    ])
+  })
+
   it('surfaces a refused input with its status', async () => {
     const { client } = harness(
       () => jsonResponse(403, { error: 'Typing from the Companion is off in Settings' }),

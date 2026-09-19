@@ -23,6 +23,7 @@ import {
   type CompanionEventStream,
 } from './companion-client'
 import { CompanionMirrorFeed } from './companion-mirror-feed'
+import type { CompanionInputSource } from './companion-terminal-mount'
 import {
   EMPTY_COMPANION_PAGE,
   applyCompanionSnapshot,
@@ -36,6 +37,16 @@ import {
   type CompanionPageState,
 } from './companion-store'
 import { useInputArming, type CompanionInputArmingControl } from './use-input-arming'
+
+/**
+ * Bytes for the mirrored row. The source defaults to the person typing; a
+ * read-back gesture names itself, which is what frees it from the per-mirror
+ * arm and keeps it out of the desktop's input record (ADR-055).
+ */
+export type CompanionInputVerb = (
+  data: string,
+  source?: CompanionInputSource,
+) => Promise<void>
 
 export interface CompanionSession {
   readonly connection: CompanionConnection
@@ -53,8 +64,8 @@ export interface CompanionSession {
   readonly respond: (optionOrdinal: number) => Promise<void>
   /** Resolves true when the message was accepted, so the box can clear. */
   readonly submit: (message: string) => Promise<boolean>
-  /** Exact bytes for the mirrored row; dropped here unless armed on a live mirror. */
-  readonly input: (data: string) => Promise<void>
+  /** Exact bytes for the mirrored row; typing is dropped here unless armed on a live mirror. */
+  readonly input: CompanionInputVerb
   /**
    * The phone's grid for the live mirror (ADR-052). Resolves the listener's
    * answer, or nothing when there is no live mirror or the verb failed.
@@ -67,6 +78,8 @@ export interface CompanionSession {
 
 const PAIRING_EXPIRED = 'The desktop no longer accepts this pairing; pair again'
 const TYPING_OFF = 'Typing from the Companion is off in Settings'
+const NAVIGATION_OFF =
+  'Input from the Companion is off in Settings, so this program cannot be paged'
 const MIRROR_ENDED = 'The mirrored terminal ended or changed'
 
 export function useCompanionSession(client: CompanionClient): CompanionSession {
@@ -253,14 +266,20 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
     [client, run, selected],
   )
 
-  const input = useCallback(
-    async (data: string) => {
-      if (!armed || mirrorHandle === undefined || data === '') return
-      touch()
+  // Read-back navigation passes the arm on the way out and extends none of it:
+  // a drag is not typing, so it neither waits for the person to arm the mirror
+  // nor keeps an arming alive that would otherwise lapse (ADR-055).
+  const input = useCallback<CompanionInputVerb>(
+    async (data, source = 'user') => {
+      const navigation = source === 'navigation'
+      if (mirrorHandle === undefined || data === '') return
+      if (!navigation && !armed) return
+      if (!navigation) touch()
       const outcome = await run(
-        (current) => client.input(current, mirrorHandle, data),
+        (current) => client.input(current, mirrorHandle, data, navigation),
         (failure) => {
           if (failure.status === 403) {
+            if (navigation) return NAVIGATION_OFF
             disarm()
             return TYPING_OFF
           }

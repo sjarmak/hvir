@@ -208,6 +208,12 @@ export interface PtyMirrorLease {
   /** Writes the user's exact bytes to this instance or throws `PtyMirrorRefusedError`. */
   write(data: string): void
   /**
+   * Read-back navigation (ADR-055): the same write, and never reported to the
+   * owning renderer as terminal input, so paging a program's own history from a
+   * phone arms no attention and sends no Push.
+   */
+  navigate(data: string): void
+  /**
    * Sizes this instance to the mirror's grid while the desktop is Away, or throws
    * `PtyMirrorRefusedError` (`desktop-focused` while any window is focused). Dimensions are
    * clamped as the renderer's are; the most recent admitted resize wins.

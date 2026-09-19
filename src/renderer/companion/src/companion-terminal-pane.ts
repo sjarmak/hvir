@@ -26,6 +26,14 @@ export interface CompanionTerminalPaneEvents {
   /** The user's exact key bytes; nothing the emulator answers on its own. */
   onData(cb: (data: string, source: 'user') => void): () => void
   /**
+   * The page keys a read-back gesture sends a program that owns its history
+   * (ADR-055). Its own event rather than a source on `onData`: these bytes pass
+   * different gates on the page and on the desktop alike, and `onData` is the
+   * member narrowed against the desktop's own seam, where no such channel
+   * exists. The pane emits a gesture's bytes on exactly one of the two.
+   */
+  onNavigation(cb: (data: string) => void): () => void
+  /**
    * Every move of the viewport, whatever moved it: a gesture, the page's own
    * way back, a reflow re-anchoring it, output pushing a held position along.
    * The offset is read from the emulator rather than taken from the event,
@@ -56,7 +64,10 @@ export interface CompanionTerminalPane {
    * moves its own scroller by. Zero means the viewport absorbed all of it.
    */
   scroll(event: TerminalWheelEvent): number
-  /** The alternate screen keeps no scrollback, so it offers no read-back at all. */
+  /**
+   * The alternate screen keeps no scrollback of its own, so the viewport has
+   * nothing to move over and a gesture pages the program instead (ADR-055).
+   */
   isAlternateScreen(): boolean
   /** Puts the viewport back on the newest output, which is the page's one tap. */
   returnToLive(): void

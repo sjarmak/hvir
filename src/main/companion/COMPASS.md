@@ -1,11 +1,11 @@
 ---
 compass_area: "companion: the phone page's loopback listener, Sessions verbs, Push, and terminal mirror"
 area_path: "src/main/companion/"
-generated: "2026-09-18"
+generated: "2026-09-19"
 # Staleness stamp, machine-readable so a refresh can test drift without a model.
 # `sources` are area-relative paths (relative to THIS file's directory). Recompute:
 #   node ~/.claude/skills/project-compass/compass-hash.mjs src/main/companion/COMPASS.md
-sources_hash: "sha256-16:b0e95ed5bf564e68"
+sources_hash: "sha256-16:2fc48a803658f655"
 sources:
   - companion-owner.ts
   - companion-sessions.ts
@@ -356,8 +356,10 @@ cycle.
   one first, the host toward older content and the viewport toward the live edge, so a host
   scrolled down over a tall grid comes back up the same way. A gesture the policy claimed
   whose bytes the arming gate dropped is still the viewport's, so the default disarmed mirror
-  reads back under a mouse-tracking program rather than going dead. A reflow moves no
-  viewport, so the pane re-anchors to `getScrollbackLength()` after a resize that shortens it.
+  reads back under a mouse-tracking program rather than going dead, and a disarmed mirror still
+  pages a program that owns its history, because those bytes are not held by the arm. A reflow
+  moves no viewport, so the pane re-anchors to `getScrollbackLength()` after a resize that
+  shortens it.
 - **One control returns the strip to the live edge, and position is all it knows.**
   `returnToLive()` on the pane is `scrollToBottom()`, and the position it answers about
   arrives through `events.onViewport` alone, which is the emulator's own `onScroll` read for
@@ -388,11 +390,26 @@ cycle.
   mirror does not, and a surface rebuilt for another row clears it from the view. Disposing a
   pane releases every subscription it handed out, which the port states, so the mount holds no
   unsubscriber of its own for either `onData` or `onViewport`.
-- **The alternate screen states that it has no history.** `pane.isAlternateScreen()` reads the
-  emulator's mode flag, never the screen's text, and the mount reports the change to
-  `terminal-view.tsx`, which renders one `companion-status` line in the terminal area beside
-  the Away size line. It is not inside `.companion-terminal-extent`, which is `overflow:
-  hidden` at an explicit pixel size the fit writes every frame and would clip it.
+- **The alternate screen says the program keeps its own history (ADR-055).**
+  `pane.isAlternateScreen()` reads the emulator's mode flag, never the screen's text, and the
+  mount reports the change to `terminal-view.tsx`, which renders one `companion-status` line in
+  the terminal area beside the Away size line. It is not inside `.companion-terminal-extent`,
+  which is `overflow: hidden` at an explicit pixel size the fit writes every frame and would
+  clip it. The line used to claim the session had no history, which is false for anything
+  holding its own: tmux, a pager, a shell under tmux. What is true is that the emulator has no
+  scrollback there, so the gesture pages the program instead.
+- **Read-back navigation is not typing, on either side (ADR-055).** The page keys the wheel
+  policy's alternate-screen route emits leave the pane on `events.onNavigation` rather than
+  `events.onData`, so the per-mirror arm does not hold them; everything else a gesture produces,
+  SGR mouse reports included, still passes `emitUser`. The split is `isTerminalPageKey` in
+  `src/shared/terminal-wheel.ts`, which is the route's own output and the closed set the wire
+  guard admits `navigation: true` for: claim it on any other byte and
+  `isCompanionInputRequest` refuses the request at 400. Main gates it on `typingAllowed()` like
+  any key and then takes `lease.navigate` rather than `lease.write`, which is the same PTY
+  write minus `sources.onInput`. That omission is the point: `pty-supervisor.ts` fans `onInput`
+  to the owning renderer, which records it as terminal input and arms ADR-019, so a page key
+  sent through `write` would push a notification about the person's own scrolling. The same
+  distinction `resize` already draws, one verb further along.
 - **The control bar is armed-only.** `MirrorControls` renders the Arm/Disarm button alone
   while disarmed and adds the key strip and the text form only while `armed`; the tests that
   look for `#companion-terminal-text` or the key buttons must arm first.

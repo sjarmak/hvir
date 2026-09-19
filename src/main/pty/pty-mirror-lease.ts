@@ -37,7 +37,7 @@ export interface PtyMirrorLeaseSources {
   /** The tail and its preamble read together, so the preamble matches this exact tail. */
   readonly retained: () => PtyRetainedOutput
   readonly geometry: () => PtyGeometry
-  /** Fan-out after a write landed on the PTY. */
+  /** Fan-out after a write landed on the PTY; read-back navigation skips it (ADR-055). */
   readonly onInput: (data: string) => void
 }
 
@@ -101,6 +101,9 @@ export function createPtyMirrorLease(
     write(data) {
       admitMirror(state, sources.entry(), sources).write(data)
       sources.onInput(data)
+    },
+    navigate(data) {
+      admitMirror(state, sources.entry(), sources).write(data)
     },
     resize(cols, rows) {
       admitMirror(state, sources.entry(), sources).resize(cols, rows)

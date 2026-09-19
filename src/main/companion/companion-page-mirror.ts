@@ -108,6 +108,15 @@ export class CompanionPageMirror {
   }
 
   /**
+   * Pages a program through its own history (ADR-055). The same write and the
+   * same refusals; it is left out of the input record the owning renderer keeps,
+   * so reading back on a phone raises no attention.
+   */
+  navigate(data: string): void {
+    this.admit((lease) => lease.navigate(data))
+  }
+
+  /**
    * Asks the PTY to take the phone's grid (ADR-052). `desktop-focused` is the
    * Away door saying not now and leaves the mirror as it is; every other
    * refusal means the lease is dead and ends the mirror as a write would.

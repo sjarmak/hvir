@@ -108,9 +108,17 @@ async function input(
 ): Promise<void> {
   const { page, rest } = await verbBody(context)
   if (!isCompanionInputRequest(rest)) {
-    throw new CompanionHttpError(400, 'Expected {"page", "data"}')
+    throw new CompanionHttpError(
+      400,
+      'Expected {"page", "data"}, with "navigation" only on a read-back page key',
+    )
   }
-  sessions.input(page, handleParam(context), rest.data)
+  sessions.input(
+    page,
+    handleParam(context),
+    rest.data,
+    rest.navigation === true ? 'navigation' : 'typing',
+  )
   const accepted: SessionsMutationResponse = { outcome: 'accepted' }
   json(context.response, 200, accepted)
 }
