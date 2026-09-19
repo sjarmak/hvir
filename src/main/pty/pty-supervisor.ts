@@ -776,10 +776,14 @@ export class PtySupervisor {
     this.publishMirrorGeometry({ kind: 'held', ...ownerOf(id, entry), geometry })
   }
 
-  /** Every hold ends here or at a renderer resize; each produces at most one reclaim. */
+  /**
+   * Every hold ends here or at a renderer resize; each produces at most one reclaim. An exit
+   * listener may settle attention while the exited entry is still registered, so a dead PTY
+   * is never named.
+   */
   private reclaimMirrorGeometry(): void {
     for (const [id, entry] of this.entries) {
-      if (entry.geometrySource !== 'mirror') continue
+      if (entry.geometrySource !== 'mirror' || !entry.lifetime.current) continue
       entry.geometrySource = 'renderer'
       this.publishMirrorGeometry({ kind: 'reclaim', ...ownerOf(id, entry) })
     }

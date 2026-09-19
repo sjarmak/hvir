@@ -607,6 +607,14 @@ describe('PtySupervisor mirror lease holds the PTY size while the desktop is Awa
     expect(refused).toBeInstanceOf(PtyMirrorRefusedError)
     const error = refused as PtyMirrorRefusedError
     expect(error.message).toBe(`PTY mirror on '${info.id}' refused: desktop-focused`)
-    expect(error.message).not.toContain('50')
+  })
+
+  it('a hold on a PTY that exited before its entry was dropped reclaims nothing', async () => {
+    const { pty, supervisor, lease, events, attention } = await awayFixture()
+    lease.resize(50, 40)
+    // The exit fan-out runs while the exited entry is still registered.
+    supervisor.onExit(() => attention.setAway(false))
+    pty.emitExit({ exitCode: 0, signal: undefined })
+    expect(events.map((event) => event.kind)).toEqual(['held'])
   })
 })
