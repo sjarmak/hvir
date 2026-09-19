@@ -464,7 +464,7 @@ export class TerminalRuntime {
         if (this.pane !== pane) return
         this.interactions.retainedBufferChanged()
         this.terminalSize = { cols, rows }
-        if (!this.surface.canFocus() || !this.started) return
+        if (!this.surface.ownsGeometry() || !this.started) return
         if (this.resizeTimer !== undefined) window.clearTimeout(this.resizeTimer)
         const interactionGeneration = this.surface.interactionGeneration
         const ptyId = this.activePtyId
@@ -472,7 +472,7 @@ export class TerminalRuntime {
         this.resizeTimer = window.setTimeout(() => {
           this.resizeTimer = undefined
           if (
-            !this.surface.canFocus() ||
+            !this.surface.ownsGeometry() ||
             interactionGeneration !== this.surface.interactionGeneration ||
             !ptyId ||
             ptyId !== this.activePtyId ||
@@ -480,10 +480,7 @@ export class TerminalRuntime {
           ) {
             return
           }
-          window.hvir.send('pty:resize', {
-            id: ptyId,
-            ...this.terminalSize,
-          })
+          window.hvir.send('pty:resize', { id: ptyId, ...this.terminalSize })
         }, PTY_RESIZE_DEBOUNCE_MS)
       }),
       pane.events.onEvent((event) => {
@@ -538,6 +535,9 @@ export class TerminalRuntime {
         // Already written to the PTY by a Companion mirror (ADR-050): hand it
         // to the owner as this terminal's mirror input; write nothing.
         onMirrorInput: (data) => this.options.onMirrorInput(data),
+        // A Companion holds this PTY's size, or gave it back (ADR-052): the
+        // surface presents it and decides whether the pane's fit may resize.
+        onMirrorGeometry: (held) => this.surface.holdGeometry(held),
       },
     )
     this.surface.installRoute(this.eventRoute)

@@ -1,5 +1,5 @@
 import type { TerminalEventRoute } from './terminal-event-router'
-import type { TerminalPane, TerminalPresentation } from './terminal-pane'
+import type { TerminalPane, TerminalPresentation, TerminalSize } from './terminal-pane'
 
 /**
  * Owns the ordered lease between one retained terminal surface and its current
@@ -12,6 +12,7 @@ export class TerminalSurfaceAttachment {
   private route?: TerminalEventRoute
   private applied: TerminalPresentation = 'hidden'
   private workspacePresentation: TerminalPresentation = 'hidden'
+  private held?: TerminalSize
   private lease?: {
     readonly generation: number
     container?: HTMLElement
@@ -80,6 +81,17 @@ export class TerminalSurfaceAttachment {
 
   canFocus(): boolean {
     return Boolean(this.current && this.pane && this.applied === 'visible')
+  }
+
+  /** The pane's measured size is the PTY's: presented, and no Companion holds it (ADR-052). */
+  ownsGeometry(): boolean {
+    return this.canFocus() && this.held === undefined
+  }
+
+  /** A Companion mirror holds the PTY's size, or the desktop reclaimed it (ADR-052). */
+  holdGeometry(held: TerminalSize | undefined): void {
+    this.held = held
+    this.pane?.setHeldGeometry(held)
   }
 
   canWorkspaceFocus(): boolean {
@@ -169,6 +181,7 @@ export class TerminalSurfaceAttachment {
     this.pane = undefined
     this.route = undefined
     this.lease = undefined
+    this.held = undefined
     this.applied = 'hidden'
     this.interactionRevision += 1
   }

@@ -66,20 +66,62 @@ describe('TerminalSurfaceAttachment', () => {
     expect(surface.currentContainer).toBe(second)
     expect(surface.isCurrentLease(secondLease, second)).toBe(true)
   })
+
+  it('hands a held size to the pane and withdraws geometry ownership until it is released', () => {
+    const surface = new TerminalSurfaceAttachment()
+    const pane = fakePane()
+    const workspace = document.createElement('div')
+    surface.attach(workspace, 'visible')
+    surface.mountPane(pane.value, workspace)
+    surface.synchronize('visible')
+    expect(surface.ownsGeometry()).toBe(true)
+
+    surface.holdGeometry({ cols: 61, rows: 23 })
+
+    expect(pane.heldGeometry).toHaveBeenCalledExactlyOnceWith({ cols: 61, rows: 23 })
+    expect(surface.ownsGeometry()).toBe(false)
+    expect(surface.canFocus()).toBe(true)
+
+    // Hidden still wins: the pane is told to hide, and reveal does not re-send the hold.
+    surface.synchronize('hidden')
+    surface.synchronize('visible')
+    expect(pane.presentation.mock.calls.map(([value]) => value)).toEqual([
+      'hidden',
+      'visible',
+      'hidden',
+      'visible',
+    ])
+    expect(pane.heldGeometry).toHaveBeenCalledOnce()
+    expect(surface.ownsGeometry()).toBe(false)
+
+    surface.holdGeometry(undefined)
+    expect(pane.heldGeometry).toHaveBeenLastCalledWith(undefined)
+    expect(surface.ownsGeometry()).toBe(true)
+
+    surface.holdGeometry({ cols: 61, rows: 23 })
+    surface.releaseResources()
+    expect(surface.ownsGeometry()).toBe(false)
+    surface.mountPane(pane.value, workspace)
+    surface.synchronize('visible')
+    expect(surface.ownsGeometry()).toBe(true)
+  })
 })
 
 function fakePane() {
   const mount = vi.fn()
   const reparent = vi.fn()
   const presentation = vi.fn<TerminalPane['setPresentation']>()
+  const heldGeometry = vi.fn<TerminalPane['setHeldGeometry']>()
   return {
     mount,
     reparent,
     presentation,
+    heldGeometry,
     value: {
       mount,
       reparent,
       setPresentation: presentation,
+      setHeldGeometry: heldGeometry,
     } as unknown as TerminalPane,
   }
 }

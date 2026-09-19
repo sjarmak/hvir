@@ -40,6 +40,24 @@
   caret-color: transparent;
 }
 
+/* A Companion mirror holds the PTY's size (ADR-052): the grid sits top-left at
+   that size and this one-line mark names the holder, as tmux marks a smaller
+   client. Present only while held. */
+.terminal-held-geometry-notice {
+  position: absolute;
+  z-index: 2;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 8px;
+  border: 1px solid #3b4654;
+  border-radius: 3px;
+  background: color-mix(in srgb, #191e25 92%, transparent);
+  color: #aeb7c3;
+  font-size: calc(9px * var(--hvir-interface-scale));
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 .terminal-semantic-navigation {
   position: absolute;
   z-index: 3;
