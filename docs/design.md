@@ -531,6 +531,7 @@ drives the badge and away-time Push.
 > Superseded by: [ADR-051](adr/ADR-051-terminal-notification-prompt-attention.md) | partial | No phone action clearing attention, for a prompt entry on the mirrored terminal.
 > Superseded by: [ADR-052](adr/ADR-052-companion-mirror-holds-pty-size-while-away.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
 > Superseded by: [ADR-054](adr/ADR-054-sticky-terminal-modes-precede-the-replayed-tail.md) | partial | Main not interpreting the bytes it forwards, for a bounded scan of sticky DEC private modes emitted ahead of the replayed tail.
+> Superseded by: [ADR-055](adr/ADR-055-read-back-navigation-is-not-typing.md) | partial | The per-mirror arm gating every byte and mirror input being recorded as terminal input, for the page keys a read-back gesture emits to a program that owns its history.
 
 A Companion page holds a mirror lease on one live hvir-owned PTY: main forwards the retained
 output tail, live bytes, and desktop geometry, the phone emulates them with ghostty-web, and
@@ -561,8 +562,9 @@ the most recent phone resize wins when two phones hold one PTY.
 
 ### [ADR-053 — The Companion mirror reads back through the emulator's viewport](adr/ADR-053-companion-mirror-reads-back-through-emulator-viewport.md)
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-052](adr/ADR-052-companion-mirror-holds-pty-size-while-away.md) | partial | The page's own scrollback layer drawing above the grid for a shell's mirror, for the emulator's viewport as the one read-back surface.
+> Superseded by: [ADR-055](adr/ADR-055-read-back-navigation-is-not-typing.md) | partial | An alternate-screen session stating that it has no history to read back, for a program that keeps its own history and is paged through it.
 
 The phone reads back by moving the emulator's own viewport, so history is drawn by the renderer
 that draws the live screen and the page keeps no second text surface. A finger drag decides
@@ -581,6 +583,19 @@ with no screen model, cursor, or content. Each reader receives as a preamble onl
 window it is about to replay can no longer prove, carried as a distinct wire field rather than a
 prefix, so a full-screen program's first frame is one grid instead of a stack of them. The page
 repeats the same scan over its own buffer, whose window is cut independently and keeps moving.
+
+### [ADR-055 — Read-back navigation reaches a mirrored program without being typing](adr/ADR-055-read-back-navigation-is-not-typing.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | The per-mirror arm gating every byte and mirror input being recorded as terminal input, for the page keys a read-back gesture emits to a program that owns its history.
+> Supersedes: [ADR-053](adr/ADR-053-companion-mirror-reads-back-through-emulator-viewport.md) | partial | An alternate-screen session stating that it has no history to read back, for a program that keeps its own history and is paged through it.
+
+A program that owns its history, such as Claude Code under tmux, is read back from the phone by
+paging it with the two keys the shared wheel policy already sends on the desktop. Those keys are
+gated by the owner's mirror input permission alone, not by the per-mirror arm, and they reach the
+PTY without being recorded as terminal input, so reading back raises no attention and sends no
+Push. The exempt set is closed at those keys, typing still requires the arm, and the mirror stops
+claiming an alternate-screen session has no history.
 
 ## 5. Architecture
 

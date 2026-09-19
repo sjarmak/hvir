@@ -1,7 +1,8 @@
 # ADR-053: The Companion mirror reads back through the emulator's viewport
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-052](ADR-052-companion-mirror-holds-pty-size-while-away.md) | partial | The page's own scrollback layer drawing above the grid for a shell's mirror, for the emulator's viewport as the one read-back surface.
+> Superseded by: [ADR-055](ADR-055-read-back-navigation-is-not-typing.md) | partial | An alternate-screen session stating that it has no history to read back, for a program that keeps its own history and is paged through it.
 
 ## Context
 
