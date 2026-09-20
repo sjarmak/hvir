@@ -27,8 +27,8 @@ import {
 } from '../../shared'
 import type { Disposer } from '../project-host'
 import type { PtyObservationSource } from '../pty/pty-supervisor'
+import { SessionsDemandLeases } from './sessions-demand-lease'
 import {
-  demandOwnerKey,
   requireRendererOwner,
   type SessionsDemandOwner,
 } from './sessions-demand-owner'
@@ -131,14 +131,13 @@ type ObservationBase = Omit<SessionsObservationSnapshot, 'demandGeneration' | 'r
  * Demand-scoped main adapter over existing owners. It owns no session policy or state.
  */
 export class SessionsObservationPort {
-  private readonly leases = new Map<string, DemandLease>()
+  private readonly leases = new SessionsDemandLeases<DemandLease>()
   private sourceDisposers: Disposer[] = []
   private current?: ObservationBase
   private fingerprint?: string
   private revision = 0
   private identities?: SessionsProjectionIdentityScope
   private readonly sourceListeners = new Set<() => void>()
-  private disposed = false
 
   constructor(private readonly options: SessionsObservationPortOptions) {}
 
@@ -147,9 +146,8 @@ export class SessionsObservationPort {
     demandGeneration: number,
   ): SessionsObservationSnapshot {
     this.assertDemandGeneration(demandGeneration)
-    if (this.disposed) throw new Error('Sessions observation is disposed')
-    const key = demandOwnerKey(owner)
-    const current = this.leases.get(key)
+    if (this.leases.disposed) throw new Error('Sessions observation is disposed')
+    const current = this.leases.get(owner)
     if (current?.demandGeneration === demandGeneration) {
       return this.snapshot(owner, demandGeneration)
     }
@@ -164,7 +162,7 @@ export class SessionsObservationPort {
         throw error
       }
     }
-    this.leases.set(key, { owner, demandGeneration })
+    this.leases.add({ owner, demandGeneration })
     return this.snapshot(owner, demandGeneration)
   }
 
@@ -173,8 +171,8 @@ export class SessionsObservationPort {
     demandGeneration: number,
   ): SessionsObservationSnapshot {
     this.assertDemandGeneration(demandGeneration)
-    const lease = this.leases.get(demandOwnerKey(owner))
-    if (!lease || lease.demandGeneration !== demandGeneration || !this.current) {
+    const lease = this.leases.at(owner, demandGeneration)
+    if (!lease || !this.current) {
       throw new Error('Sessions observation demand is no longer current')
     }
     return {
@@ -185,10 +183,7 @@ export class SessionsObservationPort {
   }
 
   release(owner: SessionsDemandOwner, demandGeneration: number): boolean {
-    const key = demandOwnerKey(owner)
-    const lease = this.leases.get(key)
-    if (!lease || lease.demandGeneration !== demandGeneration) return false
-    this.leases.delete(key)
+    if (!this.leases.remove(owner, demandGeneration)) return false
     if (this.leases.size === 0) this.stopSources()
     return true
   }
@@ -198,7 +193,7 @@ export class SessionsObservationPort {
     request: SessionsOpenRequest,
   ): SessionsResolvedOpen {
     const renderer = requireRendererOwner(owner, 'open')
-    const lease = this.leases.get(demandOwnerKey(owner))
+    const lease = this.leases.get(owner)
     return resolveSessionsOpen({
       owner: renderer,
       request,
@@ -222,7 +217,7 @@ export class SessionsObservationPort {
       'handle' | 'projectionDemandGeneration' | 'sourceRevision'
     >,
   ): SessionsResolvedExternalSession {
-    const lease = this.leases.get(demandOwnerKey(owner))
+    const lease = this.leases.get(owner)
     return resolveSessionsExternalSession({
       request,
       activeDemandGeneration: lease?.demandGeneration,
@@ -236,7 +231,7 @@ export class SessionsObservationPort {
     owner: SessionsDemandOwner,
     request: SessionsMutationRequest,
   ): SessionsResolvedMutationTarget {
-    const lease = this.leases.get(demandOwnerKey(owner))
+    const lease = this.leases.get(owner)
     return resolveSessionsMutationTarget({
       request,
       activeDemandGeneration: lease?.demandGeneration,
@@ -256,8 +251,7 @@ export class SessionsObservationPort {
     projectionDemandGeneration: number,
     handle: SessionsTerminalHandle,
   ): SessionsResolvedExternalSession {
-    const lease = this.leases.get(demandOwnerKey(owner))
-    if (!lease || lease.demandGeneration !== projectionDemandGeneration) {
+    if (!this.leases.at(owner, projectionDemandGeneration)) {
       return { outcome: 'unavailable', reason: 'stale-projection' }
     }
     return currentSessionsExternalSession(handle, this.current, this.identities)
@@ -269,7 +263,7 @@ export class SessionsObservationPort {
     request: SessionsAttachExternalRequest,
   ): SessionsResolvedExternalAttach {
     requireRendererOwner(owner, 'attach')
-    const lease = this.leases.get(demandOwnerKey(owner))
+    const lease = this.leases.get(owner)
     return resolveSessionsExternalAttach({
       request,
       activeDemandGeneration: lease?.demandGeneration,
@@ -302,10 +296,8 @@ export class SessionsObservationPort {
     projectionDemandGeneration: number,
     targets: readonly SessionsUsageDemandTarget[],
   ): readonly SessionsResolvedUsageTarget[] {
-    const lease = this.leases.get(demandOwnerKey(owner))
     if (
-      !lease ||
-      lease.demandGeneration !== projectionDemandGeneration ||
+      !this.leases.at(owner, projectionDemandGeneration) ||
       !this.current ||
       targets.length > MAX_SESSIONS_PROJECTION_ROWS
     ) {
@@ -348,9 +340,8 @@ export class SessionsObservationPort {
   }
 
   dispose(): void {
-    if (this.disposed) return
-    this.disposed = true
-    this.leases.clear()
+    if (this.leases.disposed) return
+    this.leases.dispose()
     this.stopSources()
     this.sourceListeners.clear()
   }
@@ -378,11 +369,11 @@ export class SessionsObservationPort {
   }
 
   private readonly sourceChanged = (): void => {
-    if (this.leases.size === 0 || this.disposed) return
+    if (this.leases.size === 0 || this.leases.disposed) return
     const projectionChanged = this.rebuild(false)
     for (const listener of this.sourceListeners) listener()
     if (!projectionChanged) return
-    for (const lease of this.leases.values()) {
+    for (const lease of this.leases.all()) {
       this.options.emit(lease.owner, {
         demandGeneration: lease.demandGeneration,
         revision: this.revision,

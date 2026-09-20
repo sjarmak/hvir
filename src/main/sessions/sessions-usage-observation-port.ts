@@ -14,6 +14,11 @@ import {
 } from '../harness/harness-usage-demand-controller'
 import type { Disposer } from '../project-host'
 import type { PtyUsageObservationSource } from '../pty/pty-supervisor'
+import {
+  SessionsDemandLeases,
+  SessionsSourceObservation,
+  queueLeaseNotification,
+} from './sessions-demand-lease'
 import { demandOwnerKey, type SessionsDemandOwner } from './sessions-demand-owner'
 import type {
   SessionsObservationPort,
@@ -48,9 +53,12 @@ export interface SessionsUsageObservationPortOptions {
 
 /** Main-owned adapter from safe Sessions qualifiers to #648's exact usage demand. */
 export class SessionsUsageObservationPort {
-  private readonly leases = new Map<string, UsageLease>()
-  private stopObservingSessions?: Disposer
-  private disposed = false
+  private readonly leases = new SessionsDemandLeases<UsageLease>()
+  private readonly source = new SessionsSourceObservation(() =>
+    this.options.sessions.observeSourceChanges(() => {
+      for (const lease of this.leases.all()) this.reconcileSourceChange(lease)
+    }),
+  )
 
   constructor(private readonly options: SessionsUsageObservationPortOptions) {}
 
@@ -59,9 +67,8 @@ export class SessionsUsageObservationPort {
     request: SessionsUsageDemandRequest,
   ): SessionsUsageSnapshot {
     this.validateRequest(request)
-    if (this.disposed) throw new Error('Sessions usage observation is disposed')
-    const key = demandOwnerKey(owner)
-    const current = this.leases.get(key)
+    if (this.leases.disposed) throw new Error('Sessions usage observation is disposed')
+    const current = this.leases.get(owner)
     if (current?.demandGeneration === request.demandGeneration) {
       const targets = this.options.sessions.resolveUsageTargets(owner, request)
       this.reconcileRequest(current, request, targets)
@@ -83,18 +90,19 @@ export class SessionsUsageObservationPort {
       revision: 1,
       notifyQueued: false,
     }
-    this.leases.set(key, lease)
-    this.startSourceObservation()
+    this.leases.add(lease)
+    this.source.start()
 
     for (const target of targets) this.reconcileTarget(lease, target, false)
     return this.snapshot(owner, request.demandGeneration)
   }
 
   snapshot(owner: SessionsDemandOwner, demandGeneration: number): SessionsUsageSnapshot {
-    const lease = this.leases.get(demandOwnerKey(owner))
-    if (!lease || lease.demandGeneration !== demandGeneration) {
-      throw new Error('Sessions usage demand is no longer current')
-    }
+    const lease = this.leases.require(
+      owner,
+      demandGeneration,
+      'Sessions usage demand is no longer current',
+    )
     return {
       version: SESSIONS_PROJECTION_VERSION,
       demandGeneration,
@@ -110,22 +118,17 @@ export class SessionsUsageObservationPort {
   }
 
   release(owner: SessionsDemandOwner, demandGeneration: number): boolean {
-    const key = demandOwnerKey(owner)
-    const lease = this.leases.get(key)
-    if (!lease || lease.demandGeneration !== demandGeneration) return false
-    this.leases.delete(key)
+    const lease = this.leases.remove(owner, demandGeneration)
+    if (!lease) return false
     this.stopLease(lease)
-    this.stopSourceObservationIfIdle()
+    this.source.stopIfIdle(this.leases)
     return true
   }
 
   dispose(): void {
-    if (this.disposed) return
-    this.disposed = true
-    void this.stopObservingSessions?.()
-    this.stopObservingSessions = undefined
-    for (const lease of this.leases.values()) this.stopLease(lease)
-    this.leases.clear()
+    if (this.leases.disposed) return
+    this.source.stop()
+    for (const lease of this.leases.dispose()) this.stopLease(lease)
   }
 
   private updateFact(
@@ -140,7 +143,7 @@ export class SessionsUsageObservationPort {
   }
 
   private reconcileSourceChange(lease: UsageLease): void {
-    if (!this.currentLease(lease)) return
+    if (!this.leases.owns(lease)) return
     for (const target of lease.targets) {
       try {
         const current = this.options.sessions.currentUsageTargets(
@@ -161,11 +164,8 @@ export class SessionsUsageObservationPort {
   }
 
   private queueNotification(lease: UsageLease): void {
-    if (lease.notifyQueued) return
-    lease.notifyQueued = true
-    queueMicrotask(() => {
-      lease.notifyQueued = false
-      if (!this.ownsLease(lease)) return
+    queueLeaseNotification(lease, () => {
+      if (!this.leases.owns(lease)) return
       this.options.emit(lease.owner, {
         demandGeneration: lease.demandGeneration,
         revision: lease.revision,
@@ -178,18 +178,6 @@ export class SessionsUsageObservationPort {
     lease.facts.clear()
     lease.targetFingerprints.clear()
     lease.targetEpochs.clear()
-  }
-
-  private startSourceObservation(): void {
-    this.stopObservingSessions ??= this.options.sessions.observeSourceChanges(() => {
-      for (const lease of this.leases.values()) this.reconcileSourceChange(lease)
-    })
-  }
-
-  private stopSourceObservationIfIdle(): void {
-    if (this.leases.size > 0) return
-    void this.stopObservingSessions?.()
-    this.stopObservingSessions = undefined
   }
 
   private observeTarget(
@@ -237,7 +225,7 @@ export class SessionsUsageObservationPort {
         target: resolution.target,
         emit: (telemetry) => {
           if (
-            this.currentLease(lease) &&
+            this.leases.owns(lease) &&
             lease.targetEpochs.get(target.handle) === epoch
           ) {
             this.updateFact(
@@ -249,7 +237,7 @@ export class SessionsUsageObservationPort {
         },
       }
       const release = this.options.usage.acquire(demand)
-      if (this.currentLease(lease) && lease.targetEpochs.get(target.handle) === epoch) {
+      if (this.leases.owns(lease) && lease.targetEpochs.get(target.handle) === epoch) {
         lease.releases.set(target.handle, release)
       } else {
         void release()
@@ -257,14 +245,6 @@ export class SessionsUsageObservationPort {
     } catch {
       setFact({ status: 'unavailable', reason: 'source-unavailable' })
     }
-  }
-
-  private currentLease(lease: UsageLease): boolean {
-    return this.ownsLease(lease)
-  }
-
-  private ownsLease(lease: UsageLease): boolean {
-    return !this.disposed && this.leases.get(demandOwnerKey(lease.owner)) === lease
   }
 
   private validateRequest(request: SessionsUsageDemandRequest): void {
