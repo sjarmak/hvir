@@ -593,6 +593,7 @@ repeats the same scan over its own buffer, whose window is cut independently and
 > Supersedes: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | The per-mirror arm gating every byte and mirror input being recorded as terminal input, for the page keys a read-back gesture emits to a program that owns its history.
 > Supersedes: [ADR-053](adr/ADR-053-companion-mirror-reads-back-through-emulator-viewport.md) | partial | An alternate-screen session stating that it has no history to read back, for a program that keeps its own history and is paged through it.
 > Superseded by: [ADR-056](adr/ADR-056-read-back-reaches-a-mouse-tracking-program.md) | partial | The exempt set closed at the two page keys, for the wheel reports the same policy sends a program that tracks the mouse.
+> Superseded by: [ADR-060](adr/ADR-060-the-mirror-spends-its-height-on-the-session.md) | partial | The standing line the mirror showed for a program that keeps its own history, for the rows of the session that line stood on.
 
 A program that owns its history, such as Claude Code under tmux, is read back from the phone by
 paging it with the two keys the shared wheel policy already sends on the desktop. Those keys are
@@ -655,6 +656,18 @@ so the size becomes the person's: two steps beside the mirror's title walk a lad
 pixels, the choice is stored on that device, and the default drops to ten, which is about sixty
 columns on a phone's width. A step re-derives the grid and declares it through ADR-058's
 `viewport` verb like any other layout change; nothing about the size itself leaves the phone.
+
+### [ADR-060 — The mirror spends its height on the session](adr/ADR-060-the-mirror-spends-its-height-on-the-session.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-055](adr/ADR-055-read-back-navigation-is-not-typing.md) | partial | The standing line the mirror showed for a program that keeps its own history, for the rows of the session that line stood on.
+
+The line ADR-055 showed over a full-screen program's grid, saying the program keeps its own
+history, cost a row of the phone's screen for as long as that program ran, which on a phone is
+most of the session. The mirror now shows the alternate screen with nothing standing over it: the
+drag still pages the program through its history, the way back is still offered where a viewport
+can move, and what the mirror says is what has just happened rather than what is continuously
+true.
 
 ## 5. Architecture
 

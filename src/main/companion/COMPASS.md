@@ -402,14 +402,14 @@ otherwise.
   read-back dying with nothing on screen to say why. `STICKY_MODE_PREAMBLE_MAX_CHARS` went 14 to
   54 with them, and that is a wire bound: a page on an older bundle refuses an `opened` whose
   preamble exceeds what it knows, which ends its event stream.
-- **The alternate screen says the program keeps its own history (ADR-055).**
+- **The alternate screen is drawn, not announced (ADR-060).**
   `pane.isAlternateScreen()` reads the emulator's mode flag, never the screen's text, and the
-  mount reports the change to `terminal-view.tsx`, which renders one `companion-status` line in
-  the terminal area. It is not inside `.companion-terminal-extent`,
-  which is `overflow: hidden` at an explicit pixel size the fit writes every frame and would
-  clip it. The line used to claim the session had no history, which is false for anything
-  holding its own: tmux, a pager, a shell under tmux. What is true is that the emulator has no
-  scrollback there, so the gesture pages the program instead.
+  mount reports the change to `terminal-view.tsx`, which uses it for one thing: a viewport that
+  cannot move is offered no way back. Nothing is rendered above the grid for it. ADR-055 did show
+  a `companion-status` line there, saying the program keeps its own history; it cost a row of a
+  phone's screen for the whole life of the program, which is most of a phone's session, so
+  ADR-060 took it out. The drag that pages the program is unchanged; where it is written down is
+  the operator runbook.
 - **Read-back navigation is not typing, on either side (ADR-055, widened by ADR-056).** What the
   wheel policy emits for a read-back gesture leaves the pane on `events.onNavigation` rather than
   `events.onData`, so the per-mirror arm does not hold it; everything else a gesture produces

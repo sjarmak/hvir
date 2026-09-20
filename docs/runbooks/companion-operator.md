@@ -288,11 +288,12 @@ What the phone shows:
   whether you tapped it or dragged there. A full-screen program never shows it: there is no
   scrollback to be behind. A session that ended keeps it until you return, since its last
   output is still there to read.
-- The line `This program keeps its own history. Drag to page back through it.` under the
-  header while the session is in a full-screen program. Its earlier turns live inside the
-  program rather than in the terminal's scrollback, which is why the drag pages the program
-  instead of moving the view. A program that binds Page Up and Page Down to something other
-  than scrolling does that instead, on the phone and on the desktop alike.
+- **Nothing is shown for a full-screen program** (ADR-060). Drag over the grid and the program
+  pages through its own history: its earlier turns live inside the program rather than in the
+  terminal's scrollback, which is why the drag pages it instead of moving the view. The mirror
+  used to say so in a line above the grid and no longer does, because that line stood on a row of
+  the session for as long as the program ran. A program that binds Page Up and Page Down to
+  something other than scrolling does that instead, on the phone and on the desktop alike.
 - A **Transcript** button in the header on rows that also take answers (an external session
   attached inside an hvir terminal), switching between the mirror and the ADR-049 transcript
   view.
@@ -448,7 +449,7 @@ shows as a prompt without its message until the harness notifies again.
 | A prompt badge shows but no Push arrived for it | The terminal was already in the actionable set as Ready when the prompt arrived; Push fires only when a session enters the set. Or a desktop window was focused. |
 | The mirror shows old output and never catches up | The view is read back, which the terminal holds on purpose so output does not move the rows you are reading. Tap `The session has moved on. Back to live.` in the bottom corner, or drag toward the top of the screen. |
 | A drag or wheel over a full-screen program (vim, less, Claude Code) moves nothing | Both gestures reach the same policy, which sends the program either wheel reports (if it asked for mouse tracking, as a tmux session with `mouse on` does) or Page Up and Page Down, so what happens next is the program's answer to those. They need the Settings permission (**Allow typing from the Companion**) but not **Arm typing**; if the page says `Input from the Companion is off in Settings, so this program cannot be paged`, turn the setting on at the desktop. A program that binds those keys elsewhere, or a shell with no pager running, moves nothing by design. A program that asked for mouse reports receives reports instead, and those do need the arm. If the grid is taller than the area, the drag still scrolls it either way. |
-| The mirror is a thin strip at the bottom with black above it | The phone is still drawing the desktop's grid scaled into its width, which is what it shows until hvir confirms the size it asked for (ADR-058). It settles within a second of the mirror opening; a strip that stays means the hold never landed, which is a mirror that has ended, so select the row again. A full-screen program leaves the space above empty for a different reason: it draws on the alternate screen, where the terminal keeps no scrollback, which the mirror says in a line of its own. Drag over the grid to read that program's own history back. |
+| The mirror is a thin strip at the bottom with black above it | The phone is still drawing the desktop's grid scaled into its width, which is what it shows until hvir confirms the size it asked for (ADR-058). It settles within a second of the mirror opening; a strip that stays means the hold never landed, which is a mirror that has ended, so select the row again. A full-screen program leaves the space above empty for a different reason: it draws on the alternate screen, where the terminal keeps no scrollback. Drag over the grid to read that program's own history back. |
 | Reading back shows a frame of a full-screen program twice, or a stale line | What you read is the terminal's scrollback as it stands; a program that redraws by moving the cursor leaves its earlier frames there, as on the desktop. The live screen is the screen as drawn. |
 | Reading back jumps further back, to the oldest line, after the terminal resizes | A resize on the desktop reflows the scrollback, and a position further back than the reflowed scrollback reaches is moved to its oldest row. Drag toward the top of the screen to return to the live screen. |
 

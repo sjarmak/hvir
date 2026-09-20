@@ -36,13 +36,6 @@ interface TerminalViewProps {
 }
 
 /**
- * A full-screen program's earlier turns live in the program rather than in the
- * emulator, so a drag pages the program through them (ADR-055). The emulator
- * has no scrollback here; the session is not without history.
- */
-const OWN_HISTORY = 'This program keeps its own history. Drag to page back through it.'
-
-/**
  * One mirrored terminal (ADR-050) filling the phone's screen: a one-line
  * header, the terminal in all the height that remains (the phone's own grid,
  * which it holds the PTY at while it watches), and one compact control bar at
@@ -53,7 +46,9 @@ const OWN_HISTORY = 'This program keeps its own history. Drag to page back throu
  * grid taller than the phone. A full-screen program has no scrollback for a
  * viewport to be behind, so it is offered the way back under no condition and
  * the record's promise of no affordance that moves nothing holds here rather
- * than in the emulator. While the row carries a prompt, its message is
+ * than in the emulator. That screen is otherwise unannounced: nothing stands
+ * over the grid for the life of a program, because a row of the phone is a row
+ * of the session (ADR-060). While the row carries a prompt, its message is
  * the header's second line (ADR-051). A row that also takes answers offers its
  * transcript beside the mirror.
  */
@@ -105,11 +100,6 @@ export function TerminalView(props: TerminalViewProps) {
             {companionMirrorEndMessage(terminal.reason)}
           </p>
         ) : null}
-        {!alternateScreen ? null : (
-          <p className="companion-status companion-mirror-own-history" role="status">
-            {OWN_HISTORY}
-          </p>
-        )}
         {paneFailure === undefined ? null : (
           <p className="companion-error" role="alert">
             {paneFailure}
