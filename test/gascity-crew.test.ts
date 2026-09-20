@@ -70,9 +70,9 @@ suspended = true
  * with `dir`, sessions are named with the rig's *path* baked in, and a pooled
  * worker's `work_dir` is a worktree that lives nowhere near its rig.
  */
-const LIVE_CITY = '/home/ds/gas-city'
-const LIVE_MEM = '/home/ds/projects/mem'
-const LIVE_GASCITY_RIG = '/home/ds/gascity'
+const LIVE_CITY = '/home/dev/gas-city'
+const LIVE_MEM = '/home/dev/projects/mem'
+const LIVE_GASCITY_RIG = '/home/dev/gascity'
 
 const LIVE_SESSIONS = parseSessionListOutput(
   JSON.stringify({
@@ -94,7 +94,7 @@ const LIVE_SESSIONS = parseSessionListOutput(
         alias: `${LIVE_GASCITY_RIG}/polecat-3`,
         state: 'active',
         // A worktree, nowhere near the rig root it belongs to.
-        work_dir: '/home/ds/gascity-worktrees/polecat-3',
+        work_dir: '/home/dev/gascity-worktrees/polecat-3',
       },
       {
         id: 'gc-1',
@@ -205,7 +205,7 @@ describe('live gc crew derivation', () => {
   })
 
   it('associates a worktree-based worker by its rig-qualified name', () => {
-    // `work_dir` is /home/ds/gascity-worktrees/polecat-3 — containment alone
+    // `work_dir` is /home/dev/gascity-worktrees/polecat-3 — containment alone
     // would never place this session in the gascity rig.
     const crew = inWorkspace(LIVE_GASCITY_RIG, 'gascity')
     expect(crew.members.map((member) => member.label)).toContain('polecat-3')

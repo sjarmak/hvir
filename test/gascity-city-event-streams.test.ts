@@ -28,7 +28,7 @@ const RIG_TWO = asHostId('rig-2')
 describe('gas city event streams', () => {
   it('opens one stream per host, however many of its projects are open', async () => {
     const world = harness([
-      { hostId: RIG_ONE, cityRoot: hostPath(RIG_ONE, '/home/ds/gas-city') },
+      { hostId: RIG_ONE, cityRoot: hostPath(RIG_ONE, '/home/dev/gas-city') },
       { hostId: RIG_ONE },
       { hostId: RIG_TWO },
     ])
@@ -37,7 +37,7 @@ describe('gas city event streams', () => {
 
     expect(world.opened.map((stream) => stream.hostId)).toEqual([RIG_ONE, RIG_TWO])
     // The city root the first entry carried is the one the stream opened with.
-    expect(world.opened[0]?.cityRoot?.path).toBe('/home/ds/gas-city')
+    expect(world.opened[0]?.cityRoot?.path).toBe('/home/dev/gas-city')
     expect(
       world.streams.observationSnapshot().map((facts) => [facts.hostId, facts.stream]),
     ).toEqual([

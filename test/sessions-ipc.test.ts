@@ -199,7 +199,7 @@ describe('Sessions IPC', () => {
     const scopes = new RendererResourceScopes()
     const owner = scopes.activateOwner(31)
     const qualifier = sessionsWorkspaceQualifier(3, 0, 0)
-    const root = hostPath(asHostId('work'), '/home/ds/projects/mem')
+    const root = hostPath(asHostId('work'), '/home/dev/projects/mem')
     const resolveMutation = vi.fn(
       (): SessionsResolvedMutationTarget => ({
         outcome: 'resolved',

@@ -18,7 +18,7 @@ import {
 import type { SupervisorCityLifecycleEvent } from '../src/main/gascity/supervisor-stream'
 
 const HOST = asHostId('rig-1')
-const CITY_ROOT = hostPath(HOST, '/home/ds/gas-city')
+const CITY_ROOT = hostPath(HOST, '/home/dev/gas-city')
 
 describe('host city event facts', () => {
   it('opens stale, with the city root it was opened against', () => {

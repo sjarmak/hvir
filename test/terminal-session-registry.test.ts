@@ -116,7 +116,7 @@ describe('TerminalSessionRegistry', () => {
       launchRevision: 1,
       workspaceRoot: root,
       cwd: root,
-      title: 'ds@ds-5090: ~/projects/mem',
+      title: 'dev@workstation: ~/projects/mem',
       position: 0,
       active: true,
     })
@@ -132,11 +132,11 @@ describe('TerminalSessionRegistry', () => {
 
     // A later OSC-driven layout sync must not clobber the pinned rename.
     await registry.updateLayout(root, [
-      { id: SESSION_ID, title: 'ds@ds-5090: ~/projects/mem', position: 0, active: true },
+      { id: SESSION_ID, title: 'dev@workstation: ~/projects/mem', position: 0, active: true },
     ])
     expect(registry.list(root)).toEqual([
       expect.objectContaining({
-        title: 'ds@ds-5090: ~/projects/mem',
+        title: 'dev@workstation: ~/projects/mem',
         titlePinned: false,
       }),
     ])

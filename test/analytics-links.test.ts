@@ -73,7 +73,7 @@ describe('agentName', () => {
 
   it('prefers the alias and strips a rig-qualified path to its basename', () => {
     expect(
-      agentName('mem', { name: 'gc-517749', alias: '/home/ds/projects/mem/mem-worker-2' }),
+      agentName('mem', { name: 'gc-517749', alias: '/home/dev/projects/mem/mem-worker-2' }),
     ).toBe('mem.mem-worker-2')
   })
 

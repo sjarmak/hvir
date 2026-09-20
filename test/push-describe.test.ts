@@ -25,9 +25,9 @@ import {
 
 const LOCAL = asHostId('local')
 const RIG = asHostId('rig-1')
-const PROJECT_ROOT = '/home/ds/secret-project'
-const WORKSPACE_ROOT = '/home/ds/secret-project-worktrees/wt-panel'
-const CITY_ROOT = '/home/ds/gas-city'
+const PROJECT_ROOT = '/home/dev/secret-project'
+const WORKSPACE_ROOT = '/home/dev/secret-project-worktrees/wt-panel'
+const CITY_ROOT = '/home/dev/gas-city'
 const HARNESS_SESSION_ID = 'harness-session-7f3a'
 const SESSION_KEY = 'gc-session-9b2c'
 const REQUEST_ID = 'req-4d1e'

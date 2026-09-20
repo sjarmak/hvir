@@ -91,9 +91,9 @@ function inScope(candidate: CrewCandidate, input: DeriveCrewInput): boolean {
  * Rig association, strongest signal first.
  *
  * gc qualifies a session's name and template with the **rig root path**
- * (`/home/ds/projects/mem/mem-worker`), which is the one signal that survives
+ * (`/home/dev/projects/mem/mem-worker`), which is the one signal that survives
  * worktrees: a worker's `work_dir` is often a worktree
- * (`/home/ds/gascity-worktrees/polecat-3`) that lives nowhere near the rig it
+ * (`/home/dev/gascity-worktrees/polecat-3`) that lives nowhere near the rig it
  * belongs to, so containment alone loses it.
  */
 function belongsToRig(candidate: CrewCandidate, input: DeriveCrewInput): boolean {
@@ -117,7 +117,7 @@ function belongsToRig(candidate: CrewCandidate, input: DeriveCrewInput): boolean
 
 /**
  * The rig root gc qualified this session with:
- * `/home/ds/projects/mem/mem-worker` yields `/home/ds/projects/mem`.
+ * `/home/dev/projects/mem/mem-worker` yields `/home/dev/projects/mem`.
  *
  * Only an **absolute** prefix is a rig root. A relative qualifier (`mem/agent`)
  * names a rig, not a directory, and is matched against the rig name instead; a
@@ -336,7 +336,7 @@ function candidateRig(
 
 /**
  * gc names sessions with their rig path baked in
- * (`/home/ds/projects/mem/mem-worker-2`). The path is how the crew resolves a
+ * (`/home/dev/projects/mem/mem-worker-2`). The path is how the crew resolves a
  * rig, but it is not what anyone wants to read on a card.
  */
 function displayLabel(session: GasCitySession): string {

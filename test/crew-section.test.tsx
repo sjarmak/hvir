@@ -142,13 +142,13 @@ describe('crew view', () => {
 
   it('joins a path-shaped assignee that equals the session template', () => {
     const templated = member({
-      identityKeys: ['gc-1', 'goal-3-decisions', '/home/ds/gas-city/goal-3-decisions'],
+      identityKeys: ['gc-1', 'goal-3-decisions', '/home/dev/gas-city/goal-3-decisions'],
     })
     const view = buildCrewView(crew([templated]), [
       issue({
         id: 'g-1',
         status: 'open',
-        assignee: '/home/ds/gas-city/goal-3-decisions',
+        assignee: '/home/dev/gas-city/goal-3-decisions',
       }),
       issue({ id: 'g-2', status: 'open', assignee: 'goal-3-decisions' }),
       issue({ id: 'g-3', status: 'open', assignee: '/elsewhere/goal-3-decisions' }),
@@ -158,13 +158,13 @@ describe('crew view', () => {
 
   it('does not prefix-match a pool instance onto its template', () => {
     const template = member({
-      identityKeys: ['/home/ds/gas-city/city-infra-worker', 'city-infra-worker'],
+      identityKeys: ['/home/dev/gas-city/city-infra-worker', 'city-infra-worker'],
     })
     const view = buildCrewView(crew([template]), [
       issue({
         id: 'c-1',
         status: 'open',
-        assignee: '/home/ds/gas-city/city-infra-worker-1',
+        assignee: '/home/dev/gas-city/city-infra-worker-1',
       }),
     ])
     expect(view.pools[0]?.cards[0]?.held).toEqual([])
@@ -244,7 +244,7 @@ describe('crew view', () => {
 
 describe('holdsBead', () => {
   const keyed = member({
-    identityKeys: ['gc-1', 'mem-worker-ash', '/home/ds/gas-city/mem-worker-ash'],
+    identityKeys: ['gc-1', 'mem-worker-ash', '/home/dev/gas-city/mem-worker-ash'],
   })
 
   it.each([
@@ -252,7 +252,7 @@ describe('holdsBead', () => {
     ['undefined assignee', undefined, false],
     ['empty assignee', '', false],
     ['bare name not in keys', 'mem-worker', false],
-    ['qualified path in keys', '/home/ds/gas-city/mem-worker-ash', true],
+    ['qualified path in keys', '/home/dev/gas-city/mem-worker-ash', true],
   ])('%s -> %s', (_label, assignee, expected) => {
     expect(holdsBead(keyed, issue({ assignee }))).toBe(expected)
   })

@@ -13,7 +13,7 @@ function pendingSession(
   return {
     hostId: RIG,
     sessionKey,
-    cityRoot: hostPath(RIG, '/home/ds/gas-city'),
+    cityRoot: hostPath(RIG, '/home/dev/gas-city'),
     workspaceId: 'ws-1',
     kind: 'approval',
     freshness: 'fresh',

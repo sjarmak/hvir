@@ -118,9 +118,9 @@ export function ambiguousIdentityKeys(
  * assignee string in the member's identity keys, nothing looser.
  *
  * The rule is fixed by what bd assignees look like in a live city (read from
- * /home/ds/gas-city on 2026-09-12): a bare gc alias (`city-infra-pl`,
+ * a running city on 2026-09-12): a bare gc alias (`city-infra-pl`,
  * `gascity-pl`, `mayor`), an absolute agent-directory path that is the
- * session's template (`/home/ds/gas-city/goal-3-decisions`), a bare template
+ * session's template (`/home/dev/gas-city/goal-3-decisions`), a bare template
  * basename (`goal-4-context`), or a non-session identity (`sjarmak`,
  * `controller`, `codex-w1h`). gc's crew derivation already emits both the
  * qualified and basename form of a session's id, name, alias and template into
@@ -129,8 +129,8 @@ export function ambiguousIdentityKeys(
  * members crew-wide) joins nobody: the assignee then does not name one member.
  *
  * Prefix matching and basename-of-assignee matching are deliberately excluded:
- * `/home/ds/gas-city/city-infra-worker-1` must never join a session whose
- * template is `/home/ds/gas-city/city-infra-worker`. The rule is the one
+ * `/home/dev/gas-city/city-infra-worker-1` must never join a session whose
+ * template is `/home/dev/gas-city/city-infra-worker`. The rule is the one
  * `joinBead` uses, so the panel and gc's scheduler agree about ownership.
  */
 export function holdsBead(

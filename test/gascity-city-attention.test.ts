@@ -25,8 +25,8 @@ import type {
 
 const RIG = asHostId('rig-1')
 const OTHER = asHostId('rig-2')
-const PROJECT = '/home/ds/hvir'
-const FEATURE = '/home/ds/hvir-worktrees/wt-panel'
+const PROJECT = '/home/dev/hvir'
+const FEATURE = '/home/dev/hvir-worktrees/wt-panel'
 
 describe('gas city attention rollup', () => {
   it('raises the workspace a blocked worker is working in, with no view open', async () => {
@@ -304,7 +304,7 @@ describe('gas city attention pending sessions', () => {
       {
         hostId: RIG,
         sessionKey: 'w-1',
-        cityRoot: hostPath(RIG, '/home/ds/gas-city'),
+        cityRoot: hostPath(RIG, '/home/dev/gas-city'),
         workspaceId: 'ws-feature',
         kind: 'approval',
         freshness: 'fresh',
@@ -313,7 +313,7 @@ describe('gas city attention pending sessions', () => {
       {
         hostId: RIG,
         sessionKey: 'w-2',
-        cityRoot: hostPath(RIG, '/home/ds/gas-city'),
+        cityRoot: hostPath(RIG, '/home/dev/gas-city'),
         workspaceId: 'ws-main',
         kind: 'approval',
         freshness: 'fresh',
@@ -415,7 +415,7 @@ function facts(
 ): HostCityEvents {
   return {
     hostId: RIG,
-    cityRoot: hostPath(RIG, '/home/ds/gas-city'),
+    cityRoot: hostPath(RIG, '/home/dev/gas-city'),
     stream,
     observedAt: 1,
     lifecycle: [],
