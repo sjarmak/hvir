@@ -476,6 +476,9 @@ describe('Companion page terminal mirror', () => {
         key.textContent?.trim(),
       ),
     ).toEqual(COMPANION_KEYS.map((key) => key.label))
+    // Enter leads the bar: it follows almost every message typed on a phone,
+    // so it sits where a thumb lands rather than past the end of the row.
+    expect(COMPANION_KEYS[0]).toEqual({ label: 'Enter', data: '\r' })
     for (const key of COMPANION_KEYS) {
       await click(button(key.label))
       expect(server.calls.at(-1)).toMatchObject({

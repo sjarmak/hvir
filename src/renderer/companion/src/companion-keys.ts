@@ -10,7 +10,13 @@ export interface CompanionKey {
   readonly data: string
 }
 
+/**
+ * Enter leads: it is the key the bar exists for, sent after almost every
+ * message a phone types, so it takes the place a thumb reaches without
+ * looking rather than the end of a row that scrolls.
+ */
 export const COMPANION_KEYS: readonly CompanionKey[] = [
+  { label: 'Enter', data: '\r' },
   { label: 'Esc', data: '\u001b' },
   { label: 'Tab', data: '\t' },
   { label: 'Ctrl-C', data: '\u0003' },
@@ -18,5 +24,4 @@ export const COMPANION_KEYS: readonly CompanionKey[] = [
   { label: '↓', data: '\u001b[B' },
   { label: '←', data: '\u001b[D' },
   { label: '→', data: '\u001b[C' },
-  { label: 'Enter', data: '\r' },
 ]

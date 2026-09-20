@@ -331,8 +331,9 @@ Typing is off until you turn it on in three places, and each is independent of t
    mirror: selecting another row, a mirror ending, hiding the page (switching apps, locking
    the phone, backgrounding the tab), and two minutes with no key sent all disarm it, and the
    keys and the text field go away with it. Every key you send restarts the two minutes.
-3. Send a key. The strip carries Esc, Tab, Ctrl-C, the four arrows, and Enter, and scrolls
-   sideways when the phone is too narrow for all of them. Each sends the bytes of that key
+3. Send a key. The strip carries Enter first, then Esc, Tab, Ctrl-C and the four arrows, and
+   scrolls sideways when the phone is too narrow for all of them. Enter leads because it
+   follows almost everything typed on a phone, so it never sits past the scroll. Each sends the bytes of that key
    and nothing else; the arrows send the CSI form (`ESC [ A` and so on), which is what a
    program reads in the terminal's default cursor mode; a program that switched the terminal
    to application cursor mode reads the same bytes differently, and the page does not track
