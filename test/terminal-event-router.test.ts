@@ -33,10 +33,9 @@ describe('TerminalEventRouter', () => {
       'pty:telemetry': 1,
       'pty:identity': 1,
       'pty:mirror-input': 1,
-      'pty:mirror-geometry': 1,
     })
     expect(router.snapshot()).toMatchObject({
-      nativeSubscriptions: 6,
+      nativeSubscriptions: 5,
       registeredSessions: 12,
     })
 
@@ -117,34 +116,6 @@ describe('TerminalEventRouter', () => {
     router.dispose()
   })
 
-  it('routes pty:mirror-geometry as a held size or a reclaim to the session handler only', () => {
-    const api = new FakeHvirApi()
-    const scheduler = new ManualScheduler()
-    const router = new TerminalEventRouter(api, { scheduler })
-    const held = handlersFixture()
-    const other = handlersFixture()
-    router.register('terminal-1', 'visible', held)
-    router.register('terminal-2', 'visible', other)
-
-    api.emit('pty:mirror-geometry', {
-      id: 'terminal-1',
-      kind: 'held',
-      cols: 61,
-      rows: 23,
-    })
-    api.emit('pty:mirror-geometry', { id: 'terminal-1', kind: 'reclaim' })
-    api.emit('pty:mirror-geometry', { id: 'terminal-9', kind: 'reclaim' })
-
-    expect(held.onMirrorGeometry.mock.calls).toEqual([
-      [{ cols: 61, rows: 23 }],
-      [undefined],
-    ])
-    expect(other.onMirrorGeometry).not.toHaveBeenCalled()
-    expect(held.onData).not.toHaveBeenCalled()
-    expect(router.snapshot()).toMatchObject({ unroutedEvents: 1, nativeDataEvents: 0 })
-    router.dispose()
-  })
-
   it('flushes output before exit and rejects every later event for that session', () => {
     const api = new FakeHvirApi()
     const scheduler = new ManualScheduler()
@@ -166,21 +137,14 @@ describe('TerminalEventRouter', () => {
       identityStatus: 'identified',
     })
     api.emit('pty:mirror-input', { id: 'terminal-1', data: '\r' })
-    api.emit('pty:mirror-geometry', {
-      id: 'terminal-1',
-      kind: 'held',
-      cols: 61,
-      rows: 23,
-    })
 
     expect(order).toEqual(['data:final-output', 'exit:7:15'])
     expect(handlers.onTelemetry).not.toHaveBeenCalled()
     expect(handlers.onIdentity).not.toHaveBeenCalled()
     expect(handlers.onMirrorInput).not.toHaveBeenCalled()
-    expect(handlers.onMirrorGeometry).not.toHaveBeenCalled()
     expect(router.snapshot()).toMatchObject({
       registeredSessions: 0,
-      unroutedEvents: 5,
+      unroutedEvents: 4,
     })
     scheduler.flushFrames()
     expect(order).toHaveLength(2)
@@ -287,7 +251,6 @@ function handlersFixture(
     onTelemetry: vi.fn(overrides.onTelemetry ?? (() => undefined)),
     onIdentity: vi.fn(overrides.onIdentity ?? (() => undefined)),
     onMirrorInput: vi.fn(overrides.onMirrorInput ?? (() => undefined)),
-    onMirrorGeometry: vi.fn(overrides.onMirrorGeometry ?? (() => undefined)),
   }
 }
 
@@ -297,7 +260,6 @@ interface MockTerminalEventHandlers extends TerminalEventHandlers {
   readonly onTelemetry: Mock<TerminalEventHandlers['onTelemetry']>
   readonly onIdentity: Mock<TerminalEventHandlers['onIdentity']>
   readonly onMirrorInput: Mock<(data: string) => void>
-  readonly onMirrorGeometry: Mock<TerminalEventHandlers['onMirrorGeometry']>
 }
 
 class FakeHvirApi implements HvirApi {

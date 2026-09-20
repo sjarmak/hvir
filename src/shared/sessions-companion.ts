@@ -66,9 +66,6 @@ export const MAX_COMPANION_TERMINAL_TAIL_CHARS = 256 * 1024
 export const MAX_COMPANION_TERMINAL_PREAMBLE_CHARS = 54
 /** One input request carries at most this many characters of the user's bytes. */
 export const MAX_COMPANION_INPUT_CHARS = 4096
-/** A resize request names a grid within the PTY's own dimension bounds (ADR-052). */
-export const MIN_COMPANION_RESIZE_DIMENSION = 2
-export const MAX_COMPANION_RESIZE_DIMENSION = 1000
 
 export interface CompanionRow {
   readonly handle: SessionsTerminalHandle
@@ -113,11 +110,7 @@ export interface CompanionSnapshot {
   readonly revision: number
   /** The observation lease this page holds. */
   readonly demandGeneration: number
-  /**
-   * No hvir window is focused (ADR-049). While true a mirror may hold the
-   * PTY's size (ADR-052); the page asks only then, and the desktop's door is
-   * the authority either way.
-   */
+  /** No hvir window is focused (ADR-049): the Push signal, as the page sees it. */
   readonly away: boolean
   /** Ordered by {@link compareCompanionRows}. */
   readonly rows: readonly CompanionRow[]
@@ -185,21 +178,6 @@ export interface CompanionInputRequest {
    */
   readonly navigation?: true
 }
-
-/** The phone's own grid, asked for the mirrored PTY while the desktop is Away (ADR-052). */
-export interface CompanionResizeRequest {
-  readonly cols: number
-  readonly rows: number
-}
-
-/**
- * How a resize was answered. `refused` is the Away door saying no because a
- * desktop window is focused; the mirror stays open and the page keeps the
- * desktop's geometry. A dead lease is not a refusal but an ended mirror.
- */
-export type CompanionResizeResponse =
-  | { readonly outcome: 'accepted' }
-  | { readonly outcome: 'refused'; readonly reason: 'desktop-focused' }
 
 /** An answer, as a page sends it: the page's lease supplies the generation. */
 export type CompanionRespondRequest = Omit<
@@ -322,25 +300,6 @@ export function isCompanionInputRequest(value: unknown): value is CompanionInput
   )
 }
 
-export function isCompanionResizeRequest(
-  value: unknown,
-): value is CompanionResizeRequest {
-  if (!isRecord(value) || !hasExactKeys(value, RESIZE_KEYS)) return false
-  return isResizeDimension(value['cols']) && isResizeDimension(value['rows'])
-}
-
-export function isCompanionResizeResponse(
-  value: unknown,
-): value is CompanionResizeResponse {
-  if (!isRecord(value)) return false
-  if (value['outcome'] === 'accepted') return hasExactKeys(value, ['outcome'])
-  return (
-    value['outcome'] === 'refused' &&
-    hasExactKeys(value, ['outcome', 'reason']) &&
-    value['reason'] === 'desktop-focused'
-  )
-}
-
 export function isCompanionRespondRequest(
   value: unknown,
 ): value is CompanionRespondRequest {
@@ -379,7 +338,6 @@ const RESPOND_KEYS = ['handle', 'pendingRevision', 'optionOrdinal'] as const
 const SUBMIT_KEYS = ['handle', 'message'] as const
 const INPUT_KEYS = ['data'] as const
 const INPUT_OPTIONAL_KEYS = ['navigation'] as const
-const RESIZE_KEYS = ['cols', 'rows'] as const
 const OPENED_KEYS = ['type', 'handle', 'cols', 'rows', 'tail'] as const
 const OPENED_OPTIONAL_KEYS = ['preamble'] as const
 const OUTPUT_KEYS = ['type', 'handle', 'data'] as const
@@ -442,14 +400,6 @@ function isGeneration(value: unknown): value is number {
 
 function isDimension(value: unknown): value is number {
   return isCount(value) && value > 0
-}
-
-function isResizeDimension(value: unknown): value is number {
-  return (
-    isDimension(value) &&
-    value >= MIN_COMPANION_RESIZE_DIMENSION &&
-    value <= MAX_COMPANION_RESIZE_DIMENSION
-  )
 }
 
 /** Absent is a stream that set no sticky mode; present is bounded by the scanner. */

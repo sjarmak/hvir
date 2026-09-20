@@ -19,10 +19,8 @@ export interface FakeMirrorLease extends PtyMirrorLease {
   readonly writes: string[]
   /** Exact strings handed to `navigate`, in order; these never reach the input fan-out. */
   readonly navigations: string[]
-  /** Exact sizes handed to `resize`, in order. */
-  readonly resizes: PtyGeometry[]
   readonly released: boolean
-  /** Every `write` and `resize` throws this refusal instead of recording, while set. */
+  /** Every `write` and `navigate` throws this refusal instead of recording, while set. */
   refuse?: PtyMirrorRefusal
   /** Ends the lease the way a PTY exit does: `onEnd` once, then writes refuse. */
   exit(exit: PtyExit): void
@@ -105,7 +103,6 @@ function fakeLease(
     },
     writes: [],
     navigations: [],
-    resizes: [],
     get ended() {
       return released || exited
     },
@@ -119,10 +116,6 @@ function fakeLease(
     navigate(data) {
       admit()
       lease.navigations.push(data)
-    },
-    resize(cols, rows) {
-      admit()
-      lease.resizes.push({ cols, rows })
     },
     release() {
       released = true

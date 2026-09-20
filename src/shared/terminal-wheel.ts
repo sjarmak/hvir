@@ -18,7 +18,7 @@ const DOM_DELTA_LINE = 1
 const DOM_DELTA_PAGE = 2
 const LINES_PER_WHEEL_STEP = 3
 const FALLBACK_CELL_HEIGHT = 16
-const MAX_SGR_REPORTS_PER_EVENT = 5
+const MAX_SGR_REPORTS_PER_NOTCH = 5
 
 /** How the gesture was produced, which is what one step of travel costs. */
 export type TerminalGesture = 'notch' | 'drag'
@@ -195,7 +195,7 @@ export class TerminalWheelController {
       return 0
     }
 
-    const limit = route === 'page' ? 1 : MAX_SGR_REPORTS_PER_EVENT
+    const limit = route === 'page' ? 1 : sgrReportLimit(event, state)
     const steps = clampSteps(wholeSteps, limit)
     // Bank the steps this event may not carry, along with the sub-step
     // fraction, so how far a gesture travels follows the distance it covered
@@ -210,6 +210,20 @@ export class TerminalWheelController {
 
 function clampSteps(steps: number, limit: number): number {
   return Math.max(-limit, Math.min(steps, limit))
+}
+
+/**
+ * Reports one event may carry on the SGR route. A wheel produces many events
+ * for one gesture and a program scrolling by report keeps up with a few per
+ * event, so a notch is held to a few. A finger produces one event per move and
+ * its travel is the whole scroll, so a drag carries every report its distance
+ * earned, up to a screen of them: no finger crosses more than a screen in one
+ * move, and the bound is what keeps a synthetic delta from running away.
+ */
+function sgrReportLimit(event: TerminalWheelEvent, state: TerminalWheelState): number {
+  if (event.gesture === 'notch') return MAX_SGR_REPORTS_PER_NOTCH
+  const rows = Number.isFinite(state.rows) ? Math.trunc(state.rows) : 0
+  return Math.max(MAX_SGR_REPORTS_PER_NOTCH, rows)
 }
 
 /**

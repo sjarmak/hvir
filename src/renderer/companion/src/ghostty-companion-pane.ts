@@ -47,14 +47,14 @@ import {
   type TerminalWheelEvent,
 } from '../../../shared'
 import type {
-  CompanionCellSize,
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
 } from './companion-terminal-pane'
 
-const MIRROR_SCROLLBACK_BYTES = 1_000_000
+/** The desktop pane's `TERMINAL_SCROLLBACK_BYTES`, so the phone reads back as far as the desktop. */
+const MIRROR_SCROLLBACK_BYTES = 10_000_000
 const FALLBACK_CELL_HEIGHT = 16
-/** The phone's fixed readable font (ADR-052); the grid asked for is what this leaves room for. */
+/** The mirror's font; the grid is the desktop's, scaled to the phone's width (ADR-050). */
 const MIRROR_FONT_SIZE = 15
 
 let initializeGhostty: Promise<void> | undefined
@@ -185,14 +185,6 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
     this.remainder = 0
   }
 
-  /** The renderer exists once the terminal is open; its cell is the font's measured box. */
-  cellSize(): CompanionCellSize | undefined {
-    const renderer = this.terminal.renderer
-    if (renderer === undefined) return undefined
-    const { charWidth: width, charHeight: height } = renderer
-    return width > 0 && height > 0 ? { width, height } : undefined
-  }
-
   setInputEnabled(enabled: boolean): void {
     this.inputEnabled = enabled
     // Read live by the emulator on every key, so toggling needs no reopen.
@@ -254,7 +246,8 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
     if (!Number.isFinite(event.deltaY)) return 0
     const renderer = this.terminal.renderer
     if (this.disposed || renderer === undefined) return event.deltaY
-    const cellHeight = renderer.charHeight > 0 ? renderer.charHeight : FALLBACK_CELL_HEIGHT
+    const cellHeight =
+      renderer.charHeight > 0 ? renderer.charHeight : FALLBACK_CELL_HEIGHT
     const cells = event.deltaY / cellHeight
     if (this.pinned(cells)) {
       this.remainder = 0
@@ -281,9 +274,7 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
   /** The viewport is pinned when the direction asked for is past the scrollback it has. */
   private pinned(cells: number): boolean {
     const viewportY = this.terminal.getViewportY()
-    return cells < 0
-      ? viewportY >= this.terminal.getScrollbackLength()
-      : viewportY <= 0
+    return cells < 0 ? viewportY >= this.terminal.getScrollbackLength() : viewportY <= 0
   }
 
   /** A reflow leaves the viewport where it was, which a shortened scrollback no longer reaches. */

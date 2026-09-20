@@ -188,7 +188,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     const externalMoveSmoke = createExternalMoveSmokeControl()
     const smokeAttention = createSmokeAttention()
     cleanup.defer('attention', () => smokeAttention.dispose())
-    const supervisor = new PtySupervisor({ attention: smokeAttention.set })
+    const supervisor = new PtySupervisor()
     smokeSupervisor = supervisor
     cleanup.defer('supervised terminals', () => supervisor.disposeAllAndWait())
     const smokeCloseableRoot = joinHostPath(smokeRoot, '.hvir-smoke-closed-project')

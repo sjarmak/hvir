@@ -330,7 +330,6 @@ function createPane(
     setCursorDefaults: (next) => state.cursorDefaults.push(next),
     setLigatures: (enabled) => state.ligatures.push(enabled),
     setPresentation: (presentation) => state.presentations.push(presentation),
-    setHeldGeometry: () => undefined,
     redraw: () => undefined,
     resolveEventProvenance: () => undefined,
     activeEventScreen: () => 'normal',

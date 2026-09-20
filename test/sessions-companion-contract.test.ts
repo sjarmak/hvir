@@ -5,17 +5,13 @@ import { STICKY_MODE_PREAMBLE_MAX_CHARS } from '../src/shared/terminal-sticky-mo
 import {
   MAX_ACTIONABLE_BODY_CHARS,
   MAX_COMPANION_INPUT_CHARS,
-  MAX_COMPANION_RESIZE_DIMENSION,
   MAX_COMPANION_ROWS,
   MAX_COMPANION_TERMINAL_PREAMBLE_CHARS,
   MAX_COMPANION_TERMINAL_TAIL_CHARS,
   MAX_SESSIONS_SUBMIT_MESSAGE,
-  MIN_COMPANION_RESIZE_DIMENSION,
   SESSIONS_COMPANION_VERSION,
   compareCompanionRows,
   isCompanionInputRequest,
-  isCompanionResizeRequest,
-  isCompanionResizeResponse,
   isCompanionRespondRequest,
   isCompanionRow,
   isCompanionSnapshot,
@@ -334,51 +330,6 @@ describe('sessions companion contract', () => {
     }
     expect(isCompanionInputRequest({ data: '\x1b[5~', navigation: false })).toBe(false)
     expect(isCompanionInputRequest({ data: '\x1b[5~', navigation: 'true' })).toBe(false)
-  })
-
-  it('a resize request is two integers within the PTY dimension bounds and nothing else (ADR-052)', () => {
-    expect([MIN_COMPANION_RESIZE_DIMENSION, MAX_COMPANION_RESIZE_DIMENSION]).toEqual([
-      2, 1000,
-    ])
-    expect(isCompanionResizeRequest({ cols: 47, rows: 31 })).toBe(true)
-    expect(isCompanionResizeRequest({ cols: 2, rows: 1000 })).toBe(true)
-    for (const request of [
-      { cols: 1, rows: 31 },
-      { cols: 47, rows: 1001 },
-      { cols: 47.5, rows: 31 },
-      { cols: 47, rows: Number.NaN },
-      { cols: 47, rows: Number.POSITIVE_INFINITY },
-      { cols: '47', rows: 31 },
-      { cols: 47 },
-      { rows: 31 },
-      { cols: 47, rows: 31, handle: 't1' },
-      {},
-      [47, 31],
-      null,
-      '47x31',
-    ]) {
-      expect(isCompanionResizeRequest(request), JSON.stringify(request)).toBe(false)
-    }
-  })
-
-  it('a resize answer is accepted alone, or refused with the one reason the Away door gives', () => {
-    expect(isCompanionResizeResponse({ outcome: 'accepted' })).toBe(true)
-    expect(
-      isCompanionResizeResponse({ outcome: 'refused', reason: 'desktop-focused' }),
-    ).toBe(true)
-    for (const reply of [
-      { outcome: 'accepted', reason: 'desktop-focused' },
-      { outcome: 'accepted', cols: 47 },
-      { outcome: 'refused' },
-      { outcome: 'refused', reason: 'ended' },
-      { outcome: 'refused', reason: 'desktop-focused', rows: 31 },
-      { outcome: 'unavailable', reason: 'desktop-focused' },
-      { error: 'The mirrored terminal ended or changed' },
-      'accepted',
-      null,
-    ]) {
-      expect(isCompanionResizeResponse(reply), JSON.stringify(reply)).toBe(false)
-    }
   })
 
   it('tail bound equals PTY_OUTPUT_TAIL_CHARS', () => {

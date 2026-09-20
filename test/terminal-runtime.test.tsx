@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TerminalRuntimeOptions } from '../src/renderer/src/terminal/terminal-runtime-options'
 import { terminalThemeForAppearance } from '../src/renderer/src/terminal/terminal-palette'
 import { TerminalRuntimeRegistry } from '../src/renderer/src/terminal/terminal-runtime-registry'
-import type { TerminalPane } from '../src/renderer/src/terminal/terminal-pane'
+import type {
+  TerminalPane,
+  TerminalSize,
+} from '../src/renderer/src/terminal/terminal-pane'
 import {
   asHarnessProfileId,
   localPath,
@@ -19,7 +22,12 @@ vi.mock('../src/renderer/src/terminal/terminal-pane-factory', () => ({
   createTerminalRuntimePane: paneFactory,
 }))
 
-function fakePane(): TerminalPane {
+/** Past the runtime's pty:resize debounce (75 ms). */
+const RESIZE_DEBOUNCE_ELAPSED_MS = 120
+
+function fakePane(
+  onResize: TerminalPane['events']['onResize'] = () => () => undefined,
+): TerminalPane {
   const noopDisposer = () => undefined
   return {
     mount: vi.fn(),
@@ -51,10 +59,62 @@ function fakePane(): TerminalPane {
       onData: vi.fn(() => noopDisposer),
       onClipboardPaste: vi.fn(() => noopDisposer),
       onEvent: vi.fn(() => noopDisposer),
-      onResize: vi.fn(() => noopDisposer),
+      onResize: vi.fn(onResize),
       onLink: vi.fn(() => noopDisposer),
     },
   } as unknown as TerminalPane
+}
+
+/** A pane whose engine reports its grid size on demand, as ghostty does after a fit. */
+function resizingPane(): {
+  pane: TerminalPane
+  fireResize: (size: TerminalSize) => void
+} {
+  const handlers: Array<(size: TerminalSize) => void> = []
+  const pane = fakePane((handler) => {
+    handlers.push(handler)
+    return () => undefined
+  })
+  return {
+    pane,
+    fireResize: (size) => {
+      for (const handler of handlers) handler(size)
+    },
+  }
+}
+
+function stubHvir(): {
+  send: ReturnType<typeof vi.fn>
+  invoke: ReturnType<typeof vi.fn>
+  emit: (channel: string, payload: unknown) => void
+} {
+  const send = vi.fn()
+  const invoke = vi.fn(() => Promise.resolve(startResponse()))
+  const handlers = new Map<string, (payload: unknown) => void>()
+  vi.stubGlobal('window', {
+    hvir: {
+      invoke,
+      send,
+      on: vi.fn((channel: string, handler: (payload: unknown) => void) => {
+        handlers.set(channel, handler)
+        return () => handlers.delete(channel)
+      }),
+    },
+    setTimeout: (callback: () => void, delayMs: number) =>
+      globalThis.setTimeout(callback, delayMs),
+    clearTimeout: (handle: number | undefined) => globalThis.clearTimeout(handle),
+  })
+  return {
+    send,
+    invoke,
+    emit: (channel, payload) => handlers.get(channel)?.(payload),
+  }
+}
+
+function sentOn(send: ReturnType<typeof vi.fn>, channel: string): unknown[] {
+  return send.mock.calls
+    .filter(([sent]) => sent === channel)
+    .map(([, payload]) => payload as unknown)
 }
 
 function startResponse(): StartPtyResponse {
@@ -171,35 +231,8 @@ describe('TerminalRuntime initial input', () => {
     paneFactory.mockReset()
   })
 
-  function stubHvir(): {
-    send: ReturnType<typeof vi.fn>
-    invoke: ReturnType<typeof vi.fn>
-    emit: (channel: string, payload: unknown) => void
-  } {
-    const send = vi.fn()
-    const invoke = vi.fn(() => Promise.resolve(startResponse()))
-    const handlers = new Map<string, (payload: unknown) => void>()
-    vi.stubGlobal('window', {
-      hvir: {
-        invoke,
-        send,
-        on: vi.fn((channel: string, handler: (payload: unknown) => void) => {
-          handlers.set(channel, handler)
-          return () => handlers.delete(channel)
-        }),
-      },
-    })
-    return {
-      send,
-      invoke,
-      emit: (channel, payload) => handlers.get(channel)?.(payload),
-    }
-  }
-
   function ptyWrites(send: ReturnType<typeof vi.fn>): unknown[] {
-    return send.mock.calls
-      .filter(([channel]) => channel === 'pty:write')
-      .map(([, payload]) => payload as unknown)
+    return sentOn(send, 'pty:write')
   }
 
   it('types the initial command once, after first launch', async () => {
@@ -251,5 +284,43 @@ describe('TerminalRuntime initial input', () => {
     )
 
     expect(ptyWrites(send)).toHaveLength(0)
+  })
+})
+
+describe('TerminalRuntime pty:resize', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    paneFactory.mockReset()
+  })
+
+  it('sends the measured size only while the pane is presented', async () => {
+    const { pane, fireResize } = resizingPane()
+    paneFactory.mockResolvedValue(pane)
+    const { send, invoke } = stubHvir()
+    const hidden = { ...options(localPath('/repo')), presentation: 'hidden' as const }
+    const runtime = new TerminalRuntimeRegistry().acquire(hidden)
+    runtime.attach(document.createElement('div'))
+    await vi.waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith('pty:start', expect.anything()),
+    )
+    await vi.waitFor(() => expect(hidden.onStarted).toHaveBeenCalled())
+
+    // A hidden tab measures nothing the PTY should take.
+    fireResize({ cols: 100, rows: 25 })
+    await new Promise((resolve) =>
+      globalThis.setTimeout(resolve, RESIZE_DEBOUNCE_ELAPSED_MS),
+    )
+    expect(sentOn(send, 'pty:resize')).toEqual([])
+
+    runtime.update({ ...hidden, presentation: 'visible' })
+    runtime.synchronizeLifecycle()
+    fireResize({ cols: 100, rows: 25 })
+    await new Promise((resolve) =>
+      globalThis.setTimeout(resolve, RESIZE_DEBOUNCE_ELAPSED_MS),
+    )
+    expect(sentOn(send, 'pty:resize')).toEqual([
+      { id: 'terminal-1', cols: 100, rows: 25 },
+    ])
+    runtime.dispose()
   })
 })

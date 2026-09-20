@@ -24,8 +24,6 @@ export interface PtyMirrorEntryView {
   readonly current: boolean
   readonly instanceId: string
   write(data: string): void
-  /** The supervisor's Away door (ADR-052); throws `desktop-focused` when the desktop is not Away. */
-  resize(cols: number, rows: number): void
 }
 
 export interface PtyMirrorLeaseSources {
@@ -104,9 +102,6 @@ export function createPtyMirrorLease(
     },
     navigate(data) {
       admitMirror(state, sources.entry(), sources).write(data)
-    },
-    resize(cols, rows) {
-      admitMirror(state, sources.entry(), sources).resize(cols, rows)
     },
     release() {
       if (state !== 'live') return

@@ -225,7 +225,6 @@ function paneFixture(match: TerminalRetainedBufferRange, text: string): Terminal
     setCursorDefaults: vi.fn(),
     setLigatures: vi.fn(),
     setPresentation: vi.fn(),
-    setHeldGeometry: vi.fn(),
     redraw: vi.fn(),
     resolveEventProvenance: vi.fn(() => undefined),
     activeEventScreen: vi.fn(() => 'normal' as const),

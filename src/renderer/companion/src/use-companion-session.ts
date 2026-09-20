@@ -12,7 +12,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import {
   sessionsMutationUnavailableMessage,
-  type CompanionResizeResponse,
   type SessionsMutationResponse,
   type SessionsTerminalHandle,
 } from '../../../shared'
@@ -67,14 +66,6 @@ export interface CompanionSession {
   readonly submit: (message: string) => Promise<boolean>
   /** Exact bytes for the mirrored row; typing is dropped here unless armed on a live mirror. */
   readonly input: CompanionInputVerb
-  /**
-   * The phone's grid for the live mirror (ADR-052). Resolves the listener's
-   * answer, or nothing when there is no live mirror or the verb failed.
-   */
-  readonly resize: (
-    cols: number,
-    rows: number,
-  ) => Promise<CompanionResizeResponse | undefined>
 }
 
 const PAIRING_EXPIRED = 'The desktop no longer accepts this pairing; pair again'
@@ -297,7 +288,9 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
     async (data, source = 'user') => {
       if (mirrorHandle === undefined || data === '') return
       if (source === 'navigation') {
-        navigationQueue.push(mirrorHandle, data, (batch) => send(mirrorHandle, batch, true))
+        navigationQueue.push(mirrorHandle, data, (batch) =>
+          send(mirrorHandle, batch, true),
+        )
         return
       }
       if (!armed) return
@@ -305,23 +298,6 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
       await send(mirrorHandle, data, false)
     },
     [send, navigationQueue, armed, mirrorHandle, touch],
-  )
-
-  // The page asks for this on its own, so it never touches the notice a verb
-  // the person sent may be showing. A 409 here means the mirror ended, and the
-  // stream's `ended` frame says so; any other failure leaves the desktop's
-  // geometry in place, which the scaled view already shows.
-  const resize = useCallback(
-    async (cols: number, rows: number) => {
-      if (page === undefined || mirrorHandle === undefined) return undefined
-      try {
-        return await client.resize(page, mirrorHandle, { cols, rows })
-      } catch (error: unknown) {
-        if (error instanceof CompanionUnauthorizedError) expire()
-        return undefined
-      }
-    },
-    [client, page, mirrorHandle, expire],
   )
 
   return {
@@ -338,7 +314,6 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
     respond,
     submit,
     input,
-    resize,
   }
 }
 

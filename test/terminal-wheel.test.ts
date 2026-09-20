@@ -259,6 +259,26 @@ describe('terminal wheel behavior', () => {
     ).toEqual(['\x1b[<76;80;1M'])
   })
 
+  it('a drag carries every report its travel earned in one event, up to a screen of them', () => {
+    const controller = new TerminalWheelController()
+    const mouse = state({ mouseTracking: true, sgrMouse: true })
+    // Ten notches of travel in one move: a finger is one event per move and
+    // its distance is the scroll, so all ten go rather than five.
+    expect(controller.handle(drag(-300), mouse).data).toEqual(
+      Array.from({ length: 10 }, () => '\x1b[<64;1;1M'),
+    )
+    // A hundred notches of travel: a screen of reports goes and a screen waits.
+    expect(controller.handle(drag(-3000), mouse).data).toHaveLength(24)
+    expect(controller.handle(drag(-1), mouse).data).toHaveLength(24)
+    expect(controller.handle(drag(-1), mouse).data).toEqual([])
+  })
+
+  it('a drag is never held below a notch\u2019s five, however small the screen', () => {
+    const controller = new TerminalWheelController()
+    const mouse = state({ mouseTracking: true, sgrMouse: true, rows: 2 })
+    expect(controller.handle(drag(300), mouse).data).toHaveLength(5)
+  })
+
   it('consumes unsupported mouse encodings without injecting keyboard input', () => {
     const controller = new TerminalWheelController()
     const legacyMouse = state({

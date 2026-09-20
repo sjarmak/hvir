@@ -154,14 +154,11 @@ export const NOT_PROJECTED = transcript({
   stream: 'closed',
 })
 
-/**
- * Pairs, selects the mirror row and opens its mirror at 132x43 with `tail`.
- * `away` is what the snapshot says about the desktop's focus (ADR-052).
- */
-export async function openMirror(tail = '$ ', away = false): Promise<void> {
+/** Pairs, selects the mirror row and opens its mirror at 132x43 with `tail`. */
+export async function openMirror(tail = '$ '): Promise<void> {
   server.transcriptReply = NOT_PROJECTED
   await renderPaired()
-  await emit('snapshot', snapshot(1, [MIRROR_ROW], { away }))
+  await emit('snapshot', snapshot(1, [MIRROR_ROW]))
   await click(host.querySelector<HTMLElement>('.companion-row') as HTMLElement)
   await emit('terminal', { type: 'opened', handle: 'term-1', cols: 132, rows: 43, tail })
 }

@@ -4,12 +4,11 @@
  * the page owns its emulator through the same shape without importing the
  * desktop renderer. A conformance test outside the page tree pins the match.
  *
- * A mirror pane follows the geometry main publishes and never resizes itself.
- * It draws a fixed readable font and reports one cell's size, so the page can
- * derive the grid its area holds and ask the desktop for it while Away
- * (ADR-052); the emulator itself changes size only through `resize`. Input is
- * off until the page enables it, and the bytes it emits are the user's exact
- * key bytes, uncomposed.
+ * A mirror pane follows the geometry main publishes and never resizes itself:
+ * the emulator changes size only through `resize`, and the page scales what it
+ * draws rather than asking the desktop for another grid. Input is off until
+ * the page enables it, and the bytes it emits are the user's exact key bytes,
+ * uncomposed.
  *
  * Reading back is the emulator's own viewport and the page keeps no text of
  * its own (ADR-053), so the members this record adds past the ones the
@@ -42,12 +41,6 @@ export interface CompanionTerminalPaneEvents {
   onViewport(cb: (offset: number) => void): () => void
 }
 
-/** One cell's box in CSS pixels at the pane's font; what the page divides its area by. */
-export interface CompanionCellSize {
-  readonly width: number
-  readonly height: number
-}
-
 export interface CompanionTerminalPane {
   mount(container: HTMLElement): void
   write(data: string): void
@@ -77,8 +70,6 @@ export interface CompanionTerminalPane {
   endGesture(): void
   /** Puts the viewport back on the newest output, which is the page's one tap. */
   returnToLive(): void
-  /** The cell's measured size once mounted; nothing before the emulator has drawn. */
-  cellSize(): CompanionCellSize | undefined
   /** Ends the pane and releases every subscription it handed out, so no caller need. */
   dispose(): void
   setInputEnabled(enabled: boolean): void

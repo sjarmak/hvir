@@ -9,17 +9,11 @@
  * both directions; nothing here logs, trims, or composes them. The one thing an
  * `opened` carries beyond the lease's own bytes is the sticky-mode preamble
  * (ADR-054), a distinct field the page writes before the tail, omitted entirely
- * when the stream set no mode the scanner carries. A resize (ADR-052) passes the
- * same lease checks as a write; only the Away door's `desktop-focused` answer is
- * a refusal the mirror survives.
+ * when the stream set no mode the scanner carries.
  */
 import type { CompanionMirrorEndReason, CompanionTerminalEvent } from '../../shared'
 import type { SessionsTerminalHandle } from '../../shared'
-import type {
-  PtyMirrorHandlers,
-  PtyMirrorLease,
-  PtyMirrorRefusal,
-} from '../pty/pty-contract'
+import type { PtyMirrorHandlers, PtyMirrorLease } from '../pty/pty-contract'
 import { PtyMirrorRefusedError } from '../pty/pty-mirror-lease'
 import type { CompanionMirrorTarget } from './companion-mirror-target'
 
@@ -28,16 +22,6 @@ export class CompanionMirrorEndedError extends Error {
   constructor() {
     super('The mirrored terminal ended or changed')
     this.name = 'CompanionMirrorEndedError'
-  }
-}
-
-/** The desktop is not Away, so the PTY keeps the desktop's size; the mirror stays live. */
-export class CompanionResizeRefusedError extends Error {
-  readonly reason = 'desktop-focused'
-
-  constructor() {
-    super('The desktop is focused and holds the terminal size')
-    this.name = 'CompanionResizeRefusedError'
   }
 }
 
@@ -116,33 +100,14 @@ export class CompanionPageMirror {
     this.admit((lease) => lease.navigate(data))
   }
 
-  /**
-   * Asks the PTY to take the phone's grid (ADR-052). `desktop-focused` is the
-   * Away door saying not now and leaves the mirror as it is; every other
-   * refusal means the lease is dead and ends the mirror as a write would.
-   */
-  resize(cols: number, rows: number): void {
-    const refused = this.admit((lease) => lease.resize(cols, rows), 'desktop-focused')
-    if (refused !== undefined) throw new CompanionResizeRefusedError()
-  }
-
-  /**
-   * Runs one lease verb. Returns `survivable` when the lease refused with exactly
-   * that reason and the mirror stays open; any other refusal ends the mirror
-   * and throws as ended. A verb that names no survivable refusal never returns one.
-   */
-  private admit(
-    verb: (lease: PtyMirrorLease) => void,
-    survivable?: PtyMirrorRefusal,
-  ): PtyMirrorRefusal | undefined {
+  /** Runs one lease verb. A refusal means the lease is dead: the mirror ends and throws as ended. */
+  private admit(verb: (lease: PtyMirrorLease) => void): void {
     const current = this.current
     if (current === undefined) throw new CompanionMirrorEndedError()
     try {
       verb(current.lease)
-      return undefined
     } catch (error) {
       if (!(error instanceof PtyMirrorRefusedError)) throw error
-      if (survivable !== undefined && error.reason === survivable) return survivable
       this.end('exited')
       throw new CompanionMirrorEndedError()
     }

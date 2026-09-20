@@ -26,8 +26,6 @@ import {
   type PtyUsageObservationResolution,
   type HarnessSessionIdentityStatus,
   type PtyGeometry,
-  type PtyGeometrySource,
-  type PtyMirrorGeometryEvent,
   type PtyMirrorHandlers,
   type PtyMirrorLease,
   type PtyStreamHandlers,
@@ -43,7 +41,6 @@ import {
 import { PtyStreamAttachment } from './pty-stream-attachment'
 import { PtySessionObservation } from './pty-session-observation'
 import { PtySessionLifetime, type PendingPtyExit } from './pty-session-lifetime'
-import { terminalDimension } from './terminal-dimension'
 
 export * from './pty-contract'
 export { PtyMirrorRefusedError } from './pty-mirror-lease'
@@ -58,8 +55,6 @@ interface Entry {
   }
   /** The last size applied to the PTY; replaced, never mutated. */
   geometry: PtyGeometry
-  /** Who holds that size (ADR-052); `mirror` for exactly as long as a mirror's hold lasts. */
-  geometrySource: PtyGeometrySource
   rendererReattachPending: boolean
 }
 
@@ -71,20 +66,13 @@ export class PtySupervisor {
   private readonly mirrorInputListeners = new Set<
     (info: ManagedPty, data: string) => void
   >()
-  private readonly mirrorGeometryListeners = new Set<
-    (event: PtyMirrorGeometryEvent) => void
-  >()
   private readonly identityListeners = new Set<(info: ManagedPty) => void>()
   private readonly observationListeners = new Set<() => void>()
   private readonly identityAcceptances = new Set<Promise<boolean>>()
   private readonly admission: PtyLaunchAdmission
-  private readonly unobserveAttention: (() => void) | undefined
 
   constructor(private readonly options: PtySupervisorOptions = {}) {
     this.admission = new PtyLaunchAdmission(options.bulkStartConcurrencyPerHost ?? 2)
-    this.unobserveAttention = options.attention?.observe((snapshot) => {
-      if (!snapshot.away) this.reclaimMirrorGeometry()
-    })
   }
 
   /** Spawn a PTY. The one and only site that calls `host.spawnPty`. */
@@ -316,7 +304,6 @@ export class PtySupervisor {
       usage: { host: req.host, artifact },
       // Both hosts spawn at 80x24 when the request carries no size.
       geometry: { cols: req.cols ?? 80, rows: req.rows ?? 24 },
-      geometrySource: 'renderer',
       rendererReattachPending: false,
     }
 
@@ -411,14 +398,6 @@ export class PtySupervisor {
     this.mirrorInputListeners.add(cb)
     return () => {
       this.mirrorInputListeners.delete(cb)
-    }
-  }
-
-  /** Subscribe to a mirror holding or the desktop reclaiming a PTY's size (ADR-052). */
-  onMirrorGeometry(cb: (event: PtyMirrorGeometryEvent) => void): Disposer {
-    this.mirrorGeometryListeners.add(cb)
-    return () => {
-      this.mirrorGeometryListeners.delete(cb)
     }
   }
 
@@ -530,12 +509,10 @@ export class PtySupervisor {
     rows: number,
     ownerGeneration?: number,
   ): void {
-    // Accepted whoever held the size: a renderer refit ends a mirror's hold without a reclaim.
-    this.applyGeometry(
-      this.requireOwned(id, ownerId, ownerGeneration),
-      { cols, rows },
-      'renderer',
-    )
+    const entry = this.requireOwned(id, ownerId, ownerGeneration)
+    entry.lifetime.resize(cols, rows)
+    entry.geometry = { cols, rows }
+    entry.stream.publishGeometry(entry.geometry)
   }
 
   kill(id: string, ownerId: number, signal?: string, ownerGeneration?: number): void {
@@ -693,10 +670,8 @@ export class PtySupervisor {
   }
 
   private clearLifetimeListeners(): void {
-    this.unobserveAttention?.()
     this.globalExitListeners.clear()
     this.mirrorInputListeners.clear()
-    this.mirrorGeometryListeners.clear()
     this.identityListeners.clear()
     this.observationListeners.clear()
   }
@@ -746,7 +721,7 @@ export class PtySupervisor {
     return entry
   }
 
-  /** The entry registered under `id` right now, as a mirror lease may write to or size it. */
+  /** The entry registered under `id` right now, as a mirror lease may write to it. */
   private mirrorEntryView(id: string): PtyMirrorEntryView | undefined {
     const entry = this.entries.get(id)
     if (!entry) return undefined
@@ -757,51 +732,7 @@ export class PtySupervisor {
         entry.lifetime.write(data)
         entry.observation.retryAfterInput()
       },
-      resize: (cols, rows) => this.holdGeometryForMirror(id, entry, cols, rows),
     }
-  }
-
-  /** The mirror's door beside the renderer's `resize`: open only while the desktop is Away. */
-  private holdGeometryForMirror(
-    id: string,
-    entry: Entry,
-    cols: number,
-    rows: number,
-  ): void {
-    if (this.options.attention?.away() !== true) {
-      throw new PtyMirrorRefusedError('desktop-focused', id)
-    }
-    const geometry = { cols: terminalDimension(cols), rows: terminalDimension(rows) }
-    this.applyGeometry(entry, geometry, 'mirror')
-    this.publishMirrorGeometry({ kind: 'held', ...ownerOf(id, entry), geometry })
-  }
-
-  /**
-   * Every hold ends here or at a renderer resize; each produces at most one reclaim. An exit
-   * listener may settle attention while the exited entry is still registered, so a dead PTY
-   * is never named.
-   */
-  private reclaimMirrorGeometry(): void {
-    for (const [id, entry] of this.entries) {
-      if (entry.geometrySource !== 'mirror' || !entry.lifetime.current) continue
-      entry.geometrySource = 'renderer'
-      this.publishMirrorGeometry({ kind: 'reclaim', ...ownerOf(id, entry) })
-    }
-  }
-
-  private applyGeometry(
-    entry: Entry,
-    geometry: PtyGeometry,
-    source: PtyGeometrySource,
-  ): void {
-    entry.lifetime.resize(geometry.cols, geometry.rows)
-    entry.geometry = geometry
-    entry.geometrySource = source
-    entry.stream.publishGeometry(geometry)
-  }
-
-  private publishMirrorGeometry(event: PtyMirrorGeometryEvent): void {
-    for (const cb of this.mirrorGeometryListeners) cb(event)
   }
 
   private disposeEntry(id: string, entry: Entry): boolean {
@@ -832,13 +763,6 @@ export class PtySupervisor {
   private publishObservation(): void {
     for (const listener of this.observationListeners) listener()
   }
-}
-
-function ownerOf(
-  id: string,
-  entry: Entry,
-): Pick<ManagedPty, 'id' | 'ownerId' | 'ownerGeneration'> {
-  return { id, ownerId: entry.info.ownerId, ownerGeneration: entry.info.ownerGeneration }
 }
 
 function lifetimeBucket(elapsedMs: number): 'under-30s' | 'under-5m' | '5m-or-more' {

@@ -551,9 +551,10 @@ never comes from reading the screen.
 
 ### [ADR-052 — The Companion mirror holds the PTY's size while the desktop is Away](adr/ADR-052-companion-mirror-holds-pty-size-while-away.md)
 
-> Lifecycle: Partially superseded
+> Lifecycle: Superseded
 > Supersedes: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
 > Superseded by: [ADR-053](adr/ADR-053-companion-mirror-reads-back-through-emulator-viewport.md) | partial | The page's own scrollback layer drawing above the grid for a shell's mirror, for the emulator's viewport as the one read-back surface.
+> Superseded by: [ADR-057](adr/ADR-057-companion-mirror-shows-the-desktop-grid-at-every-focus.md) | full | Entire decision.
 
 While every hvir window is unfocused, a live mirror lease may resize its PTY to the phone's own
 grid so a full-screen program lays out for the phone; the desktop draws the held grid top-left
@@ -612,6 +613,20 @@ whatever the one policy emits for a read-back gesture on any route, so the wheel
 synthesizes, buttons 64 and 65 alone, join the page keys outside the per-mirror arm and outside
 the terminal input record. Carrying the trackers without the encoding is the silent failure
 ADR-054 predicted, so the family moves together or not at all.
+
+### [ADR-057 — The Companion mirror shows the desktop's grid whether or not the desktop is Away](adr/ADR-057-companion-mirror-shows-the-desktop-grid-at-every-focus.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-052](adr/ADR-052-companion-mirror-holds-pty-size-while-away.md) | full | Entire decision.
+
+The phone shows the desktop's grid scaled to its width, and only that. A mirror never resizes
+the PTY again, whether or not a desktop window is focused, so the desktop's fit controller is
+the one author of a PTY's size and a focus transition resizes nothing. ADR-055 and ADR-056 had
+already answered the history ADR-052 was for, and a real device found the phone-sized grid
+laggy and the scaled one the view to keep. What the phone lacked was travel: a drag on the
+mouse-tracking route now carries every report its distance earned, up to a screen of them per
+event, a lift with speed behind it flings on until it rests, and the mirror keeps the desktop
+pane's scrollback.
 
 ## 5. Architecture
 

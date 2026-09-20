@@ -1,12 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import {
-  CompanionMirrorEndedError,
-  CompanionResizeRefusedError,
-} from '../src/main/companion/companion-page-mirror'
+import { CompanionMirrorEndedError } from '../src/main/companion/companion-page-mirror'
 import {
   CompanionNoMirrorError,
-  CompanionPageNotOpenError,
   CompanionSessionsService,
   CompanionTypingDisallowedError,
 } from '../src/main/companion/companion-sessions'
@@ -294,7 +290,7 @@ describe('CompanionSessionsService', () => {
     service.dispose()
   })
 
-  it('carries whether the desktop is Away and republishes when focus changes (ADR-052)', () => {
+  it('carries whether the desktop is Away and republishes when focus changes (ADR-049)', () => {
     const world = companionWorld()
     const service = new CompanionSessionsService({
       ...world.ports,
@@ -733,56 +729,7 @@ describe('CompanionSessionsService mirrors', () => {
     service.dispose()
   })
 
-  it('resize reaches lease.resize for the mirrored row whether or not typing is allowed', () => {
-    const { world, service, page, terminal } = mirrorWorld()
-    expect(world.mirrors.typingAllowed).toBe(false)
-    expect(() => service.resize(page.pageId, LOCAL, 47, 31)).toThrow(
-      CompanionNoMirrorError,
-    )
-    service.select(page.pageId, LOCAL)
-    service.resize(page.pageId, LOCAL, 47, 31)
-    service.resize(page.pageId, LOCAL, 52, 28)
-    expect(world.mirrors.leases[0]!.resizes).toEqual([
-      { cols: 47, rows: 31 },
-      { cols: 52, rows: 28 },
-    ])
-    expect(world.mirrors.leases[0]!.writes).toEqual([])
-    expect(terminal().map((event) => event.type)).toEqual(['opened'])
-
-    expect(() => service.resize(page.pageId, REMOTE, 47, 31)).toThrow(
-      'Companion page holds no mirror for this row',
-    )
-    expect(() => service.resize('page-9', LOCAL, 47, 31)).toThrow(
-      CompanionPageNotOpenError,
-    )
-    expect(world.mirrors.leases[0]!.resizes).toHaveLength(2)
-    service.dispose()
-  })
-
-  it('a desktop-focused refusal surfaces as CompanionResizeRefusedError and leaves the mirror live', () => {
-    const { world, service, page, terminal } = mirrorWorld()
-    service.select(page.pageId, LOCAL)
-    const lease = world.mirrors.leases[0]!
-    lease.refuse = 'desktop-focused'
-    let caught: unknown
-    try {
-      service.resize(page.pageId, LOCAL, 47, 31)
-    } catch (error) {
-      caught = error
-    }
-    expect(caught).toBeInstanceOf(CompanionResizeRefusedError)
-    expect((caught as CompanionResizeRefusedError).reason).toBe('desktop-focused')
-    expect(lease.released).toBe(false)
-    expect(lease.resizes).toEqual([])
-    expect(terminal().map((event) => event.type)).toEqual(['opened'])
-
-    lease.refuse = undefined
-    service.resize(page.pageId, LOCAL, 47, 31)
-    expect(lease.resizes).toEqual([{ cols: 47, rows: 31 }])
-    service.dispose()
-  })
-
-  it('every other resize refusal ends the mirror exactly as a refused write does', () => {
+  it('every refusal a write meets ends the mirror exactly as a dead lease does', () => {
     for (const refusal of [
       'ended',
       'instance-changed',
@@ -790,41 +737,22 @@ describe('CompanionSessionsService mirrors', () => {
       'no-session',
     ] as const) {
       const { world, service, page, terminal } = mirrorWorld()
+      world.mirrors.typingAllowed = true
       service.select(page.pageId, LOCAL)
       const lease = world.mirrors.leases[0]!
       lease.refuse = refusal
-      expect(() => service.resize(page.pageId, LOCAL, 47, 31), refusal).toThrow(
+      expect(() => service.input(page.pageId, LOCAL, 'y'), refusal).toThrow(
         CompanionMirrorEndedError,
       )
       expect(lease.released, refusal).toBe(true)
+      expect(lease.writes, refusal).toEqual([])
       expect(terminal(), refusal).toEqual([
-        { type: 'opened', handle: LOCAL, cols: 132, rows: 43, tail: '[2J$ ' },
+        { type: 'opened', handle: LOCAL, cols: 132, rows: 43, tail: '\u001b[2J$ ' },
         { type: 'ended', handle: LOCAL, reason: 'exited' },
       ])
-      expect(() => service.resize(page.pageId, LOCAL, 47, 31)).toThrow(
-        CompanionNoMirrorError,
-      )
+      expect(() => service.input(page.pageId, LOCAL, 'y')).toThrow(CompanionNoMirrorError)
       service.dispose()
     }
-  })
-
-  it('a write refused with desktop-focused ends the mirror: only resize may survive that reason', () => {
-    const { world, service, page, terminal } = mirrorWorld()
-    world.mirrors.typingAllowed = true
-    service.select(page.pageId, LOCAL)
-    const lease = world.mirrors.leases[0]!
-    lease.refuse = 'desktop-focused'
-    expect(() => service.input(page.pageId, LOCAL, 'y')).toThrow(
-      CompanionMirrorEndedError,
-    )
-    expect(() => service.input(page.pageId, LOCAL, 'y')).not.toThrow(
-      CompanionResizeRefusedError,
-    )
-    expect(lease.released).toBe(true)
-    expect(lease.writes).toEqual([])
-    expect(terminal().map((event) => event.type)).toEqual(['opened', 'ended'])
-    expect(terminal().at(-1)).toEqual({ type: 'ended', handle: LOCAL, reason: 'exited' })
-    service.dispose()
   })
 
   it('read-back navigation reaches lease.navigate, which the input record never sees', () => {

@@ -36,9 +36,7 @@ export function CompanionApp({ client, createPane }: CompanionAppProps) {
           feed={session.feed}
           createPane={createPane}
           arming={session.arming}
-          away={state.snapshot?.away ?? false}
           onInput={session.input}
-          onResize={session.resize}
           onBack={session.back}
           onResume={session.resume}
           onRespond={session.respond}

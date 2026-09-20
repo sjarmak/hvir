@@ -13,7 +13,6 @@ import type {
 import {
   PtySupervisor,
   type ManagedPty,
-  type PtyAwaySource,
   type PtySpawnRequest,
   type PtySupervisorDiagnostic,
   type PtySupervisorOptions,
@@ -55,34 +54,6 @@ export class TestPtyProcess implements PtyProcess {
 
   emitExit(exit: PtyExit): void {
     for (const cb of [...this.exitListeners]) cb(exit)
-  }
-}
-
-export interface FakePtyAwaySource extends PtyAwaySource {
-  /** Flip the desktop's Away state; observers hear the change like a settled snapshot. */
-  setAway(away: boolean): void
-  readonly listeners: number
-}
-
-/** The Away predicate as the supervisor sees it (ADR-052), driven by the test. */
-export function fakePtyAwaySource(initiallyAway: boolean): FakePtyAwaySource {
-  const listeners = new Set<(snapshot: { readonly away: boolean }) => void>()
-  let away = initiallyAway
-  return {
-    away: () => away,
-    observe: (listener) => {
-      listeners.add(listener)
-      return () => {
-        listeners.delete(listener)
-      }
-    },
-    setAway: (next) => {
-      away = next
-      for (const listener of listeners) listener({ away })
-    },
-    get listeners() {
-      return listeners.size
-    },
   }
 }
 

@@ -316,12 +316,11 @@ describe('ghostty companion pane', () => {
     expect(fake.disposed).toBe(true)
   })
 
-  it('draws a fixed readable font and reports its cell size from the renderer (ADR-052)', async () => {
-    const pane = await createGhosttyCompanionPane(80, 24)
+  it('draws a fixed readable font over the same scrollback the desktop pane keeps', async () => {
+    await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!
     expect(fake.options['fontSize']).toBe(15)
-    pane.mount(document.createElement('div'))
-    expect(pane.cellSize()).toEqual({ width: 8, height: 16 })
+    expect(fake.options['scrollbackBytes']).toBe(10_000_000)
   })
 
   it('data emitted during write never reaches onData', async () => {
@@ -532,13 +531,13 @@ describe('ghostty companion pane', () => {
     fake.sgrMouse = true
     const paged: string[] = []
     pane.events.onNavigation((data) => paged.push(data))
-    // Seven notches in one move: five go and two are banked for the next move.
-    pane.scroll(drag(-336))
-    expect(paged).toEqual(['\x1b[<64;1;1M'.repeat(5)])
+    // Thirty notches in one move: a screen of 24 go and six are banked for the next move.
+    pane.scroll(drag(-1440))
+    expect(paged).toEqual(['\x1b[<64;1;1M'.repeat(24)])
     pane.endGesture()
     // A fresh touch a hair long owes nothing from the last one.
     pane.scroll(drag(-1))
-    expect(paged).toEqual(['\x1b[<64;1;1M'.repeat(5)])
+    expect(paged).toEqual(['\x1b[<64;1;1M'.repeat(24)])
   })
 
   it('a mouse mode the policy cannot encode reads back rather than swallowing the drag', async () => {

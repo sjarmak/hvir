@@ -7,8 +7,6 @@
  */
 import type {
   CompanionEvent,
-  CompanionResizeRequest,
-  CompanionResizeResponse,
   CompanionRespondRequest,
   CompanionSnapshot,
   CompanionSubmitRequest,
@@ -16,7 +14,7 @@ import type {
   SessionsTerminalHandle,
   SessionsTranscriptSnapshot,
 } from '../../../shared'
-import { isCompanionResizeResponse, isCompanionSnapshot } from '../../../shared'
+import { isCompanionSnapshot } from '../../../shared'
 import {
   CompanionProtocolError,
   SseFrameParser,
@@ -121,15 +119,6 @@ export interface CompanionClient {
     data: string,
     navigation?: boolean,
   ): Promise<SessionsMutationResponse>
-  /**
-   * The phone's grid for the mirrored row (ADR-052). A `desktop-focused`
-   * refusal is an outcome, not a failure; an ended mirror still throws.
-   */
-  resize(
-    page: string,
-    handle: SessionsTerminalHandle,
-    request: CompanionResizeRequest,
-  ): Promise<CompanionResizeResponse>
 }
 
 export interface CompanionClientOptions {
@@ -143,8 +132,6 @@ interface AuthorizedRequest {
   readonly body?: unknown
   readonly headers?: Readonly<Record<string, string>>
   readonly signal?: AbortSignal
-  /** A 409 reply is handed back for the verb to read, not thrown: resize's refusal carries a body. */
-  readonly readConflict?: boolean
 }
 
 export function createCompanionClient(options: CompanionClientOptions): CompanionClient {
@@ -169,8 +156,7 @@ export function createCompanionClient(options: CompanionClientOptions): Companio
       tokens.clear()
       throw new CompanionUnauthorizedError()
     }
-    const conflictRead = request.readConflict === true && response.status === 409
-    if (!isSuccess(response.status) && !conflictRead) throw await failure(response)
+    if (!isSuccess(response.status)) throw await failure(response)
     return response
   }
 
@@ -228,24 +214,6 @@ export function createCompanionClient(options: CompanionClientOptions): Companio
     return reply
   }
 
-  /** A 409 is read: the Away door's refusal carries its reason, an ended mirror its error. */
-  async function resize(
-    page: string,
-    handle: SessionsTerminalHandle,
-    request: CompanionResizeRequest,
-  ): Promise<CompanionResizeResponse> {
-    const response = await authorized({
-      method: 'POST',
-      url: route(handle, 'resize'),
-      body: { page, ...request },
-      readConflict: true,
-    })
-    const reply: unknown = await response.json()
-    if (isCompanionResizeResponse(reply)) return reply
-    if (response.status === 409) throw failureOf(response.status, reply)
-    throw new Error('The listener answered with no resize outcome')
-  }
-
   return {
     paired: () => tokens.read() !== undefined,
     pair,
@@ -277,7 +245,6 @@ export function createCompanionClient(options: CompanionClientOptions): Companio
         isSessionsMutationResponse,
         'mutation outcome',
       ),
-    resize,
   }
 }
 

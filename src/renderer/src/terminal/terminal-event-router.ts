@@ -1,5 +1,5 @@
 import type { HvirApi, HarnessTelemetry, TerminalIdentityStatus } from '../../../shared'
-import type { TerminalPresentation, TerminalSize } from './terminal-pane'
+import type { TerminalPresentation } from './terminal-pane'
 
 export const TERMINAL_HIDDEN_FLUSH_MS = 40
 export const TERMINAL_MAX_BUFFERED_BYTES = 64 * 1024
@@ -33,8 +33,6 @@ export interface TerminalEventHandlers {
   ) => void
   /** Bytes a Companion mirror already wrote to the PTY; input to record, not output. */
   readonly onMirrorInput: (data: string) => void
-  /** The size a Companion mirror holds this PTY at, or `undefined` once the desktop reclaimed it. */
-  readonly onMirrorGeometry: (held: TerminalSize | undefined) => void
 }
 
 export interface TerminalEventRoute {
@@ -115,16 +113,6 @@ export class TerminalEventRouter {
         const route = this.routes.get(id)
         if (route) route.mirrorInput(data)
         else this.unroutedEvents += 1
-      }),
-      api.on('pty:mirror-geometry', (event) => {
-        const route = this.routes.get(event.id)
-        if (!route) {
-          this.unroutedEvents += 1
-          return
-        }
-        route.mirrorGeometry(
-          event.kind === 'held' ? { cols: event.cols, rows: event.rows } : undefined,
-        )
       }),
     ]
   }
@@ -237,10 +225,6 @@ class TerminalEventRouteState implements TerminalEventRoute {
 
   mirrorInput(data: string): void {
     if (!this.disposed) this.handlers.onMirrorInput(data)
-  }
-
-  mirrorGeometry(held: TerminalSize | undefined): void {
-    if (!this.disposed) this.handlers.onMirrorGeometry(held)
   }
 
   setPresentation(presentation: TerminalPresentation): void {

@@ -213,21 +213,6 @@ export class CompanionSessionsService {
     else page.mirror.write(data)
   }
 
-  /**
-   * The phone's grid for the mirrored row (ADR-052). Resizing is not input, so
-   * the typing permission does not gate it; the supervisor's Away door does.
-   */
-  resize(
-    pageId: string,
-    handle: SessionsTerminalHandle,
-    cols: number,
-    rows: number,
-  ): void {
-    const page = this.page(pageId)
-    if (page.mirror.handle !== handle) throw new CompanionNoMirrorError()
-    page.mirror.resize(cols, rows)
-  }
-
   /** The stream fell behind: the route ends the mirror rather than the page. */
   endMirror(pageId: string, reason: 'overrun'): void {
     this.pages.get(pageId)?.mirror.end(reason)

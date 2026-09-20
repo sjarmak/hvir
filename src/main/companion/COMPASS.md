@@ -27,7 +27,6 @@ sources:
   - push-sink.ts
   - ../pty/pty-mirror-lease.ts
   - ../terminal/mirror-input-notice.ts
-  - ../terminal/mirror-geometry-notice.ts
   - ../../shared/sessions-companion.ts
   - ../../shared/companion-settings.ts
   - ../../shared/actionable-attention.ts
@@ -37,7 +36,6 @@ sources:
   - ../../renderer/companion/src/companion-terminal-pane.ts
   - ../../renderer/companion/src/ghostty-companion-pane.ts
   - ../../renderer/companion/src/companion-terminal-mount.ts
-  - ../../renderer/companion/src/companion-terminal-fit.ts
   - ../../renderer/companion/src/companion-client.ts
   - ../../renderer/companion/src/companion-mirror-feed.ts
   - ../../renderer/companion/src/companion-touch-scroll.ts
@@ -58,7 +56,9 @@ sources:
 > Canonical decisions: `docs/adr/ADR-049-companion-observer-and-away-push.md`,
 > `docs/adr/ADR-050-companion-live-terminal-mirror.md`,
 > `docs/adr/ADR-051-terminal-notification-prompt-attention.md`, and
-> `docs/adr/ADR-052-companion-mirror-holds-pty-size-while-away.md`. Operator view:
+> `docs/adr/ADR-057-companion-mirror-shows-the-desktop-grid-at-every-focus.md`, which retired
+> the Away size rule of `docs/adr/ADR-052-companion-mirror-holds-pty-size-while-away.md`.
+> Operator view:
 > `docs/runbooks/companion-operator.md`.
 
 ## Purpose
@@ -68,9 +68,8 @@ prohibition): a `node:http` server bound to `127.0.0.1` only, serving a second V
 phone-sized page and a small `/api` behind a paired bearer credential. The page reads the same
 Sessions projection the desktop reads, answers external sessions through the same transcript
 port, and, under ADR-050, mirrors one live hvir-owned terminal per page and carries the user's
-keystrokes back to it. Under ADR-052 that mirror also holds the PTY's size while the desktop is
-Away. Away-time Push rides the same actionable set that drives the OS badge, and the same
-`away()` opens the supervisor's resize door to a mirror.
+keystrokes back to it. The mirror never sizes the PTY (ADR-057). Away-time Push rides the
+same actionable set that drives the OS badge, and Away decides nothing else here.
 Nothing here is a second session authority: every lease is a companion demand owner the
 Sessions ports already understand, and every PTY byte enters and leaves through the PTY
 supervisor's doors.
@@ -88,15 +87,13 @@ supervisor's doors.
   `CompanionPageMirror`. Registers the single companion sink and routes each change to the
   page whose owner and generation it names.
 - **`companion-page-mirror.ts`**: the mirror lease owner. One per page, at most one lease at
-  a time, ends exactly once with a reason. `write` and `resize` run through one `admit`:
-  every lease refusal ends the mirror as `exited`, except a resize's `desktop-focused`, which
-  surfaces as `CompanionResizeRefusedError` and leaves the mirror live.
+  a time, ends exactly once with a reason. `write` and `navigate` run through one `admit`:
+  every lease refusal ends the mirror as `exited`.
 - **`companion-mirror-target.ts`**: pure eligibility and identity. Live lifecycle, connected
   host, live PTY, workspace neither closed nor missing: the desktop's Interact gate verbatim.
   Row handle is the PTY `id`; `livePty.handle` is the PTY `instanceId`; both are plain casts.
 - **`companion-api-routes.ts`**: `bindCompanionApi`. The SSE stream per page, the Sessions
-  verbs, `POST /api/sessions/:handle/input`, `POST /api/sessions/:handle/resize`, and the
-  error-to-status translation.
+  verbs, `POST /api/sessions/:handle/input`, and the error-to-status translation.
 - **`companion-server.ts`**, **`companion-router.ts`**, **`companion-http.ts`**: transport.
   32 sockets, a closed route table, 64 KiB bodies, `SseWriter` with a 25 s heartbeat and a
   `backlog` getter over `writableLength`.
@@ -125,11 +122,10 @@ supervisor's doors.
   the one control that sits over the terminal area rather than in the bar, can hand a tap
   back to the pane; `companion-terminal-mount.ts` builds the pane at the geometry main
   publishes and scales it to the host's width, with `companion-touch-scroll.ts` turning a
-  finger over the grid into the shared wheel policy's event shape (ADR-053) and
-  `companion-terminal-fit.ts` deciding when to ask for the
-  phone's own grid (ADR-052); `companion-client.ts` is the fetch layer, and `resize` is the
-  one verb there that reads a 409 body instead of throwing; `ghostty-companion-pane.ts` is
-  the only file that imports ghostty-web and fixes the mirror font at 15 px;
+  finger over the grid into the shared wheel policy's event shape (ADR-053) and carrying a
+  flick on as a fling after the lift (ADR-057); `companion-client.ts` is the fetch layer;
+  `ghostty-companion-pane.ts` is the only file that imports ghostty-web, fixes the mirror
+  font at 15 px, and gives the emulator the desktop pane's 10 MB of scrollback;
   `use-input-arming.ts` and `companion-input-arming.ts` are the arming state.
 
 ## How it connects
@@ -138,22 +134,17 @@ supervisor's doors.
   `actionable: attention.set`, `mirrors: ptySupervisor`, the asset reader over the built
   renderer root, and `onDiagnostic` to `console.warn('[companion]', ...)`. The same root
   installs `terminal/mirror-input-notice.ts`, which forwards `PtySupervisor.onMirrorInput`
-  to the owning renderer as `pty:mirror-input` through `RendererEventPublisher.toRenderer`,
-  and `terminal/mirror-geometry-notice.ts`, which forwards `onMirrorGeometry` (`held` with
-  the grid, or `reclaim`) as `pty:mirror-geometry` the same way. The supervisor itself is
-  built with `attention: attention.set`, so `ApplicationAttention` must exist before the
-  `PtySupervisor` in `index.ts`; that ordering is the whole reason the two blocks swapped.
+  to the owning renderer as `pty:mirror-input` through `RendererEventPublisher.toRenderer`.
+  The supervisor takes no attention source: a bare `new PtySupervisor()` is the real one.
 - **Downstream:** `sessions/sessions-observation-port.ts` (leases, snapshot, external
   resolution), `sessions/sessions-transcript-port.ts`, `sessions/sessions-companion-sinks.ts`
   (one sink per app), `attention/actionable-attention-set.ts`, and the PTY supervisor's
   `attachMirror` door, which bypasses the renderer owner gate and checks `(id, instanceId)`.
-  The lease's `resize` is a second door beside the renderer's, gated on the supervisor's
-  `PtyAwaySource` rather than on ownership.
+  A lease writes and navigates; the renderer's IPC handler is the one door that sizes a PTY.
 - **Wire contracts** live in `src/shared/sessions-companion.ts` (`CompanionEvent`,
-  `CompanionTerminalEvent`, `CompanionMirrorEndReason`, `CompanionSnapshot.away`,
-  `CompanionResizeRequest` and `CompanionResizeResponse`, the exact-key guards, the 256K
-  tail, the 14-character sticky-mode preamble beside it, the 4096-character input bound,
-  and the 2..1000 resize dimension bounds) and
+  `CompanionTerminalEvent`, `CompanionMirrorEndReason`, `CompanionSnapshot.away`, the
+  exact-key guards, the 256K tail, the 14-character sticky-mode preamble beside it, and the
+  4096-character input bound) and
   `src/shared/companion-settings.ts`. Both are
   ownership-guarded: no imports from `./ipc`, `electron`, main, or preload. The attention
   kinds and the prompt message bound come from `src/shared/actionable-attention.ts`:
@@ -246,41 +237,18 @@ while disarmed. The pane gates the same way for bytes it makes itself: the wheel
 keys and SGR reports go through `emitUser`, which sends nothing while disarmed or while the
 pane is writing. A 403 disarms and names Settings; a 409 names the ended terminal.
 
-## The Away size rule (ADR-052)
+## One fit (ADR-057)
 
-The phone owns the PTY's size only while `ActionableAttentionSet.away()` is true, the same
-predicate that admits Push, and the desktop takes it back on the first focus. Nothing is
-negotiated: a renderer `resize` is accepted whenever the owner asks and ends a mirror's hold
-without a `reclaim`; a mirror `resize` is refused `desktop-focused` whenever any hvir window is
-focused, and always when the supervisor has no `attention` source at all (a bare
-`new PtySupervisor()` in a test; `index.ts` and the smoke both pass one). The supervisor records `geometrySource` beside `geometry`, applies
-the host resize before it replaces either, and publishes the new geometry to every mirror as it
-does for a desktop resize, so the phone learns its own size through the ordinary `geometry`
-frame. When the set stops being Away, `reclaimMirrorGeometry` flips every live entry a mirror
-holds back to `renderer` and publishes one `reclaim` each; an entry whose lifetime already
-ended is skipped, because an exit listener can settle attention while the dead entry is still
-registered. Two phones on one PTY are not arbitrated: the most recent admitted resize wins.
-
-`POST /api/sessions/:handle/resize` takes exactly `{ page, cols, rows }` with both dimensions
-integers in 2..1000 (`isCompanionResizeRequest`; the supervisor clamps again with
-`terminalDimension`). The service checks only that the page's mirror is on `:handle`
-(`CompanionNoMirrorError`, 409 `{error}`); the typing permission is not consulted, because
-sizing is not input, so a read-only mirror still sizes the PTY while Away. The route answers
-200 `{outcome: 'accepted'}`, 409 `{outcome: 'refused', reason: 'desktop-focused'}` with the
-mirror still live, or 409 `{error}` when the lease refused for any other reason, in which case
-the mirror has already ended `exited` and the stream says so. The snapshot carries
-`away: boolean`, and a change to it alone is a new revision, so the phone can start asking the
-moment the desktop leaves.
-
-On the desktop, `pty:mirror-geometry` reaches the owning renderer's `TerminalEventRouter`, and
-`TerminalSurfaceAttachment.holdGeometry` hands it to the pane. `ownsGeometry()` is
-`canFocus() && held === undefined`, and it gates the runtime's debounced `pty:resize`, so a
-held pane's fit never fights the phone and a hidden tab's reclaim sends nothing until that tab
-is shown. `GhosttyTerminalPane.setHeldGeometry` suspends the fit, resizes the emulator to the
-held grid, and puts on `TerminalHeldGeometryMark`: the surface takes the theme background and
-a `.terminal-held-geometry-notice` reads `Companion holds the size · C×R`. Clearing it lets
-`revealAfterSettledFit` resume the fit, which re-asserts the pane's own size within one fit
-cycle.
+The phone shows the desktop's grid scaled to its width and nothing else, whether or not a
+desktop window is focused. ADR-052 once let a mirror size the PTY to the phone while
+`ActionableAttentionSet.away()` held, through a lease `resize` door, a `geometrySource` beside
+the geometry, a `reclaim` on focus and a held-size presentation on the desktop pane. A real
+device found that fit the worse one, since a full-screen program laid itself out twice per
+glance and read back slowly at a grid nobody at the desk wanted, so all of it is gone: the
+supervisor carries `geometry` alone, the renderer's IPC handler is the one door that sizes a
+PTY, and a mirror's geometry frames come from desktop resizes only. `CompanionSnapshot.away`
+remains for Push. What the phone lacked was travel, which ADR-057 gives it in the wheel policy
+and the touch adapter (see the read-back gotchas below).
 
 ## Gotchas & non-obvious constraints
 
@@ -303,27 +271,16 @@ cycle.
   front of the listener must pass `application/wasm` through unchanged.
 - **The phone pane is `TerminalPane`-shaped by conformance, not by import.** The boundary
   test forbids the page tree from importing `src/renderer/src/`, and the desktop adapter fits
-  its own pane except while a Companion holds the size (ADR-052). `CompanionTerminalPane`
+  its own pane and nothing else does (ADR-050, ADR-057). `CompanionTerminalPane`
   keeps the `mount`/`write`/`resize`/`dispose` names and the `events.onData` shape, and
   `test/companion-terminal-pane-seam.test.ts`, outside the page tree, assigns it to
   `Pick<TerminalPane, ...>` so `npm run typecheck` enforces the narrowing. ghostty-web is
   imported only by `ghostty-companion-pane.ts`; ghostty cannot run under happy-dom, so every
   page test fakes `createPane`.
-- **The phone asks for a size; it never takes one.** The pane is built with `cols`/`rows`
-  from `opened`, never subscribes `terminal.onResize`, and changes size only through
-  `geometry` frames, whoever caused them. `CompanionFitController` (`companion-terminal-fit.ts`)
-  is the only thing that asks: it divides the host's content box by the pane's measured cell
-  (`cellSize()`, from ghostty's renderer, so nothing before the emulator has drawn) and posts
-  the grid only while the mirror is live and the snapshot says Away, once when both hold and
-  once more after a 75 ms settle (`FIT_SETTLE_MS`) on every `ResizeObserver` change, which is
-  how rotation and the soft keyboard each produce one request. A fresh Away forgets and asks
-  again even for a grid asked before, and `applied` forgets the request when a geometry frame
-  differs from it, so the next fit asks rather than assuming the PTY still has the phone's
-  grid. One
-  request is in flight at a time and a later grid waits behind it, and only the answer to the
-  latest grid reaches the view: a `refused` outcome shows
-  `The desktop is focused, so it keeps the terminal size.` as a status line, an accepted one
-  or a failed verb clears it. The verb never touches the notice a person's own action shows.
+- **The phone never sizes the PTY.** The pane is built with `cols`/`rows` from `opened`,
+  never subscribes `terminal.onResize`, and changes size only through `geometry` frames,
+  which desktop resizes alone produce. There is no fit controller, no resize verb and no
+  size status line; ADR-057 removed them with ADR-052.
   The one view is a CSS `transform: scale(...)` on the surface at `fitWidthScale` =
   `min(1, hostWidth / gridWidth)`, so the cell grid stays whatever main published: the
   desktop's wide grid shrinks to fit, and the phone's own grid draws at scale 1 (or a hair
@@ -346,8 +303,8 @@ cycle.
   divides every delta by the mount's current transform scale, or the content crawls at a
   fraction of the finger's speed under a scaled desktop grid. It stops every `touchend` over
   the grid before ghostty-web's own canvas `touchend` can focus the hidden textarea, which
-  `disableStdin` does not gate and which on a phone raises the soft keyboard, resizes the
-  viewport, and asks the desktop for a new grid while Away; the mirror's typing surface is
+  `disableStdin` does not gate and which on a phone raises the soft keyboard and resizes the
+  viewport; the mirror's typing surface is
   `MirrorControls`, so nothing over the grid wants that focus. `scroll` answers the distance
   the viewport did not take rather than a boolean, which is what keeps the host's own scroller
   honest: a sub-cell drag at the live edge hands back all of its pixels instead of banking
@@ -393,8 +350,8 @@ cycle.
   over `.companion-terminal-area`: absolutely positioned, outside `.companion-terminal-host`,
   which is `overflow-y: auto` and would carry an absolutely positioned descendant away with its
   own scrolled content in exactly the tall-grid case that needs the control, and out of the
-  area's flex flow, because a control that took height would cost a PTY resize round-trip every
-  time it appeared while Away. Both declarations are text-asserted in
+  area's flex flow, so a control that takes height never moves the grid under a finger. Both
+  declarations are text-asserted in
   `test/style-ownership.test.ts`, since happy-dom applies no stylesheet and the rendered tests
   can only prove ancestry. The alternate screen is a condition of the render and not only of
   the emulator: ADR-053 forbids an affordance that moves nothing, so the view withholds the
@@ -423,7 +380,7 @@ cycle.
 - **The alternate screen says the program keeps its own history (ADR-055).**
   `pane.isAlternateScreen()` reads the emulator's mode flag, never the screen's text, and the
   mount reports the change to `terminal-view.tsx`, which renders one `companion-status` line in
-  the terminal area beside the Away size line. It is not inside `.companion-terminal-extent`,
+  the terminal area. It is not inside `.companion-terminal-extent`,
   which is `overflow: hidden` at an explicit pixel size the fit writes every frame and would
   clip it. The line used to claim the session had no history, which is false for anything
   holding its own: tmux, a pager, a shell under tmux. What is true is that the emulator has no
@@ -440,10 +397,9 @@ cycle.
   any key and then takes `lease.navigate` rather than `lease.write`, which is the same PTY
   write minus `sources.onInput`. That omission is the point: `pty-supervisor.ts` fans `onInput`
   to the owning renderer, which records it as terminal input and arms ADR-019, so a page key
-  sent through `write` would push a notification about the person's own scrolling. The same
-  distinction `resize` already draws, one verb further along.
+  sent through `write` would push a notification about the person's own scrolling.
 - **One gesture's reports travel as one ordered write, not one request each.** A finger over
-  a mouse-tracking program makes a wheel report on every move, up to five a move, and posting
+  a mouse-tracking program makes wheel reports on every move, and posting
   each as its own request let the browser open them in parallel and the listener write them in
   whatever order they landed: a program paged up and then down could read the down first. The
   pane emits one event's reports as one string, and `companion-navigation-queue.ts` keeps one
@@ -453,6 +409,17 @@ cycle.
   A batch with anything else inside is still a 400. Main writes the batch to the PTY once. The
   lift of the finger reaches the pane as `endGesture`, which drops the policy's banked steps and
   the viewport's sub-cell fraction, so a slow drag's remainder is never owed to the next touch.
+- **A drag delivers its travel; a notch is still held to five.** `terminal-wheel.ts` caps the
+  SGR reports of one event at `MAX_SGR_REPORTS_PER_NOTCH` (5) for a wheel notch, which is many
+  events per gesture, and at `max(5, rows)` for a drag, which is one event per move whose
+  distance is the scroll (ADR-057). Before that a finger sent five reports a move and the rest
+  died at the lift, which on a live Claude Code seat (one row or two per report, some 1900
+  reports of history) read as a hard limit a few rows back. The lift itself is a fling when
+  the last 100 ms of samples show 0.3 px/ms or more: `companion-touch-scroll.ts` keeps emitting
+  the same drag from `requestAnimationFrame` at the lift's velocity decayed by 0.998 per ms
+  until it drops under 0.02, and only then calls `end`; a finger landing on it ends it there.
+  Tests drive the clock and the frames through the `now` and `frames` options, and the mount
+  test freezes `performance.now` across a synthetic drag so a lift there is a stop.
 - **The control bar is armed-only.** `MirrorControls` renders the Arm/Disarm button alone
   while disarmed and adds the key strip and the text form only while `armed`; the tests that
   look for `#companion-terminal-text` or the key buttons must arm first.
