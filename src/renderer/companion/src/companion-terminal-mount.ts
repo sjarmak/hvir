@@ -45,7 +45,7 @@
  * line of text.
  */
 import type { CompanionTerminalEvent, TerminalWheelEvent } from '../../../shared'
-import { CompanionFitController } from './companion-terminal-fit'
+import { CompanionFitController, type CompanionGrid } from './companion-terminal-fit'
 import { COMPANION_DEFAULT_TEXT_SIZE, nearestTextSize } from './companion-text-size'
 import type {
   CompanionTerminalPane,
@@ -80,6 +80,19 @@ export interface CompanionTerminalMountOptions {
   readonly onFailure: (error: unknown) => void
   /** The person's mirror text size (ADR-059); the default when the page states none. */
   readonly textSize?: number
+  /**
+   * The two grids, whenever either moves: the one the session actually has and
+   * the one this page last asked to hold it at (ADR-059). The view says both,
+   * because a phone showing a session laid out for a desktop looks exactly like
+   * a phone whose own grid landed, only smaller in every dimension that matters.
+   */
+  readonly onGrids?: (grids: CompanionGrids) => void
+}
+
+/** What the session is laid out at, and what this page asked for; either may be unknown. */
+export interface CompanionGrids {
+  readonly session: CompanionGrid | undefined
+  readonly asked: CompanionGrid | undefined
 }
 
 /** The scale that sets the grid's width to the host's, never above 1; nothing while either has no layout. */
@@ -93,6 +106,10 @@ export class CompanionTerminalMount {
   private pending?: PendingPane
   private inputEnabled = false
   private textSize: number
+  /** The grid the session is laid out at, as the last frame from main stated it. */
+  private sessionGrid?: CompanionGrid
+  /** The grid this page last declared; undefined until its first ask. */
+  private askedGrid?: CompanionGrid
   /** Undefined until the first report, so a fresh mount states its screen rather than assuming it. */
   private alternateScreen?: boolean
   /** Undefined until the first report, stated for the same reason as the screen. */
@@ -131,7 +148,11 @@ export class CompanionTerminalMount {
     this.fitter = new CompanionFitController({
       area: () => ({ width: host.clientWidth, height: host.clientHeight }),
       cell: () => this.pane?.cellSize(),
-      request: ({ cols, rows }) => options.onViewport(cols, rows),
+      request: (grid) => {
+        this.askedGrid = grid
+        this.reportGrids()
+        return options.onViewport(grid.cols, grid.rows)
+      },
     })
     this.observer = new ResizeObserver(() => {
       this.fit()
@@ -155,6 +176,8 @@ export class CompanionTerminalMount {
         }
         return
       case 'geometry':
+        this.sessionGrid = { cols: event.cols, rows: event.rows }
+        this.reportGrids()
         this.fitter.applied({ cols: event.cols, rows: event.rows })
         if (this.pane !== undefined) {
           this.pane.resize(event.cols, event.rows)
@@ -218,6 +241,9 @@ export class CompanionTerminalMount {
   }
 
   private open(cols: number, rows: number, preamble: string, tail: string): void {
+    this.sessionGrid = { cols, rows }
+    this.askedGrid = undefined
+    this.reportGrids()
     this.fitter.setLive(false)
     this.releaseMirror()
     this.gridBox.replaceChildren()
@@ -269,6 +295,10 @@ export class CompanionTerminalMount {
     this.fit()
     this.reportScreen()
     this.fitter.setLive(true)
+  }
+
+  private reportGrids(): void {
+    this.options.onGrids?.({ session: this.sessionGrid, asked: this.askedGrid })
   }
 
   private fail(pending: PendingPane, error: unknown): void {

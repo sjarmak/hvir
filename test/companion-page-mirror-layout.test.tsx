@@ -464,6 +464,13 @@ describe('Companion page mirror holds the grid it draws (ADR-058)', () => {
 })
 
 describe('Companion page mirror draws the text size the person chose (ADR-059)', () => {
+  /** The header's one line of numbers: the session's grid, and the ask while it is out. */
+  function readout(): string | undefined {
+    return (
+      host.querySelector<HTMLElement>('.companion-grid-readout')?.textContent ?? undefined
+    )
+  }
+
   /** The control beside the title; the label is what a screen reader says, not "A-". */
   function textSizeButton(label: 'Smaller text' | 'Larger text'): HTMLButtonElement {
     const element = host.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)
@@ -502,6 +509,25 @@ describe('Companion page mirror draws the text size the person chose (ADR-059)',
     expect(panes.panes.at(-1)?.fontSizes).toEqual([9])
     expect(server.viewports().at(-1)).toEqual({ page: 'page-1', cols: 52, rows: 34 })
     expect(readCompanionTextSize(localStorage)).toBe(9)
+    localStorage.clear()
+  })
+
+  it('says what the session is laid out at, and what it asked for until that lands', async () => {
+    localStorage.clear()
+    await openMirror()
+    // The session opened at the desktop's grid, which is what the phone draws
+    // scaled; at this point nothing has been asked for.
+    expect(readout()).toBe('132\u00d743 at 10px')
+
+    layoutHost(376, 496)
+    await settleFit()
+    expect(server.viewports()).toEqual([{ page: 'page-1', cols: 47, rows: 31 }])
+    // The ask is out and the session has not moved: both numbers, so a phone
+    // drawing a desktop's grid never passes for a phone holding its own.
+    expect(readout()).toBe('132\u00d743 at 10px · asked 47\u00d731')
+
+    await emit('terminal', { type: 'geometry', handle: 'term-1', cols: 47, rows: 31 })
+    expect(readout()).toBe('47\u00d731 at 10px')
     localStorage.clear()
   })
 

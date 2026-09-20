@@ -394,6 +394,19 @@ body {
   gap: 4px;
 }
 
+/* What the session is laid out at, and what this phone asked for (ADR-059). */
+.companion-grid-readout {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.65;
+}
+
+.companion-grid-asked {
+  opacity: 0.85;
+}
+
 /* The prompt's message (ADR-051): the header's second line while it lasts. */
 .companion-mirror-prompt {
   flex-basis: 100%;

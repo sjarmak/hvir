@@ -7,7 +7,7 @@ import type {
 } from '../../../shared'
 import type { CompanionMirrorFeed } from './companion-mirror-feed'
 import { companionMirrorEndMessage, type CompanionTerminalState } from './companion-store'
-import { CompanionTerminalMount } from './companion-terminal-mount'
+import { CompanionTerminalMount, type CompanionGrids } from './companion-terminal-mount'
 import {
   readCompanionTextSize,
   stepCompanionTextSize,
@@ -64,6 +64,10 @@ export function TerminalView(props: TerminalViewProps) {
   const [alternateScreen, setAlternateScreen] = useState(false)
   const [readingBack, setReadingBack] = useState(false)
   const [textSize, setTextSize] = useState(() => readCompanionTextSize(localStorage))
+  const [grids, setGrids] = useState<CompanionGrids>({
+    session: undefined,
+    asked: undefined,
+  })
   const mirror = useRef<CompanionTerminalMount>(undefined)
   const live = terminal.status === 'live'
   if (showTranscript && transcript !== undefined) {
@@ -88,6 +92,7 @@ export function TerminalView(props: TerminalViewProps) {
         onBack={props.onBack}
         onTranscript={() => setShowTranscript(true)}
         textSize={textSize}
+        grids={grids}
         onTextSize={(direction) => {
           const next = stepCompanionTextSize(textSize, direction)
           setTextSize(next)
@@ -116,6 +121,7 @@ export function TerminalView(props: TerminalViewProps) {
           createPane={props.createPane}
           inputEnabled={arming.armed}
           textSize={textSize}
+          onGrids={setGrids}
           mirror={mirror}
           onInput={onInput}
           onViewport={onViewport}
@@ -139,6 +145,7 @@ function TerminalSurface({
   createPane,
   inputEnabled,
   textSize,
+  onGrids,
   mirror,
   onInput,
   onViewport,
@@ -152,6 +159,8 @@ function TerminalSurface({
   readonly inputEnabled: boolean
   /** The person's mirror text size (ADR-059), which every pane this surface builds draws at. */
   readonly textSize: number
+  /** The session's grid and the one this page asked for, for the header to say (ADR-059). */
+  readonly onGrids: (grids: CompanionGrids) => void
   /** The mount the view holds, so the way back reaches the pane this surface owns. */
   readonly mirror: RefObject<CompanionTerminalMount | undefined>
   readonly onInput: CompanionInputVerb
@@ -171,8 +180,16 @@ function TerminalSurface({
     onAlternateScreen,
     onReadingBack,
     onFailure,
+    onGrids,
   })
-  callbacks.current = { onInput, onViewport, onAlternateScreen, onReadingBack, onFailure }
+  callbacks.current = {
+    onInput,
+    onViewport,
+    onAlternateScreen,
+    onReadingBack,
+    onFailure,
+    onGrids,
+  }
 
   useEffect(() => {
     const element = host.current
@@ -185,6 +202,7 @@ function TerminalSurface({
       onAlternateScreen: (alternate) => callbacks.current.onAlternateScreen(alternate),
       onReadingBack: (readingBack) => callbacks.current.onReadingBack(readingBack),
       onFailure: (error) => callbacks.current.onFailure(error),
+      onGrids: (next) => callbacks.current.onGrids(next),
       textSize: size.current,
     })
     mirror.current = created
@@ -193,6 +211,8 @@ function TerminalSurface({
       detach()
       created.dispose()
       mirror.current = undefined
+      // A surface rebuilt for another row has no grids to report yet.
+      callbacks.current.onGrids({ session: undefined, asked: undefined })
       // A surface rebuilt for another row leaves no way back to the one before
       // it: there is no mount to answer the tap until the next mirror opens.
       callbacks.current.onReadingBack(false)

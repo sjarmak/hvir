@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { FIT_SETTLE_MS } from '../src/renderer/companion/src/companion-terminal-fit'
+import type { CompanionGrids } from '../src/renderer/companion/src/companion-terminal-mount'
 import { COMPANION_DEFAULT_TEXT_SIZE } from '../src/renderer/companion/src/companion-text-size'
 import {
   CompanionTerminalMount,
@@ -739,6 +740,39 @@ describe('CompanionTerminalMount draws the text size the person chose (ADR-059)'
     await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS * 2)
     expect(panes[0]?.fontSizes).toEqual([COMPANION_DEFAULT_TEXT_SIZE, 8])
     expect(viewports).toHaveLength(2)
+    mount.dispose()
+  })
+
+  it('reports the session grid and the ask, so the two can be told apart on the device', async () => {
+    const { create } = fakePanes()
+    const host = document.createElement('div')
+    document.body.append(host)
+    const grids: CompanionGrids[] = []
+    const mount = new CompanionTerminalMount({
+      host,
+      createPane: create,
+      onInput: () => undefined,
+      onViewport: () => Promise.resolve(),
+      onAlternateScreen: () => undefined,
+      onReadingBack: () => undefined,
+      onFailure: () => undefined,
+      onGrids: (next) => grids.push(next),
+    })
+    layout(host, 376, 496)
+    mount.handle({ type: 'opened', handle: ROW, cols: 132, rows: 43, tail: '' })
+    expect(grids.at(-1)).toEqual({ session: { cols: 132, rows: 43 }, asked: undefined })
+
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS)
+    expect(grids.at(-1)).toEqual({
+      session: { cols: 132, rows: 43 },
+      asked: { cols: 47, rows: 31 },
+    })
+
+    mount.handle({ type: 'geometry', handle: ROW, cols: 47, rows: 31 })
+    expect(grids.at(-1)).toEqual({
+      session: { cols: 47, rows: 31 },
+      asked: { cols: 47, rows: 31 },
+    })
     mount.dispose()
   })
 
