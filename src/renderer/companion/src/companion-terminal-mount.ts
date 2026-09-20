@@ -34,9 +34,8 @@
  * the gesture with keys of its own still leaves the rows below the fold
  * reachable. The way back is that same strip travelled at once rather than a
  * second route through it, so both scrollers land on the newest output
- * together. The mount also reports which screen the emulator is on, so the
- * view can say that a full-screen program keeps its own history and a drag
- * pages through it (ADR-055), and whether the viewport sits behind the newest
+ * together. The mount also reports which screen the emulator is on, so a
+ * viewport that cannot move is offered no way back (ADR-060), and whether the viewport sits behind the newest
  * output, so the view can offer the one tap back to it. That second report is a
  * subscription and never a sample:
  * a wheel notch the policy leaves alone is scrolled by the emulator itself and
@@ -51,7 +50,10 @@ import type {
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
 } from './companion-terminal-pane'
-import { CompanionTouchScroll } from './companion-touch-scroll'
+import {
+  CompanionTouchScroll,
+  type CompanionFrameScheduler,
+} from './companion-touch-scroll'
 
 interface PendingPane {
   readonly created: Promise<CompanionTerminalPane>
@@ -87,6 +89,8 @@ export interface CompanionTerminalMountOptions {
    * a phone whose own grid landed, only smaller in every dimension that matters.
    */
   readonly onGrids?: (grids: CompanionGrids) => void
+  /** Where a coalesced fit's frame comes from; the window's animation frames by default. */
+  readonly frames?: CompanionFrameScheduler
 }
 
 /** What the session is laid out at, and what this page asked for; either may be unknown. */
@@ -125,11 +129,18 @@ export class CompanionTerminalMount {
   private readonly touch: CompanionTouchScroll
   private readonly fitter: CompanionFitController
   private readonly observer: ResizeObserver
+  private readonly frames: CompanionFrameScheduler
+  /** A fit owed to output already written, waiting for the frame that pays it. */
+  private fitHandle?: number
 
   constructor(private readonly options: CompanionTerminalMountOptions) {
     const { host } = options
     this.host = host
     this.textSize = nearestTextSize(options.textSize ?? COMPANION_DEFAULT_TEXT_SIZE)
+    this.frames = options.frames ?? {
+      request: (callback) => requestAnimationFrame(callback),
+      cancel: (handle) => cancelAnimationFrame(handle),
+    }
     this.extent = document.createElement('div')
     this.extent.className = 'companion-terminal-extent'
     this.surface = document.createElement('div')
@@ -155,7 +166,7 @@ export class CompanionTerminalMount {
       },
     })
     this.observer = new ResizeObserver(() => {
-      this.fit()
+      this.fitNow()
       this.fitter.areaChanged()
     })
     this.observer.observe(host)
@@ -169,7 +180,7 @@ export class CompanionTerminalMount {
       case 'output':
         if (this.pane !== undefined) {
           this.pane.write(event.data)
-          this.fit()
+          this.scheduleFit()
           this.reportScreen()
         } else {
           this.pending?.frames.push(event.data)
@@ -181,7 +192,7 @@ export class CompanionTerminalMount {
         this.fitter.applied({ cols: event.cols, rows: event.rows })
         if (this.pane !== undefined) {
           this.pane.resize(event.cols, event.rows)
-          this.fit()
+          this.fitNow()
           this.reportScreen()
         } else if (this.pending !== undefined) {
           this.pending.geometry = { cols: event.cols, rows: event.rows }
@@ -212,7 +223,7 @@ export class CompanionTerminalMount {
     this.textSize = next
     if (this.pane === undefined) return
     this.pane.setFontSize(next)
-    this.fit()
+    this.fitNow()
     this.fitter.areaChanged()
   }
 
@@ -232,6 +243,7 @@ export class CompanionTerminalMount {
 
   dispose(): void {
     this.disposed = true
+    this.cancelFit()
     this.observer.disconnect()
     this.touch.dispose()
     this.fitter.dispose()
@@ -292,9 +304,39 @@ export class CompanionTerminalMount {
     }
     this.pending = undefined
     this.pane = pane
-    this.fit()
+    this.fitNow()
     this.reportScreen()
     this.fitter.setLive(true)
+  }
+
+  /**
+   * Output does not move the grid's box: the emulator draws the same cells it
+   * was sized for, so a frame of it needs no measurement of its own. What it
+   * does do is dirty the canvas, which makes the next read of the grid's box a
+   * forced layout, and reading back makes a program redraw its history in
+   * bursts of frames. So the fit output owes is paid once on the next frame,
+   * however many frames of output arrive before it. Everything that really
+   * changes the box, a resize, a text size, a new pane, fits where it happens.
+   */
+  private scheduleFit(): void {
+    if (this.fitHandle !== undefined) return
+    this.fitHandle = this.frames.request(() => {
+      this.fitHandle = undefined
+      if (this.disposed) return
+      this.fit()
+    })
+  }
+
+  /** A fit that cannot wait; the frame output owed is settled by the same measurement. */
+  private fitNow(): void {
+    this.cancelFit()
+    this.fit()
+  }
+
+  private cancelFit(): void {
+    if (this.fitHandle === undefined) return
+    this.frames.cancel(this.fitHandle)
+    this.fitHandle = undefined
   }
 
   private reportGrids(): void {
@@ -383,12 +425,16 @@ export class CompanionTerminalMount {
   private fit(): void {
     const grid = this.grid()
     if (grid === undefined) return
-    const scale = fitWidthScale(this.host.clientWidth, grid.offsetWidth)
+    // The box is read once per dimension: each read after the emulator drew is
+    // a forced layout, and the scale and the extent want the same two numbers.
+    const width = grid.offsetWidth
+    const height = grid.offsetHeight
+    const scale = fitWidthScale(this.host.clientWidth, width)
     if (scale === undefined) return
     this.scale = scale
     this.surface.style.transform = `scale(${scale})`
-    this.extentHeight = Math.ceil(grid.offsetHeight * scale)
-    this.extent.style.width = `${Math.ceil(grid.offsetWidth * scale)}px`
+    this.extentHeight = Math.ceil(height * scale)
+    this.extent.style.width = `${Math.ceil(width * scale)}px`
     this.extent.style.height = `${this.extentHeight}px`
   }
 }

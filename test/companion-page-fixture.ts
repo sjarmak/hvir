@@ -287,9 +287,11 @@ export class FakeCompanionPane implements CompanionTerminalPane {
     const surface = document.createElement('div')
     surface.className = 'fake-pane'
     Object.defineProperty(surface, 'offsetWidth', {
+      configurable: true,
       get: () => (this.resizes.at(-1)?.cols ?? this.cols) * this.cell().width,
     })
     Object.defineProperty(surface, 'offsetHeight', {
+      configurable: true,
       get: () => (this.resizes.at(-1)?.rows ?? this.rows) * this.cell().height,
     })
     container.append(surface)
