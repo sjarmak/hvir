@@ -32,16 +32,32 @@ export const MAX_SESSIONS_PENDING_OPTION_TEXT = 200
 export const MAX_SESSIONS_SUBMIT_MESSAGE = 8_000
 
 /** Who produced the turn, in the supervisor's provider-neutral vocabulary. */
-export type SessionsTranscriptTurnRole =
-  'user' | 'assistant' | 'system' | 'tool' | 'unknown'
+export const SESSIONS_TRANSCRIPT_TURN_ROLES = [
+  'user',
+  'assistant',
+  'system',
+  'tool',
+  'unknown',
+] as const
+
+export type SessionsTranscriptTurnRole = (typeof SESSIONS_TRANSCRIPT_TURN_ROLES)[number]
 
 /**
  * What kind of thing the turn is. `event` is a system event the supervisor
  * named; `unknown` is a block this build does not model, kept as a visible gap
  * rather than dropped.
  */
-export type SessionsTranscriptTurnKind =
-  'text' | 'tool-use' | 'tool-result' | 'interaction' | 'image' | 'event' | 'unknown'
+export const SESSIONS_TRANSCRIPT_TURN_KINDS = [
+  'text',
+  'tool-use',
+  'tool-result',
+  'interaction',
+  'image',
+  'event',
+  'unknown',
+] as const
+
+export type SessionsTranscriptTurnKind = (typeof SESSIONS_TRANSCRIPT_TURN_KINDS)[number]
 
 export interface SessionsTranscriptTurn {
   /** Position in this subscription's transcript. Stable while it lives. */
@@ -66,42 +82,56 @@ export interface SessionsTranscriptTurn {
  * own: ADR-046 requires a stopped supervisor to be distinguishable from stopped
  * agents, which a bare absence cannot do.
  */
-export type SessionsTranscriptUnavailableReason =
+export const SESSIONS_TRANSCRIPT_UNAVAILABLE_REASONS = [
   /** The handle is not an external session in the current projection. */
-  | 'not-projected'
+  'not-projected',
   /** The projection moved on before the request was served. */
-  | 'stale-projection'
+  'stale-projection',
   /** No city on that host resolved a name the supervisor knows. */
-  | 'city-unknown'
+  'city-unknown',
   /** The supervisor surface is turned off for that host. */
-  | 'disabled'
+  'disabled',
   /** Its configured endpoint could not be read as one. */
-  | 'misconfigured'
-  | 'unreachable'
-  | 'timeout'
+  'misconfigured',
+  'unreachable',
+  'timeout',
   /** hvir ended the exchange. */
-  | 'aborted'
+  'aborted',
   /** Not valid HTTP, or not the declared shape. */
-  | 'protocol'
-  | 'not-found'
-  | 'denied'
-  | 'conflict'
-  | 'rejected'
+  'protocol',
+  'not-found',
+  'denied',
+  'conflict',
+  'rejected',
   /** That supervisor does not implement the verb. */
-  | 'unsupported'
+  'unsupported',
   /** The supervisor is up; the city backend is not serving yet. */
-  | 'unready'
-  | 'faulted'
+  'unready',
+  'faulted',
+] as const
+
+export type SessionsTranscriptUnavailableReason =
+  (typeof SESSIONS_TRANSCRIPT_UNAVAILABLE_REASONS)[number]
 
 /** Whether turns are still arriving. `lost` is resumed by an explicit request. */
-export type SessionsTranscriptStreamState = 'opening' | 'live' | 'lost' | 'closed'
+export const SESSIONS_TRANSCRIPT_STREAM_STATES = [
+  'opening',
+  'live',
+  'lost',
+  'closed',
+] as const
+
+export type SessionsTranscriptStreamState =
+  (typeof SESSIONS_TRANSCRIPT_STREAM_STATES)[number]
+
+export const SESSIONS_TRANSCRIPT_STATUSES = ['loading', 'ready', 'unavailable'] as const
 
 export interface SessionsTranscriptSnapshot {
   readonly version: typeof SESSIONS_TRANSCRIPT_VERSION
   readonly demandGeneration: number
   readonly revision: number
   readonly handle: SessionsTerminalHandle
-  readonly status: 'loading' | 'ready' | 'unavailable'
+  readonly status: (typeof SESSIONS_TRANSCRIPT_STATUSES)[number]
   /** Present when `status` is `unavailable`. */
   readonly reason?: SessionsTranscriptUnavailableReason
   readonly stream: SessionsTranscriptStreamState
@@ -181,16 +211,20 @@ export interface SessionsTranscriptSubmitRequest extends SessionsDemandRequest {
  * mutation can fail on. A refused mutation is never retried behind the caller
  * (ADR-047): the reason is reported and the pane decides.
  */
-export type SessionsMutationUnavailableReason =
-  | SessionsTranscriptUnavailableReason
+export const SESSIONS_MUTATION_UNAVAILABLE_REASONS = [
+  ...SESSIONS_TRANSCRIPT_UNAVAILABLE_REASONS,
   /** The interaction moved on; what was answered is not what is waiting. */
-  | 'stale-interaction'
+  'stale-interaction',
   /** Nothing is waiting on an answer. */
-  | 'no-interaction'
+  'no-interaction',
   /** No option stands at that position. */
-  | 'invalid-option'
+  'invalid-option',
   /** A message with nothing in it, or more than one message may carry. */
-  | 'invalid-message'
+  'invalid-message',
+] as const
+
+export type SessionsMutationUnavailableReason =
+  (typeof SESSIONS_MUTATION_UNAVAILABLE_REASONS)[number]
 
 /**
  * The outcome of one mutation. An accepted answer carries nothing back: the

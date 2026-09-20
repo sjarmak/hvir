@@ -82,10 +82,20 @@ async function flush(): Promise<void> {
 
 type OnBeadAction = (request: BeadActionRequest) => Promise<boolean>
 
-async function renderPanel(onBeadAction: OnBeadAction, canLaunch = true): Promise<void> {
+async function renderPanel(
+  onBeadAction: OnBeadAction,
+  canLaunch = true,
+  hidden = false,
+): Promise<void> {
   act(() => {
     root.render(
-      createElement(BeadsPanel, { root: ROOT, connected: true, onBeadAction, canLaunch }),
+      createElement(BeadsPanel, {
+        root: ROOT,
+        connected: true,
+        onBeadAction,
+        canLaunch,
+        hidden,
+      }),
     )
   })
   await flush()
@@ -149,6 +159,22 @@ describe('BeadsPanel bead actions', () => {
     await advance(200)
     expect(listCalls).toBe(2)
     await advance(1500)
+    expect(listCalls).toBe(2)
+  })
+
+  it('stops an accepted action refresh while hidden and reads fresh data on return', async () => {
+    await renderPanel(accept)
+    act(() => {
+      host.querySelector<HTMLButtonElement>('.beads-row')?.click()
+    })
+    act(() => {
+      buttonLabelled('Claim')?.click()
+    })
+    await flush()
+    await renderPanel(accept, true, true)
+    await advance(10_000)
+    expect(listCalls).toBe(1)
+    await renderPanel(accept)
     expect(listCalls).toBe(2)
   })
 

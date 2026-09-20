@@ -15,8 +15,9 @@ let root: Root
 let invoke: Mock<(channel: string, payload?: unknown) => Promise<unknown>>
 
 beforeEach(() => {
-  ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-    true
+  ;(
+    globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
@@ -93,6 +94,26 @@ describe('useGasCityCrew', () => {
     await render(ROOT, false)
     const probes = channels().filter((channel) => channel === 'gascity:probe')
     expect(probes).toHaveLength(1)
+  })
+
+  it('retries a probe canceled by hiding and ignores its late answer', async () => {
+    let resolveFirst!: (value: { hasCity: boolean }) => void
+    invoke.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirst = resolve
+        }),
+    )
+    await render(ROOT, false)
+    await render(ROOT, true)
+    await act(async () => {
+      resolveFirst({ hasCity: true })
+      await Promise.resolve()
+    })
+    expect(channels()).toEqual(['gascity:probe'])
+    await render(ROOT, false)
+    expect(channels().filter((channel) => channel === 'gascity:probe')).toHaveLength(2)
+    expect(channels()).toContain('gascity:crew')
   })
 
   it('never invokes gc for a workspace outside a city', async () => {

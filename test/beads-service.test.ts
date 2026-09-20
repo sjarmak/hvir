@@ -12,7 +12,6 @@ import type { ProjectHost } from '../src/main/project-host'
 import {
   asHostId,
   hostPath,
-  type BeadsChangedEvent,
   type ExecResult,
 } from '../src/shared'
 
@@ -58,19 +57,10 @@ interface FakeHostOptions {
 function fakeHost(options: FakeHostOptions = {}): {
   readonly host: ProjectHost
   readonly exec: ReturnType<typeof vi.fn>
-  readonly watch: ReturnType<typeof vi.fn>
-  readonly watchCallbacks: Array<(event: unknown) => void>
-  readonly stopWatch: ReturnType<typeof vi.fn>
 } {
-  const watchCallbacks: Array<(event: unknown) => void> = []
-  const stopWatch = vi.fn()
   const exec = vi.fn(async (command: string, args: readonly string[]) => {
     if (options.exec) return options.exec(command, args)
     return execResult(0, '[]')
-  })
-  const watch = vi.fn((_path: unknown, onEvent: (event: unknown) => void) => {
-    watchCallbacks.push(onEvent)
-    return stopWatch
   })
   const host = {
     hostId: ROOT.hostId,
@@ -80,15 +70,13 @@ function fakeHost(options: FakeHostOptions = {}): {
         ? Promise.reject(new Error('ENOENT: no such file'))
         : Promise.resolve({ type: options.statType ?? 'dir' }),
     ),
-    watch,
   } as unknown as ProjectHost
-  return { host, exec, watch, watchCallbacks, stopWatch }
+  return { host, exec }
 }
 
-function service(host: ProjectHost, emitted: BeadsChangedEvent[] = []): BeadsService {
+function service(host: ProjectHost): BeadsService {
   return new BeadsService({
     getProject: () => ({ host, root: ROOT }),
-    emitChanged: (event) => emitted.push(event),
   })
 }
 
@@ -281,50 +269,6 @@ describe('BeadsService.probe', () => {
     const { host } = fakeHost({ statType: 'dir' })
     const other = hostPath(asHostId('local'), '/projects/other')
     await expect(service(host).probe(other)).rejects.toThrow(/active workspace root/)
-  })
-})
-
-describe('BeadsService watch lifecycle', () => {
-  it('watches .beads once, debounces bursts into one event, and unwatches', async () => {
-    vi.useFakeTimers()
-    try {
-      const emitted: BeadsChangedEvent[] = []
-      const { host, watchCallbacks, stopWatch } = fakeHost()
-      const beads = service(host, emitted)
-      await beads.watch(ROOT)
-      await beads.watch(ROOT)
-      expect(watchCallbacks).toHaveLength(1)
-
-      watchCallbacks[0]?.({})
-      watchCallbacks[0]?.({})
-      watchCallbacks[0]?.({})
-      expect(emitted).toHaveLength(0)
-      vi.advanceTimersByTime(300)
-      expect(emitted).toEqual([{ root: ROOT }])
-
-      beads.unwatch(ROOT)
-      expect(stopWatch).toHaveBeenCalledTimes(1)
-      watchCallbacks[0]?.({})
-      vi.advanceTimersByTime(300)
-      expect(emitted).toHaveLength(1)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('does not start a watch when .beads is absent', async () => {
-    const { host, watch } = fakeHost({ statType: 'missing' })
-    const beads = service(host)
-    await beads.watch(ROOT)
-    expect(watch).not.toHaveBeenCalled()
-  })
-
-  it('disposes every active watch', async () => {
-    const { host, stopWatch } = fakeHost()
-    const beads = service(host)
-    await beads.watch(ROOT)
-    beads.dispose()
-    expect(stopWatch).toHaveBeenCalledTimes(1)
   })
 })
 

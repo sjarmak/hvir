@@ -21,7 +21,7 @@ import { beadStore } from './analytics-links'
 import { beadSectionKeys } from './bead-placement'
 import type { BeadActionRequest } from './bead-commands'
 import { BeadCreateForm } from './bead-create-form'
-import { createVisibilityRefresh } from './beads-refresh'
+import { createVisibilityRefresh, type VisibilityRefresh } from './beads-refresh'
 import { CrewSection } from './CrewSection'
 import { memberForIdentity } from './crew-model'
 import type { GasCityAction } from './gascity-commands'
@@ -29,28 +29,9 @@ import { useAnalyticsConfig } from './use-analytics-config'
 import { useGasCityCrew } from './use-gascity-crew'
 import './beads.css'
 
-const CHANGED_REFETCH_DELAY_MS = 300
-/**
- * Bounded poll period while the panel is visible. Shared-Dolt mutations do not
- * touch the rig's `.beads/` directory, so the file watcher can miss them; a
- * modest visible-only poll keeps the panel current without hammering `bd`.
- * Typed bd write actions (claim/close/create) rely on this poll too: the watch
- * is best-effort and the echo cooldown below may swallow their change event.
- */
+// Shared-Dolt writes can bypass directory watches; one visible poll owns freshness.
 const VISIBLE_POLL_INTERVAL_MS = 5000
-/**
- * Ignore `.beads/` change events for a short window after a refetch completes.
- * Our own `bd` reads (several per refresh: list, ready, gates, edges, jq) can
- * touch `.beads/`, which the watcher then reports as a change — a feedback loop
- * that would refetch continuously. This cooldown breaks that loop while still
- * catching genuine external edits after it, and the visible poll is the backstop.
- */
-const CHANGED_COOLDOWN_MS = 2500
-/**
- * One refresh this long after a typed bd write action. The visible poll backs
- * off to as much as 30 s on a slow host, and the watch may miss the change
- * inside the echo cooldown; bd itself finishes in well under this.
- */
+/** Allow a typed command to finish before requesting updated data. */
 const ACTION_REFRESH_DELAY_MS = 1500
 /** Shown on every typed action while the workspace terminal cannot open a shell. */
 export const LAUNCH_UNAVAILABLE_HINT =
@@ -102,10 +83,8 @@ export function BeadsPanel({
   const [createTitle, setCreateTitle] = useState('')
   const [pendingFocus, setPendingFocus] = useState<string>()
   const rootRef = useRef<HTMLElement>(null)
-  const actionRefreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const refreshController = useRef<VisibilityRefresh | undefined>(undefined)
   const requestSerial = useRef(0)
-  const inFlight = useRef(false)
-  const lastCompletedAt = useRef(0)
   const showClosedRef = useRef(showClosed)
   showClosedRef.current = showClosed
   const showInternalsRef = useRef(showInternals)
@@ -135,11 +114,6 @@ export function BeadsPanel({
   )
 
   const refresh = useCallback(async (): Promise<void> => {
-    // Non-reentrant: a poll tick, focus, or watch event that arrives while a
-    // refetch is in flight is dropped rather than overlapped (slow SSH `bd`
-    // calls can outlast the 5s poll), so the button never flickers.
-    if (inFlight.current) return
-    inFlight.current = true
     const serial = ++requestSerial.current
     setLoading(true)
     try {
@@ -155,91 +129,58 @@ export function BeadsPanel({
       if (serial !== requestSerial.current) return
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
-      inFlight.current = false
-      lastCompletedAt.current = Date.now()
       if (serial === requestSerial.current) setLoading(false)
     }
   }, [root])
 
-  // Local-change signal: watch `.beads/` and refetch on a debounced burst. This
-  // stays subscribed regardless of visibility, but it is a best-effort hint —
-  // shared-Dolt mutations happen in the central server and may never touch this
-  // directory, which is why the visible-only poll below is the reliable signal.
-  useEffect(() => {
-    if (!connected) return
-    void window.hvir.invoke('beads:watch', { root }).catch(() => undefined)
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const dispose = window.hvir.on('beads:changed', (event) => {
-      if (event.root.hostId !== root.hostId || event.root.path !== root.path) return
-      // Suppress the echo of our own reads: a change right after a refetch is
-      // almost certainly bd touching `.beads/`, not a real external edit.
-      if (Date.now() - lastCompletedAt.current < CHANGED_COOLDOWN_MS) return
-      if (timer) clearTimeout(timer)
-      timer = setTimeout(() => {
-        timer = undefined
-        void refresh()
-      }, CHANGED_REFETCH_DELAY_MS)
-    })
-    return () => {
-      if (timer) clearTimeout(timer)
-      void dispose()
-      void window.hvir.invoke('beads:unwatch', { root }).catch(() => undefined)
-    }
-  }, [root, connected, refresh])
-
-  // Visible-only refresh + bounded polling. Refreshes on becoming visible and
-  // on regaining focus, polls while visible, and stops the moment the panel is
-  // hidden or the component unmounts, so a background panel never drives `bd`.
   useEffect(() => {
     const controller = createVisibilityRefresh({
-      onRefresh: () => refresh(),
+      onRefresh: refresh,
       intervalMs: VISIBLE_POLL_INTERVAL_MS,
     })
-    controller.setVisible(connected && !hidden)
-    const onFocus = (): void => controller.focus()
+    refreshController.current = controller
+    return () => {
+      controller.dispose()
+      refreshController.current = undefined
+      requestSerial.current += 1
+    }
+  }, [refresh])
+
+  useEffect(() => {
+    const controller = refreshController.current
+    const updateVisibility = (): void => {
+      controller?.setVisible(
+        connected && !hidden && document.visibilityState !== 'hidden',
+      )
+    }
+    const onFocus = (): void => controller?.focus()
+    updateVisibility()
     window.addEventListener('focus', onFocus)
-    document.addEventListener('visibilitychange', onFocus)
+    document.addEventListener('visibilitychange', updateVisibility)
     return () => {
       window.removeEventListener('focus', onFocus)
-      document.removeEventListener('visibilitychange', onFocus)
-      controller.dispose()
+      document.removeEventListener('visibilitychange', updateVisibility)
     }
   }, [connected, hidden, refresh])
 
-  useEffect(
-    () => () => {
-      if (actionRefreshTimer.current !== undefined)
-        clearTimeout(actionRefreshTimer.current)
-    },
-    [],
-  )
-
-  // Deliver the action and, once the terminal accepted it, schedule exactly one
-  // follow-up refresh; a second action inside the window restarts the timer
-  // rather than stacking a refresh. A refused action changes nothing in bd, so
-  // it earns no refresh.
   const requestBeadAction = async (request: BeadActionRequest): Promise<boolean> => {
     if (!onBeadAction || !canLaunch) return false
+    const controller = refreshController.current
     const accepted = await onBeadAction(request)
-    if (!accepted) return false
-    if (actionRefreshTimer.current !== undefined) clearTimeout(actionRefreshTimer.current)
-    actionRefreshTimer.current = setTimeout(() => {
-      actionRefreshTimer.current = undefined
-      void refresh()
-    }, ACTION_REFRESH_DELAY_MS)
-    return true
+    if (accepted) controller?.request(ACTION_REFRESH_DELAY_MS)
+    return accepted
   }
 
   const toggleClosed = (): void => {
     setShowClosed(!showClosed)
     showClosedRef.current = !showClosed
-    void refresh()
+    refreshController.current?.request()
   }
 
   const toggleInternals = (): void => {
     setShowInternals(!showInternals)
     showInternalsRef.current = !showInternals
-    void refresh()
+    refreshController.current?.request()
   }
 
   const toggleExpanded = (id: string): void => {
@@ -300,7 +241,7 @@ export function BeadsPanel({
           title="Refresh crew and beads"
           disabled={loading || !connected}
           onClick={() => {
-            void refresh()
+            refreshController.current?.request()
             crew.refresh()
           }}
         >

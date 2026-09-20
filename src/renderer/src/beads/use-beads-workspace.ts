@@ -1,20 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
-import type {
-  ExternalSessionAttachRequest,
-  HostConnectionState,
-  HostPath,
-  SessionsAttachExternalTarget,
-} from '../../../shared'
-import type { TerminalAttachRequest } from '../terminal/terminal-workspace-model'
+import type { HostConnectionState, HostPath } from '../../../shared'
+import type { TerminalCommands } from '../terminal/use-terminal-commands'
 import type { WorkbenchRailMode } from '../workbench/use-workbench-layout'
 import { beadCommand, type BeadActionRequest } from './bead-commands'
 import { gasCityCommand, type GasCityAction } from './gascity-commands'
-
-export interface BeadsWorkspaceAttach {
-  readonly workspaceId: string
-  readonly request: TerminalAttachRequest
-}
 
 export interface BeadsWorkspace {
   /**
@@ -46,26 +36,12 @@ export interface BeadsWorkspace {
    * when no workspace is active, nothing can launch, or the command was refused.
    */
   readonly requestBeadAction: (request: BeadActionRequest) => Promise<boolean>
-  /**
-   * Attach a projected external session in the workspace main just switched to.
-   * The ticket names the session; only main can redeem it, because the renderer
-   * is never told which session a projected row is (ADR-046).
-   */
-  readonly requestExternalAttach: (
-    workspaceId: string,
-    target: SessionsAttachExternalTarget,
-  ) => Promise<boolean>
-  /** The pending attach request for `workspaceId`, if it targets that workspace. */
-  readonly attachRequestFor: (workspaceId: string) => TerminalAttachRequest | undefined
-  /** Each workspace terminal reports whether it could launch an attach shell. */
-  readonly reportLaunchAvailability: (workspaceId: string, canLaunch: boolean) => void
 }
 
 /** The App-workspace context the Beads policy reads — a structural subset. */
 interface BeadsWorkspaceContext {
   readonly root?: HostPath
   readonly connectionState: HostConnectionState
-  readonly activeWorkspace?: { readonly id: string }
 }
 
 /** The rail context the Beads policy reads — a structural subset of the layout. */
@@ -82,67 +58,12 @@ interface BeadsRailContext {
 export function useBeadsWorkspace(
   session: BeadsWorkspaceContext,
   layout: BeadsRailContext,
+  terminal: Pick<TerminalCommands, 'actionsAvailable' | 'requestCommand'>,
 ): BeadsWorkspace {
-  const { root, connectionState, activeWorkspace } = session
+  const { root, connectionState } = session
   const { railMode, setRailMode } = layout
   const [beadsEnabled, setBeadsEnabled] = useState(false)
-  const [attachRequest, setAttachRequest] = useState<BeadsWorkspaceAttach | undefined>()
-  const [launchable, setLaunchable] = useState<ReadonlyMap<string, boolean>>(new Map())
-  const attachNonce = useRef(0)
-  const actionsAvailable =
-    activeWorkspace !== undefined && launchable.get(activeWorkspace.id) === true
-
-  const reportLaunchAvailability = (workspaceId: string, canLaunch: boolean): void => {
-    setLaunchable((current) => {
-      if (current.get(workspaceId) === canLaunch) return current
-      return new Map(current).set(workspaceId, canLaunch)
-    })
-  }
-
-  // Type a command into the active workspace's terminal. A `key` marks a
-  // long-lived identity so a repeat click focuses the terminal already showing
-  // it instead of opening another one; one-shot commands pass none. Resolves
-  // with the terminal's own answer; a workspace that cannot launch is refused
-  // here rather than dispatched to vanish.
-  const requestCommand = (
-    command: string,
-    key?: string,
-    attaches?: ExternalSessionAttachRequest,
-  ): Promise<boolean> => {
-    const workspaceId = activeWorkspace?.id
-    if (!workspaceId || launchable.get(workspaceId) !== true) return Promise.resolve(false)
-    return dispatchCommand(workspaceId, command, key, attaches)
-  }
-
-  const dispatchCommand = (
-    workspaceId: string,
-    command: string,
-    key?: string,
-    attaches?: ExternalSessionAttachRequest,
-  ): Promise<boolean> => {
-    attachNonce.current += 1
-    return new Promise((resolve) => {
-      setAttachRequest({
-        workspaceId,
-        request: {
-          command,
-          nonce: attachNonce.current,
-          onSettled: resolve,
-          ...(key === undefined ? {} : { key }),
-          ...(attaches === undefined ? {} : { attaches }),
-        },
-      })
-    })
-  }
-
-  // The attach targets the workspace main just switched to, whose terminal may
-  // not have reported yet. The request waits with that workspace instead of
-  // being refused for not having answered in time; it is told either way.
-  const requestExternalAttach = (
-    workspaceId: string,
-    target: SessionsAttachExternalTarget,
-  ): Promise<boolean> =>
-    dispatchCommand(workspaceId, target.command, target.key, { ticket: target.ticket })
+  const { actionsAvailable, requestCommand } = terminal
 
   const requestCrewAction = (
     action: GasCityAction,
@@ -157,11 +78,6 @@ export function useBeadsWorkspace(
     const built = beadCommand(request)
     return built === undefined ? Promise.resolve(false) : requestCommand(built.command)
   }
-
-  // Resolve the pending attach request for one workspace (App maps this over
-  // every workspace's terminal, so only the targeted one fires).
-  const attachRequestFor = (workspaceId: string): TerminalAttachRequest | undefined =>
-    attachRequest?.workspaceId === workspaceId ? attachRequest.request : undefined
 
   // Probe whether the active workspace has a `.beads` project; drives the Beads
   // tab's visibility. Re-runs on workspace/connection change, with a cancel
@@ -196,8 +112,5 @@ export function useBeadsWorkspace(
     actionsAvailable,
     requestCrewAction,
     requestBeadAction,
-    requestExternalAttach,
-    attachRequestFor,
-    reportLaunchAvailability,
   }
 }

@@ -141,10 +141,6 @@ export interface BeadsUnavailable {
 
 export type BeadsListResponse = BeadsSnapshot | BeadsUnavailable
 
-export interface BeadsWatchRequest {
-  readonly root: HostPath
-}
-
 export interface BeadsProbeRequest {
   readonly root: HostPath
 }
@@ -156,8 +152,4 @@ export interface BeadsProbeRequest {
  */
 export interface BeadsProbeResponse {
   readonly hasProject: boolean
-}
-
-export interface BeadsChangedEvent {
-  readonly root: HostPath
 }

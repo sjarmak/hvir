@@ -50,10 +50,7 @@ import type {
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
 } from './companion-terminal-pane'
-import {
-  CompanionTouchScroll,
-  type CompanionFrameScheduler,
-} from './companion-touch-scroll'
+import { CompanionTouchScroll } from './companion-touch-scroll'
 
 interface PendingPane {
   readonly created: Promise<CompanionTerminalPane>
@@ -89,8 +86,6 @@ export interface CompanionTerminalMountOptions {
    * a phone whose own grid landed, only smaller in every dimension that matters.
    */
   readonly onGrids?: (grids: CompanionGrids) => void
-  /** Where a coalesced fit's frame comes from; the window's animation frames by default. */
-  readonly frames?: CompanionFrameScheduler
 }
 
 /** What the session is laid out at, and what this page asked for; either may be unknown. */
@@ -129,18 +124,11 @@ export class CompanionTerminalMount {
   private readonly touch: CompanionTouchScroll
   private readonly fitter: CompanionFitController
   private readonly observer: ResizeObserver
-  private readonly frames: CompanionFrameScheduler
-  /** A fit owed to output already written, waiting for the frame that pays it. */
-  private fitHandle?: number
 
   constructor(private readonly options: CompanionTerminalMountOptions) {
     const { host } = options
     this.host = host
     this.textSize = nearestTextSize(options.textSize ?? COMPANION_DEFAULT_TEXT_SIZE)
-    this.frames = options.frames ?? {
-      request: (callback) => requestAnimationFrame(callback),
-      cancel: (handle) => cancelAnimationFrame(handle),
-    }
     this.extent = document.createElement('div')
     this.extent.className = 'companion-terminal-extent'
     this.surface = document.createElement('div')
@@ -166,7 +154,7 @@ export class CompanionTerminalMount {
       },
     })
     this.observer = new ResizeObserver(() => {
-      this.fitNow()
+      this.fit()
       this.fitter.areaChanged()
     })
     this.observer.observe(host)
@@ -180,7 +168,6 @@ export class CompanionTerminalMount {
       case 'output':
         if (this.pane !== undefined) {
           this.pane.write(event.data)
-          this.scheduleFit()
           this.reportScreen()
         } else {
           this.pending?.frames.push(event.data)
@@ -192,7 +179,7 @@ export class CompanionTerminalMount {
         this.fitter.applied({ cols: event.cols, rows: event.rows })
         if (this.pane !== undefined) {
           this.pane.resize(event.cols, event.rows)
-          this.fitNow()
+          this.fit()
           this.reportScreen()
         } else if (this.pending !== undefined) {
           this.pending.geometry = { cols: event.cols, rows: event.rows }
@@ -223,7 +210,7 @@ export class CompanionTerminalMount {
     this.textSize = next
     if (this.pane === undefined) return
     this.pane.setFontSize(next)
-    this.fitNow()
+    this.fit()
     this.fitter.areaChanged()
   }
 
@@ -243,7 +230,6 @@ export class CompanionTerminalMount {
 
   dispose(): void {
     this.disposed = true
-    this.cancelFit()
     this.observer.disconnect()
     this.touch.dispose()
     this.fitter.dispose()
@@ -304,39 +290,11 @@ export class CompanionTerminalMount {
     }
     this.pending = undefined
     this.pane = pane
-    this.fitNow()
+    const grid = this.grid()
+    if (grid !== undefined) this.observer.observe(grid)
+    this.fit()
     this.reportScreen()
     this.fitter.setLive(true)
-  }
-
-  /**
-   * Output does not move the grid's box: the emulator draws the same cells it
-   * was sized for, so a frame of it needs no measurement of its own. What it
-   * does do is dirty the canvas, which makes the next read of the grid's box a
-   * forced layout, and reading back makes a program redraw its history in
-   * bursts of frames. So the fit output owes is paid once on the next frame,
-   * however many frames of output arrive before it. Everything that really
-   * changes the box, a resize, a text size, a new pane, fits where it happens.
-   */
-  private scheduleFit(): void {
-    if (this.fitHandle !== undefined) return
-    this.fitHandle = this.frames.request(() => {
-      this.fitHandle = undefined
-      if (this.disposed) return
-      this.fit()
-    })
-  }
-
-  /** A fit that cannot wait; the frame output owed is settled by the same measurement. */
-  private fitNow(): void {
-    this.cancelFit()
-    this.fit()
-  }
-
-  private cancelFit(): void {
-    if (this.fitHandle === undefined) return
-    this.frames.cancel(this.fitHandle)
-    this.fitHandle = undefined
   }
 
   private reportGrids(): void {
@@ -409,6 +367,8 @@ export class CompanionTerminalMount {
 
   /** Lets go of the mirror; disposing a pane releases every subscription it handed out. */
   private releaseMirror(): void {
+    const grid = this.grid()
+    if (grid !== undefined) this.observer.unobserve(grid)
     this.pane?.dispose()
     this.pane = undefined
   }

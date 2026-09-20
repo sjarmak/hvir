@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createVisibilityRefresh } from '../src/renderer/src/beads/beads-refresh'
 
 interface Harness {
-  readonly onRefresh: ReturnType<typeof vi.fn>
+  readonly onRefresh: ReturnType<typeof vi.fn<() => Promise<void>>>
   readonly cancel: ReturnType<typeof vi.fn>
   readonly controller: ReturnType<typeof createVisibilityRefresh>
   /** Delays the controller asked for, in order. */
@@ -17,7 +17,10 @@ interface Harness {
 }
 
 /** Drives the controller with injected timers and clock; no real time passes. */
-function harness(intervalMs = 5000, options: { costFactor?: number; maxIntervalMs?: number } = {}): Harness {
+function harness(
+  intervalMs = 5000,
+  options: { costFactor?: number; maxIntervalMs?: number } = {},
+): Harness {
   let clock = 0
   let scheduled: (() => void) | undefined
   const delays: number[] = []
@@ -166,6 +169,47 @@ describe('createVisibilityRefresh', () => {
     h.controller.setVisible(true)
     h.controller.focus()
     expect(h.onRefresh).not.toHaveBeenCalled()
+  })
+
+  it('coalesces signals during a slow read and runs one fresh read afterwards', async () => {
+    let finish!: () => void
+    const h = harness()
+    h.onRefresh.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        }),
+    )
+    h.controller.setVisible(true)
+    h.controller.request()
+    h.controller.focus()
+    expect(h.onRefresh).toHaveBeenCalledTimes(1)
+    finish()
+    await h.settle()
+    expect(h.onRefresh).toHaveBeenCalledTimes(2)
+    expect(h.delays).toEqual([5000])
+    h.controller.dispose()
+  })
+
+  it('cancels an action refresh when hidden and refreshes on return', async () => {
+    vi.useFakeTimers()
+    try {
+      const onRefresh = vi.fn()
+      const controller = createVisibilityRefresh({ onRefresh, intervalMs: 5000 })
+      controller.setVisible(true)
+      await Promise.resolve()
+      controller.request(1500)
+      controller.setVisible(false)
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(onRefresh).toHaveBeenCalledTimes(1)
+      controller.setVisible(true)
+      await Promise.resolve()
+      expect(onRefresh).toHaveBeenCalledTimes(2)
+      expect(vi.getTimerCount()).toBe(1)
+      controller.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('does not schedule a poll when the interval is non-positive', async () => {

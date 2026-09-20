@@ -154,10 +154,11 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
    * in its own pixels and signed like the gesture. Bytes that reached a
    * program answer the gesture in that program's terms and move no pixel of
    * this surface, so the whole distance goes back for the page to scroll a
-   * grid too tall for its host with.
+   * grid too tall for its host with. Fractional program-owned gestures keep
+   * that route while they accumulate enough travel for the next report.
    */
   scroll(event: TerminalWheelEvent): number {
-    if (this.navigate(event).emitted) return event.deltaY
+    if (this.navigate(event).programOwned) return event.deltaY
     return this.moveViewport(event)
   }
 
@@ -222,31 +223,37 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
    * The desktop's decision for one gesture, and the only place its bytes are
    * emitted, so a gesture is never sent twice however it arrived. `handled` is
    * the wheel path's answer: false leaves a notch to the emulator's own smooth
-   * scroll. `emitted` is whether a byte actually cleared the arming gate, which
-   * is the narrower question `scroll` asks, since a policy that claimed the
-   * gesture and sent nothing has left the viewport the only thing that can move.
+   * scroll. Program ownership includes fractional movement banked for a later
+   * report, so a single drag never also moves the local history. Unsupported
+   * mouse encodings still leave touch read-back to the local viewport.
    */
   private navigate(event: TerminalWheelEvent): {
     readonly handled: boolean
-    readonly emitted: boolean
+    readonly programOwned: boolean
   } {
     const term = this.terminal.wasmTerm
     const renderer = this.terminal.renderer
+    const mouseTracking = term?.hasMouseTracking() ?? false
+    const sgrMouse = term?.getMode(1006) ?? false
+    const alternateScreen = term?.isAlternateScreen() ?? false
     const result = this.wheel.handle(event, {
-      alternateScreen: term?.isAlternateScreen() ?? false,
-      mouseTracking: term?.hasMouseTracking() ?? false,
-      sgrMouse: term?.getMode(1006) ?? false,
+      alternateScreen,
+      mouseTracking,
+      sgrMouse,
       cols: this.terminal.cols,
       rows: this.terminal.rows,
       cellWidth: renderer?.charWidth ?? 1,
       cellHeight: renderer?.charHeight ?? FALLBACK_CELL_HEIGHT,
     })
     const navigation = result.data.filter(isTerminalReadBackNavigation)
-    let emitted = navigation.length > 0 && this.emitNavigation(navigation.join(''))
+    if (navigation.length > 0) this.emitNavigation(navigation.join(''))
     for (const data of result.data) {
-      if (!isTerminalReadBackNavigation(data)) emitted = this.emitUser(data) || emitted
+      if (!isTerminalReadBackNavigation(data)) this.emitUser(data)
     }
-    return { handled: result.handled, emitted }
+    return {
+      handled: result.handled,
+      programOwned: result.handled && (mouseTracking ? sgrMouse : alternateScreen),
+    }
   }
 
   /**

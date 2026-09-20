@@ -15,7 +15,7 @@ import { ProjectRegistry } from './project-registry'
 import { ProjectCoordinator } from './project-coordinator'
 import { PtySupervisor } from './pty/pty-supervisor'
 import { installApplicationAttention } from './attention/attention-owner'
-import { ownBeadsService } from './beads/beads-owner'
+import { BeadsService } from './beads/beads-service'
 import { createCompanionAssetReader } from './companion/companion-assets'
 import { installApplicationCompanion } from './companion/companion-owner'
 import { ownGasCityRuntime, ownGasCityService } from './gascity/gascity-owner'
@@ -363,7 +363,7 @@ function createWorkbenchEntry(): void {
       withSshPresentation,
     })
     const getProject = () => registry.active
-    const beadsService = ownBeadsService(runtime, getProject, emit)
+    const beadsService = new BeadsService({ getProject })
     const gasCityService = ownGasCityService(getProject, gasCity.reader)
     runtime.own(
       'IPC authority router',

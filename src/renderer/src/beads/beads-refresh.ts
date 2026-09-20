@@ -54,6 +54,8 @@ export interface VisibilityRefresh {
   setVisible(visible: boolean): void
   /** A focus/foreground signal. Refreshes only when currently visible. */
   focus(): void
+  /** Request a refresh, optionally after a coalescing delay; only while visible. */
+  request(delayMs?: number): void
   /** Stop polling permanently. Every method is a no-op afterwards. */
   dispose(): void
 }
@@ -70,6 +72,8 @@ export function createVisibilityRefresh(
   let visible = false
   let disposed = false
   let timer: TimerHandle | undefined
+  let running = false
+  let pending = false
 
   const stopPolling = (): void => {
     if (timer !== undefined) {
@@ -84,28 +88,52 @@ export function createVisibilityRefresh(
   // Refresh, then schedule the next one from what this one cost. Chained rather
   // than a fixed interval so a refresh can never overlap its own successor.
   const cycle = async (): Promise<void> => {
+    if (disposed || !visible) return
+    if (running) {
+      pending = true
+      return
+    }
+    stopPolling()
+    running = true
     const startedAt = now()
     try {
       await options.onRefresh()
     } catch {
       // A refresh reports its own failures; the poll must outlive them.
     }
+    running = false
     if (disposed || !visible) return
+    if (pending) {
+      pending = false
+      void cycle()
+      return
+    }
     // A non-positive period means "refresh on signals only", never on a timer.
     if (options.intervalMs <= 0) return
-    timer = schedule(() => void cycle(), nextDelay(now() - startedAt))
+    if (timer === undefined)
+      timer = schedule(() => void cycle(), nextDelay(now() - startedAt))
+  }
+
+  const request = (delayMs = 0): void => {
+    if (disposed || !visible) return
+    stopPolling()
+    if (delayMs > 0) timer = schedule(() => void cycle(), delayMs)
+    else void cycle()
   }
 
   return {
+    request,
     setVisible(next: boolean): void {
       if (disposed || next === visible) return
       visible = next
       if (visible) void cycle()
-      else stopPolling()
+      else {
+        pending = false
+        stopPolling()
+      }
     },
     focus(): void {
-      if (disposed || !visible) return
-      void options.onRefresh()
+      request()
     },
     dispose(): void {
       if (disposed) return

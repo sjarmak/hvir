@@ -10,7 +10,6 @@ import {
   fitWidthScale,
 } from '../src/renderer/companion/src/companion-terminal-mount'
 import type { CompanionTerminalPane } from '../src/renderer/companion/src/companion-terminal-pane'
-import type { CompanionFrameScheduler } from '../src/renderer/companion/src/companion-touch-scroll'
 import { asSessionsTerminalHandle } from '../src/shared'
 import { FakeCompanionPane } from './companion-page-fixture'
 
@@ -23,7 +22,6 @@ async function microtasks(): Promise<void> {
 function mountWith(
   create: (cols: number, rows: number) => Promise<CompanionTerminalPane>,
   held: () => Promise<void> = () => Promise.resolve(),
-  frames?: CompanionFrameScheduler,
 ): {
   readonly mount: CompanionTerminalMount
   readonly host: HTMLDivElement
@@ -51,7 +49,6 @@ function mountWith(
     onAlternateScreen: (alternate) => alternates.push(alternate),
     onReadingBack: (readingBack) => readingBacks.push(readingBack),
     onFailure: (error) => failures.push(error),
-    ...(frames === undefined ? {} : { frames }),
   })
   return { mount, host, failures, inputs, viewports, alternates, readingBacks }
 }
@@ -101,6 +98,7 @@ function observedResizes(): { readonly fire: () => void } {
         callbacks.push(callback)
       }
       observe(): void {}
+      unobserve(): void {}
       disconnect(): void {}
     },
   )
@@ -806,35 +804,7 @@ describe('CompanionTerminalMount draws the text size the person chose (ADR-059)'
   })
 })
 
-describe('CompanionTerminalMount measures the grid once a frame while output arrives', () => {
-  /** Frames a test pumps by hand, so a fit owed to output is visible before it is paid. */
-  function heldFrames(): {
-    readonly scheduler: CompanionFrameScheduler
-    readonly pending: () => number
-    readonly pump: () => void
-  } {
-    const callbacks = new Map<number, (now: number) => void>()
-    let next = 1
-    return {
-      scheduler: {
-        request: (callback) => {
-          const handle = next++
-          callbacks.set(handle, callback)
-          return handle
-        },
-        cancel: (handle) => {
-          callbacks.delete(handle)
-        },
-      },
-      pending: () => callbacks.size,
-      pump: () => {
-        const due = [...callbacks.values()]
-        callbacks.clear()
-        for (const callback of due) callback(0)
-      },
-    }
-  }
-
+describe('CompanionTerminalMount measures geometry changes rather than output', () => {
   /**
    * Counts the layout the fit forces, which is the read of the grid's box. The
    * width is restated from the pane's own grid rather than wrapped, so the
@@ -854,10 +824,9 @@ describe('CompanionTerminalMount measures the grid once a frame while output arr
     return () => measurements
   }
 
-  it('pays one fit for a burst of output frames, and none until the frame arrives', async () => {
+  it('does not measure layout for a burst of output frames', async () => {
     const { panes, create } = fakePanes()
-    const frames = heldFrames()
-    const { mount, host } = mountWith(create, undefined, frames.scheduler)
+    const { mount, host } = mountWith(create)
     layout(host, 400, 320)
     mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
     await microtasks()
@@ -868,19 +837,14 @@ describe('CompanionTerminalMount measures the grid once a frame while output arr
     }
     // Twenty frames of a program redrawing its history, and no layout forced yet.
     expect(measurements()).toBe(0)
-    expect(frames.pending()).toBe(1)
     expect(panes[0]?.writes.length).toBe(21)
 
-    frames.pump()
-    expect(measurements()).toBe(1)
-    expect(frames.pending()).toBe(0)
     mount.dispose()
   })
 
   it('fits a real box change where it happens rather than a frame later', async () => {
     const { panes, create } = fakePanes()
-    const frames = heldFrames()
-    const { mount, host } = mountWith(create, undefined, frames.scheduler)
+    const { mount, host } = mountWith(create)
     layout(host, 400, 320)
     mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
     await microtasks()
@@ -889,24 +853,9 @@ describe('CompanionTerminalMount measures the grid once a frame while output arr
 
     mount.handle({ type: 'output', handle: ROW, data: 'redraw' })
     mount.handle({ type: 'geometry', handle: ROW, cols: 200, rows: 40 })
-    // The resize measured, and it settled the fit the output frame owed.
+    // Actual geometry still measures immediately.
     expect(measurements()).toBe(1)
     expect(surface?.style.transform).toBe('scale(0.25)')
-    expect(frames.pending()).toBe(0)
     mount.dispose()
-  })
-
-  it('forgets a fit it owes when the mirror goes away', async () => {
-    const { panes, create } = fakePanes()
-    const frames = heldFrames()
-    const { mount, host } = mountWith(create, undefined, frames.scheduler)
-    layout(host, 400, 320)
-    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
-    await microtasks()
-    const measurements = countMeasurements(host, panes[0]!)
-    mount.handle({ type: 'output', handle: ROW, data: 'redraw' })
-    mount.dispose()
-    frames.pump()
-    expect(measurements()).toBe(0)
   })
 })

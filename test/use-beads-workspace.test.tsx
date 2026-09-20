@@ -8,13 +8,18 @@ import {
   useBeadsWorkspace,
   type BeadsWorkspace,
 } from '../src/renderer/src/beads/use-beads-workspace'
-import { asHostId, hostPath } from '../src/shared'
+import {
+  useTerminalCommands,
+  type TerminalCommands,
+} from '../src/renderer/src/terminal/use-terminal-commands'
+import { asHostId, asSessionsExternalAttachTicket, hostPath } from '../src/shared'
 
 const ROOT = hostPath(asHostId('local'), '/home/dev/city/rigs/mem')
 
 let host: HTMLDivElement
 let root: Root
-let latest: BeadsWorkspace | undefined
+type State = BeadsWorkspace & TerminalCommands
+let latest: State | undefined
 
 beforeEach(() => {
   ;(
@@ -37,18 +42,20 @@ afterEach(() => {
 })
 
 function Probe({ workspaceId }: { readonly workspaceId?: string }): ReactElement {
-  latest = useBeadsWorkspace(
+  const terminal = useTerminalCommands(workspaceId)
+  const beads = useBeadsWorkspace(
     {
       root: ROOT,
       connectionState: 'connected',
-      ...(workspaceId === undefined ? {} : { activeWorkspace: { id: workspaceId } }),
     },
     { railMode: 'beads', setRailMode: vi.fn() },
+    terminal,
   )
+  latest = { ...terminal, ...beads }
   return createElement('div')
 }
 
-async function render(workspaceId?: string): Promise<BeadsWorkspace> {
+async function render(workspaceId?: string): Promise<State> {
   await act(async () => {
     root.render(createElement(Probe, { workspaceId }))
     await Promise.resolve()
@@ -57,7 +64,7 @@ async function render(workspaceId?: string): Promise<BeadsWorkspace> {
   return latest
 }
 
-async function within(run: () => void): Promise<BeadsWorkspace> {
+async function within(run: () => void): Promise<State> {
   await act(async () => {
     run()
     await Promise.resolve()
@@ -195,4 +202,26 @@ describe('useBeadsWorkspace launch availability', () => {
     })
     expect(accepted).toBe(false)
   })
+})
+
+it('routes external Sessions attaches before the destination reports launch availability', async () => {
+  const state = await render('ws-1')
+  const ticket = asSessionsExternalAttachTicket('a'.repeat(32))
+  let accepted: boolean | undefined
+  const pending = await within(() => {
+    void state
+      .requestExternalAttach('ws-2', {
+        command: 'gc session attach mayor',
+        key: 'gc:mayor',
+        ticket,
+      })
+      .then((value) => {
+        accepted = value
+      })
+  })
+  expect(pending.attachRequestFor('ws-1')).toBeUndefined()
+  const request = pending.attachRequestFor('ws-2')
+  expect(request).toMatchObject({ key: 'gc:mayor', attaches: { ticket } })
+  await within(() => request?.onSettled?.(true))
+  expect(accepted).toBe(true)
 })

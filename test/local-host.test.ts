@@ -239,7 +239,9 @@ describe('LocalHost', () => {
     )
     expect(await host.readTextFile(p)).toBe('external')
 
-    await host.removeFile(p, { expectedMtimeMs: changedTime.getTime() })
+    // Filesystems can round utimes; remove the version actually observed.
+    const current = await host.stat(p)
+    await host.removeFile(p, { expectedMtimeMs: current.mtimeMs })
     await expect(host.stat(p)).rejects.toThrow()
   })
 

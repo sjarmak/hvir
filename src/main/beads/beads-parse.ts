@@ -271,10 +271,6 @@ function numberField(
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
-export function watchKey(root: HostPath): string {
-  return `${root.hostId}:${root.path}`
-}
-
 export function joinRoot(root: HostPath, name: string): HostPath {
   return hostPath(root.hostId, root.path === '/' ? `/${name}` : `${root.path}/${name}`)
 }

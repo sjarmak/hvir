@@ -95,12 +95,14 @@ export function useGasCityCrew(options: GasCityCrewOptions): GasCityCrewState {
   // reopening the section must not ask again.
   useEffect(() => {
     if (!connected || hidden || probedRoot.current === rootKey) return
-    probedRoot.current = rootKey
     let cancelled = false
     void window.hvir
       .invoke('gascity:probe', { root })
       .then((result) => {
-        if (!cancelled) setHasCity(result.hasCity)
+        if (!cancelled) {
+          probedRoot.current = rootKey
+          setHasCity(result.hasCity)
+        }
       })
       .catch(() => {
         if (!cancelled) setHasCity(false)
@@ -129,8 +131,8 @@ export function useGasCityCrew(options: GasCityCrewOptions): GasCityCrewState {
 
   // A toggled internals filter changes the request, not just the rendering.
   useEffect(() => {
-    if (hasCity && connected) void refresh(false)
-  }, [includeInternals, hasCity, connected, refresh])
+    if (hasCity && connected && !hidden) void refresh(false)
+  }, [includeInternals, hasCity, connected, hidden, refresh])
 
   return { response, loading, refresh: () => void refresh(true) }
 }

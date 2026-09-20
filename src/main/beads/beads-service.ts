@@ -5,13 +5,11 @@ import {
   type BeadDependencyEdge,
   type BeadGate,
   type BeadIssue,
-  type BeadsChangedEvent,
   type BeadsListRequest,
   type BeadsListResponse,
   type BeadsProbeResponse,
   type BeadsUnavailable,
   type DispatchabilitySource,
-  type Disposer,
   type HostPath,
 } from '../../shared'
 import type { ProjectHost } from '../project-host'
@@ -23,27 +21,12 @@ import {
   parseDigraphEdges,
   parseDispatchableOutput,
   parseGatesOutput,
-  watchKey,
 } from './beads-parse'
 
 /** aoa's full export is ~760 KB; leave two orders of magnitude of headroom. */
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024
-/** Dolt touches several files per mutation; coalesce bursts into one event. */
-const WATCH_DEBOUNCE_MS = 250
-/** Watches are per-subscribed-workspace; the panel holds at most one. */
-const MAX_WATCHES = 8
-
 export interface BeadsServiceDeps {
   readonly getProject: () => { readonly host: ProjectHost; readonly root: HostPath }
-  readonly emitChanged: (event: BeadsChangedEvent) => void
-}
-
-interface BeadsWatchEntry {
-  readonly root: HostPath
-  readonly stop: Disposer
-  timer: ReturnType<typeof setTimeout> | undefined
-  /** Watch backends may deliver events already in flight after stop. */
-  stopped: boolean
 }
 
 /**
@@ -52,8 +35,6 @@ interface BeadsWatchEntry {
  * alike wherever `bd` is installed.
  */
 export class BeadsService {
-  private readonly watches = new Map<string, BeadsWatchEntry>()
-
   constructor(private readonly deps: BeadsServiceDeps) {}
 
   async list(req: BeadsListRequest): Promise<BeadsListResponse> {
@@ -124,59 +105,9 @@ export class BeadsService {
     }
   }
 
-  /** Watch `.beads/` under the active workspace and push change events. */
-  async watch(requestedRoot: HostPath): Promise<void> {
-    const { host, root } = this.activeProject(requestedRoot)
-    const key = watchKey(root)
-    if (this.watches.has(key)) return
-    const beadsDirectory = joinRoot(root, '.beads')
-    try {
-      const stat = await host.stat(beadsDirectory)
-      if (stat.type !== 'dir') return
-    } catch {
-      // No .beads directory: nothing to watch. A manual refresh (or reopening
-      // the panel) picks up a database created later.
-      return
-    }
-    if (this.watches.size >= MAX_WATCHES) {
-      const oldest = this.watches.keys().next().value
-      if (oldest !== undefined) this.stopWatch(oldest)
-    }
-    const entry: BeadsWatchEntry = {
-      root,
-      timer: undefined,
-      stopped: false,
-      stop: host.watch(
-        beadsDirectory,
-        () => {
-          if (entry.stopped) return
-          if (entry.timer) clearTimeout(entry.timer)
-          entry.timer = setTimeout(() => {
-            entry.timer = undefined
-            this.deps.emitChanged({ root: entry.root })
-          }, WATCH_DEBOUNCE_MS)
-        },
-        {
-          recursive: false,
-          onError: (error) => console.error('[beads] watcher failed', error),
-        },
-      ),
-    }
-    this.watches.set(key, entry)
-  }
-
-  unwatch(requestedRoot: HostPath): void {
-    if (!isHostPathShape(requestedRoot)) return
-    this.stopWatch(watchKey(requestedRoot))
-  }
-
-  dispose(): void {
-    for (const key of [...this.watches.keys()]) this.stopWatch(key)
-  }
-
   /**
    * The panel only ever asks about the active workspace; anything else is
-   * rejected before a path reaches exec or watch. The trusted registry root is
+   * rejected before a path reaches exec. The trusted registry root is
    * used from here on, never the renderer-supplied value.
    */
   private activeProject(requested: HostPath): {
@@ -399,20 +330,5 @@ export class BeadsService {
       }
     }
     return undefined
-  }
-
-  private stopWatch(key: string): void {
-    const entry = this.watches.get(key)
-    if (!entry) return
-    this.watches.delete(key)
-    entry.stopped = true
-    if (entry.timer) clearTimeout(entry.timer)
-    try {
-      void Promise.resolve(entry.stop()).catch((reason) =>
-        console.error('[beads] failed to stop watcher', reason),
-      )
-    } catch (reason) {
-      console.error('[beads] failed to stop watcher', reason)
-    }
   }
 }

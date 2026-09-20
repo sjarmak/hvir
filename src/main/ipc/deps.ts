@@ -183,7 +183,7 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly remoteImagePaste: Pick<RemoteImagePasteCoordinator, 'pasteOrForward'>
   /** Defaults to the Electron clipboard; scenarios override it to stay inert. */
   readonly systemClipboard?: SystemClipboardPort
-  readonly beads: Pick<BeadsService, 'list' | 'probe' | 'watch' | 'unwatch'>
+  readonly beads: Pick<BeadsService, 'list' | 'probe'>
   readonly gascity: Pick<GasCityService, 'crew' | 'probe' | 'analyticsConfig'>
   /** Companion settings (ADR-049); the view it answers with carries no secret. */
   readonly companion: Pick<

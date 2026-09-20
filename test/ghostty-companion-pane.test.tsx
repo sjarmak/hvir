@@ -523,6 +523,22 @@ describe('ghostty companion pane', () => {
     expect(fake.scrolls).toEqual([])
   })
 
+  it('keeps fractional mouse-tracking drags out of local scrollback', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    fake.mouseTracking = true
+    fake.sgrMouse = true
+    fake.scrollbackLength = 500
+    const navigation: string[] = []
+    pane.events.onNavigation((data) => navigation.push(data))
+    for (let i = 0; i < 8; i += 1) pane.scroll(drag(-12))
+    expect(navigation.join('')).toBe('\x1b[<64;1;1M'.repeat(2))
+    expect(fake.scrolls).toEqual([])
+    expect(fake.viewportY).toBe(0)
+    pane.dispose()
+  })
+
   it('one move worth several reports sends them as one string, in order (ADR-056)', async () => {
     const pane = await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!

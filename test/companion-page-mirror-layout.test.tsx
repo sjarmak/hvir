@@ -11,7 +11,7 @@
  */
 import { act, createElement } from 'react'
 import { createRoot } from 'react-dom/client'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { CompanionMirrorFeed } from '../src/renderer/companion/src/companion-mirror-feed'
 import { FIT_SETTLE_MS } from '../src/renderer/companion/src/companion-terminal-fit'
@@ -41,6 +41,28 @@ const PAGE_DOWN = '\x1b[6~'
 
 useCompanionPage()
 
+// happy-dom does not emit resize observations when fixture dimensions change.
+const resizeCallbacks = new Set<() => void>()
+beforeEach(() => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(private readonly callback: () => void) {
+        resizeCallbacks.add(callback)
+      }
+      observe(): void {}
+      unobserve(): void {}
+      disconnect(): void {
+        resizeCallbacks.delete(this.callback)
+      }
+    },
+  )
+})
+afterEach(() => {
+  resizeCallbacks.clear()
+  vi.unstubAllGlobals()
+})
+
 /** Lets the fit settle after the area was laid out. */
 async function settleFit(): Promise<void> {
   await act(() => new Promise((resolve) => setTimeout(resolve, FIT_SETTLE_MS + 25)))
@@ -65,6 +87,9 @@ function layoutHost(width: number, height: number): void {
   Object.defineProperty(element, 'clientHeight', {
     configurable: true,
     get: () => height,
+  })
+  act(() => {
+    for (const callback of resizeCallbacks) callback()
   })
 }
 

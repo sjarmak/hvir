@@ -299,9 +299,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     } = sessionsPorts
     const smokeBeads = new BeadsService({
       getProject: () => ({ host, root: smokeRoot }),
-      emitChanged: (event) => emit('beads:changed', event),
     })
-    cleanup.defer('beads service', () => smokeBeads.dispose())
     const smokeGasCity = new GasCityService({
       getProject: () => ({ host, root: smokeRoot }),
     })

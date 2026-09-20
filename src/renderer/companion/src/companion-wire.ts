@@ -6,6 +6,12 @@
  */
 import {
   SESSIONS_TRANSCRIPT_VERSION,
+  SESSIONS_TRANSCRIPT_STREAM_STATES,
+  SESSIONS_TRANSCRIPT_STATUSES,
+  SESSIONS_MUTATION_UNAVAILABLE_REASONS,
+  SESSIONS_TRANSCRIPT_UNAVAILABLE_REASONS,
+  SESSIONS_TRANSCRIPT_TURN_KINDS,
+  SESSIONS_TRANSCRIPT_TURN_ROLES,
   isCompanionSnapshot,
   isCompanionTerminalEvent,
   type CompanionClosedReason,
@@ -104,43 +110,6 @@ function parseJson(event: string, text: string): unknown {
 
 const EVENT_NAMES: readonly string[] = ['snapshot', 'transcript', 'terminal', 'closed']
 const CLOSED_REASONS: readonly string[] = ['revoked', 'shutdown', 'lease-lost']
-const TURN_ROLES: readonly string[] = ['user', 'assistant', 'system', 'tool', 'unknown']
-const TURN_KINDS: readonly string[] = [
-  'text',
-  'tool-use',
-  'tool-result',
-  'interaction',
-  'image',
-  'event',
-  'unknown',
-]
-const UNAVAILABLE_REASONS: readonly string[] = [
-  'not-projected',
-  'stale-projection',
-  'city-unknown',
-  'disabled',
-  'misconfigured',
-  'unreachable',
-  'timeout',
-  'aborted',
-  'protocol',
-  'not-found',
-  'denied',
-  'conflict',
-  'rejected',
-  'unsupported',
-  'unready',
-  'faulted',
-]
-const MUTATION_REASONS: readonly string[] = [
-  ...UNAVAILABLE_REASONS,
-  'stale-interaction',
-  'no-interaction',
-  'invalid-option',
-  'invalid-message',
-]
-const TRANSCRIPT_STATUSES: readonly string[] = ['loading', 'ready', 'unavailable']
-const STREAM_STATES: readonly string[] = ['opening', 'live', 'lost', 'closed']
 const TRANSCRIPT_KEYS = new Set([
   'version',
   'demandGeneration',
@@ -194,7 +163,7 @@ function isOptionalBoolean(value: unknown): boolean {
 }
 
 function isOptionalReason(value: unknown): boolean {
-  return value === undefined || isOneOf(value, UNAVAILABLE_REASONS)
+  return value === undefined || isOneOf(value, SESSIONS_TRANSCRIPT_UNAVAILABLE_REASONS)
 }
 
 function onlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
@@ -208,8 +177,8 @@ export function isSessionsTranscriptSnapshot(
   if (value['version'] !== SESSIONS_TRANSCRIPT_VERSION) return false
   if (!isCount(value['demandGeneration']) || !isCount(value['revision'])) return false
   if (typeof value['handle'] !== 'string' || value['handle'] === '') return false
-  if (!isOneOf(value['status'], TRANSCRIPT_STATUSES)) return false
-  if (!isOneOf(value['stream'], STREAM_STATES)) return false
+  if (!isOneOf(value['status'], SESSIONS_TRANSCRIPT_STATUSES)) return false
+  if (!isOneOf(value['stream'], SESSIONS_TRANSCRIPT_STREAM_STATES)) return false
   if (!isOptionalReason(value['reason']) || !isOptionalReason(value['streamReason'])) {
     return false
   }
@@ -223,8 +192,8 @@ function isTranscriptTurn(value: unknown): value is SessionsTranscriptTurn {
   if (!isRecord(value) || !onlyKeys(value, TURN_KEYS)) return false
   return (
     isCount(value['ordinal']) &&
-    isOneOf(value['role'], TURN_ROLES) &&
-    isOneOf(value['kind'], TURN_KINDS) &&
+    isOneOf(value['role'], SESSIONS_TRANSCRIPT_TURN_ROLES) &&
+    isOneOf(value['kind'], SESSIONS_TRANSCRIPT_TURN_KINDS) &&
     typeof value['text'] === 'string' &&
     isOptionalString(value['toolName']) &&
     isOptionalString(value['at']) &&
@@ -258,6 +227,6 @@ export function isSessionsMutationResponse(
   return (
     value['outcome'] === 'unavailable' &&
     onlyKeys(value, new Set(['outcome', 'reason'])) &&
-    isOneOf(value['reason'], MUTATION_REASONS)
+    isOneOf(value['reason'], SESSIONS_MUTATION_UNAVAILABLE_REASONS)
   )
 }

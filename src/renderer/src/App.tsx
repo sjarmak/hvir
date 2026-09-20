@@ -23,6 +23,7 @@ import { SshPromptDialog } from './workspaces/SshPromptDialog'
 import { FileTree } from './tree/FileTree'
 import { isGitIgnoreRulePath } from './tree/git-ignore-refresh'
 import { BeadsRailPanel, BeadsRailTab, useBeadsWorkspace } from './beads/BeadsRail'
+import { useTerminalCommands } from './terminal/use-terminal-commands'
 import { GitPanel } from './git/GitPanel'
 import { workspaceGitEnabled } from './git/git-capability'
 import { GitGraphView } from './git/GitGraphView'
@@ -234,7 +235,8 @@ export function App(): ReactElement {
   deactivateGitGraphRef.current = deactivateGitGraph
   deactivateWebPaneRef.current = () => setWebViewActive(false)
 
-  const beads = useBeadsWorkspace(session, layout)
+  const terminalCommands = useTerminalCommands(session.activeWorkspace?.id)
+  const beads = useBeadsWorkspace(session, layout, terminalCommands)
 
   useEffect(() => {
     if (overlays.projectPickerOpen) void refreshHosts()
@@ -638,8 +640,8 @@ export function App(): ReactElement {
           }
           railCompact={layout.terminalRailCompact}
           onRailCompact={layout.setTerminalRailCompact}
-          attachRequestFor={beads.attachRequestFor}
-          onAttachAvailability={beads.reportLaunchAvailability}
+          attachRequestFor={terminalCommands.attachRequestFor}
+          onAttachAvailability={terminalCommands.reportLaunchAvailability}
           onRollup={terminalAttention.updateRollup}
           onOpenPath={terminalPathActivation.activate}
           onOpenWebLink={openWebLink}
@@ -655,7 +657,7 @@ export function App(): ReactElement {
         runtime={terminalWorkspaces}
         onOpened={(state) => (showTerminal(), accept(state), setDestination('workspace'))}
         onError={session.reportError}
-        onAttachExternal={beads.requestExternalAttach}
+        onAttachExternal={terminalCommands.requestExternalAttach}
       />
       {overlays.projectPickerOpen ? (
         <SessionDialog
