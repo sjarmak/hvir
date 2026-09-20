@@ -30,10 +30,13 @@ const PAGE_DOWN = '\x1b[6~'
  * The wheel reports this policy synthesizes for a scroll, and only those:
  * buttons 64 and 65 are wheel up and wheel down, a notch by construction rather
  * than a press at a position, and a phone gesture carries no modifier that could
- * raise the button past them.
+ * raise the button past them. Every token starts with ESC, which is what lets a
+ * batch of them be cut at a token boundary without parsing it.
  */
-const SGR_REPORT_PREFIX = '\x1b[<'
-const WHEEL_REPORT_BODY = /^6[45];\d+;\d+M$/
+const READ_BACK_TOKEN = String.raw`\x1b\[(?:[56]~|<6[45];\d+;\d+M)`
+const READ_BACK_ONE = new RegExp(`^${READ_BACK_TOKEN}$`)
+const READ_BACK_BATCH = new RegExp(`^(?:${READ_BACK_TOKEN})+$`)
+export const TERMINAL_READ_BACK_TOKEN_START = '\x1b'
 
 /**
  * The complete output of this policy's routes for a read-back gesture: the page
@@ -43,9 +46,18 @@ const WHEEL_REPORT_BODY = /^6[45];\d+;\d+M$/
  * by ADR-056, and it is defined by the routes rather than by a list beside them.
  */
 export function isTerminalReadBackNavigation(data: string): boolean {
-  if (data === PAGE_UP || data === PAGE_DOWN) return true
-  if (!data.startsWith(SGR_REPORT_PREFIX)) return false
-  return WHEEL_REPORT_BODY.test(data.slice(SGR_REPORT_PREFIX.length))
+  return READ_BACK_ONE.test(data)
+}
+
+/**
+ * One gesture's worth of that set: one or more tokens of it and nothing else,
+ * in the order the policy produced them. A finger moves a program through its
+ * history by many reports, and they travel as one ordered write rather than one
+ * request each, which is what keeps them in the order the finger moved. A
+ * batch is still inside the closed set, since it is made of nothing but it.
+ */
+export function isTerminalReadBackNavigationBatch(data: string): boolean {
+  return READ_BACK_BATCH.test(data)
 }
 
 export interface TerminalWheelEvent {
@@ -110,6 +122,16 @@ export class TerminalWheelController {
   private route: WheelRoute | undefined
   private remainder = 0
 
+  /**
+   * The finger lifted, or the surface was sent home: whatever fraction of a
+   * step it had banked belongs to that gesture and not to the next brush of
+   * the grid, which would otherwise start with a report already owed.
+   */
+  endGesture(): void {
+    this.route = undefined
+    this.remainder = 0
+  }
+
   handle(event: TerminalWheelEvent, state: TerminalWheelState): TerminalWheelResult {
     if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return unhandled
 
@@ -118,7 +140,7 @@ export class TerminalWheelController {
       // legacy modes is safer than injecting PageUp/PageDown or history arrows
       // into an application that explicitly requested mouse input.
       if (!state.sgrMouse) {
-        this.reset()
+        this.endGesture()
         return consumed
       }
 
@@ -143,7 +165,7 @@ export class TerminalWheelController {
 
     // Normal-screen terminals own their local scrollback. Do not let a partial
     // alternate-screen gesture carry into a later mode change.
-    this.reset()
+    this.endGesture()
     return unhandled
   }
 
@@ -183,11 +205,6 @@ export class TerminalWheelController {
     // synthetic or accelerated delta.
     this.remainder = clampSteps(wholeSteps - steps, limit) + (total - wholeSteps)
     return steps
-  }
-
-  private reset(): void {
-    this.route = undefined
-    this.remainder = 0
   }
 }
 

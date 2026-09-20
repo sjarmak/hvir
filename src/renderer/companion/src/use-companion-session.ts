@@ -23,6 +23,7 @@ import {
   type CompanionEventStream,
 } from './companion-client'
 import { CompanionMirrorFeed } from './companion-mirror-feed'
+import { CompanionNavigationQueue } from './companion-navigation-queue'
 import type { CompanionInputSource } from './companion-terminal-mount'
 import {
   EMPTY_COMPANION_PAGE,
@@ -90,6 +91,7 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
   const [notice, setNotice] = useState<string>()
   const [attempt, setAttempt] = useState(0)
   const [feed] = useState(() => new CompanionMirrorFeed())
+  const [navigationQueue] = useState(() => new CompanionNavigationQueue())
   const stream = useRef<CompanionEventStream>(undefined)
   const mirrorHandle =
     state.terminal?.status === 'live' ? state.terminal.handle : undefined
@@ -266,17 +268,11 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
     [client, run, selected],
   )
 
-  // Read-back navigation passes the arm on the way out and extends none of it:
-  // a drag is not typing, so it neither waits for the person to arm the mirror
-  // nor keeps an arming alive that would otherwise lapse (ADR-055).
-  const input = useCallback<CompanionInputVerb>(
-    async (data, source = 'user') => {
-      const navigation = source === 'navigation'
-      if (mirrorHandle === undefined || data === '') return
-      if (!navigation && !armed) return
-      if (!navigation) touch()
+  /** One POST of bytes for the mirror; whether the desktop accepted them. */
+  const send = useCallback(
+    async (handle: SessionsTerminalHandle, data: string, navigation: boolean) => {
       const outcome = await run(
-        (current) => client.input(current, mirrorHandle, data, navigation),
+        (current) => client.input(current, handle, data, navigation),
         (failure) => {
           if (failure.status === 403) {
             if (navigation) return NAVIGATION_OFF
@@ -287,8 +283,28 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
         },
       )
       reportRefusal(outcome, setNotice)
+      return outcome?.outcome === 'accepted'
     },
-    [client, run, armed, mirrorHandle, touch, disarm],
+    [client, run, disarm],
+  )
+
+  // Read-back navigation passes the arm on the way out and extends none of it:
+  // a drag is not typing, so it neither waits for the person to arm the mirror
+  // nor keeps an arming alive that would otherwise lapse (ADR-055). Its reports
+  // travel in order, one request in flight per mirror and the rest joining the
+  // next, so a program paged up and then down never hears the down first.
+  const input = useCallback<CompanionInputVerb>(
+    async (data, source = 'user') => {
+      if (mirrorHandle === undefined || data === '') return
+      if (source === 'navigation') {
+        navigationQueue.push(mirrorHandle, data, (batch) => send(mirrorHandle, batch, true))
+        return
+      }
+      if (!armed) return
+      touch()
+      await send(mirrorHandle, data, false)
+    },
+    [send, navigationQueue, armed, mirrorHandle, touch],
   )
 
   // The page asks for this on its own, so it never touches the notice a verb

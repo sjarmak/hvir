@@ -509,6 +509,38 @@ describe('ghostty companion pane', () => {
     expect(fake.scrolls).toEqual([])
   })
 
+  it('one move worth several reports sends them as one string, in order (ADR-056)', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    fake.mouseTracking = true
+    fake.sgrMouse = true
+    const paged: string[] = []
+    pane.events.onNavigation((data) => paged.push(data))
+    // Three notches of travel at 3 lines of 16px each: three reports, one
+    // emission. Sent one request each they would race; as one write they land
+    // in the order the finger moved.
+    expect(pane.scroll(drag(-144))).toBe(-144)
+    expect(paged).toEqual(['\x1b[<64;1;1M'.repeat(3)])
+  })
+
+  it('the lift of the finger drops what the policy banked for a drag', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    fake.mouseTracking = true
+    fake.sgrMouse = true
+    const paged: string[] = []
+    pane.events.onNavigation((data) => paged.push(data))
+    // Seven notches in one move: five go and two are banked for the next move.
+    pane.scroll(drag(-336))
+    expect(paged).toEqual(['\x1b[<64;1;1M'.repeat(5)])
+    pane.endGesture()
+    // A fresh touch a hair long owes nothing from the last one.
+    pane.scroll(drag(-1))
+    expect(paged).toEqual(['\x1b[<64;1;1M'.repeat(5)])
+  })
+
   it('a mouse mode the policy cannot encode reads back rather than swallowing the drag', async () => {
     const pane = await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!

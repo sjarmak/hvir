@@ -24,7 +24,8 @@
  * directly, and a finger over the grid is adapted into the same event shape,
  * divided by this mount's current scale so the content tracks the finger
  * rather than the emulator's unscaled pixels. Two scrollers sit end to end
- * under that one gesture: the emulator's viewport holds everything above the
+ * under that one gesture, and the lift of the finger ends it for the pane so no
+ * fraction of it is carried into the next: the emulator's viewport holds everything above the
  * grid, and this host's own scroll holds the part of a grid too tall for the
  * phone. Whichever lies in the direction the finger travels takes the distance
  * first and hands on what it could not take, so a host scrolled down over a
@@ -124,6 +125,7 @@ export class CompanionTerminalMount {
       element: this.gridBox,
       scale: () => this.scale,
       sink: (event) => this.scrolled(event),
+      end: () => this.pane?.endGesture(),
     })
     this.fitter = new CompanionFitController({
       area: () => ({ width: host.clientWidth, height: host.clientHeight }),

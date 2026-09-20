@@ -334,6 +334,18 @@ describe('CompanionTerminalMount', () => {
     mount.dispose()
   })
 
+  it('the lift of the finger ends the gesture for the pane', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host } = mountWith(create)
+    layout(host, 400, 320)
+    mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
+    await microtasks()
+    dragGrid(host, 200, 160)
+    expect(panes[0]!.gestures).toHaveLength(1)
+    expect(panes[0]!.gestureEnds).toBe(1)
+    mount.dispose()
+  })
+
   it('a disposed mount owns the grid no longer', async () => {
     const { create } = fakePanes()
     const { mount, host } = mountWith(create)

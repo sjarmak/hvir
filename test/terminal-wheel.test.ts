@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 
 import {
   TerminalWheelController,
+  isTerminalReadBackNavigation,
+  isTerminalReadBackNavigationBatch,
   terminalWheelNotch,
   type TerminalWheelEvent,
   type TerminalWheelState,
@@ -168,6 +170,44 @@ describe('terminal wheel behavior', () => {
     expect(controller.handle(drag(120000), alternate).data).toEqual(['\x1b[6~'])
     expect(controller.handle(drag(1), alternate).data).toEqual(['\x1b[6~'])
     expect(controller.handle(drag(1), alternate).data).toEqual([])
+  })
+
+  it('the lift of the finger drops the fraction and the bank the drag had, so the next starts at zero', () => {
+    const controller = new TerminalWheelController()
+    const alternate = state({ alternateScreen: true })
+    // Two pages of travel in one move: one goes, one is banked for the next move.
+    expect(controller.handle(drag(240), alternate).data).toEqual(['\x1b[6~'])
+    controller.endGesture()
+    // A fresh touch a hair long finds nothing owed from the last one.
+    expect(controller.handle(drag(1), alternate).data).toEqual([])
+    // Nine tenths of a page, then the lift, then a tenth: two gestures, no page.
+    expect(controller.handle(drag(108), alternate).data).toEqual([])
+    controller.endGesture()
+    expect(controller.handle(drag(12), alternate).data).toEqual([])
+  })
+
+  it('a batch is one or more of the closed set in any order and nothing else', () => {
+    const reports = ['\x1b[5~', '\x1b[6~', '\x1b[<64;1;1M', '\x1b[<65;132;43M']
+    for (const one of reports) {
+      expect(isTerminalReadBackNavigation(one), one).toBe(true)
+      expect(isTerminalReadBackNavigationBatch(one), one).toBe(true)
+    }
+    const batch = reports.join('')
+    expect(isTerminalReadBackNavigationBatch(batch)).toBe(true)
+    expect(isTerminalReadBackNavigation(batch)).toBe(false)
+    expect(isTerminalReadBackNavigationBatch('\x1b[<64;1;1M'.repeat(200))).toBe(true)
+    for (const other of [
+      '',
+      '\r',
+      '\x1b[5~\r',
+      '\r\x1b[5~',
+      '\x1b[<64;1;1M\x1b[<0;1;1M',
+      '\x1b[<64;1;1M\x1b[<64;1;1m',
+      '\x1b[5~\x1b[',
+      '\x1b[5',
+    ]) {
+      expect(isTerminalReadBackNavigationBatch(other), JSON.stringify(other)).toBe(false)
+    }
   })
 
   it('drops partial momentum when wheel direction reverses', () => {

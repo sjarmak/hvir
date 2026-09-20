@@ -222,6 +222,8 @@ export class FakeCompanionPane implements CompanionTerminalPane {
   offset = 0
   /** Times the page asked for the live edge back. */
   returns = 0
+  /** Times the mount said a finger lifted, which is when a banked fraction is dropped. */
+  gestureEnds = 0
   /** Where a reflow at the next `resize` leaves a viewport it no longer reaches. */
   reflowOffset?: number
   mounted?: HTMLElement
@@ -303,6 +305,10 @@ export class FakeCompanionPane implements CompanionTerminalPane {
 
   isAlternateScreen(): boolean {
     return this.alternateScreen
+  }
+
+  endGesture(): void {
+    this.gestureEnds += 1
   }
 
   returnToLive(): void {

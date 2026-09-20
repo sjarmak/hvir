@@ -69,6 +69,12 @@ export interface CompanionTerminalPane {
    * nothing to move over and a gesture pages the program instead (ADR-055).
    */
   isAlternateScreen(): boolean
+  /**
+   * The finger lifted or the gesture was cancelled. Whatever fraction of a
+   * step the gesture had banked, toward a row of the viewport or a report to a
+   * program, belongs to it and not to the next touch, which starts from zero.
+   */
+  endGesture(): void
   /** Puts the viewport back on the newest output, which is the page's one tap. */
   returnToLive(): void
   /** The cell's measured size once mounted; nothing before the emulator has drawn. */

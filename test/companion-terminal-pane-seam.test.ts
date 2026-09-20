@@ -16,7 +16,7 @@ import type {
 import type { TerminalPane } from '../src/renderer/src/terminal/terminal-pane'
 
 /**
- * `scroll`, `isAlternateScreen`, `returnToLive`, the navigation channel, and the
+ * `scroll`, `isAlternateScreen`, `endGesture`, `returnToLive`, the navigation channel, and the
  * viewport subscription stay out of the mirrored subset on purpose: the desktop pane owns its gesture
  * inside its own engine adapter, and it has a scrollbar where the phone has a
  * control that returns to the live edge, so there is no counterpart to narrow
@@ -45,6 +45,7 @@ describe('Companion terminal pane seam', () => {
         resize: (nextCols, nextRows) => calls.push(`resize ${nextCols}x${nextRows}`),
         scroll: () => 0,
         isAlternateScreen: () => false,
+        endGesture: () => undefined,
         returnToLive: () => undefined,
         cellSize: () => ({ width: 8, height: 16 }),
         dispose: () => calls.push('dispose'),

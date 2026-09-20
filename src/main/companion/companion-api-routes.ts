@@ -110,7 +110,7 @@ async function input(
   if (!isCompanionInputRequest(rest)) {
     throw new CompanionHttpError(
       400,
-      'Expected {"page", "data"}, with "navigation" only on a read-back page key',
+      'Expected {"page", "data"}, with "navigation" only on read-back page keys and wheel reports',
     )
   }
   sessions.input(

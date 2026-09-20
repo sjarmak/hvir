@@ -17,7 +17,14 @@
  * capture phase, and every `touchend` over the grid is stopped before it
  * reaches the canvas: the mirror's typing surface is its own control bar, the
  * emulator is built to hold no focus, and nothing over the grid wants to give
- * it any.
+ * it any. The touch events are also cancelled, which is what stops the browser
+ * following a tap with the mouse events it synthesizes for a page that never
+ * asked for touch: ghostty-web's canvas `mousedown` focuses that same textarea,
+ * and a press it hears while the mirror is armed is a report of its own.
+ *
+ * The lift of the finger ends the gesture, and the pane is told so: the policy
+ * banks the fraction of a step a slow drag has not yet paid for, and that bank
+ * belongs to the drag it came from rather than to the next brush of the grid.
  */
 import type { TerminalWheelEvent } from '../../../shared'
 
@@ -28,7 +35,13 @@ export interface CompanionTouchScrollOptions {
   readonly scale: () => number
   /** Where the movement goes, already in the emulator's own pixels. */
   readonly sink: (event: TerminalWheelEvent) => void
+  /** The primary finger lifted or the gesture was cancelled; the pane drops what it banked. */
+  readonly end: () => void
 }
+
+/** Owned in the capture phase and cancellable, so `preventDefault` is honoured. */
+const LISTEN: AddEventListenerOptions = { capture: true, passive: false }
+const UNLISTEN: EventListenerOptions = { capture: true }
 
 interface TouchPoint {
   readonly identifier: number
@@ -46,22 +59,23 @@ export class CompanionTouchScroll {
       ['touchstart', (event) => this.start(event)],
       ['touchmove', (event) => this.move(event)],
       ['touchend', (event) => this.end(event)],
-      ['touchcancel', () => this.forget()],
+      ['touchcancel', (event) => this.cancel(event)],
     ]
     for (const [type, listener] of this.listeners) {
-      options.element.addEventListener(type, listener, { capture: true })
+      options.element.addEventListener(type, listener, LISTEN)
     }
   }
 
   dispose(): void {
     for (const [type, listener] of this.listeners) {
-      this.options.element.removeEventListener(type, listener, { capture: true })
+      this.options.element.removeEventListener(type, listener, UNLISTEN)
     }
-    this.forget()
+    this.identifier = undefined
   }
 
   /** One primary touch at a time: a second finger is ignored until the first ends. */
   private start(event: Event): void {
+    event.preventDefault()
     if (this.identifier !== undefined) return
     const touch = changedTouches(event)[0]
     if (touch === undefined) return
@@ -70,6 +84,7 @@ export class CompanionTouchScroll {
   }
 
   private move(event: Event): void {
+    event.preventDefault()
     const touch = this.tracked(event)
     if (touch === undefined) return
     const screenDelta = this.lastY - touch.clientY
@@ -99,7 +114,13 @@ export class CompanionTouchScroll {
    * what ends the gesture.
    */
   private end(event: Event): void {
+    event.preventDefault()
     event.stopImmediatePropagation()
+    if (this.tracked(event) !== undefined) this.forget()
+  }
+
+  /** The browser took the touch back; the gesture ends the way a lift ends it. */
+  private cancel(event: Event): void {
     if (this.tracked(event) !== undefined) this.forget()
   }
 
@@ -110,6 +131,7 @@ export class CompanionTouchScroll {
 
   private forget(): void {
     this.identifier = undefined
+    this.options.end()
   }
 }
 

@@ -15,10 +15,12 @@
  * policy leaves alone moves the emulator's own viewport, which is the mirror's
  * whole read-back. The viewport keeps its place while output arrives. The page
  * keys are read-back navigation and leave a disarmed mirror on their own event
- * (ADR-055); every other byte a gesture produces is user input and passes the
- * same gate as a key, so a disarmed mirror sends nothing and a gesture the
- * policy claimed whose bytes the gate dropped is still the viewport's rather
- * than lost. A drag shorter than one cell is kept as a remainder rather than
+ * (ADR-055), and a gesture event's reports leave it as one string in the order
+ * the policy produced them, so a finger's travel reaches the program as one
+ * ordered write rather than a race of requests; every other byte a gesture
+ * produces is user input and passes the same gate as a key, so a disarmed
+ * mirror sends nothing and a gesture the policy claimed whose bytes the gate
+ * dropped is still the viewport's rather than lost. A drag shorter than one cell is kept as a remainder rather than
  * dropped, so reading back slowly still tracks the finger; at an edge the
  * viewport cannot pass, nothing is kept and the whole distance goes back to the
  * page so its own scroller tracks it instead.
@@ -173,8 +175,14 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
    * move a whole row and put the way back on screen again unasked.
    */
   returnToLive(): void {
-    this.remainder = 0
+    this.endGesture()
     this.terminal.scrollToBottom()
+  }
+
+  /** The lift of the finger: the policy's bank and the viewport's fraction go with it. */
+  endGesture(): void {
+    this.wheel.endGesture()
+    this.remainder = 0
   }
 
   /** The renderer exists once the terminal is open; its cell is the font's measured box. */
@@ -224,12 +232,10 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
       cellWidth: renderer?.charWidth ?? 1,
       cellHeight: renderer?.charHeight ?? FALLBACK_CELL_HEIGHT,
     })
-    let emitted = false
+    const navigation = result.data.filter(isTerminalReadBackNavigation)
+    let emitted = navigation.length > 0 && this.emitNavigation(navigation.join(''))
     for (const data of result.data) {
-      const sent = isTerminalReadBackNavigation(data)
-        ? this.emitNavigation(data)
-        : this.emitUser(data)
-      emitted = sent || emitted
+      if (!isTerminalReadBackNavigation(data)) emitted = this.emitUser(data) || emitted
     }
     return { handled: result.handled, emitted }
   }
@@ -292,7 +298,9 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
    * mouse receives both leave a disarmed mirror, because the arm exists to stop
    * an unattended phone typing and a finger on the grid is neither. The
    * desktop's own permission still decides, and refuses these the same way it
-   * refuses a key.
+   * refuses a key. One event's reports go out as one string: the wire admits a
+   * batch of the closed set, and one write keeps them in the order they were
+   * made.
    */
   private emitNavigation(data: string): boolean {
     for (const listener of this.navigationListeners) listener(data)

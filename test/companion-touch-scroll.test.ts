@@ -39,6 +39,7 @@ function scroller(scale = 1): {
   readonly canvas: HTMLCanvasElement
   readonly gestures: TerminalWheelEvent[]
   readonly reachedCanvas: string[]
+  readonly ends: number[]
   readonly touchScroll: CompanionTouchScroll
 } {
   const grid = document.createElement('div')
@@ -47,14 +48,16 @@ function scroller(scale = 1): {
   document.body.append(grid)
   const gestures: TerminalWheelEvent[] = []
   const reachedCanvas: string[] = []
+  const ends: number[] = []
   // Stands in for ghostty-web's own canvas touchend, which focuses its textarea.
   canvas.addEventListener('touchend', () => reachedCanvas.push('touchend'))
   const touchScroll = new CompanionTouchScroll({
     element: grid,
     scale: () => scale,
     sink: (event) => gestures.push(event),
+    end: () => ends.push(gestures.length),
   })
-  return { grid, canvas, gestures, reachedCanvas, touchScroll }
+  return { grid, canvas, gestures, reachedCanvas, ends, touchScroll }
 }
 
 describe('CompanionTouchScroll', () => {
@@ -150,6 +153,47 @@ describe('CompanionTouchScroll', () => {
     dispatch(canvas, 'touchmove', [touch(2, 460)])
     expect(gestures.map((gesture) => gesture.deltaY)).toEqual([100, 40])
     expect(reachedCanvas).toEqual([])
+    touchScroll.dispose()
+  })
+
+  it('the primary finger lifting ends the gesture once, after its last move', () => {
+    const { canvas, ends, touchScroll } = scroller()
+    dispatch(canvas, 'touchstart', [touch(1, 300)])
+    dispatch(canvas, 'touchmove', [touch(1, 260)])
+    dispatch(canvas, 'touchstart', [touch(2, 500)])
+    // A second finger lifting is not the gesture ending.
+    dispatch(canvas, 'touchend', [touch(2, 500)])
+    expect(ends).toEqual([])
+    dispatch(canvas, 'touchmove', [touch(1, 240)])
+    dispatch(canvas, 'touchend', [touch(1, 240)])
+    expect(ends).toEqual([2])
+    // A lift with no gesture under it ends nothing.
+    dispatch(canvas, 'touchend', [touch(3, 240)])
+    expect(ends).toEqual([2])
+    touchScroll.dispose()
+  })
+
+  it('a cancelled gesture ends the same way a lift does', () => {
+    const { canvas, ends, touchScroll } = scroller()
+    dispatch(canvas, 'touchstart', [touch(1, 300)])
+    dispatch(canvas, 'touchmove', [touch(1, 200)])
+    dispatch(canvas, 'touchcancel', [touch(1, 200)])
+    expect(ends).toEqual([1])
+    touchScroll.dispose()
+  })
+
+  it('cancels the touch events it owns, so a tap breeds no mouse press for the canvas', () => {
+    const { canvas, touchScroll } = scroller()
+    // Chrome synthesizes mousedown and click after a touch unless the touch
+    // was cancelled, and ghostty-web's canvas mousedown focuses the textarea.
+    const start = dispatch(canvas, 'touchstart', [touch(1, 300)])
+    const move = dispatch(canvas, 'touchmove', [touch(1, 260)])
+    const end = dispatch(canvas, 'touchend', [touch(1, 260)])
+    expect([start, move, end].map((event) => event.defaultPrevented)).toEqual([
+      true,
+      true,
+      true,
+    ])
     touchScroll.dispose()
   })
 

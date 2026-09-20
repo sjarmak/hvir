@@ -167,6 +167,27 @@ describe('Companion page mirror layout', () => {
     expect(host.querySelector('.companion-error')).toBeNull()
   })
 
+  it('reports made while one is in flight join the next request, in order', async () => {
+    await openMirror()
+    layoutHost(352, 344)
+    panes.panes[0]!.alternateScreen = true
+    await emit('terminal', { type: 'output', handle: 'term-1', data: 'full screen paint' })
+
+    // Three moves before the first answer lands: one request out, the other
+    // two waiting as one, so the desktop writes them in the order made.
+    await act(async () => {
+      panes.panes[0]!.emitNavigation(PAGE_UP)
+      panes.panes[0]!.emitNavigation(PAGE_UP)
+      panes.panes[0]!.emitNavigation(PAGE_DOWN)
+      await Promise.resolve()
+    })
+    await settle()
+    expect(server.inputs()).toEqual([
+      { page: 'page-1', data: PAGE_UP, navigation: true },
+      { page: 'page-1', data: PAGE_UP + PAGE_DOWN, navigation: true },
+    ])
+  })
+
   it('says why when the desktop does not allow input from a phone', async () => {
     await openMirror()
     layoutHost(352, 344)

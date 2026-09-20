@@ -442,6 +442,17 @@ cycle.
   to the owning renderer, which records it as terminal input and arms ADR-019, so a page key
   sent through `write` would push a notification about the person's own scrolling. The same
   distinction `resize` already draws, one verb further along.
+- **One gesture's reports travel as one ordered write, not one request each.** A finger over
+  a mouse-tracking program makes a wheel report on every move, up to five a move, and posting
+  each as its own request let the browser open them in parallel and the listener write them in
+  whatever order they landed: a program paged up and then down could read the down first. The
+  pane emits one event's reports as one string, and `companion-navigation-queue.ts` keeps one
+  navigation request in flight per mirror, joining what arrives meanwhile into the next. The
+  wire guard admits a batch as `isTerminalReadBackNavigationBatch`: one or more tokens of the
+  same closed set, up to `MAX_COMPANION_INPUT_CHARS`, which the queue cuts to at a token boundary.
+  A batch with anything else inside is still a 400. Main writes the batch to the PTY once. The
+  lift of the finger reaches the pane as `endGesture`, which drops the policy's banked steps and
+  the viewport's sub-cell fraction, so a slow drag's remainder is never owed to the next touch.
 - **The control bar is armed-only.** `MirrorControls` renders the Arm/Disarm button alone
   while disarmed and adds the key strip and the text form only while `armed`; the tests that
   look for `#companion-terminal-text` or the key buttons must arm first.

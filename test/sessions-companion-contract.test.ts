@@ -299,17 +299,24 @@ describe('sessions companion contract', () => {
 
   it('a navigation claim is admitted only for what a read-back gesture sends (ADR-055, ADR-056)', () => {
     // The page keys, and the wheel reports the policy synthesizes for a scroll.
+    // One gesture's reports travel together, in order, as one write: a batch of
+    // the set is inside the set, up to the one input bound.
     for (const data of [
       '\x1b[5~',
       '\x1b[6~',
       '\x1b[<64;1;1M',
       '\x1b[<65;132;43M',
       '\x1b[<64;1000;1000M',
+      '\x1b[<64;1;1M\x1b[<64;1;1M',
+      '\x1b[5~\x1b[5~',
+      '\x1b[5~\x1b[<65;1;1M\x1b[6~',
+      '\x1b[<64;1;1M'.repeat(MAX_COMPANION_INPUT_CHARS / '\x1b[<64;1;1M'.length),
     ]) {
       expect(isCompanionInputRequest({ data, navigation: true }), data).toBe(true)
     }
     // Every other byte is typing, whatever the page calls it. A press, a drag
-    // report, a release, and a modified wheel button are not a read-back.
+    // report, a release, and a modified wheel button are not a read-back, and
+    // neither is a batch with one of them inside.
     for (const data of [
       '\r',
       'y',
@@ -319,8 +326,8 @@ describe('sessions companion contract', () => {
       '\x1b[<64;1;1m',
       '\x1b[<68;1;1M',
       '\x1b[<644;1;1M',
-      '\x1b[<64;1;1M\x1b[<64;1;1M',
-      '\x1b[5~\x1b[5~',
+      '\x1b[5~\r',
+      '\x1b[<64;1;1M\x1b[<0;1;1M\x1b[<64;1;1M',
     ]) {
       expect(isCompanionInputRequest({ data, navigation: true }), data).toBe(false)
       expect(isCompanionInputRequest({ data }), data).toBe(true)

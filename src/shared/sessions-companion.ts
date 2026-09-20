@@ -37,7 +37,7 @@ import {
   type SessionsTranscriptSnapshot,
   type SessionsTranscriptSubmitRequest,
 } from './sessions-transcript'
-import { isTerminalReadBackNavigation } from './terminal-wheel'
+import { isTerminalReadBackNavigationBatch } from './terminal-wheel'
 
 /**
  * The snapshot's shape, compared for strict equality so a page on an older bundle
@@ -318,7 +318,7 @@ export function isCompanionInputRequest(value: unknown): value is CompanionInput
   const navigation = value['navigation']
   return (
     navigation === undefined ||
-    (navigation === true && isTerminalReadBackNavigation(data))
+    (navigation === true && isTerminalReadBackNavigationBatch(data))
   )
 }
 
