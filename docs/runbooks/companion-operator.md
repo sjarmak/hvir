@@ -261,14 +261,25 @@ What the phone shows:
   wheel notch does the same thing, and both are decided by the one policy, so they never
   disagree. How far one step travels does differ, because a notch is a discrete step of intent
   and a finger is distance: a page key costs a drag half the rows on screen, so dragging half
-  the terminal moves it by a screen. In a full-screen program (Claude Code, vim, less) the emulator keeps no scrollback
+  the terminal moves it by a screen.
+
+  Which of those you get depends on the session, and the phone decides it the same way the
+  desktop does. A program that asked for mouse reports, which is every tmux session with
+  `mouse on`, receives the wheel reports its own desktop sends, so read-back on the phone is
+  whatever that program does for a wheel. A full-screen program that did not ask for them
+  receives Page Up and Page Down. Everything else moves the phone's own view. Before ADR-056
+  the phone did not know about mouse tracking and sent page keys to sessions whose desktop was
+  sending reports, which is why a tmux mirror used to scroll a few lines and stop while the
+  desktop moved freely. In a full-screen program (Claude Code, vim, less) the emulator keeps no scrollback
   to move, so the gesture sends Page Up and Page Down to the program instead, which is how the
   desktop pane scrolls the same session. Those two keys are not typing: they need the Settings
-  permission (section 8) but not the per-mirror arm, so reading back works on a mirror you
-  never armed, extends no arming, and raises no attention on the desktop. With the permission
+  permission (section 8) but not the per-mirror arm, and neither do the wheel reports a
+  mouse-tracking program gets instead, so reading back works on a mirror you never armed,
+  extends no arming, and raises no attention on the desktop. With the permission
   off, the page says `Input from the Companion is off in Settings, so this program cannot be
   paged`. A program that asked for mouse reports receives them the same way, and those are
-  typing: a disarmed mirror sends none of them and reads back through its own view instead.
+  typing: a mouse report that is a press, a release, or a drag rather than one of the two wheel
+  buttons is typing, so a disarmed mirror sends none of those.
   Paging a program's own history is not private to the phone. It is the same program with one
   screen, so a desktop watching that terminal moves with you; reading back through the
   emulator's own view does not do that. A grid taller than the area keeps scrolling under the
@@ -446,7 +457,7 @@ shows as a prompt without its message until the harness notifies again.
 | A Claude Code permission prompt shows as Ready, or not at all, never as a prompt | The notification channel is not set: put `"preferredNotifChannel": "iterm2"` in `~/.claude/settings.json` or pass `--settings '{"preferredNotifChannel":"iterm2"}'`. If it is set and still nothing arrives, the session is in auto permission mode and the command never prompted; start Claude Code with `--permission-mode default`. Wait the few seconds Claude Code holds before notifying. |
 | A prompt badge shows but no Push arrived for it | The terminal was already in the actionable set as Ready when the prompt arrived; Push fires only when a session enters the set. Or a desktop window was focused. |
 | The mirror shows old output and never catches up | The view is read back, which the terminal holds on purpose so output does not move the rows you are reading. Tap `The session has moved on. Back to live.` in the bottom corner, or drag toward the top of the screen. |
-| A drag or wheel over a full-screen program (vim, less, Claude Code) moves nothing | Both gestures reach the same policy, which sends Page Up and Page Down there rather than moving a view, so what happens next is the program's answer to those keys. They need the Settings permission (**Allow typing from the Companion**) but not **Arm typing**; if the page says `Input from the Companion is off in Settings, so this program cannot be paged`, turn the setting on at the desktop. A program that binds those keys elsewhere, or a shell with no pager running, moves nothing by design. A program that asked for mouse reports receives reports instead, and those do need the arm. If the grid is taller than the area, the drag still scrolls it either way. |
+| A drag or wheel over a full-screen program (vim, less, Claude Code) moves nothing | Both gestures reach the same policy, which sends the program either wheel reports (if it asked for mouse tracking, as a tmux session with `mouse on` does) or Page Up and Page Down, so what happens next is the program's answer to those. They need the Settings permission (**Allow typing from the Companion**) but not **Arm typing**; if the page says `Input from the Companion is off in Settings, so this program cannot be paged`, turn the setting on at the desktop. A program that binds those keys elsewhere, or a shell with no pager running, moves nothing by design. A program that asked for mouse reports receives reports instead, and those do need the arm. If the grid is taller than the area, the drag still scrolls it either way. |
 | The mirror is a thin strip at the bottom with black above it | The phone is showing the desktop's grid scaled to its width, and the program draws on the alternate screen, so the terminal keeps no scrollback to fill the space, which the mirror says in a line of its own. A desktop window is focused, or the mirror is not live. With a focused desktop the phone does not ask and shows no line; if it asked just as a desktop window regained focus, the line under the header reads `The desktop is focused, so it keeps the terminal size.` A mirror that ended shows its one sentence instead, so select the row again. Leave the desk, or unfocus every hvir window (switch the desktop to another app), and the phone asks for its own grid. At the desk the remedy is still a narrower desktop pane. |
 | The desktop pane shows a small grid in its top-left corner and `Companion holds the size · C×R` | A phone holds the terminal's size because every hvir window was unfocused when its mirror asked. Focus any hvir window and the pane refits to its own size; the phone returns to the scaled view as that geometry reaches it. A pane on a hidden tab refits when the tab is shown. |
 | Reading back shows a frame of a full-screen program twice, or a stale line | What you read is the terminal's scrollback as it stands; a program that redraws by moving the cursor leaves its earlier frames there, as on the desktop. The live screen is the screen as drawn. |

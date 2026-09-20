@@ -27,13 +27,25 @@ const PAGE_UP = '\x1b[5~'
 const PAGE_DOWN = '\x1b[6~'
 
 /**
- * The complete output of the alternate-screen route above, which is what a
- * read-back gesture sends a program that owns its history. It is the closed set
- * ADR-055 exempts from the per-mirror arm and from the terminal input record,
- * so the exemption is defined by the route rather than by a list beside it.
+ * The wheel reports this policy synthesizes for a scroll, and only those:
+ * buttons 64 and 65 are wheel up and wheel down, a notch by construction rather
+ * than a press at a position, and a phone gesture carries no modifier that could
+ * raise the button past them.
  */
-export function isTerminalPageKey(data: string): boolean {
-  return data === PAGE_UP || data === PAGE_DOWN
+const SGR_REPORT_PREFIX = '\x1b[<'
+const WHEEL_REPORT_BODY = /^6[45];\d+;\d+M$/
+
+/**
+ * The complete output of this policy's routes for a read-back gesture: the page
+ * keys an alternate-screen program receives, and the wheel reports a program
+ * tracking the mouse receives. It is the closed set ADR-055 exempts from the
+ * per-mirror arm and from the terminal input record, widened to the mouse route
+ * by ADR-056, and it is defined by the routes rather than by a list beside them.
+ */
+export function isTerminalReadBackNavigation(data: string): boolean {
+  if (data === PAGE_UP || data === PAGE_DOWN) return true
+  if (!data.startsWith(SGR_REPORT_PREFIX)) return false
+  return WHEEL_REPORT_BODY.test(data.slice(SGR_REPORT_PREFIX.length))
 }
 
 export interface TerminalWheelEvent {

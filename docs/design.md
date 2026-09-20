@@ -574,8 +574,9 @@ history instead of showing an empty column.
 
 ### [ADR-054 — Sticky terminal modes precede the replayed tail](adr/ADR-054-sticky-terminal-modes-precede-the-replayed-tail.md)
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | Main not interpreting the bytes it forwards, for a bounded scan of sticky DEC private modes emitted ahead of the replayed tail.
+> Superseded by: [ADR-056](adr/ADR-056-read-back-reaches-a-mouse-tracking-program.md) | partial | The mouse tracking family left to the window, for a mirror whose gesture the program's own wheel reports answer.
 
 Main scans passing PTY output for a closed set of sticky DEC private modes, the alternate screen
 `?1049` and `?47` and nothing else, keeping per mode the last state it saw and where it saw it,
@@ -586,9 +587,10 @@ repeats the same scan over its own buffer, whose window is cut independently and
 
 ### [ADR-055 — Read-back navigation reaches a mirrored program without being typing](adr/ADR-055-read-back-navigation-is-not-typing.md)
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | The per-mirror arm gating every byte and mirror input being recorded as terminal input, for the page keys a read-back gesture emits to a program that owns its history.
 > Supersedes: [ADR-053](adr/ADR-053-companion-mirror-reads-back-through-emulator-viewport.md) | partial | An alternate-screen session stating that it has no history to read back, for a program that keeps its own history and is paged through it.
+> Superseded by: [ADR-056](adr/ADR-056-read-back-reaches-a-mouse-tracking-program.md) | partial | The exempt set closed at the two page keys, for the wheel reports the same policy sends a program that tracks the mouse.
 
 A program that owns its history, such as Claude Code under tmux, is read back from the phone by
 paging it with the two keys the shared wheel policy already sends on the desktop. Those keys are
@@ -596,6 +598,20 @@ gated by the owner's mirror input permission alone, not by the per-mirror arm, a
 PTY without being recorded as terminal input, so reading back raises no attention and sends no
 Push. The exempt set is closed at those keys, typing still requires the arm, and the mirror stops
 claiming an alternate-screen session has no history.
+
+### [ADR-056 — A read-back gesture reaches a program that tracks the mouse](adr/ADR-056-read-back-reaches-a-mouse-tracking-program.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-054](adr/ADR-054-sticky-terminal-modes-precede-the-replayed-tail.md) | partial | The mouse tracking family left to the window, for a mirror whose gesture the program's own wheel reports answer.
+> Supersedes: [ADR-055](adr/ADR-055-read-back-navigation-is-not-typing.md) | partial | The exempt set closed at the two page keys, for the wheel reports the same policy sends a program that tracks the mouse.
+
+The sticky-mode scan carries the mouse tracking family whole, `?1000` `?1002` `?1003` `?1006`
+`?1015`, so a mirror of a session under `tmux -g mouse on` routes a gesture the way its desktop
+does instead of sending page keys the program barely honours. Read-back navigation becomes
+whatever the one policy emits for a read-back gesture on any route, so the wheel reports it
+synthesizes, buttons 64 and 65 alone, join the page keys outside the per-mirror arm and outside
+the terminal input record. Carrying the trackers without the encoding is the silent failure
+ADR-054 predicted, so the family moves together or not at all.
 
 ## 5. Architecture
 

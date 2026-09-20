@@ -297,13 +297,33 @@ describe('sessions companion contract', () => {
     expect(isCompanionInputRequest('\r')).toBe(false)
   })
 
-  it('a navigation claim is admitted only for the page keys a read-back gesture sends (ADR-055)', () => {
-    expect(isCompanionInputRequest({ data: '\x1b[5~', navigation: true })).toBe(true)
-    expect(isCompanionInputRequest({ data: '\x1b[6~', navigation: true })).toBe(true)
-    // Every other byte is typing, whatever the page calls it.
-    for (const data of ['\r', 'y', '\x1b[A', '\x1b[<64;1;1M', '\x1b[5~\x1b[5~']) {
-      expect(isCompanionInputRequest({ data, navigation: true })).toBe(false)
-      expect(isCompanionInputRequest({ data })).toBe(true)
+  it('a navigation claim is admitted only for what a read-back gesture sends (ADR-055, ADR-056)', () => {
+    // The page keys, and the wheel reports the policy synthesizes for a scroll.
+    for (const data of [
+      '\x1b[5~',
+      '\x1b[6~',
+      '\x1b[<64;1;1M',
+      '\x1b[<65;132;43M',
+      '\x1b[<64;1000;1000M',
+    ]) {
+      expect(isCompanionInputRequest({ data, navigation: true }), data).toBe(true)
+    }
+    // Every other byte is typing, whatever the page calls it. A press, a drag
+    // report, a release, and a modified wheel button are not a read-back.
+    for (const data of [
+      '\r',
+      'y',
+      '\x1b[A',
+      '\x1b[<0;1;1M',
+      '\x1b[<32;1;1M',
+      '\x1b[<64;1;1m',
+      '\x1b[<68;1;1M',
+      '\x1b[<644;1;1M',
+      '\x1b[<64;1;1M\x1b[<64;1;1M',
+      '\x1b[5~\x1b[5~',
+    ]) {
+      expect(isCompanionInputRequest({ data, navigation: true }), data).toBe(false)
+      expect(isCompanionInputRequest({ data }), data).toBe(true)
     }
     expect(isCompanionInputRequest({ data: '\x1b[5~', navigation: false })).toBe(false)
     expect(isCompanionInputRequest({ data: '\x1b[5~', navigation: 'true' })).toBe(false)

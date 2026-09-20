@@ -40,7 +40,7 @@ import ghosttyWasmUrl from 'ghostty-web/ghostty-vt.wasm?url'
 
 import {
   TerminalWheelController,
-  isTerminalPageKey,
+  isTerminalReadBackNavigation,
   terminalWheelNotch,
   type TerminalWheelEvent,
 } from '../../../shared'
@@ -226,7 +226,7 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
     })
     let emitted = false
     for (const data of result.data) {
-      const sent = isTerminalPageKey(data)
+      const sent = isTerminalReadBackNavigation(data)
         ? this.emitNavigation(data)
         : this.emitUser(data)
       emitted = sent || emitted
@@ -287,9 +287,10 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
   }
 
   /**
-   * Read-back navigation (ADR-055): the page keys the policy sends a program
-   * that owns its history leave a disarmed mirror, because the arm exists to
-   * stop an unattended phone typing and a finger on the grid is neither. The
+   * Read-back navigation (ADR-055, widened by ADR-056): the page keys a program
+   * that owns its history receives and the wheel reports a program tracking the
+   * mouse receives both leave a disarmed mirror, because the arm exists to stop
+   * an unattended phone typing and a finger on the grid is neither. The
    * desktop's own permission still decides, and refuses these the same way it
    * refuses a key.
    */

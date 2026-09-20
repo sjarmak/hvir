@@ -489,22 +489,24 @@ describe('ghostty companion pane', () => {
     expect(fake.scrolls).toEqual([])
   })
 
-  it('a disarmed mirror under a mouse-tracking program still reads back', async () => {
+  it('a disarmed mirror under a mouse-tracking program sends its wheel reports (ADR-056)', async () => {
     const pane = await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!
     pane.mount(document.createElement('div'))
     // A program on the normal screen that asked for mouse reports, on the
-    // default disarmed mirror: the policy claims the gesture, the gate drops
-    // every report, and the viewport is what is left to move.
+    // default disarmed mirror. The report is what its own desktop sends for the
+    // same gesture, so the arm does not hold it and the viewport stays put.
     fake.mouseTracking = true
     fake.sgrMouse = true
     fake.scrollbackLength = 500
-    const seen: string[] = []
-    pane.events.onData((data) => seen.push(data))
-    expect(pane.scroll(drag(-64))).toBe(0)
-    expect(seen).toEqual([])
-    expect(fake.scrolls).toEqual([-4])
-    expect(fake.viewportY).toBe(4)
+    const typed: string[] = []
+    const paged: string[] = []
+    pane.events.onData((data) => typed.push(data))
+    pane.events.onNavigation((data) => paged.push(data))
+    expect(pane.scroll(drag(-64))).toBe(-64)
+    expect(paged).toEqual(['\x1b[<64;1;1M'])
+    expect(typed).toEqual([])
+    expect(fake.scrolls).toEqual([])
   })
 
   it('a mouse mode the policy cannot encode reads back rather than swallowing the drag', async () => {
@@ -529,10 +531,10 @@ describe('ghostty companion pane', () => {
     fake.sgrMouse = true
     fake.scrollbackLength = 500
     pane.setInputEnabled(true)
-    const seen: string[] = []
-    pane.events.onData((data) => seen.push(data))
+    const paged: string[] = []
+    pane.events.onNavigation((data) => paged.push(data))
     expect(pane.scroll(drag(-64))).toBe(-64)
-    expect(seen).toEqual(['\x1b[<64;1;1M'])
+    expect(paged).toEqual(['\x1b[<64;1;1M'])
     expect(fake.scrolls).toEqual([])
   })
 
@@ -575,25 +577,24 @@ describe('ghostty companion pane', () => {
     expect(fake.scrolls).toEqual([])
   })
 
-  it('an SGR report from a gesture is typing and stays behind the arm', async () => {
+  it('a mouse mode the policy cannot encode still reads back rather than going dead', async () => {
     const pane = await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!
     pane.mount(document.createElement('div'))
-    // A mouse report carries a button and a position, so ADR-055 leaves it
-    // outside the exempt set: a disarmed mirror sends none of it.
+    // Tracking without SGR: the policy has no report it will synthesize, so it
+    // consumes the gesture and the viewport is what is left to move. This is the
+    // shape ADR-056 refuses to reach by carrying half the mouse family.
     fake.mouseTracking = true
-    fake.sgrMouse = true
+    fake.sgrMouse = false
+    fake.scrollbackLength = 500
     const typed: string[] = []
     const paged: string[] = []
     pane.events.onData((data) => typed.push(data))
     pane.events.onNavigation((data) => paged.push(data))
-    pane.scroll(drag(-64))
+    expect(pane.scroll(drag(-64))).toBe(0)
     expect(typed).toEqual([])
     expect(paged).toEqual([])
-    pane.setInputEnabled(true)
-    pane.scroll(drag(-64))
-    expect(typed).toEqual(['\x1b[<64;1;1M'])
-    expect(paged).toEqual([])
+    expect(fake.scrolls).toEqual([-4])
   })
 
   it('a drag pays half the screen for a page and a wheel notch still pays three lines', async () => {

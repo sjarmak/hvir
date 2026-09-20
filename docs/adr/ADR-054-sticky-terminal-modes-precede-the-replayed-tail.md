@@ -1,7 +1,8 @@
 # ADR-054: Sticky terminal modes precede the replayed tail
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-050](ADR-050-companion-live-terminal-mirror.md) | partial | Main not interpreting the bytes it forwards, for a bounded scan of sticky DEC private modes emitted ahead of the replayed tail.
+> Superseded by: [ADR-056](ADR-056-read-back-reaches-a-mouse-tracking-program.md) | partial | The mouse tracking family left to the window, for a mirror whose gesture the program's own wheel reports answer.
 
 ## Context
 

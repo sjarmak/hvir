@@ -135,8 +135,23 @@ describe('installApplicationCompanion terminal mirror', () => {
       body: { page, data: '\u001b[5~', navigation: true },
     })
     expect(paged.status).toBe(200)
-    expect(lease.navigations).toEqual(['\u001b[5~'])
+
+    // And the wheel report the same policy sends a program tracking the mouse
+    // (ADR-056), which is the route a tmux session with `mouse on` takes.
+    const reported = await send(port, 'POST', input(LOCAL), {
+      headers,
+      body: { page, data: '\u001b[<64;12;7M', navigation: true },
+    })
+    expect(reported.status).toBe(200)
+    expect(lease.navigations).toEqual(['\u001b[5~', '\u001b[<64;12;7M'])
     expect(lease.writes).toEqual(['y\r'])
+
+    // A press at the same position is not a read-back and never bypasses typing.
+    const pressed = await send(port, 'POST', input(LOCAL), {
+      headers,
+      body: { page, data: '\u001b[<0;12;7M', navigation: true },
+    })
+    expect(pressed.status).toBe(400)
 
     lease.refuse = 'ended'
     const ended = await send(port, 'POST', input(LOCAL), {

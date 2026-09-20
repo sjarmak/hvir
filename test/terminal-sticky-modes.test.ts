@@ -45,12 +45,15 @@ describe('TerminalStickyModes', () => {
 
   it('reads a combined set however the stream splits it', () => {
     const combined = '\u001b[?1049;1002;1006h'
+    // tmux asks for the alternate screen and its mouse modes in one sequence,
+    // and every carried parameter in it is kept whatever the read boundary.
+    const expected = `${ENTER}\u001b[?1002h\u001b[?1006h`
     for (let cut = 0; cut <= combined.length; cut += 1) {
       const modes = new TerminalStickyModes()
       modes.retain(combined.slice(0, cut))
       modes.retain(combined.slice(cut))
       modes.retain('x'.repeat(100))
-      expect(modes.preamble(100), `set cut at ${cut}`).toBe(ENTER)
+      expect(modes.preamble(100), `set cut at ${cut}`).toBe(expected)
     }
   })
 
@@ -103,11 +106,32 @@ describe('TerminalStickyModes', () => {
     expect(modes.preamble(100)).toBe(ENTER)
   })
 
-  it('leaves out the input modes, which change what a gesture or a keystroke means', () => {
+  it('carries the mouse tracking family whole, in emission order (ADR-056)', () => {
     const modes = new TerminalStickyModes()
     modes.retain(`${ENTER}\u001b[?1h\u001b[?1000h\u001b[?1002h\u001b[?1003h`)
     modes.retain('\u001b[?1006h\u001b[?1015h\u001b[?2004h')
     modes.retain('x'.repeat(100))
+    // The screens first, since the reports are read against a screen, and the
+    // encoding with the trackers: a reader told the program tracks the mouse
+    // but not how to encode for it consumes every gesture and sends nothing.
+    expect(modes.preamble(100)).toBe(
+      `${ENTER}\u001b[?1000h\u001b[?1002h\u001b[?1003h\u001b[?1006h\u001b[?1015h`,
+    )
+  })
+
+  it('leaves out the keystroke modes, which change what a key means', () => {
+    const modes = new TerminalStickyModes()
+    modes.retain(`${ENTER}\u001b[?1h\u001b[?2004h`)
+    modes.retain('x'.repeat(100))
+    expect(modes.preamble(100)).toBe(ENTER)
+  })
+
+  it('emits no mouse mode for a program that turned tracking off again', () => {
+    const modes = new TerminalStickyModes()
+    modes.retain(`${ENTER}\u001b[?1000h\u001b[?1006h`)
+    modes.retain('\u001b[?1000l\u001b[?1006l')
+    modes.retain('x'.repeat(100))
+    // A fresh emulator starts with tracking off, so the reset needs no sequence.
     expect(modes.preamble(100)).toBe(ENTER)
   })
 
@@ -120,9 +144,9 @@ describe('TerminalStickyModes', () => {
 
   it('bounds the preamble at STICKY_MODE_PREAMBLE_MAX_CHARS with every mode set', () => {
     const modes = new TerminalStickyModes()
-    modes.retain(`${ENTER}\u001b[?47h`)
+    modes.retain(`${ENTER}\u001b[?47h\u001b[?1000h\u001b[?1002h`)
+    modes.retain('\u001b[?1003h\u001b[?1006h\u001b[?1015h')
     modes.retain('x'.repeat(100))
-    expect(modes.preamble(100)).toBe(`${ENTER}\u001b[?47h`)
     expect(modes.preamble(100).length).toBe(STICKY_MODE_PREAMBLE_MAX_CHARS)
   })
 

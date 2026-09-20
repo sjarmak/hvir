@@ -5,7 +5,7 @@ generated: "2026-09-19"
 # Staleness stamp, machine-readable so a refresh can test drift without a model.
 # `sources` are area-relative paths (relative to THIS file's directory). Recompute:
 #   node ~/.claude/skills/project-compass/compass-hash.mjs src/main/companion/COMPASS.md
-sources_hash: "sha256-16:0f14606b981461e4"
+sources_hash: "sha256-16:43d97f29189e4547"
 sources:
   - companion-owner.ts
   - companion-sessions.ts
@@ -406,6 +406,20 @@ cycle.
   mirror does not, and a surface rebuilt for another row clears it from the view. Disposing a
   pane releases every subscription it handed out, which the port states, so the mount holds no
   unsubscriber of its own for either `onData` or `onViewport`.
+- **A mirror routes a gesture on what it knows, so it has to know (ADR-056).** A session under
+  `tmux -g mouse on` has mouse tracking on, so the desktop's trackpad takes the SGR route and the
+  program scrolls itself. The phone used to take the alternate-screen route instead and send
+  `PageUp`, which tmux binds nowhere in its root table (`list-keys -T root | grep -ci ppage`
+  returns 0) and hands to the program as a keystroke it barely honours: same PTY, same gesture,
+  two routes, because the two emulators believed different things. The cause was ADR-054's
+  carried set, which excluded the mouse family, while the program's `?1000h`/`?1006h` sat at
+  attach time far outside any retained window. `CARRIED_MODES` now carries `?1000 ?1002 ?1003
+  ?1006 ?1015` after the screens. Carry them by halves and it is worse than not carrying them:
+  the policy needs `?1006` before it will synthesize a report, so a reader that knows the program
+  tracks the mouse and cannot encode for it consumes every gesture and sends nothing, which is
+  read-back dying with nothing on screen to say why. `STICKY_MODE_PREAMBLE_MAX_CHARS` went 14 to
+  54 with them, and that is a wire bound: a page on an older bundle refuses an `opened` whose
+  preamble exceeds what it knows, which ends its event stream.
 - **The alternate screen says the program keeps its own history (ADR-055).**
   `pane.isAlternateScreen()` reads the emulator's mode flag, never the screen's text, and the
   mount reports the change to `terminal-view.tsx`, which renders one `companion-status` line in
@@ -414,13 +428,15 @@ cycle.
   clip it. The line used to claim the session had no history, which is false for anything
   holding its own: tmux, a pager, a shell under tmux. What is true is that the emulator has no
   scrollback there, so the gesture pages the program instead.
-- **Read-back navigation is not typing, on either side (ADR-055).** The page keys the wheel
-  policy's alternate-screen route emits leave the pane on `events.onNavigation` rather than
-  `events.onData`, so the per-mirror arm does not hold them; everything else a gesture produces,
-  SGR mouse reports included, still passes `emitUser`. The split is `isTerminalPageKey` in
-  `src/shared/terminal-wheel.ts`, which is the route's own output and the closed set the wire
-  guard admits `navigation: true` for: claim it on any other byte and
-  `isCompanionInputRequest` refuses the request at 400. Main gates it on `typingAllowed()` like
+- **Read-back navigation is not typing, on either side (ADR-055, widened by ADR-056).** What the
+  wheel policy emits for a read-back gesture leaves the pane on `events.onNavigation` rather than
+  `events.onData`, so the per-mirror arm does not hold it; everything else a gesture produces
+  still passes `emitUser`. The split is `isTerminalReadBackNavigation` in
+  `src/shared/terminal-wheel.ts`, which is the routes' own output and the closed set the wire
+  guard admits `navigation: true` for: claim it on any other byte and `isCompanionInputRequest`
+  refuses the request at 400. It is the two page keys plus the wheel reports the policy
+  synthesizes, buttons 64 and 65 only. A press, a release (`m` rather than `M`), a drag report,
+  and a modified wheel button are all typing. Main gates it on `typingAllowed()` like
   any key and then takes `lease.navigate` rather than `lease.write`, which is the same PTY
   write minus `sources.onInput`. That omission is the point: `pty-supervisor.ts` fans `onInput`
   to the owning renderer, which records it as terminal input and arms ADR-019, so a page key

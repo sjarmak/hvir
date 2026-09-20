@@ -1,8 +1,9 @@
 # ADR-055: Read-back navigation reaches a mirrored program without being typing
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-050](ADR-050-companion-live-terminal-mirror.md) | partial | The per-mirror arm gating every byte and mirror input being recorded as terminal input, for the page keys a read-back gesture emits to a program that owns its history.
 > Supersedes: [ADR-053](ADR-053-companion-mirror-reads-back-through-emulator-viewport.md) | partial | An alternate-screen session stating that it has no history to read back, for a program that keeps its own history and is paged through it.
+> Superseded by: [ADR-056](ADR-056-read-back-reaches-a-mouse-tracking-program.md) | partial | The exempt set closed at the two page keys, for the wheel reports the same policy sends a program that tracks the mouse.
 
 ## Context
 

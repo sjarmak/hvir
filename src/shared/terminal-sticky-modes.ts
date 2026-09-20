@@ -43,10 +43,25 @@ interface CarriedMode {
  * it. `?1047` names the same alternate buffer as `?47`, so it is observed as
  * `?47`: the two differ in what their resets clear, and this scanner emits no
  * reset. Every other mode is left to the window, for reasons ADR-054 states.
+ *
+ * The mouse tracking family follows the screens (ADR-056). A program that asked
+ * for mouse reports asks for them once, at startup, so the request is outside
+ * every window long before a phone opens a mirror, and a mirror that never
+ * learns of it routes a read-back gesture somewhere its own desktop does not.
+ * The family is carried whole: `?1006` is the encoding the wheel policy needs
+ * before it will synthesize a report, so carrying the trackers without it leaves
+ * a reader that knows the program tracks the mouse and cannot answer it, which
+ * is read-back failing with nothing on the screen to say why. Emitted after the
+ * screens, because the screen is what the reports will be read against.
  */
 const CARRIED_MODES: readonly CarriedMode[] = [
   { emitted: 1049, observed: [1049] },
   { emitted: 47, observed: [47, 1047] },
+  { emitted: 1000, observed: [1000] },
+  { emitted: 1002, observed: [1002] },
+  { emitted: 1003, observed: [1003] },
+  { emitted: 1006, observed: [1006] },
+  { emitted: 1015, observed: [1015] },
 ]
 
 const LARGEST_OBSERVED_MODE = Math.max(

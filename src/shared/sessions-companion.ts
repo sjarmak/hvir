@@ -37,7 +37,7 @@ import {
   type SessionsTranscriptSnapshot,
   type SessionsTranscriptSubmitRequest,
 } from './sessions-transcript'
-import { isTerminalPageKey } from './terminal-wheel'
+import { isTerminalReadBackNavigation } from './terminal-wheel'
 
 /**
  * The snapshot's shape, compared for strict equality so a page on an older bundle
@@ -59,9 +59,11 @@ export const MAX_COMPANION_TERMINAL_TAIL_CHARS = 256 * 1024
  * The sticky-mode preamble a mirror opens with: the width of the scanner's full
  * emission, stated here as the wire's own bound and pinned against
  * `STICKY_MODE_PREAMBLE_MAX_CHARS` by contract test, the way the tail bound is
- * pinned against the supervisor's (ADR-054).
+ * pinned against the supervisor's (ADR-054). It grew with the mouse tracking
+ * family (ADR-056), and a page built against the old bound refuses an opened
+ * event that carries the new one rather than opening the mirror imperfectly.
  */
-export const MAX_COMPANION_TERMINAL_PREAMBLE_CHARS = 14
+export const MAX_COMPANION_TERMINAL_PREAMBLE_CHARS = 54
 /** One input request carries at most this many characters of the user's bytes. */
 export const MAX_COMPANION_INPUT_CHARS = 4096
 /** A resize request names a grid within the PTY's own dimension bounds (ADR-052). */
@@ -177,8 +179,9 @@ export interface CompanionInputRequest {
    * The bytes are read-back navigation rather than typing (ADR-055): the
    * owner's permission still gates them, the per-mirror arm does not, and they
    * are not recorded as terminal input. The claim is bounded here rather than
-   * trusted: it is admitted only for the closed set of page keys the shared
-   * wheel policy sends a program that owns its history.
+   * trusted: it is admitted only for the closed set the shared wheel policy
+   * emits for a read-back gesture, the page keys of ADR-055 and the wheel
+   * reports of ADR-056.
    */
   readonly navigation?: true
 }
@@ -313,7 +316,10 @@ export function isCompanionInputRequest(value: unknown): value is CompanionInput
     return false
   }
   const navigation = value['navigation']
-  return navigation === undefined || (navigation === true && isTerminalPageKey(data))
+  return (
+    navigation === undefined ||
+    (navigation === true && isTerminalReadBackNavigation(data))
+  )
 }
 
 export function isCompanionResizeRequest(
