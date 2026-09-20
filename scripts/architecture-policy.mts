@@ -130,7 +130,7 @@ export function sourceDisposition(
   if (policy.extensions.includes(extension)) return 'source'
   if (
     DATA_EXTENSIONS.has(extension) ||
-    ['.log', '.tsbuildinfo'].includes(extension) ||
+    ['.lock', '.log', '.tsbuildinfo'].includes(extension) ||
     /^\.env(?:\.[a-zA-Z0-9_-]+)*$/.test(basename(path))
   )
     return 'data'

@@ -65,7 +65,12 @@ describe('complete architecture budget policy', () => {
   it('gives local artifacts narrow dispositions without hiding maintained or executable source', () => {
     const r = repo(),
       policy = ordinaryPolicy()
-    for (const path of ['build.log', 'tsconfig.tsbuildinfo', '.env.local'])
+    for (const path of [
+      'build.log',
+      'tsconfig.tsbuildinfo',
+      '.env.local',
+      '.beads.gate.lock',
+    ])
       r.write(path, 'local artifact')
     r.write('.gitignore', 'src/ignored.ts\n')
     r.source(1001, 'src/ignored.ts')
