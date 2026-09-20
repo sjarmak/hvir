@@ -46,6 +46,7 @@ import {
   terminalWheelNotch,
   type TerminalWheelEvent,
 } from '../../../shared'
+import { COMPANION_DEFAULT_TEXT_SIZE, nearestTextSize } from './companion-text-size'
 import type {
   CompanionCellSize,
   CompanionTerminalPane,
@@ -55,8 +56,6 @@ import type {
 /** The desktop pane's `TERMINAL_SCROLLBACK_BYTES`, so the phone reads back as far as the desktop. */
 const MIRROR_SCROLLBACK_BYTES = 10_000_000
 const FALLBACK_CELL_HEIGHT = 16
-/** The phone's fixed readable font (ADR-058); the grid held is what this leaves room for. */
-const MIRROR_FONT_SIZE = 15
 
 let initializeGhostty: Promise<void> | undefined
 
@@ -70,7 +69,7 @@ export const createGhosttyCompanionPane: CompanionTerminalPaneFactory = async (
     new Terminal({
       cols,
       rows,
-      fontSize: MIRROR_FONT_SIZE,
+      fontSize: COMPANION_DEFAULT_TEXT_SIZE,
       scrollbackBytes: MIRROR_SCROLLBACK_BYTES,
       disableStdin: true,
       disableContextMenu: true,
@@ -184,6 +183,15 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
   endGesture(): void {
     this.wheel.endGesture()
     this.remainder = 0
+  }
+
+  /**
+   * The person's size (ADR-059), read live by the emulator, which remeasures
+   * its cell and redraws the grid it already has at the new box. The page asks
+   * for the grid that new box earns; nothing here picks one.
+   */
+  setFontSize(size: number): void {
+    this.terminal.options.fontSize = nearestTextSize(size)
   }
 
   /** The renderer exists once the terminal is open; its cell is the font's measured box. */

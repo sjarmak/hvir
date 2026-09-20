@@ -8,6 +8,11 @@ import type {
 import type { CompanionMirrorFeed } from './companion-mirror-feed'
 import { companionMirrorEndMessage, type CompanionTerminalState } from './companion-store'
 import { CompanionTerminalMount } from './companion-terminal-mount'
+import {
+  readCompanionTextSize,
+  stepCompanionTextSize,
+  writeCompanionTextSize,
+} from './companion-text-size'
 import type { CompanionTerminalPaneFactory } from './companion-terminal-pane'
 import { MirrorControls, ReturnToLive } from './mirror-controls'
 import { MirrorHeader } from './mirror-header'
@@ -58,6 +63,7 @@ export function TerminalView(props: TerminalViewProps) {
   const [paneFailure, setPaneFailure] = useState<string>()
   const [alternateScreen, setAlternateScreen] = useState(false)
   const [readingBack, setReadingBack] = useState(false)
+  const [textSize, setTextSize] = useState(() => readCompanionTextSize(localStorage))
   const mirror = useRef<CompanionTerminalMount>(undefined)
   const live = terminal.status === 'live'
   if (showTranscript && transcript !== undefined) {
@@ -81,6 +87,12 @@ export function TerminalView(props: TerminalViewProps) {
         offersTranscript={row?.canAnswer === true && transcript !== undefined}
         onBack={props.onBack}
         onTranscript={() => setShowTranscript(true)}
+        textSize={textSize}
+        onTextSize={(direction) => {
+          const next = stepCompanionTextSize(textSize, direction)
+          setTextSize(next)
+          writeCompanionTextSize(localStorage, next)
+        }}
       />
       <div className="companion-terminal-area">
         {terminal.status === 'ended' ? (
@@ -103,6 +115,7 @@ export function TerminalView(props: TerminalViewProps) {
           feed={props.feed}
           createPane={props.createPane}
           inputEnabled={arming.armed}
+          textSize={textSize}
           mirror={mirror}
           onInput={onInput}
           onViewport={onViewport}
@@ -125,6 +138,7 @@ function TerminalSurface({
   feed,
   createPane,
   inputEnabled,
+  textSize,
   mirror,
   onInput,
   onViewport,
@@ -136,6 +150,8 @@ function TerminalSurface({
   readonly feed: CompanionMirrorFeed
   readonly createPane: CompanionTerminalPaneFactory
   readonly inputEnabled: boolean
+  /** The person's mirror text size (ADR-059), which every pane this surface builds draws at. */
+  readonly textSize: number
   /** The mount the view holds, so the way back reaches the pane this surface owns. */
   readonly mirror: RefObject<CompanionTerminalMount | undefined>
   readonly onInput: CompanionInputVerb
@@ -145,6 +161,10 @@ function TerminalSurface({
   readonly onFailure: (error: unknown) => void
 }) {
   const host = useRef<HTMLDivElement>(null)
+  // Read when a pane is built rather than depended on, so a step of the size
+  // changes the pane the mirror already has instead of rebuilding the mirror.
+  const size = useRef(textSize)
+  size.current = textSize
   const callbacks = useRef({
     onInput,
     onViewport,
@@ -165,6 +185,7 @@ function TerminalSurface({
       onAlternateScreen: (alternate) => callbacks.current.onAlternateScreen(alternate),
       onReadingBack: (readingBack) => callbacks.current.onReadingBack(readingBack),
       onFailure: (error) => callbacks.current.onFailure(error),
+      textSize: size.current,
     })
     mirror.current = created
     const detach = feed.attach(handle, (event) => created.handle(event))
@@ -181,6 +202,10 @@ function TerminalSurface({
   useEffect(() => {
     mirror.current?.setInputEnabled(inputEnabled)
   }, [inputEnabled, mirror])
+
+  useEffect(() => {
+    mirror.current?.setTextSize(textSize)
+  }, [textSize, mirror])
 
   return <div ref={host} className="companion-terminal-host" />
 }

@@ -15,6 +15,10 @@ import { describe, expect, it } from 'vitest'
 
 import { CompanionMirrorFeed } from '../src/renderer/companion/src/companion-mirror-feed'
 import { FIT_SETTLE_MS } from '../src/renderer/companion/src/companion-terminal-fit'
+import {
+  COMPANION_TEXT_SIZES,
+  readCompanionTextSize,
+} from '../src/renderer/companion/src/companion-text-size'
 import { TerminalView } from '../src/renderer/companion/src/terminal-view'
 import { asSessionsTerminalHandle } from '../src/shared'
 import { fakePaneFactory, snapshot } from './companion-page-fixture'
@@ -80,7 +84,7 @@ describe('Companion page mirror layout', () => {
     )
     expect(
       [...(header?.querySelectorAll('button') ?? [])].map((b) => b.textContent),
-    ).toEqual(['Sessions'])
+    ).toEqual(['Sessions', 'A-', 'A+'])
     expect(terminalHost().closest('.companion-terminal-area')).not.toBeNull()
     const controls = section?.querySelector('.companion-mirror-controls')
     expect(
@@ -456,5 +460,64 @@ describe('Companion page mirror holds the grid it draws (ADR-058)', () => {
       act(() => reactRoot.unmount())
       root.remove()
     }
+  })
+})
+
+describe('Companion page mirror draws the text size the person chose (ADR-059)', () => {
+  /** The control beside the title; the label is what a screen reader says, not "A-". */
+  function textSizeButton(label: 'Smaller text' | 'Larger text'): HTMLButtonElement {
+    const element = host.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`)
+    if (element === null) throw new Error(`missing ${label} control`)
+    return element
+  }
+
+  it('a step smaller holds the session at the larger grid the smaller cell earns, and is remembered', async () => {
+    localStorage.clear()
+    await openMirror()
+    layoutHost(376, 496)
+    await settleFit()
+    expect(server.viewports()).toEqual([{ page: 'page-1', cols: 47, rows: 31 }])
+
+    // One step down the ladder from the default: a cell four fifths the size,
+    // so about a quarter more columns and rows of the same session.
+    await click(textSizeButton('Smaller text'))
+    await settleFit()
+    expect(server.viewports()).toEqual([
+      { page: 'page-1', cols: 47, rows: 31 },
+      { page: 'page-1', cols: 52, rows: 34 },
+    ])
+    expect(panes.panes[0]?.fontSizes.at(-1)).toBe(9)
+
+    // The choice is the device's, so it outlives this mirror: the next pane the
+    // page builds is built at it, and the next visit reads it back.
+    await emit('terminal', {
+      type: 'opened',
+      handle: 'term-1',
+      cols: 132,
+      rows: 43,
+      tail: '$ ',
+    })
+    layoutHost(376, 496)
+    await settleFit()
+    expect(panes.panes.at(-1)?.fontSizes).toEqual([9])
+    expect(server.viewports().at(-1)).toEqual({ page: 'page-1', cols: 52, rows: 34 })
+    expect(readCompanionTextSize(localStorage)).toBe(9)
+    localStorage.clear()
+  })
+
+  it('offers no step past either end of the ladder', async () => {
+    localStorage.clear()
+    await openMirror()
+    expect(textSizeButton('Smaller text').disabled).toBe(false)
+    expect(textSizeButton('Larger text').disabled).toBe(false)
+    for (let step = 0; step < COMPANION_TEXT_SIZES.length; step += 1) {
+      await click(textSizeButton('Smaller text'))
+    }
+    expect(textSizeButton('Smaller text').disabled).toBe(true)
+    for (let step = 0; step < COMPANION_TEXT_SIZES.length; step += 1) {
+      await click(textSizeButton('Larger text'))
+    }
+    expect(textSizeButton('Larger text').disabled).toBe(true)
+    localStorage.clear()
   })
 })

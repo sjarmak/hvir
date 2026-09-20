@@ -13,6 +13,7 @@ import type {
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
 } from '../src/renderer/companion/src/companion-terminal-pane'
+import { COMPANION_DEFAULT_TEXT_SIZE } from '../src/renderer/companion/src/companion-text-size'
 import {
   SESSIONS_COMPANION_VERSION,
   SESSIONS_TRANSCRIPT_VERSION,
@@ -207,7 +208,12 @@ export class FakeCompanionServer {
   }
 }
 
-/** The fake grid's cell size: happy-dom lays nothing out, so the pane reports its own. */
+/**
+ * The fake grid's cell size at the default text size: happy-dom lays nothing
+ * out, so the pane reports its own. Like the real emulator it reports a box
+ * proportional to its font, so a page that steps the size (ADR-059) derives a
+ * different grid here too.
+ */
 export const FAKE_CELL_WIDTH = 8
 export const FAKE_CELL_HEIGHT = 16
 
@@ -232,6 +238,9 @@ export class FakeCompanionPane implements CompanionTerminalPane {
   reflowOffset?: number
   mounted?: HTMLElement
   disposed = false
+  /** Every text size the page gave this pane, in order (ADR-059). */
+  readonly fontSizes: number[] = []
+  private fontSize = COMPANION_DEFAULT_TEXT_SIZE
   private readonly listeners = new Set<(data: string, source: 'user') => void>()
   private readonly navigationListeners = new Set<(data: string) => void>()
   private readonly viewportListeners = new Set<(offset: number) => void>()
@@ -278,10 +287,10 @@ export class FakeCompanionPane implements CompanionTerminalPane {
     const surface = document.createElement('div')
     surface.className = 'fake-pane'
     Object.defineProperty(surface, 'offsetWidth', {
-      get: () => (this.resizes.at(-1)?.cols ?? this.cols) * FAKE_CELL_WIDTH,
+      get: () => (this.resizes.at(-1)?.cols ?? this.cols) * this.cell().width,
     })
     Object.defineProperty(surface, 'offsetHeight', {
-      get: () => (this.resizes.at(-1)?.rows ?? this.rows) * FAKE_CELL_HEIGHT,
+      get: () => (this.resizes.at(-1)?.rows ?? this.rows) * this.cell().height,
     })
     container.append(surface)
   }
@@ -320,10 +329,21 @@ export class FakeCompanionPane implements CompanionTerminalPane {
     this.moveViewport(0)
   }
 
+  /** Like the real pane: the font decides the cell, read live off the emulator. */
+  setFontSize(size: number): void {
+    this.fontSize = size
+    this.fontSizes.push(size)
+  }
+
   /** Like the real pane: no cell metrics until the emulator is mounted. */
   cellSize(): CompanionCellSize | undefined {
     if (this.mounted === undefined) return undefined
-    return { width: FAKE_CELL_WIDTH, height: FAKE_CELL_HEIGHT }
+    return this.cell()
+  }
+
+  private cell(): CompanionCellSize {
+    const scale = this.fontSize / COMPANION_DEFAULT_TEXT_SIZE
+    return { width: FAKE_CELL_WIDTH * scale, height: FAKE_CELL_HEIGHT * scale }
   }
 
   setInputEnabled(enabled: boolean): void {

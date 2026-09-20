@@ -3,6 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { FIT_SETTLE_MS } from '../src/renderer/companion/src/companion-terminal-fit'
+import { COMPANION_DEFAULT_TEXT_SIZE } from '../src/renderer/companion/src/companion-text-size'
 import {
   CompanionTerminalMount,
   fitWidthScale,
@@ -702,5 +703,68 @@ describe('CompanionTerminalMount holds the grid it draws (ADR-058)', () => {
     observer.fire()
     await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS)
     expect(viewports).toHaveLength(2)
+  })
+})
+
+describe('CompanionTerminalMount draws the text size the person chose (ADR-059)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('a smaller size is a smaller cell, so the grid it holds grows', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host, viewports } = mountWith(create)
+    layout(host, 376, 496)
+    mount.handle({ type: 'opened', handle: ROW, cols: 132, rows: 43, tail: '' })
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS)
+    expect(panes[0]?.fontSizes).toEqual([COMPANION_DEFAULT_TEXT_SIZE])
+    expect(viewports).toEqual([{ cols: 47, rows: 31 }])
+
+    // Four fifths of the default size is four fifths of the cell: 6.4 x 12.8.
+    mount.setTextSize(8)
+    expect(panes[0]?.fontSizes).toEqual([COMPANION_DEFAULT_TEXT_SIZE, 8])
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS)
+    expect(viewports).toEqual([
+      { cols: 47, rows: 31 },
+      { cols: 58, rows: 38 },
+    ])
+
+    // The same size again is no change at all, so no grid is asked for twice.
+    mount.setTextSize(8)
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS * 2)
+    expect(panes[0]?.fontSizes).toEqual([COMPANION_DEFAULT_TEXT_SIZE, 8])
+    expect(viewports).toHaveLength(2)
+    mount.dispose()
+  })
+
+  it('the size chosen before a mirror opens is the size that mirror is built at', async () => {
+    const { panes, create } = fakePanes()
+    const host = document.createElement('div')
+    document.body.append(host)
+    const viewports: Array<{ readonly cols: number; readonly rows: number }> = []
+    const mount = new CompanionTerminalMount({
+      host,
+      createPane: create,
+      onInput: () => undefined,
+      onViewport: (cols, rows) => {
+        viewports.push({ cols, rows })
+        return Promise.resolve()
+      },
+      onAlternateScreen: () => undefined,
+      onReadingBack: () => undefined,
+      onFailure: () => undefined,
+      textSize: 8,
+    })
+    layout(host, 376, 496)
+    mount.handle({ type: 'opened', handle: ROW, cols: 132, rows: 43, tail: '' })
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS)
+    expect(panes[0]?.fontSizes).toEqual([8])
+    expect(viewports).toEqual([{ cols: 58, rows: 38 }])
+    mount.dispose()
   })
 })

@@ -387,6 +387,13 @@ body {
   text-overflow: ellipsis;
 }
 
+/* The two steps of the mirror's text size (ADR-059), kept together beside the title. */
+.companion-text-size {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
 /* The prompt's message (ADR-051): the header's second line while it lasts. */
 .companion-mirror-prompt {
   flex-basis: 100%;

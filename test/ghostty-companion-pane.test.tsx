@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { COMPANION_DEFAULT_TEXT_SIZE } from '../src/renderer/companion/src/companion-text-size'
 import { createGhosttyCompanionPane } from '../src/renderer/companion/src/ghostty-companion-pane'
 import type { TerminalWheelEvent } from '../src/shared'
 
@@ -316,14 +317,25 @@ describe('ghostty companion pane', () => {
     expect(fake.disposed).toBe(true)
   })
 
-  it('draws a fixed readable font over the same scrollback the desktop pane keeps, and reports its cell (ADR-058)', async () => {
+  it('draws the phone text size over the same scrollback the desktop pane keeps, and reports its cell (ADR-058, ADR-059)', async () => {
     const pane = await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!
-    expect(fake.options['fontSize']).toBe(15)
+    expect(fake.options['fontSize']).toBe(COMPANION_DEFAULT_TEXT_SIZE)
     expect(fake.options['scrollbackBytes']).toBe(10_000_000)
     // The cell is what the page's fit divides its area by to hold the PTY.
     pane.mount(document.createElement('div'))
     expect(pane.cellSize()).toEqual({ width: 8, height: 16 })
+  })
+
+  it('takes the size the page chose, and only ever a step of the ladder (ADR-059)', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
+    const fake = fakes[0]!
+    pane.mount(document.createElement('div'))
+    pane.setFontSize(8)
+    expect(fake.options['fontSize']).toBe(8)
+    // A size off the ladder is drawn at the step nearest it rather than as given.
+    pane.setFontSize(13.6)
+    expect(fake.options['fontSize']).toBe(13)
   })
 
   it('data emitted during write never reaches onData', async () => {

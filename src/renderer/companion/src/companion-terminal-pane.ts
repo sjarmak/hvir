@@ -5,7 +5,7 @@
  * desktop renderer. A conformance test outside the page tree pins the match.
  *
  * A mirror pane follows the geometry main publishes and never resizes itself.
- * It draws a fixed readable font and reports one cell's size, so the page can
+ * It draws the font size the page gives it and reports one cell's size, so the page can
  * derive the grid its area holds and hold the PTY there for as long as it is
  * watching (ADR-058); the emulator itself changes size only through `resize`.
  * Input is off until the page enables it, and the bytes it emits are the
@@ -77,6 +77,13 @@ export interface CompanionTerminalPane {
   endGesture(): void
   /** Puts the viewport back on the newest output, which is the page's one tap. */
   returnToLive(): void
+  /**
+   * The mirror's font in CSS pixels, which is the person's choice (ADR-059)
+   * and the only thing that changes the cell. The page re-derives its grid
+   * after every change, so the pane reports the new cell and leaves the grid
+   * where `resize` last put it.
+   */
+  setFontSize(size: number): void
   /** The cell's measured size once mounted; nothing before the emulator has drawn. */
   cellSize(): CompanionCellSize | undefined
   /** Ends the pane and releases every subscription it handed out, so no caller need. */

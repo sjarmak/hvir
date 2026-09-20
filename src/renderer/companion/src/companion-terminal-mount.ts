@@ -46,6 +46,7 @@
  */
 import type { CompanionTerminalEvent, TerminalWheelEvent } from '../../../shared'
 import { CompanionFitController } from './companion-terminal-fit'
+import { COMPANION_DEFAULT_TEXT_SIZE, nearestTextSize } from './companion-text-size'
 import type {
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
@@ -77,6 +78,8 @@ export interface CompanionTerminalMountOptions {
   /** Whether the viewport sits behind the newest output, which is when the way back is offered. */
   readonly onReadingBack: (readingBack: boolean) => void
   readonly onFailure: (error: unknown) => void
+  /** The person's mirror text size (ADR-059); the default when the page states none. */
+  readonly textSize?: number
 }
 
 /** The scale that sets the grid's width to the host's, never above 1; nothing while either has no layout. */
@@ -89,6 +92,7 @@ export class CompanionTerminalMount {
   private pane?: CompanionTerminalPane
   private pending?: PendingPane
   private inputEnabled = false
+  private textSize: number
   /** Undefined until the first report, so a fresh mount states its screen rather than assuming it. */
   private alternateScreen?: boolean
   /** Undefined until the first report, stated for the same reason as the screen. */
@@ -108,6 +112,7 @@ export class CompanionTerminalMount {
   constructor(private readonly options: CompanionTerminalMountOptions) {
     const { host } = options
     this.host = host
+    this.textSize = nearestTextSize(options.textSize ?? COMPANION_DEFAULT_TEXT_SIZE)
     this.extent = document.createElement('div')
     this.extent.className = 'companion-terminal-extent'
     this.surface = document.createElement('div')
@@ -172,6 +177,23 @@ export class CompanionTerminalMount {
   }
 
   /**
+   * The person's text size (ADR-059). The cell is what the grid is derived
+   * from, so a new size is a new grid: the pane remeasures, the view rescales
+   * against the grid it still has, and the fit asks for the grid the new cell
+   * earns. Nothing here declares a grid of its own; the PTY moves when main
+   * takes the ask and publishes it, exactly as a rotated phone's does.
+   */
+  setTextSize(size: number): void {
+    const next = nearestTextSize(size)
+    if (next === this.textSize) return
+    this.textSize = next
+    if (this.pane === undefined) return
+    this.pane.setFontSize(next)
+    this.fit()
+    this.fitter.areaChanged()
+  }
+
+  /**
    * The one tap back to the newest output, which is the far end of the strip
    * the gesture travels rather than the viewport alone: the emulator returns
    * to its live edge and this host runs to the bottom of the grid, so a grid
@@ -230,6 +252,7 @@ export class CompanionTerminalMount {
       // Before the queued frames, so a write that moves the viewport is heard
       // rather than missed and then sampled for.
       pane.events.onViewport((offset) => this.setReadingBack(offset !== 0))
+      pane.setFontSize(this.textSize)
       pane.setInputEnabled(this.inputEnabled)
       for (const frame of pending.frames) pane.write(frame)
       if (pending.geometry !== undefined) {

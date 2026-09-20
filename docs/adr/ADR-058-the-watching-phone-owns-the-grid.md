@@ -1,6 +1,7 @@
 # ADR-058: The watching phone owns the grid
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
+> Superseded by: [ADR-059](ADR-059-the-phone-text-size-is-the-persons.md) | partial | One fixed readable mirror font, for a size the person sets on the device.
 > Supersedes: [ADR-050](ADR-050-companion-live-terminal-mirror.md) | partial | A mirror never resizing the PTY, for as long as a Companion page is watching that PTY.
 > Supersedes: [ADR-057](ADR-057-companion-mirror-shows-the-desktop-grid-at-every-focus.md) | partial | One fit at every focus state, with the phone drawing the desktop's grid scaled, for the grid a watching page declares.
 

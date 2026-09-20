@@ -224,7 +224,11 @@ What the phone shows:
   partially overwritten line can look wrong; a full-screen program such as Claude Code
   redraws on its next output, and a shell prompt is right after its next Enter. The Claude
   Code permission prompt that is on the desktop's screen is on the phone's.
-- The grid hvir publishes, in a fixed 15 px font. As soon as the mirror opens, the phone
+- The grid hvir publishes, at the phone's own text size. The mirror starts at 10 px and the
+  two steps beside the session's title, `A-` and `A+`, walk it down to 7 px or up to 15 px;
+  the phone remembers the choice for the next visit, and nothing about it reaches the desktop
+  (ADR-059). Smaller text is more session on screen, because the phone asks for the grid its
+  screen holds at that size. As soon as the mirror opens, and again after every step, the phone
   measures how many whole cells of that font its screen holds and asks hvir for that grid, so
   the session lays itself out for the phone and fills its height with session history. The
   size holds for as long as the phone is watching, whether or not a desktop window is focused,

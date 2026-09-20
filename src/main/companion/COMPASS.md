@@ -128,8 +128,9 @@ supervisor's doors.
   through `companion-terminal-fit.ts`, with `companion-touch-scroll.ts` turning a
   finger over the grid into the shared wheel policy's event shape (ADR-053) and carrying a
   flick on as a fling after the lift (ADR-057); `companion-client.ts` is the fetch layer;
-  `ghostty-companion-pane.ts` is the only file that imports ghostty-web, fixes the mirror
-  font at 15 px, and gives the emulator the desktop pane's 10 MB of scrollback;
+  `ghostty-companion-pane.ts` is the only file that imports ghostty-web, draws the mirror at
+  the text size `companion-text-size.ts` holds for the device (ADR-059), and gives the
+  emulator the desktop pane's 10 MB of scrollback;
   `use-input-arming.ts` and `companion-input-arming.ts` are the arming state.
 
 ## How it connects
@@ -260,6 +261,11 @@ owns, so a stale lease releasing reclaims nothing and a second page taking the s
 records before this one decided the size by focus (ADR-052 by Away, ADR-057 by refusing every mirror a
 size at all); a real device found both wrong in the same way, which was that a person saw the view
 change under them for a reason on the other side of the room.
+
+The person sets the text size from the mirror itself (ADR-059). `companion-text-size.ts` holds the
+ladder, the default of 10 px and the device's stored choice; the two steps live in `mirror-header.tsx`;
+`CompanionTerminalMount.setTextSize` gives the size to the pane and tells the fit its area changed,
+because the cell moved under it. Nothing about the size reaches main, which learns only the grid.
 
 A declaration is not typing: `viewport` is deliberately outside the `typingAllowed` gate, because
 watching is what earns the size. A verb the desktop refuses is forgotten rather than retried on a

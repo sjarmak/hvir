@@ -632,9 +632,10 @@ pane's scrollback.
 
 ### [ADR-058 — The watching phone owns the grid](adr/ADR-058-the-watching-phone-owns-the-grid.md)
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | A mirror never resizing the PTY, for as long as a Companion page is watching that PTY.
 > Supersedes: [ADR-057](adr/ADR-057-companion-mirror-shows-the-desktop-grid-at-every-focus.md) | partial | One fit at every focus state, with the phone drawing the desktop's grid scaled, for the grid a watching page declares.
+> Superseded by: [ADR-059](adr/ADR-059-the-phone-text-size-is-the-persons.md) | partial | One fixed readable mirror font, for a size the person sets on the device.
 
 For as long as a Companion page holds a live mirror, that page's measured grid is the PTY's size:
 the page declares it over a `viewport` verb, main applies and publishes it, and desktop focus is
@@ -642,6 +643,18 @@ not an input anywhere in the path. The desktop records its own fit while a hold 
 held grid with a notice, and takes its fit back when the mirror ends; the hold belongs to the
 lease that took it, so a stale release gives nothing back. Until a geometry frame says the PTY
 took the grid, the phone keeps drawing the size the PTY has, scaled to its width.
+
+### [ADR-059 — The phone's text size is the person's](adr/ADR-059-the-phone-text-size-is-the-persons.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-058](adr/ADR-058-the-watching-phone-owns-the-grid.md) | partial | One fixed readable mirror font, for a size the person sets on the device.
+
+The mirror's font is the one number that decides how much of a session a phone shows, since the
+grid it holds the PTY at is its area divided by one cell. Fifteen pixels held about forty columns,
+so the size becomes the person's: two steps beside the mirror's title walk a ladder of whole
+pixels, the choice is stored on that device, and the default drops to ten, which is about sixty
+columns on a phone's width. A step re-derives the grid and declares it through ADR-058's
+`viewport` verb like any other layout change; nothing about the size itself leaves the phone.
 
 ## 5. Architecture
 
