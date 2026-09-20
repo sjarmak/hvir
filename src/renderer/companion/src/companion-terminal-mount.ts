@@ -9,14 +9,16 @@
  * order and written once it mounts.
  *
  * The grid is whatever main publishes: geometry frames resize the pane, and
- * neither the emulator nor this mount ever picks a size of its own (ADR-050).
- * The view is a CSS transform on the pane's surface that sets the grid's
- * columns to the host's width and never enlarges, so the emulator keeps its
- * exact cell grid: the desktop's wide grid shrinks to fit, and a grid no wider
- * than the host draws at scale 1 (or a hair under when a cell advance rounds
- * past the host, so no column is clipped). The extent around the surface takes
- * the scaled size of the grid, so the host scrolls over exactly the screen the
- * emulator draws.
+ * the emulator never picks a size of its own. For as long as the mirror is
+ * live the mount holds the PTY at the grid the host's area holds at the pane's
+ * cell size (ADR-058), so the phone's screen fills with the phone's own grid
+ * whatever the desktop is doing. The view is a CSS transform on the pane's
+ * surface that sets the grid's columns to the host's width and never enlarges,
+ * so the emulator keeps its exact cell grid: a wider grid the PTY still has
+ * shrinks to fit, and the phone's own grid, already the host's width, draws at
+ * scale 1 (or a hair under when a cell advance rounds past the host, so no
+ * column is clipped). The extent around the surface takes the scaled size of
+ * the grid, so the host scrolls over exactly the screen the emulator draws.
  *
  * Read-back is the emulator's viewport and the page holds no text of its own
  * (ADR-053). There is one read-back gesture: a wheel notch reaches the pane
@@ -43,6 +45,7 @@
  * line of text.
  */
 import type { CompanionTerminalEvent, TerminalWheelEvent } from '../../../shared'
+import { CompanionFitController } from './companion-terminal-fit'
 import type {
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
@@ -67,6 +70,8 @@ export interface CompanionTerminalMountOptions {
   readonly createPane: CompanionTerminalPaneFactory
   /** The pane's bytes with what produced them, since the two are gated apart (ADR-055). */
   readonly onInput: (data: string, source: CompanionInputSource) => void
+  /** Holds the PTY at the grid this page draws, for as long as the mirror lives (ADR-058). */
+  readonly onViewport: (cols: number, rows: number) => Promise<void>
   /** Which screen the emulator is on; an alternate screen is paged rather than scrolled (ADR-055). */
   readonly onAlternateScreen: (alternate: boolean) => void
   /** Whether the viewport sits behind the newest output, which is when the way back is offered. */
@@ -97,6 +102,7 @@ export class CompanionTerminalMount {
   private readonly surface: HTMLDivElement
   private readonly gridBox: HTMLDivElement
   private readonly touch: CompanionTouchScroll
+  private readonly fitter: CompanionFitController
   private readonly observer: ResizeObserver
 
   constructor(private readonly options: CompanionTerminalMountOptions) {
@@ -117,7 +123,15 @@ export class CompanionTerminalMount {
       sink: (event) => this.scrolled(event),
       end: () => this.pane?.endGesture(),
     })
-    this.observer = new ResizeObserver(() => this.fit())
+    this.fitter = new CompanionFitController({
+      area: () => ({ width: host.clientWidth, height: host.clientHeight }),
+      cell: () => this.pane?.cellSize(),
+      request: ({ cols, rows }) => options.onViewport(cols, rows),
+    })
+    this.observer = new ResizeObserver(() => {
+      this.fit()
+      this.fitter.areaChanged()
+    })
     this.observer.observe(host)
   }
 
@@ -136,6 +150,7 @@ export class CompanionTerminalMount {
         }
         return
       case 'geometry':
+        this.fitter.applied({ cols: event.cols, rows: event.rows })
         if (this.pane !== undefined) {
           this.pane.resize(event.cols, event.rows)
           this.fit()
@@ -145,6 +160,7 @@ export class CompanionTerminalMount {
         }
         return
       case 'ended':
+        this.fitter.setLive(false)
         this.setAlternateScreen(false)
         return
     }
@@ -173,12 +189,14 @@ export class CompanionTerminalMount {
     this.disposed = true
     this.observer.disconnect()
     this.touch.dispose()
+    this.fitter.dispose()
     this.releaseMirror()
     this.pending = undefined
     this.extent.remove()
   }
 
   private open(cols: number, rows: number, preamble: string, tail: string): void {
+    this.fitter.setLive(false)
     this.releaseMirror()
     this.gridBox.replaceChildren()
     this.setAlternateScreen(false)
@@ -197,7 +215,8 @@ export class CompanionTerminalMount {
   /**
    * The queued frames are PTY bytes the emulator has never seen; a throw
    * while mounting or writing them is a failure of this pane, reported like a
-   * pane that never loaded rather than left as an unhandled rejection.
+   * pane that never loaded rather than left as an unhandled rejection. The
+   * fit goes live only here, once there is a mounted pane to measure.
    */
   private mountReady(pending: PendingPane, pane: CompanionTerminalPane): void {
     if (this.disposed || this.pending !== pending) {
@@ -226,6 +245,7 @@ export class CompanionTerminalMount {
     this.pane = pane
     this.fit()
     this.reportScreen()
+    this.fitter.setLive(true)
   }
 
   private fail(pending: PendingPane, error: unknown): void {

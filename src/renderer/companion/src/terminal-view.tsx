@@ -23,6 +23,7 @@ interface TerminalViewProps {
   readonly createPane: CompanionTerminalPaneFactory
   readonly arming: CompanionInputArmingControl
   readonly onInput: CompanionInputVerb
+  readonly onViewport: (cols: number, rows: number) => Promise<void>
   readonly onBack: () => void
   readonly onResume: () => Promise<void>
   readonly onRespond: (optionOrdinal: number) => Promise<void>
@@ -38,10 +39,9 @@ const OWN_HISTORY = 'This program keeps its own history. Drag to page back throu
 
 /**
  * One mirrored terminal (ADR-050) filling the phone's screen: a one-line
- * header, the terminal in all the height that remains (the desktop's grid
- * scaled to the phone's width), and one compact control bar at the bottom.
- * Reading back is the
- * emulator's own viewport under a finger or a wheel (ADR-053), so the area
+ * header, the terminal in all the height that remains (the phone's own grid,
+ * which it holds the PTY at while it watches), and one compact control bar at
+ * the bottom. Reading back is the emulator's own viewport under a finger or a wheel (ADR-053), so the area
  * holds the grid and the page's stated states beside it and never a second
  * surface of text. A viewport left behind the newest output puts the way back
  * over that area, outside the host's own scroller so it keeps its place over a
@@ -53,7 +53,7 @@ const OWN_HISTORY = 'This program keeps its own history. Drag to page back throu
  * transcript beside the mirror.
  */
 export function TerminalView(props: TerminalViewProps) {
-  const { row, terminal, transcript, arming, onInput } = props
+  const { row, terminal, transcript, arming, onInput, onViewport } = props
   const [showTranscript, setShowTranscript] = useState(false)
   const [paneFailure, setPaneFailure] = useState<string>()
   const [alternateScreen, setAlternateScreen] = useState(false)
@@ -105,6 +105,7 @@ export function TerminalView(props: TerminalViewProps) {
           inputEnabled={arming.armed}
           mirror={mirror}
           onInput={onInput}
+          onViewport={onViewport}
           onAlternateScreen={setAlternateScreen}
           onReadingBack={setReadingBack}
           onFailure={(error) => setPaneFailure(describeFailure(error))}
@@ -126,6 +127,7 @@ function TerminalSurface({
   inputEnabled,
   mirror,
   onInput,
+  onViewport,
   onAlternateScreen,
   onReadingBack,
   onFailure,
@@ -137,13 +139,20 @@ function TerminalSurface({
   /** The mount the view holds, so the way back reaches the pane this surface owns. */
   readonly mirror: RefObject<CompanionTerminalMount | undefined>
   readonly onInput: CompanionInputVerb
+  readonly onViewport: (cols: number, rows: number) => Promise<void>
   readonly onAlternateScreen: (alternate: boolean) => void
   readonly onReadingBack: (readingBack: boolean) => void
   readonly onFailure: (error: unknown) => void
 }) {
   const host = useRef<HTMLDivElement>(null)
-  const callbacks = useRef({ onInput, onAlternateScreen, onReadingBack, onFailure })
-  callbacks.current = { onInput, onAlternateScreen, onReadingBack, onFailure }
+  const callbacks = useRef({
+    onInput,
+    onViewport,
+    onAlternateScreen,
+    onReadingBack,
+    onFailure,
+  })
+  callbacks.current = { onInput, onViewport, onAlternateScreen, onReadingBack, onFailure }
 
   useEffect(() => {
     const element = host.current
@@ -152,6 +161,7 @@ function TerminalSurface({
       host: element,
       createPane,
       onInput: (data, source) => void callbacks.current.onInput(data, source),
+      onViewport: (cols, rows) => callbacks.current.onViewport(cols, rows),
       onAlternateScreen: (alternate) => callbacks.current.onAlternateScreen(alternate),
       onReadingBack: (readingBack) => callbacks.current.onReadingBack(readingBack),
       onFailure: (error) => callbacks.current.onFailure(error),

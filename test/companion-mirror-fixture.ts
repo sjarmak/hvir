@@ -19,6 +19,8 @@ export interface FakeMirrorLease extends PtyMirrorLease {
   readonly writes: string[]
   /** Exact strings handed to `navigate`, in order; these never reach the input fan-out. */
   readonly navigations: string[]
+  /** Every grid handed to `viewport`, in order. */
+  readonly viewports: PtyGeometry[]
   readonly released: boolean
   /** Every `write` and `navigate` throws this refusal instead of recording, while set. */
   refuse?: PtyMirrorRefusal
@@ -103,6 +105,7 @@ function fakeLease(
     },
     writes: [],
     navigations: [],
+    viewports: [],
     get ended() {
       return released || exited
     },
@@ -116,6 +119,10 @@ function fakeLease(
     navigate(data) {
       admit()
       lease.navigations.push(data)
+    },
+    viewport(cols, rows) {
+      admit()
+      lease.viewports.push({ cols, rows })
     },
     release() {
       released = true

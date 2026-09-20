@@ -6,6 +6,7 @@
 > Superseded by: [ADR-052](ADR-052-companion-mirror-holds-pty-size-while-away.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
 > Superseded by: [ADR-054](ADR-054-sticky-terminal-modes-precede-the-replayed-tail.md) | partial | Main not interpreting the bytes it forwards, for a bounded scan of sticky DEC private modes emitted ahead of the replayed tail.
 > Superseded by: [ADR-055](ADR-055-read-back-navigation-is-not-typing.md) | partial | The per-mirror arm gating every byte and mirror input being recorded as terminal input, for the page keys a read-back gesture emits to a program that owns its history.
+> Superseded by: [ADR-058](ADR-058-the-watching-phone-owns-the-grid.md) | partial | A mirror never resizing the PTY, for as long as a Companion page is watching that PTY.
 
 ## Context
 

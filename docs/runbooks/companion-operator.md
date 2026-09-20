@@ -7,9 +7,10 @@ message from the phone. While every hvir window is unfocused (Away), hvir also p
 per session that enters the actionable set to a notification sink you declare. For a terminal
 hvir launched itself, the page mirrors the desktop's screen and, once you allow it in Settings
 and arm it on the page, carries your keystrokes back to that terminal
-([ADR-050](../adr/ADR-050-companion-live-terminal-mirror.md)). The phone shows the desktop's
-grid scaled to its width and never sizes that terminal itself
-([ADR-057](../adr/ADR-057-companion-mirror-shows-the-desktop-grid-at-every-focus.md)).
+([ADR-050](../adr/ADR-050-companion-live-terminal-mirror.md)). While the phone is watching a
+terminal it sets that terminal's size to the grid its own screen holds, and the desktop pane
+draws the smaller grid and says so until the phone stops watching
+([ADR-058](../adr/ADR-058-the-watching-phone-owns-the-grid.md)).
 
 hvir owns the listener, the pairing credential, and the outbound post. Everything that makes
 the port reachable from a phone, and everything that turns a post into a notification on the
@@ -223,14 +224,14 @@ What the phone shows:
   partially overwritten line can look wrong; a full-screen program such as Claude Code
   redraws on its next output, and a shell prompt is right after its next Enter. The Claude
   Code permission prompt that is on the desktop's screen is on the phone's.
-- The grid hvir publishes, in a fixed 15 px font. That is the desktop terminal's columns and
-  rows, whether or not a desktop window is focused, and a CSS transform scales it into the
-  phone's width, so a 200-column desktop terminal reads small and the remedy is a narrower
-  desktop pane. Every resize on the desktop reaches the phone as a geometry frame and the
-  emulator there follows it. The phone never sizes the terminal itself: an earlier rule that
-  gave the phone its own grid while the desktop was Away is retired (ADR-057), because the
-  program laid itself out twice per glance and read back slowly at a grid nobody at the desk
-  wanted.
+- The grid hvir publishes, in a fixed 15 px font. As soon as the mirror opens, the phone
+  measures how many whole cells of that font its screen holds and asks hvir for that grid, so
+  the session lays itself out for the phone and fills its height with session history. The
+  size holds for as long as the phone is watching, whether or not a desktop window is focused,
+  and the desktop pane draws the same grid with a line naming it. Close the mirror, or open
+  another row, and the desktop pane takes its own fit back within a cycle. Until hvir confirms
+  the new size the phone keeps drawing the grid the terminal has, scaled into its width, which
+  is also what you see if the terminal refuses the size.
 - A full-screen program (Claude Code started with `"tui": "fullscreen"`, vim, less) draws on
   the alternate screen, where the emulator keeps no scrollback, so its mirror reads it back by
   paging the program, or by the wheel reports a program that tracks the mouse asks for, rather
@@ -443,7 +444,7 @@ shows as a prompt without its message until the harness notifies again.
 | A prompt badge shows but no Push arrived for it | The terminal was already in the actionable set as Ready when the prompt arrived; Push fires only when a session enters the set. Or a desktop window was focused. |
 | The mirror shows old output and never catches up | The view is read back, which the terminal holds on purpose so output does not move the rows you are reading. Tap `The session has moved on. Back to live.` in the bottom corner, or drag toward the top of the screen. |
 | A drag or wheel over a full-screen program (vim, less, Claude Code) moves nothing | Both gestures reach the same policy, which sends the program either wheel reports (if it asked for mouse tracking, as a tmux session with `mouse on` does) or Page Up and Page Down, so what happens next is the program's answer to those. They need the Settings permission (**Allow typing from the Companion**) but not **Arm typing**; if the page says `Input from the Companion is off in Settings, so this program cannot be paged`, turn the setting on at the desktop. A program that binds those keys elsewhere, or a shell with no pager running, moves nothing by design. A program that asked for mouse reports receives reports instead, and those do need the arm. If the grid is taller than the area, the drag still scrolls it either way. |
-| The mirror is a thin strip at the bottom with black above it | The phone is showing the desktop's grid scaled to its width, and the program draws on the alternate screen, so the terminal keeps no scrollback to fill the space, which the mirror says in a line of its own. Drag over the grid to read the program's own history back. The remedy for the size is a narrower desktop pane; the phone never sizes the terminal itself (ADR-057). A mirror that ended shows its one sentence instead, so select the row again. |
+| The mirror is a thin strip at the bottom with black above it | The phone is still drawing the desktop's grid scaled into its width, which is what it shows until hvir confirms the size it asked for (ADR-058). It settles within a second of the mirror opening; a strip that stays means the hold never landed, which is a mirror that has ended, so select the row again. A full-screen program leaves the space above empty for a different reason: it draws on the alternate screen, where the terminal keeps no scrollback, which the mirror says in a line of its own. Drag over the grid to read that program's own history back. |
 | Reading back shows a frame of a full-screen program twice, or a stale line | What you read is the terminal's scrollback as it stands; a program that redraws by moving the cursor leaves its earlier frames there, as on the desktop. The live screen is the screen as drawn. |
 | Reading back jumps further back, to the oldest line, after the terminal resizes | A resize on the desktop reflows the scrollback, and a position further back than the reflowed scrollback reaches is moved to its oldest row. Drag toward the top of the screen to return to the live screen. |
 

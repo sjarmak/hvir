@@ -3,15 +3,23 @@
 /**
  * The mirror fills the phone (hvir-3k2.3): one header line, the terminal in
  * the height that remains, one control bar that shows typing controls only
- * while armed; the terminal is the desktop's grid scaled to the phone's width
- * and nothing ever sends a resize (ADR-050). The emulator's own viewport is the whole read-back
- * (ADR-053), so the area holds the grid and the page's stated states beside
- * it, never a second surface of text.
+ * while armed. A watching page holds the PTY at the grid its own area measures
+ * (ADR-058), whatever the desktop is doing, and draws the desktop's grid scaled
+ * to the phone's width until that hold lands. The emulator's own viewport is
+ * the whole read-back (ADR-053), so the area holds the grid and the page's
+ * stated states beside it, never a second surface of text.
  */
-import { act } from 'react'
+import { act, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
 import { describe, expect, it } from 'vitest'
 
+import { CompanionMirrorFeed } from '../src/renderer/companion/src/companion-mirror-feed'
+import { FIT_SETTLE_MS } from '../src/renderer/companion/src/companion-terminal-fit'
+import { TerminalView } from '../src/renderer/companion/src/terminal-view'
+import { asSessionsTerminalHandle } from '../src/shared'
+import { fakePaneFactory, snapshot } from './companion-page-fixture'
 import {
+  MIRROR_ROW,
   armButton,
   click,
   emit,
@@ -28,6 +36,17 @@ const PAGE_UP = '\x1b[5~'
 const PAGE_DOWN = '\x1b[6~'
 
 useCompanionPage()
+
+/** Lets the fit settle after the area was laid out. */
+async function settleFit(): Promise<void> {
+  await act(() => new Promise((resolve) => setTimeout(resolve, FIT_SETTLE_MS + 25)))
+}
+
+function surfaceTransform(): string | undefined {
+  return host.querySelector<HTMLElement>('.companion-terminal-scale')?.style.transform
+}
+
+const SCALED_TO_376 = `scale(${376 / (132 * 8)})`
 
 function terminalHost(): HTMLElement {
   const element = host.querySelector<HTMLElement>('.companion-terminal-host')
@@ -85,7 +104,7 @@ describe('Companion page mirror layout', () => {
     expect(host.querySelector('.companion-mirror-controls')?.children).toHaveLength(1)
   })
 
-  it('scales the desktop grid to the area width and never resizes', async () => {
+  it('scales the desktop grid to the area width until the grid it asked for lands', async () => {
     await openMirror()
     layoutHost(352, 344)
     const pane = panes.panes[0]!
@@ -97,8 +116,10 @@ describe('Companion page mirror layout', () => {
     ).toContain('scale(0.3333')
     const extent = host.querySelector<HTMLElement>('.companion-terminal-extent')
     expect(extent?.style.width).toBe('352px')
+    // The hold went out for the area's own grid; the emulator keeps the
+    // desktop's until a geometry frame says the PTY took it.
+    expect(server.viewports()).toEqual([{ page: 'page-1', cols: 44, rows: 21 }])
     expect(pane.resizes).toEqual([])
-    expect(server.calls.some((call) => call.url.includes('resize'))).toBe(false)
     expect(server.inputs()).toEqual([])
   })
 
@@ -278,5 +299,162 @@ describe('Companion page mirror layout', () => {
     await emit('terminal', { type: 'ended', handle: 'term-1', reason: 'exited' })
     expect(host.querySelector('.companion-mirror-ended')).not.toBeNull()
     expect(host.querySelector('.companion-mirror-own-history')).toBeNull()
+  })
+})
+
+describe('Companion page mirror holds the grid it draws (ADR-058)', () => {
+  it('asks once for the measured grid and renders unscaled when the matching geometry lands', async () => {
+    await openMirror()
+    layoutHost(376, 496)
+    // Output refits the column to the stated layout, as the observer would in a browser.
+    await emit('terminal', { type: 'output', handle: 'term-1', data: 'x' })
+    expect(server.viewports()).toEqual([])
+    await settleFit()
+    expect(server.viewports()).toEqual([{ page: 'page-1', cols: 47, rows: 31 }])
+    expect(server.calls.at(-1)).toMatchObject({
+      url: '/api/sessions/term-1/viewport',
+      method: 'POST',
+    })
+    expect(surfaceTransform()).toBe(SCALED_TO_376)
+
+    await emit('terminal', { type: 'geometry', handle: 'term-1', cols: 47, rows: 31 })
+    expect(panes.panes[0]?.resizes).toEqual([{ cols: 47, rows: 31 }])
+    expect(surfaceTransform()).toBe('scale(1)')
+    expect(
+      host.querySelector<HTMLElement>('.companion-terminal-extent')?.style.width,
+    ).toBe('376px')
+    expect(host.querySelector('.companion-error')).toBeNull()
+
+    // The hold lasts as long as the page watches, so an area that has not
+    // changed asks for nothing more.
+    await settleFit()
+    expect(server.viewports()).toHaveLength(1)
+    expect(server.inputs()).toEqual([])
+  })
+
+  it('a hold the desktop could not take leaves the scaled view and no status line', async () => {
+    server.viewportStatus = 409
+    await openMirror()
+    layoutHost(376, 496)
+    await emit('terminal', { type: 'output', handle: 'term-1', data: 'x' })
+    await settleFit()
+    expect(server.viewports()).toEqual([{ page: 'page-1', cols: 47, rows: 31 }])
+    // Nothing stands over the area to explain a size: the PTY kept whatever it
+    // had, the scaled column already draws that, and the fit asks again on its own.
+    expect(host.querySelector('.companion-mirror-size')).toBeNull()
+    expect(host.querySelector('.companion-error')).toBeNull()
+    expect(surfaceTransform()).toBe(SCALED_TO_376)
+    expect(panes.panes[0]?.resizes).toEqual([])
+  })
+
+  it('holds once the mirror opens whatever the desktop is doing, and nothing after ended', async () => {
+    await openMirror()
+    layoutHost(376, 496)
+    await settleFit()
+    expect(server.viewports()).toEqual([{ page: 'page-1', cols: 47, rows: 31 }])
+
+    // The desktop's focus is not an input here: another snapshot changes nothing.
+    await emit('snapshot', snapshot(2, [MIRROR_ROW]))
+    await settleFit()
+    expect(server.viewports()).toHaveLength(1)
+
+    await emit('terminal', { type: 'ended', handle: 'term-1', reason: 'exited' })
+    await emit('snapshot', snapshot(3, [MIRROR_ROW]))
+    await settleFit()
+    expect(server.viewports()).toHaveLength(1)
+  })
+
+  it('an automatic hold leaves the notice a refused keystroke is showing', async () => {
+    await openMirror()
+    layoutHost(376, 496)
+    await click(armButton())
+    server.inputStatus = 403
+    server.inputError = 'Typing from the Companion is off in Settings'
+    await act(async () => {
+      panes.panes[0]!.emitData('\r')
+      await Promise.resolve()
+    })
+    await settleFit()
+    expect(server.inputs()).toEqual([{ page: 'page-1', data: '\r' }])
+    const notice = () => host.querySelector('.companion-error')?.textContent
+    expect(notice()).toBe('Typing from the Companion is off in Settings')
+    expect(server.viewports()).toEqual([{ page: 'page-1', cols: 47, rows: 31 }])
+    expect(notice()).toBe('Typing from the Companion is off in Settings')
+  })
+
+  it('a surface rebuilt for another row holds that row at the same grid', async () => {
+    const root = document.createElement('div')
+    document.body.append(root)
+    Object.defineProperty(root, 'clientWidth', { get: () => 376 })
+    Object.defineProperty(root, 'clientHeight', { get: () => 496 })
+    const reactRoot = createRoot(root)
+    const feed = new CompanionMirrorFeed()
+    const factory = fakePaneFactory()
+    const viewports: {
+      readonly handle: string
+      readonly cols: number
+      readonly rows: number
+    }[] = []
+    const first = asSessionsTerminalHandle('term-1')
+    const second = asSessionsTerminalHandle('term-2')
+    const render = (handle: typeof first): Promise<void> =>
+      act(async () => {
+        reactRoot.render(
+          createElement(TerminalView, {
+            row: undefined,
+            terminal: { handle, status: 'live', cols: 132, rows: 43 },
+            transcript: undefined,
+            feed,
+            createPane: factory.createPane,
+            arming: { armed: false, arm: () => {}, disarm: () => {}, touch: () => {} },
+            onInput: () => Promise.resolve(),
+            onViewport: (cols, rows): Promise<void> => {
+              viewports.push({ handle, cols, rows })
+              return Promise.resolve()
+            },
+            onBack: () => {},
+            onResume: () => Promise.resolve(),
+            onRespond: () => Promise.resolve(),
+            onSubmit: () => Promise.resolve(true),
+          }),
+        )
+        await Promise.resolve()
+      })
+    try {
+      await render(first)
+      const terminalHost = root.querySelector<HTMLElement>('.companion-terminal-host')!
+      Object.defineProperty(terminalHost, 'clientWidth', { get: () => 376 })
+      Object.defineProperty(terminalHost, 'clientHeight', { get: () => 496 })
+      await act(async () => {
+        feed.push({ type: 'opened', handle: first, cols: 132, rows: 43, tail: '' })
+        await Promise.resolve()
+      })
+      await settleFit()
+      expect(viewports).toEqual([{ handle: first, cols: 47, rows: 31 }])
+      await act(async () => {
+        factory.panes[0]!.moveViewport(18)
+        await Promise.resolve()
+      })
+      expect(root.querySelector('.companion-return-live')).not.toBeNull()
+
+      // The same TerminalView, a new row: the surface is rebuilt, and the new
+      // mirror is a fresh hold of its own.
+      await render(second)
+      // The way back belonged to the row that is gone, and the new mirror has
+      // not opened yet, so nothing stands over the area offering it.
+      expect(root.querySelector('.companion-return-live')).toBeNull()
+      await act(async () => {
+        feed.push({ type: 'opened', handle: second, cols: 132, rows: 43, tail: '' })
+        await Promise.resolve()
+      })
+      await settleFit()
+      expect(viewports).toEqual([
+        { handle: first, cols: 47, rows: 31 },
+        { handle: second, cols: 47, rows: 31 },
+      ])
+    } finally {
+      act(() => reactRoot.unmount())
+      root.remove()
+    }
   })
 })

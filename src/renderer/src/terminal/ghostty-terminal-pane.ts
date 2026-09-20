@@ -45,6 +45,7 @@ import {
   isTerminalWebTarget,
 } from './terminal-file-link'
 import { TerminalFitController } from './ghostty-terminal-fit'
+import { TerminalHeldGeometryMark } from './terminal-held-geometry-mark'
 import { resolveGhosttyTerminalFilePaste } from './ghostty-terminal-file-paste'
 import {
   ghosttyClipboardPasteFallback,
@@ -208,6 +209,8 @@ class GhosttyTerminalPane implements TerminalPane {
   private mounted = false
   private disposed = false
   private presentation: TerminalPresentation = 'visible'
+  private held?: TerminalSize
+  private readonly heldMark = new TerminalHeldGeometryMark()
   private readonly wheel = new TerminalWheelController()
   private searchHighlight?: Readonly<{
     owner: object
@@ -323,6 +326,9 @@ class GhosttyTerminalPane implements TerminalPane {
     if (this.disposed || terminalColorThemeEquals(theme, this.theme)) return
     this.terminal.options.theme = toGhosttyTheme(theme)
     this.theme = theme
+    if (this.held && this.surface) {
+      this.heldMark.present(this.surface, this.held, theme.background)
+    }
   }
 
   setTypography(typography: TerminalTypography): void {
@@ -373,6 +379,18 @@ class GhosttyTerminalPane implements TerminalPane {
     } else {
       this.revealAfterSettledFit()
     }
+  }
+
+  setHeldGeometry(held: TerminalSize | undefined): void {
+    if (this.disposed) return
+    this.held = held
+    if (held) {
+      // Fitting stops before the grid takes the held size, so no settling fit undoes it.
+      this.fit.suspend()
+      this.terminal.resize(held.cols, held.rows)
+      if (this.surface) this.heldMark.present(this.surface, held, this.theme.background)
+    } else if (this.surface) this.heldMark.clear(this.surface)
+    this.revealAfterSettledFit()
   }
 
   redraw(): void {
@@ -499,6 +517,7 @@ class GhosttyTerminalPane implements TerminalPane {
     this.searchHighlight = undefined
     this.searchHighlightLayer?.remove()
     this.searchHighlightLayer = undefined
+    this.held = undefined
     this.surface?.remove()
     this.surface = undefined
     this.dataListeners.clear()
@@ -634,6 +653,11 @@ class GhosttyTerminalPane implements TerminalPane {
     if (this.disposed || this.presentation !== 'visible' || !this.mounted) return
     const retainedCanvas = this.terminal.renderer?.getCanvas()
     if (this.hasPresentedFrame && retainedCanvas) retainedCanvas.style.visibility = ''
+    // A held grid (ADR-058) is presented as it is; only the pane's own size settles by fit.
+    if (this.held) {
+      this.presentFrame()
+      return
+    }
     this.fit.resume(() => {
       if (this.disposed || this.presentation !== 'visible' || !this.mounted) return
       this.presentFrame()

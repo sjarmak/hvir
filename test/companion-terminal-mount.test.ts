@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { FIT_SETTLE_MS } from '../src/renderer/companion/src/companion-terminal-fit'
 import {
   CompanionTerminalMount,
   fitWidthScale,
@@ -18,11 +19,13 @@ async function microtasks(): Promise<void> {
 
 function mountWith(
   create: (cols: number, rows: number) => Promise<CompanionTerminalPane>,
+  held: () => Promise<void> = () => Promise.resolve(),
 ): {
   readonly mount: CompanionTerminalMount
   readonly host: HTMLDivElement
   readonly failures: unknown[]
   readonly inputs: string[]
+  readonly viewports: { readonly cols: number; readonly rows: number }[]
   readonly alternates: boolean[]
   readonly readingBacks: boolean[]
 } {
@@ -30,17 +33,22 @@ function mountWith(
   document.body.append(host)
   const failures: unknown[] = []
   const inputs: string[] = []
+  const viewports: { readonly cols: number; readonly rows: number }[] = []
   const alternates: boolean[] = []
   const readingBacks: boolean[] = []
   const mount = new CompanionTerminalMount({
     host,
     createPane: create,
     onInput: (data) => inputs.push(data),
+    onViewport: (cols, rows) => {
+      viewports.push({ cols, rows })
+      return held()
+    },
     onAlternateScreen: (alternate) => alternates.push(alternate),
     onReadingBack: (readingBack) => readingBacks.push(readingBack),
     onFailure: (error) => failures.push(error),
   })
-  return { mount, host, failures, inputs, alternates, readingBacks }
+  return { mount, host, failures, inputs, viewports, alternates, readingBacks }
 }
 
 /**
@@ -76,6 +84,22 @@ function dragGrid(within: HTMLElement, from: number, to: number): void {
 function layout(host: HTMLElement, width: number, height: number): void {
   Object.defineProperty(host, 'clientWidth', { configurable: true, get: () => width })
   Object.defineProperty(host, 'clientHeight', { configurable: true, get: () => height })
+}
+
+/** happy-dom's ResizeObserver never fires: this one is fired by the test. */
+function observedResizes(): { readonly fire: () => void } {
+  const callbacks: (() => void)[] = []
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      constructor(callback: () => void) {
+        callbacks.push(callback)
+      }
+      observe(): void {}
+      disconnect(): void {}
+    },
+  )
+  return { fire: () => callbacks.forEach((callback) => callback()) }
 }
 
 function fakePanes(): {
@@ -456,7 +480,7 @@ describe('CompanionTerminalMount', () => {
 
   it('the way back reaches the pane and nothing else', async () => {
     const { panes, create } = fakePanes()
-    const { mount, host, readingBacks } = mountWith(create)
+    const { mount, host, readingBacks, viewports } = mountWith(create)
     layout(host, 400, 320)
     mount.handle({ type: 'opened', handle: ROW, cols: 100, rows: 40, tail: '' })
     await microtasks()
@@ -465,6 +489,7 @@ describe('CompanionTerminalMount', () => {
     expect(panes[0]?.returns).toBe(1)
     expect(readingBacks).toEqual([false, true, false])
     expect(panes[0]?.writes).toEqual([''])
+    expect(viewports).toEqual([])
     mount.dispose()
   })
 
@@ -572,5 +597,110 @@ describe('CompanionTerminalMount', () => {
     expect(panes[1]?.viewportSubscriptions()).toBe(0)
     panes[1]!.moveViewport(0)
     expect(readingBacks).toEqual([false, true, false, true])
+  })
+})
+
+describe('CompanionTerminalMount holds the grid it draws (ADR-058)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('holds the phone grid once after opening and renders it unscaled when it lands', async () => {
+    const { panes, create } = fakePanes()
+    const { mount, host, viewports } = mountWith(create)
+    layout(host, 376, 496)
+    mount.handle({ type: 'opened', handle: ROW, cols: 132, rows: 43, tail: '' })
+    await vi.advanceTimersByTimeAsync(0)
+    const surface = host.querySelector<HTMLElement>('.companion-terminal-scale')!
+    const extent = host.querySelector<HTMLElement>('.companion-terminal-extent')!
+    expect(viewports).toEqual([])
+    expect(surface.style.transform).toBe(`scale(${376 / (132 * 8)})`)
+
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS)
+    expect(viewports).toEqual([{ cols: 47, rows: 31 }])
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS * 4)
+    expect(viewports).toHaveLength(1)
+    // The grid is still the PTY's old one until main says otherwise.
+    expect(panes[0]?.resizes).toEqual([])
+    expect(surface.style.transform).toBe(`scale(${376 / (132 * 8)})`)
+
+    mount.handle({ type: 'geometry', handle: ROW, cols: 47, rows: 31 })
+    expect(panes[0]?.resizes).toEqual([{ cols: 47, rows: 31 }])
+    expect(surface.style.transform).toBe('scale(1)')
+    expect([extent.style.width, extent.style.height]).toEqual(['376px', '496px'])
+
+    // Some other size landed: back to the scaled column, and the same grid is asked
+    // for again at the next settle rather than assumed still held.
+    mount.handle({ type: 'geometry', handle: ROW, cols: 132, rows: 43 })
+    expect(surface.style.transform).toBe(`scale(${376 / (132 * 8)})`)
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS * 2)
+    expect(viewports).toHaveLength(1)
+    mount.dispose()
+  })
+
+  it('a held grid whose cells round past the host width shrinks a hair rather than clipping a column', async () => {
+    const { create } = fakePanes()
+    const { mount, host } = mountWith(create)
+    // 47 fake cells are 376px wide; the host is one pixel narrower.
+    layout(host, 375, 496)
+    mount.handle({ type: 'opened', handle: ROW, cols: 47, rows: 31, tail: '' })
+    await vi.advanceTimersByTimeAsync(0)
+    const surface = host.querySelector<HTMLElement>('.companion-terminal-scale')!
+    const extent = host.querySelector<HTMLElement>('.companion-terminal-extent')!
+    expect(surface.style.transform).toBe(`scale(${375 / 376})`)
+    expect(extent.style.width).toBe('375px')
+    mount.dispose()
+  })
+
+  it('holds once the mirror opens, whatever the desktop is doing, and nothing after ended', async () => {
+    const { create } = fakePanes()
+    const { mount, host, viewports } = mountWith(create)
+    layout(host, 376, 496)
+    // Nothing tells the mount about focus, because nothing about focus is asked.
+    mount.handle({ type: 'opened', handle: ROW, cols: 132, rows: 43, tail: '' })
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS)
+    expect(viewports).toEqual([{ cols: 47, rows: 31 }])
+
+    mount.handle({ type: 'ended', handle: ROW, reason: 'exited' })
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS * 2)
+    expect(viewports).toHaveLength(1)
+    mount.dispose()
+  })
+
+  it('a settled area change asks again, and a change that fits the same grid does not', async () => {
+    const observer = observedResizes()
+    const { create } = fakePanes()
+    const { mount, host, viewports } = mountWith(create)
+    layout(host, 376, 496)
+    mount.handle({ type: 'opened', handle: ROW, cols: 132, rows: 43, tail: '' })
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS)
+    expect(viewports).toEqual([{ cols: 47, rows: 31 }])
+
+    layout(host, 383, 500)
+    observer.fire()
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS)
+    expect(viewports).toHaveLength(1)
+
+    layout(host, 240, 320)
+    observer.fire()
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS - 1)
+    layout(host, 240, 336)
+    observer.fire()
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS - 1)
+    expect(viewports).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(viewports).toEqual([
+      { cols: 47, rows: 31 },
+      { cols: 30, rows: 21 },
+    ])
+    mount.dispose()
+    observer.fire()
+    await vi.advanceTimersByTimeAsync(FIT_SETTLE_MS)
+    expect(viewports).toHaveLength(2)
   })
 })

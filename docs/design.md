@@ -532,6 +532,7 @@ drives the badge and away-time Push.
 > Superseded by: [ADR-052](adr/ADR-052-companion-mirror-holds-pty-size-while-away.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
 > Superseded by: [ADR-054](adr/ADR-054-sticky-terminal-modes-precede-the-replayed-tail.md) | partial | Main not interpreting the bytes it forwards, for a bounded scan of sticky DEC private modes emitted ahead of the replayed tail.
 > Superseded by: [ADR-055](adr/ADR-055-read-back-navigation-is-not-typing.md) | partial | The per-mirror arm gating every byte and mirror input being recorded as terminal input, for the page keys a read-back gesture emits to a program that owns its history.
+> Superseded by: [ADR-058](adr/ADR-058-the-watching-phone-owns-the-grid.md) | partial | A mirror never resizing the PTY, for as long as a Companion page is watching that PTY.
 
 A Companion page holds a mirror lease on one live hvir-owned PTY: main forwards the retained
 output tail, live bytes, and desktop geometry, the phone emulates them with ghostty-web, and
@@ -616,8 +617,9 @@ ADR-054 predicted, so the family moves together or not at all.
 
 ### [ADR-057 — The Companion mirror shows the desktop's grid whether or not the desktop is Away](adr/ADR-057-companion-mirror-shows-the-desktop-grid-at-every-focus.md)
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-052](adr/ADR-052-companion-mirror-holds-pty-size-while-away.md) | full | Entire decision.
+> Superseded by: [ADR-058](adr/ADR-058-the-watching-phone-owns-the-grid.md) | partial | One fit at every focus state, with the phone drawing the desktop's grid scaled, for the grid a watching page declares.
 
 The phone shows the desktop's grid scaled to its width, and only that. A mirror never resizes
 the PTY again, whether or not a desktop window is focused, so the desktop's fit controller is
@@ -627,6 +629,19 @@ laggy and the scaled one the view to keep. What the phone lacked was travel: a d
 mouse-tracking route now carries every report its distance earned, up to a screen of them per
 event, a lift with speed behind it flings on until it rests, and the mirror keeps the desktop
 pane's scrollback.
+
+### [ADR-058 — The watching phone owns the grid](adr/ADR-058-the-watching-phone-owns-the-grid.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | A mirror never resizing the PTY, for as long as a Companion page is watching that PTY.
+> Supersedes: [ADR-057](adr/ADR-057-companion-mirror-shows-the-desktop-grid-at-every-focus.md) | partial | One fit at every focus state, with the phone drawing the desktop's grid scaled, for the grid a watching page declares.
+
+For as long as a Companion page holds a live mirror, that page's measured grid is the PTY's size:
+the page declares it over a `viewport` verb, main applies and publishes it, and desktop focus is
+not an input anywhere in the path. The desktop records its own fit while a hold is on, draws the
+held grid with a notice, and takes its fit back when the mirror ends; the hold belongs to the
+lease that took it, so a stale release gives nothing back. Until a geometry frame says the PTY
+took the grid, the phone keeps drawing the size the PTY has, scaled to its width.
 
 ## 5. Architecture
 

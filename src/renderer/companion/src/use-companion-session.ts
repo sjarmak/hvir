@@ -66,6 +66,11 @@ export interface CompanionSession {
   readonly submit: (message: string) => Promise<boolean>
   /** Exact bytes for the mirrored row; typing is dropped here unless armed on a live mirror. */
   readonly input: CompanionInputVerb
+  /**
+   * The grid the page is drawing for the live mirror (ADR-058). Rejects when there is no
+   * live mirror or the verb failed, which is the fit's signal to ask again.
+   */
+  readonly viewport: (cols: number, rows: number) => Promise<void>
 }
 
 const PAIRING_EXPIRED = 'The desktop no longer accepts this pairing; pair again'
@@ -300,6 +305,25 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
     [send, navigationQueue, armed, mirrorHandle, touch],
   )
 
+  // The page holds the size on its own, so a failure here never touches the notice a verb
+  // the person sent may be showing. A 409 means the mirror ended, which the stream's
+  // `ended` frame says; anything else leaves the PTY at whatever size it has, which the
+  // scaled view already draws. Either way the rejection tells the fit to ask again.
+  const viewport = useCallback(
+    async (cols: number, rows: number) => {
+      if (page === undefined || mirrorHandle === undefined) {
+        throw new Error('No mirror is live')
+      }
+      try {
+        await client.viewport(page, mirrorHandle, { cols, rows })
+      } catch (error: unknown) {
+        if (error instanceof CompanionUnauthorizedError) expire()
+        throw error
+      }
+    },
+    [client, page, mirrorHandle, expire],
+  )
+
   return {
     connection,
     state,
@@ -314,6 +338,7 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
     respond,
     submit,
     input,
+    viewport,
   }
 }
 

@@ -1,7 +1,7 @@
 /**
  * The Companion's /api rows (ADR-049, ADR-050), bound onto the server's
  * router: one event stream per page, the page's rows on demand, the four
- * Sessions verbs, and terminal input. Bodies are validated with the shared
+ * Sessions verbs, terminal input, and the grid a page draws. Bodies are validated with the shared
  * guards before any port is asked; a page the service does not hold is 404, a
  * transcript verb before a selection is 409, typing while Settings forbids it
  * is 403, input for a row without a mirror or after the mirror ended is 409,
@@ -14,6 +14,7 @@ import {
   isCompanionInputRequest,
   isCompanionRespondRequest,
   isCompanionSubmitRequest,
+  isCompanionViewportRequest,
   type CompanionEvent,
   type CompanionTerminalEvent,
   type SessionsMutationResponse,
@@ -65,6 +66,7 @@ export function bindCompanionApi(
   bind('POST', '/api/sessions/:handle/respond', (context) => respond(context, sessions))
   bind('POST', '/api/sessions/:handle/message', (context) => message(context, sessions))
   bind('POST', '/api/sessions/:handle/input', (context) => input(context, sessions))
+  bind('POST', '/api/sessions/:handle/viewport', (context) => viewport(context, sessions))
 }
 
 async function respond(
@@ -111,6 +113,19 @@ async function input(
     rest.data,
     rest.navigation === true ? 'navigation' : 'typing',
   )
+  const accepted: SessionsMutationResponse = { outcome: 'accepted' }
+  json(context.response, 200, accepted)
+}
+
+async function viewport(
+  context: CompanionRequestContext,
+  sessions: CompanionSessionsService,
+): Promise<void> {
+  const { page, rest } = await verbBody(context)
+  if (!isCompanionViewportRequest(rest)) {
+    throw new CompanionHttpError(400, 'Expected {"page", "cols", "rows"}')
+  }
+  sessions.viewport(page, handleParam(context), rest.cols, rest.rows)
   const accepted: SessionsMutationResponse = { outcome: 'accepted' }
   json(context.response, 200, accepted)
 }

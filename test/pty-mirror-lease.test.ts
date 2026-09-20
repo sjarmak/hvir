@@ -16,6 +16,8 @@ function view(overrides: Partial<PtyMirrorEntryView> = {}): PtyMirrorEntryView {
     current: true,
     instanceId: INSTANCE,
     write: () => undefined,
+    hold: () => undefined,
+    releaseHold: () => undefined,
     ...overrides,
   }
 }

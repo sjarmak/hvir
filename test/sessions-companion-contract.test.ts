@@ -5,13 +5,16 @@ import { STICKY_MODE_PREAMBLE_MAX_CHARS } from '../src/shared/terminal-sticky-mo
 import {
   MAX_ACTIONABLE_BODY_CHARS,
   MAX_COMPANION_INPUT_CHARS,
+  MAX_COMPANION_VIEWPORT_DIMENSION,
   MAX_COMPANION_ROWS,
   MAX_COMPANION_TERMINAL_PREAMBLE_CHARS,
   MAX_COMPANION_TERMINAL_TAIL_CHARS,
   MAX_SESSIONS_SUBMIT_MESSAGE,
+  MIN_COMPANION_VIEWPORT_DIMENSION,
   SESSIONS_COMPANION_VERSION,
   compareCompanionRows,
   isCompanionInputRequest,
+  isCompanionViewportRequest,
   isCompanionRespondRequest,
   isCompanionRow,
   isCompanionSnapshot,
@@ -330,6 +333,31 @@ describe('sessions companion contract', () => {
     }
     expect(isCompanionInputRequest({ data: '\x1b[5~', navigation: false })).toBe(false)
     expect(isCompanionInputRequest({ data: '\x1b[5~', navigation: 'true' })).toBe(false)
+  })
+
+  it('a viewport is two integers within the PTY dimension bounds and nothing else (ADR-058)', () => {
+    expect([MIN_COMPANION_VIEWPORT_DIMENSION, MAX_COMPANION_VIEWPORT_DIMENSION]).toEqual([
+      2, 1000,
+    ])
+    expect(isCompanionViewportRequest({ cols: 47, rows: 31 })).toBe(true)
+    expect(isCompanionViewportRequest({ cols: 2, rows: 1000 })).toBe(true)
+    for (const request of [
+      { cols: 1, rows: 31 },
+      { cols: 47, rows: 1001 },
+      { cols: 47.5, rows: 31 },
+      { cols: 47, rows: Number.NaN },
+      { cols: 47, rows: Number.POSITIVE_INFINITY },
+      { cols: '47', rows: 31 },
+      { cols: 47 },
+      { rows: 31 },
+      { cols: 47, rows: 31, handle: 't1' },
+      {},
+      [47, 31],
+      null,
+      '47x31',
+    ]) {
+      expect(isCompanionViewportRequest(request), JSON.stringify(request)).toBe(false)
+    }
   })
 
   it('tail bound equals PTY_OUTPUT_TAIL_CHARS', () => {

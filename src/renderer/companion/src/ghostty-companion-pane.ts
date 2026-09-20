@@ -47,6 +47,7 @@ import {
   type TerminalWheelEvent,
 } from '../../../shared'
 import type {
+  CompanionCellSize,
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
 } from './companion-terminal-pane'
@@ -54,7 +55,7 @@ import type {
 /** The desktop pane's `TERMINAL_SCROLLBACK_BYTES`, so the phone reads back as far as the desktop. */
 const MIRROR_SCROLLBACK_BYTES = 10_000_000
 const FALLBACK_CELL_HEIGHT = 16
-/** The mirror's font; the grid is the desktop's, scaled to the phone's width (ADR-050). */
+/** The phone's fixed readable font (ADR-058); the grid held is what this leaves room for. */
 const MIRROR_FONT_SIZE = 15
 
 let initializeGhostty: Promise<void> | undefined
@@ -183,6 +184,14 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
   endGesture(): void {
     this.wheel.endGesture()
     this.remainder = 0
+  }
+
+  /** The renderer exists once the terminal is open; its cell is the font's measured box. */
+  cellSize(): CompanionCellSize | undefined {
+    const renderer = this.terminal.renderer
+    if (renderer === undefined) return undefined
+    const { charWidth: width, charHeight: height } = renderer
+    return width > 0 && height > 0 ? { width, height } : undefined
   }
 
   setInputEnabled(enabled: boolean): void {

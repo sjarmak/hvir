@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { CompanionMirrorEndedError } from '../src/main/companion/companion-page-mirror'
 import {
   CompanionNoMirrorError,
+  CompanionPageNotOpenError,
   CompanionSessionsService,
   CompanionTypingDisallowedError,
 } from '../src/main/companion/companion-sessions'
@@ -729,6 +730,33 @@ describe('CompanionSessionsService mirrors', () => {
     service.dispose()
   })
 
+  it('viewport reaches lease.viewport for the mirrored row whether or not typing is allowed', () => {
+    const { world, service, page, terminal } = mirrorWorld()
+    // Watching is not typing: a page that may not write still sizes what it reads.
+    expect(world.mirrors.typingAllowed).toBe(false)
+    expect(() => service.viewport(page.pageId, LOCAL, 47, 31)).toThrow(
+      CompanionNoMirrorError,
+    )
+    service.select(page.pageId, LOCAL)
+    service.viewport(page.pageId, LOCAL, 47, 31)
+    service.viewport(page.pageId, LOCAL, 52, 28)
+    expect(world.mirrors.leases[0]!.viewports).toEqual([
+      { cols: 47, rows: 31 },
+      { cols: 52, rows: 28 },
+    ])
+    expect(world.mirrors.leases[0]!.writes).toEqual([])
+    expect(terminal().map((event) => event.type)).toEqual(['opened'])
+
+    expect(() => service.viewport(page.pageId, REMOTE, 47, 31)).toThrow(
+      'Companion page holds no mirror for this row',
+    )
+    expect(() => service.viewport('page-9', LOCAL, 47, 31)).toThrow(
+      CompanionPageNotOpenError,
+    )
+    expect(world.mirrors.leases[0]!.viewports).toHaveLength(2)
+    service.dispose()
+  })
+
   it('every refusal a write meets ends the mirror exactly as a dead lease does', () => {
     for (const refusal of [
       'ended',
@@ -751,6 +779,32 @@ describe('CompanionSessionsService mirrors', () => {
         { type: 'ended', handle: LOCAL, reason: 'exited' },
       ])
       expect(() => service.input(page.pageId, LOCAL, 'y')).toThrow(CompanionNoMirrorError)
+      service.dispose()
+    }
+  })
+
+  it('every refusal a viewport meets ends the mirror the same way (ADR-058)', () => {
+    for (const refusal of [
+      'ended',
+      'instance-changed',
+      'exited',
+      'no-session',
+    ] as const) {
+      const { world, service, page, terminal } = mirrorWorld()
+      service.select(page.pageId, LOCAL)
+      const lease = world.mirrors.leases[0]!
+      lease.refuse = refusal
+      expect(() => service.viewport(page.pageId, LOCAL, 47, 31), refusal).toThrow(
+        CompanionMirrorEndedError,
+      )
+      expect(lease.released, refusal).toBe(true)
+      expect(terminal(), refusal).toEqual([
+        { type: 'opened', handle: LOCAL, cols: 132, rows: 43, tail: '\u001b[2J$ ' },
+        { type: 'ended', handle: LOCAL, reason: 'exited' },
+      ])
+      expect(() => service.viewport(page.pageId, LOCAL, 47, 31)).toThrow(
+        CompanionNoMirrorError,
+      )
       service.dispose()
     }
   })

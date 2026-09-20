@@ -100,6 +100,14 @@ export class CompanionPageMirror {
     this.admit((lease) => lease.navigate(data))
   }
 
+  /**
+   * The grid this page is drawing (ADR-058). The PTY takes that size for as long as this
+   * mirror lasts, so the phone sees its own screen full whatever the desktop is doing.
+   */
+  viewport(cols: number, rows: number): void {
+    this.admit((lease) => lease.viewport(cols, rows))
+  }
+
   /** Runs one lease verb. A refusal means the lease is dead: the mirror ends and throws as ended. */
   private admit(verb: (lease: PtyMirrorLease) => void): void {
     const current = this.current

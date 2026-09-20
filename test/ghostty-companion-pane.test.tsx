@@ -316,11 +316,14 @@ describe('ghostty companion pane', () => {
     expect(fake.disposed).toBe(true)
   })
 
-  it('draws a fixed readable font over the same scrollback the desktop pane keeps', async () => {
-    await createGhosttyCompanionPane(80, 24)
+  it('draws a fixed readable font over the same scrollback the desktop pane keeps, and reports its cell (ADR-058)', async () => {
+    const pane = await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!
     expect(fake.options['fontSize']).toBe(15)
     expect(fake.options['scrollbackBytes']).toBe(10_000_000)
+    // The cell is what the page's fit divides its area by to hold the PTY.
+    pane.mount(document.createElement('div'))
+    expect(pane.cellSize()).toEqual({ width: 8, height: 16 })
   })
 
   it('data emitted during write never reaches onData', async () => {

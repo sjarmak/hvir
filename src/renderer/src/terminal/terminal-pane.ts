@@ -222,6 +222,11 @@ export interface TerminalPane {
   setLigatures(enabled: boolean): void
   /** Start or stop visible engine work without changing the live terminal state. */
   setPresentation(presentation: TerminalPresentation): void
+  /**
+   * Present a size another client holds (ADR-058): fitting stops and the grid draws at
+   * `held` from the top-left with the remainder blank; `undefined` returns it to the fit.
+   */
+  setHeldGeometry(held: TerminalSize | undefined): void
   /** Force the current grid to repaint without changing PTY geometry. */
   redraw(): void
   /** Resolve retained semantic provenance, or fail closed after eviction/reset. */

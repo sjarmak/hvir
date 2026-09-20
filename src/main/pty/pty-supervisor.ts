@@ -26,6 +26,8 @@ import {
   type PtyUsageObservationResolution,
   type HarnessSessionIdentityStatus,
   type PtyGeometry,
+  type PtyGeometrySource,
+  type PtyMirrorGeometryEvent,
   type PtyMirrorHandlers,
   type PtyMirrorLease,
   type PtyStreamHandlers,
@@ -41,6 +43,7 @@ import {
 import { PtyStreamAttachment } from './pty-stream-attachment'
 import { PtySessionObservation } from './pty-session-observation'
 import { PtySessionLifetime, type PendingPtyExit } from './pty-session-lifetime'
+import { terminalDimension } from './terminal-dimension'
 
 export * from './pty-contract'
 export { PtyMirrorRefusedError } from './pty-mirror-lease'
@@ -55,6 +58,12 @@ interface Entry {
   }
   /** The last size applied to the PTY; replaced, never mutated. */
   geometry: PtyGeometry
+  /** Who holds that size (ADR-058); `mirror` for exactly as long as a page's hold lasts. */
+  geometrySource: PtyGeometrySource
+  /** The lease holding the size, so only that holder's release gives it back. */
+  geometryHolder?: object
+  /** The owner's own fit, kept while a phone holds the size and applied again on release. */
+  rendererGeometry: PtyGeometry
   rendererReattachPending: boolean
 }
 
@@ -65,6 +74,9 @@ export class PtySupervisor {
   >()
   private readonly mirrorInputListeners = new Set<
     (info: ManagedPty, data: string) => void
+  >()
+  private readonly mirrorGeometryListeners = new Set<
+    (event: PtyMirrorGeometryEvent) => void
   >()
   private readonly identityListeners = new Set<(info: ManagedPty) => void>()
   private readonly observationListeners = new Set<() => void>()
@@ -304,6 +316,8 @@ export class PtySupervisor {
       usage: { host: req.host, artifact },
       // Both hosts spawn at 80x24 when the request carries no size.
       geometry: { cols: req.cols ?? 80, rows: req.rows ?? 24 },
+      geometrySource: 'renderer',
+      rendererGeometry: { cols: req.cols ?? 80, rows: req.rows ?? 24 },
       rendererReattachPending: false,
     }
 
@@ -391,6 +405,14 @@ export class PtySupervisor {
       },
       handlers,
     )
+  }
+
+  /** Subscribe to a phone holding a PTY's size, or giving it back (ADR-058). */
+  onMirrorGeometry(cb: (event: PtyMirrorGeometryEvent) => void): Disposer {
+    this.mirrorGeometryListeners.add(cb)
+    return () => {
+      this.mirrorGeometryListeners.delete(cb)
+    }
   }
 
   /** Subscribe after a mirror write landed; `info` carries the current renderer owner. */
@@ -510,9 +532,11 @@ export class PtySupervisor {
     ownerGeneration?: number,
   ): void {
     const entry = this.requireOwned(id, ownerId, ownerGeneration)
-    entry.lifetime.resize(cols, rows)
-    entry.geometry = { cols, rows }
-    entry.stream.publishGeometry(entry.geometry)
+    entry.rendererGeometry = { cols, rows }
+    // A phone is watching and holds the size (ADR-058); its grid is what the PTY keeps
+    // until that mirror ends, and this fit is what it goes back to then.
+    if (entry.geometrySource === 'mirror') return
+    this.applyGeometry(entry, entry.rendererGeometry, 'renderer')
   }
 
   kill(id: string, ownerId: number, signal?: string, ownerGeneration?: number): void {
@@ -672,6 +696,7 @@ export class PtySupervisor {
   private clearLifetimeListeners(): void {
     this.globalExitListeners.clear()
     this.mirrorInputListeners.clear()
+    this.mirrorGeometryListeners.clear()
     this.identityListeners.clear()
     this.observationListeners.clear()
   }
@@ -732,7 +757,58 @@ export class PtySupervisor {
         entry.lifetime.write(data)
         entry.observation.retryAfterInput()
       },
+      hold: (holder, cols, rows) =>
+        this.holdGeometryForMirror(id, entry, holder, cols, rows),
+      releaseHold: (holder) => this.releaseMirrorGeometry(id, entry, holder),
     }
+  }
+
+  /**
+   * The phone's door beside the renderer's `resize`, open for as long as its mirror lives
+   * (ADR-058). No focus state is consulted: the page that is watching decides the grid.
+   */
+  private holdGeometryForMirror(
+    id: string,
+    entry: Entry,
+    holder: object,
+    cols: number,
+    rows: number,
+  ): void {
+    const geometry = { cols: terminalDimension(cols), rows: terminalDimension(rows) }
+    entry.geometryHolder = holder
+    this.applyGeometry(entry, geometry, 'mirror')
+    this.publishMirrorGeometry({ kind: 'held', ...ownerOf(id, entry), geometry })
+  }
+
+  /**
+   * Every hold ends here, and each produces at most one reclaim. A second page holding the
+   * size meanwhile owns it, so a stale holder's release changes nothing. The PTY goes back
+   * to the owner's own fit, which is the size its pane has been measuring all along.
+   */
+  private releaseMirrorGeometry(id: string, entry: Entry, holder: object): void {
+    if (entry.geometrySource !== 'mirror' || entry.geometryHolder !== holder) return
+    entry.geometryHolder = undefined
+    if (!entry.lifetime.current) {
+      entry.geometrySource = 'renderer'
+      return
+    }
+    this.applyGeometry(entry, entry.rendererGeometry, 'renderer')
+    this.publishMirrorGeometry({ kind: 'reclaim', ...ownerOf(id, entry) })
+  }
+
+  private applyGeometry(
+    entry: Entry,
+    geometry: PtyGeometry,
+    source: PtyGeometrySource,
+  ): void {
+    entry.lifetime.resize(geometry.cols, geometry.rows)
+    entry.geometry = geometry
+    entry.geometrySource = source
+    entry.stream.publishGeometry(geometry)
+  }
+
+  private publishMirrorGeometry(event: PtyMirrorGeometryEvent): void {
+    for (const cb of this.mirrorGeometryListeners) cb(event)
   }
 
   private disposeEntry(id: string, entry: Entry): boolean {
@@ -763,6 +839,13 @@ export class PtySupervisor {
   private publishObservation(): void {
     for (const listener of this.observationListeners) listener()
   }
+}
+
+function ownerOf(
+  id: string,
+  entry: Entry,
+): Pick<ManagedPty, 'id' | 'ownerId' | 'ownerGeneration'> {
+  return { id, ownerId: entry.info.ownerId, ownerGeneration: entry.info.ownerGeneration }
 }
 
 function lifetimeBucket(elapsedMs: number): 'under-30s' | 'under-5m' | '5m-or-more' {

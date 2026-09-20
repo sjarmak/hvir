@@ -66,6 +66,9 @@ export const MAX_COMPANION_TERMINAL_TAIL_CHARS = 256 * 1024
 export const MAX_COMPANION_TERMINAL_PREAMBLE_CHARS = 54
 /** One input request carries at most this many characters of the user's bytes. */
 export const MAX_COMPANION_INPUT_CHARS = 4096
+/** A viewport names a grid within the PTY's own dimension bounds (ADR-058). */
+export const MIN_COMPANION_VIEWPORT_DIMENSION = 2
+export const MAX_COMPANION_VIEWPORT_DIMENSION = 1000
 
 export interface CompanionRow {
   readonly handle: SessionsTerminalHandle
@@ -177,6 +180,16 @@ export interface CompanionInputRequest {
    * reports of ADR-056.
    */
   readonly navigation?: true
+}
+
+/**
+ * The phone's own grid for the terminal it is watching (ADR-058). The page
+ * sends it while its mirror is open, whatever the desktop is doing; the PTY
+ * takes it for as long as that mirror lasts.
+ */
+export interface CompanionViewportRequest {
+  readonly cols: number
+  readonly rows: number
 }
 
 /** An answer, as a page sends it: the page's lease supplies the generation. */
@@ -300,6 +313,13 @@ export function isCompanionInputRequest(value: unknown): value is CompanionInput
   )
 }
 
+export function isCompanionViewportRequest(
+  value: unknown,
+): value is CompanionViewportRequest {
+  if (!isRecord(value) || !hasExactKeys(value, VIEWPORT_KEYS)) return false
+  return isViewportDimension(value['cols']) && isViewportDimension(value['rows'])
+}
+
 export function isCompanionRespondRequest(
   value: unknown,
 ): value is CompanionRespondRequest {
@@ -338,6 +358,7 @@ const RESPOND_KEYS = ['handle', 'pendingRevision', 'optionOrdinal'] as const
 const SUBMIT_KEYS = ['handle', 'message'] as const
 const INPUT_KEYS = ['data'] as const
 const INPUT_OPTIONAL_KEYS = ['navigation'] as const
+const VIEWPORT_KEYS = ['cols', 'rows'] as const
 const OPENED_KEYS = ['type', 'handle', 'cols', 'rows', 'tail'] as const
 const OPENED_OPTIONAL_KEYS = ['preamble'] as const
 const OUTPUT_KEYS = ['type', 'handle', 'data'] as const
@@ -400,6 +421,14 @@ function isGeneration(value: unknown): value is number {
 
 function isDimension(value: unknown): value is number {
   return isCount(value) && value > 0
+}
+
+function isViewportDimension(value: unknown): value is number {
+  return (
+    isDimension(value) &&
+    value >= MIN_COMPANION_VIEWPORT_DIMENSION &&
+    value <= MAX_COMPANION_VIEWPORT_DIMENSION
+  )
 }
 
 /** Absent is a stream that set no sticky mode; present is bounded by the scanner. */

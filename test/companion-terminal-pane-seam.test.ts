@@ -47,6 +47,7 @@ describe('Companion terminal pane seam', () => {
         isAlternateScreen: () => false,
         endGesture: () => undefined,
         returnToLive: () => undefined,
+        cellSize: () => ({ width: 8, height: 16 }),
         dispose: () => calls.push('dispose'),
         setInputEnabled: (enabled) => calls.push(`input ${enabled}`),
         events: {

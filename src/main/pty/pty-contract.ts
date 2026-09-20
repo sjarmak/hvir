@@ -118,13 +118,40 @@ export interface PtyStreamHandlers {
 }
 
 /**
- * The PTY's last applied terminal size. The renderer owner sets it; a mirror only renders at
- * it (ADR-050).
+ * The PTY's last applied terminal size. The renderer owner sets it, except while a Companion
+ * page watching this PTY holds it at the phone's grid (ADR-058).
  */
 export interface PtyGeometry {
   readonly cols: number
   readonly rows: number
 }
+
+/**
+ * Who holds a PTY's size (ADR-058): the renderer, or the phone watching it. A phone's hold
+ * lasts exactly as long as its mirror; the renderer's own fit is kept meanwhile and applied
+ * again the moment the hold ends.
+ */
+export type PtyGeometrySource = 'renderer' | 'mirror'
+
+/**
+ * A mirror's hold on a PTY's size, addressed to the renderer owning that PTY. `held` follows
+ * every mirror viewport; `reclaim` fires once when the hold ends, so the owner refits to its
+ * own pane.
+ */
+export type PtyMirrorGeometryEvent =
+  | {
+      readonly kind: 'held'
+      readonly id: string
+      readonly ownerId: number
+      readonly ownerGeneration: number
+      readonly geometry: PtyGeometry
+    }
+  | {
+      readonly kind: 'reclaim'
+      readonly id: string
+      readonly ownerId: number
+      readonly ownerGeneration: number
+    }
 
 export type PtyMirrorEnd =
   | { readonly kind: 'exited'; readonly exit: PtyExit }
@@ -151,9 +178,9 @@ export interface PtyRetainedOutput {
 }
 
 /**
- * A mirror lease on one exact PTY instance (ADR-050): a second reader, never an owner. It reads
- * at whatever size the renderer owner set and never sets one; every lifecycle verb stays with
- * the owner.
+ * A mirror lease on one exact PTY instance (ADR-050): a second reader, never an owner. It sets
+ * the PTY's size to its own viewport for as long as it lasts (ADR-058); every other lifecycle
+ * verb stays with the renderer owner.
  */
 export interface PtyMirrorLease {
   readonly ptyId: string
@@ -178,7 +205,16 @@ export interface PtyMirrorLease {
    * phone arms no attention and sends no Push.
    */
   navigate(data: string): void
-  /** Idempotent. Detaches the mirror; never kills, resizes or transfers the PTY. */
+  /**
+   * Sizes this instance to the watching page's grid (ADR-058) and keeps it there until this
+   * lease releases. Dimensions are clamped as the renderer's are; the most recent viewport
+   * wins, and a renderer refit meanwhile is remembered rather than applied.
+   */
+  viewport(cols: number, rows: number): void
+  /**
+   * Idempotent. Detaches the mirror and gives the size back to the renderer owner; never kills
+   * or transfers the PTY.
+   */
   release(): void
 }
 

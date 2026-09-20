@@ -24,6 +24,10 @@ export interface PtyMirrorEntryView {
   readonly current: boolean
   readonly instanceId: string
   write(data: string): void
+  /** Holds the PTY at this grid for the holder's lifetime (ADR-058). */
+  hold(holder: object, cols: number, rows: number): void
+  /** Gives the size back to the renderer owner, if this holder still has it. */
+  releaseHold(holder: object): void
 }
 
 export interface PtyMirrorLeaseSources {
@@ -72,6 +76,8 @@ export function createPtyMirrorLease(
   handlers: PtyMirrorHandlers,
 ): PtyMirrorLease {
   let state: PtyMirrorLeaseState = 'live'
+  /** This lease's identity as the supervisor's geometry holder. */
+  const holder = {}
   const { preamble, tail } = sources.retained()
   const geometry = sources.geometry()
   const detach = sources.attach({
@@ -103,9 +109,14 @@ export function createPtyMirrorLease(
     navigate(data) {
       admitMirror(state, sources.entry(), sources).write(data)
     },
+    viewport(cols, rows) {
+      admitMirror(state, sources.entry(), sources).hold(holder, cols, rows)
+    },
     release() {
       if (state !== 'live') return
       state = 'released'
+      // The entry may already be gone; a hold dies with it either way.
+      sources.entry()?.releaseHold(holder)
       void detach()
     },
   }

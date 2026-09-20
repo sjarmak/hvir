@@ -257,5 +257,20 @@ export const terminalIpc = {
      * it writes nothing back, the bytes already reached the PTY.
      */
     'pty:mirror-input': payload<{ readonly id: string; readonly data: string }>(),
+    /**
+     * A Companion page watching this renderer's PTY holds it at the phone's
+     * grid, or let it go (ADR-058). The renderer presents a held size without
+     * fitting, whatever its own window is doing; on reclaim its fit resumes and
+     * re-asserts the pane's own size through pty:resize.
+     */
+    'pty:mirror-geometry': payload<
+      | {
+          readonly id: string
+          readonly kind: 'held'
+          readonly cols: number
+          readonly rows: number
+        }
+      | { readonly id: string; readonly kind: 'reclaim' }
+    >(),
   },
 } satisfies IpcFeatureContract

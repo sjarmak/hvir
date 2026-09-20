@@ -2,7 +2,10 @@ import { describe, expect, it, vi, type Mock } from 'vitest'
 
 import { PTY_OUTPUT_TAIL_CHARS } from '../src/main/pty/pty-output-tail'
 import { PtyMirrorRefusedError } from '../src/main/pty/pty-mirror-lease'
-import type { PtyMirrorHandlers } from '../src/main/pty/pty-supervisor'
+import type {
+  PtyMirrorGeometryEvent,
+  PtyMirrorHandlers,
+} from '../src/main/pty/pty-supervisor'
 import {
   createPtySupervisorFixture,
   plainShellProvider,
@@ -23,6 +26,20 @@ async function fixture(overrides: { cols?: number; rows?: number } = {}) {
     ...overrides,
   })
   return { info, pty: ptyFixture.pty, supervisor: ptyFixture.supervisor, ptyFixture }
+}
+
+/** A mirrored PTY with one live lease and a geometry-event log. Focus never enters it. */
+async function watched(overrides: { cols?: number; rows?: number } = {}) {
+  const world = await fixture(overrides)
+  const mirror = handlers()
+  const lease = world.supervisor.attachMirror(
+    world.info.id,
+    world.info.instanceId,
+    mirror,
+  )
+  const events: PtyMirrorGeometryEvent[] = []
+  world.supervisor.onMirrorGeometry((event) => events.push(event))
+  return { ...world, mirror, lease, events }
 }
 
 interface MockedMirrorHandlers extends PtyMirrorHandlers {
@@ -249,12 +266,12 @@ describe('PtySupervisor mirror lease', () => {
     expect(pty.write).not.toHaveBeenCalled()
   })
 
-  it('geometry defaults to 80x24 when spawn carries none and follows the renderer resize; the lease neither resizes nor kills (ADR-050)', async () => {
+  it('geometry defaults to 80x24 when spawn carries none and follows renderer resize; the lease sizes but never kills', async () => {
     const { info, pty, supervisor } = await fixture()
     const mirror = handlers()
     const lease = supervisor.attachMirror(info.id, info.instanceId, mirror)
     expect(lease.geometry).toEqual({ cols: 80, rows: 24 })
-    expect('resize' in lease).toBe(false)
+    expect(typeof lease.viewport).toBe('function')
     expect('kill' in lease).toBe(false)
 
     supervisor.resize(info.id, OWNER_ID, 120, 40, 4)
@@ -392,5 +409,221 @@ describe('PtySupervisor mirror lease', () => {
     expect(again).not.toHaveBeenCalled()
     const lease = supervisor.attachMirror(info.id, info.instanceId, handlers())
     expect(lease.tail).toBe('x'.repeat(PTY_OUTPUT_TAIL_CHARS))
+  })
+})
+
+describe('the watching page owns the PTY size for as long as it watches (ADR-058)', () => {
+  it('a viewport clamps, applies, publishes to every mirror and reports the hold', async () => {
+    const { info, pty, supervisor, mirror, lease, events } = await watched()
+    const other = handlers()
+    supervisor.attachMirror(info.id, info.instanceId, other)
+
+    lease.viewport(52.7, 1)
+    expect(pty.resize).toHaveBeenCalledExactlyOnceWith(52, 2)
+    expect(mirror.onGeometry).toHaveBeenCalledExactlyOnceWith({ cols: 52, rows: 2 })
+    expect(other.onGeometry).toHaveBeenCalledExactlyOnceWith({ cols: 52, rows: 2 })
+    expect(
+      supervisor.attachMirror(info.id, info.instanceId, handlers()).geometry,
+    ).toEqual({
+      cols: 52,
+      rows: 2,
+    })
+    expect(events).toEqual([
+      {
+        kind: 'held',
+        id: info.id,
+        ownerId: OWNER_ID,
+        ownerGeneration: 4,
+        geometry: { cols: 52, rows: 2 },
+      },
+    ])
+  })
+
+  it('the most recent viewport wins across two mirrors', async () => {
+    const { info, pty, supervisor, lease, events } = await watched()
+    const second = supervisor.attachMirror(info.id, info.instanceId, handlers())
+    lease.viewport(50, 40)
+    second.viewport(60, 30)
+    expect(pty.resize.mock.calls).toEqual([
+      [50, 40],
+      [60, 30],
+    ])
+    expect(events.map((event) => event.kind)).toEqual(['held', 'held'])
+  })
+
+  it('is refused as ended after release', async () => {
+    const { pty, lease } = await watched()
+    lease.release()
+    expect(refusal(() => lease.viewport(50, 40))).toBe('ended')
+    expect(pty.resize).not.toHaveBeenCalled()
+  })
+
+  it('is refused as exited after the PTY exits', async () => {
+    const { pty, lease } = await watched()
+    pty.emitExit({ exitCode: 0, signal: undefined })
+    expect(refusal(() => lease.viewport(50, 40))).toBe('exited')
+    expect(pty.resize).not.toHaveBeenCalled()
+  })
+
+  it('is refused as instance-changed after a respawn under the same id and the new process keeps its size', async () => {
+    const { info, pty, lease, ptyFixture } = await watched()
+    pty.emitExit({ exitCode: 0, signal: undefined })
+    const respawn = new TestPtyProcess()
+    const deferred = ptyFixture.deferNextSpawn(respawn)
+    const spawning = ptyFixture.spawn({
+      provider: plainShellProvider,
+      ownerId: OWNER_ID,
+      ownerGeneration: 4,
+      sessionId: SESSION_ID,
+    })
+    deferred.resolve()
+    const next = await spawning
+    expect(next.instanceId).not.toBe(info.instanceId)
+
+    expect(refusal(() => lease.viewport(50, 40))).toBe('instance-changed')
+    expect(respawn.resize).not.toHaveBeenCalled()
+    expect(pty.resize).not.toHaveBeenCalled()
+  })
+
+  it('a renderer refit during a hold is remembered rather than applied, and lands on release', async () => {
+    const { info, pty, supervisor, mirror, lease, events } = await watched()
+    lease.viewport(50, 40)
+    supervisor.resize(info.id, OWNER_ID, 200, 60, 4)
+    // The phone is watching, so the PTY stays at the phone's grid and every
+    // mirror keeps seeing it; the desktop's own fit waits its turn.
+    expect(pty.resize).toHaveBeenCalledExactlyOnceWith(50, 40)
+    expect(mirror.onGeometry).toHaveBeenCalledExactlyOnceWith({ cols: 50, rows: 40 })
+
+    lease.release()
+    expect(pty.resize).toHaveBeenLastCalledWith(200, 60)
+    expect(events).toEqual([
+      {
+        kind: 'held',
+        id: info.id,
+        ownerId: OWNER_ID,
+        ownerGeneration: 4,
+        geometry: { cols: 50, rows: 40 },
+      },
+      { kind: 'reclaim', id: info.id, ownerId: OWNER_ID, ownerGeneration: 4 },
+    ])
+  })
+
+  it('release reclaims exactly once per hold, naming the owning renderer', async () => {
+    const { info, supervisor, events } = await watched()
+    supervisor.attach(info.id, OWNER_ID, { onData: () => undefined }, 4)
+    expect(supervisor.transferRendererSession(info.id, OWNER_ID, 4, OWNER_ID, 5)).toBe(
+      true,
+    )
+    const lease = supervisor.attachMirror(info.id, info.instanceId, handlers())
+    lease.viewport(50, 40)
+    lease.viewport(51, 41)
+    lease.release()
+    lease.release()
+    expect(events).toEqual([
+      {
+        kind: 'held',
+        id: info.id,
+        ownerId: OWNER_ID,
+        ownerGeneration: 5,
+        geometry: { cols: 50, rows: 40 },
+      },
+      {
+        kind: 'held',
+        id: info.id,
+        ownerId: OWNER_ID,
+        ownerGeneration: 5,
+        geometry: { cols: 51, rows: 41 },
+      },
+      { kind: 'reclaim', id: info.id, ownerId: OWNER_ID, ownerGeneration: 5 },
+    ])
+  })
+
+  it('a release without a hold reclaims nothing', async () => {
+    const { pty, lease, events } = await watched()
+    lease.release()
+    expect(events).toEqual([])
+    expect(pty.resize).not.toHaveBeenCalled()
+  })
+
+  it('a page that took the size over keeps it when the page before it lets go', async () => {
+    const { info, pty, supervisor, lease, events } = await watched()
+    const second = supervisor.attachMirror(info.id, info.instanceId, handlers())
+    lease.viewport(50, 40)
+    second.viewport(60, 30)
+    lease.release()
+    // The first page is gone but the second is still watching, so its grid stands.
+    expect(pty.resize).toHaveBeenLastCalledWith(60, 30)
+    expect(events.map((event) => event.kind)).toEqual(['held', 'held'])
+
+    second.release()
+    expect(pty.resize).toHaveBeenLastCalledWith(80, 24)
+    expect(events.map((event) => event.kind)).toEqual(['held', 'held', 'reclaim'])
+  })
+
+  it('the PTY goes back to the desktop fit that was current when the hold began', async () => {
+    const { info, pty, supervisor, lease } = await watched({ cols: 100, rows: 30 })
+    supervisor.resize(info.id, OWNER_ID, 119, 38, 4)
+    lease.viewport(50, 40)
+    lease.release()
+    expect(pty.resize.mock.calls).toEqual([
+      [119, 38],
+      [50, 40],
+      [119, 38],
+    ])
+  })
+
+  it('a viewport the PTY refuses reports no hold and keeps the last applied size', async () => {
+    const { info, pty, supervisor, mirror, lease, events } = await watched({
+      cols: 100,
+      rows: 30,
+    })
+    pty.resize.mockImplementationOnce(() => {
+      throw new Error('Cannot resize a pty that has already exited')
+    })
+    expect(() => lease.viewport(50, 40)).toThrow(
+      'Cannot resize a pty that has already exited',
+    )
+    expect(mirror.onGeometry).not.toHaveBeenCalled()
+    expect(events).toEqual([])
+    expect(
+      supervisor.attachMirror(info.id, info.instanceId, handlers()).geometry,
+    ).toEqual({
+      cols: 100,
+      rows: 30,
+    })
+  })
+
+  it('onMirrorGeometry unsubscribes', async () => {
+    const { supervisor, lease, events } = await watched()
+    const late = vi.fn<(event: PtyMirrorGeometryEvent) => void>()
+    const stop = supervisor.onMirrorGeometry(late)
+    void stop()
+    lease.viewport(50, 40)
+    expect(late).not.toHaveBeenCalled()
+    expect(events).toHaveLength(1)
+  })
+
+  it('refusal messages carry the id and reason only', async () => {
+    const { info, lease } = await watched()
+    lease.release()
+    let refused: unknown
+    try {
+      lease.viewport(50, 40)
+    } catch (error) {
+      refused = error
+    }
+    expect(refused).toBeInstanceOf(PtyMirrorRefusedError)
+    const error = refused as PtyMirrorRefusedError
+    expect(error.message).toBe(`PTY mirror on '${info.id}' refused: ended`)
+  })
+
+  it('a hold on a PTY that exited reclaims nothing and resizes nothing', async () => {
+    const { pty, lease, events } = await watched()
+    lease.viewport(50, 40)
+    pty.emitExit({ exitCode: 0, signal: undefined })
+    pty.resize.mockClear()
+    lease.release()
+    expect(events.map((event) => event.kind)).toEqual(['held'])
+    expect(pty.resize).not.toHaveBeenCalled()
   })
 })

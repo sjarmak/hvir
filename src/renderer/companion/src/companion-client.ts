@@ -7,6 +7,7 @@
  */
 import type {
   CompanionEvent,
+  CompanionViewportRequest,
   CompanionRespondRequest,
   CompanionSnapshot,
   CompanionSubmitRequest,
@@ -118,6 +119,15 @@ export interface CompanionClient {
     handle: SessionsTerminalHandle,
     data: string,
     navigation?: boolean,
+  ): Promise<SessionsMutationResponse>
+  /**
+   * The grid this page is drawing for the mirrored row (ADR-058). The PTY takes that size
+   * and keeps it for as long as this page's mirror lasts, whatever the desktop is doing.
+   */
+  viewport(
+    page: string,
+    handle: SessionsTerminalHandle,
+    grid: CompanionViewportRequest,
   ): Promise<SessionsMutationResponse>
 }
 
@@ -242,6 +252,13 @@ export function createCompanionClient(options: CompanionClientOptions): Companio
       post(
         route(handle, 'input'),
         { page, data, ...(navigation === true ? { navigation: true } : {}) },
+        isSessionsMutationResponse,
+        'mutation outcome',
+      ),
+    viewport: (page, handle, grid) =>
+      post(
+        route(handle, 'viewport'),
+        { page, ...grid },
         isSessionsMutationResponse,
         'mutation outcome',
       ),

@@ -1,7 +1,8 @@
 # ADR-057: The Companion mirror shows the desktop's grid whether or not the desktop is Away
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-052](ADR-052-companion-mirror-holds-pty-size-while-away.md) | full | Entire decision.
+> Superseded by: [ADR-058](ADR-058-the-watching-phone-owns-the-grid.md) | partial | One fit at every focus state, with the phone drawing the desktop's grid scaled, for the grid a watching page declares.
 
 ## Context
 

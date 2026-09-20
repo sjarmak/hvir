@@ -59,6 +59,17 @@ describe('feature-owned IPC composition', () => {
       readonly id: string
       readonly data: string
     }>()
+    // A page holding or releasing a PTY's size (ADR-058) is one as well.
+    expect(EVENT_CHANNELS).toContain('pty:mirror-geometry')
+    expectTypeOf<IpcEventMap['pty:mirror-geometry']>().toEqualTypeOf<
+      | {
+          readonly id: string
+          readonly kind: 'held'
+          readonly cols: number
+          readonly rows: number
+        }
+      | { readonly id: string; readonly kind: 'reclaim' }
+    >()
     expectTypeOf<PreloadOnlyIpcInvokeChannel>().toEqualTypeOf<'fs:acquire-dropped-files'>()
     expectTypeOf<RendererIpcInvokeChannel>().toEqualTypeOf<
       Exclude<keyof IpcInvokeMap, 'fs:acquire-dropped-files'>

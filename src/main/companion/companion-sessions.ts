@@ -213,6 +213,22 @@ export class CompanionSessionsService {
     else page.mirror.write(data)
   }
 
+  /**
+   * The grid the page is drawing (ADR-058). Watching is not typing, so the Settings gate
+   * that guards input never applies here; a page may size what it reads without being
+   * allowed to write to it.
+   */
+  viewport(
+    pageId: string,
+    handle: SessionsTerminalHandle,
+    cols: number,
+    rows: number,
+  ): void {
+    const page = this.page(pageId)
+    if (page.mirror.handle !== handle) throw new CompanionNoMirrorError()
+    page.mirror.viewport(cols, rows)
+  }
+
   /** The stream fell behind: the route ends the mirror rather than the page. */
   endMirror(pageId: string, reason: 'overrun'): void {
     this.pages.get(pageId)?.mirror.end(reason)

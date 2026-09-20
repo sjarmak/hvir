@@ -104,7 +104,9 @@ export class TerminalRuntime {
     return this.options.workspaceRoot
   }
 
-  get live(): boolean { return !this.disposed && this.started && Boolean(this.activePtyId) }
+  get live(): boolean {
+    return !this.disposed && this.started && Boolean(this.activePtyId)
+  }
   snapshot = (): TerminalRuntimeSnapshot => this.currentSnapshot
 
   subscribe = (listener: () => void): (() => void) => {
@@ -464,7 +466,7 @@ export class TerminalRuntime {
         if (this.pane !== pane) return
         this.interactions.retainedBufferChanged()
         this.terminalSize = { cols, rows }
-        if (!this.surface.canFocus() || !this.started) return
+        if (!this.surface.ownsGeometry() || !this.started) return
         if (this.resizeTimer !== undefined) window.clearTimeout(this.resizeTimer)
         const interactionGeneration = this.surface.interactionGeneration
         const ptyId = this.activePtyId
@@ -472,7 +474,7 @@ export class TerminalRuntime {
         this.resizeTimer = window.setTimeout(() => {
           this.resizeTimer = undefined
           if (
-            !this.surface.canFocus() ||
+            !this.surface.ownsGeometry() ||
             interactionGeneration !== this.surface.interactionGeneration ||
             !ptyId ||
             ptyId !== this.activePtyId ||
@@ -535,6 +537,10 @@ export class TerminalRuntime {
         // Already written to the PTY by a Companion mirror (ADR-050): hand it
         // to the owner as this terminal's mirror input; write nothing.
         onMirrorInput: (data) => this.options.onMirrorInput(data),
+        // A Companion page watching this PTY holds its size, or gave it back
+        // (ADR-058): the surface presents that grid and stops the pane's own fit
+        // from resizing the PTY until the phone is done with it.
+        onMirrorGeometry: (held) => this.surface.holdGeometry(held),
       },
     )
     this.surface.installRoute(this.eventRoute)
@@ -580,7 +586,9 @@ export class TerminalRuntime {
     status: string,
     recoveryFailure?: TerminalRuntimeSnapshot['recoveryFailure'],
   ): void {
-    this.updateSnapshot(terminalStartFailureSnapshot(this.currentSnapshot, status, recoveryFailure))
+    this.updateSnapshot(
+      terminalStartFailureSnapshot(this.currentSnapshot, status, recoveryFailure),
+    )
     if (this.options.forkRequest) this.options.onStartFailed?.(status)
   }
 

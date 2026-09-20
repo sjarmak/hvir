@@ -9,6 +9,7 @@ import {
   type CompanionResponse,
 } from '../src/renderer/companion/src/companion-client'
 import type {
+  CompanionCellSize,
   CompanionTerminalPane,
   CompanionTerminalPaneFactory,
 } from '../src/renderer/companion/src/companion-terminal-pane'
@@ -96,6 +97,8 @@ export class FakeCompanionServer {
   /** The status POST input answers; anything but 200 carries `inputError`. */
   inputStatus = 200
   inputError = 'Refused'
+  /** The status POST viewport answers; anything but 200 is a hold that did not take. */
+  viewportStatus = 200
   /** While true, select replies wait until `releaseSelect` is called. */
   holdSelect = false
   transcriptReply: SessionsTranscriptSnapshot = transcript({ handle: 'none' })
@@ -121,6 +124,13 @@ export class FakeCompanionServer {
   inputs(): unknown[] {
     return this.calls
       .filter((call) => call.url.endsWith('/input'))
+      .map((call) => call.body)
+  }
+
+  /** Every grid the page held the PTY at, in order (ADR-058). */
+  viewports(): unknown[] {
+    return this.calls
+      .filter((call) => call.url.endsWith('/viewport'))
       .map((call) => call.body)
   }
 
@@ -163,6 +173,11 @@ export class FakeCompanionServer {
     if (this.verbStatus !== 200) return json(this.verbStatus, { error: 'Refused' })
     if (url.endsWith('/select') || url.endsWith('/resume')) {
       return json(200, this.transcriptReply)
+    }
+    if (url.endsWith('/viewport')) {
+      return this.viewportStatus === 200
+        ? json(200, { outcome: 'accepted' })
+        : json(this.viewportStatus, { error: 'The mirrored terminal ended or changed' })
     }
     if (url.endsWith('/input')) {
       return this.inputStatus === 200
@@ -303,6 +318,12 @@ export class FakeCompanionPane implements CompanionTerminalPane {
   returnToLive(): void {
     this.returns += 1
     this.moveViewport(0)
+  }
+
+  /** Like the real pane: no cell metrics until the emulator is mounted. */
+  cellSize(): CompanionCellSize | undefined {
+    if (this.mounted === undefined) return undefined
+    return { width: FAKE_CELL_WIDTH, height: FAKE_CELL_HEIGHT }
   }
 
   setInputEnabled(enabled: boolean): void {
