@@ -1,4 +1,5 @@
 import type { BrowserWindow } from 'electron'
+import { verifyArchitectureReviewAuthority } from './architecture-review-authority'
 import { verifyArchitectureReviewVisuals } from './architecture-review-visual'
 import { joinHostPath, type HostPath } from '../../shared'
 import type { ProjectHost } from '../project-host'
@@ -79,6 +80,7 @@ export async function runArchitectureReviewSmoke(
   host: ProjectHost,
 ): Promise<number> {
   const fixture = await createArchitectureReviewSmokeFixture(host, root)
+  await verifyArchitectureReviewAuthority(win, fixture)
   const path = await verifyArchitectureReviewWorkflow(win, fixture)
   if (!path) throw new Error('Architecture evidence path missing')
   await verifyArchitectureReviewVisuals(win, host, root)
