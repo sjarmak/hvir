@@ -29,6 +29,10 @@ interface TabStripProps {
   readonly graphActive: boolean
   readonly onActivateGraph: () => void
   readonly onCloseGraph: () => void
+  readonly architectureReviewOpen?: boolean
+  readonly architectureReviewActive?: boolean
+  readonly onActivateArchitectureReview?: () => void
+  readonly onCloseArchitectureReview?: () => void
   readonly webTabs?: readonly { readonly id: string; readonly title: string }[]
   readonly activeWebId?: string
   readonly onActivateWeb?: (id: string) => void
@@ -52,6 +56,10 @@ export function TabStrip({
   graphActive,
   onActivateGraph,
   onCloseGraph,
+  architectureReviewOpen = false,
+  architectureReviewActive = false,
+  onActivateArchitectureReview,
+  onCloseArchitectureReview,
   webTabs = [],
   activeWebId,
   onActivateWeb,
@@ -179,6 +187,35 @@ export function TabStrip({
             </button>
           </div>
         ) : null}
+        {architectureReviewOpen &&
+        onActivateArchitectureReview &&
+        onCloseArchitectureReview ? (
+          <div
+            className={`viewer-tab architecture-review-tab${architectureReviewActive ? ' active' : ''}`}
+            role="tab"
+            aria-selected={architectureReviewActive}
+          >
+            <button
+              className="tab-main"
+              type="button"
+              onClick={onActivateArchitectureReview}
+              title="Architecture review"
+            >
+              <span className="tab-status" aria-hidden="true">
+                ◇
+              </span>
+              <span className="tab-name">Architecture</span>
+            </button>
+            <button
+              className="tab-close"
+              type="button"
+              aria-label="Close Architecture review"
+              onClick={onCloseArchitectureReview}
+            >
+              ×
+            </button>
+          </div>
+        ) : null}
         {webTabs.map((webTab) => (
           <div
             className={`viewer-tab web-pane-tab${webTab.id === activeWebId ? ' active' : ''}`}
@@ -211,7 +248,10 @@ export function TabStrip({
             </button>
           </div>
         ))}
-        {tabs.length === 0 && !graphOpen && webTabs.length === 0 ? (
+        {tabs.length === 0 &&
+        !graphOpen &&
+        !architectureReviewOpen &&
+        webTabs.length === 0 ? (
           <span className="tab-strip-empty">{split ? 'Drop a tab here' : 'Viewer'}</span>
         ) : null}
         <span className="tab-strip-spacer" />

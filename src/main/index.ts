@@ -1,10 +1,11 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, shell } from 'electron'
+import { createArchitectureReview } from './architecture-review/runtime'
 import { registerIpcHandlers } from './ipc'
 import { createProjectCommands } from './ipc/project-commands'
 import { GitMutationCoordinator } from './git/mutation-coordinator'
 import { GitMutationAuthorization } from './git/mutation-authorization'
-import { GitWorkerHostRouter } from './git/worker-host-router'
+import { ownGitWorker } from './git/worker-runtime'
 import { gitDiscoveryWorker, gitMutationWorker } from './git/worker-ports'
 import { HtmlPreviewProtocol } from './html-preview-protocol'
 import { createWorkerClient, workerPath, type WorkerClient } from './worker-host'
@@ -211,19 +212,7 @@ function createWorkbenchEntry(): void {
       createWorkerClient<EchoWorkerProtocol>(workerPath('echo-worker.js'), 'hvir-echo'),
       (worker) => worker.dispose(),
     )
-    const gitHostRouter = new GitWorkerHostRouter({
-      authority: projectRegistry,
-      authorizations: gitMutationAuthorizations,
-    })
-    gitWorker = runtime.own(
-      'Git worker',
-      createWorkerClient<GitWorkerProtocol>(
-        workerPath('git-worker.js'),
-        'hvir-git',
-        (call) => gitHostRouter.route(call),
-      ),
-      (worker) => worker.dispose(),
-    )
+    gitWorker = ownGitWorker(runtime, projectRegistry, gitMutationAuthorizations)
     const filenameSearch = runtime.own(
       'filename search',
       createFilenameSearchCoordinator(gitWorker),
@@ -363,11 +352,10 @@ function createWorkbenchEntry(): void {
       withSshPresentation,
     })
     const getProject = () => registry.active
-    const beadsService = new BeadsService({ getProject })
-    const gasCityService = ownGasCityService(getProject, gasCity.reader)
     runtime.own(
       'IPC authority router',
       registerIpcHandlers({
+        architectureReview: createArchitectureReview(rendererScopes, runtime),
         echoWorker,
         gitWorker,
         filenameSearch,
@@ -406,8 +394,8 @@ function createWorkbenchEntry(): void {
         harnessProfiles: harnessProfileStore,
         harnessProbes: harnessProbeManager,
         remoteImagePaste,
-        beads: beadsService,
-        gascity: gasCityService,
+        beads: new BeadsService({ getProject }),
+        gascity: ownGasCityService(getProject, gasCity.reader),
         companion: companion.settings,
         updateAttention: (owner, set) => attention?.updateAttention(owner, set),
         updateWebPaneBindings: (owner, bindings) =>

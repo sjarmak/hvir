@@ -11,6 +11,7 @@ import type {
   ExternalSessionAttachRequest,
   ExternalSessionAttachTarget,
 } from '../external-session'
+import type { ArchitectureReviewLaunch } from '../architecture-review'
 
 export interface StartPtyRequest {
   readonly sessionId: string
@@ -48,6 +49,8 @@ export interface StartPtyRequest {
    * persisted and never reaches Sessions.
    */
   readonly externalAttach?: ExternalSessionAttachRequest
+  /** Native architecture review context; main turns this into the provider-owned prompt. */
+  readonly architectureReview?: ArchitectureReviewLaunch
 }
 
 export type StartPtyResponse =

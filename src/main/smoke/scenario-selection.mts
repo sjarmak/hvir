@@ -3,6 +3,7 @@ export const ELECTRON_SMOKE_SCENARIOS = [
   'viewer-position',
   'viewer-content',
   'git-workflow',
+  'architecture-review',
   'workspace-remote',
   'web-pane',
   'renderer-authority',

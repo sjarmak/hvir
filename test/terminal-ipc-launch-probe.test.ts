@@ -15,6 +15,7 @@ import type { ProjectHost } from '../src/main/project-host'
 import type { ManagedPty, PtySpawnRequest } from '../src/main/pty/pty-supervisor'
 import {
   LOCAL_HOST_ID,
+  asHostId,
   hostPath,
   hostPathEquals,
   type HostConnectionState,
@@ -90,13 +91,100 @@ describe('terminal IPC launch probe binding', () => {
   })
 })
 
-function launchProbeFixture(initialVersion: string) {
-  const root = hostPath(LOCAL_HOST_ID, '/repo')
+it.each([LOCAL_HOST_ID, asHostId('ssh:test')])(
+  'starts pinned evidence on %s through the selected native provider and PTY supervisor',
+  async (hostId) => {
+    const f = launchProbeFixture('codex-cli 0.153.1', true, hostId)
+    const architectureReview = {
+      root: f.request.workspaceRoot,
+      path: hostPath(f.request.workspaceRoot.hostId, '/repo/a.ts'),
+      reviewId: 'tab',
+      snapshotId: 'snapshot',
+      digest: 'digest',
+    }
+    try {
+      await f.start({ ...f.request, architectureReview }, f.context)
+      expect(f.launchPayload).toHaveBeenCalledWith(
+        f.context.owner(),
+        f.probeRequest.host,
+        architectureReview,
+      )
+      expect(f.spawn.mock.calls[0]?.[0]).toMatchObject({
+        workspaceRoot: f.request.workspaceRoot,
+        cwd: f.request.cwd,
+        profileId: f.request.profileId,
+        sessionId: f.request.sessionId,
+        launchMode: 'fresh',
+        launchSpec: {
+          file: 'codex',
+          args: [
+            '--config',
+            'tui.terminal_title=["thread-title"]',
+            '--',
+            'Pinned review\nbefore and after',
+          ],
+        },
+      })
+      expect(f.assertLaunchCurrent).toHaveBeenCalledOnce()
+    } finally {
+      f.probes.dispose()
+    }
+  },
+)
+it.each(['stale', 'cancelled'])('does not spawn a %s review launch', async (reason) => {
+  const f = launchProbeFixture('codex-cli 0.153.1', true)
+  const architectureReview = {
+    root: f.request.workspaceRoot,
+    path: hostPath(f.request.workspaceRoot.hostId, '/repo/a.ts'),
+    reviewId: 'tab',
+    snapshotId: 'snapshot',
+    digest: 'digest',
+  }
+  if (reason === 'stale') f.launchPayload.mockRejectedValue(new Error(reason))
+  else
+    f.assertLaunchCurrent.mockImplementation(() => {
+      throw new Error(reason)
+    })
+  try {
+    await expect(
+      f.start({ ...f.request, architectureReview }, f.context),
+    ).rejects.toThrow(reason)
+    expect(f.spawn).not.toHaveBeenCalled()
+  } finally {
+    f.probes.dispose()
+  }
+})
+it('refuses architecture evidence from another workspace before acquiring launch authority', async () => {
+  const f = launchProbeFixture('codex-cli 0.153.1', true)
+  const architectureReview = {
+    root: hostPath(LOCAL_HOST_ID, '/other'),
+    path: hostPath(LOCAL_HOST_ID, '/other/a.ts'),
+    reviewId: 'tab',
+    snapshotId: 'snapshot',
+    digest: 'digest',
+  }
+  try {
+    await expect(
+      f.start({ ...f.request, architectureReview }, f.context),
+    ).rejects.toThrow(/exact workspace/)
+    expect(f.launchPayload).not.toHaveBeenCalled()
+    expect(f.spawn).not.toHaveBeenCalled()
+  } finally {
+    f.probes.dispose()
+  }
+})
+
+function launchProbeFixture(
+  initialVersion: string,
+  review = false,
+  hostId = LOCAL_HOST_ID,
+) {
+  const root = hostPath(hostId, '/repo')
   const profile = {
     ...providerTemplateProfiles().find(({ providerId }) => providerId === 'codex')!,
     builtIn: false,
     launchRevision: 4,
-    args: [{ parts: [{ kind: 'literal' as const, value: '--yolo' }] }],
+    args: review ? [] : [{ parts: [{ kind: 'literal' as const, value: '--yolo' }] }],
   }
   let version = initialVersion
   const exec = vi.fn<ProjectHost['exec']>((_command, args) => {
@@ -112,7 +200,7 @@ function launchProbeFixture(initialVersion: string) {
   })
   const listeners = new Set<(state: HostConnectionState) => void>()
   const host = {
-    hostId: LOCAL_HOST_ID,
+    hostId,
     connectionState: 'connected',
     watchTier: 'native',
     defaultShell: () => Promise.resolve('/bin/zsh'),
@@ -184,7 +272,10 @@ function launchProbeFixture(initialVersion: string) {
     handleSend: vi.fn(),
   } as unknown as IpcRegistrar
   const lease = { dispose: vi.fn(() => Promise.resolve()), release: vi.fn() }
+  const launchPayload = vi.fn(() => Promise.resolve('Pinned review\nbefore and after'))
+  const assertLaunchCurrent = vi.fn()
   registerTerminalIpc(ipc, {
+    architectureReview: { launchPayload, assertLaunchCurrent },
     getHost: () => host,
     terminalSessions: {
       authorizeReattach: vi.fn(() => false),
@@ -245,6 +336,8 @@ function launchProbeFixture(initialVersion: string) {
   } as unknown as IpcInvokeContext
   return {
     probes,
+    launchPayload,
+    assertLaunchCurrent,
     probeRequest,
     exec,
     spawn,

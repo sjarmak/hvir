@@ -122,6 +122,7 @@ export function TerminalSessionRuntimes({
             resumeOnStart={session.resumeOnStart}
             initialInput={session.initialInput}
             externalAttach={session.externalAttach}
+            architectureReview={session.architectureReview}
             startMode={session.startMode ?? 'interactive'}
             position={position}
             slot={session.pane}

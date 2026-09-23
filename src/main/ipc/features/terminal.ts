@@ -7,6 +7,7 @@ import {
   type ExternalSessionAttachRequest,
   type ExternalSessionAttachTarget,
 } from '../../../shared'
+import { architectureLaunchBody } from '../../architecture-review/launch'
 import { resolveHarnessLaunch } from '../../harness/harness-launch'
 import { harnessProvider, selectHarnessLaunch } from '../../harness/harness-provider'
 import {
@@ -30,6 +31,7 @@ import type { IpcDeps } from '../deps'
 import { operationResult } from '../operation-result'
 type TerminalIpcDeps = Pick<
   IpcDeps,
+  | 'architectureReview'
   | 'getHost'
   | 'terminalSessions'
   | 'harnessProfiles'
@@ -157,6 +159,8 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
   ipc.handle('pty:start', async (req, context) => {
     if (!isTerminalId(req.sessionId)) throw new Error('Invalid PTY session id')
     const requestedMode = terminalLaunchMode(req)
+    if (req.architectureReview !== undefined && deps.ptySupervisor.get(req.sessionId))
+      throw new Error('Architecture review requires a separate session')
     if (
       req.replacesSessionId !== undefined &&
       (!isTerminalId(req.replacesSessionId) ||
@@ -341,6 +345,10 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
       )
     }
     const defaultShell = await host.defaultShell()
+    if (req.architectureReview !== undefined && !provider.architectureReviewLaunch)
+      throw new Error('This provider does not support architecture review launches')
+    const architectureReviewBody = await architectureLaunchBody(req, owner, host, profile, deps.architectureReview)
+    deps.rendererResources.assertCurrent(owner)
     const resolved = await resolveHarnessLaunch({
       profile,
       expectedLaunchRevision: req.launchRevision,
@@ -357,6 +365,7 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
         cols,
         rows,
         defaultShell,
+        architectureReviewBody,
         composerSubmitMode: req.composerSubmitMode,
         effectiveCapabilities,
       },
@@ -375,6 +384,8 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
     const launchMode = launchDecision.mode
     const refreshAfterClassifiedLaunchFailure = (): void =>
       deps.harnessProbes.refreshProfile(availabilityRequest, profile)
+    if (req.architectureReview !== undefined)
+      deps.architectureReview.assertLaunchCurrent(owner, host, req.architectureReview)
     const ptyLease = registerRendererPty(deps, owner, root, req.sessionId)
     let managed
     try {

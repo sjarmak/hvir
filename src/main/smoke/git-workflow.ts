@@ -266,3 +266,12 @@ function readGitWorkflowState(win: BrowserWindow): Promise<unknown> {
     })()
   `) as Promise<unknown>
 }
+
+export async function runGitWorkflowSmoke(
+  options: Parameters<typeof verifyGitWorkflow>[0],
+): Promise<number> {
+  const result = await verifyGitWorkflow(options)
+  console.log(`[smoke] Git workflow OK (${result})`)
+  console.log('HVIR_SMOKE_OK')
+  return 0
+}

@@ -31,6 +31,9 @@ export class HarnessProviderRegistry {
       displayName: provider.manifest.displayName,
       default: provider.manifest.default === true,
       ...(provider.fork ? { exactForkLaunch: true as const } : {}),
+      ...(provider.architectureReviewLaunch
+        ? { architectureReviewLaunch: true as const }
+        : {}),
       capabilities: harnessProviderCapabilities(provider),
       terminalInput: {
         modifiedKeyProtocol: provider.manifest.modifiedKeyProtocol ?? 'none',

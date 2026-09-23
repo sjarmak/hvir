@@ -29,6 +29,7 @@ export type RendererResourceQualifier =
         | 'project-file-operation'
         | 'document-review'
         | 'document-review-delivery'
+        | 'architecture-review'
       readonly root: HostPath
       readonly id: string
     }

@@ -64,6 +64,11 @@ export const claudeCodeProvider: HarnessProvider = {
   remoteImagePaste: pathImagePasteContract(),
   documentReviewInsert: claudeCodeReviewInsert,
 
+  architectureReviewLaunch: (spec, body) => ({
+    ...spec,
+    args: [...spec.args, '--', body],
+  }),
+
   launch(ctx): HarnessLaunchSpec {
     return {
       file: 'claude',

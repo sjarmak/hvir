@@ -14,6 +14,7 @@ import { appIpc } from './ipc/app'
 import { diagnosticsIpc } from './ipc/diagnostics'
 import { projectIpc } from './ipc/project'
 import { filesystemIpc } from './ipc/filesystem'
+import { architectureReviewIpc } from './ipc/architecture-review'
 import { gitIpc } from './ipc/git'
 import { previewIpc } from './ipc/preview'
 import { harnessIpc } from './ipc/harness'
@@ -104,7 +105,10 @@ export {
 } from './ipc/web-pane'
 export { type ProjectRootResponse, type ProjectState } from './workspace-types'
 export { type OperationResult, unwrapOperation } from './operation-result'
-export { isTerminalAttentionState, type TerminalAttentionState } from './terminal-attention'
+export {
+  isTerminalAttentionState,
+  type TerminalAttentionState,
+} from './terminal-attention'
 
 const contract = composeIpcContracts(
   appIpc,
@@ -112,6 +116,7 @@ const contract = composeIpcContracts(
   projectIpc,
   filesystemIpc,
   gitIpc,
+  architectureReviewIpc,
   previewIpc,
   harnessIpc,
   terminalIpc,

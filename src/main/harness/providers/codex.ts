@@ -90,6 +90,11 @@ export const codexProvider: HarnessProvider = {
   documentReviewInsert: codexReviewInsert,
   documentReviewSendNow: codexReviewSendNow,
 
+  architectureReviewLaunch: (spec, body) => ({
+    ...spec,
+    args: [...spec.args, '--', body],
+  }),
+
   launch(ctx): HarnessLaunchSpec {
     return {
       file: 'codex',

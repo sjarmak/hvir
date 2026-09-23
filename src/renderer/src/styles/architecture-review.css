@@ -1,0 +1,323 @@
+.architecture-review {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: calc(12px * var(--hvir-interface-scale));
+}
+.architecture-review :is(button, input, select, textarea) {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface-1);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 5px 8px;
+}
+.architecture-review button {
+  cursor: pointer;
+}
+.architecture-review button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+.architecture-review button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.architecture-review :is(button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.architecture-review-header,
+.architecture-review-controls,
+.architecture-review-map-tabs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.architecture-review-header,
+.architecture-review-controls {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.architecture-review-header {
+  justify-content: space-between;
+}
+.architecture-review h2 {
+  margin: 0;
+  font-size: calc(15px * var(--hvir-interface-scale));
+  color: var(--text-strong);
+}
+.architecture-review h3 {
+  margin: 12px 0 8px;
+  font-size: calc(13px * var(--hvir-interface-scale));
+  color: var(--text-strong);
+}
+.architecture-review-header p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+}
+.architecture-review-controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.architecture-review-body {
+  display: grid;
+  grid-template-columns: minmax(250px, 1fr) minmax(300px, 1.2fr);
+  min-height: 0;
+  flex: 1;
+}
+.architecture-review-map {
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+.architecture-review-map-tabs {
+  position: sticky;
+  top: -12px;
+  z-index: 2;
+  padding: 6px 0;
+  background: var(--surface-2);
+}
+.architecture-review-map-tabs button {
+  background: transparent;
+}
+.architecture-review-map-tabs button.active {
+  background: var(--surface-active);
+  color: var(--text-strong);
+  border-color: var(--accent);
+}
+.architecture-map-note {
+  color: var(--text-muted);
+  max-width: 65ch;
+  line-height: 1.5;
+}
+.architecture-map-scroll {
+  overflow: auto;
+  max-height: 420px;
+  border-block: 1px solid var(--border-subtle);
+}
+.architecture-map-canvas {
+  width: 580px;
+  position: relative;
+}
+.architecture-map-canvas svg {
+  position: absolute;
+  inset: 0;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.architecture-map-edge {
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+  fill: none;
+}
+.architecture-map-edge.change-added,
+.architecture-map-edge.change-changed {
+  stroke: var(--accent);
+}
+.architecture-map-edge.change-removed {
+  stroke: var(--danger-text);
+  stroke-dasharray: 4 4;
+}
+.architecture-review .architecture-subsystem {
+  position: absolute;
+  width: 244px;
+  height: 60px;
+  text-align: left;
+  padding: 8px 10px;
+  background: var(--surface-raised);
+}
+.architecture-subsystem strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-strong);
+}
+.architecture-subsystem span {
+  display: block;
+  margin-top: 4px;
+  font-size: calc(11px * var(--hvir-interface-scale));
+  color: var(--text-muted);
+}
+.architecture-subsystem.nearby {
+  background: var(--surface-1);
+}
+.architecture-subsystem.absent {
+  opacity: 0.5;
+  border-style: dashed;
+}
+.architecture-review .architecture-subsystem[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--surface-active);
+}
+.architecture-review .architecture-module {
+  display: flex;
+  width: 100%;
+  gap: 8px;
+  justify-content: space-between;
+  text-align: left;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  padding: 7px 4px;
+  background: transparent;
+  overflow-wrap: anywhere;
+}
+.architecture-module small {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.architecture-review-relationships {
+  margin-top: 12px;
+}
+.architecture-relationship {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  overflow-wrap: anywhere;
+}
+.architecture-relationship summary,
+.architecture-file-explorer summary {
+  cursor: pointer;
+}
+.architecture-relationship small {
+  display: block;
+  margin: 4px 0 0;
+  color: var(--text-muted);
+}
+.architecture-relationship button {
+  display: block;
+  margin-top: 6px;
+  width: 100%;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.architecture-file-explorer {
+  margin-top: 18px;
+}
+.architecture-file-explorer label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+.architecture-evidence {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border-left: 1px solid var(--border-subtle);
+  padding: 12px;
+}
+.architecture-evidence .diff-shell {
+  min-height: 320px;
+  height: 45vh;
+}
+.architecture-review-stale {
+  padding: 8px;
+  border: 1px solid var(--warning-border);
+  background: var(--warning-surface);
+  color: var(--warning-text);
+}
+.architecture-review-state {
+  padding: 12px;
+  color: var(--text-muted);
+}
+.architecture-review-state.error {
+  color: var(--danger-text);
+}
+.architecture-review-launch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 12px 0;
+}
+.architecture-review-launch pre {
+  width: 100%;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 10px;
+  background: var(--surface-1);
+  border: 1px solid var(--border-subtle);
+}
+.architecture-review-launch p {
+  width: 100%;
+  color: var(--text-muted);
+}
+@media (max-width: 900px) {
+  .architecture-review-body {
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+  }
+  .architecture-review-map,
+  .architecture-evidence {
+    flex-shrink: 0;
+    overflow: visible;
+  }
+  .architecture-evidence {
+    border-left: 0;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .architecture-map-scroll {
+    max-height: 280px;
+  }
+}
+.architecture-review-metadata {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  max-height: 180px;
+  overflow: auto;
+  flex-shrink: 0;
+}
+.architecture-review-metadata summary {
+  cursor: pointer;
+}
+.architecture-review-metadata dl {
+  margin-bottom: 0;
+}
+.architecture-review-metadata dl div {
+  display: flex;
+  gap: 12px;
+  margin: 5px 0;
+}
+.architecture-review-metadata dt {
+  min-width: 85px;
+}
+.architecture-review-metadata dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.architecture-evidence form {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+.architecture-evidence form label {
+  display: grid;
+  gap: 4px;
+}
+.architecture-evidence form :is(input, textarea, select) {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.architecture-evidence form textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.architecture-review-scope {
+  margin: 0;
+  padding: 6px 14px;
+  color: var(--text-muted);
+  font-size: calc(11px * var(--hvir-interface-scale));
+}

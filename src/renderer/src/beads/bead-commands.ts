@@ -19,7 +19,7 @@ export type BeadAction = (typeof BEAD_ACTIONS)[number]
 
 export type BeadActionRequest =
   | { readonly action: 'claim' | 'close'; readonly id: string }
-  | { readonly action: 'create'; readonly title: string }
+  | { readonly action: 'create'; readonly title: string; readonly description?: string }
 
 /** All three are one-shot commands: none carries a terminal-reuse key. */
 export interface BeadCommand {
@@ -59,10 +59,12 @@ export function beadCommand(request: BeadActionRequest): BeadCommand | undefined
       if (!isBeadId(request.id)) return undefined
       return { command: `bd close ${shellQuoteArg(request.id)}` }
     case 'create':
-      if (TERMINAL_CONTROL.test(request.title)) return undefined
+      if (TERMINAL_CONTROL.test(request.title) || (request.description !== undefined && TERMINAL_CONTROL.test(request.description))) return undefined
       // `--title` rather than a positional: a title starting with `-` would
       // otherwise be parsed by bd as a flag ("title required").
-      return { command: `bd create --title ${shellQuoteArg(request.title)}` }
+      return {
+        command: `bd create --title ${shellQuoteArg(request.title)}${request.description ? ` --description ${shellQuoteArg(request.description)}` : ''}`,
+      }
   }
 }
 

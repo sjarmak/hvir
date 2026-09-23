@@ -10,12 +10,17 @@ import {
 } from './terminal-runtime-live-settings'
 import {
   pendingForkExitStatus,
-  terminalRecoveryFailureEquals,
+  initialTerminalSnapshot,
+  terminalRuntimeSnapshotEquals,
   terminalStartFailureSnapshot,
   terminalUnavailablePresentation,
   type TerminalRuntimeSnapshot,
 } from './terminal-runtime-presentation'
-import type { TerminalRuntimeOptions } from './terminal-runtime-options'
+import {
+  publishTerminalIdentity,
+  assertTerminalLaunchContext,
+  type TerminalRuntimeOptions,
+} from './terminal-runtime-options'
 import { TerminalRuntimeInteractions } from './terminal-runtime-interactions'
 import { TerminalSurfaceAttachment } from './terminal-surface-attachment'
 import type {
@@ -93,11 +98,7 @@ export class TerminalRuntime {
     // Connected is the neutral initial value; the first synchronization must still
     // publish a disconnected/connecting state without requiring a mounted pane.
     this.appliedConnectionState = 'connected'
-    this.currentSnapshot = {
-      title: options.fallbackTitle,
-      status: 'Starting…',
-      exited: false,
-    }
+    this.currentSnapshot = initialTerminalSnapshot(options.fallbackTitle)
   }
 
   get workspaceRoot(): HostPath {
@@ -115,16 +116,10 @@ export class TerminalRuntime {
   }
 
   update(options: TerminalRuntimeOptions): void {
-    if (
-      options.profileId !== this.options.profileId ||
-      options.launchRevision !== this.options.launchRevision ||
-      !hostPathEquals(options.cwd, this.options.cwd)
-    ) {
-      throw new Error('Live terminal launch context cannot change')
-    }
+    assertTerminalLaunchContext(this.options, options)
     const typographyChanged = applyLivePaneOptions(this.pane, this.options, options)
     if (!hostPathEquals(options.workspaceRoot, this.options.workspaceRoot)) {
-      this.revokeSessionsSurface('workspace-unavailable')
+      this.sessionsSurface.revoke('workspace-unavailable')
     }
     this.options = options
     this.interactions.updateAvailability(runtimeCanInteract(options))
@@ -145,7 +140,7 @@ export class TerminalRuntime {
       }
       return
     }
-    this.revokeSessionsSurface('connection-unavailable')
+    this.sessionsSurface.revoke('connection-unavailable')
     this.disconnected = true
     if (this.started && connectionState !== 'disconnected') return
     this.releaseSurface(this.starting)
@@ -204,11 +199,8 @@ export class TerminalRuntime {
     return true
   }
 
-  acquireSessionsSurface(
-    request: SessionsTerminalSurfaceRequest,
-  ): ReturnType<TerminalSessionsSurfaceOwner['acquire']> {
-    return this.sessionsSurface.acquire(request)
-  }
+  acquireSessionsSurface = (request: SessionsTerminalSurfaceRequest) =>
+    this.sessionsSurface.acquire(request)
 
   restart(): void {
     if (this.disposed || this.starting || this.started || !this.currentSnapshot.exited) {
@@ -416,7 +408,8 @@ export class TerminalRuntime {
           capabilities: result.capabilities,
         })
       } else {
-        this.publishIdentity(
+        publishTerminalIdentity(
+          this.options,
           result.harnessSessionId,
           result.identityStatus,
           result.identityDiverged,
@@ -515,7 +508,7 @@ export class TerminalRuntime {
           this.interactions.retainedBufferChanged()
         },
         onExit: (exitCode) => {
-          this.revokeSessionsSurface('terminal-unavailable')
+          this.sessionsSurface.revoke('terminal-unavailable')
           this.started = false
           this.activePtyId = undefined
           this.activePtyInstanceId = undefined
@@ -533,7 +526,12 @@ export class TerminalRuntime {
         },
         onTelemetry: (telemetry) => this.options.onTelemetry(telemetry),
         onIdentity: (harnessSessionId, identityStatus, identityDiverged) =>
-          this.publishIdentity(harnessSessionId, identityStatus, identityDiverged),
+          publishTerminalIdentity(
+            this.options,
+            harnessSessionId,
+            identityStatus,
+            identityDiverged,
+          ),
         // Already written to the PTY by a Companion mirror (ADR-050): hand it
         // to the owner as this terminal's mirror input; write nothing.
         onMirrorInput: (data) => this.options.onMirrorInput(data),
@@ -550,7 +548,7 @@ export class TerminalRuntime {
     kill: boolean,
     revocationReason: SessionsTerminalSurfaceRevocationReason = 'terminal-unavailable',
   ): void {
-    this.revokeSessionsSurface(revocationReason)
+    this.sessionsSurface.revoke(revocationReason)
     const wasStarting = this.starting
     this.startController?.abort()
     this.startController = undefined
@@ -578,10 +576,6 @@ export class TerminalRuntime {
     this.activePtyInstanceId = undefined
   }
 
-  private revokeSessionsSurface(reason: SessionsTerminalSurfaceRevocationReason): void {
-    this.sessionsSurface.revoke(reason)
-  }
-
   private failStart(
     status: string,
     recoveryFailure?: TerminalRuntimeSnapshot['recoveryFailure'],
@@ -592,27 +586,8 @@ export class TerminalRuntime {
     if (this.options.forkRequest) this.options.onStartFailed?.(status)
   }
 
-  private publishIdentity(
-    harnessSessionId: string | undefined,
-    identityStatus: Parameters<TerminalRuntimeOptions['onIdentity']>[1],
-    identityDiverged?: true,
-  ): void {
-    if (identityDiverged) this.options.onIdentity(harnessSessionId, identityStatus, true)
-    else this.options.onIdentity(harnessSessionId, identityStatus)
-  }
-
   private updateSnapshot(snapshot: TerminalRuntimeSnapshot): void {
-    if (
-      snapshot.title === this.currentSnapshot.title &&
-      snapshot.status === this.currentSnapshot.status &&
-      snapshot.exited === this.currentSnapshot.exited &&
-      terminalRecoveryFailureEquals(
-        snapshot.recoveryFailure,
-        this.currentSnapshot.recoveryFailure,
-      )
-    ) {
-      return
-    }
+    if (terminalRuntimeSnapshotEquals(snapshot, this.currentSnapshot)) return
     this.currentSnapshot = snapshot
     this.options.onStatus(snapshot.status)
     for (const listener of this.listeners) listener()

@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useReducer,
-  useRef,
-  useState,
-  type ReactElement,
-} from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import {
   asSessionsTerminalHandle,
   sessionsProjectionDisplayTitle,
@@ -67,7 +60,7 @@ interface TerminalWorkspaceProps {
   readonly railCompact: boolean
   readonly onRailCompact: (compact: boolean) => void
   readonly label: string
-  readonly onRollup: (workspaceId: string, rollup: TerminalWorkspaceRollup) => void
+  readonly onRollup: (workspaceId: string, rollup: TerminalAttentionRollup) => void
   readonly onOpenPath: (target: ResolvedTerminalFileTarget) => void
   readonly onOpenWebLink: (activation: {
     readonly terminalId: string
@@ -108,7 +101,7 @@ interface TerminalWorkspaceProps {
   readonly onError: (message: string) => void
 }
 
-export type TerminalWorkspaceRollup = TerminalAttentionRollup
+export type { TerminalAttentionRollup as TerminalWorkspaceRollup } from './use-terminal-attention-controller'
 
 export function TerminalWorkspace({
   cwd,
@@ -142,7 +135,7 @@ export function TerminalWorkspace({
   onTerminalMoved,
   onAcknowledgeMoveTargets,
   onError,
-}: TerminalWorkspaceProps): ReactElement {
+}: TerminalWorkspaceProps) {
   const workspaceRootRef = useRef(cwd)
   if (
     workspaceRootRef.current.hostId !== cwd.hostId ||

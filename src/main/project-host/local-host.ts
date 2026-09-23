@@ -16,11 +16,9 @@ import { isUtf8 } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
 import { constants, mkdirSync, realpathSync } from 'node:fs'
 import { promises as fsp } from 'node:fs'
-import { createRequire } from 'node:module'
 import { connect } from 'node:net'
 import { basename, dirname, join, relative, sep } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
-import { getSystemErrorName } from 'node:util'
 import chokidar from 'chokidar'
 
 import {
@@ -66,6 +64,11 @@ import type {
   WriteFileOptions,
 } from './project-host'
 import {
+  atomicRenameError,
+  loadAtomicRenameBinding,
+  watchCapacityError,
+} from './local-host-helpers'
+import {
   assertLoopbackEndpoint,
   MAX_EXEC_STREAM_WRITE_BYTES,
   ProjectPathExistsError,
@@ -73,20 +76,6 @@ import {
 } from './project-host'
 
 const DEFAULT_MAX_BUFFER = 10 * 1024 * 1024 // 10 MiB
-const ATOMIC_RENAME_HELPER_VERSION = '0.1.0'
-const ATOMIC_RENAME_HELPER_PACKAGE = '@hvir/rename-noreplace'
-const atomicRenameRequire = createRequire(import.meta.url)
-
-interface AtomicRenameBinding {
-  metadata(): unknown
-  renameNoReplace(
-    sourceParentFd: number,
-    source: string,
-    destinationParentFd: number,
-    destination: string,
-  ): unknown
-}
-
 export class LocalHost implements ProjectHost {
   readonly hostId: HostId = LOCAL_HOST_ID
   readonly connectionState: HostConnectionState = 'connected'
@@ -971,53 +960,4 @@ function terminateBufferedExec(child: ChildProcessWithoutNullStreams): void {
 
 function fileChangedError(): Error {
   return new Error('File changed since it was opened; reload before saving')
-}
-
-function loadAtomicRenameBinding(): AtomicRenameBinding {
-  if (process.platform !== 'darwin' && process.platform !== 'linux') {
-    throw new Error('Atomic no-replace publication is unavailable on this platform')
-  }
-  const manifest = atomicRenameRequire(
-    `${ATOMIC_RENAME_HELPER_PACKAGE}/package.json`,
-  ) as {
-    name?: unknown
-    version?: unknown
-  }
-  if (
-    manifest.name !== ATOMIC_RENAME_HELPER_PACKAGE ||
-    manifest.version !== ATOMIC_RENAME_HELPER_VERSION
-  ) {
-    throw new Error('Atomic no-replace helper metadata does not match hvir')
-  }
-  const candidate = atomicRenameRequire(
-    ATOMIC_RENAME_HELPER_PACKAGE,
-  ) as Partial<AtomicRenameBinding>
-  if (
-    typeof candidate.metadata !== 'function' ||
-    typeof candidate.renameNoReplace !== 'function' ||
-    candidate.metadata() !== 'hvir.rename-noreplace.v1'
-  ) {
-    throw new Error('Atomic no-replace helper exports do not match hvir')
-  }
-  return candidate as AtomicRenameBinding
-}
-
-function atomicRenameError(errno: number): Error {
-  let code = 'UNKNOWN'
-  try {
-    code = getSystemErrorName(-errno)
-  } catch {
-    // Preserve a closed error when the platform reports an unknown errno.
-  }
-  if (code === 'EEXIST' || code === 'ENOTEMPTY') {
-    return new ProjectPathExistsError()
-  }
-  return Object.assign(new Error(`Atomic no-replace publication failed with ${code}`), {
-    code,
-  })
-}
-
-function watchCapacityError(error: Error): boolean {
-  const code = (error as NodeJS.ErrnoException).code
-  return code === 'EMFILE' || code === 'ENOSPC'
 }

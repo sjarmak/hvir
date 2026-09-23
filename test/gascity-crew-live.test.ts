@@ -1,0 +1,776 @@
+import { describe, expect, it } from 'vitest'
+
+import { parseResolvedConfig } from '../src/main/gascity/gascity-config'
+import { deriveCrew } from '../src/main/gascity/gascity-crew'
+import { parseRigListOutput, parseSessionListOutput } from '../src/main/gascity/gascity-parse'
+import { hostPath, type GasCitySession } from '../src/shared'
+
+import { HOST, CITY, RIG_ROOT, CITY_ROOT, sessionJson, RESOLVED_CONFIG } from './gascity-crew-fixture'
+
+/**
+ * Verbatim shapes from a live city, which several earlier assumptions got wrong:
+ * `[[named_session]]` is keyed by `template` (not `name`), an agent names its rig
+ * with `dir`, sessions are named with the rig's *path* baked in, and a pooled
+ * worker's `work_dir` is a worktree that lives nowhere near its rig.
+ */
+const LIVE_CITY = '/home/dev/gas-city'
+const LIVE_MEM = '/home/dev/projects/mem'
+const LIVE_GASCITY_RIG = '/home/dev/gascity'
+
+const LIVE_SESSIONS = parseSessionListOutput(
+  JSON.stringify({
+    ok: true,
+    schema_version: '1',
+    sessions: [
+      {
+        id: 'gc-517749',
+        name: `${LIVE_MEM}/mem-worker-2`,
+        template: `${LIVE_MEM}/mem-worker`,
+        alias: `${LIVE_MEM}/mem-worker-2`,
+        state: 'asleep',
+        work_dir: LIVE_MEM,
+      },
+      {
+        id: 'gc-517622',
+        name: `${LIVE_GASCITY_RIG}/polecat-3`,
+        template: `${LIVE_GASCITY_RIG}/polecat`,
+        alias: `${LIVE_GASCITY_RIG}/polecat-3`,
+        state: 'active',
+        // A worktree, nowhere near the rig root it belongs to.
+        work_dir: '/home/dev/gascity-worktrees/polecat-3',
+      },
+      {
+        id: 'gc-1',
+        name: 'mayor',
+        alias: 'mayor',
+        template: 'mayor',
+        state: 'active',
+        work_dir: LIVE_CITY,
+      },
+    ],
+  }),
+  HOST,
+)
+
+const LIVE_CONFIG = parseResolvedConfig(`
+[[agent]]
+name = "mayor"
+scope = "city"
+max_active_sessions = 1
+
+[[agent]]
+name = "mem-pl"
+dir = "mem"
+
+[[agent]]
+name = "mem-worker"
+dir = "mem"
+namepool = "mem-worker"
+max_active_sessions = 4
+
+[[agent]]
+name = "polecat"
+dir = "gascity"
+namepool = "polecat"
+max_active_sessions = 4
+
+[[named_session]]
+template = "mayor"
+mode = "always"
+
+[[named_session]]
+template = "mem-pl"
+mode = "always"
+
+[[named_session]]
+template = "project-lead"
+scope = "rig"
+dir = "decisions"
+mode = "on_demand"
+`)
+
+describe('resolved config extraction', () => {
+  const config = parseResolvedConfig(RESOLVED_CONFIG)
+
+  it('reads named sessions from both city and rig scope', () => {
+    expect(config.namedSessions.map((named) => named.name).sort()).toEqual([
+      'core.control-dispatcher',
+      'mem-pl',
+      'project-lead',
+    ])
+  })
+
+  it('keeps the suspended flag and the rig a nested named session came from', () => {
+    const stamped = config.namedSessions.find((named) => named.name === 'project-lead')
+    expect(stamped?.suspended).toBe(true)
+    expect(stamped?.rig).toBe('mem')
+  })
+
+  it('marks binding-qualified named sessions', () => {
+    const dispatcher = config.namedSessions.find((named) => named.binding !== undefined)
+    expect(dispatcher?.binding).toBe('core')
+  })
+
+  it('classifies agents as pooled only when they are multi-session', () => {
+    const worker = config.agents.find((agent) => agent.name === 'mem-worker')
+    const lead = config.agents.find((agent) => agent.name === 'mem-pl')
+    expect(worker?.pooled).toBe(true)
+    expect(worker?.poolName).toBe('mem-worker')
+    expect(lead?.pooled).toBe(false)
+  })
+
+  it('rejects output that is not TOML', () => {
+    expect(() => parseResolvedConfig('{ "not": "toml" ')).toThrow(/not TOML/)
+  })
+})
+
+/** Sessions spanning two rigs plus the city itself, as `gc session list` returns them. */
+const CITY_WIDE = parseSessionListOutput(
+  JSON.stringify([
+    sessionJson({
+      id: 'gc-100',
+      name: 'mayor',
+      alias: 'mayor',
+      template: 'mayor',
+      work_dir: CITY,
+    }),
+    sessionJson({
+      id: 'gc-101',
+      name: 'city-infra-polecat-fig',
+      template: 'city-infra-polecat',
+      work_dir: CITY,
+    }),
+    // A lead that sits at city scope but belongs to a rig — same work_dir as
+    // the mayor, so only rig association can tell them apart.
+    sessionJson({
+      id: 'gc-102',
+      name: 'city-infra-pl',
+      alias: 'city-infra-pl',
+      template: 'city-infra-pl',
+      work_dir: CITY,
+    }),
+    sessionJson({ id: 'gc-1', name: 'mem-pl', alias: 'mem-pl', template: 'mem-pl' }),
+    sessionJson({ id: 'gc-2', name: 'mem-worker-ash' }),
+    sessionJson({
+      id: 'gc-200',
+      name: 'aoa-pl',
+      alias: 'aoa-pl',
+      template: 'aoa-pl',
+      work_dir: `${CITY}/rigs/aoa`,
+    }),
+    sessionJson({
+      id: 'gc-201',
+      name: 'aoa-worker-elm',
+      template: 'aoa/aoa-worker',
+      work_dir: `${CITY}/rigs/aoa`,
+    }),
+  ]),
+  HOST,
+)
+
+const CITY_WIDE_CONFIG = parseResolvedConfig(`
+[[named_session]]
+name = "mayor"
+alias = "mayor"
+agent = "mayor"
+mode = "always"
+
+[[named_session]]
+name = "mem-pl"
+alias = "mem-pl"
+agent = "mem-pl"
+mode = "always"
+rig = "mem"
+
+[[named_session]]
+name = "aoa-pl"
+alias = "aoa-pl"
+agent = "aoa-pl"
+mode = "always"
+rig = "aoa"
+
+[[named_session]]
+name = "city-infra-pl"
+alias = "city-infra-pl"
+agent = "city-infra-pl"
+mode = "always"
+rig = "city-infra"
+
+[agents.mem-worker]
+namepool = "mem-worker"
+max_active_sessions = 4
+
+[agents.aoa-worker]
+namepool = "aoa-worker"
+max_active_sessions = 4
+
+[agents.city-infra-polecat]
+namepool = "city-infra-polecat"
+max_active_sessions = 4
+`)
+
+/**
+ * The shape a real city actually composes: rig project leads are *city-scope*
+ * named sessions with no `rig` key at all — their rig association lives only in
+ * `work_dir`, pointing at the rig root. The mayor is the one rooted at the city.
+ */
+const WORKDIR_SCOPED_CONFIG = parseResolvedConfig(`
+[[named_session]]
+name = "mayor"
+alias = "mayor"
+agent = "mayor"
+mode = "always"
+
+[[named_session]]
+name = "mem-pl"
+alias = "mem-pl"
+agent = "mem-pl"
+mode = "always"
+
+[[named_session]]
+name = "aoa-pl"
+alias = "aoa-pl"
+agent = "aoa-pl"
+mode = "always"
+
+[agents.mem-pl]
+work_dir = "${CITY}/rigs/mem"
+
+[agents.aoa-pl]
+work_dir = "${CITY}/rigs/aoa"
+
+[agents.mem-worker]
+namepool = "mem-worker"
+max_active_sessions = 4
+`)
+
+describe('rig leads defined at city scope', () => {
+  function scoped(sessions: readonly GasCitySession[]) {
+    return deriveCrew({
+      sessions,
+      config: WORKDIR_SCOPED_CONFIG,
+      rigName: 'mem',
+      rigRoot: RIG_ROOT,
+      cityWorkspace: false,
+      cityRoot: CITY_ROOT,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+  }
+
+  it("keeps this rig's lead, dropping the mayor and another rig's lead", () => {
+    const labels = scoped(CITY_WIDE).members.map((member) => member.label)
+    expect([...labels].sort()).toEqual(['mem-pl', 'mem-worker-ash'])
+  })
+
+  it('leaves the mayor out even when the city root could not be resolved', () => {
+    // A rig registered outside the city directory: the mayor's work_dir still
+    // fails to land under this rig, which is all the scope rule asks.
+    const blind = deriveCrew({
+      sessions: CITY_WIDE,
+      config: WORKDIR_SCOPED_CONFIG,
+      rigName: 'mem',
+      rigRoot: RIG_ROOT,
+      cityWorkspace: false,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    expect(blind.members.map((member) => member.label)).not.toContain('mayor')
+  })
+
+  it('scopes dormant leads by their configured work_dir, not by having no rig', () => {
+    // Nothing running at all: every lead is dormant and only `work_dir` can say
+    // which rig it belongs to.
+    const labels = scoped([]).members.map((member) => member.label)
+    expect([...labels].sort()).toEqual(['mem-pl'])
+  })
+})
+
+describe('workspace scope', () => {
+  function scopedTo(cityWorkspace: boolean) {
+    return deriveCrew({
+      sessions: CITY_WIDE,
+      config: CITY_WIDE_CONFIG,
+      rigName: cityWorkspace ? 'hq' : 'mem',
+      rigRoot: cityWorkspace ? CITY_ROOT : RIG_ROOT,
+      cityWorkspace,
+      cityRoot: CITY_ROOT,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+  }
+
+  it('shows every rig lead and worker from the city workspace', () => {
+    const labels = scopedTo(true).members.map((member) => member.label)
+    expect(labels).toEqual(
+      expect.arrayContaining([
+        'mayor',
+        'mem-pl',
+        'aoa-pl',
+        'mem-worker-ash',
+        'aoa-worker-elm',
+        'city-infra-polecat-fig',
+        'city-infra-pl',
+      ]),
+    )
+  })
+
+  it('puts the mayor at the very top of the city workspace crew', () => {
+    const first = scopedTo(true).members[0]
+    expect(first?.label).toBe('mayor')
+    expect(first?.cityLead).toBe(true)
+  })
+
+  it('pins every rig lead in the city workspace', () => {
+    const leads = scopedTo(true)
+      .members.filter((member) => member.tier === 'lead')
+      .map((member) => member.label)
+    expect([...leads].sort()).toEqual(['aoa-pl', 'city-infra-pl', 'mayor', 'mem-pl'])
+  })
+
+  it('narrows to this rig alone from a rig workspace', () => {
+    const labels = scopedTo(false).members.map((member) => member.label)
+    expect([...labels].sort()).toEqual(['mem-pl', 'mem-worker-ash'])
+  })
+
+  it("drops another rig's lead and workers from a rig workspace", () => {
+    const labels = scopedTo(false).members.map((member) => member.label)
+    expect(labels).not.toContain('aoa-pl')
+    expect(labels).not.toContain('aoa-worker-elm')
+  })
+
+  it("drops the city's worker pools from a rig workspace", () => {
+    expect(scopedTo(false).members.map((member) => member.label)).not.toContain(
+      'city-infra-polecat-fig',
+    )
+  })
+
+  it('drops the city-scope leads, mayor and city-infra alike', () => {
+    // Both sit at city scope — `city-infra-pl` even shares the mayor's work_dir
+    // — and neither is this project's lead, so neither belongs on this card.
+    const labels = scopedTo(false).members.map((member) => member.label)
+    expect(labels).not.toContain('city-infra-pl')
+    expect(labels).not.toContain('mayor')
+  })
+})
+
+describe('crew derivation', () => {
+  const config = parseResolvedConfig(RESOLVED_CONFIG)
+  const sessions = parseSessionListOutput(
+    JSON.stringify([
+      sessionJson({ id: 'gc-1', name: 'mem-pl', alias: 'mem-pl', template: 'mem-pl' }),
+      sessionJson({ id: 'gc-2', name: 'mem-worker-ash' }),
+      sessionJson({ id: 'gc-3', name: 'mem-worker-bay' }),
+      sessionJson({
+        id: 'gc-4',
+        name: 'core.control-dispatcher',
+        template: 'control-dispatcher',
+      }),
+      sessionJson({
+        id: 'gc-9',
+        name: 'other-worker',
+        template: 'aoa/aoa-worker',
+        work_dir: '/home/dev/elsewhere',
+      }),
+    ]),
+    HOST,
+  )
+
+  const crew = deriveCrew({
+    sessions,
+    config,
+    rigName: 'mem',
+    rigRoot: RIG_ROOT,
+    cityWorkspace: false,
+    cityRoot: CITY_ROOT,
+    hqRigName: 'hq',
+    includeInternals: false,
+    tierSource: 'config',
+  })
+
+  it('excludes sessions whose work_dir is outside the rig root', () => {
+    expect(crew.members.map((member) => member.label)).not.toContain('other-worker')
+  })
+
+  it('pins the configured always-on lead first', () => {
+    expect(crew.members[0]?.tier).toBe('lead')
+    expect(crew.members[0]?.label).toBe('mem-pl')
+  })
+
+  it('groups pool-backed sessions as workers under the pool name', () => {
+    const workers = crew.members.filter((member) => member.tier === 'worker')
+    expect(workers.map((member) => member.label)).toEqual([
+      'mem-worker-ash',
+      'mem-worker-bay',
+    ])
+    expect(new Set(workers.map((member) => member.poolName))).toEqual(
+      new Set(['mem-worker']),
+    )
+  })
+
+  it('orders a pool by activity before name', () => {
+    const mixed = deriveCrew({
+      sessions: parseSessionListOutput(
+        JSON.stringify([
+          sessionJson({ id: 'gc-5', name: 'mem-worker-ash', state: 'suspended' }),
+          sessionJson({ id: 'gc-6', name: 'mem-worker-bay', state: 'not running' }),
+          sessionJson({ id: 'gc-7', name: 'mem-worker-cove', state: 'active' }),
+          sessionJson({ id: 'gc-8', name: 'mem-worker-dune', state: 'running' }),
+        ]),
+        HOST,
+      ),
+      config,
+      rigName: 'mem',
+      rigRoot: RIG_ROOT,
+      cityWorkspace: false,
+      cityRoot: CITY_ROOT,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    expect(
+      mixed.members
+        .filter((member) => member.tier === 'worker')
+        .map((member) => member.label),
+    ).toEqual([
+      'mem-worker-cove',
+      'mem-worker-dune',
+      'mem-worker-ash',
+      'mem-worker-bay',
+    ])
+  })
+
+  it('sinks a dormant lead below a running one', () => {
+    const leads = deriveCrew({
+      sessions: parseSessionListOutput(
+        JSON.stringify([
+          sessionJson({
+            id: 'gc-1',
+            name: 'mem-pl',
+            alias: 'mem-pl',
+            template: 'mem-pl',
+            state: 'active',
+          }),
+        ]),
+        HOST,
+      ),
+      config: parseResolvedConfig(`
+[[named_session]]
+name = "mem-pl"
+alias = "mem-pl"
+agent = "mem-pl"
+mode = "always"
+
+[[named_session]]
+name = "aardvark-pl"
+alias = "aardvark-pl"
+agent = "aardvark-pl"
+mode = "always"
+
+[agents.mem-pl]
+work_dir = "${CITY}/rigs/mem"
+
+[agents.aardvark-pl]
+work_dir = "${CITY}/rigs/mem"
+`),
+      rigName: 'mem',
+      rigRoot: RIG_ROOT,
+      cityWorkspace: false,
+      cityRoot: CITY_ROOT,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    // Alphabetically `aardvark-pl` would lead; it is not running, so it does not.
+    expect(leads.members.map((member) => member.label)).toEqual(['mem-pl', 'aardvark-pl'])
+  })
+
+  it('hides binding-qualified sessions unless internals are requested', () => {
+    expect(crew.members.some((member) => member.tier === 'internal')).toBe(false)
+    const withInternals = deriveCrew({
+      sessions,
+      config,
+      rigName: 'mem',
+      rigRoot: RIG_ROOT,
+      cityWorkspace: false,
+      cityRoot: CITY_ROOT,
+      hqRigName: 'hq',
+      includeInternals: true,
+      tierSource: 'config',
+    })
+    expect(
+      withInternals.members.filter((member) => member.tier === 'internal'),
+    ).toHaveLength(1)
+  })
+
+  it('drops the suspended pack lead instead of rendering two generations', () => {
+    expect(crew.members.filter((member) => member.tier === 'lead')).toHaveLength(1)
+    expect(crew.members.map((member) => member.label)).not.toContain('project-lead')
+  })
+
+  it('renders a pinned identity with no session as a dormant lead', () => {
+    const dormant = deriveCrew({
+      sessions: sessions.filter((session) => session.id !== 'gc-1'),
+      config,
+      rigName: 'mem',
+      rigRoot: RIG_ROOT,
+      cityWorkspace: false,
+      cityRoot: CITY_ROOT,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    const lead = dormant.members.find((member) => member.tier === 'lead')
+    expect(lead?.label).toBe('mem-pl')
+    expect(lead?.session).toBeUndefined()
+  })
+
+  it('pins a lead whose runtime name differs from its configured name', () => {
+    // gc does not require a named session to run under its configured name; a
+    // lead configured as `project-lead` can run as `mem-pl`. Matching on name
+    // alone silently demoted it to a worker.
+    const renamed = deriveCrew({
+      sessions: parseSessionListOutput(
+        JSON.stringify([
+          sessionJson({ id: 'gc-30', name: 'lead-1', template: 'mem-pl' }),
+        ]),
+        HOST,
+      ),
+      config,
+      rigName: 'mem',
+      rigRoot: RIG_ROOT,
+      cityWorkspace: false,
+      cityRoot: CITY_ROOT,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    expect(renamed.members.find((member) => member.label === 'lead-1')?.tier).toBe('lead')
+  })
+
+  it('never promotes a pool member that shares a template with a named session', () => {
+    const pooled = deriveCrew({
+      sessions: parseSessionListOutput(
+        JSON.stringify([
+          sessionJson({ id: 'gc-31', name: 'mem-worker-ash', template: 'mem-worker' }),
+        ]),
+        HOST,
+      ),
+      config: parseResolvedConfig(`
+[[named_session]]
+name = "pool-lead"
+agent = "mem-worker"
+mode = "always"
+rig = "mem"
+
+[agents.mem-worker]
+namepool = "mem-worker"
+max_active_sessions = 4
+`),
+      rigName: 'mem',
+      rigRoot: RIG_ROOT,
+      cityWorkspace: false,
+      cityRoot: CITY_ROOT,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    expect(pooled.members.find((member) => member.label === 'mem-worker-ash')?.tier).toBe(
+      'worker',
+    )
+  })
+
+  it('carries every identity gc matches active beads by', () => {
+    const lead = crew.members.find((member) => member.tier === 'lead')
+    expect(new Set(lead?.identityKeys)).toEqual(new Set(['gc-1', 'mem-pl']))
+  })
+
+  it('prefers gc-projected fields over the resolved config when present', () => {
+    const enriched: readonly GasCitySession[] = parseSessionListOutput(
+      JSON.stringify([
+        sessionJson({
+          id: 'gc-20',
+          name: 'mayor',
+          alias: 'mayor',
+          configured_named_session: true,
+        }),
+        sessionJson({ id: 'gc-21', name: 'polecat-fig', pool: 'polecat' }),
+      ]),
+      HOST,
+    )
+    const projected = deriveCrew({
+      sessions: enriched,
+      config: { agents: [], namedSessions: [] },
+      rigName: 'mem',
+      rigRoot: RIG_ROOT,
+      cityWorkspace: false,
+      cityRoot: CITY_ROOT,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'session-fields',
+    })
+    expect(projected.tierSource).toBe('session-fields')
+    expect(projected.members.map((member) => [member.label, member.tier])).toEqual([
+      ['mayor', 'lead'],
+      ['polecat-fig', 'worker'],
+    ])
+    expect(projected.members[1]?.poolName).toBe('polecat')
+  })
+})
+
+describe('trace rig', () => {
+  // The rig half of the `gen_ai.agent.name` gas-city exports, as verified in
+  // Honeycomb: a rig member carries its rig name, the city's own leads carry the
+  // basename of the city directory (gc-seat-tracing.sh falls through to
+  // basename(GC_SEAT_ROOT) for a seat with no rig), and anything that cannot be
+  // placed gets nothing rather than a filter that matches no span.
+  const RIGS = parseRigListOutput(
+    JSON.stringify([
+      { name: 'mem', path: `${CITY}/rigs/mem` },
+      { name: 'aoa', path: `${CITY}/rigs/aoa` },
+      { name: 'hq', path: CITY },
+    ]),
+  )
+
+  function cityView(sessions: readonly GasCitySession[] = CITY_WIDE) {
+    return deriveCrew({
+      sessions,
+      config: CITY_WIDE_CONFIG,
+      rigs: RIGS,
+      rigName: 'hq',
+      rigRoot: CITY_ROOT,
+      cityWorkspace: true,
+      cityRoot: CITY_ROOT,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+  }
+
+  function traceRigOf(crew: ReturnType<typeof deriveCrew>, label: string) {
+    return crew.members.find((member) => member.label === label)?.traceRig
+  }
+
+  it('names the city directory for the city lead, not the HQ rig', () => {
+    expect(traceRigOf(cityView(), 'mayor')).toBe('gas-city')
+  })
+
+  it('names the rig from the config or gc projection for a rig lead', () => {
+    const crew = cityView()
+    expect(traceRigOf(crew, 'mem-pl')).toBe('mem')
+    expect(traceRigOf(crew, 'aoa-pl')).toBe('aoa')
+    expect(traceRigOf(crew, 'city-infra-pl')).toBe('city-infra')
+  })
+
+  it('places a worker by its work_dir against the rig list in the city view', () => {
+    const crew = cityView()
+    expect(traceRigOf(crew, 'mem-worker-ash')).toBe('mem')
+    expect(traceRigOf(crew, 'aoa-worker-elm')).toBe('aoa')
+  })
+
+  it('tags a worker rooted at the city like the mayor, not with the HQ rig name', () => {
+    expect(traceRigOf(cityView(), 'city-infra-polecat-fig')).toBe('gas-city')
+  })
+
+  it('tags a worker gc projects onto the HQ rig like the mayor too', () => {
+    const crew = cityView(
+      parseSessionListOutput(
+        JSON.stringify([sessionJson({ id: 'gc-4', name: 'city-infra-polecat-oak', rig: 'hq' })]),
+        HOST,
+      ),
+    )
+    expect(traceRigOf(crew, 'city-infra-polecat-oak')).toBe('gas-city')
+  })
+
+  it('places a worktree-based worker by its rig-qualified name', () => {
+    const crew = deriveCrew({
+      sessions: LIVE_SESSIONS,
+      config: LIVE_CONFIG,
+      rigs: parseRigListOutput(
+        JSON.stringify([
+          { name: 'mem', path: LIVE_MEM },
+          { name: 'gascity', path: LIVE_GASCITY_RIG },
+        ]),
+      ),
+      rigName: 'hq',
+      rigRoot: hostPath(HOST, LIVE_CITY),
+      cityWorkspace: true,
+      cityRoot: hostPath(HOST, LIVE_CITY),
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    expect(traceRigOf(crew, 'polecat-3')).toBe('gascity')
+    expect(traceRigOf(crew, 'mem-worker-2')).toBe('mem')
+  })
+
+  it('falls back to the workspace rig when no rig list was read', () => {
+    const crew = deriveCrew({
+      sessions: CITY_WIDE,
+      config: CITY_WIDE_CONFIG,
+      rigName: 'mem',
+      rigRoot: RIG_ROOT,
+      cityWorkspace: false,
+      cityRoot: CITY_ROOT,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    expect(traceRigOf(crew, 'mem-worker-ash')).toBe('mem')
+    expect(
+      traceRigOf(
+        deriveCrew({
+          sessions: CITY_WIDE,
+          config: CITY_WIDE_CONFIG,
+          rigName: 'hq',
+          rigRoot: CITY_ROOT,
+          cityWorkspace: true,
+          cityRoot: CITY_ROOT,
+          hqRigName: 'hq',
+          includeInternals: false,
+          tierSource: 'config',
+        }),
+        'mayor',
+      ),
+    ).toBe('gas-city')
+  })
+
+  it('prefers the rig gc projects on the session', () => {
+    const crew = cityView(
+      parseSessionListOutput(
+        JSON.stringify([sessionJson({ id: 'gc-2', name: 'mem-worker-ash', rig: 'other' })]),
+        HOST,
+      ),
+    )
+    expect(traceRigOf(crew, 'mem-worker-ash')).toBe('other')
+  })
+
+  it('leaves the rig unset when nothing places the session', () => {
+    const crew = cityView(
+      parseSessionListOutput(
+        JSON.stringify([
+          sessionJson({ id: 'gc-3', name: 'drifter', template: 'drifter', work_dir: '/elsewhere' }),
+        ]),
+        HOST,
+      ),
+    )
+    expect(traceRigOf(crew, 'drifter')).toBeUndefined()
+  })
+
+  it('leaves the city lead unset when the city root is unknown', () => {
+    const crew = deriveCrew({
+      sessions: CITY_WIDE,
+      config: CITY_WIDE_CONFIG,
+      rigName: 'mem',
+      rigRoot: RIG_ROOT,
+      cityWorkspace: false,
+      hqRigName: 'hq',
+      includeInternals: false,
+      tierSource: 'config',
+    })
+    expect(traceRigOf(crew, 'mayor')).toBeUndefined()
+  })
+})

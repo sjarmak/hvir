@@ -34,6 +34,7 @@ import {
 } from '../harness/harness-provider'
 import { sendRendererEvent } from '../renderer-event-delivery'
 import { registerIpcHandlers } from '../ipc'
+import type { EmitRendererEvent } from '../ipc/deps'
 import { PtySupervisor } from '../pty/pty-supervisor'
 import { createWorkerClient, workerPath } from '../worker-host'
 import { createWorkspaceCleanup } from '../workspace-cleanup'
@@ -50,7 +51,11 @@ import { createSmokeImagePasteFallback } from './image-paste-fallback'
 import { verifyDiagnosticRestart } from './diagnostic-report-restart'
 import { verifyDevelopmentPerformanceMode } from './development-performance'
 import { verifyDocumentReviewWorkflow } from './document-review'
-import { verifyGitWorkflow } from './git-workflow'
+import { runGitWorkflowSmoke } from './git-workflow'
+import {
+  createSmokeArchitectureReview,
+  runArchitectureReviewSmoke,
+} from './architecture-review'
 import { verifyPlatformContracts } from './platform-contracts'
 import { verifyRendererAuthorityLifecycle } from './renderer-authority'
 import { createExternalMoveSmokeControl } from './external-file-move'
@@ -79,8 +84,6 @@ import {
   type Disposer,
   type EchoWorkerProtocol,
   type GitWorkerProtocol,
-  type IpcEventChannel,
-  type IpcEventPayload,
   type WorkbenchHealthSnapshot,
 } from '../../shared'
 
@@ -252,7 +255,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       mode === 'document-review',
     )
     if (mode === 'workspace-remote') await prepareProjectFiles()
-    const emit: EmitSmokeEvent = (channel, payload) => {
+    const emit: EmitRendererEvent = (channel, payload) => {
       if (smokeWindow && !smokeWindow.isDestroyed())
         sendRendererEvent(smokeWindow.webContents, channel, payload)
     }
@@ -373,6 +376,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     )
     const readiness = new SmokeRendererReadiness()
     const ipcRouter = registerIpcHandlers({
+      architectureReview: createSmokeArchitectureReview(rendererResources, cleanup),
       echoWorker: worker,
       gitWorker: git,
       filenameSearch,
@@ -643,17 +647,15 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       })
       return 0
     }
-    if (mode === 'git-workflow') {
-      const result = await verifyGitWorkflow({
+    if (mode === 'git-workflow')
+      return await runGitWorkflowSmoke({
         win,
         host,
         root: smokeRoot,
         untrackedPath: liveReloadPath,
       })
-      console.log(`[smoke] Git workflow OK (${result})`)
-      console.log('HVIR_SMOKE_OK')
-      return 0
-    }
+    if (mode === 'architecture-review')
+      return await runArchitectureReviewSmoke(win, smokeRoot, host)
     if (mode === 'terminal-presentation') {
       const presentation = await verifyTerminalPresentationLifecycle(
         win,
@@ -776,11 +778,6 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     }
   }
 }
-
-type EmitSmokeEvent = <E extends IpcEventChannel>(
-  channel: E,
-  payload: IpcEventPayload<E>,
-) => void
 
 /** The smoke build keeps no durable health evidence; a read and an acknowledge both say so. */
 function memoryOnlyHealth(): WorkbenchHealthSnapshot {

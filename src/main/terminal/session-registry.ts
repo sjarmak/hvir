@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto'
-
 import {
   asHostId,
   asHarnessProfileId,
@@ -17,6 +16,7 @@ import {
   type ExternalSessionAttachment,
   type ExternalSessionAttachTarget,
 } from '../../shared'
+import { cleanTerminalTitle, hasTerminalControlCharacter, isHarnessSessionId } from './session-registry-text'
 import type { Disposer, ProjectHost } from '../project-host'
 import { externalSessionAttachment } from './external-session-attachment'
 import { harnessProvider } from '../harness/harness-provider'
@@ -455,7 +455,7 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
       hostId: spawn.cwd.hostId,
       workspaceRoot: spawn.workspaceRoot,
       cwd: spawn.cwd,
-      title: cleanTitle(spawn.title),
+      title: cleanTerminalTitle(spawn.title),
       position: cleanPosition(spawn.position),
       active: spawn.active,
       attention: retainedAttention,
@@ -516,7 +516,7 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
       hostId: spawn.cwd.hostId,
       workspaceRoot: spawn.workspaceRoot,
       cwd: spawn.cwd,
-      title: cleanTitle(spawn.title),
+      title: cleanTerminalTitle(spawn.title),
       position: cleanPosition(spawn.position),
       active: spawn.active,
       updatedAt: Date.now(),
@@ -617,7 +617,7 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
       if (!current || !hostPathEquals(current.workspaceRoot, workspaceRoot)) continue
       const next = {
         ...current,
-        title: cleanTitle(item.title),
+        title: cleanTerminalTitle(item.title),
         titlePinned: item.titlePinned === true,
         position: cleanPosition(item.position),
         active: item.active,
@@ -651,7 +651,7 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
     }
     this.sessions.set(id, {
       ...current,
-      title: cleanTitle(title),
+      title: cleanTerminalTitle(title),
       titlePinned: true,
       updatedAt: Date.now(),
     })
@@ -944,7 +944,7 @@ function parsePath(value: unknown): HostPath | undefined {
     hostId.length === 0 ||
     hostId.length > 255 ||
     /\s/.test(hostId) ||
-    hasControlCharacter(hostId) ||
+    hasTerminalControlCharacter(hostId) ||
     typeof path !== 'string' ||
     !path.startsWith('/')
   ) {
@@ -984,30 +984,6 @@ function legacyProfileId(providerId: HarnessProviderId): HarnessProfileId {
   return asHarnessProfileId(
     `legacy-${providerId.slice(0, providerPrefixLength)}-${digest}`,
   )
-}
-
-function cleanTitle(value: string): string {
-  const title = [...value]
-    .map((character) => (hasControlCharacter(character) ? ' ' : character))
-    .join('')
-    .trim()
-  return title.slice(0, MAX_TITLE_LENGTH) || 'Terminal'
-}
-
-function isHarnessSessionId(value: string): boolean {
-  return (
-    value.length > 0 &&
-    value.length <= 240 &&
-    !/\s/.test(value) &&
-    !hasControlCharacter(value)
-  )
-}
-
-function hasControlCharacter(value: string): boolean {
-  return [...value].some((character) => {
-    const code = character.charCodeAt(0)
-    return code <= 31 || code === 127
-  })
 }
 
 function cleanPosition(value: number): number {

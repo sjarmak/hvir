@@ -10,6 +10,7 @@ import { registerDiagnosticReportIpc } from './ipc/features/diagnostic-report'
 import { registerDocumentReviewIpc } from './ipc/features/document-review'
 import { registerFilesystemIpc } from './ipc/features/filesystem'
 import { registerGasCityIpc } from './ipc/features/gascity'
+import { registerArchitectureReviewIpc } from './ipc/features/architecture-review'
 import { registerGitIpc } from './ipc/features/git'
 import { registerHarnessIpc } from './ipc/features/harness'
 import { registerImagePasteIpc } from './ipc/features/image-paste'
@@ -36,6 +37,7 @@ export function registerIpcHandlers(
     registerSessionsIpc(router, deps)
     registerFilesystemIpc(router, deps)
     registerGitIpc(router, deps)
+    registerArchitectureReviewIpc(router, deps)
     registerHarnessIpc(router, deps)
     registerImagePasteIpc(router, deps)
     registerClipboardIpc(router, deps)

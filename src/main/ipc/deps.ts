@@ -16,6 +16,7 @@ import type {
   RenderContainmentDiagnosticBatch,
   WorkbenchHealthSnapshot,
 } from '../../shared'
+import type { ArchitectureReviewCoordinator } from '../architecture-review/coordinator'
 import type { BeadsService } from '../beads/beads-service'
 import type { CompanionSettingsPort } from '../companion/companion-settings'
 import type { GasCityService } from '../gascity/gascity-service'
@@ -56,6 +57,10 @@ export interface SystemClipboardPort {
 }
 
 export interface IpcDeps extends IpcRouterAuthorityPort {
+  readonly architectureReview: Pick<
+    ArchitectureReviewCoordinator,
+    'scan' | 'evidence' | 'close' | 'prepare' | 'launchPayload' | 'assertLaunchCurrent'
+  >
   readonly echoWorker: WorkerClient<EchoWorkerProtocol>
   readonly gitWorker: WorkerClient<GitWorkerProtocol>
   readonly filenameSearch: Pick<FilenameSearchCoordinator, 'search' | 'cancel' | 'revoke'>

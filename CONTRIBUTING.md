@@ -264,7 +264,7 @@ blocking score threshold, and uses only Node and the locally installed test depe
 not launch Electron, require a display, or access the network.
 
 `npm run smoke` runs the focused `pty-native`, `viewer-position`, `viewer-content`,
-`git-workflow`, `workspace-remote`, `web-pane`, `renderer-authority`, `renderer-recovery`,
+`git-workflow`, `architecture-review`, `workspace-remote`, `web-pane`, `renderer-authority`, `renderer-recovery`,
 `sessions-projection`, `document-review`, `terminal-presentation`, and `terminal-lifecycle` groups plus the focused
 `native-host-worker`, `workbench-health`, `platform-contracts`, `terminal-theme`,
 `terminal-move`, `workbench-layout`, `terminal-split`, `app-settings`, `harness-profiles`,
@@ -272,7 +272,7 @@ not launch Electron, require a display, or access the network.
 reports a result for every scheduled group. Direct single-process invocations require
 `HVIR_SMOKE_SCENARIO`; missing and invalid names fail with a selection diagnostic. Select one group locally with
 `npm run smoke:scenario -- <name>`; the complete name set is `pty-native`, `viewer-position`, `viewer-content`,
-`git-workflow`, `workspace-remote`, `web-pane`, `renderer-authority`, `platform-contracts`,
+`git-workflow`, `architecture-review`, `workspace-remote`, `web-pane`, `renderer-authority`, `platform-contracts`,
 `diagnostic-report-restart`, `renderer-recovery`, `sessions-projection`, `document-review`, `development-performance`,
 `terminal-presentation`, `terminal-lifecycle`, `native-host-worker`, `workbench-health`,
 `terminal-theme`, `terminal-move`, `workbench-layout`, `terminal-split`, `app-settings`,

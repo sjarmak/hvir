@@ -8,6 +8,7 @@ import {
 } from '../../shared'
 import { PaneResizer } from './layout/PaneResizer'
 import type { WebViewState } from './dashboards/WebPane'
+import { revealWebSourceTerminal } from './dashboards/reveal-web-source-terminal'
 import { WebPaneStack } from './dashboards/WebPaneStack'
 import { useWebPaneWorkspace } from './dashboards/use-web-pane-workspace'
 import { TerminalWorkspaceCollection } from './terminal/TerminalWorkspaceCollection'
@@ -27,6 +28,7 @@ import { useTerminalCommands } from './terminal/use-terminal-commands'
 import { GitPanel } from './git/GitPanel'
 import { workspaceGitEnabled } from './git/git-capability'
 import { GitGraphView } from './git/GitGraphView'
+import { useArchitectureReviewTab } from './architecture-review/use-architecture-review-tab'
 import { useGitWorkspace } from './git/use-git-workspace'
 import { FileViewer } from './viewer/FileViewer'
 import { TabStrip } from './viewer/TabStrip'
@@ -55,91 +57,59 @@ export function App(): ReactElement {
   const deactivateGitGraphRef = useRef<() => void>(() => undefined)
   const deactivateWebPaneRef = useRef<() => void>(() => undefined)
   const [gitChanges, setGitChanges] = useState<GitChanges>()
+  const architecture = useArchitectureReviewTab({
+    root: rootRef,
+    activateViewer: () => {
+      deactivateGitGraphRef.current()
+      deactivateWebPaneRef.current()
+      viewer.focusPane('primary')
+      restoreViewerRef.current()
+    },
+  })
   const overlays = useWorkbenchOverlays()
   const externalAttention = useExternalAttention()
   const terminalAttention = useTerminalAttention()
   const viewer = useViewerWorkspace({
     onActivateFile: () => {
+      architecture.deactivate()
       deactivateGitGraphRef.current()
       deactivateWebPaneRef.current()
       restoreViewerRef.current()
     },
   })
-  const {
-    tabs,
-    activeTab,
-    primaryTabs,
-    secondaryTabs,
-    primaryActiveTab,
-    secondaryActiveTab,
-    split: viewerSplit,
-    switchWorkspace: switchViewerWorkspace,
-    openFile,
-    activateTab,
-    closeTab,
-    pinTab,
-    setMode: setViewerMode,
-    cycleActiveMode,
-    viewerCommands,
-    setDiffBase: setViewerDiffBase,
-    setContent: setViewerContent,
-    navigationHandled,
-    schedulePosition,
-    reloadTab,
-    saveTab,
-    handleWatchEvent,
-    reloadCleanFiles,
-    focusPane: focusViewerPane,
-    getActivePane,
-    openSplit: openViewerSplit,
-    closeSplit: closeViewerSplit,
-    moveTab: moveTabToPane,
-    reorderTabs: reorderViewerTabs,
-  } = viewer
-  const reviewWatch = review.useWatchFanout(handleWatchEvent)
+
+  const reviewWatch = review.useWatchFanout(viewer.handleWatchEvent)
   const web = useWebPaneWorkspace({
     onActivate: () => {
-      focusViewerPane('primary')
+      architecture.deactivate()
+      viewer.focusPane('primary')
       deactivateGitGraphRef.current()
       restoreViewerRef.current()
     },
     onError: (message) => sessionErrorRef.current(message),
   })
-  const {
-    views: webViews,
-    activeId: activeWebViewId,
-    active: webViewActive,
-    activeRef: webViewActiveRef,
-    focused: webViewFocused,
-    setFocused: setWebViewFocused,
-    setActive: setWebViewActive,
-    applyProjectState: applyWebProjectState,
-    setWorkspaceRoot: setWebWorkspaceRoot,
-    openLink: openWebLink,
-    activateView: activateWebView,
-    closeView: closeWebView,
-    forgetTerminalViews,
-    followBlockedNavigation,
-    setTitle: setWebViewTitle,
-    openBrowser: openWebViewInBrowser,
-  } = web
+
   const changedCount = gitChanges?.workingTree.length ?? 0
   const changedCountLabel = gitChanges?.workingTreeLimited
     ? `${GIT_CHANGE_DISPLAY_LIMIT.toLocaleString()}+`
     : changedCount.toLocaleString()
+  const { switchWorkspace } = viewer
+  const { applyProjectState, setWorkspaceRoot } = web
+  const { close: closeArchitectureReview } = architecture
   const applyProjectViewState = useCallback(
     (state: ProjectState): void => {
-      switchViewerWorkspace(state.root, state.connectionState === 'connected')
-      if (!applyWebProjectState(state, rootRef.current)) return
+      switchWorkspace(state.root, state.connectionState === 'connected')
+      if (!applyProjectState(state, rootRef.current)) return
       resetGitGraphRef.current()
+      closeArchitectureReview()
       setGitChanges(undefined)
     },
-    [applyWebProjectState, switchViewerWorkspace],
+    [applyProjectState, switchWorkspace, closeArchitectureReview],
   )
   const session = useProjectSession({
     composerSubmitMode: settings.composerSubmitMode,
     onProjectState: applyProjectViewState,
-    onReloadFiles: reloadCleanFiles,
+    onReloadFiles: viewer.reloadCleanFiles,
     onWatchEvent: reviewWatch.handle,
     isIgnoreRulePath: isGitIgnoreRulePath,
   })
@@ -168,7 +138,7 @@ export function App(): ReactElement {
   const terminalWorkspaces = useTerminalWorkspaceRuntime({
     projectState,
     acceptProjectState: session.acceptProjectState,
-    forgetWebViews: forgetTerminalViews,
+    forgetWebViews: web.forgetTerminalViews,
     acknowledgeWorkspaces: session.acknowledgeWorkspaces,
     onError: session.reportError,
   })
@@ -196,15 +166,16 @@ export function App(): ReactElement {
   } = layout
   const git = useGitWorkspace({
     root,
-    hasDirtyViewerTabs: () => tabs.some((tab) => tab.dirty),
+    hasDirtyViewerTabs: () => viewer.tabs.some((tab) => tab.dirty),
     acceptProjectState: session.acceptProjectState,
     refreshContent: session.refreshWorkspaceContent,
     refreshGit: session.refreshGit,
     activateViewer: () => {
-      focusViewerPane('primary')
+      architecture.deactivate()
+      viewer.focusPane('primary')
       restoreViewer()
     },
-    deactivateWebPane: () => setWebViewActive(false),
+    deactivateWebPane: () => web.setActive(false),
   })
   const {
     graphOpen: gitGraphOpen,
@@ -222,9 +193,9 @@ export function App(): ReactElement {
   } = git
   const terminalPathActivation = useTerminalPathActivation({
     root,
-    selectedFile: activeTab?.path,
+    selectedFile: viewer.activeTab?.path,
     openFile: (path, position) =>
-      openFile(path, true, 'file-tree', 'head', undefined, position),
+      viewer.openFile(path, true, 'file-tree', 'head', undefined, position),
     revealDirectory: layout.focusTree,
   })
   rootRef.current = root
@@ -233,68 +204,56 @@ export function App(): ReactElement {
   restoreViewerRef.current = restoreViewer
   resetGitGraphRef.current = resetGitGraph
   deactivateGitGraphRef.current = deactivateGitGraph
-  deactivateWebPaneRef.current = () => setWebViewActive(false)
-
+  deactivateWebPaneRef.current = () => web.setActive(false)
   const terminalCommands = useTerminalCommands(session.activeWorkspace?.id)
   const beads = useBeadsWorkspace(session, layout, terminalCommands)
-
   useEffect(() => {
     if (overlays.projectPickerOpen) void refreshHosts()
   }, [overlays.projectPickerOpen, refreshHosts])
   useEffect(() => {
-    if (root) setWebWorkspaceRoot(root)
-  }, [root, setWebWorkspaceRoot])
+    if (root) setWorkspaceRoot(root)
+  }, [root, setWorkspaceRoot])
   useEffect(() => {
     if (activeWorkspace?.missing) resetGitGraph()
   }, [activeWorkspace?.missing, resetGitGraph])
   useWorkbenchCommands(settings.keybindings, {
     enabled: destination === 'workspace',
-    closeWebPane: closeWebView,
-    escapeWebPaneFocus: () => setWebViewFocused(false),
-    canUseViewerCommands: () => !gitGraphActiveRef.current && !webViewActiveRef.current,
-    cycleViewMode: cycleActiveMode,
+    closeWebPane: web.closeView,
+    escapeWebPaneFocus: () => web.setFocused(false),
+    canUseViewerCommands: () =>
+      !gitGraphActiveRef.current &&
+      !web.activeRef.current &&
+      (!root || !architecture.active(root)),
+    cycleViewMode: viewer.cycleActiveMode,
     findFile: layout.focusFilenameSearch,
-    findInFile: viewerCommands.findInFile,
+    findInFile: viewer.viewerCommands.findInFile,
     findInTerminal: terminalWorkspaces.openTerminalSearch,
-    goToLine: viewerCommands.goToLine,
+    goToLine: viewer.viewerCommands.goToLine,
     toggleTerminalFocus,
     focusTerminal: layout.focusTerminal,
-    focusViewer: () => layout.focusViewer(getActivePane()),
+    focusViewer: () => layout.focusViewer(viewer.getActivePane()),
     focusTree: layout.focusTree,
     switchWorkspace: (direction) => {
       setDestination('workspace')
       workspaceSwitchRef.current(direction)
     },
   })
-  const revealSourceTerminal = async (view: WebViewState): Promise<void> => {
-    const target = projectState?.projects
-      .flatMap((project) =>
-        project.workspaces.map((workspace) => ({ project, workspace })),
-      )
-      .find(({ workspace }) => hostPathEquals(workspace.root, view.workspaceRoot))
-    if (!target) {
-      session.reportError('The source workspace is no longer registered')
-      return
-    }
-    if (!rootRef.current || !hostPathEquals(rootRef.current, view.workspaceRoot)) {
-      await session.switchWorkspace(target.project.id, target.workspace.id)
-    }
-    window.requestAnimationFrame(() => {
-      const source = [
-        ...document.querySelectorAll<HTMLElement>('[data-terminal-session]'),
-      ].find((element) => element.dataset['terminalSession'] === view.sourceTerminalId)
-      source?.click()
-      source?.focus()
-      if (!source) session.reportError('The source terminal has closed')
+  const revealSourceTerminal = (view: WebViewState) =>
+    revealWebSourceTerminal(view, {
+      projectState,
+      root: rootRef.current,
+      switchWorkspace: session.switchWorkspace,
+      onError: session.reportError,
     })
-  }
   if (rootError) return <div className="startup-error">{rootError}</div>
   if (!root) return <div className="startup-loading">Starting hvir…</div>
-  const rootWebViews = webViews.filter((view) => hostPathEquals(view.workspaceRoot, root))
+  const rootWebViews = web.views.filter((view) =>
+    hostPathEquals(view.workspaceRoot, root),
+  )
   const renderViewerPane = (
     pane: 'primary' | 'secondary',
-    paneTabs: typeof primaryTabs,
-    paneTab: typeof primaryActiveTab,
+    paneTabs: typeof viewer.primaryTabs,
+    paneTab: typeof viewer.primaryActiveTab,
     graphPane: boolean,
   ): ReactElement => (
     <section
@@ -308,11 +267,12 @@ export function App(): ReactElement {
         if (
           paneTab &&
           !(graphPane && gitGraphActive) &&
-          !(pane === 'primary' && webViewActive)
+          !(pane === 'primary' && web.active) &&
+          !architecture.active(root, pane)
         ) {
-          focusViewerPane(pane, paneTab.id)
+          viewer.focusPane(pane, paneTab.id)
         } else {
-          focusViewerPane(pane)
+          viewer.focusPane(pane)
         }
       }}
     >
@@ -321,30 +281,33 @@ export function App(): ReactElement {
         pathCopyRoot={root}
         pane={pane}
         activeId={
-          (graphPane && gitGraphActive) || (pane === 'primary' && webViewActive)
+          (graphPane && gitGraphActive) ||
+          (pane === 'primary' && web.active) ||
+          architecture.active(root, pane)
             ? undefined
             : paneTab?.id
         }
-        onActivate={(id) => activateTab(id, pane)}
-        onClose={closeTab}
-        onPin={pinTab}
-        onReorder={reorderViewerTabs}
-        onMoveToPane={moveTabToPane}
-        split={viewerSplit}
-        onSplit={openViewerSplit}
-        onClosePane={pane === 'secondary' ? closeViewerSplit : undefined}
+        onActivate={(id) => viewer.activateTab(id, pane)}
+        onClose={viewer.closeTab}
+        onPin={viewer.pinTab}
+        onReorder={viewer.reorderTabs}
+        onMoveToPane={viewer.moveTab}
+        split={viewer.split}
+        onSplit={viewer.openSplit}
+        onClosePane={pane === 'secondary' ? viewer.closeSplit : undefined}
         graphOpen={graphPane && gitGraphOpen}
         graphActive={graphPane && gitGraphActive}
         onActivateGraph={activateGitGraph}
         onCloseGraph={closeGitGraph}
+        {...architecture.stripProps(root, pane)}
         webTabs={
           pane === 'primary'
             ? rootWebViews.map((view) => ({ id: view.id, title: view.title }))
             : undefined
         }
-        activeWebId={pane === 'primary' && webViewActive ? activeWebViewId : undefined}
-        onActivateWeb={activateWebView}
-        onCloseWeb={closeWebView}
+        activeWebId={pane === 'primary' && web.active ? web.activeId : undefined}
+        onActivateWeb={web.activateView}
+        onCloseWeb={web.closeView}
       />
       {graphPane && gitGraphOpen ? (
         <div className="workspace-view" hidden={!gitGraphActive}>
@@ -354,27 +317,34 @@ export function App(): ReactElement {
             connectionState={connectionState}
             requestedHash={gitGraphRequest.hash}
             requestSerial={gitGraphRequest.serial}
-            onOpen={(path, base, revision) => openFile(path, true, 'git', base, revision)}
+            onOpen={(path, base, revision) =>
+              viewer.openFile(path, true, 'git', base, revision)
+            }
           />
         </div>
       ) : null}
+      {architecture.panel(root, pane)}
       {pane === 'primary' ? (
         <WebPaneStack
-          views={webViews}
+          views={web.views}
           root={root}
-          active={webViewActive}
-          activeId={activeWebViewId}
-          focused={webViewFocused}
-          onToggleFocus={() => setWebViewFocused((focused) => !focused)}
-          onTitle={setWebViewTitle}
-          onBlockedNavigation={followBlockedNavigation}
-          onOpenBrowser={openWebViewInBrowser}
+          active={web.active}
+          activeId={web.activeId}
+          focused={web.focused}
+          onToggleFocus={() => web.setFocused((focused) => !focused)}
+          onTitle={web.setTitle}
+          onBlockedNavigation={web.followBlockedNavigation}
+          onOpenBrowser={web.openBrowser}
           onRevealTerminal={(view) => void revealSourceTerminal(view)}
         />
       ) : null}
       <div
         className="workspace-view"
-        hidden={(graphPane && gitGraphActive) || (pane === 'primary' && webViewActive)}
+        hidden={
+          (graphPane && gitGraphActive) ||
+          (pane === 'primary' && web.active) ||
+          architecture.active(root, pane)
+        }
       >
         {activeWorkspace?.missing ? (
           <MissingWorkspaceNotice root={root} />
@@ -383,20 +353,22 @@ export function App(): ReactElement {
             key={`${pane}:${paneTab?.id ?? 'empty'}`}
             tab={paneTab}
             gitRefreshVersion={gitVersion}
-            onMode={(mode, at) => paneTab && setViewerMode(paneTab.id, mode, at)}
-            onDiffBase={(diffBase) => paneTab && setViewerDiffBase(paneTab.id, diffBase)}
-            onContent={(content) => paneTab && setViewerContent(paneTab.id, content)}
-            onSave={() => paneTab && saveTab(paneTab.id)}
-            onReload={() => paneTab && reloadTab(paneTab.id)}
-            onPosition={(position) => paneTab && schedulePosition(paneTab.id, position)}
-            onNavigationHandled={(serial) =>
-              paneTab && navigationHandled(paneTab.id, serial)
+            onMode={(mode, at) => paneTab && viewer.setMode(paneTab.id, mode, at)}
+            onDiffBase={(diffBase) => paneTab && viewer.setDiffBase(paneTab.id, diffBase)}
+            onContent={(content) => paneTab && viewer.setContent(paneTab.id, content)}
+            onSave={() => paneTab && viewer.saveTab(paneTab.id)}
+            onReload={() => paneTab && viewer.reloadTab(paneTab.id)}
+            onPosition={(position) =>
+              paneTab && viewer.schedulePosition(paneTab.id, position)
             }
-            registerCommands={viewerCommands.register}
+            onNavigationHandled={(serial) =>
+              paneTab && viewer.navigationHandled(paneTab.id, serial)
+            }
+            registerCommands={viewer.viewerCommands.register}
             onOpenPath={(path) => {
-              focusViewerPane(pane)
-              if (paneTab) pinTab(paneTab.id)
-              openFile(path, true)
+              viewer.focusPane(pane)
+              if (paneTab) viewer.pinTab(paneTab.id)
+              viewer.openFile(path, true)
             }}
             onRenderedDependencies={viewer.setRenderedDependencies}
             documentReview={documentReview}
@@ -444,7 +416,7 @@ export function App(): ReactElement {
         />
       ) : null}
       <main
-        className={`workbench${connectionState === 'connected' ? '' : ' project-stale'}${terminalMode === 'maximized' ? ' terminal-focused' : ''}${terminalMode === 'collapsed' ? ' terminal-collapsed' : ''}${treeCollapsed ? ' tree-collapsed' : ''}${layout.terminalRailCompact ? ' terminal-rail-compact' : ''}${webViewFocused && webViewActive ? ' web-focused' : ''}`}
+        className={`workbench${connectionState === 'connected' ? '' : ' project-stale'}${terminalMode === 'maximized' ? ' terminal-focused' : ''}${terminalMode === 'collapsed' ? ' terminal-collapsed' : ''}${treeCollapsed ? ' tree-collapsed' : ''}${layout.terminalRailCompact ? ' terminal-rail-compact' : ''}${web.focused && web.active ? ' web-focused' : ''}`}
         ref={workbenchRef}
         hidden={destination === 'sessions'}
       >
@@ -484,9 +456,11 @@ export function App(): ReactElement {
               ignoredRefreshVersion={ignoredRefreshVersion}
               changedFiles={gitChanges?.workingTree}
               gitChangesLimited={gitChanges?.workingTreeLimited}
-              selected={terminalPathActivation.revealRequest?.path ?? activeTab?.path}
+              selected={
+                terminalPathActivation.revealRequest?.path ?? viewer.activeTab?.path
+              }
               revealRequest={terminalPathActivation.revealRequest}
-              onOpen={openFile}
+              onOpen={viewer.openFile}
               onPointerActivate={focusVisibleActiveTerminalAfterLayout}
               viewerPathRebind={viewer}
               onWorkspaceContentChanged={session.refreshWorkspaceContent}
@@ -505,16 +479,17 @@ export function App(): ReactElement {
                 historyRefreshVersion={gitVersion}
                 onChanges={setGitChanges}
                 onOpenChange={(path, base, untracked) =>
-                  openFile(path, true, untracked ? 'git-untracked' : 'git', base)
+                  viewer.openFile(path, true, untracked ? 'git-untracked' : 'git', base)
                 }
                 onOpenHistory={(path, revision) =>
-                  openFile(path, true, 'git', 'head', revision)
+                  viewer.openFile(path, true, 'git', 'head', revision)
                 }
                 onOpenGraph={openGitGraph}
+                onOpenArchitectureReview={architecture.open}
                 connectionState={connectionState}
                 hidden={railMode !== 'git'}
                 historyPaused={gitGraphActive}
-                hasDirtyViewerTabs={tabs.some((tab) => tab.dirty)}
+                hasDirtyViewerTabs={viewer.tabs.some((tab) => tab.dirty)}
                 onSwitchBranch={switchGitBranch}
                 onFetch={fetchGit}
                 onPull={pullGit}
@@ -572,11 +547,16 @@ export function App(): ReactElement {
         />
         <section className="viewer-panel" aria-label="File viewer">
           <div
-            className={`viewer-groups${viewerSplit ? ' split' : ''}`}
+            className={`viewer-groups${viewer.split ? ' split' : ''}`}
             ref={viewerGroupsRef}
           >
-            {renderViewerPane('primary', primaryTabs, primaryActiveTab, true)}
-            {viewerSplit ? (
+            {renderViewerPane(
+              'primary',
+              viewer.primaryTabs,
+              viewer.primaryActiveTab,
+              true,
+            )}
+            {viewer.split ? (
               <>
                 <PaneResizer
                   orientation="vertical"
@@ -597,7 +577,12 @@ export function App(): ReactElement {
                   }}
                   onReset={resetViewerPrimaryWidth}
                 />
-                {renderViewerPane('secondary', secondaryTabs, secondaryActiveTab, false)}
+                {renderViewerPane(
+                  'secondary',
+                  viewer.secondaryTabs,
+                  viewer.secondaryActiveTab,
+                  false,
+                )}
               </>
             ) : null}
           </div>
@@ -636,7 +621,7 @@ export function App(): ReactElement {
           terminalPresented={
             destination === 'workspace' &&
             terminalMode !== 'collapsed' &&
-            !(webViewFocused && webViewActive)
+            !(web.focused && web.active)
           }
           railCompact={layout.terminalRailCompact}
           onRailCompact={layout.setTerminalRailCompact}
@@ -644,7 +629,7 @@ export function App(): ReactElement {
           onAttachAvailability={terminalCommands.reportLaunchAvailability}
           onRollup={terminalAttention.updateRollup}
           onOpenPath={terminalPathActivation.activate}
-          onOpenWebLink={openWebLink}
+          onOpenWebLink={web.openLink}
           preferences={terminalPreferences(settings)}
           onOpenSettings={() => overlays.openSettings()}
           onOpenTerminalSettings={() => overlays.openSettings('terminal')}

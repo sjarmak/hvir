@@ -20,6 +20,7 @@ interface GitPanelProps {
   readonly onOpenChange: (path: HostPath, base: DiffBase, untracked?: boolean) => void
   readonly onOpenHistory: (path: HostPath, revision: string) => void
   readonly onOpenGraph: (hash?: string) => void
+  readonly onOpenArchitectureReview: () => void
   readonly onChanges: (changes: GitChanges | undefined) => void
   readonly connectionState?: HostConnectionState
   readonly hidden?: boolean
@@ -38,6 +39,7 @@ export function GitPanel({
   onOpenChange,
   onOpenHistory,
   onOpenGraph,
+  onOpenArchitectureReview,
   onChanges,
   connectionState = 'connected',
   hidden = false,
@@ -94,6 +96,13 @@ export function GitPanel({
           onClick={() => controller.selectView('history')}
         >
           History
+        </button>
+        <button
+          type="button"
+          onClick={onOpenArchitectureReview}
+          disabled={connectionState !== 'connected'}
+        >
+          Architecture
         </button>
       </div>
       <div

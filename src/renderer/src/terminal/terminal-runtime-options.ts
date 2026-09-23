@@ -1,3 +1,4 @@
+import { hostPathEquals } from '../../../shared'
 import type {
   ComposerSubmitMode,
   HarnessModifiedKeyProtocol,
@@ -8,6 +9,7 @@ import type {
   HostPath,
   TerminalIdentityStatus,
   ExternalSessionAttachRequest,
+  ArchitectureReviewLaunch,
 } from '../../../shared'
 import type {
   TerminalColorTheme,
@@ -45,6 +47,7 @@ export interface TerminalRuntimeOptions {
    * restart names nothing and keeps the join (ADR-046).
    */
   readonly externalAttach?: ExternalSessionAttachRequest
+  readonly architectureReview?: ArchitectureReviewLaunch
   readonly position: number
   readonly active: boolean
   readonly presentation: TerminalPresentation
@@ -80,4 +83,27 @@ export interface TerminalRuntimeOptions {
   readonly onNotification: (body: string | undefined) => void
   readonly onFocus: () => void
   readonly onLink: (activation: TerminalLinkActivation) => void
+}
+
+export function publishTerminalIdentity(
+  options: TerminalRuntimeOptions,
+  harnessSessionId: string | undefined,
+  identityStatus: Parameters<TerminalRuntimeOptions['onIdentity']>[1],
+  identityDiverged?: true,
+): void {
+  if (identityDiverged) options.onIdentity(harnessSessionId, identityStatus, true)
+  else options.onIdentity(harnessSessionId, identityStatus)
+}
+
+export function assertTerminalLaunchContext(
+  current: TerminalRuntimeOptions,
+  next: TerminalRuntimeOptions,
+): void {
+  if (
+    next.profileId !== current.profileId ||
+    next.launchRevision !== current.launchRevision ||
+    !hostPathEquals(next.cwd, current.cwd)
+  ) {
+    throw new Error('Live terminal launch context cannot change')
+  }
 }

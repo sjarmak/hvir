@@ -10,6 +10,7 @@ import type {
   HostPath,
   TerminalIdentityStatus,
   ExternalSessionAttachRequest,
+  ArchitectureReviewLaunch,
 } from '../../../shared'
 import type { TerminalThemeOverride } from '../settings/settings'
 import { useAppTheme, type AppTheme } from '../theme'
@@ -50,6 +51,7 @@ interface TerminalViewProps {
    * main at spawn, so the row it joins survives a reload (ADR-046).
    */
   readonly externalAttach?: ExternalSessionAttachRequest
+  readonly architectureReview?: ArchitectureReviewLaunch
   readonly startMode: 'interactive' | 'bulk'
   readonly position: number
   readonly slot: 'primary' | 'secondary'

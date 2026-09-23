@@ -29,6 +29,7 @@ export interface HarnessLaunchContext {
   /** Interactive shell resolved by the owning ProjectHost. */
   readonly defaultShell: string
   readonly composerSubmitMode?: ComposerSubmitMode
+  readonly architectureReviewBody?: string
   readonly effectiveCapabilities?: HarnessProviderCapabilities
 }
 
@@ -230,6 +231,9 @@ export interface HarnessProvider {
   readonly remoteImagePaste?: HarnessRemoteImagePasteContract
   readonly documentReviewInsert?: HarnessDocumentReviewInsertContract
   readonly documentReviewSendNow?: HarnessDocumentReviewSendNowContract
+
+  /** Provider-owned initial prompt for an explicit pinned architecture review. */
+  architectureReviewLaunch?(spec: HarnessLaunchSpec, body: string): HarnessLaunchSpec
 
   /** Command to start a fresh session. */
   launch(ctx: HarnessLaunchContext): HarnessLaunchSpec

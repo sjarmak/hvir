@@ -452,6 +452,7 @@ describe('IpcAuthorityRouter', () => {
   it('keeps the reviewed owner and authority channel policies explicit', () => {
     expect(new Set(OWNER_SCOPED_INVOKE_CHANNELS)).toEqual(
       new Set<IpcInvokeChannel>([
+        'architecture-review:close',
         'workbench-health:acknowledge',
         'diagnostic-evidence:get',
         'diagnostic-evidence:delete',
@@ -462,6 +463,9 @@ describe('IpcAuthorityRouter', () => {
         'project:folder-picker-create-directory',
         'project:folder-picker-close',
         'project:open',
+        'architecture-review:scan',
+        'architecture-review:evidence',
+      'architecture-review:prepare',
         'document-review:restore',
         'document-review:save',
         'document-review:revalidate',
@@ -530,6 +534,9 @@ describe('IpcAuthorityRouter', () => {
     expect(new Set(AUTHORITY_SCOPED_INVOKE_CHANNELS)).toEqual(
       new Set<IpcInvokeChannel>([
         'project:watch-interests',
+        'architecture-review:scan',
+        'architecture-review:evidence',
+      'architecture-review:prepare',
         'document-review:restore',
         'document-review:save',
         'document-review:revalidate',
@@ -587,6 +594,7 @@ describe('IpcAuthorityRouter', () => {
       'app.ts',
       'filesystem.ts',
       'git.ts',
+      'architecture-review.ts',
       'harness.ts',
       'preview.ts',
       'project.ts',

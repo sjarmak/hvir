@@ -49,6 +49,7 @@ export function terminalStartRequest(
     resume,
     harnessSessionId: resume ? options.harnessSessionId : undefined,
     externalAttach: declareAttach ? options.externalAttach : undefined,
+    architectureReview: options.architectureReview,
     forkSourceSessionId: fork?.sourceSessionId,
     parentHarnessSessionId: fork?.parentHarnessSessionId,
   }

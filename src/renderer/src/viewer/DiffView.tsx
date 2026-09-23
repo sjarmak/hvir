@@ -36,46 +36,71 @@ interface DiffViewProps {
   readonly onPosition: (position: ViewerDocumentPosition) => void
   readonly positionCapture: ViewerPositionCapture
   readonly registerFindTarget: RegisterViewerFindTarget
+  readonly evidenceLocation?: { readonly line: number; readonly side: 'before' | 'after' }
+  /** Exact pair captured by an evidence request; avoids re-reading live Git state. */
+  readonly capturedInputs?: {
+    readonly baseLabel: string
+    readonly currentLabel: string
+    readonly baseInput: TextWorkload
+    readonly currentInput: TextWorkload
+  }
 }
 
-export function DiffView({
-  path,
-  base,
-  currentContent,
-  currentSize,
-  dirty,
-  revision,
-  documentRefreshVersion,
-  gitRefreshVersion,
-  position,
-  onPosition,
-  positionCapture,
-  registerFindTarget,
-}: DiffViewProps): ReactElement {
-  const contextKey = diffInputContextKey(path, base, revision)
+export function DiffView(props: DiffViewProps): ReactElement {
+  return props.capturedInputs ? (
+    <ResolvedDiffView {...props} inputs={props.capturedInputs} />
+  ) : (
+    <LiveDiffView {...props} />
+  )
+}
+
+function LiveDiffView(props: DiffViewProps): ReactElement {
+  const { path, base, revision, documentRefreshVersion, gitRefreshVersion } = props
   const { inputs, error } = useDiffInputs({
-    contextKey,
+    contextKey: diffInputContextKey(path, base, revision),
     path,
     base,
     revision,
     documentRefreshVersion,
     gitRefreshVersion,
   })
+  return <ResolvedDiffView {...props} inputs={inputs} error={error} />
+}
+
+function ResolvedDiffView({
+  path,
+  base,
+  currentContent,
+  currentSize,
+  dirty,
+  revision,
+  position,
+  onPosition,
+  positionCapture,
+  registerFindTarget,
+  evidenceLocation,
+  inputs: resolvedInputs,
+  error,
+}: DiffViewProps & {
+  readonly inputs?: DiffViewProps['capturedInputs']
+  readonly error?: string
+}): ReactElement {
+  const contextKey = diffInputContextKey(path, base, revision)
   const showUnsaved = usesUnsavedContent(dirty, base, revision)
   const currentInput = useMemo(
     () =>
-      inputs
+      resolvedInputs
         ? showUnsaved
           ? liveInput(currentContent, currentSize)
-          : inputs.currentInput
+          : resolvedInputs.currentInput
         : undefined,
-    [currentContent, currentSize, inputs, showUnsaved],
+    [currentContent, currentSize, resolvedInputs, showUnsaved],
   )
   const workload =
-    inputs && currentInput
-      ? selectDiffWorkload(inputs.baseInput, currentInput)
+    resolvedInputs && currentInput
+      ? selectDiffWorkload(resolvedInputs.baseInput, currentInput)
       : undefined
-  if (!inputs || !currentInput || !workload) {
+  if (!resolvedInputs || !currentInput || !workload) {
     return (
       <div className={`viewer-empty${error ? ' error' : ''}`}>
         {error ?? 'Preparing diff…'}
@@ -90,9 +115,9 @@ export function DiffView({
           path={path}
           base={base}
           revision={revision}
-          baseLabel={inputs.baseLabel}
-          currentLabel={`${inputs.currentLabel}${showUnsaved ? ' (unsaved)' : ''}`}
-          baseInput={inputs.baseInput}
+          baseLabel={resolvedInputs.baseLabel}
+          currentLabel={`${resolvedInputs.currentLabel}${showUnsaved ? ' (unsaved)' : ''}`}
+          baseInput={resolvedInputs.baseInput}
           currentInput={currentInput}
           workload={workload}
         />
@@ -102,15 +127,16 @@ export function DiffView({
   return (
     <InteractiveDiff
       key={contextKey}
-      baseLabel={inputs.baseLabel}
-      currentLabel={`${inputs.currentLabel}${showUnsaved ? ' (unsaved)' : ''}`}
-      baseContent={inputs.baseInput.content}
+      baseLabel={resolvedInputs.baseLabel}
+      currentLabel={`${resolvedInputs.currentLabel}${showUnsaved ? ' (unsaved)' : ''}`}
+      baseContent={resolvedInputs.baseInput.content}
       currentContent={currentInput.content}
       error={error}
       position={position}
       onPosition={onPosition}
       positionCapture={positionCapture}
       registerFindTarget={registerFindTarget}
+      evidenceLocation={evidenceLocation}
     />
   )
 }
@@ -125,7 +151,9 @@ function InteractiveDiff({
   onPosition,
   positionCapture,
   registerFindTarget,
+  evidenceLocation,
 }: {
+  readonly evidenceLocation?: DiffViewProps['evidenceLocation']
   readonly baseLabel: string
   readonly currentLabel: string
   readonly baseContent: string
@@ -226,6 +254,20 @@ function InteractiveDiff({
     replaceDocument(merge.a, baseContent)
     replaceDocument(merge.b, currentContent)
   }, [baseContent, currentContent])
+
+  useEffect(() => {
+    const merge = mergeRef.current
+    if (!merge || !evidenceLocation) return
+    merge.reconfigure({ collapseUnchanged: undefined })
+    const view = evidenceLocation.side === 'before' ? merge.a : merge.b
+    const line = view.state.doc.line(
+      Math.max(1, Math.min(view.state.doc.lines, evidenceLocation.line)),
+    )
+    view.dispatch({
+      selection: { anchor: line.from },
+      effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+    })
+  }, [evidenceLocation, baseContent, currentContent])
 
   return (
     <div className="diff-shell">

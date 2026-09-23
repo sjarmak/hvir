@@ -669,6 +669,14 @@ drag still pages the program through its history, the way back is still offered 
 can move, and what the mirror says is what has just happened rather than what is continuously
 true.
 
+### [ADR-061 — Pinned native architecture review](adr/ADR-061-pinned-native-architecture-review.md)
+
+> Lifecycle: Active
+
+Bounded host-qualified source snapshots drive a native subsystem review and exact source
+viewer; request-owned workers extract facts while existing providers and Beads own explicit
+handoffs.
+
 ## 5. Architecture
 
 ### Process model

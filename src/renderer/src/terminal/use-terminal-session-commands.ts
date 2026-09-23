@@ -1,7 +1,9 @@
+import { useArchitectureReviewLaunchListener } from './use-architecture-review-launch-listener'
 import type { RefObject } from 'react'
 
 import { hostPathEquals } from '../../../shared'
 import type {
+  ArchitectureReviewLaunch,
   ExternalSessionAttachRequest,
   HarnessProfile,
   HarnessProfileId,
@@ -60,6 +62,7 @@ export function useTerminalSessionCommands({
     provider: HarnessProviderDescriptor,
     initialInput?: string,
     externalAttach?: ExternalSessionAttachRequest,
+    architectureReview?: ArchitectureReviewLaunch,
   ): string => {
     const current = modelRef.current
     const pane = terminalWorkspaceSplit(current) ? current.activePane : 'primary'
@@ -72,6 +75,7 @@ export function useTerminalSessionCommands({
       profileProbe(probes, profile)?.capabilities,
       initialInput,
       externalAttach,
+      architectureReview,
     )
     send({ type: 'session-added', session })
     closeLaunchMenu()
@@ -86,6 +90,35 @@ export function useTerminalSessionCommands({
       : undefined
     if (!provider || !profile) return
     launch(profile, provider)
+  }
+
+  const launchBeadCommand = (command: string): boolean => {
+    if (!available || !defaultProfile || !defaultProvider) return false
+    launch(defaultProfile, defaultProvider, command)
+    return true
+  }
+
+  const launchArchitectureReview = (
+    profileId: HarnessProfileId,
+    launchRequest: ArchitectureReviewLaunch,
+    launchRevision: number,
+  ): boolean => {
+    if (!available) return false
+    const profile = profiles.find((candidate) => candidate.id === profileId)
+    const provider = profile
+      ? providers.find((candidate) => candidate.id === profile.providerId)
+      : undefined
+    if (
+      !profile ||
+      !provider?.architectureReviewLaunch ||
+      profile.executable.kind !== 'provider-default' ||
+      profile.args.length !== 0 ||
+      profile.launchRevision !== launchRevision
+    ) {
+      return false
+    }
+    launch(profile, provider, undefined, undefined, launchRequest)
+    return true
   }
 
   const failForkStart = (id: string, reason: string): void => {
@@ -183,8 +216,15 @@ export function useTerminalSessionCommands({
     })
   }
 
+  useArchitectureReviewLaunchListener(workspaceRoot, {
+    launchArchitectureReview,
+    launchBeadCommand,
+  })
+
   return {
     add,
+    launchBeadCommand,
+    launchArchitectureReview,
     fork: (sourceId: string) => {
       const source = modelRef.current.sessions.find((session) => session.id === sourceId)
       const provider = source

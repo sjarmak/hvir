@@ -43,6 +43,25 @@ afterEach(() => {
 })
 
 describe('DiffView refresh lifecycle', () => {
+  it('uses captured evidence without live Git reads and selects the cited baseline line', async () => {
+    const path = localPath('/repo/deleted.ts')
+    const capturedInputs = diffResponse(path, 'captured')
+    await renderDiff({
+      path,
+      gitRefreshVersion: 0,
+      capturedInputs,
+      evidenceLocation: { line: 2, side: 'before' },
+    })
+    expect(invoke).not.toHaveBeenCalled()
+    expect(currentDocument()).toBe('captured\n')
+    const editor = container.querySelector<HTMLElement>('.cm-editor.cm-merge-a')!
+    const view = EditorView.findFromDOM(editor)!
+    expect(view.state.selection.main.head).toBe(view.state.doc.line(2).from)
+    await renderDiff({ path, gitRefreshVersion: 4, capturedInputs })
+    expect(invoke).not.toHaveBeenCalled()
+    expect(currentDocument()).toBe('captured\n')
+  })
+
   it('applies a settled result before draining a coalesced refresh', async () => {
     const path = localPath('/repo/design.md')
     const active = deferred<GitDiffResponse>()
@@ -169,17 +188,23 @@ async function renderDiff({
   revision,
   documentRefreshVersion = 0,
   gitRefreshVersion,
+  capturedInputs,
+  evidenceLocation,
 }: {
   readonly path: HostPath
   readonly base?: DiffBase
   readonly revision?: string
   readonly documentRefreshVersion?: number
   readonly gitRefreshVersion: number
+  readonly capturedInputs?: GitDiffResponse
+  readonly evidenceLocation?: { readonly line: number; readonly side: 'before' | 'after' }
 }): Promise<void> {
   await act(async () => {
     reactRoot.render(
       <DiffView
         path={path}
+        capturedInputs={capturedInputs}
+        evidenceLocation={evidenceLocation}
         base={base}
         currentContent="working\n"
         currentSize={8}

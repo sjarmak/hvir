@@ -19,6 +19,8 @@ import type {
   HarnessArtifactContext,
 } from './harness-provider-contract'
 
+import { composeArchitectureReviewLaunch } from './architecture-review-launch'
+
 const PROTECTED_ENVIRONMENT = new Set(['TERM', 'COLORTERM', 'TERM_PROGRAM'])
 
 export interface ResolvedHarnessLaunch {
@@ -121,7 +123,14 @@ export async function resolveHarnessLaunch(
   return {
     profile,
     provider,
-    spec,
+    spec:
+      request.context.architectureReviewBody === undefined
+        ? spec
+        : composeArchitectureReviewLaunch(
+            provider,
+            spec,
+            request.context.architectureReviewBody,
+          ),
     unsetEnvironment: environment.unset,
     previewEnvironment: environment.preview,
     artifactIdentity: artifact.identity,
