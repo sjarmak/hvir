@@ -672,7 +672,8 @@ true.
 
 ### [ADR-061 — Pinned native architecture review](adr/ADR-061-pinned-native-architecture-review.md)
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
+> Superseded by: [ADR-063](adr/ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | The fixed comparison modes, the full recapture on revalidation, and the read-only single-file handoff consumed once per snapshot; pinned evidence, worker isolation, and launch authority remain.
 
 Bounded host-qualified source snapshots drive a native subsystem review and exact source
 viewer; request-owned workers extract facts while existing providers and Beads own explicit
@@ -685,6 +686,15 @@ handoffs.
 
 The Beads-governed maintained branch verifies locally against a pinned policy baseline;
 upstream GitHub provenance and blocking source/dependency checks retain their authority.
+
+### [ADR-063 — Architecture review over history, with agent worktrees](adr/ADR-063-architecture-review-history-and-agent-worktrees.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-061](adr/ADR-061-pinned-native-architecture-review.md) | partial | The fixed comparison modes, the full recapture on revalidation, and the read-only single-file handoff consumed once per snapshot; pinned evidence, worker isolation, and launch authority remain.
+
+A snapshot compares any two refs or a ref and the live tree from Git objects through a blob-keyed
+parse cache, opens on subsystem relationships across TypeScript, Python, Go and Rust, and hands
+an agent a worktree hvir owns so the review can re-snapshot the agent's change.
 
 ## 5. Architecture
 

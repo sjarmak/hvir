@@ -67,3 +67,29 @@ the project, the session title, the kind of signal, and at most one line of a pe
 It points at a session; it is not a copy of the session and never carries options, identifiers,
 or credentials.
 _Avoid_: toast, alert, notification (ambiguous with the desktop badge)
+
+### Architecture
+
+**Architecture review**:
+The workbench surface that shows how a project's structure changed between two points and
+lets the person judge that change or hand it to an agent. Its job is review; browsing history
+is one way of choosing what to review.
+_Avoid_: architecture diff viewer, diff viewer, dependency graph, map (the map is one view
+inside it)
+
+**Snapshot**:
+One comparison of a project's structure between a baseline and a current end, fixed to the
+exact bytes read at that moment. A snapshot never changes; a new comparison is a new snapshot.
+_Avoid_: scan (the act that produces one), capture, report, analysis
+
+**Baseline** / **Current**:
+The two ends of a snapshot. Either may be a commit; only the current end may be the live
+working tree. Two commits can never go stale; a snapshot whose current end is the working tree
+is stale once that tree differs from what was read.
+_Avoid_: before/after (presentation words for the two sides), source/target, left/right
+
+**Subsystem**:
+The unit the review compares structure at: a named group of modules whose imports of one
+another are counted as one relationship. Modules and their individual imports are the
+evidence beneath it.
+_Avoid_: group, directory, package, area, layer

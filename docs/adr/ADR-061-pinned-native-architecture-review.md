@@ -1,6 +1,7 @@
 # ADR-061: Pinned native architecture review
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
+> Superseded by: [ADR-063](ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | The fixed comparison modes, the full recapture on revalidation, and the read-only single-file handoff consumed once per snapshot; pinned evidence, worker isolation, and launch authority remain.
 
 ## Context
 
