@@ -71,7 +71,12 @@ function placeWorkerSpans(
   marks: WorkerRequestMarks,
   window: WorkerRequestWindow,
 ): void {
-  const files = [...capture.before, ...capture.after]
+  const files = [
+    ...capture.before,
+    ...capture.after,
+    ...capture.configs.before,
+    ...capture.configs.after,
+  ]
   const requestBytes = files.reduce(
     (total, file) =>
       total + Buffer.byteLength(file.path) + Buffer.byteLength(file.content),

@@ -5,9 +5,10 @@ import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { LocalHost } from '../src/main/project-host/local-host'
 import { asHostId, hostPath, localPath } from '../src/shared/host-path'
-import type { ProjectHost } from '../src/main/project-host/project-host'
+import type { ExecOptions, ProjectHost } from '../src/main/project-host/project-host'
 import { captureArchitecture } from '../src/main/architecture-review/capture'
 import { ArchitectureScanRecorder } from '../src/main/architecture-review/scan-recorder'
+import { analyzeCaptureTimed } from '../src/main/architecture-review/timed-analysis'
 import { expectMonotoneMetrics, stagesOf } from './architecture-scan-metrics-fixture'
 
 const roots: string[] = []
@@ -177,7 +178,7 @@ it('captures identical bytes and revisions through a host-qualified remote trans
   expect(remoteCapture.fingerprint).not.toBe(localCapture.fingerprint)
 })
 
-it('records listing, blob, live-read, recheck and hashing spans for a working-tree scan', async () => {
+it('records listing, blob, one live-read and hashing spans for a working-tree scan', async () => {
   const f = await fixture()
   await writeFile(join(f.root, 'src/b.ts'), 'export const b = 22\n')
   const recorder = new ArchitectureScanRecorder()
@@ -189,13 +190,7 @@ it('records listing, blob, live-read, recheck and hashing spans for a working-tr
   )
   const metrics = recorder.metrics()
   expectMonotoneMetrics(metrics)
-  expect(stagesOf(metrics)).toEqual([
-    'blob-read',
-    'hashing',
-    'listing',
-    'live-read',
-    'live-recheck',
-  ])
+  expect(stagesOf(metrics)).toEqual(['blob-read', 'hashing', 'listing', 'live-read'])
   const span = (stage: string) => metrics.spans.find((entry) => entry.stage === stage)!
   const bytes = (files: readonly { content: string }[]) =>
     files.reduce((total, file) => total + Buffer.byteLength(file.content), 0)
@@ -205,17 +200,146 @@ it('records listing, blob, live-read, recheck and hashing spans for a working-tr
     bytes: bytes(capture.before),
     hostCalls: 1,
   })
-  // Every live file costs a stat, a realpath and a read on the host.
+  // The whole live side, consistency check included, is one host command.
   expect(span('live-read')).toMatchObject({
     side: 'current',
     items: 2,
     bytes: bytes(capture.after),
-    hostCalls: 6,
+    hostCalls: 1,
   })
-  expect(span('live-recheck')).toMatchObject({ items: 2, hostCalls: 6 })
   expect(
     metrics.spans.filter((entry) => entry.stage === 'listing').length,
   ).toBeGreaterThan(2)
+})
+
+it('reads any number of live files in one host command', async () => {
+  const f = await fixture()
+  for (let index = 0; index < 40; index += 1)
+    await writeFile(join(f.root, `src/m${index}.ts`), `export const m = ${index}\n`)
+  const recorder = new ArchitectureScanRecorder()
+  const capture = await captureArchitecture(
+    f.host,
+    { root: localPath(f.root), mode: 'head' },
+    new AbortController().signal,
+    recorder,
+  )
+  expect(capture.after).toHaveLength(41)
+  const live = recorder.metrics().spans.filter((span) => span.stage === 'live-read')
+  expect(live).toEqual([expect.objectContaining({ items: 41, hostCalls: 1 })])
+})
+
+it('carries Git blob ids and fingerprints ids rather than whole contents', async () => {
+  const f = await fixture()
+  await writeFile(
+    join(f.root, 'src/big.ts'),
+    `export const big = '${'x'.repeat(300_000)}'\n`,
+  )
+  await writeFile(join(f.root, 'tsconfig.json'), '{"compilerOptions":{}}')
+  const recorder = new ArchitectureScanRecorder()
+  const capture = await captureArchitecture(
+    f.host,
+    { root: localPath(f.root), mode: 'head' },
+    new AbortController().signal,
+    recorder,
+  )
+  for (const file of [...capture.after, ...capture.configs.after])
+    expect(file.object).toBe(git(f.root, 'hash-object', '--no-filters', file.path))
+  for (const file of capture.before)
+    expect(file.object).toBe(git(f.root, 'rev-parse', `HEAD:${file.path}`))
+  expect(capture.configs.after.map((file) => file.path)).toEqual(['tsconfig.json'])
+  const hashed = recorder
+    .metrics()
+    .spans.filter((span) => span.stage === 'hashing')
+    .reduce((total, span) => total + span.bytes, 0)
+  expect(hashed).toBeGreaterThan(0)
+  expect(hashed).toBeLessThan(4_096)
+  const again = await f.capture('head')
+  expect(again.fingerprint).toBe(capture.fingerprint)
+})
+
+/** A host whose `tar` edits a live source just before or just after it archives. */
+async function hostEditingDuringRead(root: string, when: 'before' | 'after') {
+  const shims = await mkdtemp(join(tmpdir(), 'hvir-architecture-shim-'))
+  roots.push(shims)
+  const tar = execFileSync('sh', ['-c', 'command -v tar'], { encoding: 'utf8' }).trim()
+  const edit = `printf 'export const value = 9\\n' > '${join(root, 'src/a.ts')}'`
+  const body =
+    when === 'before'
+      ? `${edit}\nexec '${tar}' "$@"`
+      : `'${tar}' "$@"\nstatus=$?\n${edit}\nexit $status`
+  await writeFile(join(shims, 'tar'), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+  const local = new LocalHost()
+  const host = new Proxy(local, {
+    get(target, property, receiver) {
+      if (property !== 'exec') {
+        const value: unknown = Reflect.get(target, property, receiver)
+        return typeof value === 'function' ? (value.bind(target) as unknown) : value
+      }
+      return (command: string, args: readonly string[], options?: ExecOptions) =>
+        target.exec(command, args, {
+          ...options,
+          env: { ...options?.env, PATH: `${shims}:${process.env.PATH ?? ''}` },
+        })
+    },
+  })
+  return host
+}
+
+it.each([['before'], ['after']] as const)(
+  'refuses a live tree edited %s its bytes are streamed',
+  async (when) => {
+    const f = await fixture()
+    await writeFile(join(f.root, 'src/a.ts'), 'export const value = 5\n')
+    const host = await hostEditingDuringRead(f.root, when)
+    await expect(
+      captureArchitecture(
+        host,
+        { root: localPath(f.root), mode: 'head' },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow('Sources changed during capture')
+  },
+)
+
+it('resolves path aliases through the tsconfig captured with each end', async () => {
+  const f = await fixture()
+  await writeFile(join(f.root, 'src/b.ts'), 'export const b = 1\n')
+  await writeFile(join(f.root, 'src/a.ts'), "import { b } from '@app/b'\n")
+  await writeFile(
+    join(f.root, 'tsconfig.json'),
+    JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '@app/*': ['src/*'] } } }),
+  )
+  const { analysis } = analyzeCaptureTimed(await f.capture('working-tree'))
+  expect(analysis.after.imports).toEqual([
+    expect.objectContaining({
+      specifier: '@app/b',
+      resolution: 'internal',
+      target: 'src/b.ts',
+    }),
+  ])
+  expect(analysis.after.diagnostics).toEqual([])
+  expect(analysis.before.diagnostics).toEqual([
+    expect.objectContaining({ file: '(capture)' }),
+  ])
+})
+
+it('refuses invalid UTF-8 and sources reached through a symbolic link directory', async () => {
+  const f = await fixture()
+  await writeFile(join(f.root, 'src/bad.ts'), Buffer.from([0x65, 0xff, 0xfe, 0x0a]))
+  await writeFile(join(f.root, 'src/z.ts'), 'export const z = 1\n')
+  await expect(f.capture('head')).rejects.toThrow(
+    'Unsupported large or invalid source: src/bad.ts',
+  )
+  await rm(join(f.root, 'src/bad.ts'))
+  const outside = await mkdtemp(join(tmpdir(), 'hvir-architecture-outside-'))
+  roots.push(outside)
+  await writeFile(join(outside, 'a.ts'), 'export const leaked = 1\n')
+  await writeFile(join(outside, 'z.ts'), 'export const z = 1\n')
+  await rm(join(f.root, 'src'), { recursive: true })
+  await symlink(outside, join(f.root, 'src'))
+  await expect(f.capture('head')).rejects.toThrow(
+    'Unsupported symbolic link in scan: src',
+  )
 })
 
 it('reads both commit ends from Git objects without live reads in branch-point mode', async () => {
@@ -244,7 +368,13 @@ it('reads both commit ends from Git objects without live reads in branch-point m
 function countingHost(): { host: ProjectHost; calls: () => number } {
   const local = new LocalHost()
   let calls = 0
-  const counted = new Set(['exec', 'stat', 'realpath', 'readTextFile', 'readTextFilePrefix'])
+  const counted = new Set([
+    'exec',
+    'stat',
+    'realpath',
+    'readTextFile',
+    'readTextFilePrefix',
+  ])
   const host = new Proxy(local, {
     get(target, property, receiver) {
       const value: unknown = Reflect.get(target, property, receiver)
@@ -271,7 +401,11 @@ it('credits every host round trip to a span in every comparison mode', async () 
     const recorder = new ArchitectureScanRecorder()
     await captureArchitecture(
       host,
-      { root: localPath(f.root), mode, revision: mode === 'commit' ? f.baseline : undefined },
+      {
+        root: localPath(f.root),
+        mode,
+        revision: mode === 'commit' ? f.baseline : undefined,
+      },
       new AbortController().signal,
       recorder,
     )

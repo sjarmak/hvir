@@ -1,11 +1,17 @@
 export interface ArchitectureSourceFile {
   readonly path: string
   readonly content: string
+  /** Git's blob id for `content` when the capture already holds it. */
+  readonly object?: string
 }
 
 export interface ArchitectureScanInput {
   readonly files: readonly ArchitectureSourceFile[]
-  readonly compilerOptions?: Readonly<Record<string, unknown>>
+  /**
+   * Captured tsconfig, jsconfig and package.json files. Absent means none were captured, and
+   * the scan discloses that imports resolve without the project's compiler options.
+   */
+  readonly configs?: readonly ArchitectureSourceFile[]
   readonly scope: string
   readonly exclusions: readonly string[]
 }

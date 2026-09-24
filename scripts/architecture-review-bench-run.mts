@@ -119,7 +119,7 @@ async function scanOnce(host: ProjectHost, args: BenchArguments) {
   const timed = analyzeCaptureTimed(capture)
   for (const stage of timed.stages)
     recorder.place(stage.stage, stage.startMark, stage.endMark, stage)
-  const { before: _before, after: _after, ...metadata } = capture
+  const { before: _before, after: _after, configs: _configs, ...metadata } = capture
   recorder.measureSync(
     'renderer-payload',
     () => Buffer.byteLength(JSON.stringify({ ...metadata, analysis: timed.analysis })),

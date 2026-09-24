@@ -7,7 +7,6 @@ export const ARCHITECTURE_SCAN_STAGES = [
   'listing',
   'blob-read',
   'live-read',
-  'live-recheck',
   'hashing',
   'worker-spawn',
   'worker-transfer',

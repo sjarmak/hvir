@@ -40,6 +40,13 @@ import { reportWorkerTimings } from '../src/main/architecture-review/worker-timi
 import { translateClock } from '../src/main/architecture-review/wall-clock'
 import { localPath } from '../src/shared/host-path'
 import { expectMonotoneMetrics, stagesOf } from './architecture-scan-metrics-fixture'
+import { gitBlobId } from '../src/main/architecture-review/blob-id'
+
+const source = (path: string, content: string) => ({
+  path,
+  content,
+  object: gitBlobId(Buffer.from(content)),
+})
 
 const capture = {} as ArchitectureCapture
 
@@ -80,8 +87,9 @@ describe('architecture analysis worker timings', () => {
     baselineRevision: 'b',
     currentRevision: 'c',
     fingerprint: 'f',
-    before: [{ path: 'a.ts', content: 'export {}' }],
-    after: [{ path: 'a.ts', content: "import './b'" }],
+    before: [source('a.ts', 'export {}')],
+    after: [source('a.ts', "import './b'")],
+    configs: { before: [], after: [source('tsconfig.json', '{}')] },
     exclusions: [],
     capturedAt: 'now',
   }
@@ -118,8 +126,12 @@ describe('architecture analysis worker timings', () => {
       'worker-transfer',
     ])
     expect(metrics.spans.find((span) => span.stage === 'worker-transfer')).toMatchObject({
-      bytes: 'a.ts'.length * 2 + 'export {}'.length + "import './b'".length,
-      items: 2,
+      bytes:
+        'a.ts'.length * 2 +
+        'export {}'.length +
+        "import './b'".length +
+        'tsconfig.json{}'.length,
+      items: 3,
     })
     expect(metrics.spans.find((span) => span.stage === 'worker-return')).toMatchObject({
       bytes: 321,
@@ -163,7 +175,12 @@ describe('architecture analysis worker timings', () => {
     ])
   })
 
-  const emptyPair = { ...capture, before: [], after: [] }
+  const emptyPair = {
+    ...capture,
+    before: [],
+    after: [],
+    configs: { before: [], after: [] },
+  }
   /** Wall-clock timings a well-behaved worker would report for a request made now. */
   function plausibleTimings() {
     const now = Date.now()

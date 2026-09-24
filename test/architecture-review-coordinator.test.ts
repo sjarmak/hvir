@@ -8,6 +8,13 @@ import type { ArchitectureAnalysis } from '../src/shared/architecture-analysis'
 import type { ArchitectureScanRecorder } from '../src/main/architecture-review/scan-recorder'
 import type { captureArchitecture } from '../src/main/architecture-review/capture'
 import { expectMonotoneMetrics, stagesOf } from './architecture-scan-metrics-fixture'
+import { gitBlobId } from '../src/main/architecture-review/blob-id'
+
+const source = (path: string, content: string) => ({
+  path,
+  content,
+  object: gitBlobId(Buffer.from(content)),
+})
 const root = localPath('/repo')
 const snapshot: ArchitectureCapture = {
   root,
@@ -15,8 +22,9 @@ const snapshot: ArchitectureCapture = {
   baselineRevision: 'abc',
   currentRevision: 'working-tree',
   fingerprint: 'fingerprint',
-  before: [{ path: 'a.ts', content: 'before' }],
+  before: [source('a.ts', 'before')],
   after: [],
+  configs: { before: [], after: [] },
   exclusions: [],
   capturedAt: 'now',
 }
@@ -67,6 +75,8 @@ function setup(
 it('returns captured deleted-source evidence and rejects a different host or renderer', async () => {
   const f = setup()
   const result = await f.coordinator.scan(f.owner, f.host, f.request)
+  for (const retained of ['before', 'after', 'configs'])
+    expect(result).not.toHaveProperty(retained)
   const evidence = await f.coordinator.evidence(f.owner, f.host, {
     root,
     reviewId: 'tab-1',

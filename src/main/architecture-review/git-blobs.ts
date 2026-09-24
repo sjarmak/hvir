@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto'
 import type { HostPath } from '../../shared'
 import { ARCHITECTURE_SCOPE } from '../../shared/architecture-review'
 import type { GitCommandContext } from '../git/git-command-context'
+import { gitBlobId, objectFormat } from './blob-id'
 
 /** Git's length-delimited batch protocol avoids one process per captured source. */
 export async function readArchitectureBlobs(
@@ -32,10 +32,7 @@ export async function readArchitectureBlobs(
     if (!Number.isSafeInteger(size) || size > ARCHITECTURE_SCOPE.maxFileBytes)
       throw new Error('Unsupported large architecture source')
     const content = bytes.subarray(end + 1, end + 1 + size)
-    const hash = createHash(id.length === 64 ? 'sha256' : 'sha1')
-      .update(`blob ${size}\0`)
-      .update(content)
-      .digest('hex')
+    const hash = gitBlobId(content, objectFormat(id))
     // Buffered ProjectHost output is UTF-8 text. Re-hashing proves decoding did
     // not replace invalid bytes and that the exact pinned object was returned.
     if (content.length !== size || bytes[end + 1 + size] !== 10 || hash !== id)

@@ -3,6 +3,7 @@ import { posix } from 'node:path'
 import ts from 'typescript'
 import { ARCHITECTURE_ANALYSIS_LIMITS } from '../../shared'
 import type {
+  ArchitectureDiagnostic,
   ArchitectureAnalysis,
   ArchitectureChange,
   ArchitectureImportDelta,
@@ -11,30 +12,19 @@ import type {
   ArchitectureModuleDelta,
   ArchitectureScanInput,
   ArchitectureScanResult,
+  ArchitectureSourceFile,
 } from '../../shared'
+import { gitBlobId } from './blob-id'
+import {
+  loadCompilerSettings,
+  VIRTUAL_ROOT,
+  type CompilerSettings,
+} from './compiler-config'
 
-const VIRTUAL_ROOT = '/__architecture__'
 const implementation = /\.[cm]?[jt]sx?$/
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
-
-function compilerOptions(input: ArchitectureScanInput): ts.CompilerOptions {
-  const converted = ts.convertCompilerOptionsFromJson(
-    input.compilerOptions ?? {},
-    '/__architecture__',
-  )
-  if (converted.errors.length)
-    throw new Error(
-      converted.errors
-        .map((error) => ts.flattenDiagnosticMessageText(error.messageText, ' '))
-        .join('; '),
-    )
-  return {
-    moduleResolution: ts.ModuleResolutionKind.NodeNext,
-    module: ts.ModuleKind.NodeNext,
-    allowJs: true,
-    ...converted.options,
-  }
-}
+const blobHash = (file: ArchitectureSourceFile): string =>
+  file.object ?? gitBlobId(Buffer.from(file.content, 'utf8'))
 
 function group(path: string): string {
   const directory = posix.dirname(path)
@@ -154,79 +144,20 @@ export function scanArchitecture(input: ArchitectureScanInput): ArchitectureScan
   const sorted = [...input.files].sort((left, right) =>
     left.path.localeCompare(right.path),
   )
+  const configs = input.configs ?? []
   const files = new Map(sorted.map((file) => [file.path, file.content]))
-  const options = compilerOptions(input)
-  const directories = new Set<string>(['', '.'])
-  for (const path of files.keys()) {
-    let directory = posix.dirname(path)
-    while (!directories.has(directory)) {
-      directories.add(directory)
-      directory = posix.dirname(directory)
-    }
-  }
-  const host: ts.ModuleResolutionHost = {
-    fileExists: (path) => files.has(posix.relative(VIRTUAL_ROOT, path)),
-    readFile: (path) => files.get(posix.relative(VIRTUAL_ROOT, path)),
-    directoryExists: (path) => directories.has(posix.relative(VIRTUAL_ROOT, path)),
-    getCurrentDirectory: () => VIRTUAL_ROOT,
-  }
-  const cache = ts.createModuleResolutionCache(VIRTUAL_ROOT, (path) => path, options)
+  const settings = loadCompilerSettings(configs, [...files.keys()])
+  const resolver = moduleResolver(files, configs, settings)
   const modules: ArchitectureModule[] = []
   const imports: ArchitectureImportFact[] = []
-  const diagnostics: { file: string; line: number; message: string }[] = []
-  if (!input.compilerOptions)
-    diagnostics.push({
-      file: '(capture)',
-      line: 1,
-      message:
-        'Compiler options are not applied to this scan. Relative imports are resolved from captured files; bare specifiers are classified as external. Aliases and package exports may be unresolved or misclassified.',
-    })
+  const diagnostics: ArchitectureDiagnostic[] = [...settings.diagnostics]
   for (const source of sorted) {
     if (!implementation.test(source.path)) continue
-    const file = ts.createSourceFile(
-      source.path,
-      source.content,
-      ts.ScriptTarget.Latest,
-      true,
-    )
-    const parseDiagnostics =
-      (file as ts.SourceFile & { readonly parseDiagnostics?: readonly ts.Diagnostic[] })
-        .parseDiagnostics ?? []
-    for (const diagnostic of parseDiagnostics) {
-      const point = file.getLineAndCharacterOfPosition(diagnostic.start ?? 0)
-      diagnostics.push({
-        file: source.path,
-        line: point.line + 1,
-        message: ts.flattenDiagnosticMessageText(diagnostic.messageText, ' '),
-      })
-    }
-    const symbols: ArchitectureModule['symbols'][number][] = []
-    const line = (node: ts.Node) =>
-      file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1
-    function collect(node: ts.Node): void {
-      if (
-        (ts.isFunctionDeclaration(node) ||
-          ts.isClassDeclaration(node) ||
-          ts.isInterfaceDeclaration(node) ||
-          ts.isTypeAliasDeclaration(node)) &&
-        node.name
-      )
-        symbols.push({
-          name: node.name.text,
-          line: line(node),
-          kind: ts.SyntaxKind[node.kind],
-        })
-      ts.forEachChild(node, collect)
-    }
-    collect(file)
-    modules.push({
-      path: source.path,
-      group: group(source.path),
-      hash: digest(source.content),
-      symbols: symbols.slice(0, ARCHITECTURE_ANALYSIS_LIMITS.maxSymbolsPerModule),
-    })
+    const scanned = scanModule(source, resolver, files)
+    diagnostics.push(...scanned.diagnostics)
+    modules.push(scanned.module)
     imports.push(
-      ...scanImportFacts(file, options, files, host, cache).slice(
+      ...scanned.imports.slice(
         0,
         Math.max(0, ARCHITECTURE_ANALYSIS_LIMITS.maxImports - imports.length),
       ),
@@ -238,22 +169,139 @@ export function scanArchitecture(input: ArchitectureScanInput): ArchitectureScan
       line: 1,
       message: 'Import evidence was truncated at the analysis limit.',
     })
-  const fingerprint = digest(
-    JSON.stringify({
-      scope: input.scope,
-      exclusions: [...input.exclusions],
-      compilerOptions: input.compilerOptions ?? {},
-      files: sorted,
-    }),
-  )
   return {
-    fingerprint,
+    fingerprint: scanFingerprint(input, sorted, configs),
     scope: input.scope,
     exclusions: [...input.exclusions],
     modules,
     imports,
     diagnostics,
   }
+}
+
+/** Identity by path and blob id: the ids already name every byte of every input. */
+function scanFingerprint(
+  input: ArchitectureScanInput,
+  sources: readonly ArchitectureSourceFile[],
+  configs: readonly ArchitectureSourceFile[],
+): string {
+  const ids = (files: readonly ArchitectureSourceFile[]) =>
+    [...files]
+      .sort((left, right) => left.path.localeCompare(right.path))
+      .map((file) => [file.path, blobHash(file)])
+  return digest(
+    JSON.stringify({
+      scope: input.scope,
+      exclusions: [...input.exclusions],
+      configs: ids(configs),
+      files: ids(sources),
+    }),
+  )
+}
+
+interface ModuleResolver {
+  readonly host: ts.ModuleResolutionHost
+  readonly settings: CompilerSettings
+  readonly cacheFor: (
+    config: string | undefined,
+    options: ts.CompilerOptions,
+  ) => ts.ModuleResolutionCache
+}
+
+/** Resolution sees every captured source and config, and caches per governing project. */
+function moduleResolver(
+  files: ReadonlyMap<string, string>,
+  configs: readonly ArchitectureSourceFile[],
+  settings: CompilerSettings,
+): ModuleResolver {
+  const readable = new Map([
+    ...configs.map((file) => [file.path, file.content] as const),
+    ...files,
+  ])
+  const directories = new Set<string>(['', '.'])
+  for (const path of readable.keys()) {
+    let directory = posix.dirname(path)
+    while (!directories.has(directory)) {
+      directories.add(directory)
+      directory = posix.dirname(directory)
+    }
+  }
+  const host: ts.ModuleResolutionHost = {
+    fileExists: (path) => readable.has(posix.relative(VIRTUAL_ROOT, path)),
+    readFile: (path) => readable.get(posix.relative(VIRTUAL_ROOT, path)),
+    directoryExists: (path) => directories.has(posix.relative(VIRTUAL_ROOT, path)),
+    getCurrentDirectory: () => VIRTUAL_ROOT,
+  }
+  const caches = new Map<string | undefined, ts.ModuleResolutionCache>()
+  const cacheFor = (config: string | undefined, options: ts.CompilerOptions) => {
+    const known = caches.get(config)
+    if (known) return known
+    const cache = ts.createModuleResolutionCache(VIRTUAL_ROOT, (path) => path, options)
+    caches.set(config, cache)
+    return cache
+  }
+  return { host, settings, cacheFor }
+}
+
+function scanModule(
+  source: ArchitectureSourceFile,
+  resolver: ModuleResolver,
+  files: ReadonlyMap<string, string>,
+): {
+  module: ArchitectureModule
+  imports: readonly ArchitectureImportFact[]
+  diagnostics: readonly ArchitectureDiagnostic[]
+} {
+  const file = ts.createSourceFile(
+    source.path,
+    source.content,
+    ts.ScriptTarget.Latest,
+    true,
+  )
+  const parseDiagnostics =
+    (file as ts.SourceFile & { readonly parseDiagnostics?: readonly ts.Diagnostic[] })
+      .parseDiagnostics ?? []
+  const diagnostics = parseDiagnostics.map((diagnostic) => ({
+    file: source.path,
+    line: file.getLineAndCharacterOfPosition(diagnostic.start ?? 0).line + 1,
+    message: ts.flattenDiagnosticMessageText(diagnostic.messageText, ' '),
+  }))
+  const project = resolver.settings.projectFor(source.path)
+  const cache = resolver.cacheFor(project.config, project.options)
+  return {
+    module: {
+      path: source.path,
+      group: group(source.path),
+      hash: blobHash(source),
+      symbols: moduleSymbols(file).slice(
+        0,
+        ARCHITECTURE_ANALYSIS_LIMITS.maxSymbolsPerModule,
+      ),
+    },
+    imports: scanImportFacts(file, project.options, files, resolver.host, cache),
+    diagnostics,
+  }
+}
+
+function moduleSymbols(file: ts.SourceFile): ArchitectureModule['symbols'][number][] {
+  const symbols: ArchitectureModule['symbols'][number][] = []
+  function collect(node: ts.Node): void {
+    if (
+      (ts.isFunctionDeclaration(node) ||
+        ts.isClassDeclaration(node) ||
+        ts.isInterfaceDeclaration(node) ||
+        ts.isTypeAliasDeclaration(node)) &&
+      node.name
+    )
+      symbols.push({
+        name: node.name.text,
+        line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1,
+        kind: ts.SyntaxKind[node.kind],
+      })
+    ts.forEachChild(node, collect)
+  }
+  collect(file)
+  return symbols
 }
 
 const importKey = (fact: ArchitectureImportFact): string =>

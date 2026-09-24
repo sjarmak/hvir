@@ -31,11 +31,27 @@ export function parseTree(output: string): readonly CaptureEntry[] {
     })
 }
 
-export function parsePaths(output: string): readonly CaptureEntry[] {
-  return output
+/**
+ * `git ls-files -t` over cached, deleted and other files: the paths on disk now. A deleted
+ * tracked file is listed twice, once cached and once tagged R; a skip-worktree file (S) is
+ * one Git does not read from the working tree. Neither is part of the live side.
+ */
+export function parseLivePaths(output: string): readonly CaptureEntry[] {
+  const records = output
     .split('\0')
     .filter(Boolean)
-    .map((path) => ({ path }))
+    .map((record) => {
+      if (record[1] !== ' ') throw new Error('Invalid Git file listing entry')
+      return { tag: record[0], path: record.slice(2) }
+    })
+  const absent = new Set(
+    records
+      .filter((record) => record.tag === 'R' || record.tag === 'S')
+      .map((r) => r.path),
+  )
+  return records
+    .filter((record) => !absent.has(record.path))
+    .map(({ path }) => ({ path }))
 }
 
 /** Unique in-scope entries in path order, each checked before any byte is read. */

@@ -74,7 +74,6 @@ it('reports per-stage medians and every sample for a local repository', async ()
     'listing',
     'blob-read',
     'live-read',
-    'live-recheck',
     'hashing',
     'parse',
     'compare',

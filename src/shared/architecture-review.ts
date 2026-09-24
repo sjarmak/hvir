@@ -12,6 +12,8 @@ export interface ArchitectureSource {
   /** Repository-relative identifier; resolve only against the snapshot's qualified root. */
   readonly path: string
   readonly content: string
+  /** Git's blob id for exactly `content`, from the object store or hashed on the host. */
+  readonly object: string
 }
 export interface ArchitectureCapture {
   readonly root: HostPath
@@ -21,6 +23,11 @@ export interface ArchitectureCapture {
   readonly fingerprint: string
   readonly before: readonly ArchitectureSource[]
   readonly after: readonly ArchitectureSource[]
+  /** tsconfig, jsconfig and package.json files each end resolves imports with. */
+  readonly configs: {
+    readonly before: readonly ArchitectureSource[]
+    readonly after: readonly ArchitectureSource[]
+  }
   readonly exclusions: readonly string[]
   readonly capturedAt: string
 }
@@ -49,7 +56,7 @@ export interface ArchitectureReviewRequest
   extends ArchitectureCaptureRequest, ArchitectureReviewKey {}
 export interface ArchitectureReviewSnapshot extends Omit<
   ArchitectureCapture,
-  'before' | 'after'
+  'before' | 'after' | 'configs'
 > {
   readonly id: string
   readonly analysis: import('./architecture-analysis').ArchitectureAnalysis

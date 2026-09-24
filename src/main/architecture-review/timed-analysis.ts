@@ -25,8 +25,8 @@ export function captureScanInputs(
   const scope = 'repository source files'
   const exclusions = capture.exclusions
   return [
-    { files: capture.before, scope, exclusions },
-    { files: capture.after, scope, exclusions },
+    { files: capture.before, configs: capture.configs.before, scope, exclusions },
+    { files: capture.after, configs: capture.configs.after, scope, exclusions },
   ]
 }
 

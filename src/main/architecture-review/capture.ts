@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { containsHostPath, hostPathEquals, joinHostPath } from '../../shared/host-path'
+import { hostPathEquals, joinHostPath } from '../../shared/host-path'
 import { ARCHITECTURE_SCOPE as SCOPE } from '../../shared/architecture-review'
 import type {
   ArchitectureCapture,
@@ -12,21 +12,20 @@ import { readArchitectureBlobs } from './git-blobs'
 import {
   isSource,
   parseIndex,
-  parsePaths,
+  parseLivePaths,
   parseTree,
   selectEntries,
   type CaptureEntry,
 } from './capture-entries'
+import { readLiveTree } from './live-tree'
 import { ArchitectureScanRecorder } from './scan-recorder'
 
 const COMMAND_TIMEOUT = 30_000
-const READ_CONCURRENCY = 8
 interface Side {
   readonly sources: readonly ArchitectureSource[]
   readonly configs: readonly ArchitectureSource[]
 }
-type SideRead = 'blob' | 'live' | 'recheck'
-type Contents = ReadonlyMap<string, string>
+type SideName = 'baseline' | 'current'
 
 /**
  * Captures actual text pairs, never a deferred instruction to re-resolve Git revisions.
@@ -45,12 +44,9 @@ export async function captureArchitecture(
     return call()
   }
   const context = countedGitContext(host, request, signal, counted)
-  const { project, canonicalRoot } = await recorder.measure(
+  const project = await recorder.measure(
     'listing',
-    async () => ({
-      project: await context.project(request.root),
-      canonicalRoot: await counted(() => host.realpath(request.root)),
-    }),
+    () => context.project(request.root),
     () => ({ bytes: 0, items: 0 }),
   )
   if (!project) throw new Error('Architecture review requires a Git repository')
@@ -72,32 +68,32 @@ export async function captureArchitecture(
       (branch) => ({ bytes: Buffer.byteLength(branch), items: 1 }),
     ),
   )
-  const beforeEntries =
+  const before = await readBlobSide(
     request.mode === 'working-tree'
       ? parseIndex(await run(['ls-files', '--stage', '-z', '--', '.']))
-      : parseTree(await run(['ls-tree', '-r', '-z', baselineRevision, '--', '.']))
-  const before = await readSide(beforeEntries, 'blob', 'baseline')
-  const currentEntries = async () =>
-    live
-      ? parsePaths(
+      : parseTree(await run(['ls-tree', '-r', '-z', baselineRevision, '--', '.'])),
+    'baseline',
+  )
+  const after = live
+    ? await readLiveSide(
+        parseLivePaths(
           await run([
             'ls-files',
             '-z',
+            '-t',
             '--cached',
+            '--deleted',
             '--others',
             '--exclude-standard',
             '--',
             '.',
           ]),
-        )
-      : parseTree(await run(['ls-tree', '-r', '-z', currentRevision, '--', '.']))
-  const after = await readSide(await currentEntries(), live ? 'live' : 'blob', 'current')
-  // A live tree is not atomic. Refuse a moving read rather than label mixed evidence current.
-  if (live) {
-    const check = await readSide(await currentEntries(), 'recheck', 'current')
-    if (digest(after) !== digest(check))
-      throw new Error('Sources changed during capture; refresh architecture review')
-  }
+        ),
+      )
+    : await readBlobSide(
+        parseTree(await run(['ls-tree', '-r', '-z', currentRevision, '--', '.'])),
+        'current',
+      )
   signal.throwIfAborted()
   const identity = {
     root: request.root,
@@ -105,15 +101,13 @@ export async function captureArchitecture(
     baselineRevision,
     currentRevision: live ? 'working-tree' : currentRevision,
     scope: SCOPE,
-    configFingerprint: digest({ before: before.configs, after: after.configs }),
-    before,
-    after,
   }
   return {
     ...identity,
     before: before.sources,
     after: after.sources,
-    fingerprint: digest(identity),
+    configs: { before: before.configs, after: after.configs },
+    fingerprint: fingerprint(identity, before, after),
     capturedAt: new Date().toISOString(),
     exclusions: [
       ...SCOPE.excludedDirectories,
@@ -123,88 +117,69 @@ export async function captureArchitecture(
     ],
   }
 
-  async function readSide(
-    entries: readonly CaptureEntry[],
-    read: SideRead,
-    side: 'baseline' | 'current',
-  ): Promise<Side> {
+  async function readBlobSide(entries: readonly CaptureEntry[], side: SideName) {
     const selected = selectEntries(entries)
     signal.throwIfAborted()
-    const contents = await recorder.measure(
-      read === 'blob' ? 'blob-read' : read === 'live' ? 'live-read' : 'live-recheck',
-      () => (read === 'blob' ? readBlobs(selected) : readLive(selected)),
-      (result) => ({ bytes: totalBytes(result), items: result.size, side }),
-    )
-    const files = selected.flatMap((entry) => {
-      const content = contents.get(entry.path)
-      return content === undefined ? [] : [{ path: entry.path, content }]
-    })
-    return {
-      sources: files.filter((file) => isSource(file.path)),
-      configs: files.filter((file) => !isSource(file.path)),
-    }
-  }
-  async function readBlobs(entries: readonly CaptureEntry[]): Promise<Contents> {
-    const blobs = await readArchitectureBlobs(
-      context,
-      request.root,
-      entries.map((entry) => entry.object!),
-    )
-    const contents = new Map(
-      entries.map((entry) => [entry.path, blobs.get(entry.object!)!]),
-    )
-    assertWithinByteLimit(totalBytes(contents))
-    return contents
-  }
-  async function readLive(entries: readonly CaptureEntry[]): Promise<Contents> {
-    const contents = new Map<string, string>()
-    let bytes = 0
-    for (let offset = 0; offset < entries.length; offset += READ_CONCURRENCY) {
-      signal.throwIfAborted()
-      const batch = await Promise.all(
-        entries.slice(offset, offset + READ_CONCURRENCY).map(async (entry) => ({
+    const files = await recorder.measure(
+      'blob-read',
+      async () => {
+        const blobs = await readArchitectureBlobs(
+          context,
+          request.root,
+          selected.map((entry) => entry.object!),
+        )
+        return selected.map((entry) => ({
           path: entry.path,
-          content: await liveText(entry.path),
-        })),
-      )
-      for (const file of batch) {
-        if (file.content === undefined) continue
-        bytes += Buffer.byteLength(file.content)
-        assertWithinByteLimit(bytes)
-        contents.set(file.path, file.content)
-      }
-    }
-    return contents
+          content: blobs.get(entry.object!)!,
+          object: entry.object!,
+        }))
+      },
+      (result) => ({ bytes: totalBytes(result), items: result.length, side }),
+    )
+    assertWithinByteLimit(totalBytes(files))
+    return splitSide(files)
   }
-  async function liveText(relative: string): Promise<string | undefined> {
-    const path = joinHostPath(request.root, relative)
-    try {
-      const stat = await counted(() => host.stat(path))
-      if (stat.type !== 'file')
-        throw new Error(`Unsupported symbolic link or non-file source: ${relative}`)
-      const canonical = await counted(() => host.realpath(path))
-      if (!containsHostPath(canonicalRoot, canonical))
-        throw new Error('Source escapes workspace through a symlink')
-      const result = await counted(() =>
-        host.readTextFilePrefix(path, SCOPE.maxFileBytes, { signal }),
-      )
-      if (!result.complete || result.validUtf8 === false)
-        throw new Error(`Unsupported large or invalid source: ${relative}`)
-      return result.content
-    } catch (error) {
-      if (isMissing(error)) return undefined
-      throw error
-    }
+  async function readLiveSide(entries: readonly CaptureEntry[]) {
+    const selected = selectEntries(entries)
+    signal.throwIfAborted()
+    const files = await recorder.measure(
+      'live-read',
+      async () => [
+        ...(
+          await readLiveTree(
+            (command, args, options) => counted(() => host.exec(command, args, options)),
+            request.root,
+            selected.map((entry) => entry.path),
+            signal,
+          )
+        ).values(),
+      ],
+      (result) => ({ bytes: totalBytes(result), items: result.length, side: 'current' }),
+    )
+    return splitSide(files)
   }
-  function digest(value: unknown): string {
+  /** Identity by blob id: the ids already name every byte, so no content is hashed again. */
+  function fingerprint(identity: object, ...sides: readonly Side[]): string {
     return recorder.measureSync(
       'hashing',
       () => {
-        const text = JSON.stringify(value)
+        const text = JSON.stringify({
+          identity,
+          sides: sides.map((side) =>
+            [...side.sources, ...side.configs].map((file) => [file.path, file.object]),
+          ),
+        })
         return { hex: createHash('sha256').update(text).digest('hex'), text }
       },
       ({ text }) => ({ bytes: Buffer.byteLength(text), items: 1 }),
     ).hex
+  }
+}
+
+function splitSide(files: readonly ArchitectureSource[]): Side {
+  return {
+    sources: files.filter((file) => isSource(file.path)),
+    configs: files.filter((file) => !isSource(file.path)),
   }
 }
 
@@ -275,16 +250,6 @@ function assertWithinByteLimit(bytes: number): void {
   if (bytes > SCOPE.maxTotalBytes)
     throw new Error('Architecture scan exceeds the total source byte limit')
 }
-function totalBytes(contents: Contents): number {
-  let bytes = 0
-  for (const content of contents.values()) bytes += Buffer.byteLength(content)
-  return bytes
-}
-function isMissing(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    error.code === 'ENOENT'
-  )
+function totalBytes(files: readonly ArchitectureSource[]): number {
+  return files.reduce((total, file) => total + Buffer.byteLength(file.content), 0)
 }

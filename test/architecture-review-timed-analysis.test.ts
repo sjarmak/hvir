@@ -6,6 +6,13 @@ import {
   analyzeCaptureTimed,
   captureScanInputs,
 } from '../src/main/architecture-review/timed-analysis'
+import { gitBlobId } from '../src/main/architecture-review/blob-id'
+
+const source = (path: string, content: string) => ({
+  path,
+  content,
+  object: gitBlobId(Buffer.from(content)),
+})
 
 const capture: ArchitectureCapture = {
   root: localPath('/repo'),
@@ -13,11 +20,9 @@ const capture: ArchitectureCapture = {
   baselineRevision: 'a'.repeat(40),
   currentRevision: 'working-tree',
   fingerprint: 'f',
-  before: [{ path: 'src/a.ts', content: "import './b'" }],
-  after: [
-    { path: 'src/a.ts', content: "import './b'" },
-    { path: 'src/b.ts', content: 'export const b = 1' },
-  ],
+  before: [source('src/a.ts', "import './b'")],
+  after: [source('src/a.ts', "import './b'"), source('src/b.ts', 'export const b = 1')],
+  configs: { before: [], after: [] },
   exclusions: [],
   capturedAt: 'now',
 }

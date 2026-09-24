@@ -98,7 +98,14 @@ describe('architecture review analysis', () => {
         'src/a.ts': "import { B } from '@app/b'",
         'src/b.ts': 'export type B = string',
       }),
-      compilerOptions: { baseUrl: '.', paths: { '@app/*': ['src/*'] } },
+      configs: [
+        {
+          path: 'tsconfig.json',
+          content: JSON.stringify({
+            compilerOptions: { baseUrl: '.', paths: { '@app/*': ['src/*'] } },
+          }),
+        },
+      ],
     })
     expect(result.imports[0]).toEqual(
       expect.objectContaining({ resolution: 'internal', target: 'src/b.ts' }),

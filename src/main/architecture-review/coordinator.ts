@@ -89,7 +89,7 @@ export class ArchitectureReviewCoordinator {
       this.assertLive(owner, key, controller)
       const analysis = await this.ports.analyze(capture, controller.signal, recorder)
       this.assertLive(owner, key, controller)
-      const { before: _before, after: _after, ...metadata } = capture
+      const { before: _before, after: _after, configs: _configs, ...metadata } = capture
       const payload = { ...metadata, id: randomUUID(), analysis }
       // The renderer receives this payload over IPC; its serialized size is the transfer cost.
       recorder.measureSync(
