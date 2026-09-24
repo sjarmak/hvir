@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { HostPath } from '../../shared/host-path'
 import type { ProjectHost } from '../project-host/project-host'
-import { inArchitectureScope } from './capture-entries'
+import { affectsArchitectureCapture } from './capture-entries'
 import type { ArchitectureScanRecorder } from './scan-recorder'
 
 const TIMEOUT = 30_000
@@ -161,7 +161,7 @@ function parseState(output: string) {
     !prefix?.startsWith('p')
   )
     throw new Error('Malformed architecture freshness output')
-  const index = staged!.filter((record) => inArchitectureScope(stagedPath(record)))
+  const index = staged!.filter((record) => affectsArchitectureCapture(stagedPath(record)))
   return {
     head: head.slice(1),
     index,
@@ -195,7 +195,9 @@ function parseStatus(records: readonly string[], prefix: string): readonly Statu
         throw new Error('Invalid Git status entry')
       return { code: record.slice(0, 2), repositoryPath: path }
     })
-    .filter((entry) => inArchitectureScope(entry.repositoryPath.slice(prefix.length)))
+    .filter((entry) =>
+      affectsArchitectureCapture(entry.repositoryPath.slice(prefix.length)),
+    )
 }
 
 function stdinPaths(paths: readonly string[]): string {

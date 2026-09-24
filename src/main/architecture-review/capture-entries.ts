@@ -1,3 +1,9 @@
+import {
+  ARCHITECTURE_DEFAULT_LAYOUT,
+  ARCHITECTURE_LAYOUT_FILE,
+  inLayoutScope,
+  type ArchitectureLayout,
+} from '../../shared/architecture-layout'
 import { ARCHITECTURE_SCOPE as SCOPE } from '../../shared/architecture-review'
 
 export interface CaptureEntry {
@@ -41,10 +47,17 @@ export function parseLivePaths(output: string): readonly CaptureEntry[] {
     .map(({ path }) => ({ path }))
 }
 
-/** Unique in-scope entries in path order, each checked before any byte is read. */
-export function selectEntries(entries: readonly CaptureEntry[]): readonly CaptureEntry[] {
+/**
+ * Unique in-scope entries in path order, each checked before any byte is read. The layout's
+ * scope narrows sources only: a config outside it may still configure resolution inside it.
+ */
+export function selectEntries(
+  entries: readonly CaptureEntry[],
+  layout: ArchitectureLayout = ARCHITECTURE_DEFAULT_LAYOUT,
+): readonly CaptureEntry[] {
   const unique = [...new Map(entries.map((entry) => [entry.path, entry])).values()]
     .filter((entry) => inArchitectureScope(entry.path))
+    .filter((entry) => !isSource(entry.path) || inLayoutScope(layout, entry.path))
     .sort((a, b) => a.path.localeCompare(b.path))
   if (unique.length > SCOPE.maxFiles)
     throw new Error(
@@ -86,4 +99,9 @@ export function inArchitectureScope(path: string): boolean {
     (isSource(path) ||
       /(?:^|\/)(?:tsconfig[^/]*\.json|jsconfig\.json|package\.json)$/.test(path))
   )
+}
+
+/** Every path whose bytes a capture may read: sources, configs and the layout file. */
+export function affectsArchitectureCapture(path: string): boolean {
+  return path === ARCHITECTURE_LAYOUT_FILE || inArchitectureScope(path)
 }

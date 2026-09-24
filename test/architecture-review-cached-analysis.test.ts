@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeAll, expect, it } from 'vitest'
 import { localPath } from '../src/shared/host-path'
 import type { ArchitectureCapture } from '../src/shared/architecture-review'
+import { ARCHITECTURE_DEFAULT_LAYOUT } from '../src/shared/architecture-layout'
 import type { ArchitectureAnalysis } from '../src/shared/architecture-analysis'
 import { analyzeCaptureTimed } from '../src/main/architecture-review/timed-analysis'
 import { ModuleFactsCache } from '../src/main/architecture-review/module-facts-cache'
@@ -52,6 +53,7 @@ const capture: ArchitectureCapture = {
   ],
   configs: { before: [], after: [] },
   exclusions: [],
+  layout: ARCHITECTURE_DEFAULT_LAYOUT,
   capturedAt: 'now',
 }
 let uncached: ArchitectureAnalysis

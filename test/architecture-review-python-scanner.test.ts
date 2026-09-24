@@ -104,15 +104,15 @@ describe('Python scanner on web-tree-sitter', () => {
     expect(scanned.diagnostics.some((entry) => entry.file === 'app/broken.py')).toBe(true)
   })
 
-  it('treats every file as a module grouped by its package directory', () => {
-    expect(scan().modules.map(({ path, group }) => [path, group])).toEqual([
+  it('treats every file as a module in the subsystem of its first directory', () => {
+    expect(scan().modules.map(({ path, subsystem }) => [path, subsystem])).toEqual([
       ['app/__init__.py', 'app'],
       ['app/broken.py', 'app'],
-      ['app/core/__init__.py', 'app/core'],
-      ['app/core/engine.py', 'app/core'],
-      ['app/core/models.py', 'app/core'],
-      ['app/util/__init__.py', 'app/util'],
-      ['app/util/text.py', 'app/util'],
+      ['app/core/__init__.py', 'app'],
+      ['app/core/engine.py', 'app'],
+      ['app/core/models.py', 'app'],
+      ['app/util/__init__.py', 'app'],
+      ['app/util/text.py', 'app'],
       ['scripts/helpers.py', 'scripts'],
       ['scripts/run.py', 'scripts'],
     ])

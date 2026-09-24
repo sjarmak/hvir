@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 import { localPath } from '../src/shared/host-path'
 import type { ArchitectureCapture } from '../src/shared/architecture-review'
+import { ARCHITECTURE_DEFAULT_LAYOUT } from '../src/shared/architecture-layout'
 import { analyzeArchitecture } from '../src/main/architecture-review/analysis'
 import {
   analyzeCaptureTimed,
@@ -25,6 +26,7 @@ const capture: ArchitectureCapture = {
   after: [source('src/a.ts', "import './b'"), source('src/b.ts', 'export const b = 1')],
   configs: { before: [], after: [] },
   exclusions: [],
+  layout: ARCHITECTURE_DEFAULT_LAYOUT,
   capturedAt: 'now',
 }
 

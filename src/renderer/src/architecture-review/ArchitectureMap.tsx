@@ -8,6 +8,7 @@ import {
 } from 'react'
 import type { ArchitectureAnalysis, ArchitectureRelationshipDelta } from '../../../shared'
 import { subsystemMap, type ArchitectureMapMode } from './architecture-review-model'
+import { ArchitectureRelationships } from './ArchitectureRelationships'
 interface Props {
   readonly analysis: ArchitectureAnalysis
   readonly mode: ArchitectureMapMode
@@ -81,8 +82,9 @@ export function ArchitectureMap({
         </label>
       </div>
       <p className="architecture-map-note">
-        Directories define subsystems. Lines are observed imports, not responsibility
-        claims. Select a node to explore its files.
+        Each node is a subsystem. Lines are observed imports between subsystems, not
+        responsibility claims. Select a subsystem to narrow the relationships and list its
+        modules.
       </p>
       {map.nodes.length === 0 ? (
         <p>
@@ -158,8 +160,17 @@ export function ArchitectureMap({
           available below.
         </p>
       ) : null}
+      <ArchitectureRelationships
+        relationships={links.filter(present)}
+        mode={mode}
+        subsystem={node?.id}
+        onEvidence={openEvidence}
+      />
       {node ? (
-        <section className="architecture-module-list" aria-label={`Files in ${node.id}`}>
+        <section
+          className="architecture-module-list"
+          aria-label={`Modules in ${node.id}`}
+        >
           <h3>{node.id}</h3>
           <ModuleGroups
             modules={node.modules.slice(0, 200)}
@@ -171,58 +182,6 @@ export function ArchitectureMap({
           ) : null}
         </section>
       ) : null}
-      <section className="architecture-review-relationships" aria-label="Import evidence">
-        <h3>Observed relationships{node ? ` involving ${node.id}` : ''}</h3>
-        {links.filter(present).map((r) => (
-          <details
-            key={JSON.stringify([r.source, r.target])}
-            className={`architecture-relationship change-${r.change}`}
-          >
-            <summary>
-              {r.source} → {r.target}
-              <small>
-                {r.change === 'added'
-                  ? 'New dependency'
-                  : r.change === 'removed'
-                    ? 'Removed dependency'
-                    : r.change === 'changed'
-                      ? 'Imports changed, existing dependency'
-                      : 'Context'}{' '}
-                · {r.before} before / {r.after} after
-              </small>
-            </summary>
-            {r.evidence
-              .filter(
-                (e) =>
-                  mode === 'overlay' ||
-                  (mode === 'before' ? e.change !== 'added' : e.change !== 'removed'),
-              )
-              .slice(0, 100)
-              .map((e, index) => (
-                <button
-                  type="button"
-                  key={index}
-                  onClick={() =>
-                    openEvidence(
-                      e.source,
-                      mode === 'before' ? (e.beforeLine ?? e.line) : e.line,
-                      mode === 'before' || e.change === 'removed' ? 'before' : 'after',
-                    )
-                  }
-                >
-                  {e.source}:{mode === 'before' ? (e.beforeLine ?? e.line) : e.line} ·{' '}
-                  {e.specifier}{' '}
-                  <small>
-                    {e.change} · {e.kind} · {e.resolution}
-                  </small>
-                </button>
-              ))}
-            {r.evidence.length > 100 ? (
-              <p>{r.evidence.length - 100} more imports in this relationship.</p>
-            ) : null}
-          </details>
-        ))}
-      </section>
       <ArchitectureFiles analysis={analysis} mode={mode} onEvidence={openEvidence} />
     </div>
   )

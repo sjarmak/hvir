@@ -2,7 +2,7 @@ import type { BrowserWindow } from 'electron'
 import { verifyArchitectureReviewAuthority } from './architecture-review-authority'
 import { verifyArchitectureCommitStrip } from './architecture-review-strip'
 import { verifyArchitectureReviewVisuals } from './architecture-review-visual'
-import { joinHostPath, type HostPath } from '../../shared'
+import { ARCHITECTURE_LAYOUT_FILE, joinHostPath, type HostPath } from '../../shared'
 import type { ProjectHost } from '../project-host'
 import { ArchitectureReviewCoordinator } from '../architecture-review/coordinator'
 import { ArchitectureAnalysisWorker } from '../architecture-review/worker'
@@ -11,6 +11,7 @@ import { architectureParseCacheDirectory } from '../architecture-review/runtime'
 import type { SmokeCleanup } from './cleanup'
 import type { RendererResourceScopes } from '../renderer-resource-scopes'
 import {
+  ARCHITECTURE_SMOKE_LAYOUT,
   createArchitectureReviewSmokeFixture,
   type ArchitectureReviewSmokeFixture,
 } from './architecture-review-fixture'
@@ -78,6 +79,10 @@ export async function verifyArchitectureReviewWorkflow(
         control.click();
         await wait(() => control.getAttribute('aria-pressed') === 'true', mode + ' map');
       }
+      const detail = (term) => [...document.querySelectorAll('.architecture-review-metadata dt')].find(node => node.textContent === term)?.nextElementSibling?.textContent ?? '';
+      if (!detail('Subsystems').startsWith('.hvir/architecture.json') || detail('Scope') !== 'architecture-smoke') throw new Error('Snapshot details do not name the tracked layout: ' + detail('Subsystems') + ' / ' + detail('Scope'));
+      const relationship = [...body.querySelectorAll('[aria-label="Subsystem relationships"] .architecture-relationship')].find(node => node.querySelector('summary')?.textContent?.startsWith('architecture-smoke/ui → architecture-smoke/new-data'));
+      if (!relationship?.querySelector('[aria-label="Imports in ${fixture.selectedPath}"] button')) throw new Error('Subsystem relationship does not drill to module import evidence');
       const subsystem = [...body.querySelectorAll('.architecture-subsystem')].find(node => node.querySelector('strong')?.textContent === 'architecture-smoke/ui');
       if (!subsystem) throw new Error('Changed subsystem missing');
       subsystem.focus();
@@ -185,6 +190,7 @@ export async function runArchitectureReviewSmoke(
       requestAnimationFrame(open);
     })
   `)
+  await verifyLayoutRefusal(win, host, root)
   await verifyArchitectureCommitStrip(win, fixture)
   const close = (await win.webContents.executeJavaScript(`
     new Promise((resolve, reject) => {
@@ -202,4 +208,48 @@ export async function runArchitectureReviewSmoke(
   )
   console.log('HVIR_SMOKE_OK')
   return 0
+}
+
+/** An invalid tracked layout refuses the scan with the file and field named in the UI. */
+async function verifyLayoutRefusal(
+  win: BrowserWindow,
+  host: ProjectHost,
+  root: HostPath,
+): Promise<void> {
+  const layout = joinHostPath(root, ARCHITECTURE_LAYOUT_FILE)
+  await host.writeFile(layout, '{"version":2}\n')
+  const refusal = (await win.webContents.executeJavaScript(`
+    new Promise((resolve, reject) => {
+      setTimeout(() => reject(new Error('Timed out waiting for the layout refusal')), 30000);
+      const scan = [...document.querySelectorAll('button')].find((node) => node.textContent?.trim() === 'Scan snapshot');
+      if (!scan) return reject(new Error('Architecture scan control missing'));
+      scan.click();
+      const wait = () => {
+        const error = document.querySelector('[role="alert"]');
+        if (error?.textContent?.includes('architecture.json')) return resolve(error.textContent);
+        setTimeout(wait, 50);
+      };
+      wait();
+    })
+  `)) as string
+  await host.writeFile(layout, ARCHITECTURE_SMOKE_LAYOUT)
+  if (
+    !refusal.includes('Invalid .hvir/architecture.json') ||
+    !refusal.includes('"version"')
+  )
+    throw new Error(`Invalid layout was not refused by name: ${refusal}`)
+  await win.webContents.executeJavaScript(`
+    new Promise((resolve, reject) => {
+      setTimeout(() => reject(new Error('Timed out rescanning after restoring the layout')), 30000);
+      const scan = [...document.querySelectorAll('button')].find((node) => node.textContent?.trim() === 'Scan snapshot');
+      if (!scan) return reject(new Error('Architecture scan control missing'));
+      scan.click();
+      const wait = () => {
+        const surface = document.querySelector('[aria-label="Architecture review"]:not([hidden])');
+        if (!surface?.querySelector('[role="alert"]') && surface?.querySelector('.architecture-review-body')) return resolve(true);
+        setTimeout(wait, 50);
+      };
+      wait();
+    })
+  `)
 }

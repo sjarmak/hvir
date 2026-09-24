@@ -3,6 +3,7 @@ import {
   analyzeArchitecture,
   scanArchitecture,
 } from '../src/main/architecture-review/analysis'
+import { parseArchitectureLayout } from '../src/shared/architecture-layout'
 
 const input = (files: Record<string, string>) => ({
   files: Object.entries(files).map(([path, content]) => ({ path, content })),
@@ -11,7 +12,7 @@ const input = (files: Record<string, string>) => ({
 })
 
 describe('architecture review analysis', () => {
-  it('extracts AST imports, type/runtime facts, source groups and unresolved imports', () => {
+  it('extracts AST imports, type/runtime facts, source subsystems and unresolved imports', () => {
     const result = scanArchitecture(
       input({
         'src/a.ts':
@@ -19,7 +20,7 @@ describe('architecture review analysis', () => {
         'src/b.ts': 'export interface B {}\nexport const b = 1',
       }),
     )
-    expect(result.modules.map((module) => [module.path, module.group])).toEqual([
+    expect(result.modules.map((module) => [module.path, module.subsystem])).toEqual([
       ['src/a.ts', 'src'],
       ['src/b.ts', 'src'],
     ])
@@ -90,6 +91,39 @@ describe('architecture review analysis', () => {
         change: 'removed',
       }),
     ])
+  })
+
+  it('names subsystems and relationships by the layout the scan was given', () => {
+    const layout = parseArchitectureLayout(
+      JSON.stringify({
+        version: 1,
+        subsystems: [{ name: 'shell', paths: ['src/ui', 'src/app.ts'] }],
+      }),
+    )
+    const files = {
+      'src/app.ts': "import './ui/view'; import './data/store'",
+      'src/ui/view.ts': "import '../data/store'",
+      'src/data/store.ts': '',
+    }
+    const result = analyzeArchitecture(input({}), { ...input(files), layout })
+    expect(result.modules.map((module) => [module.path, module.subsystem])).toEqual([
+      ['src/app.ts', 'shell'],
+      ['src/data/store.ts', 'src/data'],
+      ['src/ui/view.ts', 'shell'],
+    ])
+    expect(
+      result.relationships.map((r) => [r.source, r.target, r.before, r.after]),
+    ).toEqual([['shell', 'src/data', 0, 2]])
+  })
+
+  it('fingerprints the layout with the files it groups', () => {
+    const files = input({ 'src/a.ts': '' })
+    const layout = parseArchitectureLayout(
+      JSON.stringify({ version: 1, sourceRoots: ['lib'] }),
+    )
+    expect(scanArchitecture({ ...files, layout }).fingerprint).not.toBe(
+      scanArchitecture(files).fingerprint,
+    )
   })
 
   it('uses captured compiler options when aliases are available', () => {

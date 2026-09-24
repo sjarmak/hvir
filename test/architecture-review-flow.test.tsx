@@ -35,6 +35,12 @@ const snapshot = {
   currentRevision: 'a',
   fingerprint: 'fingerprint',
   exclusions: [],
+  layout: {
+    origin: 'override',
+    scope: ['src', 'test'],
+    sourceRoots: ['src'],
+    subsystems: [{ name: 'ui', paths: ['src/renderer'] }],
+  },
   capturedAt: '2026-09-23',
   metrics: {
     totalMs: 42.5,
@@ -275,6 +281,31 @@ it('shows per-stage scan cost in the snapshot details', async () => {
   expect(faults?.textContent).toBe(
     'Worker stages not shown: Architecture worker returned malformed timings',
   )
+})
+
+it('names the layout file and scope the snapshot grouped subsystems by', async () => {
+  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await click(button('Scan snapshot'))
+  const detail = (term: string) =>
+    Array.from(host.querySelectorAll('.architecture-review-metadata dt')).find(
+      (node) => node.textContent === term,
+    )?.nextElementSibling?.textContent
+  expect(detail('Subsystems')).toBe(
+    '.hvir/architecture.json: 1 rule, then the first directory under src',
+  )
+  expect(detail('Scope')).toBe('src, test')
+})
+
+it('shows why a layout file was refused', async () => {
+  const refusal = 'Invalid .hvir/architecture.json at working tree: "version" must be 1'
+  invoke.mockImplementation(async (channel: string) => {
+    if (channel === 'architecture-review:scan') throw new Error(refusal)
+    if (channel === 'architecture-review:commits') return commits
+    return undefined
+  })
+  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await click(button('Scan snapshot'))
+  expect(host.querySelector('[role="alert"]')?.textContent).toBe(refusal)
 })
 
 const scans = () =>

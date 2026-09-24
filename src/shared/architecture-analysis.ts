@@ -1,3 +1,5 @@
+import type { ArchitectureLayout } from './architecture-layout'
+
 export interface ArchitectureSourceFile {
   readonly path: string
   readonly content: string
@@ -15,6 +17,8 @@ export interface ArchitectureScanInput {
   readonly configs?: readonly ArchitectureSourceFile[]
   readonly scope: string
   readonly exclusions: readonly string[]
+  /** Names each module's subsystem; absent means ARCHITECTURE_DEFAULT_LAYOUT. */
+  readonly layout?: ArchitectureLayout
 }
 
 /** How an import is written; `from-import` is Python's `from module import name`. */
@@ -29,7 +33,8 @@ export type ArchitectureImportForm =
 
 export interface ArchitectureModule {
   readonly path: string
-  readonly group: string
+  /** The Subsystem (CONTEXT.md) the module belongs to under the scan's layout. */
+  readonly subsystem: string
   readonly hash: string
   readonly symbols: readonly {
     readonly name: string

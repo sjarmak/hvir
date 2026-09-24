@@ -4,6 +4,7 @@ import { RendererResourceScopes } from '../src/main/renderer-resource-scopes'
 import { localPath, hostPath, asHostId } from '../src/shared/host-path'
 import type { ProjectHost } from '../src/main/project-host'
 import type { ArchitectureCapture } from '../src/shared/architecture-review'
+import { ARCHITECTURE_DEFAULT_LAYOUT } from '../src/shared/architecture-layout'
 import type { ArchitectureAnalysis } from '../src/shared/architecture-analysis'
 import type { ArchitectureScanRecorder } from '../src/main/architecture-review/scan-recorder'
 import type { captureArchitecture } from '../src/main/architecture-review/capture'
@@ -28,6 +29,7 @@ const snapshot: ArchitectureCapture = {
   after: [],
   configs: { before: [], after: [] },
   exclusions: [],
+  layout: ARCHITECTURE_DEFAULT_LAYOUT,
   capturedAt: 'now',
 }
 function setup(

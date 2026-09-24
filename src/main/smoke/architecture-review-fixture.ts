@@ -1,4 +1,4 @@
-import { joinHostPath, type HostPath } from '../../shared'
+import { ARCHITECTURE_LAYOUT_FILE, joinHostPath, type HostPath } from '../../shared'
 import { GitCommandContext } from '../git/git-command-context'
 import type { ProjectHost } from '../project-host'
 
@@ -16,6 +16,16 @@ export interface ArchitectureReviewSmokeFixture {
 }
 
 const LABEL_PATH = 'architecture-smoke/ui/label.ts'
+
+/**
+ * The tracked layout file keeps the scan to the fixture and names subsystems by the first
+ * directory under it, so `architecture-smoke/ui` is a subsystem, not all of the fixture.
+ */
+export const ARCHITECTURE_SMOKE_LAYOUT = `${JSON.stringify({
+  version: 1,
+  scope: ['architecture-smoke'],
+  sourceRoots: ['architecture-smoke'],
+})}\n`
 
 /**
  * Untracked Python modules on the live side, inside an existing subsystem so the map keeps
@@ -50,6 +60,7 @@ export async function createArchitectureReviewSmokeFixture(
     '',
   ].join('\n')
   const beforeFiles: Readonly<Record<string, string>> = {
+    [ARCHITECTURE_LAYOUT_FILE]: ARCHITECTURE_SMOKE_LAYOUT,
     [selectedPath]: beforeSource,
     'architecture-smoke/old-data/item.ts': 'export const item = "old"\n',
     'architecture-smoke/ui/code.ts': 'export const codeOnly = true\n',
@@ -62,6 +73,7 @@ export async function createArchitectureReviewSmokeFixture(
       joinHostPath(root, 'architecture-smoke/ui').path,
       joinHostPath(root, 'architecture-smoke/old-data').path,
       joinHostPath(root, 'architecture-smoke/new-data').path,
+      joinHostPath(root, '.hvir').path,
     ],
     { cwd: root },
   )

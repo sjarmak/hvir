@@ -209,3 +209,12 @@ it('notices an edit to a file marked assume-unchanged', async () => {
   expect(git(root, 'status', '--porcelain')).toBe('')
   expect(await review.stale()).toBe(true)
 })
+
+it('turns a live snapshot stale when the layout file changes', async () => {
+  const root = await repository()
+  const review = await reviewOf(root, { baseline: 'HEAD' })
+  expect(await review.stale()).toBe(false)
+  await mkdir(join(root, '.hvir'))
+  await writeFile(join(root, '.hvir/architecture.json'), '{"version":1}')
+  expect(await review.stale()).toBe(true)
+})

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ArchitectureCapture } from '../src/shared/architecture-review'
+import { ARCHITECTURE_DEFAULT_LAYOUT } from '../src/shared/architecture-layout'
 
 let respond: ((request: unknown) => Promise<unknown>) | undefined
 const clients: Array<{
@@ -97,6 +98,7 @@ describe('architecture analysis worker timings', () => {
     after: [source('a.ts', "import './b'")],
     configs: { before: [], after: [source('tsconfig.json', '{}')] },
     exclusions: [],
+    layout: ARCHITECTURE_DEFAULT_LAYOUT,
     capturedAt: 'now',
   }
   /** Answers the way the worker module does, reading `clock` as its own process clock. */
@@ -294,6 +296,7 @@ describe('warm architecture analysis worker', () => {
     after: [source('a.ts', 'export {}')],
     configs: { before: [], after: [] },
     exclusions: [],
+    layout: ARCHITECTURE_DEFAULT_LAYOUT,
     capturedAt: 'now',
   }
   const cache = { directory: '/user-data/architecture-parse-cache', maxBytes: 1024 }

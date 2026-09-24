@@ -121,3 +121,27 @@ it('offers an expanded map and makes file status scannable without color', () =>
   act(() => explorer.querySelector<HTMLButtonElement>('.architecture-module')!.click())
   expect(map.classList.contains('architecture-map-expanded')).toBe(false)
 })
+
+it('opens on subsystem relationships and drills to modules, then their imports', () => {
+  act(() =>
+    root.render(
+      <ArchitectureMap
+        analysis={analysis}
+        mode="overlay"
+        onMode={() => undefined}
+        onEvidence={() => undefined}
+      />,
+    ),
+  )
+  const relationships = container.querySelector('[aria-label="Subsystem relationships"]')!
+  expect(relationships.querySelector('h3')?.textContent).toBe('Subsystem relationships')
+  const relationship = relationships.querySelector('.architecture-relationship')!
+  expect(relationship.querySelector('summary')?.textContent).toContain('ui → data')
+  const module = relationship.querySelector('[aria-label="Imports in ui/a.ts"]')!
+  expect(module.querySelector('h4')?.textContent).toContain('ui/a.ts')
+  expect(module.querySelectorAll('button')).toHaveLength(3)
+  const later = relationships.compareDocumentPosition(
+    container.querySelector('.architecture-file-explorer')!,
+  )
+  expect(later & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+})

@@ -24,6 +24,7 @@ import {
 } from './capture-entries'
 import { resolveArchitectureEnds, validateArchitectureEnds, type EndsGit } from './ends'
 import { readLiveTree } from './live-tree'
+import { readCaptureLayout, type CapturedLayout } from './capture-layout'
 import { ArchitectureScanRecorder } from './scan-recorder'
 
 interface Side {
@@ -80,16 +81,22 @@ export async function captureArchitecture(
     request,
     measuredEndsGit(recorder, context, request.root),
   )
+  const currentEntries = ends.currentCommit
+    ? parseTree(await run(['ls-tree', '-r', '-z', ends.currentCommit, '--', '.']))
+    : parseLivePaths(await run(LIVE_LISTING))
+  const captured = await readCaptureLayout(currentEntries, ends.currentRef, (entry) =>
+    ends.currentCommit
+      ? readBlobs([entry], 'current').then((files) => files[0]!)
+      : readLive([entry]).then((files) => files[0]!),
+  )
+  const { layout } = captured
   const before = await readBlobSide(
     parseTree(await run(['ls-tree', '-r', '-z', ends.baselineRevision, '--', '.'])),
     'baseline',
   )
   const after = ends.currentCommit
-    ? await readBlobSide(
-        parseTree(await run(['ls-tree', '-r', '-z', ends.currentCommit, '--', '.'])),
-        'current',
-      )
-    : await readLiveSide(parseLivePaths(await run(LIVE_LISTING)))
+    ? await readBlobSide(currentEntries, 'current')
+    : splitSide(await readLive(selectEntries(currentEntries, layout)))
   signal.throwIfAborted()
   // Refs are labels; the fingerprint names only the commits and bytes they resolved to.
   const identity = {
@@ -97,6 +104,7 @@ export async function captureArchitecture(
     baselineRevision: ends.baselineRevision,
     currentRevision: ends.currentCommit ?? LIVE_REVISION,
     scope: SCOPE,
+    layout: layoutIdentity(captured),
   }
   return {
     ...identity,
@@ -105,6 +113,7 @@ export async function captureArchitecture(
     before: before.sources,
     after: after.sources,
     configs: { before: before.configs, after: after.configs },
+    layout,
     fingerprint: fingerprint(identity, before, after),
     capturedAt: new Date().toISOString(),
     exclusions: [
@@ -117,9 +126,13 @@ export async function captureArchitecture(
   }
 
   async function readBlobSide(entries: readonly CaptureEntry[], side: SideName) {
-    const selected = selectEntries(entries)
+    const files = await readBlobs(selectEntries(entries, layout), side)
+    assertWithinByteLimit(totalBytes(files))
+    return splitSide(files)
+  }
+  function readBlobs(selected: readonly CaptureEntry[], side: SideName) {
     signal.throwIfAborted()
-    const files = await recorder.measure(
+    return recorder.measure(
       'blob-read',
       async () => {
         const blobs = await readArchitectureBlobs(
@@ -135,13 +148,10 @@ export async function captureArchitecture(
       },
       (result) => ({ bytes: totalBytes(result), items: result.length, side }),
     )
-    assertWithinByteLimit(totalBytes(files))
-    return splitSide(files)
   }
-  async function readLiveSide(entries: readonly CaptureEntry[]) {
-    const selected = selectEntries(entries)
+  function readLive(selected: readonly CaptureEntry[]) {
     signal.throwIfAborted()
-    const files = await recorder.measure(
+    return recorder.measure(
       'live-read',
       async () => [
         ...(
@@ -155,7 +165,6 @@ export async function captureArchitecture(
       ],
       (result) => ({ bytes: totalBytes(result), items: result.length, side: 'current' }),
     )
-    return splitSide(files)
   }
   /** Identity by blob id: the ids already name every byte, so no content is hashed again. */
   function fingerprint(identity: object, ...sides: readonly Side[]): string {
@@ -195,6 +204,11 @@ function measuredEndsGit(
         (branch) => ({ bytes: Buffer.byteLength(branch), items: 1 }),
       ),
   }
+}
+
+/** The layout's pinned bytes; its parsed form follows from them. */
+function layoutIdentity({ file }: CapturedLayout): string | null {
+  return file ? file.object : null
 }
 
 function splitSide(files: readonly ArchitectureSource[]): Side {

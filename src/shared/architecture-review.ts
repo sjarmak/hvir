@@ -1,4 +1,5 @@
 import type { HostPath } from './host-path'
+import type { ArchitectureLayout } from './architecture-layout'
 
 /**
  * The two ends of a snapshot (ADR-063). Either end may be any commit a ref names (branch,
@@ -55,6 +56,8 @@ export interface ArchitectureCapture {
     readonly after: readonly ArchitectureSource[]
   }
   readonly exclusions: readonly string[]
+  /** Subsystem mapping and scope, from the Current end's layout file or the defaults. */
+  readonly layout: ArchitectureLayout
   readonly capturedAt: string
 }
 export const ARCHITECTURE_SCOPE = {

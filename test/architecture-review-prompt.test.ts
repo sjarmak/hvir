@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 import { architectureReviewPrompt } from '../src/main/architecture-review/prompt'
 import { localPath } from '../src/shared/host-path'
 import type { ArchitectureCapture } from '../src/shared/architecture-review'
+import { ARCHITECTURE_DEFAULT_LAYOUT } from '../src/shared/architecture-layout'
 import { gitBlobId } from '../src/main/architecture-review/blob-id'
 
 const source = (path: string, content: string) => ({
@@ -18,6 +19,7 @@ const capture: ArchitectureCapture = {
   fingerprint: 'fingerprint',
   capturedAt: 'now',
   exclusions: ['vendor'],
+  layout: ARCHITECTURE_DEFAULT_LAYOUT,
   before: [source('src/a.ts', 'export const a = 1')],
   after: [source('src/a.ts', 'export const a = 2')],
   configs: { before: [], after: [] },

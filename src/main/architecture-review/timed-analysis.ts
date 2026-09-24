@@ -26,11 +26,11 @@ export interface TimedArchitectureAnalysis {
 export function captureScanInputs(
   capture: ArchitectureCapture,
 ): readonly [ArchitectureScanInput, ArchitectureScanInput] {
-  const scope = 'repository source files'
-  const exclusions = capture.exclusions
+  const { exclusions, layout } = capture
+  const scope = layout.scope.length ? layout.scope.join(', ') : 'repository source files'
   return [
-    { files: capture.before, configs: capture.configs.before, scope, exclusions },
-    { files: capture.after, configs: capture.configs.after, scope, exclusions },
+    { files: capture.before, configs: capture.configs.before, scope, exclusions, layout },
+    { files: capture.after, configs: capture.configs.after, scope, exclusions, layout },
   ]
 }
 

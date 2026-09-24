@@ -11,7 +11,7 @@ import { ArchitectureEndsControls } from './ArchitectureEndsControls'
 import { ArchitectureEvidencePanel } from './ArchitectureEvidencePanel'
 import { ArchitectureScanTimings } from './ArchitectureScanTimings'
 import { endsFromText, type ArchitectureEnds } from './architecture-ends-model'
-import type { ArchitectureMapMode } from './architecture-review-model'
+import { layoutSummary, type ArchitectureMapMode } from './architecture-review-model'
 
 export function ArchitectureReview({
   root,
@@ -114,7 +114,7 @@ export function ArchitectureReview({
       <header className="architecture-review-header">
         <div>
           <h2>Architecture review</h2>
-          <p>Captured source relationships grouped by directory.</p>
+          <p>Captured source relationships between subsystems.</p>
         </div>
         <button
           type="button"
@@ -185,6 +185,14 @@ export function ArchitectureReview({
                 <dd>{snapshot.capturedAt}</dd>
               </div>
               <div>
+                <dt>Subsystems</dt>
+                <dd>{layoutSummary(snapshot.layout).subsystems}</dd>
+              </div>
+              <div>
+                <dt>Scope</dt>
+                <dd>{layoutSummary(snapshot.layout).scope}</dd>
+              </div>
+              <div>
                 <dt>Excluded</dt>
                 <dd>{snapshot.exclusions.join(', ') || 'None'}</dd>
               </div>
@@ -215,9 +223,10 @@ export function ArchitectureReview({
             )}
           </details>
           <p className="architecture-review-scope">
-            TypeScript, JavaScript and Python imports only. Directory grouping is
-            structural; compiler aliases, package exports and Python import paths set at
-            run time may be unresolved. See snapshot details for analysis notices.
+            TypeScript, JavaScript and Python imports only. Subsystems are structural
+            groupings, not responsibility claims; compiler aliases, package exports and
+            Python import paths set at run time may be unresolved. See snapshot details
+            for analysis notices.
           </p>
           <div className="architecture-review-body">
             {snapshot.analysis.modules.length === 0 ? (

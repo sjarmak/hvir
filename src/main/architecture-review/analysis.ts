@@ -1,12 +1,16 @@
 import { createHash } from 'node:crypto'
-import { posix } from 'node:path'
-import { ARCHITECTURE_ANALYSIS_LIMITS } from '../../shared'
+import {
+  ARCHITECTURE_ANALYSIS_LIMITS,
+  ARCHITECTURE_DEFAULT_LAYOUT,
+  subsystemOf,
+} from '../../shared'
 import type {
   ArchitectureDiagnostic,
   ArchitectureAnalysis,
   ArchitectureChange,
   ArchitectureImportDelta,
   ArchitectureImportFact,
+  ArchitectureLayout,
   ArchitectureModule,
   ArchitectureModuleDelta,
   ArchitectureScanInput,
@@ -21,11 +25,6 @@ import { TYPESCRIPT_ONLY_SCANNERS } from './typescript-scanner'
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
 const blobHash = (file: ArchitectureSourceFile): string =>
   file.object ?? gitBlobId(Buffer.from(file.content, 'utf8'))
-
-function group(path: string): string {
-  const directory = posix.dirname(path)
-  return directory === '.' ? '(repository root)' : directory
-}
 
 /** Supplies one module's facts; the default parses it, a cached source may not need to. */
 export type ModuleFactsSource = (source: {
@@ -61,6 +60,7 @@ export function scanArchitecture(
     left.path.localeCompare(right.path),
   )
   const configs = input.configs ?? []
+  const layout = input.layout ?? ARCHITECTURE_DEFAULT_LAYOUT
   const claimed = claimModules(sorted, scanners)
   const resolvers = languageResolvers(claimed, configs)
   const modules: ArchitectureModule[] = []
@@ -70,7 +70,7 @@ export function scanArchitecture(
     ...unscannedDiagnostics(sorted.length - claimed.length),
   ]
   for (const entry of claimed) {
-    const scanned = scanModule(entry, resolvers.get(entry.scanner)!, factsOf)
+    const scanned = scanModule(entry, resolvers.get(entry.scanner)!, factsOf, layout)
     diagnostics.push(...scanned.diagnostics)
     modules.push(scanned.module)
     imports.push(
@@ -151,6 +151,7 @@ function scanFingerprint(
     JSON.stringify({
       scope: input.scope,
       exclusions: [...input.exclusions],
+      layout: input.layout ?? ARCHITECTURE_DEFAULT_LAYOUT,
       configs: ids(configs),
       files: ids(sources),
     }),
@@ -161,6 +162,7 @@ function scanModule(
   { source, scanner, kind }: ScanModule,
   resolver: ScanResolver,
   factsOf: ModuleFactsSource,
+  layout: ArchitectureLayout,
 ): {
   module: ArchitectureModule
   imports: readonly ArchitectureImportFact[]
@@ -177,7 +179,7 @@ function scanModule(
   return {
     module: {
       path: source.path,
-      group: group(source.path),
+      subsystem: subsystemOf(layout, source.path),
       hash: blob,
       symbols: facts.symbols,
     },
@@ -252,22 +254,22 @@ export function compareArchitecture(
           : {}),
       }
     })
-  const groups = new Map<string, ArchitectureImportDelta[]>()
+  const subsystemOfModule = (path: string): string => {
+    const module = newModules.get(path) ?? oldModules.get(path)
+    if (!module) throw new Error(`Import evidence names an unscanned module: ${path}`)
+    return module.subsystem
+  }
+  const pairs = new Map<string, ArchitectureImportDelta[]>()
   for (const fact of imports) {
     const target = fact.target
-      ? (newModules.get(fact.target)?.group ??
-        oldModules.get(fact.target)?.group ??
-        posix.dirname(fact.target))
+      ? subsystemOfModule(fact.target)
       : `${fact.resolution}: ${fact.specifier}`
-    const source =
-      newModules.get(fact.source)?.group ??
-      oldModules.get(fact.source)?.group ??
-      posix.dirname(fact.source)
+    const source = subsystemOfModule(fact.source)
     if (source === target) continue
     const key = JSON.stringify([source, target])
-    groups.set(key, [...(groups.get(key) ?? []), fact])
+    pairs.set(key, [...(pairs.get(key) ?? []), fact])
   }
-  const relationships = [...groups]
+  const relationships = [...pairs]
     .map(([key, evidence]) => {
       const [source, target] = JSON.parse(key) as [string, string]
       const beforeCount = evidence.filter((fact) => fact.change !== 'added').length
