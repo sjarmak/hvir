@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Usage: node scripts/architecture-review-bench.mts <absolute repo root> <mode> [--runs N] [--ssh]
-//    or: npm run bench:architecture-review -- <absolute repo root> <mode> [--runs N] [--ssh]
+// Usage: node scripts/architecture-review-bench.mts <absolute repo root> <mode> [--runs N] [--ssh] [--cache cold|warm]
+//    or: npm run bench:architecture-review -- <absolute repo root> <mode> [--runs N] [--ssh] [--cache cold|warm]
 // --ssh scans a repository on the target named by the HVIR_REAL_SSH_* environment contract.
 // Prints per-stage timings and bytes for architecture capture plus analysis as JSON.
 //
@@ -12,7 +12,10 @@ import { fileURLToPath } from 'node:url'
 import { build } from 'vite'
 
 const repository = join(dirname(fileURLToPath(import.meta.url)), '..')
-const bundle = join(repository, 'out/architecture-review-bench/architecture-review-bench.cjs')
+const bundle = join(
+  repository,
+  'out/architecture-review-bench/architecture-review-bench.cjs',
+)
 
 await build({
   root: repository,

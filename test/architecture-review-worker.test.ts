@@ -29,7 +29,7 @@ vi.mock('../src/main/worker-host', () => ({
   workerPath: vi.fn(() => '/tmp/architecture-worker.js'),
 }))
 
-import { analyzeInWorker } from '../src/main/architecture-review/worker'
+import { ArchitectureAnalysisWorker } from '../src/main/architecture-review/worker'
 import { analyzeCaptureTimed } from '../src/main/architecture-review/timed-analysis'
 import {
   ArchitectureScanRecorder,
@@ -49,6 +49,11 @@ const source = (path: string, content: string) => ({
 })
 
 const capture = {} as ArchitectureCapture
+/** A worker used for one request only, as every scan was before processes stayed warm. */
+const analyzeInWorker = (
+  ...args: Parameters<ArchitectureAnalysisWorker['analyze']>
+): ReturnType<ArchitectureAnalysisWorker['analyze']> =>
+  new ArchitectureAnalysisWorker().analyze(...args)
 
 afterEach(() => {
   respond = undefined
@@ -95,18 +100,21 @@ describe('architecture analysis worker timings', () => {
   }
   /** Answers the way the worker module does, reading `clock` as its own process clock. */
   function workerAnswering(clock: ProcessClock) {
-    return (payload: unknown) => {
+    return async (payload: unknown) => {
       const readyMark = clock()
       const receivedMark = clock()
-      const timed = analyzeCaptureTimed(payload as ArchitectureCapture, clock)
+      const timed = await analyzeCaptureTimed(
+        (payload as { capture: ArchitectureCapture }).capture,
+        clock,
+      )
       const marks = { readyMark, receivedMark, respondedMark: clock(), resultBytes: 321 }
-      return Promise.resolve({
+      return {
         analysis: timed.analysis,
         timings: reportWorkerTimings(
           { ...marks, stages: timed.stages },
           translateClock(clock),
         ),
-      })
+      }
     }
   }
 
@@ -270,5 +278,146 @@ describe('architecture analysis worker timings', () => {
     await analyzeInWorker(emptyPair, new AbortController().signal, recorder)
     expect(recorder.metrics().timingFaults).toEqual([])
     expectMonotoneMetrics(recorder.metrics())
+  })
+})
+
+describe('warm architecture analysis worker', () => {
+  const pair: ArchitectureCapture = {
+    root: localPath('/repo'),
+    mode: 'head',
+    baselineRevision: 'b',
+    currentRevision: 'c',
+    fingerprint: 'f',
+    before: [source('a.ts', 'export {}')],
+    after: [source('a.ts', 'export {}')],
+    configs: { before: [], after: [] },
+    exclusions: [],
+    capturedAt: 'now',
+  }
+  const cache = { directory: '/user-data/architecture-parse-cache', maxBytes: 1024 }
+  const payloads: unknown[] = []
+  /** A process that became ready once, when it was spawned, and answers every request. */
+  function warmProcess() {
+    const readyMark = processClock()
+    return async (payload: unknown) => {
+      payloads.push(payload)
+      const receivedMark = processClock()
+      const timed = await analyzeCaptureTimed(
+        (payload as { capture: ArchitectureCapture }).capture,
+      )
+      const marks = {
+        readyMark,
+        receivedMark,
+        respondedMark: processClock(),
+        resultBytes: 1,
+      }
+      return {
+        analysis: timed.analysis,
+        timings: reportWorkerTimings(
+          { ...marks, stages: timed.stages },
+          translateClock(),
+        ),
+      }
+    }
+  }
+  afterEach(() => {
+    payloads.length = 0
+  })
+
+  it('reuses one process across scans and sends it the parse cache location', async () => {
+    respond = warmProcess()
+    const worker = new ArchitectureAnalysisWorker({ cache })
+    const first = new ArchitectureScanRecorder()
+    await worker.analyze(pair, new AbortController().signal, first)
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    const second = new ArchitectureScanRecorder()
+    await worker.analyze(pair, new AbortController().signal, second)
+    expect(clients).toHaveLength(1)
+    expect(clients[0]?.request).toHaveBeenCalledTimes(2)
+    expect(clients[0]?.dispose).not.toHaveBeenCalled()
+    expect(payloads).toEqual([
+      { capture: pair, cache },
+      { capture: pair, cache },
+    ])
+    expect(stagesOf(first.metrics())).toContain('worker-spawn')
+    expect(second.metrics().timingFaults).toEqual([])
+    expectMonotoneMetrics(second.metrics())
+    expect(stagesOf(second.metrics())).toEqual([
+      'compare',
+      'parse',
+      'worker-return',
+      'worker-transfer',
+    ])
+    worker.dispose()
+    expect(clients[0]?.dispose).toHaveBeenCalledTimes(1)
+  })
+
+  it('kills the process of a cancelled scan and starts a new one for the next', async () => {
+    const worker = new ArchitectureAnalysisWorker()
+    const controller = new AbortController()
+    const pending = worker.analyze(pair, controller.signal)
+    const assertion = expect(pending).rejects.toThrow('worker client disposed')
+    controller.abort(new Error('cancelled'))
+    await assertion
+    respond = warmProcess()
+    await worker.analyze(pair, new AbortController().signal)
+    expect(clients).toHaveLength(2)
+    expect(clients[0]?.dispose).toHaveBeenCalled()
+    expect(clients[1]?.dispose).not.toHaveBeenCalled()
+    worker.dispose()
+  })
+
+  it('does not keep a process whose request failed', async () => {
+    respond = () => Promise.reject(new Error('parse exploded'))
+    const worker = new ArchitectureAnalysisWorker()
+    await expect(worker.analyze(pair, new AbortController().signal)).rejects.toThrow(
+      'parse exploded',
+    )
+    respond = warmProcess()
+    await worker.analyze(pair, new AbortController().signal)
+    expect(clients).toHaveLength(2)
+    expect(clients[0]?.dispose).toHaveBeenCalled()
+    worker.dispose()
+  })
+
+  it('gives concurrent scans their own processes and keeps one idle', async () => {
+    respond = warmProcess()
+    const worker = new ArchitectureAnalysisWorker()
+    await Promise.all([
+      worker.analyze(pair, new AbortController().signal),
+      worker.analyze(pair, new AbortController().signal),
+    ])
+    expect(clients).toHaveLength(2)
+    expect(clients.filter((client) => client.dispose.mock.calls.length > 0)).toHaveLength(
+      1,
+    )
+    await worker.analyze(pair, new AbortController().signal)
+    expect(clients).toHaveLength(2)
+    worker.dispose()
+    expect(clients.every((client) => client.dispose.mock.calls.length > 0)).toBe(true)
+  })
+
+  it('lets an idle process exit after the idle period', async () => {
+    respond = warmProcess()
+    vi.useFakeTimers()
+    const worker = new ArchitectureAnalysisWorker({ idleMs: 1_000 })
+    await worker.analyze(pair, new AbortController().signal)
+    await vi.advanceTimersByTimeAsync(999)
+    expect(clients[0]?.dispose).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(clients[0]?.dispose).toHaveBeenCalledTimes(1)
+    vi.useRealTimers()
+    await worker.analyze(pair, new AbortController().signal)
+    expect(clients).toHaveLength(2)
+    worker.dispose()
+  })
+
+  it('refuses scans after disposal', async () => {
+    const worker = new ArchitectureAnalysisWorker()
+    worker.dispose()
+    await expect(worker.analyze(pair, new AbortController().signal)).rejects.toThrow(
+      /disposed/,
+    )
+    expect(clients).toHaveLength(0)
   })
 })

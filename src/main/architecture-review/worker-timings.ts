@@ -38,8 +38,11 @@ export interface WorkerRequestMarks {
 
 /** Main's own process-clock marks around one worker request. */
 export interface WorkerRequestWindow {
-  readonly spawnMark: number
+  /** When main began the request: at spawn for a new process, at send for a warm one. */
+  readonly startMark: number
   readonly returnedMark: number
+  /** A warm process became ready before this request began, during an earlier one. */
+  readonly reused?: boolean
 }
 
 /** Worker side: carries its process-clock marks to main as wall-clock marks. */
@@ -64,7 +67,8 @@ export function reportWorkerTimings(
  * Main side: accepts only timings a worker could have produced for this request and
  * returns them on main's clock. Every mark must lie inside the window main observed, in the
  * order ready, received, stages, responded, allowing the translation's skew. Relative
- * milliseconds, reordered marks and future stamps are refused.
+ * milliseconds, reordered marks and future stamps are refused. A warm process's ready mark
+ * predates the window, so for a reused process it need only precede the request's receipt.
  */
 export function readWorkerTimings(
   value: unknown,
@@ -125,7 +129,7 @@ function inRequestOrder(marks: WorkerRequestMarks, window: WorkerRequestWindow):
       notAfter(stage.endMark, marks.respondedMark),
   )
   const all = [
-    marks.readyMark,
+    ...(window.reused ? [] : [marks.readyMark]),
     marks.receivedMark,
     marks.respondedMark,
     ...marks.stages.flatMap((stage) => [stage.startMark, stage.endMark]),
@@ -133,7 +137,7 @@ function inRequestOrder(marks: WorkerRequestMarks, window: WorkerRequestWindow):
   return (
     stagesInOrder &&
     all.every(
-      (mark) => notAfter(window.spawnMark, mark) && notAfter(mark, window.returnedMark),
+      (mark) => notAfter(window.startMark, mark) && notAfter(mark, window.returnedMark),
     ) &&
     notAfter(marks.readyMark, marks.receivedMark) &&
     notAfter(marks.receivedMark, marks.respondedMark)

@@ -4,7 +4,9 @@ import { verifyArchitectureReviewVisuals } from './architecture-review-visual'
 import { joinHostPath, type HostPath } from '../../shared'
 import type { ProjectHost } from '../project-host'
 import { ArchitectureReviewCoordinator } from '../architecture-review/coordinator'
-import { analyzeInWorker } from '../architecture-review/worker'
+import { ArchitectureAnalysisWorker } from '../architecture-review/worker'
+import { architectureParseCacheDirectory } from '../architecture-review/runtime'
+import { ARCHITECTURE_PARSE_CACHE_BYTES } from '../architecture-review/module-facts-cache'
 import type { SmokeCleanup } from './cleanup'
 import type { RendererResourceScopes } from '../renderer-resource-scopes'
 import {
@@ -16,9 +18,19 @@ export function createSmokeArchitectureReview(
   resources: RendererResourceScopes,
   cleanup: SmokeCleanup,
 ) {
+  // The smoke harness gives every run its own user data root and removes it afterwards.
+  const directory = architectureParseCacheDirectory()
+  const worker = cleanup.acquire(
+    'architecture analysis worker',
+    () =>
+      new ArchitectureAnalysisWorker({
+        cache: { directory, maxBytes: ARCHITECTURE_PARSE_CACHE_BYTES },
+      }),
+    (owned) => owned.dispose(),
+  )
   return cleanup.acquire(
     'architecture review',
-    () => new ArchitectureReviewCoordinator({ resources, analyze: analyzeInWorker }),
+    () => new ArchitectureReviewCoordinator({ resources, analyze: worker.analyze }),
     (review) => review.dispose(),
   )
 }
@@ -52,7 +64,7 @@ export async function verifyArchitectureReviewWorkflow(
       button('Scan snapshot').click();
       const body = await wait(() => document.querySelector('.architecture-review-body'), 'map');
       const stages = [...document.querySelectorAll('table[aria-label="Scan timings"] tbody th')].map(node => node.textContent);
-      for (const stage of ['listing', 'live-read', 'worker-spawn', 'parse', 'worker-return', 'renderer-payload'])
+      for (const stage of ['listing', 'live-read', 'worker-transfer', 'parse', 'worker-return', 'renderer-payload'])
         if (!stages.includes(stage)) throw new Error('Snapshot details miss scan stage ' + stage + ': ' + stages.join(','));
       for (const mode of ['before', 'after', 'overlay']) {
         const control = button(mode);

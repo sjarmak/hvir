@@ -1,6 +1,8 @@
 import type { ArchitectureAnalysis, ArchitectureScanInput } from '../../shared'
 import type { ArchitectureCapture } from '../../shared/architecture-review'
 import { compareArchitecture, scanArchitecture } from './analysis'
+import { cachedFactsSource } from './cached-facts'
+import type { ModuleFactsCache } from './module-facts-cache'
 import { processClock, type ProcessClock } from './scan-recorder'
 
 /** One analysis stage, marked on the clock of the process that ran it. */
@@ -30,15 +32,26 @@ export function captureScanInputs(
   ]
 }
 
-/** Analyze one captured pair, timing each end's parse and the comparison; no host I/O. */
-export function analyzeCaptureTimed(
+/**
+ * Analyze one captured pair, timing each end's parse and the comparison; no project host
+ * I/O. With a cache, a module whose blob was parsed before costs a lookup, not a parse.
+ */
+export async function analyzeCaptureTimed(
   capture: ArchitectureCapture,
   clock: ProcessClock = processClock,
-): TimedArchitectureAnalysis {
+  cache?: ModuleFactsCache,
+): Promise<TimedArchitectureAnalysis> {
   const [baselineInput, currentInput] = captureScanInputs(capture)
-  const parse = (input: ArchitectureScanInput, side: 'baseline' | 'current') => {
+  const facts = cachedFactsSource(cache, capture.root)
+  const parse = async (input: ArchitectureScanInput, side: 'baseline' | 'current') => {
     const startMark = clock()
-    const result = scanArchitecture(input)
+    await facts.load(input.files)
+    const scanned = scanArchitecture(input, facts.factsOf)
+    await facts.flush()
+    const result = {
+      ...scanned,
+      diagnostics: [...scanned.diagnostics, ...facts.takeDiagnostics()],
+    }
     const stage: TimedStage = {
       stage: 'parse',
       side,
@@ -52,8 +65,8 @@ export function analyzeCaptureTimed(
     }
     return { result, stage }
   }
-  const baseline = parse(baselineInput, 'baseline')
-  const current = parse(currentInput, 'current')
+  const baseline = await parse(baselineInput, 'baseline')
+  const current = await parse(currentInput, 'current')
   const compareStart = clock()
   const analysis = compareArchitecture(baseline.result, current.result)
   const compare: TimedStage = {

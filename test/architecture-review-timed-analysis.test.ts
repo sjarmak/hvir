@@ -27,9 +27,9 @@ const capture: ArchitectureCapture = {
   capturedAt: 'now',
 }
 
-it('times each side parse and the comparison without changing the analysis', () => {
+it('times each side parse and the comparison without changing the analysis', async () => {
   let now = 100
-  const timed = analyzeCaptureTimed(capture, () => (now += 2))
+  const timed = await analyzeCaptureTimed(capture, () => (now += 2))
   expect(timed.analysis).toEqual(analyzeArchitecture(...captureScanInputs(capture)))
   expect(timed.stages.map((stage) => [stage.stage, stage.side])).toEqual([
     ['parse', 'baseline'],

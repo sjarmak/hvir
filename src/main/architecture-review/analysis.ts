@@ -16,12 +16,19 @@ import type {
 } from '../../shared'
 import { gitBlobId } from './blob-id'
 import {
+  parseModuleFacts,
+  type ModuleFacts,
+  type ModuleImportOccurrence,
+} from './module-facts'
+import {
   loadCompilerSettings,
   VIRTUAL_ROOT,
   type CompilerSettings,
 } from './compiler-config'
 
 const implementation = /\.[cm]?[jt]sx?$/
+/** Whether a captured file is a module the scan parses, rather than only reads. */
+export const isArchitectureModule = (path: string): boolean => implementation.test(path)
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
 const blobHash = (file: ArchitectureSourceFile): string =>
   file.object ?? gitBlobId(Buffer.from(file.content, 'utf8'))
@@ -31,115 +38,76 @@ function group(path: string): string {
   return directory === '.' ? '(repository root)' : directory
 }
 
-function scanImportFacts(
-  file: ts.SourceFile,
+/** Resolves one import as written against this scan's files and compiler options. */
+function resolveImport(
+  source: string,
+  occurrence: ModuleImportOccurrence,
   options: ts.CompilerOptions,
   files: ReadonlyMap<string, string>,
-  host: ts.ModuleResolutionHost,
+  resolver: ModuleResolver,
   cache: ts.ModuleResolutionCache,
-): ArchitectureImportFact[] {
-  const facts: ArchitectureImportFact[] = []
-  const add = (
-    node: ts.Node,
-    expression: ts.Node | undefined,
-    form: ArchitectureImportFact['form'],
-    typeOnly: boolean,
-  ) => {
-    const point = file.getLineAndCharacterOfPosition(node.getStart(file))
-    const literal =
-      expression && (ts.isStringLiteralLike(expression) ? expression.text : undefined)
-    const specifier = literal ?? '<computed>'
-    const resolved = literal
-      ? ts.resolveModuleName(
-          literal,
-          posix.join(VIRTUAL_ROOT, file.fileName),
-          options,
-          host,
-          cache,
-        ).resolvedModule
-      : undefined
-    const target = resolved
-      ? posix.relative(VIRTUAL_ROOT, resolved.resolvedFileName)
-      : undefined
-    const local = Boolean(
-      literal &&
-      (literal.startsWith('.') ||
-        literal.startsWith('/') ||
-        literal.startsWith('#') ||
-        Object.keys(options.paths ?? {}).some((pattern) => {
-          const [prefix, suffix] = pattern.split('*')
-          return suffix === undefined
-            ? literal === prefix
-            : literal.startsWith(prefix ?? '') && literal.endsWith(suffix ?? '')
-        }) ||
-        (options.baseUrl && !literal.startsWith('node:'))),
-    )
-    const resolution: ArchitectureImportFact['resolution'] =
-      target && files.has(target)
-        ? 'internal'
-        : (literal && !local && !literal.startsWith('node:')) ||
-            literal?.startsWith('node:')
-          ? 'external'
-          : 'unresolved'
-    facts.push({
-      source: file.fileName,
-      ...(resolution === 'internal' ? { target } : {}),
-      specifier,
-      form,
-      kind: typeOnly ? 'type-only' : 'runtime',
-      resolution,
-      line: point.line + 1,
-      column: point.character + 1,
-    })
+): ArchitectureImportFact {
+  const literal = occurrence.specifier
+  const resolved = !literal
+    ? undefined
+    : ts.resolveModuleName(
+        literal,
+        posix.join(VIRTUAL_ROOT, source),
+        options,
+        resolver.host,
+        cache,
+      ).resolvedModule
+  const target = resolved
+    ? posix.relative(VIRTUAL_ROOT, resolved.resolvedFileName)
+    : undefined
+  const resolution: ArchitectureImportFact['resolution'] =
+    target && files.has(target)
+      ? 'internal'
+      : literal && (literal.startsWith('node:') || !isLocal(literal, options))
+        ? 'external'
+        : 'unresolved'
+  return {
+    source,
+    ...(resolution === 'internal' ? { target } : {}),
+    specifier: literal ?? '<computed>',
+    form: occurrence.form,
+    kind: occurrence.typeOnly ? 'type-only' : 'runtime',
+    resolution,
+    line: occurrence.line,
+    column: occurrence.column,
   }
-  function visit(node: ts.Node): void {
-    if (ts.isImportDeclaration(node)) {
-      const bindings = node.importClause?.namedBindings
-      const allType = Boolean(
-        bindings &&
-        ts.isNamedImports(bindings) &&
-        !node.importClause?.name &&
-        bindings.elements.length > 0 &&
-        bindings.elements.every((entry) => entry.isTypeOnly),
-      )
-      add(
-        node,
-        node.moduleSpecifier,
-        'import',
-        Boolean(node.importClause?.isTypeOnly || allType),
-      )
-    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier)
-      add(node, node.moduleSpecifier, 'export', Boolean(node.isTypeOnly))
-    else if (ts.isImportTypeNode(node))
-      add(
-        node,
-        ts.isLiteralTypeNode(node.argument) ? node.argument.literal : undefined,
-        'import-type',
-        true,
-      )
-    else if (
-      ts.isImportEqualsDeclaration(node) &&
-      ts.isExternalModuleReference(node.moduleReference)
-    )
-      add(
-        node,
-        node.moduleReference.expression,
-        'import-equals',
-        Boolean(node.isTypeOnly),
-      )
-    else if (ts.isCallExpression(node)) {
-      if (node.expression.kind === ts.SyntaxKind.ImportKeyword)
-        add(node, node.arguments[0], 'dynamic-import', false)
-      else if (ts.isIdentifier(node.expression) && node.expression.text === 'require')
-        add(node, node.arguments[0], 'require', false)
-    }
-    ts.forEachChild(node, visit)
-  }
-  visit(file)
-  return facts
 }
 
-export function scanArchitecture(input: ArchitectureScanInput): ArchitectureScanResult {
+function isLocal(literal: string, options: ts.CompilerOptions): boolean {
+  return (
+    literal.startsWith('.') ||
+    literal.startsWith('/') ||
+    literal.startsWith('#') ||
+    Object.keys(options.paths ?? {}).some((pattern) => {
+      const [prefix, suffix] = pattern.split('*')
+      return suffix === undefined
+        ? literal === prefix
+        : literal.startsWith(prefix ?? '') && literal.endsWith(suffix ?? '')
+    }) ||
+    Boolean(options.baseUrl && !literal.startsWith('node:'))
+  )
+}
+
+/** Supplies one module's facts; the default parses it, a cached source may not need to. */
+export type ModuleFactsSource = (source: {
+  readonly path: string
+  readonly content: string
+  /** Git's blob id for `content`. */
+  readonly blob: string
+}) => ModuleFacts
+
+export const parseFacts: ModuleFactsSource = ({ path, content }) =>
+  parseModuleFacts(path, content)
+
+export function scanArchitecture(
+  input: ArchitectureScanInput,
+  factsOf: ModuleFactsSource = parseFacts,
+): ArchitectureScanResult {
   if (!input.scope.trim()) throw new Error('Architecture scan scope is required')
   const sorted = [...input.files].sort((left, right) =>
     left.path.localeCompare(right.path),
@@ -152,8 +120,8 @@ export function scanArchitecture(input: ArchitectureScanInput): ArchitectureScan
   const imports: ArchitectureImportFact[] = []
   const diagnostics: ArchitectureDiagnostic[] = [...settings.diagnostics]
   for (const source of sorted) {
-    if (!implementation.test(source.path)) continue
-    const scanned = scanModule(source, resolver, files)
+    if (!isArchitectureModule(source.path)) continue
+    const scanned = scanModule(source, resolver, files, factsOf)
     diagnostics.push(...scanned.diagnostics)
     modules.push(scanned.module)
     imports.push(
@@ -247,61 +215,28 @@ function scanModule(
   source: ArchitectureSourceFile,
   resolver: ModuleResolver,
   files: ReadonlyMap<string, string>,
+  factsOf: ModuleFactsSource,
 ): {
   module: ArchitectureModule
   imports: readonly ArchitectureImportFact[]
   diagnostics: readonly ArchitectureDiagnostic[]
 } {
-  const file = ts.createSourceFile(
-    source.path,
-    source.content,
-    ts.ScriptTarget.Latest,
-    true,
-  )
-  const parseDiagnostics =
-    (file as ts.SourceFile & { readonly parseDiagnostics?: readonly ts.Diagnostic[] })
-      .parseDiagnostics ?? []
-  const diagnostics = parseDiagnostics.map((diagnostic) => ({
-    file: source.path,
-    line: file.getLineAndCharacterOfPosition(diagnostic.start ?? 0).line + 1,
-    message: ts.flattenDiagnosticMessageText(diagnostic.messageText, ' '),
-  }))
+  const blob = blobHash(source)
+  const facts = factsOf({ path: source.path, content: source.content, blob })
   const project = resolver.settings.projectFor(source.path)
   const cache = resolver.cacheFor(project.config, project.options)
   return {
     module: {
       path: source.path,
       group: group(source.path),
-      hash: blobHash(source),
-      symbols: moduleSymbols(file).slice(
-        0,
-        ARCHITECTURE_ANALYSIS_LIMITS.maxSymbolsPerModule,
-      ),
+      hash: blob,
+      symbols: facts.symbols,
     },
-    imports: scanImportFacts(file, project.options, files, resolver.host, cache),
-    diagnostics,
+    imports: facts.imports.map((occurrence) =>
+      resolveImport(source.path, occurrence, project.options, files, resolver, cache),
+    ),
+    diagnostics: facts.diagnostics.map((entry) => ({ file: source.path, ...entry })),
   }
-}
-
-function moduleSymbols(file: ts.SourceFile): ArchitectureModule['symbols'][number][] {
-  const symbols: ArchitectureModule['symbols'][number][] = []
-  function collect(node: ts.Node): void {
-    if (
-      (ts.isFunctionDeclaration(node) ||
-        ts.isClassDeclaration(node) ||
-        ts.isInterfaceDeclaration(node) ||
-        ts.isTypeAliasDeclaration(node)) &&
-      node.name
-    )
-      symbols.push({
-        name: node.name.text,
-        line: file.getLineAndCharacterOfPosition(node.getStart(file)).line + 1,
-        kind: ts.SyntaxKind[node.kind],
-      })
-    ts.forEachChild(node, collect)
-  }
-  collect(file)
-  return symbols
 }
 
 const importKey = (fact: ArchitectureImportFact): string =>

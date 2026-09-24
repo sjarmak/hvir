@@ -309,7 +309,7 @@ it('resolves path aliases through the tsconfig captured with each end', async ()
     join(f.root, 'tsconfig.json'),
     JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '@app/*': ['src/*'] } } }),
   )
-  const { analysis } = analyzeCaptureTimed(await f.capture('working-tree'))
+  const { analysis } = await analyzeCaptureTimed(await f.capture('working-tree'))
   expect(analysis.after.imports).toEqual([
     expect.objectContaining({
       specifier: '@app/b',
