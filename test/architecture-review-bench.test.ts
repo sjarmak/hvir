@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -132,3 +132,31 @@ it('opens the local host for a local bench', async () => {
     await opened.dispose()
   }
 })
+
+const repository = join(import.meta.dirname, '..')
+const launch = (...args: string[]) =>
+  spawnSync(process.execPath, ['scripts/architecture-review-bench.mts', ...args], {
+    cwd: repository,
+    encoding: 'utf8',
+    timeout: 120_000,
+  })
+
+it('runs from the documented node command and reports a local scan as JSON', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'hvir-architecture-bench-'))
+  roots.push(root)
+  git(root, 'init', '-b', 'main')
+  git(root, 'config', 'user.email', 'test@example.test')
+  git(root, 'config', 'user.name', 'Test')
+  await writeFile(join(root, 'a.ts'), 'export const a = 1\n')
+  git(root, 'add', '.')
+  git(root, 'commit', '-m', 'baseline')
+  const result = launch(root, 'head', '--runs', '2')
+  expect(result.stderr).toBe('')
+  expect(result.status).toBe(0)
+  const report = JSON.parse(result.stdout) as Record<string, unknown>
+  expect(report).toMatchObject({ root, mode: 'head', runs: 2, target: 'local' })
+  expect(report.samples).toHaveLength(2)
+  const refused = launch('relative', 'head')
+  expect(refused.status).toBe(1)
+  expect(refused.stderr).toMatch(/absolute/)
+}, 120_000)

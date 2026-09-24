@@ -473,6 +473,7 @@ export default tseslint.config(
       'scripts/real-host-ssh-contract.mts',
       'scripts/run-real-host-ssh-acceptance.mts',
       'scripts/real-host-ssh-host.mts',
+      'scripts/architecture-review-bench.mts',
       'scripts/require-release-ci-evidence.mts',
       'scripts/prepare-release-linux-package.mts',
       'scripts/validate-release-pr.mts',
