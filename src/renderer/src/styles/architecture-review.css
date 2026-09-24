@@ -388,6 +388,11 @@
 .architecture-review-timings :is(th[scope='row'], thead th:first-child) {
   text-align: left;
 }
+.architecture-review-timing-faults {
+  margin: 0 0 8px;
+  padding-left: 16px;
+  color: var(--text-muted);
+}
 .architecture-evidence form {
   display: grid;
   gap: 8px;

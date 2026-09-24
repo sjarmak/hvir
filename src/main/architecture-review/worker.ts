@@ -2,8 +2,14 @@ import type { ArchitectureCapture } from '../../shared/architecture-review'
 import type { ArchitectureAnalysis } from '../../shared/architecture-analysis'
 import type { WorkerOperation } from '../../shared/worker-protocol'
 import { createWorkerClient, workerPath } from '../worker-host'
-import { ArchitectureScanRecorder, epochClock } from './scan-recorder'
-import { assertWorkerTimings, type ArchitectureWorkerTimings } from './worker-timings'
+import { ArchitectureScanRecorder, processClock } from './scan-recorder'
+import { translateClock } from './wall-clock'
+import {
+  readWorkerTimings,
+  type ArchitectureWorkerTimings,
+  type WorkerRequestMarks,
+  type WorkerRequestWindow,
+} from './worker-timings'
 
 export interface ArchitectureWorkerResult {
   readonly analysis: ArchitectureAnalysis
@@ -19,7 +25,7 @@ export async function analyzeInWorker(
   recorder: ArchitectureScanRecorder = new ArchitectureScanRecorder(),
 ): Promise<ArchitectureAnalysis> {
   signal.throwIfAborted()
-  const spawnEpochMs = epochClock()
+  const spawnMark = processClock()
   const worker = createWorkerClient<ArchitectureWorkerProtocol>(
     workerPath('architecture-worker.js'),
     'hvir-architecture',
@@ -29,9 +35,10 @@ export async function analyzeInWorker(
   const timeout = setTimeout(stop, 60_000)
   try {
     const result = await worker.request('analyze', capture)
-    const returnedEpochMs = epochClock()
+    const window = { spawnMark, returnedMark: processClock() }
     signal.throwIfAborted()
-    placeWorkerSpans(recorder, capture, result.timings, spawnEpochMs, returnedEpochMs)
+    const marks = readTimingsOrNoteFault(recorder, result.timings, window)
+    if (marks) placeWorkerSpans(recorder, capture, marks, window)
     return result.analysis
   } finally {
     clearTimeout(timeout)
@@ -40,36 +47,52 @@ export async function analyzeInWorker(
   }
 }
 
+/**
+ * Timings describe the analysis; they are not part of it. Timings main cannot place leave
+ * the analysis intact and show in the snapshot as a timing fault instead of worker spans.
+ */
+function readTimingsOrNoteFault(
+  recorder: ArchitectureScanRecorder,
+  timings: unknown,
+  window: WorkerRequestWindow,
+): WorkerRequestMarks | undefined {
+  try {
+    return readWorkerTimings(timings, window, translateClock())
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    recorder.noteTimingFault(`Worker stages not shown: ${reason}`)
+    return undefined
+  }
+}
+
 function placeWorkerSpans(
   recorder: ArchitectureScanRecorder,
   capture: ArchitectureCapture,
-  timings: unknown,
-  spawnEpochMs: number,
-  returnedEpochMs: number,
+  marks: WorkerRequestMarks,
+  window: WorkerRequestWindow,
 ): void {
-  assertWorkerTimings(timings, { spawnEpochMs, returnedEpochMs })
   const files = [...capture.before, ...capture.after]
   const requestBytes = files.reduce(
     (total, file) =>
       total + Buffer.byteLength(file.path) + Buffer.byteLength(file.content),
     0,
   )
-  recorder.place('worker-spawn', spawnEpochMs, timings.readyEpochMs, {
+  recorder.place('worker-spawn', window.spawnMark, marks.readyMark, {
     bytes: 0,
     items: 1,
   })
-  recorder.place('worker-transfer', timings.readyEpochMs, timings.receivedEpochMs, {
+  recorder.place('worker-transfer', marks.readyMark, marks.receivedMark, {
     bytes: requestBytes,
     items: files.length,
   })
-  for (const stage of timings.stages)
-    recorder.place(stage.stage, stage.startEpochMs, stage.endEpochMs, {
+  for (const stage of marks.stages)
+    recorder.place(stage.stage, stage.startMark, stage.endMark, {
       bytes: stage.bytes,
       items: stage.items,
       ...(stage.side ? { side: stage.side } : {}),
     })
-  recorder.place('worker-return', timings.respondedEpochMs, returnedEpochMs, {
-    bytes: timings.resultBytes,
+  recorder.place('worker-return', marks.respondedMark, window.returnedMark, {
+    bytes: marks.resultBytes,
     items: 1,
   })
 }

@@ -4,14 +4,19 @@ import type {
   ArchitectureStageSpan,
 } from '../../shared/architecture-scan-metrics'
 
-/** Wall-clock milliseconds with sub-millisecond resolution, comparable across processes. */
-export type EpochClock = () => number
-export const epochClock: EpochClock = () => performance.timeOrigin + performance.now()
+/**
+ * This process's clock: milliseconds with sub-millisecond resolution, anchored at the wall
+ * clock when the process started. It is monotonic, so it stops while the machine sleeps and
+ * a long-lived process falls behind the wall clock by every suspend it lived through. Marks
+ * are comparable only within one process; `wall-clock.ts` carries them across processes.
+ */
+export type ProcessClock = () => number
+export const processClock: ProcessClock = () => performance.timeOrigin + performance.now()
 
 /**
- * How far two processes' wall clocks may disagree before a span timed in one is refused by
- * the other. Same-machine clocks differ by well under a millisecond; this leaves room for a
- * slewing clock without admitting a relative or misread timestamp.
+ * How far a mark carried from another process through the wall clock may fall outside the
+ * window main observed. Each translation is exact to the wall clock's 1 ms tick; this leaves
+ * room for that and a slewing clock without admitting a relative or misread timestamp.
  */
 export const ARCHITECTURE_CLOCK_SKEW_TOLERANCE_MS = 25
 
@@ -27,13 +32,14 @@ export interface StageMeasurement {
  * every host call must fall inside one, so no round trip goes uncredited or misattributed.
  */
 export class ArchitectureScanRecorder {
-  readonly originEpochMs: number
+  readonly originMs: number
   private readonly spans: ArchitectureStageSpan[] = []
+  private readonly timingFaults: string[] = []
   private hostCalls = 0
   private active: ArchitectureScanStage | undefined
 
-  constructor(private readonly clock: EpochClock = epochClock) {
-    this.originEpochMs = clock()
+  constructor(private readonly clock: ProcessClock = processClock) {
+    this.originMs = clock()
   }
 
   countHostCall(): void {
@@ -77,34 +83,43 @@ export class ArchitectureScanRecorder {
   }
 
   /**
-   * Places a span timed elsewhere, such as in the analysis worker. Clocks of two processes
-   * can disagree slightly, so a span within the skew allowance is clamped to start no
-   * earlier than the scan and to end no earlier than it starts. Anything further off is a
-   * wrong clock or a wrong unit, and is refused rather than hidden by the clamp.
+   * Places a span timed outside `measure`, as marks on this process's clock: an in-process
+   * analysis stage, or a worker stage translated through the wall clock. A translated mark is
+   * exact only to the skew allowance, so a span within it is clamped to start no earlier
+   * than the scan and to end no earlier than it starts. Anything further off is a wrong
+   * clock or a wrong unit, and is refused rather than hidden by the clamp.
    */
   place(
     stage: ArchitectureScanStage,
-    startEpochMs: number,
-    endEpochMs: number,
+    startMark: number,
+    endMark: number,
     measurement: StageMeasurement,
   ): void {
     const refuse = (reason: string) => {
       throw new Error(`Architecture scan span for ${stage} ${reason}`)
     }
     const tolerance = ARCHITECTURE_CLOCK_SKEW_TOLERANCE_MS
-    if (startEpochMs < this.originEpochMs - tolerance) refuse('starts before the scan')
-    if (endEpochMs < startEpochMs - tolerance) refuse('ends before it starts')
-    if (endEpochMs > this.clock() + tolerance) refuse('ends in the future')
-    this.record(stage, startEpochMs, endEpochMs, measurement, 0)
+    if (startMark < this.originMs - tolerance) refuse('starts before the scan')
+    if (endMark < startMark - tolerance) refuse('ends before it starts')
+    if (endMark > this.clock() + tolerance) refuse('ends in the future')
+    this.record(stage, startMark, endMark, measurement, 0)
+  }
+
+  /**
+   * Records why stages that ran are missing from the spans, so the snapshot shows the gap
+   * instead of failing the scan the timings describe.
+   */
+  noteTimingFault(message: string): void {
+    this.timingFaults.push(message)
   }
 
   metrics(): ArchitectureScanMetrics {
     const spans = [...this.spans].sort((left, right) => left.startMs - right.startMs)
     const end = Math.max(
-      this.clock() - this.originEpochMs,
+      this.clock() - this.originMs,
       ...spans.map((span) => span.startMs + span.durationMs),
     )
-    return { spans, totalMs: end }
+    return { spans, totalMs: end, timingFaults: [...this.timingFaults] }
   }
 
   private enter(stage: ArchitectureScanStage): void {
@@ -115,23 +130,23 @@ export class ArchitectureScanRecorder {
 
   private record(
     stage: ArchitectureScanStage,
-    startEpochMs: number,
-    endEpochMs: number,
+    startMark: number,
+    endMark: number,
     measurement: StageMeasurement,
     hostCalls: number,
   ): void {
-    for (const value of [startEpochMs, endEpochMs])
+    for (const value of [startMark, endMark])
       if (!Number.isFinite(value))
         throw new Error(`Invalid architecture scan measurement for ${stage}`)
     for (const value of [measurement.bytes, measurement.items])
       if (!Number.isSafeInteger(value) || value < 0)
         throw new Error(`Invalid architecture scan measurement for ${stage}`)
-    const startMs = Math.max(0, startEpochMs - this.originEpochMs)
+    const startMs = Math.max(0, startMark - this.originMs)
     this.spans.push({
       stage,
       ...(measurement.side ? { side: measurement.side } : {}),
       startMs,
-      durationMs: Math.max(0, endEpochMs - this.originEpochMs - startMs),
+      durationMs: Math.max(0, endMark - this.originMs - startMs),
       bytes: measurement.bytes,
       items: measurement.items,
       hostCalls,

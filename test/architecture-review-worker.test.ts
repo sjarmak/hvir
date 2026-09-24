@@ -33,8 +33,11 @@ import { analyzeInWorker } from '../src/main/architecture-review/worker'
 import { analyzeCaptureTimed } from '../src/main/architecture-review/timed-analysis'
 import {
   ArchitectureScanRecorder,
-  epochClock,
+  processClock,
+  type ProcessClock,
 } from '../src/main/architecture-review/scan-recorder'
+import { reportWorkerTimings } from '../src/main/architecture-review/worker-timings'
+import { translateClock } from '../src/main/architecture-review/wall-clock'
 import { localPath } from '../src/shared/host-path'
 import { expectMonotoneMetrics, stagesOf } from './architecture-scan-metrics-fixture'
 
@@ -71,38 +74,42 @@ describe('architecture analysis worker lifecycle', () => {
 })
 
 describe('architecture analysis worker timings', () => {
-  it('places spawn, transfer, parse, compare and return spans on the scan timeline', async () => {
-    const pair: ArchitectureCapture = {
-      root: localPath('/repo'),
-      mode: 'head',
-      baselineRevision: 'b',
-      currentRevision: 'c',
-      fingerprint: 'f',
-      before: [{ path: 'a.ts', content: 'export {}' }],
-      after: [{ path: 'a.ts', content: "import './b'" }],
-      exclusions: [],
-      capturedAt: 'now',
-    }
-    respond = (payload) => {
-      const readyEpochMs = epochClock()
-      const receivedEpochMs = epochClock()
-      const timed = analyzeCaptureTimed(payload as ArchitectureCapture)
+  const pair: ArchitectureCapture = {
+    root: localPath('/repo'),
+    mode: 'head',
+    baselineRevision: 'b',
+    currentRevision: 'c',
+    fingerprint: 'f',
+    before: [{ path: 'a.ts', content: 'export {}' }],
+    after: [{ path: 'a.ts', content: "import './b'" }],
+    exclusions: [],
+    capturedAt: 'now',
+  }
+  /** Answers the way the worker module does, reading `clock` as its own process clock. */
+  function workerAnswering(clock: ProcessClock) {
+    return (payload: unknown) => {
+      const readyMark = clock()
+      const receivedMark = clock()
+      const timed = analyzeCaptureTimed(payload as ArchitectureCapture, clock)
+      const marks = { readyMark, receivedMark, respondedMark: clock(), resultBytes: 321 }
       return Promise.resolve({
         analysis: timed.analysis,
-        timings: {
-          readyEpochMs,
-          receivedEpochMs,
-          respondedEpochMs: epochClock(),
-          resultBytes: 321,
-          stages: timed.stages,
-        },
+        timings: reportWorkerTimings(
+          { ...marks, stages: timed.stages },
+          translateClock(clock),
+        ),
       })
     }
+  }
+
+  it('places spawn, transfer, parse, compare and return spans on the scan timeline', async () => {
+    respond = workerAnswering(processClock)
     const recorder = new ArchitectureScanRecorder()
     const analysis = await analyzeInWorker(pair, new AbortController().signal, recorder)
     expect(analysis.modules.map((module) => module.path)).toEqual(['a.ts'])
     const metrics = recorder.metrics()
     expectMonotoneMetrics(metrics)
+    expect(metrics.timingFaults).toEqual([])
     expect(stagesOf(metrics)).toEqual([
       'compare',
       'parse',
@@ -119,25 +126,47 @@ describe('architecture analysis worker timings', () => {
     })
   })
 
-  it('rejects malformed worker timings rather than recording them', async () => {
+  // Main's monotonic clock stops while the machine sleeps; a freshly spawned worker's does
+  // not carry that lag, so the two process clocks disagree by the sleep main lived through.
+  it.each([30, 150, -150, 60_000, 3_600_000])(
+    'places worker spans when main and worker process clocks disagree by %i ms',
+    async (skewMs) => {
+      respond = workerAnswering(() => processClock() + skewMs)
+      const recorder = new ArchitectureScanRecorder()
+      await analyzeInWorker(pair, new AbortController().signal, recorder)
+      const metrics = recorder.metrics()
+      expect(metrics.timingFaults).toEqual([])
+      expectMonotoneMetrics(metrics)
+      expect(stagesOf(metrics)).toContain('parse')
+      expect(metrics.totalMs).toBeLessThan(10_000)
+    },
+  )
+
+  it('keeps the analysis and reports a timing fault when the timings are malformed', async () => {
+    const modules = [{ path: 'kept.ts' }]
     respond = () =>
       Promise.resolve({
-        analysis: { modules: [] },
+        analysis: { modules },
         timings: { readyEpochMs: 'soon', stages: [] },
       })
-    await expect(
-      analyzeInWorker(
-        { ...capture, before: [], after: [] },
-        new AbortController().signal,
-        new ArchitectureScanRecorder(),
-      ),
-    ).rejects.toThrow(/timings/)
+    const recorder = new ArchitectureScanRecorder()
+    const analysis = await analyzeInWorker(
+      { ...capture, before: [], after: [] },
+      new AbortController().signal,
+      recorder,
+    )
+    expect(analysis.modules).toBe(modules)
+    const metrics = recorder.metrics()
+    expect(metrics.spans).toEqual([])
+    expect(metrics.timingFaults).toEqual([
+      'Worker stages not shown: Architecture worker returned malformed timings',
+    ])
   })
 
   const emptyPair = { ...capture, before: [], after: [] }
-  /** Timings a well-behaved worker would report for a scan that starts now. */
+  /** Wall-clock timings a well-behaved worker would report for a request made now. */
   function plausibleTimings() {
-    const now = epochClock()
+    const now = Date.now()
     return {
       readyEpochMs: now + 1,
       receivedEpochMs: now + 2,
@@ -198,25 +227,31 @@ describe('architecture analysis worker timings', () => {
       'a stage outside the request it belongs to',
       (t: Timings) => withStage(t, { startEpochMs: t.readyEpochMs - 1_000 }),
     ],
+    [
+      'a stage stamped after the worker returned',
+      (t: Timings) => withStage(t, { endEpochMs: t.respondedEpochMs + 1_000 }),
+    ],
     ['a fractional result size', (t: Timings) => ({ ...t, resultBytes: 1.5 })],
-  ])('rejects %s', async (_label, corrupt) => {
+  ])('records no worker span for %s', async (_label, corrupt) => {
     respond = () =>
       Promise.resolve({
         analysis: { modules: [] },
         timings: corrupt(plausibleTimings()),
       })
     const recorder = new ArchitectureScanRecorder()
-    await expect(
-      analyzeInWorker(emptyPair, new AbortController().signal, recorder),
-    ).rejects.toThrow(/timings/)
-    expect(recorder.metrics().spans).toEqual([])
+    await analyzeInWorker(emptyPair, new AbortController().signal, recorder)
+    const metrics = recorder.metrics()
+    expect(metrics.spans).toEqual([])
+    expect(metrics.timingFaults).toHaveLength(1)
+    expect(metrics.timingFaults[0]).toMatch(/malformed timings/)
   })
 
-  it('accepts plausible timings from a real worker', async () => {
+  it('accepts plausible wall-clock timings', async () => {
     respond = () =>
       Promise.resolve({ analysis: { modules: [] }, timings: plausibleTimings() })
     const recorder = new ArchitectureScanRecorder()
     await analyzeInWorker(emptyPair, new AbortController().signal, recorder)
+    expect(recorder.metrics().timingFaults).toEqual([])
     expectMonotoneMetrics(recorder.metrics())
   })
 })

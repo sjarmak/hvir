@@ -1,21 +1,21 @@
 import type { ArchitectureAnalysis, ArchitectureScanInput } from '../../shared'
 import type { ArchitectureCapture } from '../../shared/architecture-review'
 import { compareArchitecture, scanArchitecture } from './analysis'
-import { epochClock, type EpochClock } from './scan-recorder'
+import { processClock, type ProcessClock } from './scan-recorder'
 
-/** One analysis stage timed in the process that ran it, on the wall clock. */
-export interface EpochStage {
+/** One analysis stage, marked on the clock of the process that ran it. */
+export interface TimedStage {
   readonly stage: 'parse' | 'compare'
   readonly side?: 'baseline' | 'current'
-  readonly startEpochMs: number
-  readonly endEpochMs: number
+  readonly startMark: number
+  readonly endMark: number
   readonly bytes: number
   readonly items: number
 }
 
 export interface TimedArchitectureAnalysis {
   readonly analysis: ArchitectureAnalysis
-  readonly stages: readonly EpochStage[]
+  readonly stages: readonly TimedStage[]
 }
 
 /** The scan inputs for both ends of one already-captured pair. */
@@ -33,17 +33,17 @@ export function captureScanInputs(
 /** Analyze one captured pair, timing each end's parse and the comparison; no host I/O. */
 export function analyzeCaptureTimed(
   capture: ArchitectureCapture,
-  clock: EpochClock = epochClock,
+  clock: ProcessClock = processClock,
 ): TimedArchitectureAnalysis {
   const [baselineInput, currentInput] = captureScanInputs(capture)
   const parse = (input: ArchitectureScanInput, side: 'baseline' | 'current') => {
-    const startEpochMs = clock()
+    const startMark = clock()
     const result = scanArchitecture(input)
-    const stage: EpochStage = {
+    const stage: TimedStage = {
       stage: 'parse',
       side,
-      startEpochMs,
-      endEpochMs: clock(),
+      startMark,
+      endMark: clock(),
       bytes: input.files.reduce(
         (total, file) => total + Buffer.byteLength(file.content),
         0,
@@ -56,10 +56,10 @@ export function analyzeCaptureTimed(
   const current = parse(currentInput, 'current')
   const compareStart = clock()
   const analysis = compareArchitecture(baseline.result, current.result)
-  const compare: EpochStage = {
+  const compare: TimedStage = {
     stage: 'compare',
-    startEpochMs: compareStart,
-    endEpochMs: clock(),
+    startMark: compareStart,
+    endMark: clock(),
     bytes: 0,
     items: analysis.imports.length,
   }

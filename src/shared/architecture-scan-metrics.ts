@@ -38,6 +38,8 @@ export interface ArchitectureScanMetrics {
   readonly spans: readonly ArchitectureStageSpan[]
   /** Milliseconds from the scan start to the snapshot being complete. */
   readonly totalMs: number
+  /** Why stages that ran have no span, such as worker timings main could not place. */
+  readonly timingFaults: readonly string[]
 }
 
 export interface ArchitectureStageTotal {

@@ -35,8 +35,8 @@ it('times each side parse and the comparison without changing the analysis', () 
   expect(timed.stages[1]).toMatchObject({ items: 2, bytes: 30 })
   let previous = 0
   for (const stage of timed.stages) {
-    expect(stage.startEpochMs).toBeGreaterThanOrEqual(previous)
-    expect(stage.endEpochMs).toBeGreaterThanOrEqual(stage.startEpochMs)
-    previous = stage.endEpochMs
+    expect(stage.startMark).toBeGreaterThanOrEqual(previous)
+    expect(stage.endMark).toBeGreaterThanOrEqual(stage.startMark)
+    previous = stage.endMark
   }
 })

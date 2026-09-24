@@ -8,6 +8,21 @@ interface ArchitectureScanTimingsProps {
 /** Per-stage cost of the scan that produced this snapshot (ADR-063). */
 export function ArchitectureScanTimings({ metrics }: ArchitectureScanTimingsProps) {
   return (
+    <>
+      <ScanTimingTable metrics={metrics} />
+      {metrics.timingFaults.length > 0 && (
+        <ul className="architecture-review-timing-faults" aria-label="Scan timing faults">
+          {metrics.timingFaults.map((fault) => (
+            <li key={fault}>{fault}</li>
+          ))}
+        </ul>
+      )}
+    </>
+  )
+}
+
+function ScanTimingTable({ metrics }: ArchitectureScanTimingsProps) {
+  return (
     <table className="architecture-review-timings" aria-label="Scan timings">
       <caption>Scan timings · {formatScanMs(metrics.totalMs)} total</caption>
       <thead>

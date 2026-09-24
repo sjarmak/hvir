@@ -16,6 +16,7 @@ it('formats durations and transfer sizes for the snapshot details', () => {
 it('builds one row per stage that ran, in pipeline order', () => {
   const rows = scanTimingRows({
     totalMs: 10,
+    timingFaults: [],
     spans: [
       {
         stage: 'parse',

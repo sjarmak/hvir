@@ -37,6 +37,9 @@ const snapshot = {
   capturedAt: '2026-09-23',
   metrics: {
     totalMs: 42.5,
+    timingFaults: [
+      'Worker stages not shown: Architecture worker returned malformed timings',
+    ],
     spans: [
       { stage: 'listing', startMs: 0, durationMs: 2, bytes: 900, items: 3, hostCalls: 2 },
       {
@@ -249,4 +252,8 @@ it('shows per-stage scan cost in the snapshot details', async () => {
     ['listing', '2.0 ms', '900 B', '3', '2'],
     ['live-read', '30.3 ms', '2.4 MB', '10', '30'],
   ])
+  const faults = host.querySelector('[aria-label="Scan timing faults"]')
+  expect(faults?.textContent).toBe(
+    'Worker stages not shown: Architecture worker returned malformed timings',
+  )
 })
