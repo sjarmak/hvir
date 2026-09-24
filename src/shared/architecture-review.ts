@@ -72,7 +72,12 @@ export const ARCHITECTURE_SCOPE = {
     'vendor',
     '__pycache__',
     '.venv',
+    'venv',
+    'site-packages',
     '.tox',
+    '.nox',
+    '.mypy_cache',
+    '.pytest_cache',
   ],
   extensions: ['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'py'],
 } as const
