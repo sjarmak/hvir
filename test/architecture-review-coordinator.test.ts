@@ -7,6 +7,7 @@ import type { ArchitectureCapture } from '../src/shared/architecture-review'
 import type { ArchitectureAnalysis } from '../src/shared/architecture-analysis'
 import type { ArchitectureScanRecorder } from '../src/main/architecture-review/scan-recorder'
 import type { captureArchitecture } from '../src/main/architecture-review/capture'
+import type { readArchitectureLiveState } from '../src/main/architecture-review/freshness'
 import { expectMonotoneMetrics, stagesOf } from './architecture-scan-metrics-fixture'
 import { gitBlobId } from '../src/main/architecture-review/blob-id'
 
@@ -61,8 +62,17 @@ function setup(
       imports: [],
     }),
   )
-  const coordinator = new ArchitectureReviewCoordinator({ resources, capture, analyze })
+  const liveState = vi.fn<typeof readArchitectureLiveState>(() =>
+    Promise.resolve('live-state'),
+  )
+  const coordinator = new ArchitectureReviewCoordinator({
+    resources,
+    capture,
+    liveState,
+    analyze,
+  })
   return {
+    liveState,
     resources,
     owner,
     host,
@@ -102,10 +112,10 @@ it('returns captured deleted-source evidence and rejects a different host or ren
     }),
   ).rejects.toThrow()
 })
-it('marks changed content stale while keeping the pinned pair', async () => {
+it('marks a changed live state stale while keeping the pinned pair, without recapture', async () => {
   const f = setup()
   const result = await f.coordinator.scan(f.owner, f.host, f.request)
-  f.capture.mockResolvedValue({ ...snapshot, fingerprint: 'edited' })
+  f.liveState.mockResolvedValue('edited')
   const evidence = await f.coordinator.evidence(f.owner, f.host, {
     root,
     reviewId: 'tab-1',
@@ -114,6 +124,7 @@ it('marks changed content stale while keeping the pinned pair', async () => {
   })
   expect(evidence.stale).toBe(true)
   expect(evidence.diff.baseInput.content).toBe('before')
+  expect(f.capture).toHaveBeenCalledTimes(1)
 })
 it('revokes pending capture on workspace close and rejects its late completion', async () => {
   let resolve!: (value: ArchitectureCapture) => void
@@ -127,6 +138,7 @@ it('revokes pending capture on workspace close and rejects its late completion',
   )
   const pending = f.coordinator.scan(f.owner, f.host, f.request)
   const rejected = expect(pending).rejects.toThrow(/cancel|revoked/i)
+  await vi.waitFor(() => expect(f.capture).toHaveBeenCalled())
   await f.resources.revokeWorkspace(root)
   resolve(snapshot)
   await rejected
@@ -179,7 +191,7 @@ it('refuses stale prepared launches and revokes preview authority with the works
     snapshotId: result.id,
     path: localPath('/repo/a.ts'),
   })
-  f.capture.mockResolvedValue({ ...snapshot, fingerprint: 'edited' })
+  f.liveState.mockResolvedValue('edited')
   await expect(f.coordinator.launchPayload(f.owner, f.host, preview)).rejects.toThrow(
     /stale/,
   )
@@ -223,7 +235,7 @@ it('releases workspace ownership when connection subscription setup fails', asyn
   expect(register).toHaveBeenCalledTimes(6)
 })
 
-it('returns unchecked pinned evidence without recapturing, but cannot skip launch validation', async () => {
+it('returns unchecked pinned evidence without a host read, but cannot skip launch validation', async () => {
   const f = setup()
   const result = await f.coordinator.scan(f.owner, f.host, f.request)
   const request = {
@@ -232,11 +244,11 @@ it('returns unchecked pinned evidence without recapturing, but cannot skip launc
     path: localPath('/repo/a.ts'),
     capturedOnly: true,
   }
-  f.capture.mockRejectedValue(new Error('host unavailable'))
+  f.liveState.mockRejectedValue(new Error('host unavailable'))
   const evidence = await f.coordinator.evidence(f.owner, f.host, request)
   expect(evidence.stale).toBeNull()
   expect(evidence.diff.baseInput.content).toBe('before')
-  expect(f.capture).toHaveBeenCalledTimes(1)
+  expect(f.liveState).toHaveBeenCalledTimes(1)
   await expect(f.coordinator.prepare(f.owner, f.host, request)).rejects.toThrow(
     'host unavailable',
   )

@@ -65,7 +65,7 @@ export interface ArchitectureReviewSnapshot extends Omit<
 export interface ArchitectureEvidenceRequest extends ArchitectureReviewKey {
   readonly snapshotId: string
   readonly path: HostPath
-  /** Read pinned bytes immediately; launch preparation always revalidates. */
+  /** Read pinned bytes without the freshness check; launch preparation always checks. */
   readonly capturedOnly?: boolean
 }
 export interface ArchitectureEvidence {

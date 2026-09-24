@@ -212,6 +212,18 @@ it('records listing, blob, one live-read and hashing spans for a working-tree sc
   ).toBeGreaterThan(2)
 })
 
+it('reads a workspace below the repository root in every live mode', async () => {
+  const f = await fixture()
+  await writeFile(join(f.root, 'src/b.ts'), 'export const b = 2\n')
+  for (const mode of ['head', 'working-tree'] as const) {
+    const capture = await captureArchitecture(
+      f.host,
+      { root: localPath(join(f.root, 'src')), mode },
+      new AbortController().signal,
+    )
+    expect(capture.after.map((file) => file.path)).toEqual(['a.ts', 'b.ts'])
+  }
+})
 it('reads any number of live files in one host command', async () => {
   const f = await fixture()
   for (let index = 0; index < 40; index += 1)

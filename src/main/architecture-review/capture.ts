@@ -17,6 +17,7 @@ import {
   selectEntries,
   type CaptureEntry,
 } from './capture-entries'
+import { hasLiveCurrent } from './freshness'
 import { readLiveTree } from './live-tree'
 import { ArchitectureScanRecorder } from './scan-recorder'
 
@@ -38,7 +39,7 @@ export async function captureArchitecture(
   recorder: ArchitectureScanRecorder = new ArchitectureScanRecorder(),
 ): Promise<ArchitectureCapture> {
   signal.throwIfAborted()
-  validateRequest(host, request)
+  validateArchitectureRequest(host, request)
   const counted: Counted = (call) => {
     recorder.countHostCall()
     return call()
@@ -59,7 +60,7 @@ export async function captureArchitecture(
         items: output.split(/[\0\n]/).filter(Boolean).length,
       }),
     )
-  const live = request.mode !== 'branch-point'
+  const live = hasLiveCurrent(request.mode)
   const currentRevision = (await run(['rev-parse', '--verify', 'HEAD'])).trim()
   const baselineRevision = await resolveBaseline(request, currentRevision, run, () =>
     recorder.measure(
@@ -211,7 +212,10 @@ function countedGitContext(
     request.root,
   )
 }
-function validateRequest(host: ProjectHost, request: ArchitectureCaptureRequest): void {
+export function validateArchitectureRequest(
+  host: ProjectHost,
+  request: ArchitectureCaptureRequest,
+): void {
   if (
     request.root.hostId !== host.hostId ||
     !request.root.path.startsWith('/') ||

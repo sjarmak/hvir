@@ -57,7 +57,7 @@ export function parseLivePaths(output: string): readonly CaptureEntry[] {
 /** Unique in-scope entries in path order, each checked before any byte is read. */
 export function selectEntries(entries: readonly CaptureEntry[]): readonly CaptureEntry[] {
   const unique = [...new Map(entries.map((entry) => [entry.path, entry])).values()]
-    .filter((entry) => included(entry.path))
+    .filter((entry) => inArchitectureScope(entry.path))
     .sort((a, b) => a.path.localeCompare(b.path))
   if (unique.length > SCOPE.maxFiles)
     throw new Error(
@@ -85,7 +85,8 @@ function assertRelative(path: string): void {
     throw new Error('Invalid repository source path')
 }
 
-function included(path: string): boolean {
+/** Sources and the configs that resolve them, outside the excluded directories. */
+export function inArchitectureScope(path: string): boolean {
   return (
     !path
       .split('/')

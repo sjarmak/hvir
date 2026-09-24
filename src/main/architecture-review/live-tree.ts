@@ -29,14 +29,17 @@ export const SOURCES_CHANGED =
  * file, tar streams them, and Git hashes them again: bytes that match both hash passes were
  * on disk, unchanged, across the whole read. That is the consistency check the old second
  * full read performed, for the cost of one object id per file instead of every byte again.
+ * Git resolves --stdin-paths from the repository root, so a workspace below it prefixes them.
  */
 const SCRIPT = `
 while IFS= read -r directory && [ -n "$directory" ]; do
   if [ -L "$directory" ]; then printf '%s\\n' "$directory" >&2; exit ${SYMLINK_EXIT}; fi
 done
 paths=$(cat)
+prefix=$(git rev-parse --show-prefix) || exit ${HASH_EXIT}
 objects() {
-  printf '%s\\n' "$paths" | git hash-object --no-filters --stdin-paths || exit ${HASH_EXIT}
+  printf '%s\\n' "$paths" | while IFS= read -r path; do printf '%s%s\\n' "$prefix" "$path"; done |
+    git hash-object --no-filters --stdin-paths || exit ${HASH_EXIT}
 }
 objects
 printf '%s\\n' "$paths" | tr '\\n' '\\0' | xargs -0 tar -cf - --

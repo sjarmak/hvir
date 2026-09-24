@@ -18,7 +18,8 @@ import type {
   RendererResourceLease,
   RendererResourceScopes,
 } from '../renderer-resource-scopes'
-import { captureArchitecture } from './capture'
+import { captureArchitecture, validateArchitectureRequest } from './capture'
+import { hasLiveCurrent, readArchitectureLiveState } from './freshness'
 import { ArchitectureScanRecorder } from './scan-recorder'
 import { architectureReviewPrompt, architecturePromptDigest } from './prompt'
 
@@ -26,6 +27,7 @@ const MAX_REVIEWS = 4
 export interface ArchitectureReviewPorts {
   readonly resources: RendererResourceScopes
   readonly capture?: typeof captureArchitecture
+  readonly liveState?: typeof readArchitectureLiveState
   readonly analyze: (
     capture: ArchitectureCapture,
     signal: AbortSignal,
@@ -39,6 +41,8 @@ interface Review {
   readonly lease: RendererResourceLease
   readonly stopConnection?: () => void | Promise<void>
   readonly capture?: ArchitectureCapture
+  /** Live state read before capture; absent when both ends are commits. */
+  readonly liveState?: string
   readonly launched?: boolean
   readonly snapshot?: ArchitectureReviewSnapshot
 }
@@ -80,7 +84,7 @@ export class ArchitectureReviewCoordinator {
       }
       this.reviews.set(key, review)
       const recorder = new ArchitectureScanRecorder()
-      const capture = await (this.ports.capture ?? captureArchitecture)(
+      const { capture, liveState } = await this.capture(
         host,
         request,
         controller.signal,
@@ -101,7 +105,7 @@ export class ArchitectureReviewCoordinator {
         ...payload,
         metrics: recorder.metrics(),
       }
-      this.reviews.set(key, { ...review, capture, snapshot })
+      this.reviews.set(key, { ...review, capture, liveState, snapshot })
       return snapshot
     } catch (error) {
       if (this.reviews.get(key)?.controller === controller) this.close(owner, request)
@@ -130,18 +134,11 @@ export class ArchitectureReviewCoordinator {
       hostPathEquals(joinHostPath(capture.root, file.path), request.path),
     )
     if (!source) throw new Error('Path is not evidence in this architecture snapshot')
-    const current =
-      request.capturedOnly === true
-        ? undefined
-        : await (this.ports.capture ?? captureArchitecture)(
-            host,
-            review.request,
-            review.controller.signal,
-          )
+    const stale = request.capturedOnly === true ? null : await this.isStale(review)
     this.assertLive(owner, key, review.controller)
     return {
       snapshotId: review.snapshot.id,
-      stale: current ? current.fingerprint !== capture.fingerprint : null,
+      stale,
       diff: {
         path: request.path,
         base: capture.mode === 'commit' ? 'head' : capture.mode,
@@ -241,6 +238,48 @@ export class ArchitectureReviewCoordinator {
       review.lease.release()
     }
     this.reviews.clear()
+  }
+  /** The live state is read first: an edit racing the capture can only make it stale. */
+  private async capture(
+    host: ProjectHost,
+    request: ArchitectureReviewRequest,
+    signal: AbortSignal,
+    recorder: ArchitectureScanRecorder,
+  ): Promise<{ capture: ArchitectureCapture; liveState?: string }> {
+    validateArchitectureRequest(host, request)
+    const liveState = hasLiveCurrent(request.mode)
+      ? await this.readLiveState(host, request, signal, recorder)
+      : undefined
+    const capture = await (this.ports.capture ?? captureArchitecture)(
+      host,
+      request,
+      signal,
+      recorder,
+    )
+    return { capture, liveState }
+  }
+  /** A commit pair never goes stale; a live end is compared by its cheap state digest. */
+  private async isStale(review: Review): Promise<boolean> {
+    if (review.liveState === undefined) return false
+    const current = await this.readLiveState(
+      review.host,
+      review.request,
+      review.controller.signal,
+    )
+    return current !== review.liveState
+  }
+  private readLiveState(
+    host: ProjectHost,
+    request: ArchitectureReviewRequest,
+    signal: AbortSignal,
+    recorder?: ArchitectureScanRecorder,
+  ): Promise<string> {
+    return (this.ports.liveState ?? readArchitectureLiveState)(
+      host,
+      request.root,
+      signal,
+      recorder,
+    )
   }
   private assertLive(
     owner: RendererOwner,
