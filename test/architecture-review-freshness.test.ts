@@ -171,3 +171,42 @@ it('checks a workspace below the repository root against its own paths', async (
   await appendFile(join(root, 'src/a.ts'), 'export const edited = 2\n')
   expect(await read()).not.toBe(before)
 })
+
+async function conflicted(root: string) {
+  git(root, 'checkout', '-b', 'theirs', 'main')
+  await writeFile(join(root, 'src/a.ts'), 'export const a = "theirs"\n')
+  git(root, 'commit', '-am', 'theirs')
+  git(root, 'checkout', 'feature')
+  await writeFile(join(root, 'src/a.ts'), 'export const a = "ours"\n')
+  git(root, 'commit', '-am', 'ours')
+  expect(() => git(root, 'merge', 'theirs')).toThrow()
+  expect(git(root, 'status', '--porcelain', '--', 'src/a.ts')).toBe('UU src/a.ts')
+}
+
+it('notices an edit to a file with an unresolved merge conflict', async () => {
+  const root = await repository()
+  await conflicted(root)
+  const review = await reviewOf(root, 'head')
+  expect(await review.stale()).toBe(false)
+  await appendFile(join(root, 'src/a.ts'), 'export const resolved = 2\n')
+  expect(await review.stale()).toBe(true)
+  expect(review.capture).toHaveBeenCalledTimes(1)
+})
+
+it('tolerates a conflicted file removed from the working tree', async () => {
+  const root = await repository()
+  await conflicted(root)
+  const review = await reviewOf(root, 'head')
+  await rm(join(root, 'src/a.ts'))
+  expect(await review.stale()).toBe(true)
+})
+
+it('notices an edit to a file marked assume-unchanged', async () => {
+  const root = await repository()
+  git(root, 'update-index', '--assume-unchanged', 'src/a.ts')
+  const review = await reviewOf(root, 'working-tree')
+  expect(await review.stale()).toBe(false)
+  await appendFile(join(root, 'src/a.ts'), 'export const hidden = 2\n')
+  expect(git(root, 'status', '--porcelain')).toBe('')
+  expect(await review.stale()).toBe(true)
+})

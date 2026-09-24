@@ -15,24 +15,49 @@ export function hasLiveCurrent(mode: ArchitectureComparisonMode): boolean {
 }
 
 /**
- * HEAD, the workspace prefix, the staged entries and the porcelain status, in one host
- * command. Every -z record is non-empty, so an empty record marks the end of a section.
+ * HEAD, the workspace prefix, the tagged staged entries and the porcelain status, in one
+ * host command. Every -z record is non-empty, so an empty record marks the end of a
+ * section. The -v tag is lowercase for an assume-unchanged entry, which status never
+ * reports although a capture reads its working-tree bytes.
  */
 const SCRIPT = `
 set -e
 head=$(git rev-parse --verify HEAD)
 prefix=$(git rev-parse --show-prefix)
 printf 'h%s\\0p%s\\0\\0' "$head" "$prefix"
-git ls-files --stage -z -- .
+git ls-files --stage -v -z -- .
 printf '\\0'
 git status --porcelain=v1 -z --untracked-files=all --no-renames -- .
 printf '\\0'
 `
 
+/**
+ * One existence flag per path read from stdin, then the blob id of each present path.
+ * Paths are relative to the repository root, so the check runs from there as
+ * `git hash-object --stdin-paths` does. A conflicted or assume-unchanged path may be gone.
+ */
+const HASH_SCRIPT = `
+set -e
+cd "$(git rev-parse --show-toplevel)"
+nl='
+'
+present=''
+while IFS= read -r path; do
+  if [ -f "$path" ] || [ -L "$path" ]; then
+    printf '1\\n'
+    present="$present$path$nl"
+  else
+    printf '0\\n'
+  fi
+done
+printf '\\0'
+if [ -n "$present" ]; then
+  printf '%s' "$present" | git hash-object --no-filters --stdin-paths
+fi
+`
+
 interface StatusEntry {
   readonly code: string
-  /** Relative to the workspace root, as the scan names it. */
-  readonly path: string
   /** Relative to the repository root, as `git hash-object --stdin-paths` resolves it. */
   readonly repositoryPath: string
 }
@@ -52,7 +77,9 @@ export async function readArchitectureLiveState(
   if (root.hostId !== host.hostId) throw new Error('Invalid architecture workspace')
   const exec = checkedExec(host, root, signal, recorder)
   const state = parseState(await exec('sh', ['-c', SCRIPT, 'hvir-architecture-state']))
-  const objects = await worktreeObjects(exec, state.status)
+  const objects = await worktreeObjects(exec, [
+    ...new Set([...state.status.map((entry) => entry.repositoryPath), ...state.hidden]),
+  ])
   return createHash('sha256')
     .update(JSON.stringify({ ...state, objects }))
     .digest('hex')
@@ -89,22 +116,29 @@ function checkedExec(
     })
 }
 
-/** Blob ids of the files whose working-tree bytes differ from the index; none when clean. */
+/** Blob id, or null when absent, of each working-tree path; none when there are none. */
 async function worktreeObjects(
   exec: CheckedExec,
-  status: readonly StatusEntry[],
-): Promise<readonly string[]> {
-  const hashed = status.filter((entry) => /[MTA?]/.test(entry.code[1] ?? ''))
-  if (hashed.length === 0) return []
+  paths: readonly string[],
+): Promise<readonly (string | null)[]> {
+  if (paths.length === 0) return []
   const output = await exec(
-    'git',
-    ['hash-object', '--no-filters', '--stdin-paths'],
-    stdinPaths(hashed.map((entry) => entry.repositoryPath)),
+    'sh',
+    ['-c', HASH_SCRIPT, 'hvir-architecture-objects'],
+    stdinPaths(paths),
   )
-  const objects = output.split('\n').filter(Boolean)
-  if (objects.length !== hashed.length)
+  const [flagText = '', objectText = '', ...rest] = output.split('\0')
+  const flags = flagText.split('\n').filter(Boolean)
+  const objects = objectText.split('\n').filter(Boolean)
+  if (
+    rest.length !== 0 ||
+    flags.length !== paths.length ||
+    flags.some((flag) => flag !== '0' && flag !== '1') ||
+    objects.length !== flags.filter((flag) => flag === '1').length
+  )
     throw new Error('Architecture freshness check returned a different file set')
-  return objects
+  let next = 0
+  return flags.map((flag) => (flag === '1' ? objects[next++]! : null))
 }
 
 /** A scan's state read is a listing like any other and is credited to its recorder. */
@@ -133,13 +167,20 @@ function parseState(output: string) {
     !prefix?.startsWith('p')
   )
     throw new Error('Malformed architecture freshness output')
+  const index = staged!.filter((record) => inArchitectureScope(stagedPath(record)))
   return {
     head: head.slice(1),
-    index: staged!.filter((record) =>
-      inArchitectureScope(record.slice(record.indexOf('\t') + 1)),
-    ),
+    index,
     status: parseStatus(status!, prefix.slice(1)),
+    hidden: index
+      .filter((record) => /^[a-z] /.test(record))
+      .map((record) => prefix.slice(1) + stagedPath(record)),
   }
+}
+
+/** `git ls-files --stage -v` paths are relative to the workspace root. */
+function stagedPath(record: string): string {
+  return record.slice(record.indexOf('\t') + 1)
 }
 
 function splitSections(output: string): readonly (readonly string[])[] {
@@ -158,13 +199,9 @@ function parseStatus(records: readonly string[], prefix: string): readonly Statu
       const path = record.slice(3)
       if (record[2] !== ' ' || !path.startsWith(prefix))
         throw new Error('Invalid Git status entry')
-      return {
-        code: record.slice(0, 2),
-        path: path.slice(prefix.length),
-        repositoryPath: path,
-      }
+      return { code: record.slice(0, 2), repositoryPath: path }
     })
-    .filter((entry) => inArchitectureScope(entry.path))
+    .filter((entry) => inArchitectureScope(entry.repositoryPath.slice(prefix.length)))
 }
 
 function stdinPaths(paths: readonly string[]): string {
