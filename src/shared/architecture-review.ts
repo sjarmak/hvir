@@ -116,7 +116,9 @@ export interface ArchitectureReviewLaunch extends ArchitectureEvidenceRequest {
   readonly digest: string
 }
 export interface ArchitecturePreparedReview extends ArchitectureReviewLaunch {
+  /** The agent's prompt, which points at the brief. */
   readonly body: string
+  readonly handoff: import('./architecture-handoff').ArchitectureHandoffPlan
 }
 
 /** A commit on the strip, with the first parent pairwise stepping compares it to. */

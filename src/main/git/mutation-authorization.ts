@@ -7,8 +7,10 @@ import {
 } from '../../shared'
 import type { ProjectHost } from '../project-host'
 import { GIT_FETCH_ARGS, GIT_PULL_ARGS } from './git-engine'
+import { isHvirWorktreeTarget, type HvirWorktreeTarget } from './hvir-worktrees'
 
-export type GitMutationKind = 'worktree-prune' | 'branch-switch' | 'fetch' | 'pull'
+export type GitMutationKind =
+  'worktree-prune' | 'worktree-add' | 'branch-switch' | 'fetch' | 'pull'
 
 export type GitMutationGrantRequest =
   | {
@@ -18,7 +20,14 @@ export type GitMutationGrantRequest =
       readonly target: string
     }
   | {
-      readonly kind: Exclude<GitMutationKind, 'branch-switch'>
+      /** Creates the one worktree a review handoff owns (ADR-063). */
+      readonly kind: 'worktree-add'
+      readonly projectId: string
+      readonly root: HostPath
+      readonly target: HvirWorktreeTarget
+    }
+  | {
+      readonly kind: Exclude<GitMutationKind, 'branch-switch' | 'worktree-add'>
       readonly projectId: string
       readonly root: HostPath
       readonly target?: never
@@ -32,6 +41,7 @@ export interface GitMutationAuthority {
 
 export interface GitHostCallPermissions {
   readonly allowWorktreePrune?: boolean
+  readonly allowWorktreeAdd?: HvirWorktreeTarget
   readonly allowBranchSwitch?: string
   readonly allowFetch?: boolean
   readonly allowPull?: boolean
@@ -63,6 +73,7 @@ interface DenialRecord {
 interface WorkerMutation {
   readonly kind: GitMutationKind
   readonly root: HostPath
+  /** The exact grant key part: a branch name, or a serialized worktree target. */
   readonly target?: string
 }
 
@@ -220,6 +231,15 @@ function workerMutation(call: WorkerHostCall): WorkerMutation | undefined {
   if (root.path !== rawRoot) return undefined
   const command = call.args.slice(2)
   if (sameArgs(command, PRUNE_ARGS)) return { kind: 'worktree-prune', root }
+  if (
+    command.length === 6 &&
+    command[0] === 'worktree' &&
+    command[1] === 'add' &&
+    command[2] === '-b'
+  ) {
+    const [, , , branch = '', path = '', commit = ''] = command
+    return { kind: 'worktree-add', root, target: worktreeKey({ branch, path, commit }) }
+  }
   if (sameArgs(command, GIT_FETCH_ARGS)) return { kind: 'fetch', root }
   if (sameArgs(command, GIT_PULL_ARGS)) return { kind: 'pull', root }
   if (
@@ -237,6 +257,8 @@ function permissions(request: GitMutationGrantRequest): GitHostCallPermissions {
   switch (request.kind) {
     case 'worktree-prune':
       return { allowWorktreePrune: true }
+    case 'worktree-add':
+      return { allowWorktreeAdd: request.target }
     case 'branch-switch':
       return { allowBranchSwitch: request.target }
     case 'fetch':
@@ -277,7 +299,17 @@ function validateGrantRequest(request: GitMutationGrantRequest): void {
   ) {
     throw new Error('Invalid Git mutation target')
   }
-  if (request.kind !== 'branch-switch' && request.target !== undefined) {
+  if (
+    request.kind === 'worktree-add' &&
+    !isHvirWorktreeTarget(request.root.path, request.target)
+  ) {
+    throw new Error('Invalid Git mutation target')
+  }
+  if (
+    request.kind !== 'branch-switch' &&
+    request.kind !== 'worktree-add' &&
+    request.target !== undefined
+  ) {
     throw new Error('Invalid Git mutation target')
   }
 }
@@ -285,6 +317,7 @@ function validateGrantRequest(request: GitMutationGrantRequest): void {
 function isGitMutationKind(value: string): value is GitMutationKind {
   return (
     value === 'worktree-prune' ||
+    value === 'worktree-add' ||
     value === 'branch-switch' ||
     value === 'fetch' ||
     value === 'pull'
@@ -296,8 +329,16 @@ function grantKey(request: GitMutationGrantRequest): string {
     request.projectId,
     request.root,
     request.kind,
-    request.kind === 'branch-switch' ? request.target : undefined,
+    request.kind === 'branch-switch'
+      ? request.target
+      : request.kind === 'worktree-add'
+        ? worktreeKey(request.target)
+        : undefined,
   )
+}
+
+function worktreeKey(target: HvirWorktreeTarget): string {
+  return JSON.stringify([target.branch, target.path, target.commit])
 }
 
 function exactGrantKey(
@@ -311,7 +352,7 @@ function exactGrantKey(
     root.hostId,
     root.path,
     kind,
-    kind === 'branch-switch' ? target : null,
+    kind === 'branch-switch' || kind === 'worktree-add' ? target : null,
   ])
 }
 

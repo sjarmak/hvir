@@ -56,7 +56,9 @@ function mutationCall(
   }
 }
 
-function grantRequest(kind: GitMutationGrantRequest['kind']): GitMutationGrantRequest {
+function grantRequest(
+  kind: Exclude<GitMutationGrantRequest['kind'], 'worktree-add'>,
+): GitMutationGrantRequest {
   return kind === 'branch-switch'
     ? { kind, projectId: 'project-1', root, target: 'feature/one' }
     : { kind, projectId: 'project-1', root }

@@ -130,6 +130,7 @@ highlighting without turning hvir into an IDE.
 
 > Lifecycle: Partially superseded
 > Superseded by: [ADR-021](adr/ADR-021-system-git-dirty-navigation-safety.md) | partial | Clean-worktree navigation prerequisite and handing every dirty branch switch or pull to the terminal.
+> Superseded by: [ADR-063](adr/ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | Creating no branch at all; the architecture review creates one hvir/architecture/ branch per agent launch.
 
 System Git runs behind an off-thread engine and a main-owned `ProjectHost` broker; the few
 mutations hvir exposes are exact, bounded navigation operations.
@@ -157,6 +158,7 @@ sandboxed HTML rendering.
 > Superseded by: [ADR-024](adr/ADR-024-demand-driven-terminal-workspace-lifecycle.md) | partial | Registration or discovery implying renderer terminal runtime materialization.
 > Superseded by: [ADR-027](adr/ADR-027-demand-driven-workspace-activity.md) | partial | Periodic Git work refreshing activity for every open workspace.
 > Superseded by: [ADR-033](adr/ADR-033-successful-discovery-dismisses-missing-workspaces.md) | partial | Missing worktrees remaining visible until explicit dismissal.
+> Superseded by: [ADR-063](adr/ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
 
 Host-qualified registered projects own discovered worktree workspaces without making hvir a
 worktree orchestrator.
@@ -691,6 +693,8 @@ upstream GitHub provenance and blocking source/dependency checks retain their au
 
 > Lifecycle: Active
 > Supersedes: [ADR-061](adr/ADR-061-pinned-native-architecture-review.md) | partial | The fixed comparison modes, the full recapture on revalidation, and the read-only single-file handoff consumed once per snapshot; pinned evidence, worker isolation, and launch authority remain.
+> Supersedes: [ADR-005](adr/ADR-005-system-git-engine.md) | partial | Creating no branch at all; the architecture review creates one hvir/architecture/ branch per agent launch.
+> Supersedes: [ADR-008](adr/ADR-008-project-worktree-workspaces.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
 
 A snapshot compares any two refs or a ref and the live tree from Git objects through a blob-keyed
 parse cache, opens on subsystem relationships across TypeScript, Python, Go and Rust, and hands

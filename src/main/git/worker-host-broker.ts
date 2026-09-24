@@ -9,6 +9,7 @@ import {
 } from '../../shared'
 import type { ProjectHost } from '../project-host'
 import { GIT_FETCH_ARGS, GIT_PULL_ARGS } from './git-engine'
+import { isHvirWorktreeTarget, sameHvirWorktreeTarget } from './hvir-worktrees'
 import type { GitHostCallPermissions } from './mutation-authorization'
 
 const canonicalRoots = new WeakMap<ProjectHost, Map<string, Promise<HostPath>>>()
@@ -59,6 +60,7 @@ export async function dispatchWorkerHostCall(
     'now',
     '--verbose',
   ])
+  const worktreeAdd = call.args[2] === 'worktree' && call.args[3] === 'add'
   const branchSwitch =
     call.args.length === 5 && call.args[2] === 'switch' && call.args[3] === '--no-guess'
   const fetch = sameArgs(call.args.slice(2), GIT_FETCH_ARGS)
@@ -67,6 +69,16 @@ export async function dispatchWorkerHostCall(
   validateGitInvocation(call.args)
   if (worktreePrune && !permissions.allowWorktreePrune) {
     throw new Error('git worker requested an unauthorized worktree prune')
+  }
+  if (
+    worktreeAdd &&
+    !sameHvirWorktreeTarget(permissions.allowWorktreeAdd, {
+      branch: call.args[5]!,
+      path: call.args[6]!,
+      commit: call.args[7]!,
+    })
+  ) {
+    throw new Error('git worker requested an unauthorized worktree add')
   }
   if (branchSwitch && permissions.allowBranchSwitch !== call.args[4]) {
     throw new Error('git worker requested an unauthorized branch switch')
@@ -131,7 +143,7 @@ export async function dispatchWorkerHostCall(
       // data; otherwise content filters can rerun forever against a stale index.
       ...(fetch || pull
         ? { env: { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'Never' } }
-        : worktreePrune || branchSwitch
+        : worktreePrune || worktreeAdd || branchSwitch
           ? {}
           : call.allowIndexRefresh
             ? {}
@@ -266,7 +278,8 @@ function validateGitInvocation(args: readonly string[]): void {
       if (
         sameArgs(rest, ['list', '--porcelain', '-z']) ||
         sameArgs(rest, ['list', '--porcelain']) ||
-        sameArgs(rest, ['prune', '--expire', 'now', '--verbose'])
+        sameArgs(rest, ['prune', '--expire', 'now', '--verbose']) ||
+        isHvirWorktreeAdd(commandRoot, rest)
       )
         return
       break
@@ -286,6 +299,22 @@ function validateGitInvocation(args: readonly string[]): void {
       break
   }
   invalidGitInvocation()
+}
+
+/** `worktree add -b <branch> <path> <commit>` for the exact location hvir owns. */
+function isHvirWorktreeAdd(commandRoot: string, rest: readonly string[]): boolean {
+  const [add, flag, branch, path, commit] = rest
+  return (
+    rest.length === 5 &&
+    add === 'add' &&
+    flag === '-b' &&
+    isSafeBranchName(branch ?? '') &&
+    isHvirWorktreeTarget(commandRoot, {
+      branch,
+      path,
+      commit,
+    })
+  )
 }
 
 function isAllowedNumstatDiff(args: readonly string[]): boolean {

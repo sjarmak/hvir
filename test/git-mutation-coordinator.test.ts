@@ -92,6 +92,7 @@ function fixture() {
   }
   const worker: GitMutationWorkerPort = {
     pruneWorktrees: vi.fn(() => Promise.resolve(pruned)),
+    addWorktree: vi.fn(() => Promise.resolve(pruned)),
     switchBranch: vi.fn(() => Promise.resolve()),
     fetch: vi.fn(() => Promise.resolve()),
     pull: vi.fn(() => Promise.resolve()),
@@ -223,5 +224,62 @@ describe('GitMutationCoordinator', () => {
 
     expect(revoke).toHaveBeenCalledOnce()
     expect(workspaces.refresh).toHaveBeenCalledWith('project-1')
+  })
+
+  it('adds the owned review worktree under an exact grant and names its workspace', async () => {
+    const { coordinator, worker, authorizations, revoke, registry, state } = fixture()
+    const added = localPath('/project.hvir-worktrees/review-1')
+    const project = state.projects[0]!
+    const withWorktree: ProjectState = {
+      ...state,
+      projects: [
+        {
+          ...project,
+          workspaces: [
+            ...project.workspaces,
+            { ...project.workspaces[1]!, id: 'workspace-review', root: added },
+          ],
+        },
+      ],
+    }
+    vi.mocked(registry.reconcileWorktrees).mockResolvedValueOnce(withWorktree)
+    const commit = 'd'.repeat(40)
+
+    await expect(coordinator.addWorktree(root, 'review-1', commit)).resolves.toEqual({
+      projectId: 'project-1',
+      workspaceId: 'workspace-review',
+      root: added,
+      branch: 'hvir/architecture/review-1',
+    })
+
+    const target = { branch: 'hvir/architecture/review-1', path: added.path, commit }
+    expect(authorizations.grant).toHaveBeenCalledWith({
+      kind: 'worktree-add',
+      projectId: 'project-1',
+      root,
+      target,
+    })
+    expect(worker.addWorktree).toHaveBeenCalledWith(root, target)
+    expect(revoke).toHaveBeenCalledOnce()
+    expect(coordinator.worktreeTarget(root, 'review-1', commit)).toEqual(target)
+    expect(() => coordinator.worktreeTarget(worktreeRoot, 'review-1', commit)).toThrow(
+      'another workspace',
+    )
+  })
+
+  it('refuses a worktree add for another workspace or a missing result', async () => {
+    const { coordinator, worker, authorizations, revoke } = fixture()
+    const commit = 'd'.repeat(40)
+
+    await expect(
+      coordinator.addWorktree(worktreeRoot, 'review-1', commit),
+    ).rejects.toThrow('another workspace')
+    expect(authorizations.grant).not.toHaveBeenCalled()
+
+    await expect(coordinator.addWorktree(root, 'review-1', commit)).rejects.toThrow(
+      'did not report the new worktree',
+    )
+    expect(worker.addWorktree).toHaveBeenCalledOnce()
+    expect(revoke).toHaveBeenCalledOnce()
   })
 })

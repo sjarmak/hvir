@@ -17,7 +17,7 @@ export async function verifyArchitectureReviewAuthority(
         let refused = false;
         try { await window.hvir.invoke(channel, forged); }
         catch (error) {
-          if (!/active workspace|not evidence|unavailable|host|authorized/i.test(String(error))) throw error;
+          if (!/active workspace|not evidence|unavailable|host|authorized|preview changed/i.test(String(error))) throw error;
           refused = true;
         }
         if (!refused) throw new Error('Architecture authority accepted ' + label);
@@ -25,13 +25,15 @@ export async function verifyArchitectureReviewAuthority(
       try {
         const evidence = await window.hvir.invoke('architecture-review:evidence', request);
         if (evidence.stale || evidence.diff.currentInput.content !== ${JSON.stringify(fixture.afterSource)}) throw new Error('Authority fixture did not capture the selected source');
-        for (const channel of ['architecture-review:evidence', 'architecture-review:prepare']) {
+        for (const channel of ['architecture-review:evidence', 'architecture-review:prepare', 'architecture-review:handoff']) {
           await reject(channel, { ...request, root: { ...root, hostId: 'other-smoke-host' } }, 'another host root');
           await reject(channel, { ...request, root: { ...root, path: root.path + '-other-worktree' } }, 'another worktree root');
           await reject(channel, { ...request, path: { ...path, hostId: 'other-smoke-host' } }, 'same path on another host');
           await reject(channel, { ...request, path: { ...path, path: root.path + '-other-worktree/' + ${JSON.stringify(fixture.selectedPath)} } }, 'another worktree source');
         }
         await reject('architecture-review:commits', { root: { ...root, hostId: 'other-smoke-host' } }, 'a commit strip on another host');
+        await reject('architecture-review:origin', { root: { ...root, hostId: 'other-smoke-host' } }, 'a handoff origin on another host');
+        await reject('architecture-review:origin', { root: { ...root, path: root.path + '.hvir-worktrees/review-forged' } }, 'a handoff origin for another worktree');
         await reject('architecture-review:commits', { root: { ...root, path: root.path + '-other-worktree' } }, 'a commit strip for another worktree');
         const retained = await window.hvir.invoke('architecture-review:evidence', request);
         if (retained.snapshotId !== snapshot.id || retained.diff.currentInput.content !== evidence.diff.currentInput.content) throw new Error('Rejected requests changed the original evidence');

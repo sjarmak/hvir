@@ -85,13 +85,17 @@ const click = async (node: HTMLElement) => {
 }
 
 it('keeps the scope unsaveable until a scan reports the one in effect', async () => {
-  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
   expect(host.textContent).toContain('Scope: shown after the first scan.')
   expect(button('Save scope and scan')).toBeUndefined()
 })
 
 it('shows a refusal with its counts and scans again once a narrower scope is saved', async () => {
-  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
   await click(button('Scan snapshot'))
   const status = host.querySelector('[role="status"]')
   expect(status?.textContent).toBe(refusal.message)
@@ -116,7 +120,9 @@ it('shows a refusal with its counts and scans again once a narrower scope is sav
 })
 
 it('refuses to save a scope the layout file would reject', async () => {
-  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
   await click(button('Scan snapshot'))
   const textarea = host.querySelector('textarea')!
   await act(async () => {
@@ -131,7 +137,9 @@ it('refuses to save a scope the layout file would reject', async () => {
 })
 
 it('shows why the scope could not be saved and does not scan', async () => {
-  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
   await click(button('Scan snapshot'))
   invoke.mockImplementationOnce(async () => {
     throw new Error(

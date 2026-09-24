@@ -8,6 +8,7 @@ import { captureArchitecture } from '../src/main/architecture-review/capture'
 import { readArchitectureLiveState } from '../src/main/architecture-review/freshness'
 import { LocalHost } from '../src/main/project-host/local-host'
 import { RendererResourceScopes } from '../src/main/renderer-resource-scopes'
+import { hvirWorktreeTarget } from '../src/main/git/hvir-worktrees'
 import { localPath } from '../src/shared/host-path'
 import type { ArchitectureAnalysis } from '../src/shared/architecture-analysis'
 
@@ -68,6 +69,13 @@ async function reviewOf(root: string, ends: { baseline?: string; current?: strin
     capture,
     liveState,
     analyze: () => Promise.resolve(analysis),
+    handoff: {
+      worktrees: {
+        worktreeTarget: (_root, slug, commit) =>
+          hvirWorktreeTarget(localPath(root), slug, commit),
+        addWorktree: () => Promise.reject(new Error('not created in this test')),
+      },
+    },
   })
   const request = { root: localPath(root), ...ends, reviewId: 'tab-1' }
   const snapshot = await coordinator.scan(owner, host, request)
@@ -87,10 +95,13 @@ async function reviewOf(root: string, ends: { baseline?: string; current?: strin
 it('never marks a commit-to-commit snapshot stale and never reads the host to decide', async () => {
   const root = await repository()
   const review = await reviewOf(root, { current: 'HEAD' })
+  const scanned = git(root, 'rev-parse', 'HEAD')
   await appendFile(join(root, 'src/a.ts'), 'export const edited = 2\n')
   git(root, 'commit', '-am', 'moved on')
   expect(await review.stale()).toBe(false)
-  expect((await review.prepare()).body).toContain('a.ts')
+  const { handoff } = await review.prepare()
+  expect(handoff.commit).toBe(scanned)
+  expect(handoff.brief).toContain('Focus file: src/a.ts')
   expect(review.capture).toHaveBeenCalledTimes(1)
   expect(review.liveState).not.toHaveBeenCalled()
 })

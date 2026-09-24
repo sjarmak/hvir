@@ -1,5 +1,7 @@
 import { hostPathEquals, joinHostPath, type HostPath } from '../../../shared/host-path'
 import { ARCHITECTURE_LAYOUT_FILE } from '../../../shared/architecture-layout'
+import { ARCHITECTURE_BRIEF_FILE } from '../../../shared/architecture-handoff'
+import { readArchitectureBriefOrigin } from '../../architecture-review/handoff'
 import { architectureScanOutcome } from '../../architecture-review/scope-cap'
 import type { IpcRegistrar } from '../authority-router'
 import type { IpcDeps } from '../deps'
@@ -54,6 +56,30 @@ export function registerArchitectureReviewIpc(ipc: IpcRegistrar, deps: Deps): vo
     context.owner()
     project(request)
     return result
+  })
+  ipc.handle('architecture-review:handoff', async (request, context) => {
+    const active = project(request)
+    const owner = context.owner()
+    await ipc.authority.projectPath(request.root, active.root, active.host)
+    reconstructIpcHostPath(request.path)
+    project(request)
+    const result = await deps.architectureReview.handoff(owner, active.host, request)
+    context.owner()
+    return result
+  })
+  ipc.handle('architecture-review:origin', async (request, context) => {
+    const active = project(request)
+    context.owner()
+    const file = await ipc.authority.projectPath(
+      joinHostPath(active.root, ARCHITECTURE_BRIEF_FILE),
+      active.root,
+      active.host,
+      { allowMissingLeaf: true, returnCanonical: true },
+    )
+    project(request)
+    const origin = await readArchitectureBriefOrigin(active.host, file)
+    context.owner()
+    return origin
   })
   ipc.handle('architecture-review:scope', async (request, context) => {
     const active = project(request)

@@ -12,7 +12,13 @@ import type {
   ArchitecturePreparedReview,
   ArchitectureCommitRangeRequest,
   ArchitectureCommitRange,
+  ArchitectureReviewLaunch,
 } from '../architecture-review'
+import type {
+  ArchitectureHandoff,
+  ArchitectureHandoffOrigin,
+  ArchitectureOriginRequest,
+} from '../architecture-handoff'
 export const architectureReviewIpc = {
   invoke: {
     'architecture-review:scan': invoke<
@@ -30,6 +36,11 @@ export const architectureReviewIpc = {
     'architecture-review:prepare': invoke<
       ArchitectureEvidenceRequest,
       ArchitecturePreparedReview
+    >(),
+    'architecture-review:handoff': invoke<ArchitectureReviewLaunch, ArchitectureHandoff>(),
+    'architecture-review:origin': invoke<
+      ArchitectureOriginRequest,
+      ArchitectureHandoffOrigin | null
     >(),
     'architecture-review:commits': invoke<
       ArchitectureCommitRangeRequest,

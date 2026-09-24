@@ -16,7 +16,7 @@ import { GitDetailCapability } from './git-detail'
 import { GitDiffCapability } from './git-diff'
 import { GitHistoryCapability } from './git-history'
 import { GitStatusCapability } from './git-status'
-import { GitWorktreeCapability } from './git-worktrees'
+import { GitWorktreeCapability, type HvirWorktreeTarget } from './git-worktrees'
 
 export { GIT_FETCH_ARGS, GIT_PULL_ARGS } from './git-branches'
 export { parseLocalBranches, parseWorktreeList } from './git-parsers'
@@ -86,8 +86,8 @@ export class GitEngine {
     return this.diffCapability.inputs(path, base, revision)
   }
 
-  repoRoot(path: HostPath): Promise<HostPath> {
-    return this.diffCapability.repoRoot(path)
+  addWorktree(root: HostPath, target: HvirWorktreeTarget): Promise<WorktreeDiscovery> {
+    return this.worktreeCapability.add(root, target)
   }
 
   changes(

@@ -17,7 +17,12 @@ export function useTerminalWorkspaceTransfer({
   readonly forgetWebViews: (terminalId: string) => void
   readonly onError: (message: string) => void
 }) {
-  const callbacks = useRef({ acceptProjectState, canMaterialize, forgetWebViews, onError })
+  const callbacks = useRef({
+    acceptProjectState,
+    canMaterialize,
+    forgetWebViews,
+    onError,
+  })
   callbacks.current = { acceptProjectState, canMaterialize, forgetWebViews, onError }
 
   const register = useCallback(

@@ -17,7 +17,7 @@ vi.mock('../src/main/application-runtime', () => ({
   applicationUserDataPath: (name: string) => `/home/person/.config/hvir/${name}`,
 }))
 
-import { createArchitectureReview } from '../src/main/architecture-review/runtime'
+import { ownArchitectureReview } from '../src/main/architecture-review/runtime'
 import { ARCHITECTURE_PARSE_CACHE_BYTES } from '../src/main/architecture-review/parse-cache-budget'
 import { ArchitectureAnalysisWorker } from '../src/main/architecture-review/worker'
 import { ArchitectureReviewCoordinator } from '../src/main/architecture-review/coordinator'
@@ -35,7 +35,12 @@ it('keeps the parse cache under userData and owns the warm worker for disposal',
       return resource
     },
   }
-  const review = createArchitectureReview({} as RendererResourceScopes, runtime)
+  const review = ownArchitectureReview({} as RendererResourceScopes, runtime, {
+    worktreeTarget: () => {
+      throw new Error("unused")
+    },
+    addWorktree: () => Promise.reject(new Error("unused")),
+  })
   expect(review).toBeInstanceOf(ArchitectureReviewCoordinator)
   const worker = owned.find(
     (entry) => entry.resource instanceof ArchitectureAnalysisWorker,

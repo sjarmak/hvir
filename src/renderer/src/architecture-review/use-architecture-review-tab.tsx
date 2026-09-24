@@ -33,13 +33,20 @@ export function useArchitectureReviewTab(ports: {
       onActivateArchitectureReview: open,
       onCloseArchitectureReview: close,
     }),
-    panel: (root: HostPath, pane: string) =>
+    panel: (
+      root: HostPath,
+      pane: string,
+      switchWorkspace: (projectId: string, workspaceId: string) => Promise<void>,
+    ) =>
       belongs(root, pane) ? (
         <div className="workspace-view" hidden={!active(root, pane)}>
           <ArchitectureReview
             key={JSON.stringify(root)}
             root={root}
             active={active(root, pane)}
+            onHandoff={(projectId, workspaceId) =>
+              void switchWorkspace(projectId, workspaceId)
+            }
           />
         </div>
       ) : null,

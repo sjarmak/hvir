@@ -347,7 +347,7 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
     const defaultShell = await host.defaultShell()
     if (req.architectureReview !== undefined && !provider.architectureReviewLaunch)
       throw new Error('This provider does not support architecture review launches')
-    const architectureReviewBody = await architectureLaunchBody(req, owner, host, profile, deps.architectureReview)
+    const architectureReviewBody = architectureLaunchBody(req, owner, host, profile, deps.architectureReview)
     deps.rendererResources.assertCurrent(owner)
     const resolved = await resolveHarnessLaunch({
       profile,

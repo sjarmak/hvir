@@ -1,3 +1,4 @@
+import type { ArchitectureHandoffOrigin } from '../../../shared/architecture-handoff'
 import {
   architectureRefProblem,
   type ArchitectureCommitRange,
@@ -74,5 +75,18 @@ export function endsFromText(baseline: string, current: string): ParsedEnds {
       ...(b.problem === undefined ? {} : { baseline: b.problem }),
       ...(c.problem === undefined ? {} : { current: c.problem }),
     },
+  }
+}
+
+/**
+ * Re-snapshot ends for a handed-off worktree: its live tree against the original Current
+ * commit shows only the agent's change; against the original Baseline, the cumulative one.
+ */
+export function handoffEnds(
+  origin: ArchitectureHandoffOrigin,
+  compare: 'change' | 'cumulative',
+): ArchitectureEnds {
+  return {
+    baseline: compare === 'change' ? origin.currentRevision : origin.baselineRevision,
   }
 }

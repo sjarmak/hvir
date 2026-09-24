@@ -19,7 +19,7 @@ import { createViewerFixtures } from './viewer-fixtures'
 import { createSmokeProjectState } from './project-state-fixture'
 import { createSessionsProjectState } from './sessions-project-fixture'
 import type { BrowserWindow } from 'electron'
-import { dispatchWorkerHostCall } from '../git/worker-host-broker'
+import { createSmokeGitWorker } from './git-worker'
 import { createFilenameSearchCoordinator } from '../filename-search'
 import { createProjectFileOperationCoordinator } from '../project-file-operations'
 import { ProjectFolderPickerCoordinator } from '../project-folder-picker'
@@ -83,7 +83,6 @@ import {
   localPath,
   type Disposer,
   type EchoWorkerProtocol,
-  type GitWorkerProtocol,
   type WorkbenchHealthSnapshot,
 } from '../../shared'
 
@@ -175,16 +174,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       (worker) => worker.dispose(),
     )
 
-    const git = cleanup.acquire(
-      'Git worker',
-      () =>
-        createWorkerClient<GitWorkerProtocol>(
-          workerPath('git-worker.js'),
-          'hvir-git-smoke',
-          (call) => dispatchWorkerHostCall(call, { host, root: projectRoot }),
-        ),
-      (worker) => worker.dispose(),
-    )
+    const { git, worktrees } = createSmokeGitWorker(host, projectRoot, cleanup)
 
     const filenameSearch = createFilenameSearchCoordinator(git)
     cleanup.defer('filename search', () => filenameSearch.dispose())
@@ -376,7 +366,11 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     )
     const readiness = new SmokeRendererReadiness()
     const ipcRouter = registerIpcHandlers({
-      architectureReview: createSmokeArchitectureReview(rendererResources, cleanup),
+      architectureReview: createSmokeArchitectureReview(
+        rendererResources,
+        cleanup,
+        worktrees,
+      ),
       echoWorker: worker,
       gitWorker: git,
       filenameSearch,

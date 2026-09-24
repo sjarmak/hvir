@@ -15,7 +15,8 @@ import {
   initialViewerPosition,
   type ViewerPositionCapture,
 } from '../viewer/viewer-position'
-import { dispatchArchitectureReviewLaunch } from './architecture-review-launch'
+import { queueArchitectureAgentLaunch } from './architecture-review-launch'
+import { ArchitectureHandoffPreview } from './ArchitectureHandoffPreview'
 import { ArchitectureFindingForm } from './ArchitectureFindingForm'
 
 const registerFindTarget = () => () => undefined
@@ -30,6 +31,7 @@ export function ArchitectureEvidencePanel({
   evidence,
   freshnessError,
   location,
+  onHandoff,
 }: {
   readonly root: HostPath
   readonly reviewId: string
@@ -38,6 +40,8 @@ export function ArchitectureEvidencePanel({
   readonly freshnessError?: string
   readonly evidence: ArchitectureEvidence
   readonly location?: { readonly line: number; readonly side: 'before' | 'after' }
+  /** Switches to the worktree the handoff created, where its terminal claims the launch. */
+  readonly onHandoff: (projectId: string, workspaceId: string) => void
 }) {
   const epoch = useRef(0)
   const [profiles, setProfiles] = useState<readonly HarnessProfile[]>([])
@@ -103,7 +107,9 @@ export function ArchitectureEvidencePanel({
       if (request !== epoch.current) return
       setStatus('idle')
       setError(
-        cause instanceof Error ? cause.message : 'Review prompt could not be prepared.',
+        cause instanceof Error
+          ? cause.message
+          : 'The agent handoff could not be prepared.',
       )
     }
   }
@@ -112,21 +118,32 @@ export function ArchitectureEvidencePanel({
     if (!prepared || !profile || status !== 'idle') return
     const request = ++epoch.current
     setStatus('launching')
-    const accepted = await dispatchArchitectureReviewLaunch({
-      root,
-      launch: {
+    setError(undefined)
+    try {
+      const handoff = await window.hvir.invoke('architecture-review:handoff', {
         root: prepared.root,
         reviewId: prepared.reviewId,
         snapshotId: prepared.snapshotId,
         path: prepared.path,
         digest: prepared.digest,
-      },
-      profileId: profile.id,
-      launchRevision: profile.launchRevision,
-    })
-    if (request !== epoch.current) return
-    setStatus(accepted ? 'launched' : 'idle')
-    if (!accepted) setError('That review profile is unavailable for this workspace.')
+      })
+      queueArchitectureAgentLaunch({
+        launch: handoff.launch,
+        profileId: profile.id,
+        launchRevision: profile.launchRevision,
+      })
+      if (request === epoch.current) setStatus('launched')
+      onHandoff(handoff.projectId, handoff.workspaceId)
+    } catch (cause) {
+      if (request !== epoch.current) return
+      setStatus('idle')
+      setPrepared(undefined)
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'The agent worktree could not be created.',
+      )
+    }
   }
   return (
     <aside className="architecture-evidence" aria-label={`Captured evidence for ${path}`}>
@@ -183,22 +200,22 @@ export function ArchitectureEvidencePanel({
           {status === 'preparing'
             ? 'Preparing…'
             : prepared
-              ? 'Refresh exact prompt'
-              : 'Prepare exact prompt'}
+              ? 'Refresh agent handoff'
+              : 'Prepare agent handoff'}
         </button>
         {prepared && (
           <>
-            <pre aria-label="Exact review prompt">{prepared.body}</pre>
+            <ArchitectureHandoffPreview prepared={prepared} />
             <button
               type="button"
               onClick={() => void launch()}
               disabled={!profileId || evidence.stale !== false || status !== 'idle'}
             >
               {status === 'launched'
-                ? 'Review session requested'
+                ? 'Agent worktree created'
                 : status === 'launching'
-                  ? 'Launching…'
-                  : 'Launch review agent'}
+                  ? 'Creating worktree…'
+                  : 'Create worktree and launch agent'}
             </button>
           </>
         )}
@@ -207,8 +224,8 @@ export function ArchitectureEvidencePanel({
         )}
         {status === 'launched' && (
           <p role="status">
-            The separate terminal session owns launch progress. Refresh the snapshot to
-            start another review.
+            hvir switched to the new worktree, where the agent session starts. Scan that
+            worktree to review the agent&apos;s change.
           </p>
         )}
         {error && (

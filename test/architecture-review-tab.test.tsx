@@ -17,7 +17,7 @@ it('retains an inactive review, deactivates for files, and never exposes it in a
     const root = useRef<HostPath | undefined>(path)
     root.current = path
     tab = useArchitectureReviewTab({ root, activateViewer })
-    return tab.panel(path, 'primary')
+    return tab.panel(path, 'primary', () => Promise.resolve())
   }
   const path = localPath('/one')
   try {

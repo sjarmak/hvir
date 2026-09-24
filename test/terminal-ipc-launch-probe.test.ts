@@ -92,14 +92,12 @@ describe('terminal IPC launch probe binding', () => {
 })
 
 it.each([LOCAL_HOST_ID, asHostId('ssh:test')])(
-  'starts pinned evidence on %s through the selected native provider and PTY supervisor',
+  'starts a handed-off review on %s through the selected native provider and PTY supervisor',
   async (hostId) => {
     const f = launchProbeFixture('codex-cli 0.153.1', true, hostId)
     const architectureReview = {
       root: f.request.workspaceRoot,
-      path: hostPath(f.request.workspaceRoot.hostId, '/repo/a.ts'),
-      reviewId: 'tab',
-      snapshotId: 'snapshot',
+      handoffId: 'handoff-1',
       digest: 'digest',
     }
     try {
@@ -135,12 +133,13 @@ it.each(['stale', 'cancelled'])('does not spawn a %s review launch', async (reas
   const f = launchProbeFixture('codex-cli 0.153.1', true)
   const architectureReview = {
     root: f.request.workspaceRoot,
-    path: hostPath(f.request.workspaceRoot.hostId, '/repo/a.ts'),
-    reviewId: 'tab',
-    snapshotId: 'snapshot',
+    handoffId: 'handoff-1',
     digest: 'digest',
   }
-  if (reason === 'stale') f.launchPayload.mockRejectedValue(new Error(reason))
+  if (reason === 'stale')
+    f.launchPayload.mockImplementation(() => {
+      throw new Error(reason)
+    })
   else
     f.assertLaunchCurrent.mockImplementation(() => {
       throw new Error(reason)
@@ -154,19 +153,17 @@ it.each(['stale', 'cancelled'])('does not spawn a %s review launch', async (reas
     f.probes.dispose()
   }
 })
-it('refuses architecture evidence from another workspace before acquiring launch authority', async () => {
+it('refuses an architecture launch outside its handoff worktree before spending it', async () => {
   const f = launchProbeFixture('codex-cli 0.153.1', true)
   const architectureReview = {
     root: hostPath(LOCAL_HOST_ID, '/other'),
-    path: hostPath(LOCAL_HOST_ID, '/other/a.ts'),
-    reviewId: 'tab',
-    snapshotId: 'snapshot',
+    handoffId: 'handoff-1',
     digest: 'digest',
   }
   try {
     await expect(
       f.start({ ...f.request, architectureReview }, f.context),
-    ).rejects.toThrow(/exact workspace/)
+    ).rejects.toThrow(/handoff worktree/)
     expect(f.launchPayload).not.toHaveBeenCalled()
     expect(f.spawn).not.toHaveBeenCalled()
   } finally {
@@ -272,7 +269,7 @@ function launchProbeFixture(
     handleSend: vi.fn(),
   } as unknown as IpcRegistrar
   const lease = { dispose: vi.fn(() => Promise.resolve()), release: vi.fn() }
-  const launchPayload = vi.fn(() => Promise.resolve('Pinned review\nbefore and after'))
+  const launchPayload = vi.fn((): string => 'Pinned review\nbefore and after')
   const assertLaunchCurrent = vi.fn()
   registerTerminalIpc(ipc, {
     architectureReview: { launchPayload, assertLaunchCurrent },

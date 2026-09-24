@@ -1,5 +1,10 @@
 import type { BrowserWindow } from 'electron'
 import { verifyArchitectureReviewAuthority } from './architecture-review-authority'
+import {
+  verifyArchitectureHandoff,
+  verifyArchitectureHandoffAuthority,
+} from './architecture-review-handoff'
+import type { ArchitectureWorktreePort } from '../architecture-review/handoff'
 import { verifyArchitectureCommitStrip } from './architecture-review-strip'
 import { verifyArchitectureScopeSave } from './architecture-review-scope'
 import { verifyArchitectureReviewVisuals } from './architecture-review-visual'
@@ -20,6 +25,7 @@ import {
 export function createSmokeArchitectureReview(
   resources: RendererResourceScopes,
   cleanup: SmokeCleanup,
+  worktrees: ArchitectureWorktreePort,
 ) {
   // The smoke harness gives every run its own user data root and removes it afterwards.
   const directory = architectureParseCacheDirectory()
@@ -33,7 +39,12 @@ export function createSmokeArchitectureReview(
   )
   return cleanup.acquire(
     'architecture review',
-    () => new ArchitectureReviewCoordinator({ resources, analyze: worker.analyze }),
+    () =>
+      new ArchitectureReviewCoordinator({
+        resources,
+        analyze: worker.analyze,
+        handoff: { worktrees },
+      }),
     (review) => review.dispose(),
   )
 }
@@ -110,6 +121,7 @@ export async function runArchitectureReviewSmoke(
 ): Promise<number> {
   const fixture = await createArchitectureReviewSmokeFixture(host, root)
   await verifyArchitectureReviewAuthority(win, fixture)
+  await verifyArchitectureHandoffAuthority(win, host, fixture)
   const path = await verifyArchitectureReviewWorkflow(win, fixture)
   if (!path) throw new Error('Architecture evidence path missing')
   await verifyArchitectureReviewVisuals(win, host, root)
@@ -195,6 +207,7 @@ export async function runArchitectureReviewSmoke(
   await verifyLayoutRefusal(win, host, root)
   await verifyArchitectureScopeSave(win, host, root)
   await verifyArchitectureCommitStrip(win, fixture)
+  await verifyArchitectureHandoff(win, host, fixture)
   const close = (await win.webContents.executeJavaScript(`
     new Promise((resolve, reject) => {
       setTimeout(() => reject(new Error('Timed out closing architecture review')), 30000);
@@ -207,7 +220,7 @@ export async function runArchitectureReviewSmoke(
   `)) as string
   if (close !== 'closed') throw new Error('Architecture review did not close')
   console.log(
-    `[smoke] Architecture review OK (Git entry → keyboard focus → themes/layout → stale/refresh → DiffView → scope save → commit strip → ${close})`,
+    `[smoke] Architecture review OK (Git entry → keyboard focus → themes/layout → stale/refresh → DiffView → scope save → commit strip → agent handoff → ${close})`,
   )
   console.log('HVIR_SMOKE_OK')
   return 0

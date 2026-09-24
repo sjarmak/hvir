@@ -79,6 +79,34 @@ export async function readArchitectureLiveState(
     .digest('hex')
 }
 
+/** HEAD, the workspace prefix and whether the in-scope live tree equals HEAD. */
+export interface ArchitectureLiveBase {
+  readonly head: string
+  /** The workspace's path below the repository root, '' at the root. */
+  readonly prefix: string
+  /** No in-scope staged, unstaged, untracked or assume-unchanged difference. */
+  readonly clean: boolean
+}
+
+/**
+ * The commit a handoff worktree starts from when Current is the live tree. Only a clean
+ * in-scope tree equals HEAD, so only then is HEAD the original Current end.
+ */
+export async function readArchitectureLiveBase(
+  host: ProjectHost,
+  root: HostPath,
+  signal: AbortSignal,
+): Promise<ArchitectureLiveBase> {
+  if (root.hostId !== host.hostId) throw new Error('Invalid architecture workspace')
+  const exec = checkedExec(host, root, signal, undefined)
+  const state = parseState(await exec('sh', ['-c', SCRIPT, 'hvir-architecture-state']))
+  return {
+    head: state.head,
+    prefix: state.prefix,
+    clean: state.status.length === 0 && state.hidden.length === 0,
+  }
+}
+
 type CheckedExec = (
   command: string,
   args: readonly string[],
@@ -164,6 +192,7 @@ function parseState(output: string) {
   const index = staged!.filter((record) => affectsArchitectureCapture(stagedPath(record)))
   return {
     head: head.slice(1),
+    prefix: prefix.slice(1),
     index,
     status: parseStatus(status!, prefix.slice(1)),
     hidden: index

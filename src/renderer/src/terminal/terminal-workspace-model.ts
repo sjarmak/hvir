@@ -9,7 +9,7 @@ import {
   type HostPath,
   type TerminalIdentityStatus,
   type ExternalSessionAttachRequest,
-  type ArchitectureReviewLaunch,
+  type ArchitectureAgentLaunch,
 } from '../../../shared'
 import type { TerminalAttention } from './terminal-attention'
 
@@ -82,7 +82,7 @@ export interface TerminalSession {
    * it joins survives a reload (ADR-046).
    */
   readonly externalAttach?: ExternalSessionAttachRequest
-  readonly architectureReview?: ArchitectureReviewLaunch
+  readonly architectureReview?: ArchitectureAgentLaunch
   /** Restored metadata exists, but no terminal engine or PTY has been allocated. */
   readonly dormant?: boolean
   /** Bulk starts alone use the main-owned per-host admission queue. */
@@ -275,7 +275,7 @@ export function createTerminalSession(
   capabilities: HarnessProviderCapabilities = provider.capabilities,
   initialInput?: string,
   externalAttach?: ExternalSessionAttachRequest,
-  architectureReview?: ArchitectureReviewLaunch,
+  architectureReview?: ArchitectureAgentLaunch,
 ): TerminalSession {
   const fallbackTitle = `${provider.displayName} · ${basenameHostPath(cwd)}`
   return {

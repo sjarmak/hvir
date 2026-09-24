@@ -5,6 +5,7 @@
 > Superseded by: [ADR-024](ADR-024-demand-driven-terminal-workspace-lifecycle.md) | partial | Registration or discovery implying renderer terminal runtime materialization.
 > Superseded by: [ADR-027](ADR-027-demand-driven-workspace-activity.md) | partial | Periodic Git work refreshing activity for every open workspace.
 > Superseded by: [ADR-033](ADR-033-successful-discovery-dismisses-missing-workspaces.md) | partial | Missing worktrees remaining visible until explicit dismissal.
+> Superseded by: [ADR-063](ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
 
 ## Context
 

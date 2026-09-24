@@ -8,10 +8,7 @@ import { localPath } from '../src/shared'
 import type { ArchitectureEvidence } from '../src/shared/architecture-review'
 import { analyzeArchitecture } from '../src/main/architecture-review/analysis'
 import { ArchitectureReview } from '../src/renderer/src/architecture-review/ArchitectureReview'
-import {
-  ARCHITECTURE_REVIEW_LAUNCH_EVENT,
-  type ArchitectureReviewLaunchDetail,
-} from '../src/renderer/src/architecture-review/architecture-review-launch'
+import { claimArchitectureAgentLaunch } from '../src/renderer/src/architecture-review/architecture-review-launch'
 
 vi.mock('../src/renderer/src/viewer/DiffView', () => ({
   DiffView: () => <div data-testid="captured-diff" />,
@@ -67,7 +64,20 @@ const prepared = {
   snapshotId: 's',
   path: localPath('/repo/src/a.ts'),
   digest: 'd',
-  body: 'exact captured prompt',
+  body: 'exact agent prompt',
+  handoff: {
+    branch: 'hvir/architecture/review-1',
+    worktree: localPath('/repo.hvir-worktrees/review-1'),
+    commit: 'c'.repeat(40),
+    brief: '# Architecture review brief',
+  },
+}
+const handoff = {
+  projectId: 'project-1',
+  workspaceId: 'workspace-review',
+  branch: prepared.handoff.branch,
+  worktree: prepared.handoff.worktree,
+  launch: { handoffId: 'h', root: prepared.handoff.worktree, digest: 'd' },
 }
 const revision = (digit: string) => digit.repeat(40)
 const commits = {
@@ -123,6 +133,7 @@ beforeEach(() => {
         },
       }
     if (channel === 'architecture-review:prepare') return prepared
+    if (channel === 'architecture-review:handoff') return handoff
     return undefined
   })
   vi.stubGlobal('hvir', { invoke })
@@ -141,53 +152,89 @@ const button = (text: string) =>
 const click = async (node: HTMLElement) => {
   await act(async () => node.click())
 }
-async function openEvidence() {
-  await act(async () => app.render(<ArchitectureReview root={root} active />))
+async function openEvidence(onHandoff = vi.fn()) {
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={onHandoff} />),
+  )
   await click(button('Scan snapshot'))
   await click(host.querySelector<HTMLElement>('.architecture-module')!)
 }
-it('requires explicit preparation and launches one exact prompt through the native owner', async () => {
-  const launched = vi.fn((event: Event) =>
-    (event as CustomEvent<ArchitectureReviewLaunchDetail>).detail.resolve(true),
+it('previews the exact handoff, creates the worktree once and queues its launch', async () => {
+  const onHandoff = vi.fn()
+  await openEvidence(onHandoff)
+  expect(host.querySelector('[data-testid="captured-diff"]')).not.toBeNull()
+  expect(
+    invoke.mock.calls.some(([channel]) => channel === 'architecture-review:prepare'),
+  ).toBe(false)
+  await click(button('Prepare agent handoff'))
+  expect(host.querySelector('pre')?.textContent).toBe(prepared.body)
+  expect(host.textContent).toContain(prepared.handoff.branch)
+  expect(host.textContent).toContain(prepared.handoff.worktree.path)
+  expect(host.querySelector('[aria-label="Snapshot brief"]')?.textContent).toBe(
+    prepared.handoff.brief,
   )
-  window.addEventListener(ARCHITECTURE_REVIEW_LAUNCH_EVENT, launched)
-  try {
-    await openEvidence()
-    expect(host.querySelector('[data-testid="captured-diff"]')).not.toBeNull()
-    expect(
-      invoke.mock.calls.some(([channel]) => channel === 'architecture-review:prepare'),
-    ).toBe(false)
-    expect(launched).not.toHaveBeenCalled()
-    await click(button('Prepare exact prompt'))
-    expect(host.querySelector('pre')?.textContent).toBe(prepared.body)
-    expect(button('Launch review agent').disabled).toBe(true)
-    await act(async () => {
-      const select = host.querySelector<HTMLSelectElement>(
-        '.architecture-review-launch select',
-      )!
-      select.value = 'p'
-      select.dispatchEvent(new Event('change', { bubbles: true }))
-    })
-    await click(button('Launch review agent'))
-    expect(launched).toHaveBeenCalledOnce()
-    const detail = (
-      launched.mock.calls[0]![0] as CustomEvent<ArchitectureReviewLaunchDetail>
-    ).detail
-    expect(detail).toMatchObject({
-      profileId: 'p',
-      launchRevision: 2,
-      launch: { digest: 'd', snapshotId: 's', path: prepared.path },
-    })
-    expect(button('Review session requested').disabled).toBe(true)
-  } finally {
-    window.removeEventListener(ARCHITECTURE_REVIEW_LAUNCH_EVENT, launched)
+  expect(button('Create worktree and launch agent').disabled).toBe(true)
+  await act(async () => {
+    const select = host.querySelector<HTMLSelectElement>(
+      '.architecture-review-launch select',
+    )!
+    select.value = 'p'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  await click(button('Create worktree and launch agent'))
+  expect(invoke).toHaveBeenCalledWith('architecture-review:handoff', {
+    root,
+    reviewId: 'r',
+    snapshotId: 's',
+    path: prepared.path,
+    digest: 'd',
+  })
+  expect(onHandoff).toHaveBeenCalledWith('project-1', 'workspace-review')
+  const claimed = vi.fn(() => true)
+  claimArchitectureAgentLaunch(prepared.handoff.worktree, claimed)
+  expect(claimed).toHaveBeenCalledWith({
+    launch: handoff.launch,
+    profileId: 'p',
+    launchRevision: 2,
+  })
+  expect(button('Agent worktree created').disabled).toBe(true)
+})
+it('offers the agent change and the cumulative change in a handed-off worktree', async () => {
+  const origin = {
+    baselineRef: 'main',
+    baselineRevision: 'a'.repeat(40),
+    currentRef: 'working tree',
+    currentRevision: 'c'.repeat(40),
   }
+  const original: (channel: string, request?: ScanRequest) => Promise<unknown> =
+    invoke.getMockImplementation()!
+  invoke.mockImplementation(async (channel: string, request?: ScanRequest) =>
+    channel === 'architecture-review:origin' ? origin : original(channel, request),
+  )
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
+  const baseline = host.querySelector<HTMLInputElement>(
+    '.architecture-review-controls input',
+  )!
+  expect(baseline.value).toBe(origin.currentRevision)
+  await click(button('Scan the cumulative change'))
+  expect(invoke).toHaveBeenLastCalledWith(
+    'architecture-review:scan',
+    expect.objectContaining({ baseline: origin.baselineRevision }),
+  )
+  await click(button("Scan the agent's change"))
+  expect(invoke).toHaveBeenLastCalledWith(
+    'architecture-review:scan',
+    expect.objectContaining({ baseline: origin.currentRevision }),
+  )
+  expect(invoke.mock.calls.at(-1)?.[1]).not.toHaveProperty('current')
 })
 it('shows stale captured evidence but prevents prompt preparation and finding submission', async () => {
   stale = true
   await openEvidence()
   expect(host.textContent).toContain('This capture is stale')
-  expect(button('Prepare exact prompt').disabled).toBe(true)
+  expect(button('Prepare agent handoff').disabled).toBe(true)
   expect(button('Create bead from finding').disabled).toBe(true)
 })
 it('drops a pending preparation result after a fresh snapshot replaces its evidence', async () => {
@@ -199,11 +246,11 @@ it('drops a pending preparation result after a fresh snapshot replaces its evide
         resolve = done
       }),
   )
-  await click(button('Prepare exact prompt'))
+  await click(button('Prepare agent handoff'))
   await click(button('Scan snapshot'))
   await act(async () => resolve(prepared))
   expect(host.querySelector('pre')).toBeNull()
-  expect(button('Launch review agent')).toBeUndefined()
+  expect(button('Create worktree and launch agent')).toBeUndefined()
 })
 
 it('shows the captured diff while freshness is pending and keeps actions blocked', async () => {
@@ -222,11 +269,11 @@ it('shows the captured diff while freshness is pending and keeps actions blocked
   await openEvidence()
   expect(host.querySelector('[data-testid="captured-diff"]')).not.toBeNull()
   expect(host.textContent).toContain('Checking snapshot freshness')
-  expect(button('Prepare exact prompt').disabled).toBe(true)
+  expect(button('Prepare agent handoff').disabled).toBe(true)
   expect(button('Create bead from finding').disabled).toBe(true)
   await act(async () => resolve(await original('architecture-review:evidence')))
   expect(host.textContent).not.toContain('Checking snapshot freshness')
-  expect(button('Prepare exact prompt').disabled).toBe(false)
+  expect(button('Prepare agent handoff').disabled).toBe(false)
 })
 
 it('retains readable pinned evidence after validation fails, without allowing actions', async () => {
@@ -243,7 +290,7 @@ it('retains readable pinned evidence after validation fails, without allowing ac
   expect(host.textContent).toContain('SSH disconnected')
   expect(host.textContent).toContain('Snapshot freshness could not be checked')
   expect(host.textContent).not.toContain('Checking snapshot freshness')
-  expect(button('Prepare exact prompt').disabled).toBe(true)
+  expect(button('Prepare agent handoff').disabled).toBe(true)
   expect(button('Create bead from finding').disabled).toBe(true)
 })
 it('ignores late freshness completion after a replacement scan', async () => {
@@ -266,7 +313,9 @@ it('ignores late freshness completion after a replacement scan', async () => {
 })
 
 it('shows per-stage scan cost in the snapshot details', async () => {
-  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
   await click(button('Scan snapshot'))
   const table = host.querySelector('table[aria-label="Scan timings"]')!
   expect(table.querySelector('caption')?.textContent).toContain('42.5 ms')
@@ -284,7 +333,9 @@ it('shows per-stage scan cost in the snapshot details', async () => {
 })
 
 it('names the layout file and scope the snapshot grouped subsystems by', async () => {
-  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
   await click(button('Scan snapshot'))
   const detail = (term: string) =>
     Array.from(host.querySelectorAll('.architecture-review-metadata dt')).find(
@@ -303,7 +354,9 @@ it('shows why a layout file was refused', async () => {
     if (channel === 'architecture-review:commits') return commits
     return undefined
   })
-  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
   await click(button('Scan snapshot'))
   expect(host.querySelector('[role="alert"]')?.textContent).toBe(refusal)
 })
@@ -331,7 +384,9 @@ async function type(label: string, value: string) {
 }
 
 it('scans the typed ends and treats a blank end as its default', async () => {
-  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
   await click(button('Scan snapshot'))
   await type('Baseline', ' v1 ')
   await click(button('Scan snapshot'))
@@ -348,7 +403,9 @@ it('scans the typed ends and treats a blank end as its default', async () => {
 })
 
 it('refuses an option-shaped ref before any scan is sent', async () => {
-  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
   await type('Baseline', '--all')
   expect(host.textContent).toContain('A ref cannot start with "-"')
   expect(button('Scan snapshot').disabled).toBe(true)
@@ -356,7 +413,9 @@ it('refuses an option-shaped ref before any scan is sent', async () => {
 })
 
 it('steps the strip pairwise, then against a locked baseline', async () => {
-  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
   expect(invoke).toHaveBeenCalledWith('architecture-review:commits', { root })
   await click(commitButton('2'))
   expect(commitButton('2').getAttribute('aria-pressed')).toBe('true')
@@ -384,7 +443,9 @@ it('steps the strip pairwise, then against a locked baseline', async () => {
 })
 
 it('widens the strip from any ref', async () => {
-  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
   await type('Widen from', 'main~3')
   await click(button('List commits'))
   expect(invoke).toHaveBeenLastCalledWith('architecture-review:commits', {

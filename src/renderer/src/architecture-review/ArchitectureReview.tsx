@@ -13,6 +13,7 @@ import { ArchitectureMap } from './ArchitectureMap'
 import { ArchitectureCommitStrip } from './ArchitectureCommitStrip'
 import { ArchitectureEndsControls } from './ArchitectureEndsControls'
 import { ArchitectureEvidencePanel } from './ArchitectureEvidencePanel'
+import { ArchitectureHandoffOrigin } from './ArchitectureHandoffOrigin'
 import { ArchitectureScanTimings } from './ArchitectureScanTimings'
 import { ArchitectureScopeControls } from './ArchitectureScopeControls'
 import { scopeFromText, scopeText as textOfScope } from './architecture-scope-model'
@@ -22,9 +23,11 @@ import { layoutSummary, type ArchitectureMapMode } from './architecture-review-m
 export function ArchitectureReview({
   root,
   active,
+  onHandoff,
 }: {
   readonly root: HostPath
   readonly active: boolean
+  readonly onHandoff: (projectId: string, workspaceId: string) => void
 }) {
   const requestEpoch = useRef(0)
   const [reviewId] = useState(() => crypto.randomUUID())
@@ -164,6 +167,12 @@ export function ArchitectureReview({
         onBaseline={setBaselineText}
         onCurrent={setCurrentText}
       />
+      <ArchitectureHandoffOrigin
+        root={root}
+        disabled={state === 'loading'}
+        onOrigin={(ends) => setBaselineText(ends.baseline ?? '')}
+        onScan={chooseFromStrip}
+      />
       <ArchitectureScopeControls
         text={scopeText}
         refusal={refusal}
@@ -296,6 +305,7 @@ export function ArchitectureReview({
                 evidence={evidence}
                 freshnessError={error}
                 location={selection}
+                onHandoff={onHandoff}
               />
             ) : (
               <p className="architecture-review-state">

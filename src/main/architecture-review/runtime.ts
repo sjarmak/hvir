@@ -2,6 +2,7 @@ import { applicationUserDataPath } from '../application-runtime'
 import type { WorkbenchRuntime } from '../workbench-runtime'
 import type { RendererResourceScopes } from '../renderer-resource-scopes'
 import { ArchitectureReviewCoordinator } from './coordinator'
+import type { ArchitectureWorktreePort } from './handoff'
 import { ArchitectureAnalysisWorker } from './worker'
 import { ARCHITECTURE_PARSE_CACHE_BYTES } from './parse-cache-budget'
 
@@ -10,9 +11,10 @@ export function architectureParseCacheDirectory(): string {
   return applicationUserDataPath('architecture-parse-cache')
 }
 
-export function createArchitectureReview(
+export function ownArchitectureReview(
   resources: RendererResourceScopes,
   runtime: Pick<WorkbenchRuntime, 'own'>,
+  worktrees: ArchitectureWorktreePort,
 ): ArchitectureReviewCoordinator {
   const worker = runtime.own(
     'architecture analysis worker',
@@ -26,7 +28,11 @@ export function createArchitectureReview(
   )
   return runtime.own(
     'architecture review',
-    new ArchitectureReviewCoordinator({ resources, analyze: worker.analyze }),
+    new ArchitectureReviewCoordinator({
+      resources,
+      analyze: worker.analyze,
+      handoff: { worktrees },
+    }),
     (review) => review.dispose(),
   )
 }

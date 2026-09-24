@@ -1,6 +1,9 @@
 import type { HostPath, WorktreeDiscovery } from '../../shared'
 import { gitError, type GitCommandContext } from './git-command-context'
 import { parseLegacyWorktreeList, parseWorktreeList } from './git-parsers'
+import type { HvirWorktreeTarget } from './hvir-worktrees'
+
+export type { HvirWorktreeTarget }
 
 export class GitWorktreeCapability {
   constructor(private readonly context: GitCommandContext) {}
@@ -36,6 +39,18 @@ export class GitWorktreeCapability {
   async prune(projectRoot: HostPath): Promise<WorktreeDiscovery> {
     this.context.assertHost(projectRoot)
     const args = ['worktree', 'prune', '--expire', 'now', '--verbose'] as const
+    const result = await this.context.mutate(projectRoot, args)
+    if (result.code !== 0) throw gitError(args, result.stderr, result.code)
+    return this.discover(projectRoot)
+  }
+
+  /** Creates the worktree a review handoff owns; main grants exactly this argv (ADR-063). */
+  async add(
+    projectRoot: HostPath,
+    target: HvirWorktreeTarget,
+  ): Promise<WorktreeDiscovery> {
+    this.context.assertHost(projectRoot)
+    const args = ['worktree', 'add', '-b', target.branch, target.path, target.commit]
     const result = await this.context.mutate(projectRoot, args)
     if (result.code !== 0) throw gitError(args, result.stderr, result.code)
     return this.discover(projectRoot)

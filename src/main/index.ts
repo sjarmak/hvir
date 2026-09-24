@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, shell } from 'electron'
-import { createArchitectureReview } from './architecture-review/runtime'
+import { ownArchitectureReview } from './architecture-review/runtime'
 import { registerIpcHandlers } from './ipc'
 import { createProjectCommands } from './ipc/project-commands'
 import { GitMutationCoordinator } from './git/mutation-coordinator'
@@ -355,7 +355,7 @@ function createWorkbenchEntry(): void {
     runtime.own(
       'IPC authority router',
       registerIpcHandlers({
-        architectureReview: createArchitectureReview(rendererScopes, runtime),
+        architectureReview: ownArchitectureReview(rendererScopes, runtime, gitMutations),
         echoWorker,
         gitWorker,
         filenameSearch,

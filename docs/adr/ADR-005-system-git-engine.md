@@ -2,6 +2,7 @@
 
 > Lifecycle: Partially superseded
 > Superseded by: [ADR-021](ADR-021-system-git-dirty-navigation-safety.md) | partial | Clean-worktree navigation prerequisite and handing every dirty branch switch or pull to the terminal.
+> Superseded by: [ADR-063](ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | Creating no branch at all; the architecture review creates one hvir/architecture/ branch per agent launch.
 
 ## Context
 

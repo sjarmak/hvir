@@ -8,7 +8,12 @@ import { ARCHITECTURE_DEFAULT_LAYOUT } from '../src/shared/architecture-layout'
 import type { ArchitectureAnalysis } from '../src/shared/architecture-analysis'
 import type { ArchitectureScanRecorder } from '../src/main/architecture-review/scan-recorder'
 import type { captureArchitecture } from '../src/main/architecture-review/capture'
-import type { readArchitectureLiveState } from '../src/main/architecture-review/freshness'
+import type {
+  readArchitectureLiveBase,
+  readArchitectureLiveState,
+} from '../src/main/architecture-review/freshness'
+import type { writeArchitectureBrief } from '../src/main/architecture-review/handoff'
+import type { HostPath } from '../src/shared/host-path'
 import { expectMonotoneMetrics, stagesOf } from './architecture-scan-metrics-fixture'
 import { gitBlobId } from '../src/main/architecture-review/blob-id'
 
@@ -18,11 +23,14 @@ const source = (path: string, content: string) => ({
   object: gitBlobId(Buffer.from(content)),
 })
 const root = localPath('/repo')
+const BASE = 'a'.repeat(40)
+const HEAD = 'b'.repeat(40)
+const WORKTREE = '/repo.hvir-worktrees'
 const snapshot: ArchitectureCapture = {
   root,
   baselineRef: 'HEAD',
   currentRef: 'working tree',
-  baselineRevision: 'abc',
+  baselineRevision: BASE,
   currentRevision: 'working-tree',
   fingerprint: 'fingerprint',
   before: [source('a.ts', 'before')],
@@ -68,13 +76,34 @@ function setup(
   const liveState = vi.fn<typeof readArchitectureLiveState>(() =>
     Promise.resolve('live-state'),
   )
+  const liveBase = vi.fn<typeof readArchitectureLiveBase>(() =>
+    Promise.resolve({ head: HEAD, prefix: '', clean: true }),
+  )
+  const worktreeTarget = vi.fn((_root: HostPath, slug: string, commit: string) => ({
+    branch: `hvir/architecture/${slug}`,
+    path: `${WORKTREE}/${slug}`,
+    commit,
+  }))
+  const addWorktree = vi.fn((_root: HostPath, slug: string) =>
+    Promise.resolve({
+      projectId: 'project-1',
+      workspaceId: `workspace-${slug}`,
+      root: localPath(`${WORKTREE}/${slug}`),
+      branch: `hvir/architecture/${slug}`,
+    }),
+  )
+  const writeBrief = vi.fn<typeof writeArchitectureBrief>(() => Promise.resolve())
   const coordinator = new ArchitectureReviewCoordinator({
     resources,
     capture,
     liveState,
     analyze,
+    handoff: { worktrees: { worktreeTarget, addWorktree }, liveBase, writeBrief },
   })
   return {
+    liveBase,
+    addWorktree,
+    writeBrief,
     liveState,
     resources,
     owner,
@@ -100,7 +129,7 @@ it('returns captured deleted-source evidence and rejects a different host or ren
   expect(evidence.diff.currentInput.content).toBe('')
   expect(evidence.diff).toMatchObject({
     base: 'working-tree',
-    baseLabel: 'HEAD (abc)',
+    baseLabel: `HEAD (${BASE.slice(0, 12)})`,
     currentLabel: 'working tree',
   })
   expect(evidence.diff.revision).toBeUndefined()
@@ -179,49 +208,86 @@ it('cancels an analysis and prevents old completion overwriting a refresh', asyn
     }),
   ).rejects.toThrow()
 })
-it('previews pinned evidence and consumes launch authority once without changing bytes', async () => {
-  const f = setup()
+async function prepared(f: ReturnType<typeof setup>) {
   const result = await f.coordinator.scan(f.owner, f.host, f.request)
   const request = { ...f.request, snapshotId: result.id, path: localPath('/repo/a.ts') }
-  const preview = await f.coordinator.prepare(f.owner, f.host, request)
+  return { request, preview: await f.coordinator.prepare(f.owner, f.host, request) }
+}
+it('previews the exact worktree, brief and prompt, then hands off and launches once', async () => {
+  const f = setup()
+  const { request, preview } = await prepared(f)
+  expect(preview.handoff.commit).toBe(HEAD)
+  expect(preview.handoff.branch).toMatch(/^hvir\/architecture\/review-[0-9a-f]{8}$/)
+  expect(preview.handoff.brief).toContain(`"currentRevision":"${HEAD}"`)
+  expect(preview.body).toContain('.hvir-architecture-brief.md')
+  expect(f.addWorktree).not.toHaveBeenCalled()
   await expect(
-    f.coordinator.launchPayload(f.owner, f.host, { ...request, digest: 'wrong' }),
+    f.coordinator.handoff(f.owner, f.host, { ...request, digest: 'wrong' }),
   ).rejects.toThrow(/preview/)
-  expect(await f.coordinator.launchPayload(f.owner, f.host, preview)).toBe(preview.body)
-  await expect(f.coordinator.launchPayload(f.owner, f.host, preview)).rejects.toThrow(
-    /already/,
+  const handoff = await f.coordinator.handoff(f.owner, f.host, preview)
+  expect(handoff.worktree).toEqual(preview.handoff.worktree)
+  expect(f.writeBrief).toHaveBeenCalledWith(
+    f.host,
+    preview.handoff.worktree,
+    preview.handoff.brief,
+    expect.any(AbortSignal),
+  )
+  await expect(f.coordinator.handoff(f.owner, f.host, preview)).rejects.toThrow(/preview/)
+  expect(f.addWorktree).toHaveBeenCalledOnce()
+  expect(() =>
+    f.coordinator.launchPayload(f.owner, f.host, { ...handoff.launch, digest: 'x' }),
+  ).toThrow(/unavailable/)
+  expect(f.coordinator.launchPayload(f.owner, f.host, handoff.launch)).toBe(preview.body)
+  f.coordinator.assertLaunchCurrent(f.owner, f.host, handoff.launch)
+  expect(() => f.coordinator.launchPayload(f.owner, f.host, handoff.launch)).toThrow(
+    /already used/,
   )
 })
-it('refuses stale prepared launches and revokes preview authority with the workspace', async () => {
+it('refuses a stale, dirty or subdirectory handoff before creating a worktree', async () => {
   const f = setup()
-  const result = await f.coordinator.scan(f.owner, f.host, f.request)
-  const preview = await f.coordinator.prepare(f.owner, f.host, {
-    ...f.request,
-    snapshotId: result.id,
-    path: localPath('/repo/a.ts'),
-  })
+  const { preview } = await prepared(f)
+  f.liveBase.mockResolvedValueOnce({ head: HEAD, prefix: '', clean: false })
+  await expect(f.coordinator.handoff(f.owner, f.host, preview)).rejects.toThrow(/Commit/)
+  f.liveBase.mockResolvedValueOnce({ head: 'c'.repeat(40), prefix: '', clean: true })
+  await expect(f.coordinator.handoff(f.owner, f.host, preview)).rejects.toThrow(/preview/)
+  f.liveBase.mockResolvedValueOnce({ head: HEAD, prefix: 'src/', clean: true })
+  await expect(f.coordinator.handoff(f.owner, f.host, preview)).rejects.toThrow(/root/)
   f.liveState.mockResolvedValue('edited')
-  await expect(f.coordinator.launchPayload(f.owner, f.host, preview)).rejects.toThrow(
-    /stale/,
-  )
+  await expect(f.coordinator.handoff(f.owner, f.host, preview)).rejects.toThrow(/stale/)
   await f.resources.revokeWorkspace(root)
-  await expect(f.coordinator.launchPayload(f.owner, f.host, preview)).rejects.toThrow(
-    /unavailable/,
-  )
+  await expect(f.coordinator.handoff(f.owner, f.host, preview)).rejects.toThrow(/preview/)
+  expect(f.addWorktree).not.toHaveBeenCalled()
 })
-it('concurrent launch attempts cannot consume one snapshot twice', async () => {
+it('starts a commit-pair handoff at the Current commit, dirty tree or not', async () => {
+  const pair = { ...snapshot, currentRef: 'v2', currentRevision: 'd'.repeat(40) }
+  const f = setup(vi.fn<typeof captureArchitecture>(() => Promise.resolve(pair)))
+  f.liveBase.mockResolvedValue({ head: HEAD, prefix: '', clean: false })
+  const { preview } = await prepared(f)
+  expect(preview.handoff.commit).toBe('d'.repeat(40))
+  await f.coordinator.handoff(f.owner, f.host, preview)
+  expect(f.addWorktree).toHaveBeenCalledWith(root, expect.any(String), 'd'.repeat(40))
+})
+it('concurrent handoffs cannot create two worktrees from one preview', async () => {
   const f = setup()
-  const result = await f.coordinator.scan(f.owner, f.host, f.request)
-  const preview = await f.coordinator.prepare(f.owner, f.host, {
-    ...f.request,
-    snapshotId: result.id,
-    path: localPath('/repo/a.ts'),
-  })
+  const { preview } = await prepared(f)
   const results = await Promise.allSettled([
-    f.coordinator.launchPayload(f.owner, f.host, preview),
-    f.coordinator.launchPayload(f.owner, f.host, preview),
+    f.coordinator.handoff(f.owner, f.host, preview),
+    f.coordinator.handoff(f.owner, f.host, preview),
   ])
   expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
+  expect(f.addWorktree).toHaveBeenCalledOnce()
+})
+it('refuses a launch for another renderer or host', async () => {
+  const f = setup()
+  const { preview } = await prepared(f)
+  const { launch } = await f.coordinator.handoff(f.owner, f.host, preview)
+  const other: ProjectHost = { ...f.host }
+  expect(() => f.coordinator.launchPayload(f.owner, other, launch)).toThrow(/unavailable/)
+  expect(() => f.coordinator.assertLaunchCurrent(f.owner, f.host, launch)).toThrow(
+    /cancelled/,
+  )
+  await f.resources.revokeOwner(f.owner.id)
+  expect(() => f.coordinator.launchPayload(f.owner, f.host, launch)).toThrow(/revoked/)
 })
 it('releases workspace ownership when connection subscription setup fails', async () => {
   const f = setup()
@@ -299,7 +365,7 @@ it('keys commit-pair evidence to its Current commit and never checks freshness',
   expect(evidence.diff).toMatchObject({
     base: 'head',
     revision: 'def',
-    baseLabel: 'HEAD (abc)',
+    baseLabel: `HEAD (${BASE.slice(0, 12)})`,
     currentLabel: 'v2 (def)',
   })
   expect(evidence.stale).toBe(false)

@@ -3,7 +3,7 @@ import type { RefObject } from 'react'
 
 import { hostPathEquals } from '../../../shared'
 import type {
-  ArchitectureReviewLaunch,
+  ArchitectureAgentLaunch,
   ExternalSessionAttachRequest,
   HarnessProfile,
   HarnessProfileId,
@@ -62,7 +62,7 @@ export function useTerminalSessionCommands({
     provider: HarnessProviderDescriptor,
     initialInput?: string,
     externalAttach?: ExternalSessionAttachRequest,
-    architectureReview?: ArchitectureReviewLaunch,
+    architectureReview?: ArchitectureAgentLaunch,
   ): string => {
     const current = modelRef.current
     const pane = terminalWorkspaceSplit(current) ? current.activePane : 'primary'
@@ -98,12 +98,13 @@ export function useTerminalSessionCommands({
     return true
   }
 
+  /** Undefined while the terminal cannot launch yet; false when the profile is refused. */
   const launchArchitectureReview = (
     profileId: HarnessProfileId,
-    launchRequest: ArchitectureReviewLaunch,
+    launchRequest: ArchitectureAgentLaunch,
     launchRevision: number,
-  ): boolean => {
-    if (!available) return false
+  ): boolean | undefined => {
+    if (!available || profiles.length === 0) return undefined
     const profile = profiles.find((candidate) => candidate.id === profileId)
     const provider = profile
       ? providers.find((candidate) => candidate.id === profile.providerId)
@@ -115,6 +116,9 @@ export function useTerminalSessionCommands({
       profile.args.length !== 0 ||
       profile.launchRevision !== launchRevision
     ) {
+      onError(
+        'The architecture review profile changed or is unavailable in this worktree.',
+      )
       return false
     }
     launch(profile, provider, undefined, undefined, launchRequest)

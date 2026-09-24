@@ -96,8 +96,4 @@ export class GitDiffCapability {
       ),
     }
   }
-
-  async repoRoot(path: HostPath): Promise<HostPath> {
-    return (await this.context.repository(path)).repositoryRoot
-  }
 }

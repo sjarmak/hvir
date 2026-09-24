@@ -323,7 +323,7 @@ export function App(): ReactElement {
           />
         </div>
       ) : null}
-      {architecture.panel(root, pane)}
+      {architecture.panel(root, pane, session.switchWorkspace)}
       {pane === 'primary' ? (
         <WebPaneStack
           views={web.views}

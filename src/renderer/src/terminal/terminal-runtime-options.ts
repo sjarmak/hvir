@@ -9,7 +9,7 @@ import type {
   HostPath,
   TerminalIdentityStatus,
   ExternalSessionAttachRequest,
-  ArchitectureReviewLaunch,
+  ArchitectureAgentLaunch,
 } from '../../../shared'
 import type {
   TerminalColorTheme,
@@ -47,7 +47,7 @@ export interface TerminalRuntimeOptions {
    * restart names nothing and keeps the join (ADR-046).
    */
   readonly externalAttach?: ExternalSessionAttachRequest
-  readonly architectureReview?: ArchitectureReviewLaunch
+  readonly architectureReview?: ArchitectureAgentLaunch
   readonly position: number
   readonly active: boolean
   readonly presentation: TerminalPresentation

@@ -4,6 +4,7 @@
  * mutation coordinator. Each verb is one typed request over the worker client.
  */
 import {
+  GIT_ADD_WORKTREE_TYPE,
   GIT_FETCH_TYPE,
   GIT_PRUNE_WORKTREES_TYPE,
   GIT_PULL_TYPE,
@@ -29,6 +30,8 @@ export function gitDiscoveryWorker(worker: GitWorker): WorkspaceDiscoveryPort {
 export function gitMutationWorker(worker: GitWorker): GitMutationWorkerPort {
   return {
     pruneWorktrees: (root) => worker.request(GIT_PRUNE_WORKTREES_TYPE, { root }),
+    addWorktree: (root, target) =>
+      worker.request(GIT_ADD_WORKTREE_TYPE, { root, ...target }),
     switchBranch: (root, branch, relatedWorktreeRoots) =>
       worker.request(GIT_SWITCH_BRANCH_TYPE, { root, branch, relatedWorktreeRoots }),
     fetch: (root) => worker.request(GIT_FETCH_TYPE, { root }),

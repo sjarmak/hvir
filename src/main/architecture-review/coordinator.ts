@@ -18,6 +18,10 @@ import type {
   ArchitectureReviewRequest,
   ArchitectureReviewSnapshot,
 } from '../../shared/architecture-review'
+import type {
+  ArchitectureAgentLaunch,
+  ArchitectureHandoff,
+} from '../../shared/architecture-handoff'
 import { ARCHITECTURE_LIVE_REVISION } from '../../shared/architecture-review'
 import type { ProjectHost } from '../project-host/project-host'
 import type {
@@ -28,9 +32,15 @@ import type {
 import { captureArchitecture, validateArchitectureRequest } from './capture'
 import { listArchitectureCommits } from './commit-range'
 import { hasLiveCurrent } from './ends'
-import { readArchitectureLiveState } from './freshness'
+import { readArchitectureLiveBase, readArchitectureLiveState } from './freshness'
 import { ArchitectureScanRecorder } from './scan-recorder'
-import { architectureReviewPrompt, architecturePromptDigest } from './prompt'
+import {
+  ArchitectureLaunches,
+  handoffCommit,
+  writeArchitectureBrief,
+  type ArchitectureWorktreePort,
+} from './handoff'
+import { planArchitectureHandoff, type PlannedHandoff } from './handoff-plan'
 import { recordArchitectureScope } from './scope-record'
 
 const MAX_REVIEWS = 4
@@ -40,6 +50,12 @@ export interface ArchitectureReviewPorts {
   readonly capture?: typeof captureArchitecture
   readonly liveState?: typeof readArchitectureLiveState
   readonly commits?: typeof listArchitectureCommits
+  /** Worktree creation and brief writing for the agent handoff (ADR-063). */
+  readonly handoff?: {
+    readonly worktrees: ArchitectureWorktreePort
+    readonly liveBase?: typeof readArchitectureLiveBase
+    readonly writeBrief?: typeof writeArchitectureBrief
+  }
   readonly analyze: (
     capture: ArchitectureCapture,
     signal: AbortSignal,
@@ -55,12 +71,14 @@ interface Review {
   readonly capture?: ArchitectureCapture
   /** Live state read before capture; absent when both ends are commits. */
   readonly liveState?: string
-  readonly launched?: boolean
+  /** The approved-on-preview handoff; consumed by the one handoff it allows. */
+  readonly plan?: PlannedHandoff
   readonly snapshot?: ArchitectureReviewSnapshot
 }
 /** Workspace leases own bounded captured pairs; analysis owns no host authority. */
 export class ArchitectureReviewCoordinator {
   private readonly reviews = new Map<string, Review>()
+  private readonly launches = new ArchitectureLaunches()
   constructor(private readonly ports: ArchitectureReviewPorts) {}
 
   async scan(
@@ -198,58 +216,102 @@ export class ArchitectureReviewCoordinator {
     }
   }
 
+  /**
+   * Pins the exact handoff the person approves: the worktree, branch and starting commit,
+   * the brief and the prompt. Nothing is created until `handoff` presents the digest.
+   */
   async prepare(
     owner: RendererOwner,
     host: ProjectHost,
     request: ArchitectureEvidenceRequest,
   ): Promise<ArchitecturePreparedReview> {
-    const evidence = await this.evidence(owner, host, { ...request, capturedOnly: false })
-    if (evidence.stale !== false)
-      throw new Error('Architecture evidence is stale; refresh before launching')
-    const review = this.reviews.get(reviewKey(owner, request))!
-    if (review.launched)
-      throw new Error('A review agent was already launched for this snapshot')
-    const source = [...review.capture!.before, ...review.capture!.after].find((file) =>
+    const worktrees = this.worktrees()
+    const { key, commit } = await this.freshHandoffBase(owner, host, request)
+    const review = this.reviews.get(key)!
+    const capture = review.capture!
+    const focus = [...capture.before, ...capture.after].find((file) =>
       hostPathEquals(joinHostPath(request.root, file.path), request.path),
-    )!
-    const body = architectureReviewPrompt(
-      review.capture!,
-      request.snapshotId,
-      source.path,
-    )
-    return { ...request, body, digest: architecturePromptDigest(body) }
+    )!.path
+    const slug = `review-${randomUUID().slice(0, 8)}`
+    const planned = planArchitectureHandoff({
+      capture,
+      snapshot: review.snapshot!,
+      focus,
+      slug,
+      commit,
+      target: worktrees.worktreeTarget(request.root, slug, commit),
+    })
+    this.reviews.set(key, { ...this.reviews.get(key)!, plan: planned })
+    return {
+      ...request,
+      body: planned.body,
+      digest: planned.digest,
+      handoff: planned.plan,
+    }
   }
 
-  async launchPayload(
+  /**
+   * Creates the prepared worktree once, writes the brief and issues the one launch the
+   * agent session may spend. The plan is consumed before any mutation.
+   */
+  async handoff(
     owner: RendererOwner,
     host: ProjectHost,
     request: ArchitectureReviewLaunch,
-  ): Promise<string> {
-    const prepared = await this.prepare(owner, host, request)
-    if (typeof request.digest !== 'string' || request.digest !== prepared.digest)
+  ): Promise<ArchitectureHandoff> {
+    const worktrees = this.worktrees()
+    const planned = this.reviews.get(reviewKey(owner, request))?.plan
+    if (!planned || !matchesPlan(planned, request))
       throw new Error('Architecture review preview changed; prepare again')
-    const key = reviewKey(owner, request)
-    const review = this.reviews.get(key)!
-    // Spend before native launch: an uncertain launch must never silently duplicate a session.
-    if (review.launched) throw new Error('Architecture review launch already consumed')
-    this.reviews.set(key, { ...review, launched: true })
-    return prepared.body
+    const { key, commit } = await this.freshHandoffBase(owner, host, request)
+    // Read and spend in one synchronous step: a concurrent handoff finds the plan gone.
+    const review = this.reviews.get(key)
+    if (!review || review.plan !== planned || commit !== planned.plan.commit)
+      throw new Error('Architecture review preview changed; prepare again')
+    this.reviews.set(key, { ...review, plan: undefined })
+    const added = await worktrees.addWorktree(request.root, planned.slug, commit)
+    if (!hostPathEquals(added.root, planned.plan.worktree))
+      throw new Error('Git created the handoff worktree somewhere else')
+    await (this.ports.handoff!.writeBrief ?? writeArchitectureBrief)(
+      host,
+      added.root,
+      planned.plan.brief,
+      AbortSignal.timeout(STRIP_TIMEOUT),
+    )
+    this.ports.resources.assertCurrent(owner)
+    const launch = this.launches.issue(
+      owner,
+      host,
+      added.root,
+      planned.digest,
+      planned.body,
+    )
+    return {
+      projectId: added.projectId,
+      workspaceId: added.workspaceId,
+      branch: added.branch,
+      worktree: added.root,
+      launch,
+    }
+  }
+
+  /** Spends the launch before the native start: a session never silently duplicates. */
+  launchPayload(
+    owner: RendererOwner,
+    host: ProjectHost,
+    launch: ArchitectureAgentLaunch,
+  ): string {
+    this.ports.resources.assertCurrent(owner)
+    return this.launches.consume(owner, host, launch)
   }
 
   assertLaunchCurrent(
     owner: RendererOwner,
     host: ProjectHost,
-    request: ArchitectureReviewLaunch,
+    launch: ArchitectureAgentLaunch,
   ): void {
-    const key = reviewKey(owner, request)
-    const review = this.reviews.get(key)
-    if (
-      !review?.launched ||
-      review.snapshot?.id !== request.snapshotId ||
-      review.host !== host
-    )
-      throw new Error('Architecture review launch was cancelled')
-    this.assertLive(owner, key, review.controller)
+    this.ports.resources.assertCurrent(owner)
+    this.launches.assertCurrent(owner, host, launch)
   }
 
   close(owner: RendererOwner, request: ArchitectureReviewKey): void {
@@ -282,7 +344,36 @@ export class ArchitectureReviewCoordinator {
       review.lease.release()
     }
     this.reviews.clear()
+    this.launches.clear()
   }
+  /** Fresh evidence and the commit a handoff from it starts at. */
+  private async freshHandoffBase(
+    owner: RendererOwner,
+    host: ProjectHost,
+    request: ArchitectureEvidenceRequest,
+  ): Promise<{ key: string; commit: string }> {
+    const evidence = await this.evidence(owner, host, { ...request, capturedOnly: false })
+    if (evidence.stale !== false)
+      throw new Error('Architecture evidence is stale; refresh before launching')
+    const key = reviewKey(owner, request)
+    const { controller, capture } = this.reviews.get(key)!
+    const base = await (this.ports.handoff?.liveBase ?? readArchitectureLiveBase)(
+      host,
+      request.root,
+      controller.signal,
+    )
+    this.assertLive(owner, key, controller)
+    const live = capture!.currentRevision === ARCHITECTURE_LIVE_REVISION
+    const commit = handoffCommit(live ? undefined : capture!.currentRevision, base)
+    return { key, commit }
+  }
+
+  private worktrees(): ArchitectureWorktreePort {
+    const worktrees = this.ports.handoff?.worktrees
+    if (!worktrees) throw new Error('Agent handoff is unavailable in this window')
+    return worktrees
+  }
+
   /** The live state is read first: an edit racing the capture can only make it stale. */
   private async capture(
     host: ProjectHost,
@@ -372,4 +463,17 @@ function endLabel(ref: string, revision: string): string {
   if (revision === ARCHITECTURE_LIVE_REVISION) return ref
   const short = revision.slice(0, 12)
   return ref === revision || ref === short ? short : `${ref} (${short})`
+}
+
+function matchesPlan(
+  planned: PlannedHandoff,
+  request: ArchitectureReviewLaunch,
+): boolean {
+  return (
+    typeof request.digest === 'string' &&
+    request.digest === planned.digest &&
+    request.snapshotId === planned.snapshotId &&
+    !!request.path &&
+    hostPathEquals(joinHostPath(request.root, planned.path), request.path)
+  )
 }

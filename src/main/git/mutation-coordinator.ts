@@ -5,6 +5,7 @@ import {
   type RegisteredProjectState,
   type WorktreeDiscovery,
 } from '../../shared'
+import { hvirWorktreeTarget, type HvirWorktreeTarget } from './hvir-worktrees'
 import type { GitMutationGrant, GitMutationGrantRequest } from './mutation-authorization'
 import type { ProjectWatchTarget } from '../project-watch'
 import type { WorkspaceRemovalPort } from '../workspace-removal-coordinator'
@@ -23,6 +24,7 @@ export interface GitMutationRegistryPort {
 
 export interface GitMutationWorkerPort {
   pruneWorktrees(root: HostPath): Promise<WorktreeDiscovery>
+  addWorktree(root: HostPath, target: HvirWorktreeTarget): Promise<WorktreeDiscovery>
   switchBranch(
     root: HostPath,
     branch: string,
@@ -57,6 +59,14 @@ export interface GitMutationCoordinatorOptions {
   readonly onError?: (message: string, error: unknown) => void
 }
 
+/** The workspace a review handoff created, registered and ready to switch to. */
+export interface AddedWorktree {
+  readonly projectId: string
+  readonly workspaceId: string
+  readonly root: HostPath
+  readonly branch: string
+}
+
 /** Coordinates the complete lifecycle of the bounded Git mutations exposed by hvir. */
 export class GitMutationCoordinator {
   constructor(private readonly options: GitMutationCoordinatorOptions) {}
@@ -68,6 +78,58 @@ export class GitMutationCoordinator {
     return workspaces.coalesceProjectOperation(projectId, async () => {
       await settled
       return this.performPrune(projectId)
+    })
+  }
+
+  /** The exact worktree `addWorktree(root, slug, commit)` would create, for a preview. */
+  worktreeTarget(root: HostPath, slug: string, commit: string): HvirWorktreeTarget {
+    this.assertActive(
+      root,
+      'Worktree creation belongs to another workspace',
+      'creating a worktree',
+    )
+    return hvirWorktreeTarget(this.activeProject().registeredRoot, slug, commit)
+  }
+
+  /**
+   * Creates the review worktree hvir owns beside the registered root, on a new
+   * `hvir/architecture/<slug>` branch at `commit` (ADR-063). `root` must be the active
+   * workspace; the grant names the exact branch, path and commit.
+   */
+  addWorktree(root: HostPath, slug: string, commit: string): Promise<AddedWorktree> {
+    return this.options.workspaces.serialize(async () => {
+      const { registry } = this.options
+      this.assertActive(
+        root,
+        'Worktree creation belongs to another workspace',
+        'creating a worktree',
+      )
+      const project = this.activeProject()
+      const projectId = project.id
+      const target = hvirWorktreeTarget(project.registeredRoot, slug, commit)
+      const grant = this.options.authorizations.grant({
+        kind: 'worktree-add',
+        projectId,
+        root: project.registeredRoot,
+        target,
+      })
+      let discovery: WorktreeDiscovery
+      try {
+        discovery = await this.options.worker.addWorktree(project.registeredRoot, target)
+      } finally {
+        grant.revoke()
+      }
+      const state = await registry.reconcileWorktrees(projectId, discovery)
+      const workspace = state.projects
+        .find((candidate) => candidate.id === projectId)
+        ?.workspaces.find((candidate) => candidate.root.path === target.path)
+      if (!workspace) throw new Error('Git did not report the new worktree')
+      return {
+        projectId,
+        workspaceId: workspace.id,
+        root: workspace.root,
+        branch: target.branch,
+      }
     })
   }
 
@@ -192,6 +254,14 @@ export class GitMutationCoordinator {
       await this.options.workspaces.replaceWatch(registry.active)
     }
     return registry.state()
+  }
+
+  private activeProject(): RegisteredProjectState {
+    const project = this.options.registry.projectById(
+      this.options.registry.active.projectId,
+    )
+    if (!project) throw new Error('Unknown project')
+    return project
   }
 
   private assertActive(
