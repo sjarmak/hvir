@@ -23,18 +23,22 @@ export interface StageMeasurement {
 
 /**
  * Collects the spans of one scan. Host calls are counted by the caller as they are issued,
- * so each span carries the round trips made while it ran; scans are sequential per recorder.
+ * so each span carries the round trips made while it ran. Measured stages never overlap and
+ * every host call must fall inside one, so no round trip goes uncredited or misattributed.
  */
 export class ArchitectureScanRecorder {
   readonly originEpochMs: number
   private readonly spans: ArchitectureStageSpan[] = []
   private hostCalls = 0
+  private active: ArchitectureScanStage | undefined
 
   constructor(private readonly clock: EpochClock = epochClock) {
     this.originEpochMs = clock()
   }
 
   countHostCall(): void {
+    if (this.active === undefined)
+      throw new Error('Architecture scan host call made outside a measured stage')
     this.hostCalls += 1
   }
 
@@ -43,11 +47,16 @@ export class ArchitectureScanRecorder {
     work: () => Promise<T>,
     describe: (result: T) => StageMeasurement,
   ): Promise<T> {
+    this.enter(stage)
     const start = this.clock()
     const calls = this.hostCalls
-    const result = await work()
-    this.record(stage, start, this.clock(), describe(result), this.hostCalls - calls)
-    return result
+    try {
+      const result = await work()
+      this.record(stage, start, this.clock(), describe(result), this.hostCalls - calls)
+      return result
+    } finally {
+      this.active = undefined
+    }
   }
 
   measureSync<T>(
@@ -55,11 +64,16 @@ export class ArchitectureScanRecorder {
     work: () => T,
     describe: (result: T) => StageMeasurement,
   ): T {
+    this.enter(stage)
     const start = this.clock()
     const calls = this.hostCalls
-    const result = work()
-    this.record(stage, start, this.clock(), describe(result), this.hostCalls - calls)
-    return result
+    try {
+      const result = work()
+      this.record(stage, start, this.clock(), describe(result), this.hostCalls - calls)
+      return result
+    } finally {
+      this.active = undefined
+    }
   }
 
   /**
@@ -91,6 +105,12 @@ export class ArchitectureScanRecorder {
       ...spans.map((span) => span.startMs + span.durationMs),
     )
     return { spans, totalMs: end }
+  }
+
+  private enter(stage: ArchitectureScanStage): void {
+    if (this.active !== undefined)
+      throw new Error(`Architecture scan stage ${stage} overlaps ${this.active}`)
+    this.active = stage
   }
 
   private record(

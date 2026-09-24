@@ -71,6 +71,59 @@ it('does not record a span for work that fails', async () => {
   expect(recorder.metrics().spans).toEqual([])
 })
 
+it('refuses a host call made outside every measured stage', async () => {
+  const recorder = new ArchitectureScanRecorder(steppingClock())
+  expect(() => recorder.countHostCall()).toThrow(/outside a measured stage/)
+  await recorder.measure(
+    'listing',
+    () => Promise.resolve(recorder.countHostCall()),
+    () => ({ bytes: 0, items: 0 }),
+  )
+  expect(() => recorder.countHostCall()).toThrow(/outside a measured stage/)
+  expect(recorder.metrics().spans.map((span) => span.hostCalls)).toEqual([1])
+})
+
+it('refuses overlapping stages so no host call is credited to the wrong one', async () => {
+  const recorder = new ArchitectureScanRecorder(steppingClock())
+  let release = () => undefined as void
+  const listing = recorder.measure(
+    'listing',
+    () => new Promise<void>((resolve) => (release = resolve)),
+    () => ({ bytes: 0, items: 0 }),
+  )
+  await expect(
+    recorder.measure(
+      'blob-read',
+      () => Promise.resolve(recorder.countHostCall()),
+      () => ({ bytes: 0, items: 0 }),
+    ),
+  ).rejects.toThrow(/blob-read overlaps listing/)
+  expect(() =>
+    recorder.measureSync(
+      'hashing',
+      () => 1,
+      () => ({ bytes: 0, items: 0 }),
+    ),
+  ).toThrow(/hashing overlaps listing/)
+  release()
+  await listing
+  const failed = recorder.measure(
+    'blob-read',
+    () => Promise.reject(new Error('read failed')),
+    () => ({ bytes: 0, items: 0 }),
+  )
+  await expect(failed).rejects.toThrow('read failed')
+  recorder.measureSync(
+    'hashing',
+    () => 1,
+    () => ({ bytes: 0, items: 0 }),
+  )
+  expect(recorder.metrics().spans.map((span) => span.stage)).toEqual([
+    'listing',
+    'hashing',
+  ])
+})
+
 it('summarizes stages in pipeline order and omits stages that never ran', () => {
   const totals = summarizeArchitectureStages([
     {

@@ -239,3 +239,46 @@ it('reads both commit ends from Git objects without live reads in branch-point m
       .map((entry) => entry.side),
   ).toEqual(['baseline', 'current'])
 })
+
+/** LocalHost with every host round trip the capture can make counted. */
+function countingHost(): { host: ProjectHost; calls: () => number } {
+  const local = new LocalHost()
+  let calls = 0
+  const counted = new Set(['exec', 'stat', 'realpath', 'readTextFile', 'readTextFilePrefix'])
+  const host = new Proxy(local, {
+    get(target, property, receiver) {
+      const value: unknown = Reflect.get(target, property, receiver)
+      if (typeof value !== 'function') return value
+      if (!counted.has(String(property))) return value.bind(target) as unknown
+      return (...args: unknown[]) => {
+        calls += 1
+        return (value as (...a: unknown[]) => unknown).apply(target, args)
+      }
+    },
+  })
+  return { host, calls: () => calls }
+}
+
+it('credits every host round trip to a span in every comparison mode', async () => {
+  const f = await fixture()
+  git(f.root, 'switch', '-c', 'feature')
+  await writeFile(join(f.root, 'src/a.ts'), 'export const value = 2\n')
+  git(f.root, 'commit', '-am', 'change')
+  await writeFile(join(f.root, 'src/b.ts'), 'export const b = 22\n')
+  const modes = ['branch-point', 'working-tree', 'head', 'commit'] as const
+  for (const mode of modes) {
+    const { host, calls } = countingHost()
+    const recorder = new ArchitectureScanRecorder()
+    await captureArchitecture(
+      host,
+      { root: localPath(f.root), mode, revision: mode === 'commit' ? f.baseline : undefined },
+      new AbortController().signal,
+      recorder,
+    )
+    const credited = recorder
+      .metrics()
+      .spans.reduce((total, span) => total + span.hostCalls, 0)
+    expect({ mode, credited }).toEqual({ mode, credited: calls() })
+    expect(calls()).toBeGreaterThan(0)
+  }
+})

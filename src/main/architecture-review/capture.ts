@@ -65,7 +65,13 @@ export async function captureArchitecture(
     )
   const live = request.mode !== 'branch-point'
   const currentRevision = (await run(['rev-parse', '--verify', 'HEAD'])).trim()
-  const baselineRevision = await resolveBaseline(context, request, currentRevision, run)
+  const baselineRevision = await resolveBaseline(request, currentRevision, run, () =>
+    recorder.measure(
+      'listing',
+      () => context.defaultBranch(request.root),
+      (branch) => ({ bytes: Buffer.byteLength(branch), items: 1 }),
+    ),
+  )
   const beforeEntries =
     request.mode === 'working-tree'
       ? parseIndex(await run(['ls-files', '--stage', '-z', '--', '.']))
@@ -247,16 +253,16 @@ function validateRequest(host: ProjectHost, request: ArchitectureCaptureRequest)
     throw new Error('Reconnect the host before reviewing architecture')
 }
 async function resolveBaseline(
-  context: GitCommandContext,
   request: ArchitectureCaptureRequest,
   head: string,
   run: (args: readonly string[]) => Promise<string>,
+  defaultBranch: () => Promise<string>,
 ): Promise<string> {
   if (request.mode === 'working-tree') return 'index'
-  if (request.mode === 'branch-point')
-    return (
-      await run(['merge-base', head, await context.defaultBranch(request.root)])
-    ).trim()
+  if (request.mode === 'branch-point') {
+    const branch = await defaultBranch()
+    return (await run(['merge-base', head, branch])).trim()
+  }
   return (
     await run([
       'rev-parse',
