@@ -53,6 +53,7 @@ export interface ArchitectureReviewSnapshot extends Omit<
 > {
   readonly id: string
   readonly analysis: import('./architecture-analysis').ArchitectureAnalysis
+  readonly metrics: import('./architecture-scan-metrics').ArchitectureScanMetrics
 }
 export interface ArchitectureEvidenceRequest extends ArchitectureReviewKey {
   readonly snapshotId: string

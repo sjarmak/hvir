@@ -19,6 +19,7 @@ import type {
   RendererResourceScopes,
 } from '../renderer-resource-scopes'
 import { captureArchitecture } from './capture'
+import { ArchitectureScanRecorder } from './scan-recorder'
 import { architectureReviewPrompt, architecturePromptDigest } from './prompt'
 
 const MAX_REVIEWS = 4
@@ -28,6 +29,7 @@ export interface ArchitectureReviewPorts {
   readonly analyze: (
     capture: ArchitectureCapture,
     signal: AbortSignal,
+    recorder: ArchitectureScanRecorder,
   ) => Promise<ArchitectureAnalysis>
 }
 interface Review {
@@ -77,19 +79,27 @@ export class ArchitectureReviewCoordinator {
         controller.signal.throwIfAborted()
       }
       this.reviews.set(key, review)
+      const recorder = new ArchitectureScanRecorder()
       const capture = await (this.ports.capture ?? captureArchitecture)(
         host,
         request,
         controller.signal,
+        recorder,
       )
       this.assertLive(owner, key, controller)
-      const analysis = await this.ports.analyze(capture, controller.signal)
+      const analysis = await this.ports.analyze(capture, controller.signal, recorder)
       this.assertLive(owner, key, controller)
       const { before: _before, after: _after, ...metadata } = capture
+      const payload = { ...metadata, id: randomUUID(), analysis }
+      // The renderer receives this payload over IPC; its serialized size is the transfer cost.
+      recorder.measureSync(
+        'renderer-payload',
+        () => Buffer.byteLength(JSON.stringify(payload)),
+        (bytes) => ({ bytes, items: 1 }),
+      )
       const snapshot: ArchitectureReviewSnapshot = {
-        ...metadata,
-        id: randomUUID(),
-        analysis,
+        ...payload,
+        metrics: recorder.metrics(),
       }
       this.reviews.set(key, { ...review, capture, snapshot })
       return snapshot

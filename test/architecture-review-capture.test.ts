@@ -7,6 +7,8 @@ import { LocalHost } from '../src/main/project-host/local-host'
 import { asHostId, hostPath, localPath } from '../src/shared/host-path'
 import type { ProjectHost } from '../src/main/project-host/project-host'
 import { captureArchitecture } from '../src/main/architecture-review/capture'
+import { ArchitectureScanRecorder } from '../src/main/architecture-review/scan-recorder'
+import { expectMonotoneMetrics, stagesOf } from './architecture-scan-metrics-fixture'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -173,4 +175,67 @@ it('captures identical bytes and revisions through a host-qualified remote trans
   // The fingerprint includes the host-qualified root, so equal evidence on
   // different transports remains distinguishable to stale-review guards.
   expect(remoteCapture.fingerprint).not.toBe(localCapture.fingerprint)
+})
+
+it('records listing, blob, live-read, recheck and hashing spans for a working-tree scan', async () => {
+  const f = await fixture()
+  await writeFile(join(f.root, 'src/b.ts'), 'export const b = 22\n')
+  const recorder = new ArchitectureScanRecorder()
+  const capture = await captureArchitecture(
+    f.host,
+    { root: localPath(f.root), mode: 'working-tree' },
+    new AbortController().signal,
+    recorder,
+  )
+  const metrics = recorder.metrics()
+  expectMonotoneMetrics(metrics)
+  expect(stagesOf(metrics)).toEqual([
+    'blob-read',
+    'hashing',
+    'listing',
+    'live-read',
+    'live-recheck',
+  ])
+  const span = (stage: string) => metrics.spans.find((entry) => entry.stage === stage)!
+  const bytes = (files: readonly { content: string }[]) =>
+    files.reduce((total, file) => total + Buffer.byteLength(file.content), 0)
+  expect(span('blob-read')).toMatchObject({
+    side: 'baseline',
+    items: 1,
+    bytes: bytes(capture.before),
+    hostCalls: 1,
+  })
+  // Every live file costs a stat, a realpath and a read on the host.
+  expect(span('live-read')).toMatchObject({
+    side: 'current',
+    items: 2,
+    bytes: bytes(capture.after),
+    hostCalls: 6,
+  })
+  expect(span('live-recheck')).toMatchObject({ items: 2, hostCalls: 6 })
+  expect(
+    metrics.spans.filter((entry) => entry.stage === 'listing').length,
+  ).toBeGreaterThan(2)
+})
+
+it('reads both commit ends from Git objects without live reads in branch-point mode', async () => {
+  const f = await fixture()
+  git(f.root, 'switch', '-c', 'feature')
+  await writeFile(join(f.root, 'src/a.ts'), 'export const value = 2\n')
+  git(f.root, 'commit', '-am', 'change')
+  const recorder = new ArchitectureScanRecorder()
+  await captureArchitecture(
+    f.host,
+    { root: localPath(f.root), mode: 'branch-point' },
+    new AbortController().signal,
+    recorder,
+  )
+  const metrics = recorder.metrics()
+  expectMonotoneMetrics(metrics)
+  expect(stagesOf(metrics)).toEqual(['blob-read', 'hashing', 'listing'])
+  expect(
+    metrics.spans
+      .filter((entry) => entry.stage === 'blob-read')
+      .map((entry) => entry.side),
+  ).toEqual(['baseline', 'current'])
 })

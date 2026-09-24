@@ -7,6 +7,7 @@ import type {
 } from '../../../shared/architecture-review'
 import { ArchitectureMap } from './ArchitectureMap'
 import { ArchitectureEvidencePanel } from './ArchitectureEvidencePanel'
+import { ArchitectureScanTimings } from './ArchitectureScanTimings'
 import type { ArchitectureMapMode } from './architecture-review-model'
 
 const MODES: readonly ArchitectureComparisonMode[] = [
@@ -195,6 +196,7 @@ export function ArchitectureReview({
                 <dd>{snapshot.exclusions.join(', ') || 'None'}</dd>
               </div>
             </dl>
+            <ArchitectureScanTimings metrics={snapshot.metrics} />
             {(['before', 'after'] as const).map(
               (side) =>
                 snapshot.analysis[side].diagnostics.length > 0 && (

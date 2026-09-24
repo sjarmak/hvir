@@ -35,6 +35,21 @@ const snapshot = {
   fingerprint: 'fingerprint',
   exclusions: [],
   capturedAt: '2026-09-23',
+  metrics: {
+    totalMs: 42.5,
+    spans: [
+      { stage: 'listing', startMs: 0, durationMs: 2, bytes: 900, items: 3, hostCalls: 2 },
+      {
+        stage: 'live-read',
+        side: 'current',
+        startMs: 2,
+        durationMs: 30.25,
+        bytes: 2_500_000,
+        items: 10,
+        hostCalls: 30,
+      },
+    ],
+  },
 }
 const prepared = {
   root,
@@ -220,4 +235,18 @@ it('ignores late freshness completion after a replacement scan', async () => {
   await click(button('Scan snapshot'))
   await act(async () => resolve(await original('architecture-review:evidence')))
   expect(host.querySelector('[data-testid="captured-diff"]')).toBeNull()
+})
+
+it('shows per-stage scan cost in the snapshot details', async () => {
+  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await click(button('Scan snapshot'))
+  const table = host.querySelector('table[aria-label="Scan timings"]')!
+  expect(table.querySelector('caption')?.textContent).toContain('42.5 ms')
+  const rows = Array.from(table.querySelectorAll('tbody tr')).map((row) =>
+    Array.from(row.children).map((cell) => cell.textContent),
+  )
+  expect(rows).toEqual([
+    ['listing', '2.0 ms', '900 B', '3', '2'],
+    ['live-read', '30.3 ms', '2.4 MB', '10', '30'],
+  ])
 })

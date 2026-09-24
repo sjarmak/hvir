@@ -51,6 +51,9 @@ export async function verifyArchitectureReviewWorkflow(
       await wait(surface, 'reopened surface');
       button('Scan snapshot').click();
       const body = await wait(() => document.querySelector('.architecture-review-body'), 'map');
+      const stages = [...document.querySelectorAll('table[aria-label="Scan timings"] tbody th')].map(node => node.textContent);
+      for (const stage of ['listing', 'live-read', 'worker-spawn', 'parse', 'worker-return', 'renderer-payload'])
+        if (!stages.includes(stage)) throw new Error('Snapshot details miss scan stage ' + stage + ': ' + stages.join(','));
       for (const mode of ['before', 'after', 'overlay']) {
         const control = button(mode);
         if (!control) throw new Error('Missing map mode ' + mode);

@@ -371,6 +371,23 @@
   overflow-wrap: anywhere;
   min-width: 0;
 }
+.architecture-review-timings {
+  margin: 8px 0;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.architecture-review-timings caption {
+  text-align: left;
+  padding-bottom: 4px;
+}
+.architecture-review-timings :is(th, td) {
+  padding: 2px 12px 2px 0;
+  text-align: right;
+  font-weight: normal;
+}
+.architecture-review-timings :is(th[scope='row'], thead th:first-child) {
+  text-align: left;
+}
 .architecture-evidence form {
   display: grid;
   gap: 8px;

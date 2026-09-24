@@ -5,6 +5,9 @@ import { localPath, hostPath, asHostId } from '../src/shared/host-path'
 import type { ProjectHost } from '../src/main/project-host'
 import type { ArchitectureCapture } from '../src/shared/architecture-review'
 import type { ArchitectureAnalysis } from '../src/shared/architecture-analysis'
+import type { ArchitectureScanRecorder } from '../src/main/architecture-review/scan-recorder'
+import type { captureArchitecture } from '../src/main/architecture-review/capture'
+import { expectMonotoneMetrics, stagesOf } from './architecture-scan-metrics-fixture'
 const root = localPath('/repo')
 const snapshot: ArchitectureCapture = {
   root,
@@ -17,7 +20,9 @@ const snapshot: ArchitectureCapture = {
   exclusions: [],
   capturedAt: 'now',
 }
-function setup(capture = vi.fn(() => Promise.resolve(snapshot))) {
+function setup(
+  capture = vi.fn<typeof captureArchitecture>(() => Promise.resolve(snapshot)),
+) {
   const resources = new RendererResourceScopes()
   const owner = resources.activateOwner(1)
   const host = {
@@ -33,7 +38,13 @@ function setup(capture = vi.fn(() => Promise.resolve(snapshot))) {
     imports: [],
     diagnostics: [],
   }
-  const analyze = vi.fn((): Promise<ArchitectureAnalysis> =>
+  const analyze = vi.fn<
+    (
+      capture: ArchitectureCapture,
+      signal: AbortSignal,
+      recorder: ArchitectureScanRecorder,
+    ) => Promise<ArchitectureAnalysis>
+  >(() =>
     Promise.resolve({
       before: emptyScan,
       after: emptyScan,
@@ -97,7 +108,7 @@ it('marks changed content stale while keeping the pinned pair', async () => {
 it('revokes pending capture on workspace close and rejects its late completion', async () => {
   let resolve!: (value: ArchitectureCapture) => void
   const f = setup(
-    vi.fn(
+    vi.fn<typeof captureArchitecture>(
       () =>
         new Promise<ArchitectureCapture>((done) => {
           resolve = done
@@ -219,4 +230,26 @@ it('returns unchecked pinned evidence without recapturing, but cannot skip launc
   await expect(f.coordinator.prepare(f.owner, f.host, request)).rejects.toThrow(
     'host unavailable',
   )
+})
+
+it('shares one scan recorder with capture and analysis and reports the renderer payload', async () => {
+  const f = setup(
+    vi.fn<typeof captureArchitecture>((_host, _request, _signal, recorder) => {
+      recorder?.measureSync(
+        'hashing',
+        () => 'digest',
+        () => ({ bytes: 10, items: 1 }),
+      )
+      return Promise.resolve(snapshot)
+    }),
+  )
+  const result = await f.coordinator.scan(f.owner, f.host, f.request)
+  expect(f.analyze.mock.calls[0]?.[2]).toBe(f.capture.mock.calls[0]?.[3])
+  expectMonotoneMetrics(result.metrics)
+  expect(stagesOf(result.metrics)).toEqual(['hashing', 'renderer-payload'])
+  const { metrics: _metrics, ...payload } = result
+  expect(result.metrics.spans.at(-1)).toMatchObject({
+    stage: 'renderer-payload',
+    bytes: Buffer.byteLength(JSON.stringify(payload)),
+  })
 })

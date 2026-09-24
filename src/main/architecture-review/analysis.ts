@@ -12,7 +12,6 @@ import type {
   ArchitectureScanInput,
   ArchitectureScanResult,
 } from '../../shared'
-import type { ArchitectureCapture } from '../../shared/architecture-review'
 
 const VIRTUAL_ROOT = '/__architecture__'
 const implementation = /\.[cm]?[jt]sx?$/
@@ -365,16 +364,4 @@ export function analyzeArchitecture(
   after: ArchitectureScanInput,
 ): ArchitectureAnalysis {
   return compareArchitecture(scanArchitecture(before), scanArchitecture(after))
-}
-
-/** Analyze one already-captured pair; this adapter performs no host or Git I/O. */
-export function analyzeArchitectureCapture(
-  capture: ArchitectureCapture,
-): ArchitectureAnalysis {
-  const scope = 'repository source files'
-  const exclusions = capture.exclusions
-  return analyzeArchitecture(
-    { files: capture.before, scope, exclusions },
-    { files: capture.after, scope, exclusions },
-  )
 }

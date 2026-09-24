@@ -9,59 +9,71 @@ import type {
 import type { ProjectHost } from '../project-host/project-host'
 import { GitCommandContext } from '../git/git-command-context'
 import { readArchitectureBlobs } from './git-blobs'
+import {
+  isSource,
+  parseIndex,
+  parsePaths,
+  parseTree,
+  selectEntries,
+  type CaptureEntry,
+} from './capture-entries'
+import { ArchitectureScanRecorder } from './scan-recorder'
 
 const COMMAND_TIMEOUT = 30_000
 const READ_CONCURRENCY = 8
-interface Entry {
-  readonly path: string
-  readonly object?: string
-  readonly mode?: string
-}
 interface Side {
   readonly sources: readonly ArchitectureSource[]
   readonly configs: readonly ArchitectureSource[]
 }
-/** Captures actual text pairs, never a deferred instruction to re-resolve Git revisions. */
+type SideRead = 'blob' | 'live' | 'recheck'
+type Contents = ReadonlyMap<string, string>
+
+/**
+ * Captures actual text pairs, never a deferred instruction to re-resolve Git revisions.
+ * Every host round trip and read is recorded on the scan's recorder (ADR-063).
+ */
 export async function captureArchitecture(
   host: ProjectHost,
   request: ArchitectureCaptureRequest,
   signal: AbortSignal,
+  recorder: ArchitectureScanRecorder = new ArchitectureScanRecorder(),
 ): Promise<ArchitectureCapture> {
   signal.throwIfAborted()
   validateRequest(host, request)
-  const context = new GitCommandContext(
-    {
-      hostId: host.hostId,
-      exec: (command, args, options) =>
-        host.exec(command, args, {
-          ...options,
-          signal,
-          timeout: COMMAND_TIMEOUT,
-          maxBuffer: options?.maxBuffer ?? SCOPE.maxListingBytes,
-        }),
-      stat: (path) => host.stat(path),
-      readTextFile: (path) => host.readTextFile(path, 'utf8', { signal }),
-      readTextFilePrefix: (path, bytes) =>
-        host.readTextFilePrefix(path, bytes, { signal }),
-    },
-    request.root,
+  const counted: Counted = (call) => {
+    recorder.countHostCall()
+    return call()
+  }
+  const context = countedGitContext(host, request, signal, counted)
+  const { project, canonicalRoot } = await recorder.measure(
+    'listing',
+    async () => ({
+      project: await context.project(request.root),
+      canonicalRoot: await counted(() => host.realpath(request.root)),
+    }),
+    () => ({ bytes: 0, items: 0 }),
   )
-  const project = await context.project(request.root)
   if (!project) throw new Error('Architecture review requires a Git repository')
-  const canonicalRoot = await host.realpath(request.root)
-  const run = (args: readonly string[], limit: number = SCOPE.maxListingBytes) =>
-    context.run(request.root, args, limit)
+  const run = (args: readonly string[]) =>
+    recorder.measure(
+      'listing',
+      () => context.run(request.root, args, SCOPE.maxListingBytes),
+      (output) => ({
+        bytes: Buffer.byteLength(output),
+        items: output.split(/[\0\n]/).filter(Boolean).length,
+      }),
+    )
+  const live = request.mode !== 'branch-point'
   const currentRevision = (await run(['rev-parse', '--verify', 'HEAD'])).trim()
   const baselineRevision = await resolveBaseline(context, request, currentRevision, run)
   const beforeEntries =
     request.mode === 'working-tree'
       ? parseIndex(await run(['ls-files', '--stage', '-z', '--', '.']))
       : parseTree(await run(['ls-tree', '-r', '-z', baselineRevision, '--', '.']))
-  const before = await readSide(beforeEntries, false)
+  const before = await readSide(beforeEntries, 'blob', 'baseline')
   const currentEntries = async () =>
-    request.mode === 'branch-point'
-      ? parseTree(await run(['ls-tree', '-r', '-z', currentRevision, '--', '.']))
-      : (
+    live
+      ? parsePaths(
           await run([
             'ls-files',
             '-z',
@@ -70,15 +82,13 @@ export async function captureArchitecture(
             '--exclude-standard',
             '--',
             '.',
-          ])
+          ]),
         )
-          .split('\0')
-          .filter(Boolean)
-          .map((path) => ({ path }))
-  const after = await readSide(await currentEntries(), request.mode !== 'branch-point')
+      : parseTree(await run(['ls-tree', '-r', '-z', currentRevision, '--', '.']))
+  const after = await readSide(await currentEntries(), live ? 'live' : 'blob', 'current')
   // A live tree is not atomic. Refuse a moving read rather than label mixed evidence current.
-  if (request.mode !== 'branch-point') {
-    const check = await readSide(await currentEntries(), true)
+  if (live) {
+    const check = await readSide(await currentEntries(), 'recheck', 'current')
     if (digest(after) !== digest(check))
       throw new Error('Sources changed during capture; refresh architecture review')
   }
@@ -87,12 +97,9 @@ export async function captureArchitecture(
     root: request.root,
     mode: request.mode,
     baselineRevision,
-    currentRevision: request.mode === 'branch-point' ? currentRevision : 'working-tree',
+    currentRevision: live ? 'working-tree' : currentRevision,
     scope: SCOPE,
-    configFingerprint: digest({
-      before: before.configs,
-      after: after.configs,
-    }),
+    configFingerprint: digest({ before: before.configs, after: after.configs }),
     before,
     after,
   }
@@ -110,59 +117,71 @@ export async function captureArchitecture(
     ],
   }
 
-  async function readSide(entries: readonly Entry[], live: boolean): Promise<Side> {
-    const unique = [...new Map(entries.map((entry) => [entry.path, entry])).values()]
-      .filter((entry) => included(entry.path))
-      .sort((a, b) => a.path.localeCompare(b.path))
-    if (unique.length > SCOPE.maxFiles)
-      throw new Error(
-        `Architecture scan exceeds ${SCOPE.maxFiles} files; narrow the workspace`,
-      )
-    const files: ArchitectureSource[] = []
-    const blobs = live
-      ? undefined
-      : await readArchitectureBlobs(
-          context,
-          request.root,
-          unique.map((entry) => entry.object!),
-        )
-    let bytes = 0
-    for (let offset = 0; offset < unique.length; offset += READ_CONCURRENCY) {
-      signal.throwIfAborted()
-      const batch = await Promise.all(
-        unique.slice(offset, offset + READ_CONCURRENCY).map(async (entry) => {
-          assertRelative(entry.path)
-          if (entry.mode && entry.mode !== '100644' && entry.mode !== '100755')
-            throw new Error(
-              `Unsupported symbolic link or submodule in scan: ${entry.path}`,
-            )
-          const content = live ? await liveText(entry.path) : blobs!.get(entry.object!)!
-          return content === undefined ? undefined : { path: entry.path, content }
-        }),
-      )
-      for (const file of batch) {
-        if (!file) continue
-        bytes += Buffer.byteLength(file.content)
-        if (bytes > SCOPE.maxTotalBytes)
-          throw new Error('Architecture scan exceeds the total source byte limit')
-        files.push(file)
-      }
-    }
+  async function readSide(
+    entries: readonly CaptureEntry[],
+    read: SideRead,
+    side: 'baseline' | 'current',
+  ): Promise<Side> {
+    const selected = selectEntries(entries)
+    signal.throwIfAborted()
+    const contents = await recorder.measure(
+      read === 'blob' ? 'blob-read' : read === 'live' ? 'live-read' : 'live-recheck',
+      () => (read === 'blob' ? readBlobs(selected) : readLive(selected)),
+      (result) => ({ bytes: totalBytes(result), items: result.size, side }),
+    )
+    const files = selected.flatMap((entry) => {
+      const content = contents.get(entry.path)
+      return content === undefined ? [] : [{ path: entry.path, content }]
+    })
     return {
       sources: files.filter((file) => isSource(file.path)),
       configs: files.filter((file) => !isSource(file.path)),
     }
   }
+  async function readBlobs(entries: readonly CaptureEntry[]): Promise<Contents> {
+    const blobs = await readArchitectureBlobs(
+      context,
+      request.root,
+      entries.map((entry) => entry.object!),
+    )
+    const contents = new Map(
+      entries.map((entry) => [entry.path, blobs.get(entry.object!)!]),
+    )
+    assertWithinByteLimit(totalBytes(contents))
+    return contents
+  }
+  async function readLive(entries: readonly CaptureEntry[]): Promise<Contents> {
+    const contents = new Map<string, string>()
+    let bytes = 0
+    for (let offset = 0; offset < entries.length; offset += READ_CONCURRENCY) {
+      signal.throwIfAborted()
+      const batch = await Promise.all(
+        entries.slice(offset, offset + READ_CONCURRENCY).map(async (entry) => ({
+          path: entry.path,
+          content: await liveText(entry.path),
+        })),
+      )
+      for (const file of batch) {
+        if (file.content === undefined) continue
+        bytes += Buffer.byteLength(file.content)
+        assertWithinByteLimit(bytes)
+        contents.set(file.path, file.content)
+      }
+    }
+    return contents
+  }
   async function liveText(relative: string): Promise<string | undefined> {
     const path = joinHostPath(request.root, relative)
     try {
-      const stat = await host.stat(path)
+      const stat = await counted(() => host.stat(path))
       if (stat.type !== 'file')
         throw new Error(`Unsupported symbolic link or non-file source: ${relative}`)
-      const canonical = await host.realpath(path)
+      const canonical = await counted(() => host.realpath(path))
       if (!containsHostPath(canonicalRoot, canonical))
         throw new Error('Source escapes workspace through a symlink')
-      const result = await host.readTextFilePrefix(path, SCOPE.maxFileBytes, { signal })
+      const result = await counted(() =>
+        host.readTextFilePrefix(path, SCOPE.maxFileBytes, { signal }),
+      )
       if (!result.complete || result.validUtf8 === false)
         throw new Error(`Unsupported large or invalid source: ${relative}`)
       return result.content
@@ -171,8 +190,46 @@ export async function captureArchitecture(
       throw error
     }
   }
+  function digest(value: unknown): string {
+    return recorder.measureSync(
+      'hashing',
+      () => {
+        const text = JSON.stringify(value)
+        return { hex: createHash('sha256').update(text).digest('hex'), text }
+      },
+      ({ text }) => ({ bytes: Buffer.byteLength(text), items: 1 }),
+    ).hex
+  }
 }
 
+type Counted = <T>(call: () => Promise<T>) => Promise<T>
+/** Git access for one capture, bounded per command and counted per host round trip. */
+function countedGitContext(
+  host: ProjectHost,
+  request: ArchitectureCaptureRequest,
+  signal: AbortSignal,
+  counted: Counted,
+): GitCommandContext {
+  return new GitCommandContext(
+    {
+      hostId: host.hostId,
+      exec: (command, args, options) =>
+        counted(() =>
+          host.exec(command, args, {
+            ...options,
+            signal,
+            timeout: COMMAND_TIMEOUT,
+            maxBuffer: options?.maxBuffer ?? SCOPE.maxListingBytes,
+          }),
+        ),
+      stat: (path) => counted(() => host.stat(path)),
+      readTextFile: (path) => counted(() => host.readTextFile(path, 'utf8', { signal })),
+      readTextFilePrefix: (path, bytes) =>
+        counted(() => host.readTextFilePrefix(path, bytes, { signal })),
+    },
+    request.root,
+  )
+}
 function validateRequest(host: ProjectHost, request: ArchitectureCaptureRequest): void {
   if (
     request.root.hostId !== host.hostId ||
@@ -208,52 +265,14 @@ async function resolveBaseline(
     ])
   ).trim()
 }
-function parseIndex(output: string): readonly Entry[] {
-  return output
-    .split('\0')
-    .filter(Boolean)
-    .map((record) => {
-      const tab = record.indexOf('\t')
-      const [mode, object, stage] = record.slice(0, tab).split(' ')
-      if (tab < 0 || stage !== '0')
-        throw new Error('Resolve index conflicts before architecture review')
-      return { path: record.slice(tab + 1), object, mode }
-    })
+function assertWithinByteLimit(bytes: number): void {
+  if (bytes > SCOPE.maxTotalBytes)
+    throw new Error('Architecture scan exceeds the total source byte limit')
 }
-function parseTree(output: string): readonly Entry[] {
-  return output
-    .split('\0')
-    .filter(Boolean)
-    .map((record) => {
-      const tab = record.indexOf('\t')
-      const [mode, , object] = record.slice(0, tab).split(' ')
-      if (tab < 0 || !object) throw new Error('Invalid Git tree entry')
-      return { path: record.slice(tab + 1), object, mode }
-    })
-}
-function assertRelative(path: string): void {
-  if (
-    !path ||
-    path.startsWith('/') ||
-    path.split('/').some((part) => part === '..' || part === '.') ||
-    path.includes('\0')
-  )
-    throw new Error('Invalid repository source path')
-}
-function isSource(path: string): boolean {
-  return /\.(?:[cm]?[jt]s|[jt]sx)$/.test(path) && !/\.d\.[cm]?ts$/.test(path)
-}
-function included(path: string): boolean {
-  return (
-    !path
-      .split('/')
-      .some((part) => (SCOPE.excludedDirectories as readonly string[]).includes(part)) &&
-    (isSource(path) ||
-      /(?:^|\/)(?:tsconfig[^/]*\.json|jsconfig\.json|package\.json)$/.test(path))
-  )
-}
-function digest(value: unknown): string {
-  return createHash('sha256').update(JSON.stringify(value)).digest('hex')
+function totalBytes(contents: Contents): number {
+  let bytes = 0
+  for (const content of contents.values()) bytes += Buffer.byteLength(content)
+  return bytes
 }
 function isMissing(error: unknown): boolean {
   return (
