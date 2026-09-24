@@ -85,6 +85,39 @@ afterEach(() => {
 })
 
 describe('SessionDialog folder selection', () => {
+  it.each([localHost, sshHost])(
+    'returns the opened $kind project while picker cleanup is pending',
+    async (currentHost) => {
+      let finishClose!: () => void
+      const closing = new Promise<void>((resolve) => {
+        finishClose = resolve
+      })
+      const onPickerClose = vi.fn(() => closing)
+      const onOpened = vi.fn()
+      renderDialog({
+        currentHost,
+        suggestedPath: '/projects/initial',
+        onBrowse: (hostId, path) => Promise.resolve(browseResponse(hostId, path)),
+        onOpen: (hostId, path) => Promise.resolve(projectState(hostId, path)),
+        onPickerClose,
+        onOpened,
+      })
+      await chooseFolder()
+      try {
+        await clickButton('Use this folder')
+        expect(onPickerClose).toHaveBeenCalledWith('picker-1')
+        expect(onOpened).toHaveBeenCalledExactlyOnceWith(
+          projectState(currentHost.hostId, '/projects/initial'),
+        )
+      } finally {
+        await act(async () => {
+          finishClose()
+          await closing
+        })
+      }
+    },
+  )
+
   it('reveals initial and typed paths while keeping confirmation separate from Enter', async () => {
     const onBrowse = vi.fn((hostId: string, path: string) =>
       Promise.resolve(browseResponse(hostId, path)),
@@ -247,10 +280,7 @@ describe('SessionDialog folder selection', () => {
     act(() => directoryRow('/projects/tree')?.click())
     await waitFor(() => selectedRow('/projects/tree') !== undefined)
 
-    expect(onPickerBrowse).toHaveBeenCalledExactlyOnceWith(
-      'picker-1',
-      '/projects/tree',
-    )
+    expect(onPickerBrowse).toHaveBeenCalledExactlyOnceWith('picker-1', '/projects/tree')
     expect(onBrowse).toHaveBeenCalledExactlyOnceWith('local', '/projects/tree')
   })
 
@@ -357,6 +387,7 @@ function renderDialog({
   onCreateDirectory = (_pickerId, parent, name) =>
     Promise.resolve(hostPath(parent.hostId, `${parent.path}/${name}`)),
   onOpen,
+  onPickerClose = () => Promise.resolve(),
   onOpened = vi.fn(),
 }: {
   readonly currentHost: ProjectHostOption
@@ -365,16 +396,15 @@ function renderDialog({
   readonly onPickerBrowse?: ProjectFolderPickerPort['browse']
   readonly onCreateDirectory?: ProjectFolderPickerPort['createDirectory']
   readonly onOpen: (hostId: string, path: string) => Promise<ProjectState>
+  readonly onPickerClose?: ProjectFolderPickerPort['close']
   readonly onOpened?: (state: ProjectState) => void
 }): void {
   const connected: ConnectedHost = { host: currentHost, suggestedPath }
   const folderPicker: ProjectFolderPickerPort = {
     start: () => Promise.resolve({ pickerId: 'picker-1' }),
-    browse:
-      onPickerBrowse ??
-      ((_pickerId, path) => onBrowse(currentHost.hostId, path)),
+    browse: onPickerBrowse ?? ((_pickerId, path) => onBrowse(currentHost.hostId, path)),
     createDirectory: onCreateDirectory,
-    close: () => Promise.resolve(),
+    close: onPickerClose,
   }
   act(() => {
     root.render(

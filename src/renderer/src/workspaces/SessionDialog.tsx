@@ -155,9 +155,10 @@ export function SessionDialog({
     setError(undefined)
     try {
       const state = await onOpen(connected.host.hostId, selectedPath)
-      await releasePicker().catch(() => undefined)
+      const closingPicker = releasePicker().catch(() => undefined)
       rememberFolder(connected.host.hostId, state.root.path)
       onOpened(state)
+      await closingPicker
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
       setBusy(false)
