@@ -16,6 +16,7 @@ import type { RendererOwner, RendererResourceScopes } from '../renderer-resource
 import type { PtySupervisor } from '../pty/pty-supervisor'
 import { SESSIONS_USAGE_SMOKE_TOTAL } from './sessions-usage-provider'
 import { captureSessionsVisuals } from './sessions-visual'
+import { verifySessionsProjectPickerReturn } from './sessions-project-picker'
 
 const USAGE_SESSION_ID = '00000000-0000-4000-8000-000000006511'
 const USAGE_SESSION_TITLE = 'Usage cumulative fixture'
@@ -274,64 +275,6 @@ export async function verifySessionsProjectionSmoke(options: {
   const hiddenStatus = await verifySessionsHiddenRelease(win)
   const captureStatus = captures.length > 0 ? ` + ${captures.length} visual captures` : ''
   return `cross-project/worktree + renderer rollover + stale Open + quiet release + ${terminalStatus}${captureStatus} + ${overviewStatus} + ${pickerStatus} + hidden ${hiddenTerminalStatus} + ${hiddenStatus}`
-}
-
-async function verifySessionsProjectPickerReturn(win: BrowserWindow): Promise<string> {
-  return (await win.webContents.executeJavaScript(`
-    new Promise((resolve, reject) => {
-      const deadline = Date.now() + 15_000;
-      const wait = (next, stage) => {
-        if (Date.now() <= deadline) return setTimeout(next, 25);
-        reject(new Error('Sessions project-picker return timed out at ' + stage));
-      };
-      const button = (label, root = document) => [...root.querySelectorAll('button')]
-        .find((candidate) =>
-          candidate.getAttribute('aria-label') === label ||
-          candidate.textContent?.trim() === label
-        );
-      document.querySelector('.sessions-destination')?.click();
-      const openPicker = () => {
-        if (!document.querySelector('.sessions-overview')) return wait(openPicker, 'overview');
-        const register = button('Register project');
-        if (!(register instanceof HTMLButtonElement) || register.disabled) {
-          return wait(openPicker, 'register control');
-        }
-        register.click();
-        const chooseHost = () => {
-          const dialog = document.querySelector('.session-dialog');
-          const choose = dialog ? button('Choose folder', dialog) : undefined;
-          if (!(choose instanceof HTMLButtonElement) || choose.disabled) {
-            return wait(chooseHost, 'host choice');
-          }
-          choose.click();
-          const useFolder = () => {
-            const currentDialog = document.querySelector('.session-dialog');
-            const use = currentDialog ? button('Use this folder', currentDialog) : undefined;
-            if (!(use instanceof HTMLButtonElement) || use.disabled) {
-              return wait(useFolder, 'folder readiness');
-            }
-            use.click();
-            const returned = () => {
-              const workbench = document.querySelector('.workbench');
-              if (
-                document.querySelector('.session-dialog') ||
-                document.querySelector('.sessions-overview') ||
-                !(workbench instanceof HTMLElement) ||
-                workbench.hidden
-              ) {
-                return wait(returned, 'workspace return');
-              }
-              resolve('successful project open returns to workspace');
-            };
-            returned();
-          };
-          useFolder();
-        };
-        chooseHost();
-      };
-      openPicker();
-    });
-  `)) as string
 }
 
 async function verifySessionsHiddenRelease(win: BrowserWindow): Promise<string> {
@@ -1015,7 +958,8 @@ function recovery(
     recoverySkipCount: 0,
     hostId: root.hostId,
     cwd: root,
-    title: 'Retained smoke session · Review hierarchy and integrated footer across multiple worktrees and narrow windows',
+    title:
+      'Retained smoke session · Review hierarchy and integrated footer across multiple worktrees and narrow windows',
     position: 0,
     active: true,
     updatedAt: Date.now(),
