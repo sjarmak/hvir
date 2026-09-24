@@ -6,19 +6,6 @@ export interface CaptureEntry {
   readonly mode?: string
 }
 
-export function parseIndex(output: string): readonly CaptureEntry[] {
-  return output
-    .split('\0')
-    .filter(Boolean)
-    .map((record) => {
-      const tab = record.indexOf('\t')
-      const [mode, object, stage] = record.slice(0, tab).split(' ')
-      if (tab < 0 || stage !== '0')
-        throw new Error('Resolve index conflicts before architecture review')
-      return { path: record.slice(tab + 1), object, mode }
-    })
-}
-
 export function parseTree(output: string): readonly CaptureEntry[] {
   return output
     .split('\0')

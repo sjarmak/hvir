@@ -1,5 +1,6 @@
 import type { BrowserWindow } from 'electron'
 import { verifyArchitectureReviewAuthority } from './architecture-review-authority'
+import { verifyArchitectureCommitStrip } from './architecture-review-strip'
 import { verifyArchitectureReviewVisuals } from './architecture-review-visual'
 import { joinHostPath, type HostPath } from '../../shared'
 import type { ProjectHost } from '../project-host'
@@ -61,6 +62,11 @@ export async function verifyArchitectureReviewWorkflow(
       await wait(() => !surface(), 'cancelled scan');
       button('Architecture').click();
       await wait(surface, 'reopened surface');
+      const baseline = [...surface().querySelectorAll('.architecture-review-controls label')].find(node => node.textContent?.startsWith('Baseline'))?.querySelector('input');
+      if (!baseline || baseline.placeholder !== 'branch point') throw new Error('Baseline ref field missing its branch point default');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(baseline, 'HEAD');
+      baseline.dispatchEvent(new Event('input', { bubbles: true }));
+      await wait(() => baseline.value === 'HEAD', 'typed Baseline ref');
       button('Scan snapshot').click();
       const body = await wait(() => document.querySelector('.architecture-review-body'), 'map');
       const stages = [...document.querySelectorAll('table[aria-label="Scan timings"] tbody th')].map(node => node.textContent);
@@ -178,7 +184,7 @@ export async function runArchitectureReviewSmoke(
       requestAnimationFrame(open);
     })
   `)
-
+  await verifyArchitectureCommitStrip(win, fixture)
   const close = (await win.webContents.executeJavaScript(`
     new Promise((resolve, reject) => {
       setTimeout(() => reject(new Error('Timed out closing architecture review')), 30000);
@@ -191,7 +197,7 @@ export async function runArchitectureReviewSmoke(
   `)) as string
   if (close !== 'closed') throw new Error('Architecture review did not close')
   console.log(
-    `[smoke] Architecture review OK (Git entry → keyboard focus → themes/layout → stale/refresh → DiffView → ${close})`,
+    `[smoke] Architecture review OK (Git entry → keyboard focus → themes/layout → stale/refresh → DiffView → commit strip → ${close})`,
   )
   console.log('HVIR_SMOKE_OK')
   return 0

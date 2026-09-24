@@ -36,13 +36,10 @@ async function fixture() {
     root,
     host,
     baseline,
-    capture: (
-      mode: 'head' | 'working-tree' | 'branch-point' | 'commit',
-      revision?: string,
-    ) =>
+    capture: (ends: { baseline?: string; current?: string } = { baseline: 'HEAD' }) =>
       captureArchitecture(
         host,
-        { root: localPath(root), mode, revision },
+        { root: localPath(root), ...ends },
         new AbortController().signal,
       ),
   }
@@ -96,29 +93,27 @@ function hostBackedByLocal(local: LocalHost, hostId = 'ssh-test'): ProjectHost {
     },
   }
 }
-it('captures index -> live independently from HEAD -> live and retains exact evidence', async () => {
+it('captures HEAD -> live past staged changes and retains exact evidence', async () => {
   const f = await fixture()
   await writeFile(join(f.root, 'src/a.ts'), 'export const value = 2\n')
   git(f.root, 'add', '.')
   await writeFile(join(f.root, 'src/a.ts'), 'export const value = 3\n')
-  const index = await f.capture('working-tree')
-  const head = await f.capture('head')
-  expect(index.before[0]?.content).toContain('= 2')
+  const head = await f.capture()
   expect(head.before[0]?.content).toContain('= 1')
-  expect(index.after[0]?.content).toContain('= 3')
+  expect(head.after[0]?.content).toContain('= 3')
   await writeFile(join(f.root, 'src/a.ts'), 'export const value = 4\n')
-  expect(index.after[0]?.content).toContain('= 3')
-  expect((await f.capture('working-tree')).fingerprint).not.toBe(index.fingerprint)
+  expect(head.after[0]?.content).toContain('= 3')
+  expect((await f.capture()).fingerprint).not.toBe(head.fingerprint)
 })
-it('branch-point excludes dirty files; explicit commit comparison includes them', async () => {
+it('a commit Current excludes dirty files; a live Current includes them', async () => {
   const f = await fixture()
   git(f.root, 'switch', '-c', 'feature')
   await writeFile(join(f.root, 'src/a.ts'), 'export const value = 2\n')
   git(f.root, 'add', '.')
   git(f.root, 'commit', '-m', 'change')
   await writeFile(join(f.root, 'src/a.ts'), 'export const value = 3\n')
-  const branch = await f.capture('branch-point')
-  const pinned = await f.capture('commit', f.baseline)
+  const branch = await f.capture({ current: 'HEAD' })
+  const pinned = await f.capture({ baseline: f.baseline })
   expect(branch.before[0]?.content).toContain('= 1')
   expect(branch.after[0]?.content).toContain('= 2')
   expect(pinned.after[0]?.content).toContain('= 3')
@@ -130,28 +125,28 @@ it('captures renamed, deleted, untracked and excluded files truthfully', async (
   await writeFile(join(f.root, 'src/new.js'), 'export default 1')
   await mkdir(join(f.root, 'node_modules'))
   await writeFile(join(f.root, 'node_modules/ignored.ts'), 'bad')
-  const result = await f.capture('head')
+  const result = await f.capture()
   expect(result.before.map((f) => f.path)).toEqual(['src/a.ts'])
   expect(result.after.map((f) => f.path)).toEqual(['src/new.js', 'src/renamed.ts'])
   expect(result.exclusions).toContain('node_modules')
 })
 it('fingerprints config and rejects path escapes, cancellation and invalid baselines', async () => {
   const f = await fixture()
-  const first = await f.capture('head')
+  const first = await f.capture()
   await writeFile(join(f.root, 'tsconfig.json'), '{"compilerOptions":{}}')
-  expect((await f.capture('head')).fingerprint).not.toBe(first.fingerprint)
-  await expect(f.capture('commit', '--help')).rejects.toThrow(/revision/i)
+  expect((await f.capture()).fingerprint).not.toBe(first.fingerprint)
+  await expect(f.capture({ baseline: '--help' })).rejects.toThrow(/ref/i)
   const controller = new AbortController()
   controller.abort(new Error('cancelled'))
   await expect(
     captureArchitecture(
       f.host,
-      { root: localPath(f.root), mode: 'head' },
+      { root: localPath(f.root), baseline: 'HEAD' },
       controller.signal,
     ),
   ).rejects.toThrow('cancelled')
   await symlink('/etc/passwd', join(f.root, 'src/escape.ts'))
-  await expect(f.capture('head')).rejects.toThrow(/symbolic|symlink/)
+  await expect(f.capture()).rejects.toThrow(/symbolic|symlink/)
 })
 
 it('captures identical bytes and revisions through a host-qualified remote transport', async () => {
@@ -160,12 +155,12 @@ it('captures identical bytes and revisions through a host-qualified remote trans
   const remoteRoot = hostPath(remote.hostId, f.root)
   const localCapture = await captureArchitecture(
     f.host,
-    { root: localPath(f.root), mode: 'head' },
+    { root: localPath(f.root), baseline: 'HEAD' },
     new AbortController().signal,
   )
   const remoteCapture = await captureArchitecture(
     remote,
-    { root: remoteRoot, mode: 'head' },
+    { root: remoteRoot, baseline: 'HEAD' },
     new AbortController().signal,
   )
   expect(remoteCapture.root.hostId).toBe(remote.hostId)
@@ -178,13 +173,13 @@ it('captures identical bytes and revisions through a host-qualified remote trans
   expect(remoteCapture.fingerprint).not.toBe(localCapture.fingerprint)
 })
 
-it('records listing, blob, one live-read and hashing spans for a working-tree scan', async () => {
+it('records listing, blob, one live-read and hashing spans for a live Current scan', async () => {
   const f = await fixture()
   await writeFile(join(f.root, 'src/b.ts'), 'export const b = 22\n')
   const recorder = new ArchitectureScanRecorder()
   const capture = await captureArchitecture(
     f.host,
-    { root: localPath(f.root), mode: 'working-tree' },
+    { root: localPath(f.root), baseline: 'HEAD' },
     new AbortController().signal,
     recorder,
   )
@@ -212,13 +207,13 @@ it('records listing, blob, one live-read and hashing spans for a working-tree sc
   ).toBeGreaterThan(2)
 })
 
-it('reads a workspace below the repository root in every live mode', async () => {
+it('reads a workspace below the repository root for either Baseline default', async () => {
   const f = await fixture()
   await writeFile(join(f.root, 'src/b.ts'), 'export const b = 2\n')
-  for (const mode of ['head', 'working-tree'] as const) {
+  for (const baseline of ['HEAD', undefined]) {
     const capture = await captureArchitecture(
       f.host,
-      { root: localPath(join(f.root, 'src')), mode },
+      { root: localPath(join(f.root, 'src')), baseline },
       new AbortController().signal,
     )
     expect(capture.after.map((file) => file.path)).toEqual(['a.ts', 'b.ts'])
@@ -231,7 +226,7 @@ it('reads any number of live files in one host command', async () => {
   const recorder = new ArchitectureScanRecorder()
   const capture = await captureArchitecture(
     f.host,
-    { root: localPath(f.root), mode: 'head' },
+    { root: localPath(f.root), baseline: 'HEAD' },
     new AbortController().signal,
     recorder,
   )
@@ -250,7 +245,7 @@ it('carries Git blob ids and fingerprints ids rather than whole contents', async
   const recorder = new ArchitectureScanRecorder()
   const capture = await captureArchitecture(
     f.host,
-    { root: localPath(f.root), mode: 'head' },
+    { root: localPath(f.root), baseline: 'HEAD' },
     new AbortController().signal,
     recorder,
   )
@@ -265,7 +260,7 @@ it('carries Git blob ids and fingerprints ids rather than whole contents', async
     .reduce((total, span) => total + span.bytes, 0)
   expect(hashed).toBeGreaterThan(0)
   expect(hashed).toBeLessThan(4_096)
-  const again = await f.capture('head')
+  const again = await f.capture()
   expect(again.fingerprint).toBe(capture.fingerprint)
 })
 
@@ -306,7 +301,7 @@ it.each([['before'], ['after']] as const)(
     await expect(
       captureArchitecture(
         host,
-        { root: localPath(f.root), mode: 'head' },
+        { root: localPath(f.root), baseline: 'HEAD' },
         new AbortController().signal,
       ),
     ).rejects.toThrow('Sources changed during capture')
@@ -321,7 +316,7 @@ it('resolves path aliases through the tsconfig captured with each end', async ()
     join(f.root, 'tsconfig.json'),
     JSON.stringify({ compilerOptions: { baseUrl: '.', paths: { '@app/*': ['src/*'] } } }),
   )
-  const { analysis } = await analyzeCaptureTimed(await f.capture('working-tree'))
+  const { analysis } = await analyzeCaptureTimed(await f.capture())
   expect(analysis.after.imports).toEqual([
     expect.objectContaining({
       specifier: '@app/b',
@@ -339,7 +334,7 @@ it('refuses invalid UTF-8 and sources reached through a symbolic link directory'
   const f = await fixture()
   await writeFile(join(f.root, 'src/bad.ts'), Buffer.from([0x65, 0xff, 0xfe, 0x0a]))
   await writeFile(join(f.root, 'src/z.ts'), 'export const z = 1\n')
-  await expect(f.capture('head')).rejects.toThrow(
+  await expect(f.capture()).rejects.toThrow(
     'Unsupported large or invalid source: src/bad.ts',
   )
   await rm(join(f.root, 'src/bad.ts'))
@@ -349,12 +344,10 @@ it('refuses invalid UTF-8 and sources reached through a symbolic link directory'
   await writeFile(join(outside, 'z.ts'), 'export const z = 1\n')
   await rm(join(f.root, 'src'), { recursive: true })
   await symlink(outside, join(f.root, 'src'))
-  await expect(f.capture('head')).rejects.toThrow(
-    'Unsupported symbolic link in scan: src',
-  )
+  await expect(f.capture()).rejects.toThrow('Unsupported symbolic link in scan: src')
 })
 
-it('reads both commit ends from Git objects without live reads in branch-point mode', async () => {
+it('reads both commit ends from Git objects without live reads for a commit pair', async () => {
   const f = await fixture()
   git(f.root, 'switch', '-c', 'feature')
   await writeFile(join(f.root, 'src/a.ts'), 'export const value = 2\n')
@@ -362,7 +355,7 @@ it('reads both commit ends from Git objects without live reads in branch-point m
   const recorder = new ArchitectureScanRecorder()
   await captureArchitecture(
     f.host,
-    { root: localPath(f.root), mode: 'branch-point' },
+    { root: localPath(f.root), current: 'HEAD' },
     new AbortController().signal,
     recorder,
   )
@@ -401,30 +394,26 @@ function countingHost(): { host: ProjectHost; calls: () => number } {
   return { host, calls: () => calls }
 }
 
-it('credits every host round trip to a span in every comparison mode', async () => {
+it('credits every host round trip to a span for every kind of end', async () => {
   const f = await fixture()
   git(f.root, 'switch', '-c', 'feature')
   await writeFile(join(f.root, 'src/a.ts'), 'export const value = 2\n')
   git(f.root, 'commit', '-am', 'change')
   await writeFile(join(f.root, 'src/b.ts'), 'export const b = 22\n')
-  const modes = ['branch-point', 'working-tree', 'head', 'commit'] as const
-  for (const mode of modes) {
+  const pairs = [{ current: 'HEAD' }, {}, { baseline: 'HEAD' }, { baseline: f.baseline }]
+  for (const ends of pairs) {
     const { host, calls } = countingHost()
     const recorder = new ArchitectureScanRecorder()
     await captureArchitecture(
       host,
-      {
-        root: localPath(f.root),
-        mode,
-        revision: mode === 'commit' ? f.baseline : undefined,
-      },
+      { root: localPath(f.root), ...ends },
       new AbortController().signal,
       recorder,
     )
     const credited = recorder
       .metrics()
       .spans.reduce((total, span) => total + span.hostCalls, 0)
-    expect({ mode, credited }).toEqual({ mode, credited: calls() })
+    expect({ ends, credited }).toEqual({ ends, credited: calls() })
     expect(calls()).toBeGreaterThan(0)
   }
 })

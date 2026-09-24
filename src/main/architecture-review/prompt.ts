@@ -18,9 +18,8 @@ export function architectureReviewPrompt(
       workspace: capture.root,
       snapshotId,
       fingerprint: capture.fingerprint,
-      comparison: capture.mode,
-      baseline: capture.baselineRevision,
-      current: capture.currentRevision,
+      baseline: { ref: capture.baselineRef, revision: capture.baselineRevision },
+      current: { ref: capture.currentRef, revision: capture.currentRevision },
       capturedAt: capture.capturedAt,
       scope:
         'Captured TypeScript/JavaScript sources; selected file below, not a complete system proof.',

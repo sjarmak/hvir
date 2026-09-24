@@ -19,7 +19,8 @@ const source = (path: string, content: string) => ({
 const root = localPath('/repo')
 const snapshot: ArchitectureCapture = {
   root,
-  mode: 'head',
+  baselineRef: 'HEAD',
+  currentRef: 'working tree',
   baselineRevision: 'abc',
   currentRevision: 'working-tree',
   fingerprint: 'fingerprint',
@@ -79,7 +80,7 @@ function setup(
     coordinator,
     capture,
     analyze,
-    request: { root, mode: 'head' as const, reviewId: 'tab-1' },
+    request: { root, baseline: 'HEAD', reviewId: 'tab-1' },
   }
 }
 it('returns captured deleted-source evidence and rejects a different host or renderer', async () => {
@@ -95,6 +96,12 @@ it('returns captured deleted-source evidence and rejects a different host or ren
   })
   expect(evidence.diff.baseInput.content).toBe('before')
   expect(evidence.diff.currentInput.content).toBe('')
+  expect(evidence.diff).toMatchObject({
+    base: 'working-tree',
+    baseLabel: 'HEAD (abc)',
+    currentLabel: 'working tree',
+  })
+  expect(evidence.diff.revision).toBeUndefined()
   await expect(
     f.coordinator.evidence(f.owner, f.host, {
       root,
@@ -274,4 +281,52 @@ it('shares one scan recorder with capture and analysis and reports the renderer 
     stage: 'renderer-payload',
     bytes: Buffer.byteLength(JSON.stringify(payload)),
   })
+})
+
+it('keys commit-pair evidence to its Current commit and never checks freshness', async () => {
+  const pair = { ...snapshot, currentRef: 'v2', currentRevision: 'def' }
+  const f = setup(vi.fn<typeof captureArchitecture>(() => Promise.resolve(pair)))
+  const request = { ...f.request, current: 'v2' }
+  const result = await f.coordinator.scan(f.owner, f.host, request)
+  const evidence = await f.coordinator.evidence(f.owner, f.host, {
+    root,
+    reviewId: 'tab-1',
+    snapshotId: result.id,
+    path: localPath('/repo/a.ts'),
+  })
+  expect(evidence.diff).toMatchObject({
+    base: 'head',
+    revision: 'def',
+    baseLabel: 'HEAD (abc)',
+    currentLabel: 'v2 (def)',
+  })
+  expect(evidence.stale).toBe(false)
+  expect(f.liveState).not.toHaveBeenCalled()
+  expect(result).toMatchObject({ baselineRef: 'HEAD', currentRef: 'v2' })
+})
+
+it('lists the commit strip for the current renderer only', async () => {
+  const f = setup()
+  const range = {
+    base: { revision: 'a', parent: null, subject: 's' },
+    commits: [],
+    truncated: false,
+  }
+  const commits = vi.fn(() => Promise.resolve(range))
+  const coordinator = new ArchitectureReviewCoordinator({
+    resources: f.resources,
+    commits,
+    analyze: f.analyze,
+  })
+  await expect(coordinator.commits(f.owner, f.host, { root, from: 'v1' })).resolves.toBe(
+    range,
+  )
+  expect(commits).toHaveBeenCalledWith(
+    f.host,
+    { root, from: 'v1' },
+    expect.any(AbortSignal),
+  )
+  await f.resources.revokeOwner(f.owner.id)
+  await expect(coordinator.commits(f.owner, f.host, { root })).rejects.toThrow(/revoked/)
+  expect(commits).toHaveBeenCalledOnce()
 })

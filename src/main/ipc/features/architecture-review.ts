@@ -1,11 +1,10 @@
-import { hostPathEquals } from '../../../shared/host-path'
-import type { ArchitectureReviewKey } from '../../../shared/architecture-review'
+import { hostPathEquals, type HostPath } from '../../../shared/host-path'
 import type { IpcRegistrar } from '../authority-router'
 import type { IpcDeps } from '../deps'
 import { reconstructIpcHostPath } from '../host-path-authority'
 type Deps = Pick<IpcDeps, 'getProject' | 'architectureReview'>
 export function registerArchitectureReviewIpc(ipc: IpcRegistrar, deps: Deps): void {
-  function project(request: ArchitectureReviewKey) {
+  function project(request: { readonly root: HostPath }) {
     const root = reconstructIpcHostPath(request.root)
     const active = deps.getProject()
     if (!hostPathEquals(root, active.root))
@@ -48,6 +47,15 @@ export function registerArchitectureReviewIpc(ipc: IpcRegistrar, deps: Deps): vo
     reconstructIpcHostPath(request.path)
     project(request)
     const result = await deps.architectureReview.prepare(owner, active.host, request)
+    context.owner()
+    project(request)
+    return result
+  })
+  ipc.handle('architecture-review:commits', async (request, context) => {
+    const active = project(request)
+    const owner = context.owner()
+    await ipc.authority.projectPath(request.root, active.root, active.host)
+    const result = await deps.architectureReview.commits(owner, active.host, request)
     context.owner()
     project(request)
     return result

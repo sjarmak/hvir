@@ -9,7 +9,6 @@ import { readArchitectureLiveState } from '../src/main/architecture-review/fresh
 import { LocalHost } from '../src/main/project-host/local-host'
 import { RendererResourceScopes } from '../src/main/renderer-resource-scopes'
 import { localPath } from '../src/shared/host-path'
-import type { ArchitectureComparisonMode } from '../src/shared/architecture-review'
 import type { ArchitectureAnalysis } from '../src/shared/architecture-analysis'
 
 const roots: string[] = []
@@ -57,7 +56,7 @@ async function repository() {
   return root
 }
 
-async function reviewOf(root: string, mode: ArchitectureComparisonMode) {
+async function reviewOf(root: string, ends: { baseline?: string; current?: string }) {
   const host = new LocalHost()
   hosts.push(host)
   const resources = new RendererResourceScopes()
@@ -70,7 +69,7 @@ async function reviewOf(root: string, mode: ArchitectureComparisonMode) {
     liveState,
     analyze: () => Promise.resolve(analysis),
   })
-  const request = { root: localPath(root), mode, reviewId: 'tab-1' }
+  const request = { root: localPath(root), ...ends, reviewId: 'tab-1' }
   const snapshot = await coordinator.scan(owner, host, request)
   const evidenceRequest = {
     ...request,
@@ -87,7 +86,7 @@ async function reviewOf(root: string, mode: ArchitectureComparisonMode) {
 
 it('never marks a commit-to-commit snapshot stale and never reads the host to decide', async () => {
   const root = await repository()
-  const review = await reviewOf(root, 'branch-point')
+  const review = await reviewOf(root, { current: 'HEAD' })
   await appendFile(join(root, 'src/a.ts'), 'export const edited = 2\n')
   git(root, 'commit', '-am', 'moved on')
   expect(await review.stale()).toBe(false)
@@ -98,7 +97,7 @@ it('never marks a commit-to-commit snapshot stale and never reads the host to de
 
 it('turns a live snapshot stale after an in-scope edit through the cheap check only', async () => {
   const root = await repository()
-  const review = await reviewOf(root, 'head')
+  const review = await reviewOf(root, { baseline: 'HEAD' })
   expect(await review.stale()).toBe(false)
   await writeFile(join(root, 'README.md'), 'out of scope edit\n')
   expect(await review.stale()).toBe(false)
@@ -111,7 +110,7 @@ it('turns a live snapshot stale after an in-scope edit through the cheap check o
 it('notices a second edit to a file that was already modified at scan time', async () => {
   const root = await repository()
   await appendFile(join(root, 'src/a.ts'), 'export const first = 1\n')
-  const review = await reviewOf(root, 'working-tree')
+  const review = await reviewOf(root, {})
   expect(await review.stale()).toBe(false)
   await appendFile(join(root, 'src/a.ts'), 'export const second = 2\n')
   expect(await review.stale()).toBe(true)
@@ -120,16 +119,16 @@ it('notices a second edit to a file that was already modified at scan time', asy
 
 it('notices new untracked sources, staging and a moved HEAD on a live snapshot', async () => {
   const root = await repository()
-  const untracked = await reviewOf(root, 'head')
+  const untracked = await reviewOf(root, { baseline: 'HEAD' })
   await mkdir(join(root, 'src/new'))
   await writeFile(join(root, 'src/new/c.ts'), 'export const c = 3\n')
   expect(await untracked.stale()).toBe(true)
 
-  const staged = await reviewOf(root, 'working-tree')
+  const staged = await reviewOf(root, {})
   git(root, 'add', 'src/new/c.ts')
   expect(await staged.stale()).toBe(true)
 
-  const moved = await reviewOf(root, 'head')
+  const moved = await reviewOf(root, { baseline: 'HEAD' })
   git(root, 'commit', '-m', 'c')
   expect(await moved.stale()).toBe(true)
 })
@@ -186,7 +185,7 @@ async function conflicted(root: string) {
 it('notices an edit to a file with an unresolved merge conflict', async () => {
   const root = await repository()
   await conflicted(root)
-  const review = await reviewOf(root, 'head')
+  const review = await reviewOf(root, { baseline: 'HEAD' })
   expect(await review.stale()).toBe(false)
   await appendFile(join(root, 'src/a.ts'), 'export const resolved = 2\n')
   expect(await review.stale()).toBe(true)
@@ -196,7 +195,7 @@ it('notices an edit to a file with an unresolved merge conflict', async () => {
 it('tolerates a conflicted file removed from the working tree', async () => {
   const root = await repository()
   await conflicted(root)
-  const review = await reviewOf(root, 'head')
+  const review = await reviewOf(root, { baseline: 'HEAD' })
   await rm(join(root, 'src/a.ts'))
   expect(await review.stale()).toBe(true)
 })
@@ -204,7 +203,7 @@ it('tolerates a conflicted file removed from the working tree', async () => {
 it('notices an edit to a file marked assume-unchanged', async () => {
   const root = await repository()
   git(root, 'update-index', '--assume-unchanged', 'src/a.ts')
-  const review = await reviewOf(root, 'working-tree')
+  const review = await reviewOf(root, {})
   expect(await review.stale()).toBe(false)
   await appendFile(join(root, 'src/a.ts'), 'export const hidden = 2\n')
   expect(git(root, 'status', '--porcelain')).toBe('')

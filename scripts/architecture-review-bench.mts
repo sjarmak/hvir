@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Usage: node scripts/architecture-review-bench.mts <absolute repo root> <mode> [--runs N] [--ssh] [--cache cold|warm]
-//    or: npm run bench:architecture-review -- <absolute repo root> <mode> [--runs N] [--ssh] [--cache cold|warm]
+// Usage: node scripts/architecture-review-bench.mts <absolute repo root> [--baseline REF] [--current REF] [--runs N] [--ssh] [--cache cold|warm]
+//    or: npm run bench:architecture-review -- <absolute repo root> [--baseline REF] [--current REF] [--runs N] [--ssh] [--cache cold|warm]
 // --ssh scans a repository on the target named by the HVIR_REAL_SSH_* environment contract.
 // Prints per-stage timings and bytes for architecture capture plus analysis as JSON.
 //

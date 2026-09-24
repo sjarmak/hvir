@@ -7,9 +7,20 @@ export interface ArchitectureReviewSmokeFixture {
   readonly selectedPath: string
   readonly beforeSource: string
   readonly afterSource: string
+  /** First-parent history the strip steps through: the fixture commits and their parent. */
+  readonly history: {
+    readonly parent: string
+    readonly before: string
+    readonly label: string
+  }
 }
 
-/** Adds an index/live source pair with changed imports to the disposable smoke repository. */
+const LABEL_PATH = 'architecture-smoke/ui/label.ts'
+
+/**
+ * Commits the before sources and a second step onto the disposable smoke repository, then
+ * leaves a live source pair with changed imports on top of HEAD.
+ */
 export async function createArchitectureReviewSmokeFixture(
   host: ProjectHost,
   smokeRoot: HostPath,
@@ -50,16 +61,20 @@ export async function createArchitectureReviewSmokeFixture(
   const git = new GitCommandContext(host, root)
   for (const [relativePath, content] of Object.entries(beforeFiles))
     await host.writeFile(joinHostPath(root, relativePath), content)
-  const staged = await git.mutate(root, [
-    'add',
-    '--',
-    'architecture-smoke/ui/view.ts',
-    'architecture-smoke/old-data/item.ts',
-    'architecture-smoke/ui/code.ts',
+  const parent = await git.run(root, ['rev-parse', '--verify', 'HEAD^{commit}'])
+  const before = await commitFixture(
+    git,
+    root,
+    'Add architecture smoke sources',
+    Object.keys(beforeFiles),
+  )
+  await host.writeFile(
+    joinHostPath(root, LABEL_PATH),
+    "import { view } from './view'\n\nexport const label = `label:${view}`\n",
+  )
+  const label = await commitFixture(git, root, 'Add architecture smoke label', [
+    LABEL_PATH,
   ])
-
-  if (staged.code !== 0)
-    throw new Error('Failed to stage architecture smoke fixture: ' + staged.stderr)
   await host.writeFile(
     joinHostPath(root, 'architecture-smoke/ui/code.ts'),
     'export const codeOnly = false\n',
@@ -71,5 +86,32 @@ export async function createArchitectureReviewSmokeFixture(
     'export const item = "new"\n',
   )
 
-  return { root, selectedPath, beforeSource, afterSource }
+  return {
+    root,
+    selectedPath,
+    beforeSource,
+    afterSource,
+    history: { parent: parent.trim(), before, label },
+  }
+}
+
+async function commitFixture(
+  git: GitCommandContext,
+  root: HostPath,
+  message: string,
+  paths: readonly string[],
+): Promise<string> {
+  const staged = await git.mutate(root, ['add', '--', ...paths])
+  if (staged.code !== 0)
+    throw new Error('Failed to stage architecture smoke fixture: ' + staged.stderr)
+  const committed = await git.mutate(root, [
+    'commit',
+    '--quiet',
+    '--no-verify',
+    '-m',
+    message,
+  ])
+  if (committed.code !== 0)
+    throw new Error('Failed to commit architecture smoke fixture: ' + committed.stderr)
+  return (await git.run(root, ['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
 }

@@ -1,32 +1,48 @@
 import { createHash } from 'node:crypto'
-import { hostPathEquals, joinHostPath } from '../../shared/host-path'
-import { ARCHITECTURE_SCOPE as SCOPE } from '../../shared/architecture-review'
+import {
+  ARCHITECTURE_LIVE_REVISION as LIVE_REVISION,
+  ARCHITECTURE_SCOPE as SCOPE,
+} from '../../shared/architecture-review'
 import type {
   ArchitectureCapture,
   ArchitectureCaptureRequest,
   ArchitectureSource,
 } from '../../shared/architecture-review'
 import type { ProjectHost } from '../project-host/project-host'
-import { GitCommandContext } from '../git/git-command-context'
+import {
+  architectureGitContext,
+  validateArchitectureRoot,
+  type Counted,
+} from './git-context'
 import { readArchitectureBlobs } from './git-blobs'
 import {
   isSource,
-  parseIndex,
   parseLivePaths,
   parseTree,
   selectEntries,
   type CaptureEntry,
 } from './capture-entries'
-import { hasLiveCurrent } from './freshness'
+import { resolveArchitectureEnds, validateArchitectureEnds, type EndsGit } from './ends'
 import { readLiveTree } from './live-tree'
 import { ArchitectureScanRecorder } from './scan-recorder'
 
-const COMMAND_TIMEOUT = 30_000
 interface Side {
   readonly sources: readonly ArchitectureSource[]
   readonly configs: readonly ArchitectureSource[]
 }
 type SideName = 'baseline' | 'current'
+/** Tracked, deleted and unignored untracked paths of the live tree. */
+const LIVE_LISTING = [
+  'ls-files',
+  '-z',
+  '-t',
+  '--cached',
+  '--deleted',
+  '--others',
+  '--exclude-standard',
+  '--',
+  '.',
+] as const
 
 /**
  * Captures actual text pairs, never a deferred instruction to re-resolve Git revisions.
@@ -44,7 +60,7 @@ export async function captureArchitecture(
     recorder.countHostCall()
     return call()
   }
-  const context = countedGitContext(host, request, signal, counted)
+  const context = architectureGitContext(host, request.root, signal, counted)
   const project = await recorder.measure(
     'listing',
     () => context.project(request.root),
@@ -60,51 +76,32 @@ export async function captureArchitecture(
         items: output.split(/[\0\n]/).filter(Boolean).length,
       }),
     )
-  const live = hasLiveCurrent(request.mode)
-  const currentRevision = (await run(['rev-parse', '--verify', 'HEAD'])).trim()
-  const baselineRevision = await resolveBaseline(request, currentRevision, run, () =>
-    recorder.measure(
-      'listing',
-      () => context.defaultBranch(request.root),
-      (branch) => ({ bytes: Buffer.byteLength(branch), items: 1 }),
-    ),
+  const ends = await resolveArchitectureEnds(
+    request,
+    measuredEndsGit(recorder, context, request.root),
   )
   const before = await readBlobSide(
-    request.mode === 'working-tree'
-      ? parseIndex(await run(['ls-files', '--stage', '-z', '--', '.']))
-      : parseTree(await run(['ls-tree', '-r', '-z', baselineRevision, '--', '.'])),
+    parseTree(await run(['ls-tree', '-r', '-z', ends.baselineRevision, '--', '.'])),
     'baseline',
   )
-  const after = live
-    ? await readLiveSide(
-        parseLivePaths(
-          await run([
-            'ls-files',
-            '-z',
-            '-t',
-            '--cached',
-            '--deleted',
-            '--others',
-            '--exclude-standard',
-            '--',
-            '.',
-          ]),
-        ),
-      )
-    : await readBlobSide(
-        parseTree(await run(['ls-tree', '-r', '-z', currentRevision, '--', '.'])),
+  const after = ends.currentCommit
+    ? await readBlobSide(
+        parseTree(await run(['ls-tree', '-r', '-z', ends.currentCommit, '--', '.'])),
         'current',
       )
+    : await readLiveSide(parseLivePaths(await run(LIVE_LISTING)))
   signal.throwIfAborted()
+  // Refs are labels; the fingerprint names only the commits and bytes they resolved to.
   const identity = {
     root: request.root,
-    mode: request.mode,
-    baselineRevision,
-    currentRevision: live ? 'working-tree' : currentRevision,
+    baselineRevision: ends.baselineRevision,
+    currentRevision: ends.currentCommit ?? LIVE_REVISION,
     scope: SCOPE,
   }
   return {
     ...identity,
+    baselineRef: ends.baselineRef,
+    currentRef: ends.currentRef,
     before: before.sources,
     after: after.sources,
     configs: { before: before.configs, after: after.configs },
@@ -177,6 +174,28 @@ export async function captureArchitecture(
   }
 }
 
+/** End resolution through the scan's git context, recorded as listing work. */
+function measuredEndsGit(
+  recorder: ArchitectureScanRecorder,
+  context: ReturnType<typeof architectureGitContext>,
+  root: ArchitectureCaptureRequest['root'],
+): EndsGit {
+  return {
+    tryRun: (args) =>
+      recorder.measure(
+        'listing',
+        () => context.tryRun(root, args),
+        (output) => ({ bytes: Buffer.byteLength(output ?? ''), items: 1 }),
+      ),
+    defaultBranch: () =>
+      recorder.measure(
+        'listing',
+        () => context.defaultBranch(root),
+        (branch) => ({ bytes: Buffer.byteLength(branch), items: 1 }),
+      ),
+  }
+}
+
 function splitSide(files: readonly ArchitectureSource[]): Side {
   return {
     sources: files.filter((file) => isSource(file.path)),
@@ -184,71 +203,12 @@ function splitSide(files: readonly ArchitectureSource[]): Side {
   }
 }
 
-type Counted = <T>(call: () => Promise<T>) => Promise<T>
-/** Git access for one capture, bounded per command and counted per host round trip. */
-function countedGitContext(
-  host: ProjectHost,
-  request: ArchitectureCaptureRequest,
-  signal: AbortSignal,
-  counted: Counted,
-): GitCommandContext {
-  return new GitCommandContext(
-    {
-      hostId: host.hostId,
-      exec: (command, args, options) =>
-        counted(() =>
-          host.exec(command, args, {
-            ...options,
-            signal,
-            timeout: COMMAND_TIMEOUT,
-            maxBuffer: options?.maxBuffer ?? SCOPE.maxListingBytes,
-          }),
-        ),
-      stat: (path) => counted(() => host.stat(path)),
-      readTextFile: (path) => counted(() => host.readTextFile(path, 'utf8', { signal })),
-      readTextFilePrefix: (path, bytes) =>
-        counted(() => host.readTextFilePrefix(path, bytes, { signal })),
-    },
-    request.root,
-  )
-}
 export function validateArchitectureRequest(
   host: ProjectHost,
   request: ArchitectureCaptureRequest,
 ): void {
-  if (
-    request.root.hostId !== host.hostId ||
-    !request.root.path.startsWith('/') ||
-    !hostPathEquals(request.root, joinHostPath(request.root)) ||
-    request.root.path.includes('\0')
-  ) {
-    throw new Error('Invalid architecture workspace')
-  }
-  if (!['working-tree', 'head', 'branch-point', 'commit'].includes(request.mode))
-    throw new Error('Invalid architecture comparison')
-  if (request.mode === 'commit' && !/^[a-f0-9]{7,64}$/i.test(request.revision ?? ''))
-    throw new Error('Invalid pinned revision')
-  if (host.connectionState !== 'connected')
-    throw new Error('Reconnect the host before reviewing architecture')
-}
-async function resolveBaseline(
-  request: ArchitectureCaptureRequest,
-  head: string,
-  run: (args: readonly string[]) => Promise<string>,
-  defaultBranch: () => Promise<string>,
-): Promise<string> {
-  if (request.mode === 'working-tree') return 'index'
-  if (request.mode === 'branch-point') {
-    const branch = await defaultBranch()
-    return (await run(['merge-base', head, branch])).trim()
-  }
-  return (
-    await run([
-      'rev-parse',
-      '--verify',
-      `${request.mode === 'commit' ? request.revision : head}^{commit}`,
-    ])
-  ).trim()
+  validateArchitectureRoot(host, request.root)
+  validateArchitectureEnds(request)
 }
 function assertWithinByteLimit(bytes: number): void {
   if (bytes > SCOPE.maxTotalBytes)

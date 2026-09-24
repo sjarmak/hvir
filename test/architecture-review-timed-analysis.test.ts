@@ -16,7 +16,8 @@ const source = (path: string, content: string) => ({
 
 const capture: ArchitectureCapture = {
   root: localPath('/repo'),
-  mode: 'head',
+  baselineRef: 'HEAD',
+  currentRef: 'working tree',
   baselineRevision: 'a'.repeat(40),
   currentRevision: 'working-tree',
   fingerprint: 'f',

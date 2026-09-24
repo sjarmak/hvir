@@ -62,6 +62,25 @@ describe('DiffView refresh lifecycle', () => {
     expect(currentDocument()).toBe('captured\n')
   })
 
+  it('names a captured comparison by its own ends, not the parent of its revision', async () => {
+    const path = localPath('/repo/a.ts')
+    const captured = diffResponse(path, 'captured')
+    await renderDiff({
+      path,
+      revision: 'def',
+      gitRefreshVersion: 0,
+      capturedInputs: {
+        ...captured,
+        baseLabel: 'v1 (abc)',
+        currentLabel: 'v2 (def)',
+        baseInput: { ...captured.baseInput, complete: false },
+      },
+    })
+    expect(container.querySelector('.diff-fallback')?.textContent).toContain(
+      'Requested comparison: v1 (abc) → v2 (def)',
+    )
+  })
+
   it('applies a settled result before draining a coalesced refresh', async () => {
     const path = localPath('/repo/design.md')
     const active = deferred<GitDiffResponse>()

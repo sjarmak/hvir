@@ -59,7 +59,13 @@ export interface SystemClipboardPort {
 export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly architectureReview: Pick<
     ArchitectureReviewCoordinator,
-    'scan' | 'evidence' | 'close' | 'prepare' | 'launchPayload' | 'assertLaunchCurrent'
+    | 'scan'
+    | 'commits'
+    | 'evidence'
+    | 'close'
+    | 'prepare'
+    | 'launchPayload'
+    | 'assertLaunchCurrent'
   >
   readonly echoWorker: WorkerClient<EchoWorkerProtocol>
   readonly gitWorker: WorkerClient<GitWorkerProtocol>

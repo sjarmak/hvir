@@ -12,7 +12,7 @@ import { analyzeCaptureTimed } from '../src/main/architecture-review/timed-analy
 import { hostPath } from '../src/shared/host-path'
 import type { ProjectHost } from '../src/main/project-host/project-host'
 import { LocalHost } from '../src/main/project-host/local-host'
-import type { ArchitectureComparisonMode } from '../src/shared/architecture-review'
+import { architectureRefProblem } from '../src/shared/architecture-review'
 import {
   ARCHITECTURE_SCAN_STAGES,
   summarizeArchitectureStages,
@@ -25,8 +25,6 @@ import {
   type BenchHostOpener,
 } from './architecture-review-bench-host.mts'
 
-const MODES = ['working-tree', 'head', 'branch-point'] as const
-type BenchMode = (typeof MODES)[number] & ArchitectureComparisonMode
 /**
  * cold: every sample starts from an empty parse cache, as the first scan of a repository.
  * warm: one unsampled scan fills the cache, then every sample reuses it, as a warm worker.
@@ -36,7 +34,9 @@ type BenchCache = (typeof CACHE_MODES)[number]
 
 export interface BenchArguments {
   readonly root: string
-  readonly mode: BenchMode
+  /** Snapshot ends as the review takes them; omitted means branch point and live tree. */
+  readonly baseline?: string
+  readonly current?: string
   readonly runs: number
   readonly host: BenchHostKind
   readonly cache: BenchCache
@@ -55,38 +55,62 @@ export interface BenchReport extends BenchArguments {
   }[]
 }
 
-const USAGE = 'Usage: <root> <mode> [--runs N] [--ssh] [--cache cold|warm]'
+const USAGE =
+  'Usage: <root> [--baseline REF] [--current REF] [--runs N] [--ssh] [--cache cold|warm]'
+
+type Flags = {
+  runs?: number
+  host?: BenchHostKind
+  cache?: BenchCache
+  baseline?: string
+  current?: string
+}
 
 export function parseBenchArguments(argv: readonly string[]): BenchArguments {
-  const [root, mode, ...flags] = argv
+  const [root, ...rest] = argv
   if (!root?.startsWith('/'))
     throw new Error('Pass the repository root as an absolute path')
-  if (!MODES.includes(mode as BenchMode))
-    throw new Error(`Pass a comparison mode: ${MODES.join(', ')}`)
-  let runs: number | undefined
-  let host: BenchHostKind | undefined
-  let cache: BenchCache | undefined
-  for (let index = 0; index < flags.length; index += 1) {
-    const flag = flags[index]
-    if (flag === '--runs' && runs === undefined) {
-      index += 1
-      runs = Number(flags[index])
-      if (!Number.isSafeInteger(runs) || runs < 1 || runs > 50)
-        throw new Error('--runs must be an integer from 1 to 50')
-    } else if (flag === '--ssh' && host === undefined) host = 'ssh'
-    else if (flag === '--cache' && cache === undefined) {
-      index += 1
-      cache = flags[index] as BenchCache
-      if (!CACHE_MODES.includes(cache)) throw new Error('--cache must be cold or warm')
-    } else throw new Error(USAGE)
+  const flags: Flags = {}
+  for (let index = 0; index < rest.length; index += 1) {
+    const flag = rest[index]
+    const value = rest[index + 1]
+    if (flag === '--ssh' && flags.host === undefined) flags.host = 'ssh'
+    else if (!parseValueFlag(flags, flag, value)) throw new Error(USAGE)
+    else index += 1
   }
   return {
     root,
-    mode: mode as BenchMode,
-    runs: runs ?? 1,
-    host: host ?? 'local',
-    cache: cache ?? 'cold',
+    ...(flags.baseline === undefined ? {} : { baseline: flags.baseline }),
+    ...(flags.current === undefined ? {} : { current: flags.current }),
+    runs: flags.runs ?? 1,
+    host: flags.host ?? 'local',
+    cache: flags.cache ?? 'cold',
   }
+}
+
+/** Applies one flag that takes a value; false when the flag is unknown or repeated. */
+function parseValueFlag(
+  flags: Flags,
+  flag: string | undefined,
+  value: string | undefined,
+) {
+  if (flag === '--runs' && flags.runs === undefined) {
+    flags.runs = Number(value)
+    if (!Number.isSafeInteger(flags.runs) || flags.runs < 1 || flags.runs > 50)
+      throw new Error('--runs must be an integer from 1 to 50')
+  } else if (flag === '--cache' && flags.cache === undefined) {
+    if (!CACHE_MODES.includes(value as BenchCache))
+      throw new Error('--cache must be cold or warm')
+    flags.cache = value as BenchCache
+  } else if (
+    (flag === '--baseline' || flag === '--current') &&
+    flags[flag.slice(2) as 'baseline' | 'current'] === undefined
+  ) {
+    const problem = architectureRefProblem(value)
+    if (problem) throw new Error(`${flag} ref: ${problem}`)
+    flags[flag.slice(2) as 'baseline' | 'current'] = value
+  } else return false
+  return true
 }
 
 export function medianOf(values: readonly number[]): number {
@@ -171,7 +195,11 @@ async function scanOnce(
   const recorder = new ArchitectureScanRecorder()
   const capture = await captureArchitecture(
     host,
-    { root: hostPath(host.hostId, args.root), mode: args.mode },
+    {
+      root: hostPath(host.hostId, args.root),
+      baseline: args.baseline,
+      current: args.current,
+    },
     AbortSignal.timeout(300_000),
     recorder,
   )

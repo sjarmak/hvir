@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
 import type { HostPath } from '../../shared/host-path'
-import type { ArchitectureComparisonMode } from '../../shared/architecture-review'
 import type { ProjectHost } from '../project-host/project-host'
 import { inArchitectureScope } from './capture-entries'
 import type { ArchitectureScanRecorder } from './scan-recorder'
@@ -8,11 +7,6 @@ import type { ArchitectureScanRecorder } from './scan-recorder'
 const TIMEOUT = 30_000
 const MAX_OUTPUT = 4 * 1024 * 1024
 const ENV = { GIT_OPTIONAL_LOCKS: '0' }
-
-/** Only a Current end read from the working tree can change after capture (ADR-063). */
-export function hasLiveCurrent(mode: ArchitectureComparisonMode): boolean {
-  return mode !== 'branch-point'
-}
 
 /**
  * HEAD, the workspace prefix, the tagged staged entries and the porcelain status, in one
@@ -63,7 +57,7 @@ interface StatusEntry {
 }
 
 /**
- * A digest of everything a live Current end, or an index Baseline, is read from: HEAD
+ * A digest of everything a live Current end is read from: HEAD
  * identity, the in-scope staged entries, the in-scope porcelain status and the blob id of
  * every in-scope file that differs from the index. Equal digests mean a fresh capture
  * would read the same bytes, so freshness never needs a recapture.

@@ -79,6 +79,7 @@ function ResolvedDiffView({
   positionCapture,
   registerFindTarget,
   evidenceLocation,
+  capturedInputs,
   inputs: resolvedInputs,
   error,
 }: DiffViewProps & {
@@ -113,8 +114,11 @@ function ResolvedDiffView({
         <DiffRefreshError error={error} />
         <DiffFallback
           path={path}
-          base={base}
-          revision={revision}
+          comparison={
+            capturedInputs
+              ? `${capturedInputs.baseLabel} → ${capturedInputs.currentLabel}`
+              : requestedComparison(base, revision)
+          }
           baseLabel={resolvedInputs.baseLabel}
           currentLabel={`${resolvedInputs.currentLabel}${showUnsaved ? ' (unsaved)' : ''}`}
           baseInput={resolvedInputs.baseInput}
@@ -305,8 +309,7 @@ function liveInput(content: string, byteLength: number): TextWorkload {
 
 function DiffFallback({
   path,
-  base,
-  revision,
+  comparison,
   baseLabel,
   currentLabel,
   baseInput,
@@ -314,8 +317,8 @@ function DiffFallback({
   workload,
 }: {
   readonly path: HostPath
-  readonly base: DiffBase
-  readonly revision?: string
+  /** Captured evidence names its own ends; a live diff names the requested base. */
+  readonly comparison: string
   readonly baseLabel: string
   readonly currentLabel: string
   readonly baseInput: TextWorkload
@@ -328,7 +331,7 @@ function DiffFallback({
         <strong>Diff preview limited</strong>
         <span>{fallbackReason(workload.reason)}</span>
         <span className="diff-fallback-path">{path.path}</span>
-        <span>Requested comparison: {requestedComparison(base, revision)}</span>
+        <span>Requested comparison: {comparison}</span>
       </header>
       <div className="diff-fallback-inputs">
         <DiffFallbackInput label={baseLabel} input={baseInput} />

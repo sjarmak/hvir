@@ -31,7 +31,7 @@ describe('architecture review IPC authority', () => {
     )
     await expect(
       handlers.get('architecture-review:scan')?.(
-        { root: hostPath(asHostId('ssh'), '/repo'), mode: 'head', reviewId: 'r1' },
+        { root: hostPath(asHostId('ssh'), '/repo'), baseline: 'HEAD', reviewId: 'r1' },
         context(),
       ),
     ).rejects.toThrow(/active workspace|authority/)
@@ -70,7 +70,7 @@ describe('architecture review IPC authority', () => {
       } as unknown as Parameters<typeof registerArchitectureReviewIpc>[1],
     )
     const pending = handlers.get('architecture-review:scan')?.(
-      { root, mode: 'head', reviewId: 'r2' },
+      { root, baseline: 'HEAD', reviewId: 'r2' },
       context(),
     )
     await Promise.resolve()
@@ -78,6 +78,39 @@ describe('architecture review IPC authority', () => {
     release()
     await expect(pending).rejects.toThrow(/changed|active workspace/)
     expect(close).toHaveBeenCalled()
+  })
+
+  it('lists the commit strip only for the active workspace, through its host', async () => {
+    const root = localPath('/repo')
+    const host = {
+      hostId: root.hostId,
+      connectionState: 'connected',
+    } as unknown as ProjectHost
+    const range = { base: {}, commits: [], truncated: false }
+    const commits = vi.fn(() => Promise.resolve(range))
+    const projectPath = vi.fn()
+    const handlers = new Map<string, TestHandler>()
+    registerArchitectureReviewIpc(
+      {
+        handle: (channel: string, handler: TestHandler) => handlers.set(channel, handler),
+        authority: { projectPath },
+      } as unknown as IpcRegistrar,
+      {
+        getProject: () => ({ root, host }),
+        architectureReview: { commits },
+      } as unknown as Parameters<typeof registerArchitectureReviewIpc>[1],
+    )
+    const handler = handlers.get('architecture-review:commits')!
+    await expect(
+      handler({ root: hostPath(asHostId('ssh'), '/repo') }, context()),
+    ).rejects.toThrow(/active workspace/)
+    expect(commits).not.toHaveBeenCalled()
+    await expect(handler({ root, from: 'v1' }, context())).resolves.toBe(range)
+    expect(projectPath).toHaveBeenCalledWith(root, root, host)
+    expect(commits).toHaveBeenCalledWith({ id: 1, generation: 1 }, host, {
+      root,
+      from: 'v1',
+    })
   })
 })
 

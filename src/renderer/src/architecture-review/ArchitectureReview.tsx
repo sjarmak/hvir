@@ -1,21 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { joinHostPath, type HostPath } from '../../../shared'
-import type {
-  ArchitectureComparisonMode,
-  ArchitectureEvidence,
-  ArchitectureReviewSnapshot,
+import {
+  ARCHITECTURE_LIVE_REVISION,
+  type ArchitectureEvidence,
+  type ArchitectureReviewSnapshot,
 } from '../../../shared/architecture-review'
 import { ArchitectureMap } from './ArchitectureMap'
+import { ArchitectureCommitStrip } from './ArchitectureCommitStrip'
+import { ArchitectureEndsControls } from './ArchitectureEndsControls'
 import { ArchitectureEvidencePanel } from './ArchitectureEvidencePanel'
 import { ArchitectureScanTimings } from './ArchitectureScanTimings'
+import { endsFromText, type ArchitectureEnds } from './architecture-ends-model'
 import type { ArchitectureMapMode } from './architecture-review-model'
-
-const MODES: readonly ArchitectureComparisonMode[] = [
-  'working-tree',
-  'head',
-  'branch-point',
-  'commit',
-]
 
 export function ArchitectureReview({
   root,
@@ -26,8 +22,10 @@ export function ArchitectureReview({
 }) {
   const requestEpoch = useRef(0)
   const [reviewId] = useState(() => crypto.randomUUID())
-  const [mode, setMode] = useState<ArchitectureComparisonMode>('working-tree')
-  const [revision, setRevision] = useState('')
+  const [baselineText, setBaselineText] = useState('')
+  const [currentText, setCurrentText] = useState('')
+  const parsed = endsFromText(baselineText, currentText)
+  const endsInvalid = Object.keys(parsed.problems).length > 0
   const [snapshot, setSnapshot] = useState<ArchitectureReviewSnapshot>()
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [error, setError] = useState<string>()
@@ -50,7 +48,7 @@ export function ArchitectureReview({
     [root, reviewId],
   )
 
-  const scan = async () => {
+  const scan = async (ends: ArchitectureEnds) => {
     const epoch = ++requestEpoch.current
     setSnapshot(undefined)
     setEvidence(undefined)
@@ -60,9 +58,8 @@ export function ArchitectureReview({
     try {
       const result = await window.hvir.invoke('architecture-review:scan', {
         root,
-        mode,
         reviewId,
-        ...(mode === 'commit' ? { revision: revision.trim() } : {}),
+        ...ends,
       })
       if (epoch !== requestEpoch.current) return
       setSnapshot(result)
@@ -76,6 +73,11 @@ export function ArchitectureReview({
           : 'Architecture review could not be loaded.',
       )
     }
+  }
+  const chooseFromStrip = (ends: ArchitectureEnds) => {
+    setBaselineText(ends.baseline ?? '')
+    setCurrentText(ends.current ?? '')
+    void scan(ends)
   }
   const openEvidence = async (path: string, line: number, side: 'before' | 'after') => {
     if (!snapshot) return
@@ -116,43 +118,30 @@ export function ArchitectureReview({
         </div>
         <button
           type="button"
-          onClick={() => void scan()}
-          disabled={state === 'loading' || (mode === 'commit' && !revision.trim())}
+          onClick={() => void scan(parsed.ends)}
+          disabled={state === 'loading' || endsInvalid}
         >
           {state === 'loading' ? 'Scanning…' : 'Scan snapshot'}
         </button>
       </header>
-      <div
-        className="architecture-review-controls"
-        role="group"
-        aria-label="Baseline selection"
-      >
-        <label>
-          Baseline
-          <select
-            value={mode}
-            onChange={(event) =>
-              setMode(event.target.value as ArchitectureComparisonMode)
-            }
-          >
-            {MODES.map((candidate) => (
-              <option key={candidate} value={candidate}>
-                {candidate}
-              </option>
-            ))}
-          </select>
-        </label>
-        {mode === 'commit' ? (
-          <label>
-            Revision
-            <input
-              value={revision}
-              onChange={(event) => setRevision(event.target.value)}
-              placeholder="commit SHA"
-            />
-          </label>
-        ) : null}
-      </div>
+      <ArchitectureEndsControls
+        baseline={baselineText}
+        current={currentText}
+        problems={parsed.problems}
+        onBaseline={setBaselineText}
+        onCurrent={setCurrentText}
+      />
+      <ArchitectureCommitStrip
+        root={root}
+        ends={endsInvalid ? {} : parsed.ends}
+        current={
+          snapshot && snapshot.currentRevision !== ARCHITECTURE_LIVE_REVISION
+            ? snapshot.currentRevision
+            : undefined
+        }
+        disabled={state === 'loading'}
+        onChoose={chooseFromStrip}
+      />
       {error ? (
         <p className="architecture-review-state error" role="alert">
           {error}
@@ -160,15 +149,15 @@ export function ArchitectureReview({
       ) : null}
       {state === 'idle' && (
         <p className="architecture-review-state">
-          Choose a baseline and scan to capture a review.
+          Choose the ends, or a commit on the strip, and scan to capture a review.
         </p>
       )}
       {state === 'ready' && snapshot && (
         <>
           <details className="architecture-review-metadata">
             <summary>
-              {snapshot.mode} · {snapshot.analysis.modules.length} captured files ·
-              Snapshot details
+              {snapshot.baselineRef} → {snapshot.currentRef} ·{' '}
+              {snapshot.analysis.modules.length} captured files · Snapshot details
             </summary>
             <dl>
               <div>
@@ -177,11 +166,15 @@ export function ArchitectureReview({
               </div>
               <div>
                 <dt>Baseline</dt>
-                <dd>{snapshot.baselineRevision}</dd>
+                <dd>
+                  {snapshot.baselineRef} · {snapshot.baselineRevision}
+                </dd>
               </div>
               <div>
                 <dt>Current</dt>
-                <dd>{snapshot.currentRevision}</dd>
+                <dd>
+                  {snapshot.currentRef} · {snapshot.currentRevision}
+                </dd>
               </div>
               <div>
                 <dt>Fingerprint</dt>

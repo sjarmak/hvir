@@ -6,6 +6,8 @@ import type {
   ArchitectureEvidenceRequest,
   ArchitectureEvidence,
   ArchitecturePreparedReview,
+  ArchitectureCommitRangeRequest,
+  ArchitectureCommitRange,
 } from '../architecture-review'
 export const architectureReviewIpc = {
   invoke: {
@@ -20,6 +22,10 @@ export const architectureReviewIpc = {
     'architecture-review:prepare': invoke<
       ArchitectureEvidenceRequest,
       ArchitecturePreparedReview
+    >(),
+    'architecture-review:commits': invoke<
+      ArchitectureCommitRangeRequest,
+      ArchitectureCommitRange
     >(),
     'architecture-review:close': invoke<ArchitectureReviewKey, void>(),
   },

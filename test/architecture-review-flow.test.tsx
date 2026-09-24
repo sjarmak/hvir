@@ -28,7 +28,8 @@ const analysis = analyzeArchitecture(
 const snapshot = {
   id: 's',
   root,
-  mode: 'working-tree',
+  baselineRef: 'branch point',
+  currentRef: 'working tree',
   analysis,
   baselineRevision: 'b',
   currentRevision: 'a',
@@ -62,6 +63,17 @@ const prepared = {
   digest: 'd',
   body: 'exact captured prompt',
 }
+const revision = (digit: string) => digit.repeat(40)
+const commits = {
+  base: { revision: revision('0'), parent: null, subject: 'base' },
+  commits: ['1', '2', '3'].map((digit, index) => ({
+    revision: revision(digit),
+    parent: revision(String(index)),
+    subject: `commit ${digit}`,
+  })),
+  truncated: false,
+}
+type ScanRequest = { baseline?: string; current?: string }
 let host: HTMLDivElement
 let app: ReturnType<typeof createRoot>
 let stale: boolean
@@ -69,8 +81,15 @@ const invoke = vi.fn()
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   stale = false
-  invoke.mockImplementation(async (channel: string) => {
-    if (channel === 'architecture-review:scan') return snapshot
+  invoke.mockImplementation(async (channel: string, request?: ScanRequest) => {
+    if (channel === 'architecture-review:scan')
+      return {
+        ...snapshot,
+        baselineRef: request?.baseline ?? 'branch point',
+        currentRef: request?.current ?? 'working tree',
+        currentRevision: request?.current ?? 'working-tree',
+      }
+    if (channel === 'architecture-review:commits') return commits
     if (channel === 'harness:catalog')
       return [{ id: 'codex', architectureReviewLaunch: true }]
     if (channel === 'harness:profiles')
@@ -256,4 +275,87 @@ it('shows per-stage scan cost in the snapshot details', async () => {
   expect(faults?.textContent).toBe(
     'Worker stages not shown: Architecture worker returned malformed timings',
   )
+})
+
+const scans = () =>
+  invoke.mock.calls
+    .filter(([channel]) => channel === 'architecture-review:scan')
+    .map(([, request]) => {
+      const { baseline, current } = request as ScanRequest
+      return { baseline, current }
+    })
+const commitButton = (digit: string) =>
+  host.querySelector<HTMLButtonElement>(`button[title="${revision(digit)}"]`)!
+async function type(label: string, value: string) {
+  const input = Array.from(host.querySelectorAll('label'))
+    .find((node) => node.textContent?.startsWith(label))!
+    .querySelector('input')!
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+      input,
+      value,
+    )
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+}
+
+it('scans the typed ends and treats a blank end as its default', async () => {
+  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await click(button('Scan snapshot'))
+  await type('Baseline', ' v1 ')
+  await click(button('Scan snapshot'))
+  await type('Current', 'HEAD~1')
+  await click(button('Scan snapshot'))
+  expect(scans()).toEqual([
+    { baseline: undefined, current: undefined },
+    { baseline: 'v1', current: undefined },
+    { baseline: 'v1', current: 'HEAD~1' },
+  ])
+  expect(host.querySelector('summary')?.textContent).toContain('v1 → HEAD~1')
+})
+
+it('refuses an option-shaped ref before any scan is sent', async () => {
+  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await type('Baseline', '--all')
+  expect(host.textContent).toContain('A ref cannot start with "-"')
+  expect(button('Scan snapshot').disabled).toBe(true)
+  expect(scans()).toEqual([])
+})
+
+it('steps the strip pairwise, then against a locked baseline', async () => {
+  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  expect(invoke).toHaveBeenCalledWith('architecture-review:commits', { root })
+  await click(commitButton('2'))
+  expect(commitButton('2').getAttribute('aria-pressed')).toBe('true')
+  await click(button('Next commit'))
+  await click(commitButton('1'))
+  await act(async () =>
+    host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
+  )
+  expect(host.textContent).toContain(`Baseline held at ${revision('0').slice(0, 8)}`)
+  await click(button('Next commit'))
+  await click(button('Next commit'))
+  expect(button('Next commit').disabled).toBe(true)
+  await act(async () =>
+    host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
+  )
+  await click(button('Previous commit'))
+  expect(scans()).toEqual([
+    { baseline: revision('1'), current: revision('2') },
+    { baseline: revision('2'), current: revision('3') },
+    { baseline: revision('0'), current: revision('1') },
+    { baseline: revision('0'), current: revision('2') },
+    { baseline: revision('0'), current: revision('3') },
+    { baseline: revision('1'), current: revision('2') },
+  ])
+})
+
+it('widens the strip from any ref', async () => {
+  await act(async () => app.render(<ArchitectureReview root={root} active />))
+  await type('Widen from', 'main~3')
+  await click(button('List commits'))
+  expect(invoke).toHaveBeenLastCalledWith('architecture-review:commits', {
+    root,
+    from: 'main~3',
+  })
 })

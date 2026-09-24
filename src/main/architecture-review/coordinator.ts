@@ -4,6 +4,8 @@ import { measureTextWorkload } from '../../shared/viewer-workload-policy'
 import type { ArchitectureAnalysis } from '../../shared/architecture-analysis'
 import type {
   ArchitectureCapture,
+  ArchitectureCommitRange,
+  ArchitectureCommitRangeRequest,
   ArchitectureEvidence,
   ArchitecturePreparedReview,
   ArchitectureReviewLaunch,
@@ -12,6 +14,7 @@ import type {
   ArchitectureReviewRequest,
   ArchitectureReviewSnapshot,
 } from '../../shared/architecture-review'
+import { ARCHITECTURE_LIVE_REVISION } from '../../shared/architecture-review'
 import type { ProjectHost } from '../project-host/project-host'
 import type {
   RendererOwner,
@@ -19,15 +22,19 @@ import type {
   RendererResourceScopes,
 } from '../renderer-resource-scopes'
 import { captureArchitecture, validateArchitectureRequest } from './capture'
-import { hasLiveCurrent, readArchitectureLiveState } from './freshness'
+import { listArchitectureCommits } from './commit-range'
+import { hasLiveCurrent } from './ends'
+import { readArchitectureLiveState } from './freshness'
 import { ArchitectureScanRecorder } from './scan-recorder'
 import { architectureReviewPrompt, architecturePromptDigest } from './prompt'
 
 const MAX_REVIEWS = 4
+const STRIP_TIMEOUT = 60_000
 export interface ArchitectureReviewPorts {
   readonly resources: RendererResourceScopes
   readonly capture?: typeof captureArchitecture
   readonly liveState?: typeof readArchitectureLiveState
+  readonly commits?: typeof listArchitectureCommits
   readonly analyze: (
     capture: ArchitectureCapture,
     signal: AbortSignal,
@@ -113,6 +120,22 @@ export class ArchitectureReviewCoordinator {
     }
   }
 
+  /** The commit strip needs no review lease: it pins nothing and holds no capture. */
+  async commits(
+    owner: RendererOwner,
+    host: ProjectHost,
+    request: ArchitectureCommitRangeRequest,
+  ): Promise<ArchitectureCommitRange> {
+    this.ports.resources.assertCurrent(owner)
+    const range = await (this.ports.commits ?? listArchitectureCommits)(
+      host,
+      request,
+      AbortSignal.timeout(STRIP_TIMEOUT),
+    )
+    this.ports.resources.assertCurrent(owner)
+    return range
+  }
+
   async evidence(
     owner: RendererOwner,
     host: ProjectHost,
@@ -141,9 +164,9 @@ export class ArchitectureReviewCoordinator {
       stale,
       diff: {
         path: request.path,
-        base: capture.mode === 'commit' ? 'head' : capture.mode,
-        baseLabel: capture.baselineRevision,
-        currentLabel: capture.currentRevision,
+        ...evidenceBase(capture),
+        baseLabel: endLabel(capture.baselineRef, capture.baselineRevision),
+        currentLabel: endLabel(capture.currentRef, capture.currentRevision),
         baseInput: measureTextWorkload(
           capture.before.find((file) => file.path === source.path)?.content ?? '',
         ),
@@ -247,7 +270,7 @@ export class ArchitectureReviewCoordinator {
     recorder: ArchitectureScanRecorder,
   ): Promise<{ capture: ArchitectureCapture; liveState?: string }> {
     validateArchitectureRequest(host, request)
-    const liveState = hasLiveCurrent(request.mode)
+    const liveState = hasLiveCurrent(request)
       ? await this.readLiveState(host, request, signal, recorder)
       : undefined
     const capture = await (this.ports.capture ?? captureArchitecture)(
@@ -309,4 +332,23 @@ function reviewKey(owner: RendererOwner, request: ArchitectureReviewKey): string
     request.root.path,
     request.reviewId,
   ])
+}
+
+/**
+ * The diff base the viewer keys captured inputs by. Captured inputs are never re-resolved;
+ * a commit pair names its Current commit so no editor buffer is ever mixed in.
+ */
+function evidenceBase(
+  capture: ArchitectureCapture,
+): Pick<ArchitectureEvidence['diff'], 'base' | 'revision'> {
+  return capture.currentRevision === ARCHITECTURE_LIVE_REVISION
+    ? { base: 'working-tree' }
+    : { base: 'head', revision: capture.currentRevision }
+}
+
+/** A diff side label: the ref as chosen, with the commit it resolved to. */
+function endLabel(ref: string, revision: string): string {
+  if (revision === ARCHITECTURE_LIVE_REVISION) return ref
+  const short = revision.slice(0, 12)
+  return ref === revision || ref === short ? short : `${ref} (${short})`
 }

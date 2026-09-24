@@ -1,13 +1,35 @@
 import type { HostPath } from './host-path'
 
-export type ArchitectureComparisonMode =
-  'working-tree' | 'head' | 'branch-point' | 'commit'
+/**
+ * The two ends of a snapshot (ADR-063). Either end may be any commit a ref names (branch,
+ * tag, HEAD~n, hash); only Current may be the live working tree.
+ */
 export interface ArchitectureCaptureRequest {
   readonly root: HostPath
-  readonly mode: ArchitectureComparisonMode
-  /** Full or abbreviated commit hash; used only by the explicit commit comparison. */
-  readonly revision?: string
+  /** A commit ref; omitted means the branch point of Current with the default branch. */
+  readonly baseline?: string
+  /** A commit ref; omitted means the live working tree. */
+  readonly current?: string
 }
+/** Labels a snapshot end carries when the request left it at its default. */
+export const ARCHITECTURE_BRANCH_POINT = 'branch point'
+export const ARCHITECTURE_WORKING_TREE = 'working tree'
+/** The `currentRevision` of a snapshot whose Current end is the live tree. */
+export const ARCHITECTURE_LIVE_REVISION = 'working-tree'
+const MAX_REF_LENGTH = 256
+
+/**
+ * Why a ref cannot name a snapshot end, or undefined when Git may resolve it. A leading
+ * dash would be read as an option, so it is refused before any Git command runs.
+ */
+export function architectureRefProblem(ref: unknown): string | undefined {
+  if (typeof ref !== 'string' || ref.length === 0) return 'Enter a ref'
+  if (ref.length > MAX_REF_LENGTH) return 'Ref is too long'
+  if (ref.startsWith('-')) return 'A ref cannot start with "-"'
+  if (/[\s\p{Cc}]/u.test(ref)) return 'A ref cannot contain spaces or control characters'
+  return undefined
+}
+
 export interface ArchitectureSource {
   /** Repository-relative identifier; resolve only against the snapshot's qualified root. */
   readonly path: string
@@ -17,8 +39,12 @@ export interface ArchitectureSource {
 }
 export interface ArchitectureCapture {
   readonly root: HostPath
-  readonly mode: ArchitectureComparisonMode
+  /** The Baseline ref as requested, or the branch-point label. */
+  readonly baselineRef: string
+  /** The Current ref as requested, or the working-tree label. */
+  readonly currentRef: string
   readonly baselineRevision: string
+  /** The Current commit, or ARCHITECTURE_LIVE_REVISION when Current is the live tree. */
   readonly currentRevision: string
   readonly fingerprint: string
   readonly before: readonly ArchitectureSource[]
@@ -81,3 +107,23 @@ export interface ArchitectureReviewLaunch extends ArchitectureEvidenceRequest {
 export interface ArchitecturePreparedReview extends ArchitectureReviewLaunch {
   readonly body: string
 }
+
+/** A commit on the strip, with the first parent pairwise stepping compares it to. */
+export interface ArchitectureCommit {
+  readonly revision: string
+  readonly parent: string | null
+  readonly subject: string
+}
+export interface ArchitectureCommitRangeRequest {
+  readonly root: HostPath
+  /** Widens the strip back to this ref; omitted means the default branch. */
+  readonly from?: string
+}
+/** First-parent commits from `base` (exclusive) to HEAD, oldest first. */
+export interface ArchitectureCommitRange {
+  readonly base: ArchitectureCommit
+  readonly commits: readonly ArchitectureCommit[]
+  /** True when older commits in the range were left off the strip. */
+  readonly truncated: boolean
+}
+export const ARCHITECTURE_COMMIT_STRIP_LIMIT = 200

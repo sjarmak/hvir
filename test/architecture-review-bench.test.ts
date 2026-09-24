@@ -20,37 +20,47 @@ afterEach(async () => {
 const git = (root: string, ...args: string[]) =>
   execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' })
 
-it('parses the root, mode and run count and refuses anything else', () => {
-  expect(parseBenchArguments(['/repo', 'working-tree', '--runs', '3'])).toEqual({
+it('parses the root, ends and run count and refuses anything else', () => {
+  expect(parseBenchArguments(['/repo', '--runs', '3'])).toEqual({
     root: '/repo',
-    mode: 'working-tree',
     runs: 3,
     host: 'local',
     cache: 'cold',
   })
-  expect(parseBenchArguments(['/repo', 'branch-point'])).toMatchObject({
-    runs: 1,
-    host: 'local',
-  })
   expect(
-    parseBenchArguments(['/srv/repo', 'head', '--ssh', '--runs', '2', '--cache', 'warm']),
+    parseBenchArguments(['/repo', '--baseline', 'HEAD~3', '--current', 'v1.0']),
+  ).toMatchObject({ baseline: 'HEAD~3', current: 'v1.0', runs: 1, host: 'local' })
+  expect(
+    parseBenchArguments([
+      '/srv/repo',
+      '--baseline',
+      'HEAD',
+      '--ssh',
+      '--runs',
+      '2',
+      '--cache',
+      'warm',
+    ]),
   ).toEqual({
     root: '/srv/repo',
-    mode: 'head',
+    baseline: 'HEAD',
     runs: 2,
     host: 'ssh',
     cache: 'warm',
   })
-  expect(() => parseBenchArguments(['/repo', 'head', '--cache', 'hot'])).toThrow(
-    /cold or warm/,
-  )
-  expect(() => parseBenchArguments(['/repo', 'head', '--cache'])).toThrow(/cold or warm/)
-  expect(() => parseBenchArguments(['/repo', 'head', '--ssh', '--ssh'])).toThrow(/Usage/)
-  expect(() => parseBenchArguments(['/repo', 'head', '--remote'])).toThrow(/Usage/)
-  expect(() => parseBenchArguments(['/repo', 'head', '--runs'])).toThrow(/runs/)
-  expect(() => parseBenchArguments(['relative', 'head'])).toThrow(/absolute/)
-  expect(() => parseBenchArguments(['/repo', 'commit'])).toThrow(/mode/)
-  expect(() => parseBenchArguments(['/repo', 'head', '--runs', '0'])).toThrow(/runs/)
+  expect(() => parseBenchArguments(['/repo', '--cache', 'hot'])).toThrow(/cold or warm/)
+  expect(() => parseBenchArguments(['/repo', '--cache'])).toThrow(/cold or warm/)
+  expect(() => parseBenchArguments(['/repo', '--ssh', '--ssh'])).toThrow(/Usage/)
+  expect(() => parseBenchArguments(['/repo', '--remote'])).toThrow(/Usage/)
+  expect(() => parseBenchArguments(['/repo', 'head'])).toThrow(/Usage/)
+  expect(() => parseBenchArguments(['/repo', '--runs'])).toThrow(/runs/)
+  expect(() => parseBenchArguments(['relative'])).toThrow(/absolute/)
+  expect(() => parseBenchArguments(['/repo', '--baseline'])).toThrow(/ref/)
+  expect(() => parseBenchArguments(['/repo', '--current', '-x'])).toThrow(/ref/)
+  expect(() =>
+    parseBenchArguments(['/repo', '--baseline', 'a', '--baseline', 'b']),
+  ).toThrow(/Usage/)
+  expect(() => parseBenchArguments(['/repo', '--runs', '0'])).toThrow(/runs/)
 })
 
 it('takes the median of an odd or even sample', () => {
@@ -71,12 +81,11 @@ it('reports per-stage medians and every sample for a local repository', async ()
   git(root, 'commit', '-m', 'baseline')
   const report = await runArchitectureReviewBench({
     root,
-    mode: 'working-tree',
     runs: 2,
     host: 'local',
     cache: 'cold',
   })
-  expect(report).toMatchObject({ root, mode: 'working-tree', runs: 2, target: 'local' })
+  expect(report).toMatchObject({ root, runs: 2, target: 'local' })
   expect(report.samples).toHaveLength(2)
   expect(report.files).toEqual({ baseline: 2, current: 2 })
   expect(report.median.stages.map((stage) => stage.stage)).toEqual([
@@ -111,7 +120,7 @@ it('fills the cache once and answers every warm sample from it', async () => {
   git(root, 'commit', '-m', 'baseline')
   const report = await runArchitectureReviewBench({
     root,
-    mode: 'head',
+    baseline: 'HEAD',
     runs: 2,
     host: 'local',
     cache: 'warm',
@@ -134,7 +143,7 @@ it('scans through the host the opener returns and names its target', async () =>
   git(root, 'commit', '-m', 'baseline')
   const opened: string[] = []
   const report = await runArchitectureReviewBench(
-    { root, mode: 'head', runs: 1, host: 'ssh', cache: 'cold' },
+    { root, baseline: 'HEAD', runs: 1, host: 'ssh', cache: 'cold' },
     (kind) => {
       opened.push(kind)
       const host = new LocalHost()
@@ -186,13 +195,13 @@ it('runs from the documented node command and reports a local scan as JSON', asy
   await writeFile(join(root, 'a.ts'), 'export const a = 1\n')
   git(root, 'add', '.')
   git(root, 'commit', '-m', 'baseline')
-  const result = launch(root, 'head', '--runs', '2')
+  const result = launch(root, '--baseline', 'HEAD', '--runs', '2')
   expect(result.stderr).toBe('')
   expect(result.status).toBe(0)
   const report = JSON.parse(result.stdout) as Record<string, unknown>
-  expect(report).toMatchObject({ root, mode: 'head', runs: 2, target: 'local' })
+  expect(report).toMatchObject({ root, baseline: 'HEAD', runs: 2, target: 'local' })
   expect(report.samples).toHaveLength(2)
-  const refused = launch('relative', 'head')
+  const refused = launch('relative')
   expect(refused.status).toBe(1)
   expect(refused.stderr).toMatch(/absolute/)
 }, 120_000)

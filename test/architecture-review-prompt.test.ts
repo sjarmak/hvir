@@ -11,7 +11,8 @@ const source = (path: string, content: string) => ({
 })
 const capture: ArchitectureCapture = {
   root: localPath('/repo'),
-  mode: 'head',
+  baselineRef: 'HEAD',
+  currentRef: 'working tree',
   baselineRevision: 'abc',
   currentRevision: 'live',
   fingerprint: 'fingerprint',
@@ -30,6 +31,8 @@ it('binds both captured sides, source coordinates and scope to the review instru
   expect(prompt).toContain('export const a = 1')
   expect(prompt).toContain('export const a = 2')
   expect(prompt).toContain('interpretations')
+  expect(prompt).toContain('"baseline":{"ref":"HEAD","revision":"abc"}')
+  expect(prompt).toContain('"current":{"ref":"working tree","revision":"live"}')
 })
 it('refuses absent evidence and oversized prompts instead of truncating evidence', () => {
   expect(() => architectureReviewPrompt(capture, 'snapshot', 'other.ts')).toThrow(

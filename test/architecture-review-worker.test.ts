@@ -88,7 +88,8 @@ describe('architecture analysis worker lifecycle', () => {
 describe('architecture analysis worker timings', () => {
   const pair: ArchitectureCapture = {
     root: localPath('/repo'),
-    mode: 'head',
+    baselineRef: 'HEAD',
+    currentRef: 'working tree',
     baselineRevision: 'b',
     currentRevision: 'c',
     fingerprint: 'f',
@@ -284,7 +285,8 @@ describe('architecture analysis worker timings', () => {
 describe('warm architecture analysis worker', () => {
   const pair: ArchitectureCapture = {
     root: localPath('/repo'),
-    mode: 'head',
+    baselineRef: 'HEAD',
+    currentRef: 'working tree',
     baselineRevision: 'b',
     currentRevision: 'c',
     fingerprint: 'f',

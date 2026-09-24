@@ -464,6 +464,7 @@ describe('IpcAuthorityRouter', () => {
         'project:folder-picker-close',
         'project:open',
         'architecture-review:scan',
+        'architecture-review:commits',
         'architecture-review:evidence',
       'architecture-review:prepare',
         'document-review:restore',
@@ -535,6 +536,7 @@ describe('IpcAuthorityRouter', () => {
       new Set<IpcInvokeChannel>([
         'project:watch-interests',
         'architecture-review:scan',
+        'architecture-review:commits',
         'architecture-review:evidence',
       'architecture-review:prepare',
         'document-review:restore',
