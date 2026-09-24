@@ -3,20 +3,27 @@ import { posix } from 'node:path'
 import type { Stat } from '../../shared/fs-types'
 import { localPath, type HostPath } from '../../shared/host-path'
 import type { ProjectFileTransferPort, ProjectHost } from '../project-host/project-host'
-import {
-  ARCHITECTURE_SCANNER_VERSION,
-  isModuleFacts,
-  type ModuleFacts,
-} from './module-facts'
+import { isModuleFacts, type ModuleFacts } from './module-facts'
 
-/** What one cached parse is keyed by (ADR-063): where the blob lives, and which blob. */
+/**
+ * The layout of entries on disk. Bump it when an entry's shape or naming changes; each
+ * language's scanner version is part of every key, so a parser upgrade needs no bump.
+ */
+export const ARCHITECTURE_FACTS_CACHE_FORMAT = 'module-facts-2'
+
+/** What one cached parse is keyed by (ADR-063): where the blob lives, which blob, and what parsed it. */
 export interface ModuleFactsKey {
   readonly hostId: string
   readonly repository: string
   /** Git's blob id for the module's exact bytes. */
   readonly blob: string
-  /** From `parseKind`: the same bytes parse differently as `.ts` and `.tsx`. */
+  /** The scanner's parse kind: the same bytes parse differently as `.ts` and `.tsx`. */
   readonly kind: string
+  /**
+   * The version of the language scanner that parsed it. Upgrading one language's scanner
+   * misses only that language's entries; the stale ones age out through eviction.
+   */
+  readonly scanner: string
 }
 
 /** The local files the cache keeps; LocalHost in the app, never a project's host. */
@@ -37,7 +44,7 @@ export interface ModuleFactsCacheOptions {
   /** Absolute local directory owned by this cache; under Electron userData in the app. */
   readonly directory: string
   readonly maxBytes: number
-  readonly scannerVersion?: string
+  readonly formatVersion?: string
   readonly now?: () => number
 }
 
@@ -63,8 +70,8 @@ interface StoredEntry extends ModuleFactsKey {
 }
 
 const BLOB = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
-const KIND = /^(?:\.d)?\.[cm]?[jt]sx?$/
-const ENTRY = /^[0-9a-f]{32}-[0-9a-f]+(?:\.d)?\.[cm]?[jt]sx?\.json$/
+const KIND = /^(?:\.[a-z0-9]+){1,2}$/
+const ENTRY = /^[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]+(?:\.[a-z0-9]+){1,2}\.json$/
 /** LocalHost.writeFile's temporary name while an entry is written and renamed into place. */
 const TEMPORARY = /^\..+\.hvir-[^/]+\.tmp$/
 /** A temporary file this old belongs to a writer that died; younger ones may be in flight. */
@@ -96,11 +103,8 @@ export class ModuleFactsCache {
       throw new Error('Architecture parse cache needs a positive byte budget')
     if (!posix.isAbsolute(options.directory))
       throw new Error('Architecture parse cache needs an absolute directory')
-    this.version = options.scannerVersion ?? ARCHITECTURE_SCANNER_VERSION
-    this.root = posix.join(
-      options.directory,
-      `scanner-${hash(this.version).slice(0, 16)}`,
-    )
+    this.version = options.formatVersion ?? ARCHITECTURE_FACTS_CACHE_FORMAT
+    this.root = posix.join(options.directory, `format-${hash(this.version).slice(0, 16)}`)
     this.now = options.now ?? Date.now
   }
 
@@ -151,8 +155,11 @@ export class ModuleFactsCache {
       throw new Error(`Invalid blob id for the parse cache: ${key.blob}`)
     if (!KIND.test(key.kind))
       throw new Error(`Invalid parse kind for the parse cache: ${key.kind}`)
+    if (!key.scanner.trim())
+      throw new Error('Parse cache keys need the scanner version that parsed them')
     const namespace = hash(`${key.hostId}\0${key.repository}`).slice(0, 32)
-    return `${namespace}-${key.blob}${key.kind}.json`
+    const scanner = hash(key.scanner).slice(0, 16)
+    return `${namespace}-${scanner}-${key.blob}${key.kind}.json`
   }
 
   private file(name: string): HostPath {
@@ -206,6 +213,7 @@ export class ModuleFactsCache {
       entry.repository === key.repository &&
       entry.blob === key.blob &&
       entry.kind === key.kind &&
+      entry.scanner === key.scanner &&
       entry.digest === factsDigest(entry.facts)
     )
   }
@@ -250,7 +258,7 @@ export class ModuleFactsCache {
     return this.opened
   }
 
-  /** First use drops other scanner versions and indexes this version's entries. */
+  /** First use drops other cache formats and indexes this format's entries. */
   private async load(): Promise<Map<string, IndexEntry>> {
     await this.ensureDirectory(this.options.directory)
     await this.ensureDirectory(this.root)
@@ -333,6 +341,7 @@ function parseEntry(text: string): StoredEntry | undefined {
     entry.repository,
     entry.blob,
     entry.kind,
+    entry.scanner,
     entry.digest,
   ]
   if (!strings.every((field) => typeof field === 'string')) return undefined

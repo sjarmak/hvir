@@ -1,4 +1,8 @@
+import { join } from 'node:path'
 import type { WorkerRequest, WorkerResponse } from '../shared/worker-protocol'
+import { localPath } from '../shared/host-path'
+import { loadArchitectureScanners } from '../main/architecture-review/architecture-scanners'
+import { TREE_SITTER_ASSET_DIRECTORY } from '../main/architecture-review/tree-sitter-assets'
 import { analyzeCaptureTimed } from '../main/architecture-review/timed-analysis'
 import { ModuleFactsCache } from '../main/architecture-review/module-facts-cache'
 import { LocalHost } from '../main/project-host/local-host'
@@ -10,9 +14,6 @@ import type {
   ArchitectureWorkerRequest,
   ArchitectureWorkerResult,
 } from '../main/architecture-review/worker'
-
-// Taken after the compiler loaded, so spawn cost includes module evaluation.
-const readyMark = processClock()
 
 interface ParentPort {
   on(
@@ -27,6 +28,14 @@ if (!port) throw new Error('Architecture analysis requires a utility process')
 // The process stays warm between scans, so the cache index is read from disk once. The
 // cache is this machine's application state, so it is always kept through the local host.
 const files = new LocalHost()
+
+// The grammars ship beside this bundle (inside app.asar when packaged) and load once per
+// process. The ready mark follows them, so spawn cost includes module and grammar loading.
+const ready = loadArchitectureScanners((asset) =>
+  files.readFile(localPath(join(__dirname, TREE_SITTER_ASSET_DIRECTORY, asset.file))),
+).then((scanners) => ({ scanners, readyMark: processClock() }))
+// A failed load is reported to every request below; handled here so it cannot end the process.
+ready.catch(() => undefined)
 let cache: { readonly location: string; readonly cache: ModuleFactsCache } | undefined
 function cacheFor(
   location: ArchitectureParseCacheLocation | undefined,
@@ -43,6 +52,8 @@ async function answer(
   data: WorkerRequest<ArchitectureWorkerRequest>,
 ): Promise<void> {
   try {
+    // A request that arrives while the grammars load is received once they are ready.
+    const { scanners, readyMark } = await ready
     const receivedMark = processClock()
     if (data.type !== 'analyze') throw new Error('Unknown architecture analysis request')
     const { capture, cache: location } = data.payload
@@ -50,6 +61,7 @@ async function answer(
       capture,
       processClock,
       cacheFor(location),
+      scanners,
     )
     // Marked before sizing the result, so serializing it counts toward worker-return.
     const respondedMark = processClock()

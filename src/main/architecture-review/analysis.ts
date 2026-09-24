@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
-import ts from 'typescript'
 import { ARCHITECTURE_ANALYSIS_LIMITS } from '../../shared'
 import type {
   ArchitectureDiagnostic,
@@ -15,20 +14,10 @@ import type {
   ArchitectureSourceFile,
 } from '../../shared'
 import { gitBlobId } from './blob-id'
-import {
-  parseModuleFacts,
-  type ModuleFacts,
-  type ModuleImportOccurrence,
-} from './module-facts'
-import {
-  loadCompilerSettings,
-  VIRTUAL_ROOT,
-  type CompilerSettings,
-} from './compiler-config'
+import type { LanguageScanner, ScannerSet, ScanResolver } from './language-scanner'
+import type { ModuleFacts } from './module-facts'
+import { TYPESCRIPT_ONLY_SCANNERS } from './typescript-scanner'
 
-const implementation = /\.[cm]?[jt]sx?$/
-/** Whether a captured file is a module the scan parses, rather than only reads. */
-export const isArchitectureModule = (path: string): boolean => implementation.test(path)
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
 const blobHash = (file: ArchitectureSourceFile): string =>
   file.object ?? gitBlobId(Buffer.from(file.content, 'utf8'))
@@ -38,90 +27,50 @@ function group(path: string): string {
   return directory === '.' ? '(repository root)' : directory
 }
 
-/** Resolves one import as written against this scan's files and compiler options. */
-function resolveImport(
-  source: string,
-  occurrence: ModuleImportOccurrence,
-  options: ts.CompilerOptions,
-  files: ReadonlyMap<string, string>,
-  resolver: ModuleResolver,
-  cache: ts.ModuleResolutionCache,
-): ArchitectureImportFact {
-  const literal = occurrence.specifier
-  const resolved = !literal
-    ? undefined
-    : ts.resolveModuleName(
-        literal,
-        posix.join(VIRTUAL_ROOT, source),
-        options,
-        resolver.host,
-        cache,
-      ).resolvedModule
-  const target = resolved
-    ? posix.relative(VIRTUAL_ROOT, resolved.resolvedFileName)
-    : undefined
-  const resolution: ArchitectureImportFact['resolution'] =
-    target && files.has(target)
-      ? 'internal'
-      : literal && (literal.startsWith('node:') || !isLocal(literal, options))
-        ? 'external'
-        : 'unresolved'
-  return {
-    source,
-    ...(resolution === 'internal' ? { target } : {}),
-    specifier: literal ?? '<computed>',
-    form: occurrence.form,
-    kind: occurrence.typeOnly ? 'type-only' : 'runtime',
-    resolution,
-    line: occurrence.line,
-    column: occurrence.column,
-  }
-}
-
-function isLocal(literal: string, options: ts.CompilerOptions): boolean {
-  return (
-    literal.startsWith('.') ||
-    literal.startsWith('/') ||
-    literal.startsWith('#') ||
-    Object.keys(options.paths ?? {}).some((pattern) => {
-      const [prefix, suffix] = pattern.split('*')
-      return suffix === undefined
-        ? literal === prefix
-        : literal.startsWith(prefix ?? '') && literal.endsWith(suffix ?? '')
-    }) ||
-    Boolean(options.baseUrl && !literal.startsWith('node:'))
-  )
-}
-
 /** Supplies one module's facts; the default parses it, a cached source may not need to. */
 export type ModuleFactsSource = (source: {
   readonly path: string
   readonly content: string
   /** Git's blob id for `content`. */
   readonly blob: string
+  readonly scanner: LanguageScanner
+  /** The scanner's parse kind for this path, such as `.tsx` or `.py`. */
+  readonly kind: string
 }) => ModuleFacts
 
-export const parseFacts: ModuleFactsSource = ({ path, content }) =>
-  parseModuleFacts(path, content)
+const parseWithScanner: ModuleFactsSource = ({ path, content, scanner }) =>
+  scanner.parse(path, content)
 
+interface ScanModule {
+  readonly source: ArchitectureSourceFile
+  readonly scanner: LanguageScanner
+  readonly kind: string
+}
+
+/**
+ * Parses every captured file a loaded scanner claims and resolves its imports against the
+ * other modules of the same language. Files no scanner reads are disclosed, not dropped.
+ */
 export function scanArchitecture(
   input: ArchitectureScanInput,
-  factsOf: ModuleFactsSource = parseFacts,
+  scanners: ScannerSet = TYPESCRIPT_ONLY_SCANNERS,
+  factsOf: ModuleFactsSource = parseWithScanner,
 ): ArchitectureScanResult {
   if (!input.scope.trim()) throw new Error('Architecture scan scope is required')
   const sorted = [...input.files].sort((left, right) =>
     left.path.localeCompare(right.path),
   )
   const configs = input.configs ?? []
-  const files = new Map(sorted.map((file) => [file.path, file.content]))
-  const settings = loadCompilerSettings(configs, [...files.keys()])
-  const resolver = moduleResolver(files, configs, settings)
+  const claimed = claimModules(sorted, scanners)
+  const resolvers = languageResolvers(claimed, configs)
   const modules: ArchitectureModule[] = []
   const imports: ArchitectureImportFact[] = []
-  const diagnostics: ArchitectureDiagnostic[] = [...settings.diagnostics]
-  for (const source of sorted) {
-    if (!isArchitectureModule(source.path)) continue
-    const scanned = scanModule(source, resolver, files, factsOf)
+  const diagnostics: ArchitectureDiagnostic[] = [
+    ...[...resolvers.values()].flatMap((resolver) => resolver.diagnostics),
+    ...unscannedDiagnostics(sorted.length - claimed.length),
+  ]
+  for (const entry of claimed) {
+    const scanned = scanModule(entry, resolvers.get(entry.scanner)!, factsOf)
     diagnostics.push(...scanned.diagnostics)
     modules.push(scanned.module)
     imports.push(
@@ -147,6 +96,47 @@ export function scanArchitecture(
   }
 }
 
+function claimModules(
+  sources: readonly ArchitectureSourceFile[],
+  scanners: ScannerSet,
+): readonly ScanModule[] {
+  return sources.flatMap((source) => {
+    const match = scanners.scannerFor(source.path)
+    return match ? [{ source, scanner: match.scanner, kind: match.kind }] : []
+  })
+}
+
+/** One resolver per language present, each seeing only that language's modules. */
+function languageResolvers(
+  claimed: readonly ScanModule[],
+  configs: readonly ArchitectureSourceFile[],
+): ReadonlyMap<LanguageScanner, ScanResolver> {
+  const byScanner = new Map<LanguageScanner, Map<string, string>>()
+  for (const { source, scanner } of claimed) {
+    const modules = byScanner.get(scanner) ?? new Map<string, string>()
+    modules.set(source.path, source.content)
+    byScanner.set(scanner, modules)
+  }
+  return new Map(
+    [...byScanner].map(([scanner, modules]) => [
+      scanner,
+      scanner.resolver({ modules, configs }),
+    ]),
+  )
+}
+
+function unscannedDiagnostics(count: number): readonly ArchitectureDiagnostic[] {
+  return count === 0
+    ? []
+    : [
+        {
+          file: '(capture)',
+          line: 1,
+          message: `${count} captured source file(s) have no loaded scanner and were not scanned.`,
+        },
+      ]
+}
+
 /** Identity by path and blob id: the ids already name every byte of every input. */
 function scanFingerprint(
   input: ArchitectureScanInput,
@@ -167,54 +157,9 @@ function scanFingerprint(
   )
 }
 
-interface ModuleResolver {
-  readonly host: ts.ModuleResolutionHost
-  readonly settings: CompilerSettings
-  readonly cacheFor: (
-    config: string | undefined,
-    options: ts.CompilerOptions,
-  ) => ts.ModuleResolutionCache
-}
-
-/** Resolution sees every captured source and config, and caches per governing project. */
-function moduleResolver(
-  files: ReadonlyMap<string, string>,
-  configs: readonly ArchitectureSourceFile[],
-  settings: CompilerSettings,
-): ModuleResolver {
-  const readable = new Map([
-    ...configs.map((file) => [file.path, file.content] as const),
-    ...files,
-  ])
-  const directories = new Set<string>(['', '.'])
-  for (const path of readable.keys()) {
-    let directory = posix.dirname(path)
-    while (!directories.has(directory)) {
-      directories.add(directory)
-      directory = posix.dirname(directory)
-    }
-  }
-  const host: ts.ModuleResolutionHost = {
-    fileExists: (path) => readable.has(posix.relative(VIRTUAL_ROOT, path)),
-    readFile: (path) => readable.get(posix.relative(VIRTUAL_ROOT, path)),
-    directoryExists: (path) => directories.has(posix.relative(VIRTUAL_ROOT, path)),
-    getCurrentDirectory: () => VIRTUAL_ROOT,
-  }
-  const caches = new Map<string | undefined, ts.ModuleResolutionCache>()
-  const cacheFor = (config: string | undefined, options: ts.CompilerOptions) => {
-    const known = caches.get(config)
-    if (known) return known
-    const cache = ts.createModuleResolutionCache(VIRTUAL_ROOT, (path) => path, options)
-    caches.set(config, cache)
-    return cache
-  }
-  return { host, settings, cacheFor }
-}
-
 function scanModule(
-  source: ArchitectureSourceFile,
-  resolver: ModuleResolver,
-  files: ReadonlyMap<string, string>,
+  { source, scanner, kind }: ScanModule,
+  resolver: ScanResolver,
   factsOf: ModuleFactsSource,
 ): {
   module: ArchitectureModule
@@ -222,9 +167,13 @@ function scanModule(
   diagnostics: readonly ArchitectureDiagnostic[]
 } {
   const blob = blobHash(source)
-  const facts = factsOf({ path: source.path, content: source.content, blob })
-  const project = resolver.settings.projectFor(source.path)
-  const cache = resolver.cacheFor(project.config, project.options)
+  const facts = factsOf({
+    path: source.path,
+    content: source.content,
+    blob,
+    scanner,
+    kind,
+  })
   return {
     module: {
       path: source.path,
@@ -232,8 +181,8 @@ function scanModule(
       hash: blob,
       symbols: facts.symbols,
     },
-    imports: facts.imports.map((occurrence) =>
-      resolveImport(source.path, occurrence, project.options, files, resolver, cache),
+    imports: facts.imports.flatMap((occurrence) =>
+      resolver.resolve(source.path, occurrence),
     ),
     diagnostics: facts.diagnostics.map((entry) => ({ file: source.path, ...entry })),
   }
@@ -345,6 +294,10 @@ export function compareArchitecture(
 export function analyzeArchitecture(
   before: ArchitectureScanInput,
   after: ArchitectureScanInput,
+  scanners: ScannerSet = TYPESCRIPT_ONLY_SCANNERS,
 ): ArchitectureAnalysis {
-  return compareArchitecture(scanArchitecture(before), scanArchitecture(after))
+  return compareArchitecture(
+    scanArchitecture(before, scanners),
+    scanArchitecture(after, scanners),
+  )
 }

@@ -79,4 +79,8 @@ describe('architecture review in the main process', () => {
   it('never loads the TypeScript compiler; parsing belongs to the utility process', () => {
     expect(chainsTo(join(root, 'src/main/index.ts'), 'typescript')).toEqual([])
   })
+
+  it('never loads web-tree-sitter; grammars run only in the utility process', () => {
+    expect(chainsTo(join(root, 'src/main/index.ts'), 'web-tree-sitter')).toEqual([])
+  })
 })

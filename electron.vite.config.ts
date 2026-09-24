@@ -1,10 +1,37 @@
-import { resolve } from 'node:path'
+import { createRequire } from 'node:module'
+import { posix, resolve } from 'node:path'
 import { defineConfig, externalizeDepsPlugin, type UserConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import type { Plugin } from 'vite'
 
 import { DEVELOPMENT_PERFORMANCE_MEASURE_POLICY_ID } from './src/renderer/src/development/performance-measure-budget'
 import type { ApplicationBuildChannel } from './src/shared'
+import {
+  TREE_SITTER_ASSET_DIRECTORY,
+  TREE_SITTER_ASSETS,
+} from './src/main/architecture-review/tree-sitter-assets'
+
+const requireFromConfig = createRequire(import.meta.url)
+
+/**
+ * Copies the architecture scanner's WebAssembly runtime and grammars beside the main
+ * bundle, where the utility process reads them (ADR-063). They land in out/main, which
+ * electron-builder packs into app.asar; Electron's fs reads files inside the archive, so
+ * the worker needs no asarUnpack entry to load them.
+ */
+function emitTreeSitterAssets(): Plugin {
+  return {
+    name: 'emit-tree-sitter-assets',
+    async generateBundle(): Promise<void> {
+      for (const asset of Object.values(TREE_SITTER_ASSETS))
+        this.emitFile({
+          type: 'asset',
+          fileName: posix.join(TREE_SITTER_ASSET_DIRECTORY, asset.file),
+          source: await this.fs.readFile(requireFromConfig.resolve(asset.module)),
+        })
+    },
+  }
+}
 
 function excludeDevelopmentPerformancePolicyFromProduction(): Plugin {
   return {
@@ -56,7 +83,7 @@ function excludeSmokeRuntimeFromProduction(smokeBuild: boolean): Plugin {
 // node_modules at runtime instead of being bundled.
 const baseConfig: UserConfig = {
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin(), emitTreeSitterAssets()],
     build: {
       rollupOptions: {
         input: {

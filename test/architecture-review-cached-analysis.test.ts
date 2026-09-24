@@ -9,6 +9,8 @@ import { analyzeCaptureTimed } from '../src/main/architecture-review/timed-analy
 import { ModuleFactsCache } from '../src/main/architecture-review/module-facts-cache'
 import { LocalHost } from '../src/main/project-host/local-host'
 import { gitBlobId } from '../src/main/architecture-review/blob-id'
+import { scannerSet } from '../src/main/architecture-review/language-scanner'
+import { loadInstalledScanners } from './architecture-python-fixture'
 
 const directories: string[] = []
 afterEach(async () => {
@@ -83,6 +85,46 @@ it('discards a corrupt entry, reparses that module and keeps the analysis exact'
   const again = openCache(directory)
   await analyzeCaptureTimed(capture, undefined, again)
   expect(again.stats()).toMatchObject({ hits: 5, misses: 0, discarded: 0 })
+})
+
+it('caches Python facts under the Python scanner version, apart from TypeScript', async () => {
+  const scanners = await loadInstalledScanners()
+  const mixed: ArchitectureCapture = {
+    ...capture,
+    before: [
+      ...capture.before,
+      source('py/a.py', 'from . import b\n'),
+      source('py/b.py', 'X = 1\n'),
+    ],
+    after: [
+      ...capture.after,
+      source('py/a.py', 'from . import b\n'),
+      source('py/b.py', 'X = 2\n'),
+    ],
+  }
+  const expected = (await analyzeCaptureTimed(mixed, undefined, undefined, scanners))
+    .analysis
+  expect(expected.after.imports).toContainEqual(
+    expect.objectContaining({ source: 'py/a.py', target: 'py/b.py' }),
+  )
+  const directory = await cacheDirectory()
+  const cold = openCache(directory)
+  await analyzeCaptureTimed(mixed, undefined, cold, scanners)
+  // Five TypeScript blobs as above, plus a.py and both versions of b.py.
+  expect(cold.stats()).toMatchObject({ hits: 0, misses: 8, entries: 8 })
+  const entries = await readdir(directory, { recursive: true })
+  expect(entries.filter((name) => String(name).endsWith('.py.json'))).toHaveLength(3)
+  const upgraded = scannerSet(
+    scanners.scanners.map((scanner) =>
+      scanner.language === 'python'
+        ? { ...scanner, version: `${scanner.version}-next` }
+        : scanner,
+    ),
+  )
+  const warm = openCache(directory)
+  const reparsed = await analyzeCaptureTimed(mixed, undefined, warm, upgraded)
+  expect(reparsed.analysis).toEqual(expected)
+  expect(warm.stats()).toMatchObject({ hits: 5, misses: 3, discarded: 0 })
 })
 
 it.skipIf(process.getuid?.() === 0)(

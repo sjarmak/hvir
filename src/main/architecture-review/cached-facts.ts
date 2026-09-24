@@ -1,9 +1,10 @@
 import type { ArchitectureDiagnostic, ArchitectureSourceFile } from '../../shared'
 import type { HostPath } from '../../shared/host-path'
 import { gitBlobId } from './blob-id'
-import { isArchitectureModule, parseFacts, type ModuleFactsSource } from './analysis'
+import type { ModuleFactsSource } from './analysis'
+import type { LanguageScanner, ScannerSet } from './language-scanner'
 import type { ModuleFactsCache, ModuleFactsKey } from './module-facts-cache'
-import { parseKind, type ModuleFacts } from './module-facts'
+import type { ModuleFacts } from './module-facts'
 
 /** Cache reads and writes in flight at once; the files are small and local. */
 const CONCURRENCY = 32
@@ -26,16 +27,22 @@ export interface CachedFactsSource {
 export function cachedFactsSource(
   cache: ModuleFactsCache | undefined,
   root: HostPath,
+  scanners: ScannerSet,
 ): CachedFactsSource {
   const seen = new Map<string, ModuleFacts>()
   const parsed = new Map<string, { key: ModuleFactsKey; facts: ModuleFacts }>()
   const pending: ArchitectureDiagnostic[] = []
   let disk = cache
-  const keyOf = (path: string, blob: string): ModuleFactsKey => ({
+  const keyOf = (
+    scanner: LanguageScanner,
+    kind: string,
+    blob: string,
+  ): ModuleFactsKey => ({
     hostId: root.hostId,
     repository: root.path,
     blob,
-    kind: parseKind(path),
+    kind,
+    scanner: scanner.version,
   })
   const guarded = async (operation: (usable: ModuleFactsCache) => Promise<void>) => {
     if (!disk) return
@@ -54,8 +61,13 @@ export function cachedFactsSource(
   const load = async (sources: readonly ArchitectureSourceFile[]) => {
     const wanted = new Map<string, ModuleFactsKey>()
     for (const source of sources) {
-      if (!isArchitectureModule(source.path)) continue
-      const key = keyOf(source.path, source.object ?? blobOf(source.content))
+      const match = scanners.scannerFor(source.path)
+      if (!match) continue
+      const key = keyOf(
+        match.scanner,
+        match.kind,
+        source.object ?? blobOf(source.content),
+      )
       const memo = `${key.blob}${key.kind}`
       if (!seen.has(memo)) wanted.set(memo, key)
     }
@@ -67,11 +79,11 @@ export function cachedFactsSource(
     )
   }
   const factsOf: ModuleFactsSource = (source) => {
-    const key = keyOf(source.path, source.blob)
+    const key = keyOf(source.scanner, source.kind, source.blob)
     const memo = `${key.blob}${key.kind}`
     const known = seen.get(memo)
     if (known) return known
-    const facts = parseFacts(source)
+    const facts = source.scanner.parse(source.path, source.content)
     seen.set(memo, facts)
     parsed.set(memo, { key, facts })
     return facts

@@ -70,8 +70,11 @@ export const ARCHITECTURE_SCOPE = {
     'build',
     'coverage',
     'vendor',
+    '__pycache__',
+    '.venv',
+    '.tox',
   ],
-  extensions: ['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs'],
+  extensions: ['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'py'],
 } as const
 
 export interface ArchitectureReviewKey {

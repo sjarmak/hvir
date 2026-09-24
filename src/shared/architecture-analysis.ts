@@ -8,7 +8,8 @@ export interface ArchitectureSourceFile {
 export interface ArchitectureScanInput {
   readonly files: readonly ArchitectureSourceFile[]
   /**
-   * Captured tsconfig, jsconfig and package.json files. Absent means none were captured, and
+   * Captured tsconfig, jsconfig and package.json files; they configure TypeScript and
+   * JavaScript resolution only. Absent means none were captured, and
    * the scan discloses that imports resolve without the project's compiler options.
    */
   readonly configs?: readonly ArchitectureSourceFile[]
@@ -16,8 +17,15 @@ export interface ArchitectureScanInput {
   readonly exclusions: readonly string[]
 }
 
+/** How an import is written; `from-import` is Python's `from module import name`. */
 export type ArchitectureImportForm =
-  'import' | 'export' | 'import-type' | 'import-equals' | 'dynamic-import' | 'require'
+  | 'import'
+  | 'export'
+  | 'import-type'
+  | 'import-equals'
+  | 'dynamic-import'
+  | 'require'
+  | 'from-import'
 
 export interface ArchitectureModule {
   readonly path: string

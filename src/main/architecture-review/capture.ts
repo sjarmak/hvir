@@ -110,7 +110,8 @@ export async function captureArchitecture(
     exclusions: [
       ...SCOPE.excludedDirectories,
       '*.d.ts',
-      'non-JavaScript/TypeScript sources',
+      'sources other than JavaScript, TypeScript and Python',
+      '*.pyi',
       'ignored untracked files',
     ],
   }

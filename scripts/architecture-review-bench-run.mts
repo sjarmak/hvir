@@ -1,7 +1,10 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { loadArchitectureScanners } from '../src/main/architecture-review/architecture-scanners'
 import { captureArchitecture } from '../src/main/architecture-review/capture'
+import type { ScannerSet } from '../src/main/architecture-review/language-scanner'
 import {
   ModuleFactsCache,
   type ModuleFactsCacheStats,
@@ -178,11 +181,15 @@ async function sampleScans(
       directory: join(directory, String(run)),
       maxBytes: ARCHITECTURE_PARSE_CACHE_BYTES,
     })
+  const require = createRequire(import.meta.url)
+  const scanners = await loadArchitectureScanners((asset) =>
+    Promise.resolve(readFileSync(require.resolve(asset.module))),
+  )
   const shared = args.cache === 'warm' ? open(0) : undefined
-  if (shared) await scanOnce(host, args, shared)
+  if (shared) await scanOnce(host, args, shared, scanners)
   const samples: Sample[] = []
   for (let run = 1; run <= args.runs; run += 1)
-    samples.push(await scanOnce(host, args, shared ?? open(run)))
+    samples.push(await scanOnce(host, args, shared ?? open(run), scanners))
   return samples
 }
 
@@ -190,6 +197,7 @@ async function scanOnce(
   host: ProjectHost,
   args: BenchArguments,
   cache: ModuleFactsCache,
+  scanners: ScannerSet,
 ): Promise<Sample> {
   const before = cache.stats()
   const recorder = new ArchitectureScanRecorder()
@@ -203,7 +211,7 @@ async function scanOnce(
     AbortSignal.timeout(300_000),
     recorder,
   )
-  const timed = await analyzeCaptureTimed(capture, undefined, cache)
+  const timed = await analyzeCaptureTimed(capture, undefined, cache, scanners)
   for (const stage of timed.stages)
     recorder.place(stage.stage, stage.startMark, stage.endMark, stage)
   const { before: _before, after: _after, configs: _configs, ...metadata } = capture

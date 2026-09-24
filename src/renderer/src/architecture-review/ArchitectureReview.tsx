@@ -215,14 +215,14 @@ export function ArchitectureReview({
             )}
           </details>
           <p className="architecture-review-scope">
-            TypeScript/JavaScript imports only. Directory grouping is structural; compiler
-            aliases and package exports may be unresolved. See snapshot details for
-            analysis notices.
+            TypeScript, JavaScript and Python imports only. Directory grouping is
+            structural; compiler aliases, package exports and Python import paths set at
+            run time may be unresolved. See snapshot details for analysis notices.
           </p>
           <div className="architecture-review-body">
             {snapshot.analysis.modules.length === 0 ? (
               <p className="architecture-review-state">
-                No supported TypeScript or JavaScript modules were captured.
+                No supported TypeScript, JavaScript or Python modules were captured.
               </p>
             ) : (
               <ArchitectureMap

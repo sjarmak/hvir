@@ -58,8 +58,13 @@ export function selectEntries(entries: readonly CaptureEntry[]): readonly Captur
   return unique
 }
 
+const extensions: ReadonlySet<string> = new Set(SCOPE.extensions)
+
+/** A file some language scanner reads; declaration files describe code, they are not code. */
 export function isSource(path: string): boolean {
-  return /\.(?:[cm]?[jt]s|[jt]sx)$/.test(path) && !/\.d\.[cm]?ts$/.test(path)
+  const name = path.slice(path.lastIndexOf('/') + 1)
+  const dot = name.lastIndexOf('.')
+  return dot > 0 && extensions.has(name.slice(dot + 1)) && !/\.d\.[cm]?ts$/.test(name)
 }
 
 function assertRelative(path: string): void {

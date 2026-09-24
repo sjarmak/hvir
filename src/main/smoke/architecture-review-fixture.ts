@@ -18,6 +18,15 @@ export interface ArchitectureReviewSmokeFixture {
 const LABEL_PATH = 'architecture-smoke/ui/label.ts'
 
 /**
+ * Untracked Python modules on the live side, inside an existing subsystem so the map keeps
+ * its shape; the built worker must load the grammar to list them.
+ */
+const LIVE_PYTHON: Readonly<Record<string, string>> = {
+  'architecture-smoke/ui/app.py': 'from . import helpers\nimport json\n',
+  'architecture-smoke/ui/helpers.py': 'def helper():\n    return 1\n',
+}
+
+/**
  * Commits the before sources and a second step onto the disposable smoke repository, then
  * leaves a live source pair with changed imports on top of HEAD.
  */
@@ -85,6 +94,8 @@ export async function createArchitectureReviewSmokeFixture(
     joinHostPath(root, 'architecture-smoke/new-data/item.ts'),
     'export const item = "new"\n',
   )
+  for (const [relativePath, content] of Object.entries(LIVE_PYTHON))
+    await host.writeFile(joinHostPath(root, relativePath), content)
 
   return {
     root,

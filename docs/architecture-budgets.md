@@ -48,7 +48,8 @@ event base/head before using the same evaluator. Credentials are never policy-fi
 
 All maintained TypeScript/declarations, JavaScript, CSS, shell scripts and shell-shebang hooks
 are included across the ADR's roots and repository root. Existing native package C/header
-source is explicitly governed by the same ordinary 1,000-line ceiling. An unknown extension
+source is explicitly governed by the same ordinary 1,000-line ceiling, as are the Python
+architecture-scanner fixtures under `test/fixtures`. An unknown extension
 or non-shell executable shebang requires an explicit language disposition. JSON/YAML, prose,
 HTML templates, build manifests, and binary/image assets are data rather than these source
 families. Renaming code to an unsupported source extension fails inventory; data files are

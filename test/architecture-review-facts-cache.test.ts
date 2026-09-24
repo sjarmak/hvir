@@ -13,16 +13,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  ARCHITECTURE_FACTS_CACHE_FORMAT,
   ModuleFactsCache,
   type ModuleFactsCacheOptions,
   type ModuleFactsKey,
 } from '../src/main/architecture-review/module-facts-cache'
 import { LocalHost } from '../src/main/project-host/local-host'
 import type { HostPath } from '../src/shared/host-path'
-import {
-  ARCHITECTURE_SCANNER_VERSION,
-  parseModuleFacts,
-} from '../src/main/architecture-review/module-facts'
+import { parseTypeScriptFacts } from '../src/main/architecture-review/typescript-facts'
 
 const directories: string[] = []
 afterEach(async () => {
@@ -45,9 +43,10 @@ const key = (blob: string, patch: Partial<ModuleFactsKey> = {}): ModuleFactsKey 
   repository: '/repo',
   blob,
   kind: '.ts',
+  scanner: 'typescript-test-1',
   ...patch,
 })
-const facts = parseModuleFacts('a.ts', "import './b'\nexport function a() {}\n")
+const facts = parseTypeScriptFacts('a.ts', "import './b'\nexport function a() {}\n")
 const blobA = 'a'.repeat(40)
 const blobB = 'b'.repeat(40)
 const blobC = 'c'.repeat(40)
@@ -82,7 +81,30 @@ describe('architecture parse cache on disk', () => {
     expect(await cache.lookup(key(blobA))).toEqual(facts)
   })
 
-  it('keeps entries under a scanner version and drops other versions when opened', async () => {
+  it('keys entries by the version of the scanner that parsed them, per language', async () => {
+    const directory = await cacheDirectory()
+    const cache = openCache({ directory, maxBytes: 1024 * 1024 })
+    const python = { kind: '.py', scanner: 'python-test-1' }
+    await cache.store(key(blobA), facts)
+    await cache.store(key(blobB, python), facts)
+    const reopened = openCache({ directory, maxBytes: 1024 * 1024 })
+    expect(
+      await reopened.lookup(key(blobB, { ...python, scanner: 'python-test-2' })),
+    ).toBeUndefined()
+    expect(await reopened.lookup(key(blobA))).toEqual(facts)
+    expect(await reopened.lookup(key(blobB, python))).toEqual(facts)
+    expect(await reopened.lookup(key(blobA, { scanner: 'typescript-test-2' }))).toBe(
+      undefined,
+    )
+    const texts = await Promise.all(
+      (await entryFiles(directory)).map((file) => readFile(file, 'utf8')),
+    )
+    expect(
+      texts.filter((text) => text.includes('"scanner":"python-test-1"')),
+    ).toHaveLength(1)
+  })
+
+  it('keeps entries under a cache format and drops other formats when opened', async () => {
     const directory = await cacheDirectory()
     const stale = join(directory, 'scanner-old', 'namespace')
     mkdirSync(stale, { recursive: true })
@@ -91,12 +113,12 @@ describe('architecture parse cache on disk', () => {
     await cache.store(key(blobA), facts)
     const files = await entryFiles(directory)
     expect(files).toHaveLength(1)
-    expect(await readFile(files[0]!, 'utf8')).toContain(ARCHITECTURE_SCANNER_VERSION)
+    expect(await readFile(files[0]!, 'utf8')).toContain(ARCHITECTURE_FACTS_CACHE_FORMAT)
     expect(files.some((file) => file.includes('scanner-old'))).toBe(false)
     const upgraded = openCache({
       directory,
       maxBytes: 1024 * 1024,
-      scannerVersion: `${ARCHITECTURE_SCANNER_VERSION}-next`,
+      formatVersion: `${ARCHITECTURE_FACTS_CACHE_FORMAT}-next`,
     })
     expect(await upgraded.lookup(key(blobA))).toBeUndefined()
     expect(await entryFiles(directory)).toEqual([])
@@ -161,7 +183,7 @@ describe('architecture parse cache on disk', () => {
     ],
     [
       'a structurally invalid entry with a matching shape',
-      () => JSON.stringify({ version: ARCHITECTURE_SCANNER_VERSION, facts: [] }),
+      () => JSON.stringify({ version: ARCHITECTURE_FACTS_CACHE_FORMAT, facts: [] }),
     ],
     ['an empty file', () => ''],
   ])('discards %s and reports a miss', async (_label, corrupt) => {
@@ -183,6 +205,7 @@ describe('architecture parse cache on disk', () => {
     const cache = openCache({ directory, maxBytes: 1024 * 1024 })
     await expect(cache.lookup(key('../../etc/passwd'))).rejects.toThrow(/blob id/)
     await expect(cache.lookup(key(blobA, { kind: '/x' }))).rejects.toThrow(/kind/)
+    await expect(cache.lookup(key(blobA, { scanner: '' }))).rejects.toThrow(/scanner/)
   })
 
   it('rebuilds its index after a failed open instead of failing for good', async () => {
