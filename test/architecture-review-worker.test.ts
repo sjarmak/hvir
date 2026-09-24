@@ -133,4 +133,90 @@ describe('architecture analysis worker timings', () => {
       ),
     ).rejects.toThrow(/timings/)
   })
+
+  const emptyPair = { ...capture, before: [], after: [] }
+  /** Timings a well-behaved worker would report for a scan that starts now. */
+  function plausibleTimings() {
+    const now = epochClock()
+    return {
+      readyEpochMs: now + 1,
+      receivedEpochMs: now + 2,
+      respondedEpochMs: now + 5,
+      resultBytes: 10,
+      stages: [
+        {
+          stage: 'parse',
+          side: 'current',
+          startEpochMs: now + 3,
+          endEpochMs: now + 4,
+          bytes: 0,
+          items: 0,
+        },
+      ],
+    }
+  }
+  type Timings = ReturnType<typeof plausibleTimings>
+  const withStage = (timings: Timings, patch: Record<string, unknown>) => ({
+    ...timings,
+    stages: [{ ...timings.stages[0]!, ...patch }],
+  })
+
+  it.each([
+    [
+      'a stage side that is not baseline or current',
+      (t: Timings) => withStage(t, { side: 'left' }),
+    ],
+    [
+      'relative milliseconds instead of wall-clock marks',
+      () => ({
+        readyEpochMs: 5,
+        receivedEpochMs: 6,
+        respondedEpochMs: 7,
+        resultBytes: 1,
+        stages: [],
+      }),
+    ],
+    [
+      'a request received before the worker was ready',
+      (t: Timings) => ({
+        ...t,
+        receivedEpochMs: t.readyEpochMs - 1_000,
+      }),
+    ],
+    [
+      'a response stamped far in the future',
+      (t: Timings) => ({
+        ...t,
+        respondedEpochMs: t.respondedEpochMs + 1e9,
+      }),
+    ],
+    [
+      'a stage that ends before it starts',
+      (t: Timings) => withStage(t, { endEpochMs: t.stages[0]!.startEpochMs - 1_000 }),
+    ],
+    [
+      'a stage outside the request it belongs to',
+      (t: Timings) => withStage(t, { startEpochMs: t.readyEpochMs - 1_000 }),
+    ],
+    ['a fractional result size', (t: Timings) => ({ ...t, resultBytes: 1.5 })],
+  ])('rejects %s', async (_label, corrupt) => {
+    respond = () =>
+      Promise.resolve({
+        analysis: { modules: [] },
+        timings: corrupt(plausibleTimings()),
+      })
+    const recorder = new ArchitectureScanRecorder()
+    await expect(
+      analyzeInWorker(emptyPair, new AbortController().signal, recorder),
+    ).rejects.toThrow(/timings/)
+    expect(recorder.metrics().spans).toEqual([])
+  })
+
+  it('accepts plausible timings from a real worker', async () => {
+    respond = () =>
+      Promise.resolve({ analysis: { modules: [] }, timings: plausibleTimings() })
+    const recorder = new ArchitectureScanRecorder()
+    await analyzeInWorker(emptyPair, new AbortController().signal, recorder)
+    expectMonotoneMetrics(recorder.metrics())
+  })
 })

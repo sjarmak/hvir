@@ -8,6 +8,13 @@ import type {
 export type EpochClock = () => number
 export const epochClock: EpochClock = () => performance.timeOrigin + performance.now()
 
+/**
+ * How far two processes' wall clocks may disagree before a span timed in one is refused by
+ * the other. Same-machine clocks differ by well under a millisecond; this leaves room for a
+ * slewing clock without admitting a relative or misread timestamp.
+ */
+export const ARCHITECTURE_CLOCK_SKEW_TOLERANCE_MS = 25
+
 export interface StageMeasurement {
   readonly bytes: number
   readonly items: number
@@ -57,8 +64,9 @@ export class ArchitectureScanRecorder {
 
   /**
    * Places a span timed elsewhere, such as in the analysis worker. Clocks of two processes
-   * can disagree by a fraction of a millisecond, so a span is clamped to start no earlier
-   * than the scan and to end no earlier than it starts.
+   * can disagree slightly, so a span within the skew allowance is clamped to start no
+   * earlier than the scan and to end no earlier than it starts. Anything further off is a
+   * wrong clock or a wrong unit, and is refused rather than hidden by the clamp.
    */
   place(
     stage: ArchitectureScanStage,
@@ -66,6 +74,13 @@ export class ArchitectureScanRecorder {
     endEpochMs: number,
     measurement: StageMeasurement,
   ): void {
+    const refuse = (reason: string) => {
+      throw new Error(`Architecture scan span for ${stage} ${reason}`)
+    }
+    const tolerance = ARCHITECTURE_CLOCK_SKEW_TOLERANCE_MS
+    if (startEpochMs < this.originEpochMs - tolerance) refuse('starts before the scan')
+    if (endEpochMs < startEpochMs - tolerance) refuse('ends before it starts')
+    if (endEpochMs > this.clock() + tolerance) refuse('ends in the future')
     this.record(stage, startEpochMs, endEpochMs, measurement, 0)
   }
 

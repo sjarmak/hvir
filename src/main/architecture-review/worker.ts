@@ -3,18 +3,8 @@ import type { ArchitectureAnalysis } from '../../shared/architecture-analysis'
 import type { WorkerOperation } from '../../shared/worker-protocol'
 import { createWorkerClient, workerPath } from '../worker-host'
 import { ArchitectureScanRecorder, epochClock } from './scan-recorder'
-import type { EpochStage } from './timed-analysis'
+import { assertWorkerTimings, type ArchitectureWorkerTimings } from './worker-timings'
 
-/** Wall-clock marks the worker reports so main can place its spans on the scan timeline. */
-export interface ArchitectureWorkerTimings {
-  /** The worker module finished loading, including the TypeScript compiler. */
-  readonly readyEpochMs: number
-  readonly receivedEpochMs: number
-  readonly respondedEpochMs: number
-  /** Serialized size of the analysis sent back to main. */
-  readonly resultBytes: number
-  readonly stages: readonly EpochStage[]
-}
 export interface ArchitectureWorkerResult {
   readonly analysis: ArchitectureAnalysis
   readonly timings: ArchitectureWorkerTimings
@@ -53,11 +43,11 @@ export async function analyzeInWorker(
 function placeWorkerSpans(
   recorder: ArchitectureScanRecorder,
   capture: ArchitectureCapture,
-  timings: ArchitectureWorkerTimings,
+  timings: unknown,
   spawnEpochMs: number,
   returnedEpochMs: number,
 ): void {
-  assertTimings(timings)
+  assertWorkerTimings(timings, { spawnEpochMs, returnedEpochMs })
   const files = [...capture.before, ...capture.after]
   const requestBytes = files.reduce(
     (total, file) =>
@@ -82,32 +72,4 @@ function placeWorkerSpans(
     bytes: timings.resultBytes,
     items: 1,
   })
-}
-
-function assertTimings(timings: ArchitectureWorkerTimings | undefined): void {
-  const marks = [
-    timings?.readyEpochMs,
-    timings?.receivedEpochMs,
-    timings?.respondedEpochMs,
-    timings?.resultBytes,
-  ]
-  const stages: readonly unknown[] | undefined = Array.isArray(timings?.stages)
-    ? timings.stages
-    : undefined
-  if (
-    marks.some((mark) => typeof mark !== 'number') ||
-    !stages?.every((stage) => isEpochStage(stage))
-  )
-    throw new Error('Architecture worker returned malformed timings')
-}
-
-function isEpochStage(value: unknown): value is EpochStage {
-  if (typeof value !== 'object' || value === null) return false
-  const stage = value as Partial<Record<keyof EpochStage, unknown>>
-  return (
-    (stage.stage === 'parse' || stage.stage === 'compare') &&
-    [stage.startEpochMs, stage.endEpochMs, stage.bytes, stage.items].every(
-      (field) => typeof field === 'number',
-    )
-  )
 }

@@ -1,6 +1,9 @@
 import { expect, it } from 'vitest'
 import { summarizeArchitectureStages } from '../src/shared/architecture-scan-metrics'
-import { ArchitectureScanRecorder } from '../src/main/architecture-review/scan-recorder'
+import {
+  ARCHITECTURE_CLOCK_SKEW_TOLERANCE_MS,
+  ArchitectureScanRecorder,
+} from '../src/main/architecture-review/scan-recorder'
 import { expectMonotoneMetrics } from './architecture-scan-metrics-fixture'
 
 /** A clock that advances by a fixed step on every read, so ordering is observable. */
@@ -51,9 +54,9 @@ it('rejects impossible measurements rather than recording them', () => {
       () => ({ bytes: -1, items: 0 }),
     ),
   ).toThrow(/measurement/)
-  expect(() => recorder.place('parse', 1, 2, { bytes: Number.NaN, items: 0 })).toThrow(
-    /measurement/,
-  )
+  expect(() =>
+    recorder.place('parse', 1_001, 1_002, { bytes: Number.NaN, items: 0 }),
+  ).toThrow(/measurement/)
 })
 
 it('does not record a span for work that fails', async () => {
@@ -94,4 +97,21 @@ it('summarizes stages in pipeline order and omits stages that never ran', () => 
     { stage: 'listing', spans: 1, durationMs: 1, bytes: 5, items: 2, hostCalls: 1 },
     { stage: 'parse', spans: 2, durationMs: 5, bytes: 50, items: 5, hostCalls: 0 },
   ])
+})
+
+it('refuses externally timed spans outside the cross-process skew allowance', () => {
+  const recorder = new ArchitectureScanRecorder(steppingClock(10_000, 1))
+  const tolerance = ARCHITECTURE_CLOCK_SKEW_TOLERANCE_MS
+  const measurement = { bytes: 0, items: 1 }
+  expect(() => recorder.place('parse', 5, 6, measurement)).toThrow(/before the scan/)
+  expect(() =>
+    recorder.place('parse', 10_000 - tolerance - 1, 10_001, measurement),
+  ).toThrow(/before the scan/)
+  expect(() =>
+    recorder.place('parse', 10_050, 10_050 - tolerance - 1, measurement),
+  ).toThrow(/ends before it starts/)
+  expect(() => recorder.place('parse', 10_001, 10_000 + 1e9, measurement)).toThrow(
+    /future/,
+  )
+  expect(recorder.metrics().spans).toEqual([])
 })
