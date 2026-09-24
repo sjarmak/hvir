@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
+import type { Stat } from '../../shared/fs-types'
 import { localPath, type HostPath } from '../../shared/host-path'
 import type { ProjectFileTransferPort, ProjectHost } from '../project-host/project-host'
 import {
@@ -7,9 +8,6 @@ import {
   isModuleFacts,
   type ModuleFacts,
 } from './module-facts'
-
-/** Parsed module facts across every repository reviewed on this machine (ADR-063). */
-export const ARCHITECTURE_PARSE_CACHE_BYTES = 256 * 1024 * 1024
 
 /** What one cached parse is keyed by (ADR-063): where the blob lives, and which blob. */
 export interface ModuleFactsKey {
@@ -67,6 +65,10 @@ interface StoredEntry extends ModuleFactsKey {
 const BLOB = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
 const KIND = /^(?:\.d)?\.[cm]?[jt]sx?$/
 const ENTRY = /^[0-9a-f]{32}-[0-9a-f]+(?:\.d)?\.[cm]?[jt]sx?\.json$/
+/** LocalHost.writeFile's temporary name while an entry is written and renamed into place. */
+const TEMPORARY = /^\..+\.hvir-[^/]+\.tmp$/
+/** A temporary file this old belongs to a writer that died; younger ones may be in flight. */
+const ABANDONED_TEMPORARY_MS = 10 * 60 * 1000
 /** Recency is persisted at this granularity, so warm scans do not rewrite every entry. */
 const RECENCY_GRANULARITY_MS = 60 * 60 * 1000
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex')
@@ -74,8 +76,11 @@ const factsDigest = (facts: ModuleFacts): string => hash(JSON.stringify(facts))
 
 /**
  * Parsed module facts on disk, one file per entry, bounded in bytes and evicted least
- * recently used. Recency is the entry file's mtime, so it survives a restart. One process
- * owns the directory at a time: the warm architecture worker in the app.
+ * recently used. Recency is the entry file's mtime, so it survives a restart. Concurrent
+ * scans run in separate processes over the same directory: each indexes what it found when
+ * it opened plus what it wrote, a file another process removed is treated as a miss, and a
+ * write another process has in flight is left alone. The byte bound is therefore enforced
+ * per process and restored whenever a process opens the directory.
  */
 export class ModuleFactsCache {
   private readonly version: string
@@ -109,7 +114,7 @@ export class ModuleFactsCache {
     const now = this.now()
     const persist = now - known.persisted >= RECENCY_GRANULARITY_MS
     index.set(name, { ...known, used: now, persisted: persist ? now : known.persisted })
-    if (persist) await this.touch(name, now)
+    if (persist && !(await this.touch(name, now))) this.forget(index, name)
     this.counts = { ...this.counts, hits: this.counts.hits + 1 }
     return facts
   }
@@ -128,8 +133,9 @@ export class ModuleFactsCache {
     if (bytes > this.options.maxBytes) return
     const now = this.now()
     await this.options.files.writeFile(this.file(name), text)
-    await this.touch(name, now)
     this.forget(index, name)
+    // Another process that opened after the rename may already have evicted it.
+    if (!(await this.touch(name, now))) return
     index.set(name, { bytes, used: now, persisted: now })
     this.totalBytes += bytes
     this.entries = index.size
@@ -153,11 +159,17 @@ export class ModuleFactsCache {
     return localPath(posix.join(this.root, name))
   }
 
-  private async touch(name: string, now: number): Promise<void> {
-    await this.options.files.fileTransfer.setMetadata(this.file(name), {
-      mode: 0o644,
-      mtimeSeconds: now / 1000,
-    })
+  /** Persists recency; false when another process has removed the entry. */
+  private async touch(name: string, now: number): Promise<boolean> {
+    return this.options.files.fileTransfer
+      .setMetadata(this.file(name), { mode: 0o644, mtimeSeconds: now / 1000 })
+      .then(
+        () => true,
+        (error: unknown) => {
+          if (!isMissing(error)) throw error
+          return false
+        },
+      )
   }
 
   private miss(): undefined {
@@ -207,7 +219,11 @@ export class ModuleFactsCache {
   }
 
   private async remove(name: string): Promise<void> {
-    await this.options.files.removeFile(this.file(name)).catch((error: unknown) => {
+    await this.removeFileIfPresent(posix.join(this.root, name))
+  }
+
+  private async removeFileIfPresent(path: string): Promise<void> {
+    await this.options.files.removeFile(localPath(path)).catch((error: unknown) => {
       if (!isMissing(error)) throw error
     })
   }
@@ -225,8 +241,12 @@ export class ModuleFactsCache {
     for (const name of victims) await this.remove(name)
   }
 
+  /** A failed open is not remembered: the next use of a warm process tries again. */
   private open(): Promise<Map<string, IndexEntry>> {
-    this.opened ??= this.load()
+    this.opened ??= this.load().catch((error: unknown) => {
+      this.opened = undefined
+      throw error
+    })
     return this.opened
   }
 
@@ -237,21 +257,33 @@ export class ModuleFactsCache {
     await this.dropOtherVersions()
     const index = new Map<string, IndexEntry>()
     for (const entry of await this.options.files.readdir(localPath(this.root))) {
-      if (entry.type !== 'file' || !ENTRY.test(entry.name)) {
-        await this.removeTree(posix.join(this.root, entry.name))
-        continue
+      const path = posix.join(this.root, entry.name)
+      if (entry.type === 'file' && ENTRY.test(entry.name)) {
+        const status = await this.statIfPresent(path)
+        if (status) index.set(entry.name, indexEntry(status))
+      } else if (!(await this.isLiveTemporary(entry.type, path))) {
+        await this.removeTree(path)
       }
-      const status = await this.options.files.stat(this.file(entry.name))
-      index.set(entry.name, {
-        bytes: status.size,
-        used: status.mtimeMs,
-        persisted: status.mtimeMs,
-      })
-      this.totalBytes += status.size
     }
+    this.totalBytes = [...index.values()].reduce((sum, known) => sum + known.bytes, 0)
     this.entries = index.size
     await this.evict(index)
     return index
+  }
+
+  /** Another process's write in flight; it becomes an entry when renamed into place. */
+  private async isLiveTemporary(type: string, path: string): Promise<boolean> {
+    if (type !== 'file' || !TEMPORARY.test(posix.basename(path))) return false
+    const status = await this.statIfPresent(path)
+    return status !== undefined && this.now() - status.mtimeMs < ABANDONED_TEMPORARY_MS
+  }
+
+  /** Undefined when another process removed the file after it was listed. */
+  private async statIfPresent(path: string): Promise<Stat | undefined> {
+    return this.options.files.stat(localPath(path)).catch((error: unknown) => {
+      if (!isMissing(error)) throw error
+      return undefined
+    })
   }
 
   private async ensureDirectory(path: string): Promise<void> {
@@ -273,9 +305,10 @@ export class ModuleFactsCache {
 
   /** Removes a file, or a directory and everything under it, inside the cache. */
   private async removeTree(path: string): Promise<void> {
-    const status = await this.options.files.stat(localPath(path))
+    const status = await this.statIfPresent(path)
+    if (!status) return
     if (status.type !== 'dir') {
-      await this.options.files.removeFile(localPath(path))
+      await this.removeFileIfPresent(path)
       return
     }
     for (const entry of await this.options.files.readdir(localPath(path)))
@@ -304,6 +337,10 @@ function parseEntry(text: string): StoredEntry | undefined {
   ]
   if (!strings.every((field) => typeof field === 'string')) return undefined
   return isModuleFacts(entry.facts) ? (entry as StoredEntry) : undefined
+}
+
+function indexEntry(status: Stat): IndexEntry {
+  return { bytes: status.size, used: status.mtimeMs, persisted: status.mtimeMs }
 }
 
 function isMissing(error: unknown): boolean {

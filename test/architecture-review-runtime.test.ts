@@ -18,7 +18,7 @@ vi.mock('../src/main/application-runtime', () => ({
 }))
 
 import { createArchitectureReview } from '../src/main/architecture-review/runtime'
-import { ARCHITECTURE_PARSE_CACHE_BYTES } from '../src/main/architecture-review/module-facts-cache'
+import { ARCHITECTURE_PARSE_CACHE_BYTES } from '../src/main/architecture-review/parse-cache-budget'
 import { ArchitectureAnalysisWorker } from '../src/main/architecture-review/worker'
 import { ArchitectureReviewCoordinator } from '../src/main/architecture-review/coordinator'
 import type { RendererResourceScopes } from '../src/main/renderer-resource-scopes'

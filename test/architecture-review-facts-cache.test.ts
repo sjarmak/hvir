@@ -1,4 +1,13 @@
-import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import {
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  unlink,
+  utimes,
+  writeFile,
+} from 'node:fs/promises'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,6 +18,7 @@ import {
   type ModuleFactsKey,
 } from '../src/main/architecture-review/module-facts-cache'
 import { LocalHost } from '../src/main/project-host/local-host'
+import type { HostPath } from '../src/shared/host-path'
 import {
   ARCHITECTURE_SCANNER_VERSION,
   parseModuleFacts,
@@ -173,5 +183,88 @@ describe('architecture parse cache on disk', () => {
     const cache = openCache({ directory, maxBytes: 1024 * 1024 })
     await expect(cache.lookup(key('../../etc/passwd'))).rejects.toThrow(/blob id/)
     await expect(cache.lookup(key(blobA, { kind: '/x' }))).rejects.toThrow(/kind/)
+  })
+
+  it('rebuilds its index after a failed open instead of failing for good', async () => {
+    const directory = await cacheDirectory()
+    let denied = true
+    const flaky = Object.assign(Object.create(files) as LocalHost, {
+      readdir: (path: HostPath) => {
+        if (!denied) return files.readdir(path)
+        denied = false
+        return Promise.reject(
+          Object.assign(new Error('EACCES: denied'), { code: 'EACCES' }),
+        )
+      },
+    })
+    const cache = new ModuleFactsCache({ directory, maxBytes: 1024 * 1024, files: flaky })
+    await expect(cache.lookup(key(blobA))).rejects.toThrow(/EACCES/)
+    await cache.store(key(blobA), facts)
+    expect(await cache.lookup(key(blobA))).toEqual(facts)
+    expect(cache.stats()).toMatchObject({ entries: 1 })
+  })
+
+  it('leaves another process an in-flight write and clears only stale temporary files', async () => {
+    const directory = await cacheDirectory()
+    const writer = openCache({ directory, maxBytes: 1024 * 1024 })
+    await writer.store(key(blobA), facts)
+    const [entry] = await entryFiles(directory)
+    const root = join(entry!, '..')
+    const inFlight = join(root, `.${'f'.repeat(32)}-${blobB}.ts.json.hvir-live.tmp`)
+    const abandoned = join(root, `.${'f'.repeat(32)}-${blobC}.ts.json.hvir-dead.tmp`)
+    await writeFile(inFlight, '{')
+    await writeFile(abandoned, '{')
+    const dayAgo = (Date.now() - 24 * 60 * 60 * 1000) / 1000
+    await utimes(abandoned, dayAgo, dayAgo)
+    const reader = openCache({ directory, maxBytes: 1024 * 1024 })
+    expect(await reader.lookup(key(blobA))).toEqual(facts)
+    expect(await entryFiles(directory)).toEqual([entry, inFlight].sort())
+  })
+
+  it('opens when another process removes a file between listing and inspecting it', async () => {
+    const directory = await cacheDirectory()
+    const writer = openCache({ directory, maxBytes: 1024 * 1024 })
+    await writer.store(key(blobA), facts)
+    await writer.store(key(blobB), facts)
+    const [entry] = await entryFiles(directory)
+    const junk = join(entry!, '..', 'junk')
+    await writeFile(junk, 'x')
+    const racing = Object.assign(Object.create(files) as LocalHost, {
+      stat: async (path: HostPath) => {
+        if (path.path === entry || path.path === junk)
+          await unlink(path.path).catch(() => {})
+        return files.stat(path)
+      },
+    })
+    const reader = new ModuleFactsCache({
+      directory,
+      maxBytes: 1024 * 1024,
+      files: racing,
+    })
+    expect(await reader.lookup(key(blobA, { blob: blobC }))).toBeUndefined()
+    expect(reader.stats()).toMatchObject({ entries: 1 })
+  })
+
+  it('keeps working while concurrent processes share the directory', async () => {
+    const directory = await cacheDirectory()
+    const blobs = Array.from({ length: 40 }, (_, index) =>
+      index.toString(16).padStart(40, '0'),
+    )
+    for (let round = 0; round < 10; round += 1) {
+      const caches = [0, 1].map(() => openCache({ directory, maxBytes: 1024 * 1024 }))
+      await Promise.all(
+        caches.map(async (cache, lane) => {
+          // The second process opens while the first is mid-write, at varying offsets.
+          if (lane === 1) await new Promise((resolve) => setTimeout(resolve, round % 4))
+          await Promise.all(
+            blobs
+              .filter((_, index) => index % 2 === lane)
+              .map((blob) => cache.store(key(blob, { repository: `/r${round}` }), facts)),
+          )
+        }),
+      )
+    }
+    const reader = openCache({ directory, maxBytes: 1024 * 1024 })
+    expect(await reader.lookup(key(blobs[3]!, { repository: '/r9' }))).toEqual(facts)
   })
 })

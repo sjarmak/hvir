@@ -3,10 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { captureArchitecture } from '../src/main/architecture-review/capture'
 import {
-  ARCHITECTURE_PARSE_CACHE_BYTES,
   ModuleFactsCache,
   type ModuleFactsCacheStats,
 } from '../src/main/architecture-review/module-facts-cache'
+import { ARCHITECTURE_PARSE_CACHE_BYTES } from '../src/main/architecture-review/parse-cache-budget'
 import { ArchitectureScanRecorder } from '../src/main/architecture-review/scan-recorder'
 import { analyzeCaptureTimed } from '../src/main/architecture-review/timed-analysis'
 import { hostPath } from '../src/shared/host-path'
