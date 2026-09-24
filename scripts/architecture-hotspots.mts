@@ -22,6 +22,7 @@ import {
   resolveArchitectureContext,
 } from './architecture-github.mts'
 import { collectModuleGraph, type ModuleGraph } from './architecture-module-graph.mts'
+import { resolveMaintainedArchitectureContext } from './architecture-maintained-branch.mts'
 import { checkModuleDirections } from './architecture-module-directions.mts'
 
 const repositoryRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
@@ -77,23 +78,57 @@ export function formatReport(report: {
   return lines.join('\n')
 }
 
+async function collectMaintainedArchitecture(root: string, context: ArchitectureContext) {
+  const collected = await authorizeCandidate({
+    root,
+    context,
+    loadIntegration: () => {
+      throw new Error('Local verification cannot authorize epic integrations')
+    },
+  })
+  if (collected.admission.kind !== 'accepted-policy')
+    throw new Error(
+      'Maintained branch policy relaxation requires a separately approved baseline',
+    )
+  if (collected.policy.budgets.some((budget) => budget.kind === 'transitional'))
+    throw new Error(
+      'Transitional budgets require current upstream removal-issue evidence',
+    )
+  const current = resolveMaintainedArchitectureContext(root)
+  if (!current || current.base !== context.base || current.head !== context.head)
+    throw new Error('Maintained branch changed during verification; reverify')
+  return {
+    ...collected,
+    mode: 'maintained-branch-enforce',
+    evidence:
+      'Beads-governed local verification against the pinned ADR-062 baseline; no upstream PR or release authorization.',
+  }
+}
+
+async function collectUpstreamArchitecture(root: string) {
+  const api = githubAdapter(process.env.HVIR_REPO_TOKEN)
+  const context = await resolveArchitectureContext(root, api)
+  const collected = await authorizeCandidate({
+    root,
+    context,
+    loadIntegration: (merge, epic) => loadArchitectureIntegration(root, api, merge, epic),
+  })
+  await requireCurrentRemovalIssues(api, collected.policy)
+  const current = await resolveArchitectureContext(root, api)
+  if (current.base !== context.base || current.head !== context.head)
+    throw new Error('Architecture target changed during verification; reverify')
+  return collected
+}
+
 export async function runArchitectureCommand(root = repositoryRoot): Promise<void> {
   try {
     const enforce = process.argv.includes('--enforce')
     let collected
     if (enforce) {
-      const api = githubAdapter(process.env.HVIR_REPO_TOKEN)
-      const context = await resolveArchitectureContext(root, api)
-      collected = await authorizeCandidate({
-        root,
-        context,
-        loadIntegration: (merge, epic) =>
-          loadArchitectureIntegration(root, api, merge, epic),
-      })
-      await requireCurrentRemovalIssues(api, collected.policy)
-      const current = await resolveArchitectureContext(root, api)
-      if (current.base !== context.base || current.head !== context.head)
-        throw new Error('Architecture target changed during verification; reverify')
+      const maintained = resolveMaintainedArchitectureContext(root)
+      collected = maintained
+        ? await collectMaintainedArchitecture(root, maintained)
+        : await collectUpstreamArchitecture(root)
     } else collected = collectArchitectureHotspots(root)
     const { policy, inventory, ...report } = collected
     const dependencies = collectModuleGraph(root, inventory, policy)

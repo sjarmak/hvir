@@ -3,17 +3,26 @@ import process from 'node:process'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { runArchitectureCommand } from '../scripts/architecture-hotspots.mts'
 import type { ModuleGraph } from '../scripts/architecture-module-graph.mts'
-import type { ArchitectureRow } from '../scripts/architecture-policy.mts'
+import type {
+  ArchitecturePolicy,
+  ArchitectureRow,
+} from '../scripts/architecture-policy.mts'
 import {
   requireCurrentRemovalIssues,
   resolveArchitectureContext,
 } from '../scripts/architecture-github.mts'
-import { repository } from './fixtures/architecture/repository'
+import { resolveMaintainedArchitectureContext } from '../scripts/architecture-maintained-branch.mts'
+import { budget, ordinaryPolicy, repository } from './fixtures/architecture/repository'
 
 vi.mock('../scripts/architecture-github.mts', async (original) => ({
   ...(await original<typeof import('../scripts/architecture-github.mts')>()),
   resolveArchitectureContext: vi.fn(),
   requireCurrentRemovalIssues: vi.fn(),
+}))
+
+vi.mock('../scripts/architecture-maintained-branch.mts', async (original) => ({
+  ...(await original<typeof import('../scripts/architecture-maintained-branch.mts')>()),
+  resolveMaintainedArchitectureContext: vi.fn(),
 }))
 
 const fixtures: ReturnType<typeof repository>[] = []
@@ -28,6 +37,7 @@ interface CommandReport {
 afterEach(() => {
   process.argv = originalArgv
   process.exitCode = originalExitCode
+  vi.clearAllMocks()
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
   for (const fixture of fixtures.splice(0)) fixture.dispose()
@@ -56,6 +66,7 @@ function fixture() {
       'no-restricted-imports': ['error', {patterns: ['./forbidden']}]
     }}]`,
   )
+  vi.mocked(resolveMaintainedArchitectureContext).mockReturnValue(null)
   vi.stubEnv('HVIR_REPO_TOKEN', 'fixture-token')
   vi.mocked(resolveArchitectureContext).mockImplementation(() =>
     Promise.resolve({
@@ -181,6 +192,79 @@ describe('architecture command composition', () => {
     expect(result.output).toContain('0 budget violation(s)')
     expect(result.output).toContain('0 dependency violation(s)')
   })
+
+  it.each(['clean', 'budget', 'runtime', 'direction', 'relaxation'])(
+    'enforces maintained-branch %s without GitHub credentials',
+    async (scenario) => {
+      const repo = fixture()
+      vi.stubEnv('HVIR_REPO_TOKEN', '')
+      vi.mocked(resolveMaintainedArchitectureContext).mockReturnValue({
+        kind: 'ordinary',
+        target: 'feat/beads-panel',
+        epic: null,
+        base: repo.initial,
+        head: repo.initial,
+        tested: repo.initial,
+      })
+      if (scenario === 'budget') repo.source(1001)
+      else if (scenario === 'runtime') repo.write('src/owner.ts', "import './owner'")
+      else if (scenario === 'direction') {
+        repo.write('src/forbidden.ts', 'export const value = 1')
+        repo.write('src/owner.ts', "import './forbidden'")
+      } else if (scenario === 'relaxation') {
+        const policy = JSON.parse(
+          repo.read('scripts/architecture-hotspots.json').toString(),
+        ) as ArchitecturePolicy
+        repo.policy({ ...policy, defaultMaximum: 2000 })
+      } else repo.write('src/owner.ts', 'export const value = 1')
+      const result = await run(repo, '--enforce')
+      expect(result.exitCode).toBe(scenario === 'clean' ? 0 : 1)
+      if (scenario !== 'relaxation') {
+        expect(result.errors).toBe('')
+        expect(result.output).toContain('maintained-branch-enforce')
+      }
+      expect(resolveArchitectureContext).not.toHaveBeenCalled()
+      expect(requireCurrentRemovalIssues).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['policy-only relaxation', 'transitional exception', 'branch change'])(
+    'rejects maintained-branch %s',
+    async (scenario) => {
+      const repo = fixture()
+      if (scenario === 'transitional exception') {
+        repo.policy({ ...ordinaryPolicy(), budgets: [budget()] })
+        repo.source(10)
+      }
+      const baseline = repo.commit()
+      vi.stubEnv('HVIR_REPO_TOKEN', '')
+      const context = {
+        kind: 'ordinary' as const,
+        target: 'feat/beads-panel',
+        epic: null,
+        base: baseline,
+        head: baseline,
+        tested: baseline,
+      }
+      vi.mocked(resolveMaintainedArchitectureContext).mockReturnValue(context)
+      if (scenario === 'policy-only relaxation')
+        repo.policy({ ...ordinaryPolicy(), defaultMaximum: 2000 })
+      if (scenario === 'branch change')
+        vi.mocked(resolveMaintainedArchitectureContext)
+          .mockReturnValueOnce(context)
+          .mockReturnValueOnce(null)
+      const result = await run(repo, '--enforce')
+      expect(result.exitCode).toBe(1)
+      expect(result.output).toBe('')
+      expect(result.errors).toContain(
+        {
+          'policy-only relaxation': 'requires a separately approved baseline',
+          'transitional exception': 'require current upstream removal-issue evidence',
+          'branch change': 'changed during verification',
+        }[scenario],
+      )
+    },
+  )
 
   it('fails visibly when a required resolution configuration is missing', async () => {
     const repo = fixture()

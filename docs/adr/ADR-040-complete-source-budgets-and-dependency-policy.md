@@ -1,6 +1,7 @@
 # ADR-040: Complete source budgets and dependency policy
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
+> Superseded by: [ADR-062](ADR-062-maintained-branch-local-verification.md) | partial | Local architecture provenance on the Beads-governed feat/beads-panel branch; upstream delivery and all structural checks remain unchanged.
 > Supersedes: [ADR-014](ADR-014-modular-monolith-ownership.md) | partial | Architecture hotspot budgets paragraph: complete source budgets and extended dependency enforcement; authority/seam checks stay blocking.
 
 ## Context

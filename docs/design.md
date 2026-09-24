@@ -440,7 +440,8 @@ provider-derived branches of registered identities; ambient transitions are neve
 
 ### [ADR-040 — Complete source budgets and dependency policy](adr/ADR-040-complete-source-budgets-and-dependency-policy.md)
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
+> Superseded by: [ADR-062](adr/ADR-062-maintained-branch-local-verification.md) | partial | Local architecture provenance on the Beads-governed feat/beads-panel branch; upstream delivery and all structural checks remain unchanged.
 > Supersedes: [ADR-014](adr/ADR-014-modular-monolith-ownership.md) | partial | Architecture hotspot budgets paragraph: complete source budgets and extended dependency enforcement; authority/seam checks stay blocking.
 
 Every maintained source file has a blocking budget, with a 500-line comfort signal, a 1,000-line
@@ -676,6 +677,14 @@ true.
 Bounded host-qualified source snapshots drive a native subsystem review and exact source
 viewer; request-owned workers extract facts while existing providers and Beads own explicit
 handoffs.
+
+### [ADR-062 — Maintained branch local verification](adr/ADR-062-maintained-branch-local-verification.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-040](adr/ADR-040-complete-source-budgets-and-dependency-policy.md) | partial | Local architecture provenance on the Beads-governed feat/beads-panel branch; upstream delivery and all structural checks remain unchanged.
+
+The Beads-governed maintained branch verifies locally against a pinned policy baseline;
+upstream GitHub provenance and blocking source/dependency checks retain their authority.
 
 ## 5. Architecture
 

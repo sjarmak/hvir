@@ -462,6 +462,7 @@ export default tseslint.config(
       'scripts/architecture-inventory.mts',
       'scripts/architecture-authorization.mts',
       'scripts/architecture-github.mts',
+      'scripts/architecture-maintained-branch.mts',
       'scripts/architecture-wiring.mts',
       'scripts/architecture-module-resolution.mts',
       'scripts/architecture-module-graph.mts',

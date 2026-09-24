@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
 import {
   asSessionsTerminalHandle,
+  hostPathEquals,
   sessionsProjectionDisplayTitle,
   type HostConnectionState,
   type HostPath,
@@ -72,8 +73,7 @@ interface TerminalWorkspaceProps {
   readonly onOpenTerminalSettings: () => void
   readonly onOpenHarnessSettings: () => void
   readonly onAddHarness: () => void
-  /** When set, focuses the terminal already open for the request's identity, or
-   * opens a bare shell running `command` (deduped by `nonce`). */
+  /** Focuses an attached terminal or launches a shell command, deduplicated by nonce. */
   readonly attachRequest?: TerminalAttachRequest
   /** Told whether an attach request could currently launch a shell here. */
   readonly onAttachAvailability?: (canLaunch: boolean) => void
@@ -137,10 +137,7 @@ export function TerminalWorkspace({
   onError,
 }: TerminalWorkspaceProps) {
   const workspaceRootRef = useRef(cwd)
-  if (
-    workspaceRootRef.current.hostId !== cwd.hostId ||
-    workspaceRootRef.current.path !== cwd.path
-  ) {
+  if (!hostPathEquals(workspaceRootRef.current, cwd)) {
     workspaceRootRef.current = cwd
   }
   const workspaceRoot = workspaceRootRef.current
@@ -295,11 +292,7 @@ export function TerminalWorkspace({
     return () => window.removeEventListener('keydown', close)
   }, [menuOpen])
 
-  // Open a bare shell running an attach command (e.g. `gc session attach
-  // <worker>`) when the Beads panel requests one. A request that names its
-  // session is served from what main recorded at the attaching launch, so the
-  // click focuses the terminal already showing that session instead of piling
-  // up another shell.
+  // Attach requests focus an existing session or launch its command in a bare shell.
   useTerminalAttachRequest(attachRequest, {
     currentModel: () => modelRef.current,
     focusSession: commands.focus,

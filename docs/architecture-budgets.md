@@ -25,6 +25,13 @@ The text view lists exceptions, failures, and files above 500 lines and summariz
 Reports do not claim that policy has been accepted. Missing or malformed source/policy still
 fails visibly; offline reports cannot replace enforcing verification.
 
+On the maintained `feat/beads-panel` branch, local `npm run verify` and
+`npm run architecture:check` use the fixed policy baseline in
+[ADR-062](adr/ADR-062-maintained-branch-local-verification.md) without GitHub credentials.
+The report identifies `maintained-branch-enforce`; all structural checks remain blocking.
+Policy relaxations and transitional exceptions needing upstream issue evidence are rejected.
+GitHub Actions and every other branch continue to use the upstream provenance path below.
+
 From the selected `agent/issue-N` worktree, supply the existing repository credential convention:
 
 ```sh
