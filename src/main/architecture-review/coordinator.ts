@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { hostPathEquals, joinHostPath } from '../../shared/host-path'
+import { hostPathEquals, joinHostPath, type HostPath } from '../../shared/host-path'
+import type {
+  ArchitectureScopeRecord,
+  ArchitectureScopeRequest,
+} from '../../shared/architecture-scope'
 import { measureTextWorkload } from '../../shared/viewer-workload-policy'
 import type { ArchitectureAnalysis } from '../../shared/architecture-analysis'
 import type {
@@ -27,6 +31,7 @@ import { hasLiveCurrent } from './ends'
 import { readArchitectureLiveState } from './freshness'
 import { ArchitectureScanRecorder } from './scan-recorder'
 import { architectureReviewPrompt, architecturePromptDigest } from './prompt'
+import { recordArchitectureScope } from './scope-record'
 
 const MAX_REVIEWS = 4
 const STRIP_TIMEOUT = 60_000
@@ -118,6 +123,22 @@ export class ArchitectureReviewCoordinator {
       if (this.reviews.get(key)?.controller === controller) this.close(owner, request)
       throw error
     }
+  }
+
+  /**
+   * Records the reviewer's scope in the working tree's layout file. `file` is that file's
+   * path, authorized inside the workspace; the next scan reads it like any other edit.
+   */
+  async recordScope(
+    owner: RendererOwner,
+    host: ProjectHost,
+    file: HostPath,
+    request: ArchitectureScopeRequest,
+  ): Promise<ArchitectureScopeRecord> {
+    this.ports.resources.assertCurrent(owner)
+    const record = await recordArchitectureScope(host, file, request.scope)
+    this.ports.resources.assertCurrent(owner)
+    return record
   }
 
   /** The commit strip needs no review lease: it pins nothing and holds no capture. */

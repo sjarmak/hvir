@@ -366,7 +366,7 @@ it('reads both commit ends from Git objects without live reads for a commit pair
     metrics.spans
       .filter((entry) => entry.stage === 'blob-read')
       .map((entry) => entry.side),
-  ).toEqual(['baseline', 'current'])
+  ).toEqual(['current', 'baseline'])
 })
 
 /** LocalHost with every host round trip the capture can make counted. */

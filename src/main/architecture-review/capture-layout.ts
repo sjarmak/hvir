@@ -41,3 +41,24 @@ export async function readCaptureLayout(
     )
   }
 }
+
+export interface ScopedLayout {
+  readonly layout: ArchitectureLayout
+  /** Pinned blob ids of the files the mapping and the scope came from. */
+  readonly identity: { readonly mapping: string | null; readonly scope: string | null }
+}
+
+/** The mapping's subsystems and source roots, narrowed by the scope file's scope. */
+export function scopedLayout(
+  mapping: CapturedLayout,
+  scope: CapturedLayout,
+): ScopedLayout {
+  const origin = mapping.file || scope.file ? 'override' : 'default'
+  return {
+    layout: { ...mapping.layout, origin, scope: scope.layout.scope },
+    identity: {
+      mapping: mapping.file?.object ?? null,
+      scope: scope.file?.object ?? null,
+    },
+  }
+}

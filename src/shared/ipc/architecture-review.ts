@@ -1,7 +1,11 @@
 import { invoke, type IpcFeatureContract } from '../ipc-contract'
 import type {
+  ArchitectureScanOutcome,
+  ArchitectureScopeRecord,
+  ArchitectureScopeRequest,
+} from '../architecture-scope'
+import type {
   ArchitectureReviewRequest,
-  ArchitectureReviewSnapshot,
   ArchitectureReviewKey,
   ArchitectureEvidenceRequest,
   ArchitectureEvidence,
@@ -13,7 +17,11 @@ export const architectureReviewIpc = {
   invoke: {
     'architecture-review:scan': invoke<
       ArchitectureReviewRequest,
-      ArchitectureReviewSnapshot
+      ArchitectureScanOutcome
+    >(),
+    'architecture-review:scope': invoke<
+      ArchitectureScopeRequest,
+      ArchitectureScopeRecord
     >(),
     'architecture-review:evidence': invoke<
       ArchitectureEvidenceRequest,

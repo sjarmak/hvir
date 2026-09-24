@@ -20,6 +20,14 @@ export interface LiveFile {
 const TIMEOUT = 60_000
 const SYMLINK_EXIT = 64
 const HASH_EXIT = 65
+const OVER_CAP_EXIT = 66
+
+/** The live side is larger than the byte cap; the host measured it and sent no content. */
+export class LiveTreeOverCapError extends Error {
+  constructor(readonly bytes: number) {
+    super(`Live sources total ${bytes} bytes, above the architecture scan cap`)
+  }
+}
 export const SOURCES_CHANGED =
   'Sources changed during capture; refresh architecture review'
 
@@ -30,12 +38,19 @@ export const SOURCES_CHANGED =
  * on disk, unchanged, across the whole read. That is the consistency check the old second
  * full read performed, for the cost of one object id per file instead of every byte again.
  * Git resolves --stdin-paths from the repository root, so a workspace below it prefixes them.
+ * The sizes are summed first, from metadata, so a side above the cap ($1 bytes) is refused
+ * with its measured size before any content crosses the host boundary. No source is named
+ * "total", which is how wc labels its sum lines.
  */
 const SCRIPT = `
+max=$1
 while IFS= read -r directory && [ -n "$directory" ]; do
   if [ -L "$directory" ]; then printf '%s\\n' "$directory" >&2; exit ${SYMLINK_EXIT}; fi
 done
 paths=$(cat)
+bytes=$(printf '%s\\n' "$paths" | tr '\\n' '\\0' | xargs -0 wc -c -- |
+  awk '{ n = $1; sub(/^ *[0-9]+ /, ""); if ($0 != "total") s += n } END { print s + 0 }')
+if [ "$bytes" -gt "$max" ]; then printf '%s\\n' "$bytes" >&2; exit ${OVER_CAP_EXIT}; fi
 prefix=$(git rev-parse --show-prefix) || exit ${HASH_EXIT}
 objects() {
   printf '%s\\n' "$paths" | while IFS= read -r path; do printf '%s%s\\n' "$prefix" "$path"; done |
@@ -60,14 +75,19 @@ export async function readLiveTree(
     // Git's --stdin-paths reads one path per line and unquotes a leading double quote.
     if (path.includes('\n') || path.startsWith('"'))
       throw new Error(`Unsupported source path in scan: ${JSON.stringify(path)}`)
-  const result = await exec('sh', ['-c', SCRIPT, 'hvir-architecture-live-read'], {
-    cwd: root,
-    input: scriptInput(paths),
-    signal,
-    timeout: TIMEOUT,
-    maxBuffer: SCOPE.maxTotalBytes + paths.length * 4 * 1024 + 1024 * 1024,
-    env: { GIT_OPTIONAL_LOCKS: '0', COPYFILE_DISABLE: '1' },
-  })
+  const result = await exec(
+    'sh',
+    ['-c', SCRIPT, 'hvir-architecture-live-read', String(SCOPE.maxTotalBytes)],
+    {
+      cwd: root,
+      input: scriptInput(paths),
+      signal,
+      timeout: TIMEOUT,
+      maxBuffer: SCOPE.maxTotalBytes + paths.length * 4 * 1024 + 1024 * 1024,
+      env: { GIT_OPTIONAL_LOCKS: '0', COPYFILE_DISABLE: '1' },
+    },
+  )
+  if (result.code === OVER_CAP_EXIT) throw overCap(result)
   if (result.code === SYMLINK_EXIT)
     throw new Error(`Unsupported symbolic link in scan: ${result.stderr.trim()}`)
   if (result.code === HASH_EXIT) throw failed(result)
@@ -88,6 +108,12 @@ function scriptInput(paths: readonly string[]): string {
       directories.add(parts.slice(0, depth).join('/'))
   }
   return [...directories, '', ...paths].map((line) => `${line}\n`).join('')
+}
+
+function overCap(result: ExecResult): Error {
+  const bytes = Number(result.stderr.trim())
+  if (!Number.isSafeInteger(bytes)) return failed(result)
+  return new LiveTreeOverCapError(bytes)
 }
 
 function failed(result: ExecResult): Error {

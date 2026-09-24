@@ -473,3 +473,33 @@
   color: var(--text-muted);
   font-size: calc(11px * var(--hvir-interface-scale));
 }
+.architecture-review-scope-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.architecture-review-scope-controls summary {
+  cursor: pointer;
+}
+.architecture-review-scope-controls textarea {
+  font-family: var(--hvir-monospace-font);
+  resize: vertical;
+}
+.architecture-review-scope-controls fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 160px;
+  overflow: auto;
+  margin: 0;
+}
+.architecture-review-scope-controls button {
+  align-self: flex-start;
+}
+.architecture-review-state.refused {
+  color: var(--text);
+}

@@ -342,7 +342,9 @@ it('scans the typed ends and treats a blank end as its default', async () => {
     { baseline: 'v1', current: undefined },
     { baseline: 'v1', current: 'HEAD~1' },
   ])
-  expect(host.querySelector('summary')?.textContent).toContain('v1 → HEAD~1')
+  expect(
+    host.querySelector('.architecture-review-metadata summary')?.textContent,
+  ).toContain('v1 → HEAD~1')
 })
 
 it('refuses an option-shaped ref before any scan is sent', async () => {

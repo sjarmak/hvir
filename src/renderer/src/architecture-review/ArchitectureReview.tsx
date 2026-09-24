@@ -5,11 +5,17 @@ import {
   type ArchitectureEvidence,
   type ArchitectureReviewSnapshot,
 } from '../../../shared/architecture-review'
+import {
+  isArchitectureScanRefused,
+  type ArchitectureScopeRefusal,
+} from '../../../shared/architecture-scope'
 import { ArchitectureMap } from './ArchitectureMap'
 import { ArchitectureCommitStrip } from './ArchitectureCommitStrip'
 import { ArchitectureEndsControls } from './ArchitectureEndsControls'
 import { ArchitectureEvidencePanel } from './ArchitectureEvidencePanel'
 import { ArchitectureScanTimings } from './ArchitectureScanTimings'
+import { ArchitectureScopeControls } from './ArchitectureScopeControls'
+import { scopeFromText, scopeText as textOfScope } from './architecture-scope-model'
 import { endsFromText, type ArchitectureEnds } from './architecture-ends-model'
 import { layoutSummary, type ArchitectureMapMode } from './architecture-review-model'
 
@@ -27,7 +33,12 @@ export function ArchitectureReview({
   const parsed = endsFromText(baselineText, currentText)
   const endsInvalid = Object.keys(parsed.problems).length > 0
   const [snapshot, setSnapshot] = useState<ArchitectureReviewSnapshot>()
-  const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'refused' | 'error'>(
+    'idle',
+  )
+  const [refusal, setRefusal] = useState<ArchitectureScopeRefusal>()
+  /** Undefined until a scan reports the scope in effect, so a save never guesses it. */
+  const [scopeText, setScopeText] = useState<string>()
   const [error, setError] = useState<string>()
   const [mapMode, setMapMode] = useState<ArchitectureMapMode>('overlay')
   const [evidence, setEvidence] = useState<ArchitectureEvidence>()
@@ -53,6 +64,7 @@ export function ArchitectureReview({
     setSnapshot(undefined)
     setEvidence(undefined)
     setSelection(undefined)
+    setRefusal(undefined)
     setState('loading')
     setError(undefined)
     try {
@@ -62,7 +74,14 @@ export function ArchitectureReview({
         ...ends,
       })
       if (epoch !== requestEpoch.current) return
+      if (isArchitectureScanRefused(result)) {
+        setRefusal(result.refused)
+        setScopeText(textOfScope(result.refused.scope))
+        setState('refused')
+        return
+      }
       setSnapshot(result)
+      setScopeText(textOfScope(result.layout.scope))
       setState('ready')
     } catch (cause) {
       if (epoch !== requestEpoch.current) return
@@ -73,6 +92,20 @@ export function ArchitectureReview({
           : 'Architecture review could not be loaded.',
       )
     }
+  }
+  /** Saves the scope to the working tree's layout file, then scans with it. */
+  const saveScope = async () => {
+    setError(undefined)
+    try {
+      await window.hvir.invoke('architecture-review:scope', {
+        root,
+        scope: scopeFromText(scopeText ?? '').scope,
+      })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The scope could not be saved.')
+      return
+    }
+    await scan(parsed.ends)
   }
   const chooseFromStrip = (ends: ArchitectureEnds) => {
     setBaselineText(ends.baseline ?? '')
@@ -131,6 +164,13 @@ export function ArchitectureReview({
         onBaseline={setBaselineText}
         onCurrent={setCurrentText}
       />
+      <ArchitectureScopeControls
+        text={scopeText}
+        refusal={refusal}
+        disabled={state === 'loading' || endsInvalid}
+        onText={setScopeText}
+        onSave={() => void saveScope()}
+      />
       <ArchitectureCommitStrip
         root={root}
         ends={endsInvalid ? {} : parsed.ends}
@@ -147,6 +187,11 @@ export function ArchitectureReview({
           {error}
         </p>
       ) : null}
+      {state === 'refused' && refusal && (
+        <p className="architecture-review-state refused" role="status">
+          {refusal.message}
+        </p>
+      )}
       {state === 'idle' && (
         <p className="architecture-review-state">
           Choose the ends, or a commit on the strip, and scan to capture a review.

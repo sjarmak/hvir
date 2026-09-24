@@ -3,6 +3,8 @@ import { registerArchitectureReviewIpc } from '../src/main/ipc/features/architec
 import { localPath, hostPath, asHostId } from '../src/shared/host-path'
 import type { ProjectHost } from '../src/main/project-host/project-host'
 import type { IpcRegistrar } from '../src/main/ipc/authority-router'
+import { ArchitectureScopeRefusalError } from '../src/main/architecture-review/scope-cap'
+import type { ArchitectureScopeRefusal } from '../src/shared/architecture-scope'
 
 type TestContext = {
   readonly owner: () => { readonly id: number; readonly generation: number }
@@ -110,6 +112,78 @@ describe('architecture review IPC authority', () => {
     expect(commits).toHaveBeenCalledWith({ id: 1, generation: 1 }, host, {
       root,
       from: 'v1',
+    })
+  })
+
+  it('returns an over-cap scan as a refusal, not as a failure', async () => {
+    const root = localPath('/repo')
+    const host = {
+      hostId: root.hostId,
+      connectionState: 'connected',
+    } as unknown as ProjectHost
+    const refusal = { message: 'Architecture scan refused: ...', files: 4_001 }
+    const handlers = new Map<string, TestHandler>()
+    registerArchitectureReviewIpc(
+      {
+        handle: (channel: string, handler: TestHandler) => handlers.set(channel, handler),
+        authority: { projectPath: vi.fn() },
+      } as unknown as IpcRegistrar,
+      {
+        getProject: () => ({ root, host }),
+        architectureReview: {
+          scan: () =>
+            Promise.reject(
+              new ArchitectureScopeRefusalError(
+                refusal as unknown as ArchitectureScopeRefusal,
+              ),
+            ),
+          close: vi.fn(),
+        },
+      } as unknown as Parameters<typeof registerArchitectureReviewIpc>[1],
+    )
+    await expect(
+      handlers.get('architecture-review:scan')?.({ root, reviewId: 'r3' }, context()),
+    ).resolves.toEqual({ refused: refusal })
+  })
+
+  it('records the scope only in the active workspace layout file it authorized', async () => {
+    const root = localPath('/repo')
+    const host = {
+      hostId: root.hostId,
+      connectionState: 'connected',
+    } as unknown as ProjectHost
+    const canonical = localPath('/repo/.hvir/architecture.json')
+    const projectPath = vi.fn(() => Promise.resolve(canonical))
+    const recordScope = vi.fn(() => Promise.resolve({ scope: ['src'], written: true }))
+    const handlers = new Map<string, TestHandler>()
+    registerArchitectureReviewIpc(
+      {
+        handle: (channel: string, handler: TestHandler) => handlers.set(channel, handler),
+        authority: { projectPath },
+      } as unknown as IpcRegistrar,
+      {
+        getProject: () => ({ root, host }),
+        architectureReview: { recordScope },
+      } as unknown as Parameters<typeof registerArchitectureReviewIpc>[1],
+    )
+    const handler = handlers.get('architecture-review:scope')!
+    await expect(
+      handler({ root: hostPath(asHostId('ssh'), '/repo'), scope: ['src'] }, context()),
+    ).rejects.toThrow(/active workspace/)
+    expect(recordScope).not.toHaveBeenCalled()
+    await expect(handler({ root, scope: ['src'] }, context())).resolves.toEqual({
+      scope: ['src'],
+      written: true,
+    })
+    expect(projectPath).toHaveBeenCalledWith(
+      localPath('/repo/.hvir/architecture.json'),
+      root,
+      host,
+      { allowMissingLeaf: true, returnCanonical: true },
+    )
+    expect(recordScope).toHaveBeenCalledWith({ id: 1, generation: 1 }, host, canonical, {
+      root,
+      scope: ['src'],
     })
   })
 })

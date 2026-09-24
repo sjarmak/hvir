@@ -2,7 +2,10 @@ import { createHash } from 'node:crypto'
 import {
   ARCHITECTURE_LIVE_REVISION as LIVE_REVISION,
   ARCHITECTURE_SCOPE as SCOPE,
+  ARCHITECTURE_WORKING_TREE,
 } from '../../shared/architecture-review'
+import { ARCHITECTURE_LAYOUT_FILE } from '../../shared/architecture-layout'
+import { gitError } from '../git/git-command-context'
 import type {
   ArchitectureCapture,
   ArchitectureCaptureRequest,
@@ -23,8 +26,9 @@ import {
   type CaptureEntry,
 } from './capture-entries'
 import { resolveArchitectureEnds, validateArchitectureEnds, type EndsGit } from './ends'
-import { readLiveTree } from './live-tree'
-import { readCaptureLayout, type CapturedLayout } from './capture-layout'
+import { LiveTreeOverCapError, readLiveTree } from './live-tree'
+import { readCaptureLayout, scopedLayout } from './capture-layout'
+import { assertWithinScopeCap, liveBytesRefusal } from './scope-cap'
 import { ArchitectureScanRecorder } from './scan-recorder'
 
 interface Side {
@@ -32,7 +36,7 @@ interface Side {
   readonly configs: readonly ArchitectureSource[]
 }
 type SideName = 'baseline' | 'current'
-/** Tracked, deleted and unignored untracked paths of the live tree. */
+/** Tracked, deleted and unignored untracked paths of the live tree, before a pathspec. */
 const LIVE_LISTING = [
   'ls-files',
   '-z',
@@ -42,7 +46,6 @@ const LIVE_LISTING = [
   '--others',
   '--exclude-standard',
   '--',
-  '.',
 ] as const
 
 /**
@@ -68,10 +71,10 @@ export async function captureArchitecture(
     () => ({ bytes: 0, items: 0 }),
   )
   if (!project) throw new Error('Architecture review requires a Git repository')
-  const run = (args: readonly string[]) =>
+  const list = (args: readonly string[]) =>
     recorder.measure(
       'listing',
-      () => context.run(request.root, args, SCOPE.maxListingBytes),
+      () => boundedListing(context, request.root, args),
       (output) => ({
         bytes: Buffer.byteLength(output),
         items: output.split(/[\0\n]/).filter(Boolean).length,
@@ -82,21 +85,21 @@ export async function captureArchitecture(
     measuredEndsGit(recorder, context, request.root),
   )
   const currentEntries = ends.currentCommit
-    ? parseTree(await run(['ls-tree', '-r', '-z', ends.currentCommit, '--', '.']))
-    : parseLivePaths(await run(LIVE_LISTING))
-  const captured = await readCaptureLayout(currentEntries, ends.currentRef, (entry) =>
-    ends.currentCommit
-      ? readBlobs([entry], 'current').then((files) => files[0]!)
-      : readLive([entry]).then((files) => files[0]!),
-  )
+    ? parseTree(await list(treeListing(ends.currentCommit)))
+    : parseLivePaths(await list(liveListing('.')))
+  const captured = await captureLayouts()
   const { layout } = captured
-  const before = await readBlobSide(
-    parseTree(await run(['ls-tree', '-r', '-z', ends.baselineRevision, '--', '.'])),
-    'baseline',
+  const current = selectEntries(currentEntries, layout)
+  const baseline = selectEntries(
+    parseTree(await list(treeListing(ends.baselineRevision))),
+    layout,
   )
+  assertWithinScopeCap(current, { end: ends.currentRef, scope: layout.scope })
+  assertWithinScopeCap(baseline, { end: ends.baselineRef, scope: layout.scope })
   const after = ends.currentCommit
-    ? await readBlobSide(currentEntries, 'current')
-    : splitSide(await readLive(selectEntries(currentEntries, layout)))
+    ? await readBlobSide(current, 'current')
+    : splitSide(await readLiveSide(current))
+  const before = await readBlobSide(baseline, 'baseline')
   signal.throwIfAborted()
   // Refs are labels; the fingerprint names only the commits and bytes they resolved to.
   const identity = {
@@ -104,7 +107,7 @@ export async function captureArchitecture(
     baselineRevision: ends.baselineRevision,
     currentRevision: ends.currentCommit ?? LIVE_REVISION,
     scope: SCOPE,
-    layout: layoutIdentity(captured),
+    layout: captured.identity,
   }
   return {
     ...identity,
@@ -114,21 +117,43 @@ export async function captureArchitecture(
     after: after.sources,
     configs: { before: before.configs, after: after.configs },
     layout,
-    fingerprint: fingerprint(identity, before, after),
+    fingerprint: fingerprint(recorder, identity, before, after),
     capturedAt: new Date().toISOString(),
-    exclusions: [
-      ...SCOPE.excludedDirectories,
-      '*.d.ts',
-      'sources other than JavaScript, TypeScript and Python',
-      '*.pyi',
-      'ignored untracked files',
-    ],
+    exclusions: CAPTURE_EXCLUSIONS,
   }
 
+  /**
+   * Subsystem mapping follows the Current end; the scope is the reviewer's choice and is
+   * always read from the working tree's copy, so it also narrows a pair of commits.
+   */
+  async function captureLayouts() {
+    const mapping = await readCaptureLayout(currentEntries, ends.currentRef, (entry) =>
+      ends.currentCommit
+        ? readBlobs([entry], 'current').then((files) => files[0]!)
+        : readLive([entry]).then((files) => files[0]!),
+    )
+    const scope = ends.currentCommit
+      ? await readCaptureLayout(
+          parseLivePaths(await list(liveListing(ARCHITECTURE_LAYOUT_FILE))),
+          ARCHITECTURE_WORKING_TREE,
+          (entry) => readLive([entry]).then((files) => files[0]!),
+        )
+      : mapping
+    return scopedLayout(mapping, scope)
+  }
   async function readBlobSide(entries: readonly CaptureEntry[], side: SideName) {
-    const files = await readBlobs(selectEntries(entries, layout), side)
-    assertWithinByteLimit(totalBytes(files))
-    return splitSide(files)
+    return splitSide(await readBlobs(entries, side))
+  }
+  async function readLiveSide(entries: readonly CaptureEntry[]) {
+    try {
+      return await readLive(entries)
+    } catch (error) {
+      if (!(error instanceof LiveTreeOverCapError)) throw error
+      throw liveBytesRefusal(entries, error.bytes, {
+        end: ends.currentRef,
+        scope: layout.scope,
+      })
+    }
   }
   function readBlobs(selected: readonly CaptureEntry[], side: SideName) {
     signal.throwIfAborted()
@@ -166,22 +191,35 @@ export async function captureArchitecture(
       (result) => ({ bytes: totalBytes(result), items: result.length, side: 'current' }),
     )
   }
-  /** Identity by blob id: the ids already name every byte, so no content is hashed again. */
-  function fingerprint(identity: object, ...sides: readonly Side[]): string {
-    return recorder.measureSync(
-      'hashing',
-      () => {
-        const text = JSON.stringify({
-          identity,
-          sides: sides.map((side) =>
-            [...side.sources, ...side.configs].map((file) => [file.path, file.object]),
-          ),
-        })
-        return { hex: createHash('sha256').update(text).digest('hex'), text }
-      },
-      ({ text }) => ({ bytes: Buffer.byteLength(text), items: 1 }),
-    ).hex
-  }
+}
+
+const CAPTURE_EXCLUSIONS: readonly string[] = [
+  ...SCOPE.excludedDirectories,
+  '*.d.ts',
+  'sources other than JavaScript, TypeScript and Python',
+  '*.pyi',
+  'ignored untracked files',
+]
+
+/** Identity by blob id: the ids already name every byte, so no content is hashed again. */
+function fingerprint(
+  recorder: ArchitectureScanRecorder,
+  identity: object,
+  ...sides: readonly Side[]
+): string {
+  return recorder.measureSync(
+    'hashing',
+    () => {
+      const text = JSON.stringify({
+        identity,
+        sides: sides.map((side) =>
+          [...side.sources, ...side.configs].map((file) => [file.path, file.object]),
+        ),
+      })
+      return { hex: createHash('sha256').update(text).digest('hex'), text }
+    },
+    ({ text }) => ({ bytes: Buffer.byteLength(text), items: 1 }),
+  ).hex
 }
 
 /** End resolution through the scan's git context, recorded as listing work. */
@@ -206,9 +244,29 @@ function measuredEndsGit(
   }
 }
 
-/** The layout's pinned bytes; its parsed form follows from them. */
-function layoutIdentity({ file }: CapturedLayout): string | null {
-  return file ? file.object : null
+function treeListing(revision: string): readonly string[] {
+  return ['ls-tree', '-r', '-l', '-z', revision, '--', '.']
+}
+function liveListing(pathspec: string): readonly string[] {
+  return [...LIVE_LISTING, pathspec]
+}
+
+/** A listing past its bound is refused by name; a partial listing would drop files. */
+async function boundedListing(
+  context: ReturnType<typeof architectureGitContext>,
+  root: ArchitectureCaptureRequest['root'],
+  args: readonly string[],
+): Promise<string> {
+  const result = await context.readOnly(root, args, {
+    maxBuffer: SCOPE.maxListingBytes,
+    allowTruncatedOutput: true,
+  })
+  if (result.outputTruncated)
+    throw new Error(
+      `The Git listing for this architecture scan is larger than ${SCOPE.maxListingBytes / (1024 * 1024)} MiB (git ${args.join(' ')})`,
+    )
+  if (result.code !== 0) throw gitError(args, result.stderr, result.code)
+  return result.stdout
 }
 
 function splitSide(files: readonly ArchitectureSource[]): Side {
@@ -224,10 +282,6 @@ export function validateArchitectureRequest(
 ): void {
   validateArchitectureRoot(host, request.root)
   validateArchitectureEnds(request)
-}
-function assertWithinByteLimit(bytes: number): void {
-  if (bytes > SCOPE.maxTotalBytes)
-    throw new Error('Architecture scan exceeds the total source byte limit')
 }
 function totalBytes(files: readonly ArchitectureSource[]): number {
   return files.reduce((total, file) => total + Buffer.byteLength(file.content), 0)

@@ -95,14 +95,16 @@ it('takes the branch point of a Current commit, not of HEAD', async () => {
   expect([snapshot.baselineRevision, snapshot.currentRevision]).toEqual([f.one, f.three])
 })
 
-it('reads two commit ends from Git objects without reading the working tree', async () => {
+it('reads two commit ends from Git objects, looking in the working tree only for the scope', async () => {
   const f = await history()
   const exec = vi.spyOn(f.host, 'exec')
   await f.capture({ baseline: 'HEAD~1', current: 'HEAD' })
   const commands = exec.mock.calls.map(([command, args]) =>
     [command, ...args.filter((arg) => !arg.startsWith('/'))].join(' '),
   )
-  expect(commands.some((command) => command.includes('ls-files'))).toBe(false)
+  expect(commands.filter((command) => command.includes('ls-files'))).toEqual([
+    'git -C ls-files -z -t --cached --deleted --others --exclude-standard -- .hvir/architecture.json',
+  ])
   expect(commands.some((command) => command.startsWith('sh '))).toBe(false)
 })
 

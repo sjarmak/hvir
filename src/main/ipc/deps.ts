@@ -60,6 +60,7 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly architectureReview: Pick<
     ArchitectureReviewCoordinator,
     | 'scan'
+    | 'recordScope'
     | 'commits'
     | 'evidence'
     | 'close'

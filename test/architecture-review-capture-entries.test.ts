@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   inArchitectureScope,
   isSource,
+  parseTree,
 } from '../src/main/architecture-review/capture-entries'
 
 describe('architecture capture scope', () => {
@@ -37,5 +38,24 @@ describe('architecture capture scope', () => {
     expect(inArchitectureScope('src/env/index.ts')).toBe(true)
     expect(inArchitectureScope('app/env.py')).toBe(true)
     expect(inArchitectureScope('src/venvironment/a.ts')).toBe(true)
+  })
+})
+
+describe('Git tree listing', () => {
+  const blob = 'a'.repeat(40)
+  it('keeps the blob size a long listing carries, so the byte cap needs no content', () => {
+    const output = [
+      `100644 blob ${blob}    1234\tsrc/a b.ts`,
+      `160000 commit ${blob}       -\tvendor/lib`,
+      `100644 blob ${blob}\tsrc/short.ts`,
+    ].join('\0')
+    expect(parseTree(output + '\0')).toEqual([
+      { path: 'src/a b.ts', object: blob, mode: '100644', size: 1234 },
+      { path: 'vendor/lib', object: blob, mode: '160000' },
+      { path: 'src/short.ts', object: blob, mode: '100644' },
+    ])
+  })
+  it('refuses a record it cannot read', () => {
+    expect(() => parseTree('garbage\0')).toThrow('Invalid Git tree entry')
   })
 })

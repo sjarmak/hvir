@@ -37,6 +37,7 @@ export const OWNER_SCOPED_INVOKE_CHANNELS = [
   'sessions:forget',
   'sessions:rename',
   'architecture-review:scan',
+  'architecture-review:scope',
   'architecture-review:commits',
   'architecture-review:evidence',
   'architecture-review:prepare',
@@ -83,6 +84,7 @@ export const OWNER_SCOPED_SEND_CHANNELS = SEND_CHANNELS
 export const AUTHORITY_SCOPED_INVOKE_CHANNELS = [
   'project:watch-interests',
   'architecture-review:scan',
+  'architecture-review:scope',
   'architecture-review:commits',
   'architecture-review:evidence',
   'architecture-review:prepare',

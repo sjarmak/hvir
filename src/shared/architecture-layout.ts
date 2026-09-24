@@ -80,6 +80,21 @@ export function subsystemOf(layout: ArchitectureLayout, path: string): string {
   return root ? root.prefix : ARCHITECTURE_ROOT_SUBSYSTEM
 }
 
+/**
+ * Why a chosen scope cannot be recorded, or undefined when it can. The rules are the layout
+ * file's own, so a scope that saves always parses back; empty means the whole repository.
+ */
+export function architectureScopeProblem(scope: readonly unknown[]): string | undefined {
+  if (scope.length === 0) return undefined
+  try {
+    pathList(scope, 'scope')
+    return undefined
+  } catch (error) {
+    if (error instanceof ArchitectureLayoutError) return error.message
+    throw error
+  }
+}
+
 export function inLayoutScope(layout: ArchitectureLayout, path: string): boolean {
   return layout.scope.length === 0 || layout.scope.some((prefix) => covers(prefix, path))
 }

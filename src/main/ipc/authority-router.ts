@@ -366,22 +366,7 @@ export class IpcAuthority {
       canonicalPath = await projectHost.realpath(decoded)
     } catch (reason) {
       if (!options.allowMissingLeaf || !isMissingPathError(reason)) throw reason
-      let ancestor = dirnameHostPath(decoded)
-      for (;;) {
-        try {
-          canonicalPath = await projectHost.realpath(ancestor)
-          break
-        } catch (ancestorReason) {
-          if (!isMissingPathError(ancestorReason) || ancestor.path === projectRoot.path) {
-            throw ancestorReason
-          }
-          const parent = dirnameHostPath(ancestor)
-          if (parent.path === ancestor.path || !isLexicallyInside(parent, projectRoot)) {
-            throw reason
-          }
-          ancestor = parent
-        }
-      }
+      canonicalPath = await canonicalMissingLeaf(projectHost, decoded, projectRoot, reason)
     }
     const canonicalPrefix = canonicalRoot.path === '/' ? '/' : `${canonicalRoot.path}/`
     if (
@@ -419,6 +404,36 @@ function includes<C extends string>(
   channel: string,
 ): channel is C {
   return (channels as readonly string[]).includes(channel)
+}
+
+/**
+ * The canonical form of a path whose leaf, and maybe some parents, do not exist yet: the
+ * nearest existing ancestor inside the project, canonicalized, with the missing tail kept.
+ */
+async function canonicalMissingLeaf(
+  host: ProjectHost,
+  decoded: HostPath,
+  projectRoot: HostPath,
+  reason: unknown,
+): Promise<HostPath> {
+  let ancestor = dirnameHostPath(decoded)
+  for (;;) {
+    try {
+      const canonical = await host.realpath(ancestor)
+      const tail = decoded.path.slice(ancestor.path.length).replace(/^\/+/, '')
+      const base = canonical.path === '/' ? '' : canonical.path
+      return hostPath(canonical.hostId, `${base}/${tail}`)
+    } catch (ancestorReason) {
+      if (!isMissingPathError(ancestorReason) || ancestor.path === projectRoot.path) {
+        throw ancestorReason
+      }
+      const parent = dirnameHostPath(ancestor)
+      if (parent.path === ancestor.path || !isLexicallyInside(parent, projectRoot)) {
+        throw reason
+      }
+      ancestor = parent
+    }
+  }
 }
 
 function isLexicallyInside(candidate: HostPath, root: HostPath): boolean {

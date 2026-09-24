@@ -64,7 +64,7 @@ export const ARCHITECTURE_SCOPE = {
   maxFiles: 4_000,
   maxFileBytes: 512 * 1024,
   maxTotalBytes: 16 * 1024 * 1024,
-  maxListingBytes: 2 * 1024 * 1024,
+  maxListingBytes: 16 * 1024 * 1024,
   excludedDirectories: [
     'node_modules',
     '.git',

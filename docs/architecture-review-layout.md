@@ -35,10 +35,30 @@ may not exceed 64 KiB.
 
 ## Which copy applies
 
-The Current end's copy governs both ends of a Snapshot, so a comparison never regroups
-modules only because the mapping changed between Baseline and Current. On a live Current end
-the working-tree copy is read, tracked or not, and an edit to it makes the Snapshot stale.
-Its bytes are part of the Snapshot's fingerprint.
+The Current end's copy supplies `sourceRoots` and `subsystems` for both ends of a Snapshot,
+so a comparison never regroups modules only because the mapping changed between Baseline and
+Current. The `scope` always comes from the working-tree copy, tracked or not, for every
+Snapshot including a pair of commits: the scope is a choice about what to read today, not
+part of history, so narrowing it for a large repository applies to any two ends. On a live
+Current end both come from the working-tree copy, and an edit to it makes the Snapshot
+stale. A pair of commits is never stale (ADR-063): its Snapshot records the scope it was read
+with, and a new scope takes effect on the next scan. The bytes of both copies are part of the
+fingerprint.
+
+## Size cap and choosing a scope
+
+A scan reads at most 4,000 files and 16 MiB per end. Both limits are checked before any
+content is read: a commit end from its Git listing, which carries blob sizes, and the live
+working tree by measuring the listed files on the host. Above either limit the scan is
+refused, never truncated. The refusal names the end, its file count, its size when known,
+the scope and the cap, for example
+`Architecture scan refused: working tree has 5,210 files in the whole repository, above the
+cap of 4,000 files and 16 MiB. Choose a narrower scope and scan again; the review never
+reads part of a scope.`
+It lists the largest paths one level inside the refused scope. Ticking paths, or typing one
+per line, and choosing **Save scope and scan** writes `scope` into the working-tree
+`.hvir/architecture.json`, keeping every other key, and scans again. Saving the whole
+repository removes the key, and writes nothing when there is no file yet.
 
 ## Refusal
 

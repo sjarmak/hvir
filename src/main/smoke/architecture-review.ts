@@ -1,6 +1,7 @@
 import type { BrowserWindow } from 'electron'
 import { verifyArchitectureReviewAuthority } from './architecture-review-authority'
 import { verifyArchitectureCommitStrip } from './architecture-review-strip'
+import { verifyArchitectureScopeSave } from './architecture-review-scope'
 import { verifyArchitectureReviewVisuals } from './architecture-review-visual'
 import { ARCHITECTURE_LAYOUT_FILE, joinHostPath, type HostPath } from '../../shared'
 import type { ProjectHost } from '../project-host'
@@ -191,6 +192,7 @@ export async function runArchitectureReviewSmoke(
     })
   `)
   await verifyLayoutRefusal(win, host, root)
+  await verifyArchitectureScopeSave(win, host, root)
   await verifyArchitectureCommitStrip(win, fixture)
   const close = (await win.webContents.executeJavaScript(`
     new Promise((resolve, reject) => {
@@ -204,7 +206,7 @@ export async function runArchitectureReviewSmoke(
   `)) as string
   if (close !== 'closed') throw new Error('Architecture review did not close')
   console.log(
-    `[smoke] Architecture review OK (Git entry → keyboard focus → themes/layout → stale/refresh → DiffView → commit strip → ${close})`,
+    `[smoke] Architecture review OK (Git entry → keyboard focus → themes/layout → stale/refresh → DiffView → scope save → commit strip → ${close})`,
   )
   console.log('HVIR_SMOKE_OK')
   return 0

@@ -1,4 +1,6 @@
-import { hostPathEquals, type HostPath } from '../../../shared/host-path'
+import { hostPathEquals, joinHostPath, type HostPath } from '../../../shared/host-path'
+import { ARCHITECTURE_LAYOUT_FILE } from '../../../shared/architecture-layout'
+import { architectureScanOutcome } from '../../architecture-review/scope-cap'
 import type { IpcRegistrar } from '../authority-router'
 import type { IpcDeps } from '../deps'
 import { reconstructIpcHostPath } from '../host-path-authority'
@@ -16,7 +18,9 @@ export function registerArchitectureReviewIpc(ipc: IpcRegistrar, deps: Deps): vo
     const owner = context.owner()
     await ipc.authority.projectPath(request.root, active.root, active.host)
     project(request)
-    const result = await deps.architectureReview.scan(owner, active.host, request)
+    const result = await architectureScanOutcome(
+      deps.architectureReview.scan(owner, active.host, request),
+    )
     context.owner()
     if (
       !hostPathEquals(deps.getProject().root, active.root) ||
@@ -50,6 +54,18 @@ export function registerArchitectureReviewIpc(ipc: IpcRegistrar, deps: Deps): vo
     context.owner()
     project(request)
     return result
+  })
+  ipc.handle('architecture-review:scope', async (request, context) => {
+    const active = project(request)
+    const owner = context.owner()
+    const file = await ipc.authority.projectPath(
+      joinHostPath(active.root, ARCHITECTURE_LAYOUT_FILE),
+      active.root,
+      active.host,
+      { allowMissingLeaf: true, returnCanonical: true },
+    )
+    project(request)
+    return deps.architectureReview.recordScope(owner, active.host, file, request)
   })
   ipc.handle('architecture-review:commits', async (request, context) => {
     const active = project(request)

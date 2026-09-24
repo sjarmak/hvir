@@ -464,9 +464,10 @@ describe('IpcAuthorityRouter', () => {
         'project:folder-picker-close',
         'project:open',
         'architecture-review:scan',
+        'architecture-review:scope',
         'architecture-review:commits',
         'architecture-review:evidence',
-      'architecture-review:prepare',
+        'architecture-review:prepare',
         'document-review:restore',
         'document-review:save',
         'document-review:revalidate',
@@ -536,9 +537,10 @@ describe('IpcAuthorityRouter', () => {
       new Set<IpcInvokeChannel>([
         'project:watch-interests',
         'architecture-review:scan',
+        'architecture-review:scope',
         'architecture-review:commits',
         'architecture-review:evidence',
-      'architecture-review:prepare',
+        'architecture-review:prepare',
         'document-review:restore',
         'document-review:save',
         'document-review:revalidate',
@@ -954,5 +956,29 @@ describe('IpcAuthority', () => {
     await expect(
       authority.projectPath(localPath('/project/file.txt'), root, host),
     ).rejects.toThrow('through a symlink')
+  })
+
+  it('returns a missing leaf under its canonical ancestor, not the ancestor itself', async () => {
+    const canonicalRoot = localPath('/canonical/project')
+    const missing = Object.assign(new Error('missing'), { code: 'ENOENT' })
+    const host = {
+      hostId: root.hostId,
+      realpath: vi.fn((candidate: typeof root) =>
+        candidate.path === root.path
+          ? Promise.resolve(canonicalRoot)
+          : Promise.reject(missing),
+      ),
+    } as unknown as ProjectHost
+    const authority = new IpcAuthority({
+      getProject: () => ({ host, root }),
+      getProjectState: () => projectState(),
+      getRegisteredWorkspaceRoot: () => root,
+    })
+    await expect(
+      authority.projectPath(localPath('/project/.hvir/architecture.json'), root, host, {
+        allowMissingLeaf: true,
+        returnCanonical: true,
+      }),
+    ).resolves.toEqual(localPath('/canonical/project/.hvir/architecture.json'))
   })
 })

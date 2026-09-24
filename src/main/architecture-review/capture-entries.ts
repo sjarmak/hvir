@@ -10,17 +10,25 @@ export interface CaptureEntry {
   readonly path: string
   readonly object?: string
   readonly mode?: string
+  /** Blob size from `git ls-tree -l`; the live listing carries none. */
+  readonly size?: number
 }
+
+/** `git ls-tree -r [-l] -z` records: mode, type, object, the padded size with -l, then path. */
+const TREE_RECORD = /^(\d{6}) (\w+) ([0-9a-f]{40,64})(?: +(-|\d+))?\t/
 
 export function parseTree(output: string): readonly CaptureEntry[] {
   return output
     .split('\0')
     .filter(Boolean)
     .map((record) => {
-      const tab = record.indexOf('\t')
-      const [mode, , object] = record.slice(0, tab).split(' ')
-      if (tab < 0 || !object) throw new Error('Invalid Git tree entry')
-      return { path: record.slice(tab + 1), object, mode }
+      const match = TREE_RECORD.exec(record)
+      if (!match) throw new Error('Invalid Git tree entry')
+      const [header, mode, , object, size] = match
+      const path = record.slice(header.length)
+      return size === undefined || size === '-'
+        ? { path, object, mode }
+        : { path, object, mode, size: Number(size) }
     })
 }
 
@@ -50,6 +58,7 @@ export function parseLivePaths(output: string): readonly CaptureEntry[] {
 /**
  * Unique in-scope entries in path order, each checked before any byte is read. The layout's
  * scope narrows sources only: a config outside it may still configure resolution inside it.
+ * The size cap is the caller's to enforce on the whole selection; nothing here drops files.
  */
 export function selectEntries(
   entries: readonly CaptureEntry[],
@@ -59,10 +68,6 @@ export function selectEntries(
     .filter((entry) => inArchitectureScope(entry.path))
     .filter((entry) => !isSource(entry.path) || inLayoutScope(layout, entry.path))
     .sort((a, b) => a.path.localeCompare(b.path))
-  if (unique.length > SCOPE.maxFiles)
-    throw new Error(
-      `Architecture scan exceeds ${SCOPE.maxFiles} files; narrow the workspace`,
-    )
   for (const entry of unique) {
     assertRelative(entry.path)
     if (entry.mode && entry.mode !== '100644' && entry.mode !== '100755')
