@@ -57,10 +57,13 @@ export interface ArchitectureReviewSnapshot extends Omit<
 export interface ArchitectureEvidenceRequest extends ArchitectureReviewKey {
   readonly snapshotId: string
   readonly path: HostPath
+  /** Read pinned bytes immediately; launch preparation always revalidates. */
+  readonly capturedOnly?: boolean
 }
 export interface ArchitectureEvidence {
   readonly snapshotId: string
-  readonly stale: boolean
+  /** null until freshness is checked; actions must require false. */
+  readonly stale: boolean | null
   readonly diff: import('./viewer-types').GitDiffResponse
 }
 

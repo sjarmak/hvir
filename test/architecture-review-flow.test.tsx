@@ -5,6 +5,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { localPath } from '../src/shared'
+import type { ArchitectureEvidence } from '../src/shared/architecture-review'
 import { analyzeArchitecture } from '../src/main/architecture-review/analysis'
 import { ArchitectureReview } from '../src/renderer/src/architecture-review/ArchitectureReview'
 import {
@@ -160,4 +161,63 @@ it('drops a pending preparation result after a fresh snapshot replaces its evide
   await act(async () => resolve(prepared))
   expect(host.querySelector('pre')).toBeNull()
   expect(button('Launch review agent')).toBeUndefined()
+})
+
+it('shows the captured diff while freshness is pending and keeps actions blocked', async () => {
+  const original: (channel: string) => Promise<unknown> = invoke.getMockImplementation()!
+  let resolve!: (value: unknown) => void
+  invoke.mockImplementation(
+    async (channel: string, request: { capturedOnly?: boolean }) => {
+      if (channel !== 'architecture-review:evidence') return original(channel)
+      const evidence = (await original(channel)) as ArchitectureEvidence
+      if (request.capturedOnly) return { ...evidence, stale: null }
+      return new Promise((done) => {
+        resolve = done
+      })
+    },
+  )
+  await openEvidence()
+  expect(host.querySelector('[data-testid="captured-diff"]')).not.toBeNull()
+  expect(host.textContent).toContain('Checking snapshot freshness')
+  expect(button('Prepare exact prompt').disabled).toBe(true)
+  expect(button('Create bead from finding').disabled).toBe(true)
+  await act(async () => resolve(await original('architecture-review:evidence')))
+  expect(host.textContent).not.toContain('Checking snapshot freshness')
+  expect(button('Prepare exact prompt').disabled).toBe(false)
+})
+
+it('retains readable pinned evidence after validation fails, without allowing actions', async () => {
+  const original: (channel: string) => Promise<unknown> = invoke.getMockImplementation()!
+  invoke.mockImplementation(
+    async (channel: string, request: { capturedOnly?: boolean }) => {
+      if (channel !== 'architecture-review:evidence') return original(channel)
+      if (!request.capturedOnly) throw new Error('SSH disconnected')
+      return { ...((await original(channel)) as ArchitectureEvidence), stale: null }
+    },
+  )
+  await openEvidence()
+  expect(host.querySelector('[data-testid="captured-diff"]')).not.toBeNull()
+  expect(host.textContent).toContain('SSH disconnected')
+  expect(host.textContent).toContain('Snapshot freshness could not be checked')
+  expect(host.textContent).not.toContain('Checking snapshot freshness')
+  expect(button('Prepare exact prompt').disabled).toBe(true)
+  expect(button('Create bead from finding').disabled).toBe(true)
+})
+it('ignores late freshness completion after a replacement scan', async () => {
+  const original: (channel: string) => Promise<unknown> = invoke.getMockImplementation()!
+  let resolve!: (value: unknown) => void
+  invoke.mockImplementation(
+    async (channel: string, request: { capturedOnly?: boolean }) => {
+      if (channel !== 'architecture-review:evidence') return original(channel)
+      if (request.capturedOnly)
+        return { ...((await original(channel)) as ArchitectureEvidence), stale: null }
+      return new Promise((done) => {
+        resolve = done
+      })
+    },
+  )
+  await openEvidence()
+  await click(button('Scan snapshot'))
+  await act(async () => resolve(await original('architecture-review:evidence')))
+  expect(host.querySelector('[data-testid="captured-diff"]')).toBeNull()
 })

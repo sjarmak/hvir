@@ -81,3 +81,43 @@ it('keeps subsystem positions and opens exact side-specific import evidence', ()
   act(() => buttons.find((b) => b.textContent?.includes('../data/a'))!.click())
   expect(evidence).toHaveBeenLastCalledWith('ui/a.ts', 3, 'after')
 })
+
+it('offers an expanded map and makes file status scannable without color', () => {
+  act(() =>
+    root.render(
+      <ArchitectureMap
+        analysis={analysis}
+        mode="overlay"
+        onMode={() => undefined}
+        onEvidence={() => undefined}
+      />,
+    ),
+  )
+
+  const map = container.querySelector<HTMLElement>('.architecture-review-map')!
+  const expand = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Expand architecture map"]',
+  )!
+  expect(expand.getAttribute('aria-expanded')).toBe('false')
+  expect(map.classList.contains('architecture-map-expanded')).toBe(false)
+
+  act(() => expand.click())
+  expect(expand.getAttribute('aria-expanded')).toBe('true')
+  expect(map.classList.contains('architecture-map-expanded')).toBe(true)
+  expect(expand.textContent).toContain('Collapse map')
+
+  const files = container.querySelector('.architecture-file-explorer')!
+  expect(files.querySelector('.architecture-file-group.changed')).not.toBeNull()
+  expect(files.querySelector('.architecture-file-group.unchanged')).not.toBeNull()
+  expect(
+    files.querySelector('.architecture-module.change-added small')?.textContent,
+  ).toBe('Added')
+  expect(
+    files.querySelector('.architecture-module.change-unchanged small')?.textContent,
+  ).toBe('Unchanged')
+
+  const explorer = files as HTMLDetailsElement
+  explorer.open = true
+  act(() => explorer.querySelector<HTMLButtonElement>('.architecture-module')!.click())
+  expect(map.classList.contains('architecture-map-expanded')).toBe(false)
+})

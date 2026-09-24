@@ -151,29 +151,32 @@ describe('ArchitectureFindingForm', () => {
     received.dispose()
   })
 
-  it('blocks stale evidence and reports dispatch refusal', async () => {
-    const stale = listenForCommands((resolve) => resolve(false))
-    const mounted = mount({ ...evidence, stale: true })
-    await fillValid(mounted.host)
-    submit(mounted.host)
-    expect(stale.commands).toHaveLength(0)
-    await unmount(mounted.rootNode)
-    stale.dispose()
+  it.each([true, null])(
+    'blocks unchecked or stale evidence (%s) and reports dispatch refusal',
+    async (state) => {
+      const stale = listenForCommands((resolve) => resolve(false))
+      const mounted = mount({ ...evidence, stale: state })
+      await fillValid(mounted.host)
+      submit(mounted.host)
+      expect(stale.commands).toHaveLength(0)
+      await unmount(mounted.rootNode)
+      stale.dispose()
 
-    const refused = listenForCommands((resolve) => resolve(false))
-    const current = mount()
-    await fillValid(current.host)
-    await act(async () => {
-      submit(current.host)
-      await Promise.resolve()
-    })
-    expect(refused.commands).toHaveLength(1)
-    expect(current.host.querySelector('[role="alert"]')?.textContent).toContain(
-      'could not be created',
-    )
-    await unmount(current.rootNode)
-    refused.dispose()
-  })
+      const refused = listenForCommands((resolve) => resolve(false))
+      const current = mount()
+      await fillValid(current.host)
+      await act(async () => {
+        submit(current.host)
+        await Promise.resolve()
+      })
+      expect(refused.commands).toHaveLength(1)
+      expect(current.host.querySelector('[role="alert"]')?.textContent).toContain(
+        'could not be created',
+      )
+      await unmount(current.rootNode)
+      refused.dispose()
+    },
+  )
 
   it('accepts only one command for rapid duplicate submits', async () => {
     const received = listenForCommands((resolve) => resolve(true))

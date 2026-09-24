@@ -28,12 +28,14 @@ export function ArchitectureEvidencePanel({
   snapshot,
   path,
   evidence,
+  freshnessError,
   location,
 }: {
   readonly root: HostPath
   readonly reviewId: string
   readonly snapshot: ArchitectureReviewSnapshot
   readonly path: string
+  readonly freshnessError?: string
   readonly evidence: ArchitectureEvidence
   readonly location?: { readonly line: number; readonly side: 'before' | 'after' }
 }) {
@@ -128,7 +130,14 @@ export function ArchitectureEvidencePanel({
   }
   return (
     <aside className="architecture-evidence" aria-label={`Captured evidence for ${path}`}>
-      {evidence.stale && (
+      {evidence.stale === null && (
+        <p className="architecture-review-state" role="status">
+          {freshnessError
+            ? 'Snapshot freshness could not be checked. Refresh the review before taking action.'
+            : 'Checking snapshot freshness… You can read the captured diff while this finishes.'}
+        </p>
+      )}
+      {evidence.stale === true && (
         <p className="architecture-review-stale" role="status">
           This capture is stale. Refresh the review before relying on this evidence.
         </p>
@@ -169,7 +178,7 @@ export function ArchitectureEvidencePanel({
         <button
           type="button"
           onClick={() => void prepare()}
-          disabled={evidence.stale || status !== 'idle'}
+          disabled={evidence.stale !== false || status !== 'idle'}
         >
           {status === 'preparing'
             ? 'Preparing…'
@@ -183,7 +192,7 @@ export function ArchitectureEvidencePanel({
             <button
               type="button"
               onClick={() => void launch()}
-              disabled={!profileId || evidence.stale || status !== 'idle'}
+              disabled={!profileId || evidence.stale !== false || status !== 'idle'}
             >
               {status === 'launched'
                 ? 'Review session requested'

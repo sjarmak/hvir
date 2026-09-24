@@ -120,15 +120,18 @@ export class ArchitectureReviewCoordinator {
       hostPathEquals(joinHostPath(capture.root, file.path), request.path),
     )
     if (!source) throw new Error('Path is not evidence in this architecture snapshot')
-    const current = await (this.ports.capture ?? captureArchitecture)(
-      host,
-      review.request,
-      review.controller.signal,
-    )
+    const current =
+      request.capturedOnly === true
+        ? undefined
+        : await (this.ports.capture ?? captureArchitecture)(
+            host,
+            review.request,
+            review.controller.signal,
+          )
     this.assertLive(owner, key, review.controller)
     return {
       snapshotId: review.snapshot.id,
-      stale: current.fingerprint !== capture.fingerprint,
+      stale: current ? current.fingerprint !== capture.fingerprint : null,
       diff: {
         path: request.path,
         base: capture.mode === 'commit' ? 'head' : capture.mode,
@@ -149,8 +152,8 @@ export class ArchitectureReviewCoordinator {
     host: ProjectHost,
     request: ArchitectureEvidenceRequest,
   ): Promise<ArchitecturePreparedReview> {
-    const evidence = await this.evidence(owner, host, request)
-    if (evidence.stale)
+    const evidence = await this.evidence(owner, host, { ...request, capturedOnly: false })
+    if (evidence.stale !== false)
       throw new Error('Architecture evidence is stale; refresh before launching')
     const review = this.reviews.get(reviewKey(owner, request))!
     if (review.launched)

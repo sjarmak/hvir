@@ -1,4 +1,11 @@
-import { useId, useMemo, useState, type ReactElement } from 'react'
+import {
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react'
 import type { ArchitectureAnalysis, ArchitectureRelationshipDelta } from '../../../shared'
 import { subsystemMap, type ArchitectureMapMode } from './architecture-review-model'
 interface Props {
@@ -16,6 +23,15 @@ export function ArchitectureMap({
   const markerId = useId()
   const [all, setAll] = useState(false)
   const [selected, setSelected] = useState<string>()
+  const [expanded, setExpanded] = useState(false)
+  const mapElement = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (expanded && mapElement.current) mapElement.current.scrollTop = 0
+  }, [expanded])
+  const openEvidence = (path: string, line: number, side: 'before' | 'after') => {
+    setExpanded(false)
+    onEvidence(path, line, side)
+  }
   const map = useMemo(() => subsystemMap(analysis, all), [analysis, all])
   const node = map.nodes.find((n) => n.id === selected)
   const links = map.relationships.filter(
@@ -25,12 +41,25 @@ export function ArchitectureMap({
   const present = (r: ArchitectureRelationshipDelta) =>
     mode === 'overlay' || (mode === 'before' ? r.before > 0 : r.after > 0)
   return (
-    <div className="architecture-review-map" aria-label="Module relationship map">
+    <div
+      ref={mapElement}
+      className={`architecture-review-map${expanded ? ' architecture-map-expanded' : ''}`}
+      aria-label="Module relationship map"
+    >
       <div
         className="architecture-review-map-tabs"
         role="group"
         aria-label="Map comparison"
       >
+        <button
+          type="button"
+          className="architecture-map-size-control"
+          aria-label={expanded ? 'Collapse architecture map' : 'Expand architecture map'}
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? 'Collapse map' : 'Expand map'}
+        </button>
         {(['overlay', 'before', 'after'] as const).map((value) => (
           <button
             key={value}
@@ -132,23 +161,11 @@ export function ArchitectureMap({
       {node ? (
         <section className="architecture-module-list" aria-label={`Files in ${node.id}`}>
           <h3>{node.id}</h3>
-          {node.modules.slice(0, 200).map((module) => (
-            <button
-              type="button"
-              key={module.path}
-              className={`architecture-module change-${module.change}`}
-              onClick={() =>
-                onEvidence(
-                  module.path,
-                  1,
-                  mode === 'before' || module.change === 'removed' ? 'before' : 'after',
-                )
-              }
-            >
-              <span>{module.path}</span>
-              <small>{module.change}</small>
-            </button>
-          ))}
+          <ModuleGroups
+            modules={node.modules.slice(0, 200)}
+            mode={mode}
+            onEvidence={openEvidence}
+          />
           {node.modules.length > 200 ? (
             <p>Showing 200 files. Use file search below for the rest.</p>
           ) : null}
@@ -186,7 +203,7 @@ export function ArchitectureMap({
                   type="button"
                   key={index}
                   onClick={() =>
-                    onEvidence(
+                    openEvidence(
                       e.source,
                       mode === 'before' ? (e.beforeLine ?? e.line) : e.line,
                       mode === 'before' || e.change === 'removed' ? 'before' : 'after',
@@ -206,7 +223,7 @@ export function ArchitectureMap({
           </details>
         ))}
       </section>
-      <ArchitectureFiles analysis={analysis} mode={mode} onEvidence={onEvidence} />
+      <ArchitectureFiles analysis={analysis} mode={mode} onEvidence={openEvidence} />
     </div>
   )
 }
@@ -226,26 +243,80 @@ function ArchitectureFiles({
         Filter files{' '}
         <input value={query} onChange={(event) => setQuery(event.target.value)} />
       </label>
-      {files.slice(0, 100).map((m) => (
-        <button
-          key={m.path}
-          type="button"
-          className="architecture-module"
-          onClick={() =>
-            onEvidence(
-              m.path,
-              1,
-              mode === 'before' || m.change === 'removed' ? 'before' : 'after',
-            )
-          }
-        >
-          {m.path}
-          <small>{m.change}</small>
-        </button>
-      ))}
+      <ModuleGroups modules={files.slice(0, 100)} mode={mode} onEvidence={onEvidence} />
       {files.length > 100 ? (
         <p>Showing 100 of {files.length}; narrow the filter.</p>
       ) : null}
     </details>
   )
+}
+
+function ModuleGroups({
+  modules,
+  mode,
+  onEvidence,
+}: {
+  readonly modules: readonly ArchitectureAnalysis['modules'][number][]
+  readonly mode: ArchitectureMapMode
+  readonly onEvidence: Props['onEvidence']
+}): ReactElement {
+  const groups = [
+    {
+      key: 'changed',
+      title: 'Changed files',
+      files: modules.filter((module) => module.change !== 'unchanged'),
+    },
+    {
+      key: 'unchanged',
+      title: 'Unchanged files',
+      files: modules.filter((module) => module.change === 'unchanged'),
+    },
+  ] as const
+  return (
+    <>
+      {groups.map((group) =>
+        group.files.length ? (
+          <section
+            key={group.key}
+            className={`architecture-file-group ${group.key}`}
+            aria-label={`${group.title} (${group.files.length})`}
+          >
+            <h4>
+              {group.title} <small>({group.files.length})</small>
+            </h4>
+            {group.files.map((module) => (
+              <button
+                type="button"
+                key={module.path}
+                className={`architecture-module change-${module.change}`}
+                onClick={() =>
+                  onEvidence(
+                    module.path,
+                    1,
+                    mode === 'before' || module.change === 'removed' ? 'before' : 'after',
+                  )
+                }
+              >
+                <span>{module.path}</span>
+                <small>{moduleChangeLabel(module.change)}</small>
+              </button>
+            ))}
+          </section>
+        ) : null,
+      )}
+    </>
+  )
+}
+
+function moduleChangeLabel(change: ArchitectureAnalysis['modules'][number]['change']) {
+  switch (change) {
+    case 'added':
+      return 'Added'
+    case 'removed':
+      return 'Removed'
+    case 'changed':
+      return 'Changed'
+    default:
+      return 'Unchanged'
+  }
 }

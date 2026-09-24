@@ -90,6 +90,9 @@
   color: var(--text-strong);
   border-color: var(--accent);
 }
+.architecture-map-size-control {
+  margin-right: auto;
+}
 .architecture-map-note {
   color: var(--text-muted);
   max-width: 65ch;
@@ -99,6 +102,11 @@
   overflow: auto;
   max-height: 420px;
   border-block: 1px solid var(--border-subtle);
+}
+.architecture-map-expanded .architecture-map-scroll {
+  flex: 0 0 70%;
+  min-height: 0;
+  max-height: none;
 }
 .architecture-map-canvas {
   width: 580px;
@@ -168,9 +176,49 @@
   background: transparent;
   overflow-wrap: anywhere;
 }
+.architecture-file-group {
+  margin: 12px 0 16px;
+}
+.architecture-file-group h4 {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 4px;
+  color: var(--text-strong);
+  font-size: calc(11px * var(--hvir-interface-scale));
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.architecture-file-group h4 small {
+  color: var(--text-muted);
+  font-size: inherit;
+  font-weight: normal;
+}
+.architecture-file-group.changed h4 {
+  color: var(--accent);
+}
+.architecture-file-group.unchanged h4 {
+  color: var(--text-muted);
+}
 .architecture-module small {
   color: var(--text-muted);
   flex-shrink: 0;
+}
+.architecture-module.change-added small,
+.architecture-module.change-removed small,
+.architecture-module.change-changed small {
+  color: var(--accent);
+  font-weight: 600;
+}
+.architecture-module.change-removed small {
+  color: var(--danger-text);
+}
+.architecture-module.change-unchanged {
+  color: var(--text-muted);
+}
+.architecture-module.change-unchanged:hover:not(:disabled) {
+  color: var(--text);
 }
 .architecture-review-relationships {
   margin-top: 12px;
@@ -268,6 +316,33 @@
   .architecture-map-scroll {
     max-height: 280px;
   }
+}
+.architecture-review-body:has(.architecture-map-expanded) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.architecture-review:has(.architecture-map-expanded)
+  :is(
+    .architecture-review-header,
+    .architecture-review-controls,
+    .architecture-review-metadata,
+    .architecture-review-scope
+  ) {
+  display: none;
+}
+.architecture-review-map.architecture-map-expanded {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: auto;
+}
+.architecture-review-body:has(.architecture-map-expanded) .architecture-evidence {
+  display: none;
+}
+.architecture-review-body:has(.architecture-map-expanded) > .architecture-review-state {
+  display: none;
+}
+.architecture-review-body:has(.architecture-map-expanded) .architecture-review-map {
+  border-bottom: 1px solid var(--border-subtle);
 }
 .architecture-review-metadata {
   padding: 8px 14px;

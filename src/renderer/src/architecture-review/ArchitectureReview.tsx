@@ -83,13 +83,20 @@ export function ArchitectureReview({
     setEvidence(undefined)
     setError(undefined)
     try {
-      const result = await window.hvir.invoke('architecture-review:evidence', {
+      const request = {
         root,
         reviewId,
         snapshotId: snapshot.id,
         path: joinHostPath(root, path),
+      }
+      const captured = await window.hvir.invoke('architecture-review:evidence', {
+        ...request,
+        capturedOnly: true,
       })
-      if (epoch === requestEpoch.current) setEvidence(result)
+      if (epoch !== requestEpoch.current) return
+      setEvidence(captured)
+      const checked = await window.hvir.invoke('architecture-review:evidence', request)
+      if (epoch === requestEpoch.current) setEvidence(checked)
     } catch (cause) {
       if (epoch === requestEpoch.current)
         setError(cause instanceof Error ? cause.message : 'Evidence could not be loaded.')
@@ -238,6 +245,7 @@ export function ArchitectureReview({
                 snapshot={snapshot}
                 path={selection.path}
                 evidence={evidence}
+                freshnessError={error}
                 location={selection}
               />
             ) : (

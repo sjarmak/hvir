@@ -30,7 +30,7 @@ export function ArchitectureFindingForm({
   const lineCount = input.content.length === 0 ? 0 : input.content.split('\n').length
   const lineNumber = Number(line)
   const valid =
-    !evidence.stale &&
+    evidence.stale === false &&
     title.trim().length > 0 &&
     body.trim().length > 0 &&
     Number.isInteger(lineNumber) &&

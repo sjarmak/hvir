@@ -201,3 +201,22 @@ it('releases workspace ownership when connection subscription setup fails', asyn
   expect(close).not.toHaveBeenCalled()
   expect(register).toHaveBeenCalledTimes(6)
 })
+
+it('returns unchecked pinned evidence without recapturing, but cannot skip launch validation', async () => {
+  const f = setup()
+  const result = await f.coordinator.scan(f.owner, f.host, f.request)
+  const request = {
+    ...f.request,
+    snapshotId: result.id,
+    path: localPath('/repo/a.ts'),
+    capturedOnly: true,
+  }
+  f.capture.mockRejectedValue(new Error('host unavailable'))
+  const evidence = await f.coordinator.evidence(f.owner, f.host, request)
+  expect(evidence.stale).toBeNull()
+  expect(evidence.diff.baseInput.content).toBe('before')
+  expect(f.capture).toHaveBeenCalledTimes(1)
+  await expect(f.coordinator.prepare(f.owner, f.host, request)).rejects.toThrow(
+    'host unavailable',
+  )
+})
