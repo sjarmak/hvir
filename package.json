@@ -77,6 +77,7 @@
     "smoke:scenario": "npm run build:smoke && node scripts/run-smoke-scenarios.mts",
     "smoke:isolation": "npm run build:smoke && node scripts/run-smoke-interruption.mts",
     "acceptance:ssh:real-host": "vite build --config scripts/real-host-ssh.vite.config.mts && node out/real-host-ssh/real-host-ssh-acceptance.cjs",
+    "bench:architecture-review": "vite build --logLevel error --config scripts/architecture-review-bench.vite.config.mts && node out/architecture-review-bench/architecture-review-bench.cjs",
     "smoke:linux:installed": "bash scripts/run-linux-package-smoke.sh",
     "smoke:macos:installed": "bash scripts/run-macos-package-smoke.sh",
     "smoke:capacity": "npm run build:smoke && cross-env HVIR_SMOKE_SCENARIO=capacity node scripts/run-smoke-scenarios.mts",

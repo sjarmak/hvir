@@ -8,6 +8,8 @@ import {
   parseBenchArguments,
   runArchitectureReviewBench,
 } from '../scripts/architecture-review-bench-run.mts'
+import { openArchitectureBenchHost } from '../scripts/architecture-review-bench-host.mts'
+import { LocalHost } from '../src/main/project-host/local-host'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -23,8 +25,21 @@ it('parses the root, mode and run count and refuses anything else', () => {
     root: '/repo',
     mode: 'working-tree',
     runs: 3,
+    host: 'local',
   })
-  expect(parseBenchArguments(['/repo', 'branch-point'])).toMatchObject({ runs: 1 })
+  expect(parseBenchArguments(['/repo', 'branch-point'])).toMatchObject({
+    runs: 1,
+    host: 'local',
+  })
+  expect(parseBenchArguments(['/srv/repo', 'head', '--ssh', '--runs', '2'])).toEqual({
+    root: '/srv/repo',
+    mode: 'head',
+    runs: 2,
+    host: 'ssh',
+  })
+  expect(() => parseBenchArguments(['/repo', 'head', '--ssh', '--ssh'])).toThrow(/Usage/)
+  expect(() => parseBenchArguments(['/repo', 'head', '--remote'])).toThrow(/Usage/)
+  expect(() => parseBenchArguments(['/repo', 'head', '--runs'])).toThrow(/runs/)
   expect(() => parseBenchArguments(['relative', 'head'])).toThrow(/absolute/)
   expect(() => parseBenchArguments(['/repo', 'commit'])).toThrow(/mode/)
   expect(() => parseBenchArguments(['/repo', 'head', '--runs', '0'])).toThrow(/runs/)
@@ -46,8 +61,13 @@ it('reports per-stage medians and every sample for a local repository', async ()
   await writeFile(join(root, 'src/b.ts'), 'export const b = 1\n')
   git(root, 'add', '.')
   git(root, 'commit', '-m', 'baseline')
-  const report = await runArchitectureReviewBench({ root, mode: 'working-tree', runs: 2 })
-  expect(report).toMatchObject({ root, mode: 'working-tree', runs: 2 })
+  const report = await runArchitectureReviewBench({
+    root,
+    mode: 'working-tree',
+    runs: 2,
+    host: 'local',
+  })
+  expect(report).toMatchObject({ root, mode: 'working-tree', runs: 2, target: 'local' })
   expect(report.samples).toHaveLength(2)
   expect(report.files).toEqual({ baseline: 2, current: 2 })
   expect(report.median.stages.map((stage) => stage.stage)).toEqual([
@@ -65,4 +85,50 @@ it('reports per-stage medians and every sample for a local repository', async ()
     expect(stage.bytes).toBeGreaterThanOrEqual(0)
   }
   expect(report.median.totalMs).toBeGreaterThan(0)
+})
+
+it('scans through the host the opener returns and names its target', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'hvir-architecture-bench-'))
+  roots.push(root)
+  git(root, 'init', '-b', 'main')
+  git(root, 'config', 'user.email', 'test@example.test')
+  git(root, 'config', 'user.name', 'Test')
+  await writeFile(join(root, 'a.ts'), 'export const a = 1\n')
+  git(root, 'add', '.')
+  git(root, 'commit', '-m', 'baseline')
+  const opened: string[] = []
+  const report = await runArchitectureReviewBench(
+    { root, mode: 'head', runs: 1, host: 'ssh' },
+    (kind) => {
+      opened.push(kind)
+      const host = new LocalHost()
+      return Promise.resolve({
+        host,
+        target: 'bench.example.test',
+        dispose: () => host.dispose(),
+      })
+    },
+  )
+  expect(opened).toEqual(['ssh'])
+  expect(report).toMatchObject({ host: 'ssh', target: 'bench.example.test' })
+  expect(report.files).toEqual({ baseline: 1, current: 1 })
+})
+
+it('refuses an SSH bench without an explicit pinned target', async () => {
+  await expect(openArchitectureBenchHost('ssh', {})).rejects.toThrow(
+    /HVIR_REAL_SSH_HOST.*HVIR_REAL_SSH_HOST_KEY/s,
+  )
+  await expect(
+    openArchitectureBenchHost('ssh', { HVIR_REAL_SSH_HOST: 'bench.example.test' }),
+  ).rejects.toThrow(/HVIR_REAL_SSH_PORT/)
+})
+
+it('opens the local host for a local bench', async () => {
+  const opened = await openArchitectureBenchHost('local', {})
+  try {
+    expect(opened.host.hostId).toBe('local')
+    expect(opened.target).toBe('local')
+  } finally {
+    await opened.dispose()
+  }
 })

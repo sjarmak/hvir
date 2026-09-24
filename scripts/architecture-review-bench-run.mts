@@ -1,8 +1,8 @@
-import { LocalHost } from '../src/main/project-host/local-host'
 import { captureArchitecture } from '../src/main/architecture-review/capture'
 import { ArchitectureScanRecorder } from '../src/main/architecture-review/scan-recorder'
 import { analyzeCaptureTimed } from '../src/main/architecture-review/timed-analysis'
-import { localPath } from '../src/shared/host-path'
+import { hostPath } from '../src/shared/host-path'
+import type { ProjectHost } from '../src/main/project-host/project-host'
 import type { ArchitectureComparisonMode } from '../src/shared/architecture-review'
 import {
   ARCHITECTURE_SCAN_STAGES,
@@ -10,6 +10,11 @@ import {
   type ArchitectureScanMetrics,
   type ArchitectureStageTotal,
 } from '../src/shared/architecture-scan-metrics'
+import {
+  openArchitectureBenchHost,
+  type BenchHostKind,
+  type BenchHostOpener,
+} from './architecture-review-bench-host.mts'
 
 const MODES = ['working-tree', 'head', 'branch-point'] as const
 type BenchMode = (typeof MODES)[number] & ArchitectureComparisonMode
@@ -18,9 +23,12 @@ export interface BenchArguments {
   readonly root: string
   readonly mode: BenchMode
   readonly runs: number
+  readonly host: BenchHostKind
 }
 type StageMedian = Omit<ArchitectureStageTotal, 'spans'>
 export interface BenchReport extends BenchArguments {
+  /** 'local', or user@hostname:port for an SSH target. */
+  readonly target: string
   readonly files: { readonly baseline: number; readonly current: number }
   readonly note: string
   readonly median: { readonly totalMs: number; readonly stages: readonly StageMedian[] }
@@ -30,18 +38,27 @@ export interface BenchReport extends BenchArguments {
   }[]
 }
 
+const USAGE = 'Usage: <root> <mode> [--runs N] [--ssh]'
+
 export function parseBenchArguments(argv: readonly string[]): BenchArguments {
-  const [root, mode, flag, count, ...rest] = argv
+  const [root, mode, ...flags] = argv
   if (!root?.startsWith('/'))
     throw new Error('Pass the repository root as an absolute path')
   if (!MODES.includes(mode as BenchMode))
     throw new Error(`Pass a comparison mode: ${MODES.join(', ')}`)
-  if (rest.length > 0 || (flag !== undefined && flag !== '--runs'))
-    throw new Error('Usage: <root> <mode> [--runs N]')
-  const runs = flag === undefined ? 1 : Number(count)
-  if (!Number.isSafeInteger(runs) || runs < 1 || runs > 50)
-    throw new Error('--runs must be an integer from 1 to 50')
-  return { root, mode: mode as BenchMode, runs }
+  let runs: number | undefined
+  let host: BenchHostKind | undefined
+  for (let index = 0; index < flags.length; index += 1) {
+    const flag = flags[index]
+    if (flag === '--runs' && runs === undefined) {
+      index += 1
+      runs = Number(flags[index])
+      if (!Number.isSafeInteger(runs) || runs < 1 || runs > 50)
+        throw new Error('--runs must be an integer from 1 to 50')
+    } else if (flag === '--ssh' && host === undefined) host = 'ssh'
+    else throw new Error(USAGE)
+  }
+  return { root, mode: mode as BenchMode, runs: runs ?? 1, host: host ?? 'local' }
 }
 
 export function medianOf(values: readonly number[]): number {
@@ -54,13 +71,14 @@ export function medianOf(values: readonly number[]): number {
 }
 
 /**
- * Capture and analysis on this machine, as the app runs them, minus the utility process:
- * analysis runs in-process here, so worker spawn and transfer appear only in the app.
+ * Capture through the chosen host and analysis on this machine, as the app runs them, minus
+ * the utility process: worker spawn and transfer appear only in the app.
  */
 export async function runArchitectureReviewBench(
   args: BenchArguments,
+  openHost: BenchHostOpener = openArchitectureBenchHost,
 ): Promise<BenchReport> {
-  const host = new LocalHost()
+  const { host, target, dispose } = await openHost(args.host)
   const samples: {
     metrics: ArchitectureScanMetrics
     baseline: number
@@ -69,13 +87,14 @@ export async function runArchitectureReviewBench(
   try {
     for (let run = 0; run < args.runs; run += 1) samples.push(await scanOnce(host, args))
   } finally {
-    await host.dispose()
+    await dispose()
   }
   const totals = samples.map((sample) =>
     summarizeArchitectureStages(sample.metrics.spans),
   )
   return {
     ...args,
+    target,
     files: { baseline: samples[0]!.baseline, current: samples[0]!.current },
     note: 'Analysis runs in-process; worker spawn and transfer are measured only in the app.',
     median: {
@@ -89,11 +108,11 @@ export async function runArchitectureReviewBench(
   }
 }
 
-async function scanOnce(host: LocalHost, args: BenchArguments) {
+async function scanOnce(host: ProjectHost, args: BenchArguments) {
   const recorder = new ArchitectureScanRecorder()
   const capture = await captureArchitecture(
     host,
-    { root: localPath(args.root), mode: args.mode },
+    { root: hostPath(host.hostId, args.root), mode: args.mode },
     AbortSignal.timeout(300_000),
     recorder,
   )

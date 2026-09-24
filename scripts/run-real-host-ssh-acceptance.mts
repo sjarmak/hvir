@@ -19,11 +19,7 @@ import type {
   ExecStreamHandle,
   ProjectHost,
 } from '../src/main/project-host/project-host.ts'
-import { SshHost } from '../src/main/project-host/ssh-host.ts'
-import {
-  LocalSshIdentitySource,
-  type SshIdentitySource,
-} from '../src/main/project-host/ssh-identity-source.ts'
+import type { SshHost } from '../src/main/project-host/ssh-host.ts'
 import { PtySupervisor } from '../src/main/pty/pty-supervisor.ts'
 import {
   REAL_HOST_SSH_PHASES,
@@ -36,6 +32,11 @@ import {
   type RealHostSshPhase,
   type RealHostSshResourceEvidence,
 } from './real-host-ssh-contract.mts'
+import {
+  createRealHostSshHost,
+  takeRealHostSshSecrets,
+  type RealHostSshSecrets,
+} from './real-host-ssh-host.mts'
 
 const OPERATION_TIMEOUT_MS = 15_000
 const OWNER_ID = 1
@@ -115,12 +116,8 @@ class DisposableRemoteProject {
 
 async function main(): Promise<number> {
   const configuration = readRealHostSshConfiguration(process.env)
-  const inlinePrivateKey = process.env.HVIR_REAL_SSH_PRIVATE_KEY
-    ? Buffer.from(process.env.HVIR_REAL_SSH_PRIVATE_KEY, 'utf8')
-    : undefined
-  const passphrase = process.env.HVIR_REAL_SSH_PASSPHRASE
-  delete process.env.HVIR_REAL_SSH_PRIVATE_KEY
-  delete process.env.HVIR_REAL_SSH_PASSPHRASE
+  const secrets = takeRealHostSshSecrets(process.env)
+  const { inlinePrivateKey } = secrets
 
   if (configuration.kind === 'unavailable') {
     inlinePrivateKey?.fill(0)
@@ -146,11 +143,7 @@ async function main(): Promise<number> {
   }
 
   try {
-    return await runConfiguredAcceptance(
-      configuration.value,
-      inlinePrivateKey,
-      configuration.value.hasPassphrase ? passphrase : undefined,
-    )
+    return await runConfiguredAcceptance(configuration.value, secrets)
   } finally {
     inlinePrivateKey?.fill(0)
   }
@@ -158,9 +151,9 @@ async function main(): Promise<number> {
 
 async function runConfiguredAcceptance(
   configuration: RealHostSshConfiguration,
-  inlinePrivateKey: Buffer | undefined,
-  passphrase: string | undefined,
+  secrets: RealHostSshSecrets,
 ): Promise<number> {
+  const { inlinePrivateKey } = secrets
   const state: AcceptanceState = {
     phase: 'configuration',
     interrupted: false,
@@ -203,28 +196,7 @@ async function runConfiguredAcceptance(
       }
     })
 
-    host = new SshHost({
-      config: {
-        alias: configuration.alias,
-        hostname: configuration.hostname,
-        user: configuration.user,
-        port: configuration.port,
-        identityFiles: [],
-      },
-      identitySource: acceptanceIdentitySource(configuration, inlinePrivateKey),
-      trust: {
-        trustedHostKey: () => configuration.trustedHostKey,
-        rememberHostKey: () =>
-          Promise.reject(new Error('Real-host acceptance trust is pinned')),
-      },
-      prompter: {
-        prompt: (request) => {
-          if (request.kind === 'passphrase' && passphrase) {
-            return Promise.resolve([passphrase])
-          }
-          return Promise.resolve(undefined)
-        },
-      },
+    host = createRealHostSshHost(configuration, secrets, {
       pollIntervalMs: 100,
       watchdogIntervalMs: 500,
       refreshPulseIntervalMs: 1_000,
@@ -290,43 +262,6 @@ async function runConfiguredAcceptance(
     })}`,
   )
   return 0
-}
-
-function acceptanceIdentitySource(
-  configuration: RealHostSshConfiguration,
-  inlinePrivateKey: Buffer | undefined,
-): SshIdentitySource {
-  if (configuration.credential.kind === 'file') {
-    const path = configuration.credential.path
-    const local: Pick<ProjectHost, 'readFile'> = {
-      readFile: (qualifiedPath) => readFile(qualifiedPath.path),
-    }
-    return new LocalSshIdentitySource(local, [path])
-  }
-  const path = 'explicit-real-host-identity'
-  return {
-    candidatePaths: [path],
-    acquire(candidate, signal) {
-      if (candidate !== path || signal.aborted) return Promise.resolve(undefined)
-      let privateKey = inlinePrivateKey ? Buffer.from(inlinePrivateKey) : undefined
-      if (!privateKey) return Promise.resolve(undefined)
-      if (signal.aborted) {
-        privateKey.fill(0)
-        return Promise.resolve(undefined)
-      }
-      return Promise.resolve({
-        path,
-        get privateKey() {
-          if (!privateKey) throw new Error('SSH identity lease is released')
-          return privateKey
-        },
-        release() {
-          privateKey?.fill(0)
-          privateKey = undefined
-        },
-      })
-    },
-  }
 }
 
 async function exerciseRealHost(
