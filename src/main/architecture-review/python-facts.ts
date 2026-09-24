@@ -2,6 +2,7 @@ import type { Node, Parser } from 'web-tree-sitter'
 import { ARCHITECTURE_ANALYSIS_LIMITS } from '../../shared'
 import type { ArchitectureModule } from '../../shared'
 import type { ModuleFacts, ModuleImportOccurrence } from './module-facts'
+import { lineOf, syntaxDiagnostics } from './tree-sitter-syntax'
 
 /**
  * Bump whenever what `parsePythonFacts` extracts changes. The scanner version adds a
@@ -16,7 +17,6 @@ const SYMBOLS: Readonly<Record<string, string>> = {
 }
 const TYPE_CHECKING = new Set(['TYPE_CHECKING', 'typing.TYPE_CHECKING'])
 const compact = (text: string): string => text.replace(/\s+/g, '')
-const lineOf = (node: Node): number => node.startPosition.row + 1
 
 /** One Python module's facts through tree-sitter; a syntax error is a diagnostic. */
 export function parsePythonFacts(parser: Parser, content: string): ModuleFacts {
@@ -100,21 +100,4 @@ function underTypeChecking(node: Node): boolean {
       return true
   }
   return false
-}
-
-/** The outermost ERROR and every MISSING node, in source order; only broken subtrees are walked. */
-function syntaxDiagnostics(root: Node): { line: number; message: string }[] {
-  const diagnostics: { line: number; message: string }[] = []
-  const stack: Node[] = root.hasError ? [root] : []
-  while (stack.length > 0) {
-    const node = stack.pop()!
-    if (node.isError) diagnostics.push({ line: lineOf(node), message: 'Syntax error' })
-    else if (node.isMissing)
-      diagnostics.push({ line: lineOf(node), message: `Missing ${node.type}` })
-    else
-      stack.push(
-        ...node.children.filter((child) => child.hasError || child.isMissing).reverse(),
-      )
-  }
-  return diagnostics
 }

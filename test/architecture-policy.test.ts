@@ -88,6 +88,14 @@ describe('complete architecture budget policy', () => {
     policy.extensions.push('.log')
     expect(collectInventory(r.root, policy).has('build.log')).toBe(true)
   })
+  it('treats a go.mod as a build manifest, not an unclassified source language', () => {
+    const r = repo(),
+      policy = ordinaryPolicy()
+    r.write('go.mod', 'module example.com/app\n')
+    r.write('tools/go.mod', 'module example.com/tools\n')
+    r.source(1, 'src/owner.ts')
+    expect([...collectInventory(r.root, policy).keys()]).toEqual(['src/owner.ts'])
+  })
   it('keeps a tool-owned directory outside the inventory whether tracked, executable, or runtime', () => {
     const r = repo(),
       policy = ordinaryPolicy()

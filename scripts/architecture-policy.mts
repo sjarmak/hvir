@@ -43,6 +43,7 @@ const DATA_EXTENSIONS = new Set([
   '.icns',
   '.plist',
   '.toml',
+  '.mod',
   '.csv',
   '.gyp',
   '.apparmor',

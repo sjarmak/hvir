@@ -268,7 +268,7 @@ export function ArchitectureReview({
             )}
           </details>
           <p className="architecture-review-scope">
-            TypeScript, JavaScript and Python imports only. Subsystems are structural
+            TypeScript, JavaScript, Python and Go imports only. Subsystems are structural
             groupings, not responsibility claims; compiler aliases, package exports and
             Python import paths set at run time may be unresolved. See snapshot details
             for analysis notices.
@@ -276,7 +276,7 @@ export function ArchitectureReview({
           <div className="architecture-review-body">
             {snapshot.analysis.modules.length === 0 ? (
               <p className="architecture-review-state">
-                No supported TypeScript, JavaScript or Python modules were captured.
+                No supported TypeScript, JavaScript, Python or Go modules were captured.
               </p>
             ) : (
               <ArchitectureMap

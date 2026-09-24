@@ -11,7 +11,7 @@ import { ModuleFactsCache } from '../src/main/architecture-review/module-facts-c
 import { LocalHost } from '../src/main/project-host/local-host'
 import { gitBlobId } from '../src/main/architecture-review/blob-id'
 import { scannerSet } from '../src/main/architecture-review/language-scanner'
-import { loadInstalledScanners } from './architecture-python-fixture'
+import { loadInstalledScanners } from './architecture-scanner-fixtures'
 
 const directories: string[] = []
 afterEach(async () => {

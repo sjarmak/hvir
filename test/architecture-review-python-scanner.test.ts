@@ -3,7 +3,7 @@ import type { ArchitectureImportFact } from '../src/shared/architecture-analysis
 import { scanArchitecture } from '../src/main/architecture-review/analysis'
 import type { ScannerSet } from '../src/main/architecture-review/language-scanner'
 import { TYPESCRIPT_ONLY_SCANNERS } from '../src/main/architecture-review/typescript-scanner'
-import { loadInstalledScanners, pythonFixture } from './architecture-python-fixture'
+import { loadInstalledScanners, pythonFixture } from './architecture-scanner-fixtures'
 
 let scanners: ScannerSet
 beforeAll(async () => {

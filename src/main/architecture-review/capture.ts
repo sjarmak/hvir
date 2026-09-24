@@ -196,7 +196,7 @@ export async function captureArchitecture(
 const CAPTURE_EXCLUSIONS: readonly string[] = [
   ...SCOPE.excludedDirectories,
   '*.d.ts',
-  'sources other than JavaScript, TypeScript and Python',
+  'sources other than JavaScript, TypeScript, Python and Go',
   '*.pyi',
   'ignored untracked files',
 ]

@@ -10,9 +10,9 @@ export interface ArchitectureSourceFile {
 export interface ArchitectureScanInput {
   readonly files: readonly ArchitectureSourceFile[]
   /**
-   * Captured tsconfig, jsconfig and package.json files; they configure TypeScript and
-   * JavaScript resolution only. Absent means none were captured, and
-   * the scan discloses that imports resolve without the project's compiler options.
+   * Captured tsconfig, jsconfig and package.json files, which configure TypeScript and
+   * JavaScript resolution, and go.mod files, which name Go module paths. Absent means none
+   * were captured, and the scan discloses what each language resolved without.
    */
   readonly configs?: readonly ArchitectureSourceFile[]
   readonly scope: string
@@ -44,7 +44,12 @@ export interface ArchitectureModule {
 }
 
 export interface ArchitectureImportFact {
+  /** The file the import is written in. */
   readonly source: string
+  /**
+   * The module an internal import names: a scanned file, or for Go, whose module is a
+   * package directory, the directory holding that package's scanned files.
+   */
   readonly target?: string
   readonly specifier: string
   readonly form: ArchitectureImportForm

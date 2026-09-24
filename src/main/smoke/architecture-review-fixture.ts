@@ -28,12 +28,15 @@ export const ARCHITECTURE_SMOKE_LAYOUT = `${JSON.stringify({
 })}\n`
 
 /**
- * Untracked Python modules on the live side, inside an existing subsystem so the map keeps
- * its shape; the built worker must load the grammar to list them.
+ * Untracked Python and Go modules on the live side, inside an existing subsystem so the map
+ * keeps its shape; the built worker must load both grammars to list them.
  */
-const LIVE_PYTHON: Readonly<Record<string, string>> = {
+const LIVE_GRAMMAR_SOURCES: Readonly<Record<string, string>> = {
   'architecture-smoke/ui/app.py': 'from . import helpers\nimport json\n',
   'architecture-smoke/ui/helpers.py': 'def helper():\n    return 1\n',
+  'architecture-smoke/go.mod': 'module example.com/smoke\n',
+  'architecture-smoke/ui/server.go':
+    'package ui\n\nimport "net/http"\n\nvar _ = http.StatusOK\n',
 }
 
 /**
@@ -106,7 +109,7 @@ export async function createArchitectureReviewSmokeFixture(
     joinHostPath(root, 'architecture-smoke/new-data/item.ts'),
     'export const item = "new"\n',
   )
-  for (const [relativePath, content] of Object.entries(LIVE_PYTHON))
+  for (const [relativePath, content] of Object.entries(LIVE_GRAMMAR_SOURCES))
     await host.writeFile(joinHostPath(root, relativePath), content)
 
   return {

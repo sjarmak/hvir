@@ -17,6 +17,17 @@ describe('architecture capture scope', () => {
     expect(inArchitectureScope('tsconfig.json')).toBe(true)
   })
 
+  it('captures Go files as sources and every go.mod as a config', () => {
+    expect(isSource('cmd/shop/main.go')).toBe(true)
+    expect(isSource('internal/store/store_test.go')).toBe(true)
+    expect(isSource('go.mod')).toBe(false)
+    expect(inArchitectureScope('go.mod')).toBe(true)
+    expect(inArchitectureScope('tools/go.mod')).toBe(true)
+    expect(inArchitectureScope('go.sum')).toBe(false)
+    expect(inArchitectureScope('notgo.mod')).toBe(false)
+    expect(inArchitectureScope('vendor/github.com/google/uuid/uuid.go')).toBe(false)
+  })
+
   it('leaves out Python environments and bytecode caches', () => {
     expect(inArchitectureScope('.venv/lib/site.py')).toBe(false)
     expect(inArchitectureScope('.tox/py312/lib/a.py')).toBe(false)

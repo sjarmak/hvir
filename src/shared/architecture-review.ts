@@ -50,7 +50,7 @@ export interface ArchitectureCapture {
   readonly fingerprint: string
   readonly before: readonly ArchitectureSource[]
   readonly after: readonly ArchitectureSource[]
-  /** tsconfig, jsconfig and package.json files each end resolves imports with. */
+  /** tsconfig, jsconfig, package.json and go.mod files each end resolves imports with. */
   readonly configs: {
     readonly before: readonly ArchitectureSource[]
     readonly after: readonly ArchitectureSource[]
@@ -82,7 +82,7 @@ export const ARCHITECTURE_SCOPE = {
     '.mypy_cache',
     '.pytest_cache',
   ],
-  extensions: ['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'py'],
+  extensions: ['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'py', 'go'],
 } as const
 
 export interface ArchitectureReviewKey {

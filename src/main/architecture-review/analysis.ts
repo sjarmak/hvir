@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { posix } from 'node:path'
 import {
   ARCHITECTURE_ANALYSIS_LIMITS,
   ARCHITECTURE_DEFAULT_LAYOUT,
@@ -254,11 +255,7 @@ export function compareArchitecture(
           : {}),
       }
     })
-  const subsystemOfModule = (path: string): string => {
-    const module = newModules.get(path) ?? oldModules.get(path)
-    if (!module) throw new Error(`Import evidence names an unscanned module: ${path}`)
-    return module.subsystem
-  }
+  const subsystemOfModule = subsystemLookup(before, after)
   const pairs = new Map<string, ArchitectureImportDelta[]>()
   for (const fact of imports) {
     const target = fact.target
@@ -291,6 +288,29 @@ export function compareArchitecture(
       `${left.source}\0${left.target}`.localeCompare(`${right.source}\0${right.target}`),
     )
   return { before, after, modules, imports, relationships }
+}
+
+/**
+ * A subsystem by module path, Current first. A Go import targets a package directory, which
+ * takes the subsystem of its first scanned file in path order.
+ */
+function subsystemLookup(
+  before: ArchitectureScanResult,
+  after: ArchitectureScanResult,
+): (path: string) => string {
+  const byPath = new Map<string, string>()
+  const byDirectory = new Map<string, string>()
+  for (const module of [...after.modules, ...before.modules]) {
+    if (!byPath.has(module.path)) byPath.set(module.path, module.subsystem)
+    const directory = posix.dirname(module.path)
+    if (!byDirectory.has(directory)) byDirectory.set(directory, module.subsystem)
+  }
+  return (path) => {
+    const subsystem = byPath.get(path) ?? byDirectory.get(path)
+    if (subsystem === undefined)
+      throw new Error(`Import evidence names an unscanned module: ${path}`)
+    return subsystem
+  }
 }
 
 export function analyzeArchitecture(

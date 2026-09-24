@@ -6,16 +6,23 @@ import { loadArchitectureScanners } from '../src/main/architecture-review/archit
 import type { ScannerSet } from '../src/main/architecture-review/language-scanner'
 
 const require = createRequire(import.meta.url)
-const FIXTURE = join(__dirname, 'fixtures', 'architecture-python')
 
 /** The real Python tree under test/fixtures, as repository-relative source files. */
-export function pythonFixture(): readonly ArchitectureSourceFile[] {
-  return readdirSync(FIXTURE, { recursive: true, withFileTypes: true })
+export const pythonFixture = (): readonly ArchitectureSourceFile[] =>
+  fixtureTree('architecture-python')
+
+/** The real Go module tree under test/fixtures, go.mod files included. */
+export const goFixture = (): readonly ArchitectureSourceFile[] =>
+  fixtureTree('architecture-go')
+
+function fixtureTree(name: string): readonly ArchitectureSourceFile[] {
+  const root = join(__dirname, 'fixtures', name)
+  return readdirSync(root, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile())
     .map((entry) => {
       const absolute = join(entry.parentPath, entry.name)
       return {
-        path: relative(FIXTURE, absolute).split('\\').join('/'),
+        path: relative(root, absolute).split('\\').join('/'),
         content: readFileSync(absolute, 'utf8'),
       }
     })
