@@ -24,3 +24,7 @@ coverage
 *.db
 .beads-credential-key
 .beads.gate.lock
+
+# Gas City
+.beads/*
+!.beads/identity.toml
