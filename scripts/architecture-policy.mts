@@ -63,6 +63,7 @@ const DISPOSABLE_ROLES: Readonly<Record<string, string>> = {
 // sockets, locks), none of it hvir-maintained source.
 const TOOL_OWNED_ROLES: Readonly<Record<string, string>> = {
   '.beads': 'beads issue tracker configuration and runtime state',
+  '.gc': 'Gas City seat configuration and runtime state',
 }
 
 export interface BudgetMetadata {

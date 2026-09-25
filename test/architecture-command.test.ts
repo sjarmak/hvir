@@ -118,7 +118,7 @@ describe('architecture command composition', () => {
     expect(text.output).toContain('Installed dependencies and builtins are external')
     expect(text.output).toContain('Git internals and disposable output')
     expect(text.output).toContain(
-      'Tool-owned directories are outside the maintained inventory: .beads (beads issue tracker configuration and runtime state).',
+      'Tool-owned directories are outside the maintained inventory: .beads (beads issue tracker configuration and runtime state); .gc (Gas City seat configuration and runtime state).',
     )
     expect(text.output).toContain('Non-code assets and exact native build output')
     expect(text.output).toContain('outside same-module cycle proof')

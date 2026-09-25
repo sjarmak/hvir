@@ -113,12 +113,21 @@ describe('complete architecture budget policy', () => {
     r.write('.beads/backup/state.darc', 'opaque archive')
     r.write('.beads/dolt-server.pid', '4242\n')
     r.write('.beads/embeddeddolt/hvir/.dolt/noms/manifest', 'noms')
+    r.write('.gc/runtime/x.pid', '4242\n')
+    r.write('.gc/scripts/x.sh', '#!/usr/bin/env sh\necho seat\n')
+    chmodSync(join(r.root, '.gc/scripts/x.sh'), 0o755)
     const expected = ['src/.beads/nested.ts', 'src/owner.ts']
     expect([...collectInventory(r.root, policy).keys()].sort()).toEqual(expected)
     expect([...collectInventory(r.root, policy, head).keys()].sort()).toEqual(expected)
     expect(toolOwnedDirectory('.beads')).toBe(true)
     expect(toolOwnedDirectory('.beads/hooks/pre-commit')).toBe(true)
-    for (const path of ['.beadsx/hooks/pre-commit', 'beads/x.ts', 'src/.beads/nested.ts'])
+    expect(toolOwnedDirectory('.gc/runtime/packs/dolt/dolt.pid')).toBe(true)
+    for (const path of [
+      '.beadsx/hooks/pre-commit',
+      'beads/x.ts',
+      'src/.beads/nested.ts',
+      'src/.gc/nested.ts',
+    ])
       expect(toolOwnedDirectory(path)).toBe(false)
   })
   it.each([

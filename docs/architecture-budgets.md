@@ -64,6 +64,8 @@ those roles is an error, never a silent exemption. The top-level `.beads` direct
 tool-owned role: its tracked files are the beads issue tracker's managed configuration and hooks
 and its untracked files are that tool's runtime state (Dolt database, backups, sockets, locks),
 so neither branch of the inventory reads it, and the dependency report names the exclusion.
+The top-level `.gc` directory carries the same role for Gas City seat configuration and runtime
+state (settings, scripts, pack pid, lock, and log files).
 Git caches belong to one bounded evaluation;
 historical reads select source, alias, executable, and policy inputs without loading unrelated
 binary/data bodies. Every applicable accepted historical ratchet remains included.
