@@ -3,6 +3,7 @@ import type { GitWorkerProtocol } from '../../shared/worker-protocol'
 import type { ArchitectureWorktreePort } from '../architecture-review/handoff'
 import { hvirWorktreeLocation, hvirWorktreeTarget } from '../git/hvir-worktrees'
 import { GitMutationAuthorization } from '../git/mutation-authorization'
+import type { AddedWorktree, HeldWorktree } from '../git/mutation-coordinator'
 import { GitWorkerHostRouter } from '../git/worker-host-router'
 import { gitMutationWorker, type GitWorker } from '../git/worker-ports'
 import type { ProjectHost } from '../project-host'
@@ -66,7 +67,8 @@ function createSmokeGitAuthority(
 /**
  * Worktree creation for the smoke project through the production grant and broker: an
  * exact `worktree-add` grant, the real Git worker, and the router's argv check. The smoke
- * project fixture holds one workspace, so the handoff switches back to it.
+ * project fixture holds one workspace, so the handoff switches back to it. The smoke
+ * offers no unfinished-handoff removal, so holding a worktree in flight guards nothing.
  */
 function smokeArchitectureWorktrees(
   host: ProjectHost,
@@ -100,12 +102,17 @@ function smokeArchitectureWorktrees(
       } finally {
         grant.revoke()
       }
-      return {
+      return unguarded({
         projectId: SMOKE_PROJECT_ID,
         workspaceId: SMOKE_WORKSPACE_ID,
         root: hostPath(root.hostId, exact.path),
         branch: exact.branch,
-      }
+      })
     },
+    holdWorktree: (added) => Promise.resolve(unguarded(added)),
   }
+}
+
+function unguarded(added: AddedWorktree): HeldWorktree {
+  return { added, release: () => undefined }
 }

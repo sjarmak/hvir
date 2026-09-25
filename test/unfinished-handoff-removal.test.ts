@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { writeArchitectureBrief } from '../src/main/architecture-review/handoff'
 import { GitEngine } from '../src/main/git/git-engine'
 import {
   hvirWorktreeTarget,
@@ -136,6 +137,56 @@ describe('removing an unfinished handoff', () => {
     ).rejects.toThrow('terminal')
     expect(f.grants).toEqual([])
   })
+  it('refuses to remove or label a handoff between worktree creation and its brief', async () => {
+    const f = await fixture()
+    const held = await f.coordinator.addWorktree(f.activeRoot, 'review-2', f.head)
+    const { added } = held
+
+    await expect(f.coordinator.unfinishedHandoffs('project-1')).resolves.not.toContain(
+      added.workspaceId,
+    )
+    await expect(
+      f.coordinator.removeUnfinishedHandoff('project-1', added.workspaceId),
+    ).rejects.toThrow('in flight')
+
+    await writeArchitectureBrief(
+      new LocalHost(),
+      added.root,
+      'brief\n',
+      AbortSignal.timeout(30_000),
+    )
+    held.release()
+    await expect(
+      readFile(join(added.root.path, ARCHITECTURE_BRIEF_FILE), 'utf8'),
+    ).resolves.toBe('brief\n')
+    expect(git(f.rootPath, ['worktree', 'list', '--porcelain'])).toContain(
+      added.root.path,
+    )
+    expect(f.grants.map((grant) => grant.kind)).toEqual(['worktree-add'])
+    await expect(
+      f.coordinator.removeUnfinishedHandoff('project-1', added.workspaceId),
+    ).rejects.toThrow('brief')
+  })
+
+  it('labels a handoff again once it is released without a brief', async () => {
+    const f = await fixture()
+    const held = await f.coordinator.addWorktree(f.activeRoot, 'review-2', f.head)
+    held.release()
+
+    await expect(f.coordinator.unfinishedHandoffs('project-1')).resolves.toContain(
+      held.added.workspaceId,
+    )
+    const again = await f.coordinator.holdWorktree(held.added)
+    await expect(
+      f.coordinator.removeUnfinishedHandoff('project-1', held.added.workspaceId),
+    ).rejects.toThrow('in flight')
+    again.release()
+    await f.coordinator.removeUnfinishedHandoff('project-1', held.added.workspaceId)
+    expect(git(f.rootPath, ['worktree', 'list', '--porcelain'])).not.toContain(
+      held.added.root.path,
+    )
+  })
+
   it.each([
     ['assume-unchanged', '--assume-unchanged'],
     ['skip-worktree', '--skip-worktree'],
@@ -225,6 +276,16 @@ async function fixture(options: { readonly terminalIds?: readonly string[] } = {
           !discovery.worktrees.some((listed) => hostPathEquals(listed.root, known.root))
         )
           workspaces[index] = { ...known, missing: true }
+      for (const listed of discovery.worktrees)
+        if (!workspaces.some((known) => hostPathEquals(known.root, listed.root)))
+          workspaces.push(
+            workspace(
+              listed.root.path.split('/').pop()!,
+              listed.root,
+              listed.branch!,
+              listed.head!,
+            ),
+          )
       return Promise.resolve(state())
     },
   }
@@ -297,6 +358,8 @@ async function fixture(options: { readonly terminalIds?: readonly string[] } = {
   return {
     rootPath,
     root,
+    head,
+    activeRoot: localPath(active.path),
     target,
     coordinator,
     grants,

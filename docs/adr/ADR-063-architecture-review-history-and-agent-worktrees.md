@@ -73,7 +73,14 @@ grants: `git worktree remove` without `--force`, then deletion of the branch onl
 still points at its creation commit. Main re-reads
 every fact before each removal and refuses the main working tree, the active workspace, any
 branch outside the prefix, any path outside the owned location, and any worktree that no
-longer qualifies. This is the only removal authority the review holds.
+longer qualifies. The confirmation is not the guard, since a renderer can send the removal
+request directly: main itself holds each handoff it is carrying out, keyed by project and
+worktree root, from before `git worktree add` (or before a retry resumes the worktree) until
+the brief write succeeds or fails. While that entry is held the worktree is neither labelled
+nor removable, so the fresh worktree Git has just published, which passes every other check
+until its brief lands, cannot be deleted mid-handoff. An interrupted handoff whose review is
+still open keeps its retry; only a worktree with no held entry and no brief qualifies. This
+is the only removal authority the review holds.
 
 ## Consequences
 
@@ -84,8 +91,9 @@ package. Worktree creation is a new write authority for the review; ADR-061's re
 promise no longer holds for the review as a whole, though it still holds for the person's own
 working tree. The one-shot launch rule is replaced by one worktree per launch. The narrow,
 person-triggered removal of an unfinished handoff is the one delete authority added beside
-it; a worktree with any commit, change, brief or session is never removed by hvir, so an
-interrupted handoff with work in it stays until the person deals with it in Git.
+it; a worktree with any commit, change, brief, session or handoff in flight is never
+removed by hvir, so an interrupted handoff with work in it stays until the person deals with
+it in Git.
 
 ## Rejected alternatives
 

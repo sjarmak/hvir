@@ -74,6 +74,7 @@ async function reviewOf(root: string, ends: { baseline?: string; current?: strin
         worktreeTarget: (_root, slug, commit) =>
           hvirWorktreeTarget(localPath(root), slug, commit),
         addWorktree: () => Promise.reject(new Error('not created in this test')),
+        holdWorktree: () => Promise.reject(new Error('not held in this test')),
       },
     },
   })

@@ -1,4 +1,5 @@
 import {
+  hostPath,
   hostPathEquals,
   type HostPath,
   type ProjectState,
@@ -11,7 +12,11 @@ import {
   type HvirWorktreeTarget,
 } from './hvir-worktrees'
 import type { GitMutationGrant, GitMutationGrantRequest } from './mutation-authorization'
-import { inspectUnfinishedHandoff } from '../architecture-review/unfinished-handoff'
+import { HandoffsInFlight } from '../architecture-review/handoffs-in-flight'
+import {
+  inspectUnfinishedHandoff,
+  type HandoffWorktreeActivity,
+} from '../architecture-review/unfinished-handoff'
 import type { ProjectHost } from '../project-host'
 import type { ProjectWatchTarget } from '../project-watch'
 import type {
@@ -83,8 +88,20 @@ export interface AddedWorktree {
   readonly branch: string
 }
 
+/**
+ * A handoff worktree main holds in flight (ADR-063): removal refuses it and the
+ * unfinished-handoff listing skips it until `release`, which the handoff calls once its
+ * brief write settles.
+ */
+export interface HeldWorktree {
+  readonly added: AddedWorktree
+  release(): void
+}
+
 /** Coordinates the complete lifecycle of the bounded Git mutations exposed by hvir. */
 export class GitMutationCoordinator {
+  private readonly inFlight = new HandoffsInFlight()
+
   constructor(private readonly options: GitMutationCoordinatorOptions) {}
 
   pruneWorktrees(projectId: string): Promise<ProjectState> {
@@ -110,11 +127,11 @@ export class GitMutationCoordinator {
   /**
    * Creates the review worktree hvir owns beside the registered root, on a new
    * `hvir/architecture/<slug>` branch at `commit` (ADR-063). `root` must be the active
-   * workspace; the grant names the exact branch, path and commit.
+   * workspace; the grant names the exact branch, path and commit. The worktree is held in
+   * flight before Git creates it, so it is never removable before the caller releases it.
    */
-  addWorktree(root: HostPath, slug: string, commit: string): Promise<AddedWorktree> {
+  addWorktree(root: HostPath, slug: string, commit: string): Promise<HeldWorktree> {
     return this.options.workspaces.serialize(async () => {
-      const { registry } = this.options
       this.assertActive(
         root,
         'Worktree creation belongs to another workspace',
@@ -123,30 +140,54 @@ export class GitMutationCoordinator {
       const project = this.activeProject()
       const projectId = project.id
       const target = hvirWorktreeTarget(project.registeredRoot, slug, commit)
-      const grant = this.options.authorizations.grant({
-        kind: 'worktree-add',
+      const release = this.inFlight.hold(
         projectId,
-        root: project.registeredRoot,
-        target,
-      })
-      let discovery: WorktreeDiscovery
+        hostPath(project.registeredRoot.hostId, target.path),
+      )
       try {
-        discovery = await this.options.worker.addWorktree(project.registeredRoot, target)
-      } finally {
-        grant.revoke()
-      }
-      const state = await registry.reconcileWorktrees(projectId, discovery)
-      const workspace = state.projects
-        .find((candidate) => candidate.id === projectId)
-        ?.workspaces.find((candidate) => candidate.root.path === target.path)
-      if (!workspace) throw new Error('Git did not report the new worktree')
-      return {
-        projectId,
-        workspaceId: workspace.id,
-        root: workspace.root,
-        branch: target.branch,
+        return { added: await this.createWorktree(projectId, project, target), release }
+      } catch (error) {
+        release()
+        throw error
       }
     })
+  }
+
+  /** Holds a worktree an interrupted handoff created while a retry finishes it there. */
+  holdWorktree(added: AddedWorktree): Promise<HeldWorktree> {
+    return this.options.workspaces.serialize(() =>
+      Promise.resolve({ added, release: this.inFlight.hold(added.projectId, added.root) }),
+    )
+  }
+
+  private async createWorktree(
+    projectId: string,
+    project: RegisteredProjectState,
+    target: HvirWorktreeTarget,
+  ): Promise<AddedWorktree> {
+    const grant = this.options.authorizations.grant({
+      kind: 'worktree-add',
+      projectId,
+      root: project.registeredRoot,
+      target,
+    })
+    let discovery: WorktreeDiscovery
+    try {
+      discovery = await this.options.worker.addWorktree(project.registeredRoot, target)
+    } finally {
+      grant.revoke()
+    }
+    const state = await this.options.registry.reconcileWorktrees(projectId, discovery)
+    const workspace = state.projects
+      .find((candidate) => candidate.id === projectId)
+      ?.workspaces.find((candidate) => candidate.root.path === target.path)
+    if (!workspace) throw new Error('Git did not report the new worktree')
+    return {
+      projectId,
+      workspaceId: workspace.id,
+      root: workspace.root,
+      branch: target.branch,
+    }
   }
 
   /**
@@ -172,7 +213,7 @@ export class GitMutationCoordinator {
             host,
             project.registeredRoot,
             workspace,
-            this.options.removal.workspaceTerminalIds(workspace.root),
+            this.activity(projectId, workspace.root),
           )
           return verdict.unfinished
         } catch (error) {
@@ -223,7 +264,7 @@ export class GitMutationCoordinator {
         this.hostOf(project),
         root,
         listed,
-        removal.workspaceTerminalIds(listed.root),
+        this.activity(projectId, listed.root),
       )
       if (!verdict.unfinished) throw refuse(verdict.reason)
       const { target } = verdict
@@ -388,6 +429,13 @@ export class GitMutationCoordinator {
       return await run()
     } finally {
       grant.revoke()
+    }
+  }
+
+  private activity(projectId: string, worktree: HostPath): HandoffWorktreeActivity {
+    return {
+      terminalIds: this.options.removal.workspaceTerminalIds(worktree),
+      inFlight: this.inFlight.has(projectId, worktree),
     }
   }
 

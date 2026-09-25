@@ -14,6 +14,7 @@ import type {
 } from '../src/main/architecture-review/freshness'
 import type { writeArchitectureBrief } from '../src/main/architecture-review/handoff'
 import type { HostPath } from '../src/shared/host-path'
+import type { AddedWorktree } from '../src/main/git/mutation-coordinator'
 import { expectMonotoneMetrics, stagesOf } from './architecture-scan-metrics-fixture'
 import { gitBlobId } from '../src/main/architecture-review/blob-id'
 
@@ -84,23 +85,43 @@ function setup(
     path: `${WORKTREE}/${slug}`,
     commit,
   }))
+  // Worktrees main holds as in-flight handoffs: removal refuses them until released.
+  const held = new Set<string>()
+  const hold = (added: AddedWorktree) => {
+    held.add(added.root.path)
+    return {
+      added,
+      release: () => {
+        held.delete(added.root.path)
+      },
+    }
+  }
   const addWorktree = vi.fn((_root: HostPath, slug: string) =>
-    Promise.resolve({
-      projectId: 'project-1',
-      workspaceId: `workspace-${slug}`,
-      root: localPath(`${WORKTREE}/${slug}`),
-      branch: `hvir/architecture/${slug}`,
-    }),
+    Promise.resolve(
+      hold({
+        projectId: 'project-1',
+        workspaceId: `workspace-${slug}`,
+        root: localPath(`${WORKTREE}/${slug}`),
+        branch: `hvir/architecture/${slug}`,
+      }),
+    ),
   )
+  const holdWorktree = vi.fn((added: AddedWorktree) => Promise.resolve(hold(added)))
   const writeBrief = vi.fn<typeof writeArchitectureBrief>(() => Promise.resolve())
   const coordinator = new ArchitectureReviewCoordinator({
     resources,
     capture,
     liveState,
     analyze,
-    handoff: { worktrees: { worktreeTarget, addWorktree }, liveBase, writeBrief },
+    handoff: {
+      worktrees: { worktreeTarget, addWorktree, holdWorktree },
+      liveBase,
+      writeBrief,
+    },
   })
   return {
+    held,
+    holdWorktree,
     liveBase,
     addWorktree,
     writeBrief,
@@ -441,4 +462,28 @@ it('does not rewrite a brief that landed before the handoff was interrupted', as
   await f.coordinator.handoff(f.owner, f.host, again)
   expect(f.addWorktree).toHaveBeenCalledOnce()
   expect(briefs).toBe(1)
+})
+it('holds the handoff worktree in flight from creation until its brief write settles', async () => {
+  const f = setup()
+  const { preview } = await prepared(f)
+  const path = preview.handoff.worktree.path
+  const during: boolean[] = []
+  f.writeBrief.mockImplementationOnce(() => {
+    during.push(f.held.has(path))
+    return Promise.reject(new Error('host disconnected'))
+  })
+  await expect(f.coordinator.handoff(f.owner, f.host, preview)).rejects.toThrow(
+    /host disconnected/,
+  )
+  expect(f.held.has(path)).toBe(false)
+
+  f.writeBrief.mockImplementationOnce(() => {
+    during.push(f.held.has(path))
+    return Promise.resolve()
+  })
+  const again = await f.coordinator.prepare(f.owner, f.host, preview)
+  await f.coordinator.handoff(f.owner, f.host, again)
+  expect(during).toEqual([true, true])
+  expect(f.holdWorktree).toHaveBeenCalledOnce()
+  expect(f.held.has(path)).toBe(false)
 })

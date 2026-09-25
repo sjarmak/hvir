@@ -19,7 +19,8 @@ import {
  *
  * 1. its branch is `hvir/architecture/<slug>` and it sits at `<root>.hvir-worktrees/<slug>`,
  *    the one place a handoff creates it, which resolves to itself and not the main tree;
- * 2. no hvir terminal session is recorded or running in it;
+ * 2. no hvir terminal session is recorded or running in it, and main is not carrying out
+ *    a handoff there right now (`HandoffsInFlight`);
  * 3. the snapshot brief is absent;
  * 4. the branch reflog holds exactly its creation entry, at the worktree's HEAD: nothing
  *    was committed, reset or amended since the handoff created it;
@@ -33,6 +34,13 @@ export interface HandoffWorktreeFacts {
   readonly head?: string
 }
 
+/** What main itself is doing in the worktree, which disk and Git cannot show. */
+export interface HandoffWorktreeActivity {
+  readonly terminalIds: readonly string[]
+  /** A handoff holds it between creating the worktree and settling its brief write. */
+  readonly inFlight: boolean
+}
+
 export type UnfinishedHandoffVerdict =
   | { readonly unfinished: true; readonly target: HvirWorktreeTarget }
   | { readonly unfinished: false; readonly reason: string }
@@ -44,8 +52,9 @@ export async function inspectUnfinishedHandoff(
   host: ProjectHost,
   registeredRoot: HostPath,
   worktree: HandoffWorktreeFacts,
-  terminalIds: readonly string[],
+  activity: HandoffWorktreeActivity,
 ): Promise<UnfinishedHandoffVerdict> {
+  if (activity.inFlight) return refuse('its handoff is still in flight')
   const slug = hvirWorktreeSlug(worktree.branch)
   if (slug === undefined || !worktree.branch)
     return refuse(`its branch is not under ${HVIR_ARCHITECTURE_BRANCH_PREFIX}`)
@@ -64,7 +73,8 @@ export async function inspectUnfinishedHandoff(
   ])
   if (resolved.path !== target.path || resolved.path === main.path)
     return refuse('its path resolves somewhere else')
-  if (terminalIds.length > 0) return refuse('an hvir terminal session belongs to it')
+  if (activity.terminalIds.length > 0)
+    return refuse('an hvir terminal session belongs to it')
   if (await exists(host, joinHostPath(worktree.root, ARCHITECTURE_BRIEF_FILE)))
     return refuse('its snapshot brief was written, so the handoff reached its agent')
   if (!(await onlyCreated(host, worktree.root, worktree.branch, target.commit)))

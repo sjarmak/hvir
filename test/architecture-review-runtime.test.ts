@@ -40,6 +40,7 @@ it('keeps the parse cache under userData and owns the warm worker for disposal',
       throw new Error("unused")
     },
     addWorktree: () => Promise.reject(new Error("unused")),
+    holdWorktree: () => Promise.reject(new Error("unused")),
   })
   expect(review).toBeInstanceOf(ArchitectureReviewCoordinator)
   const worker = owned.find(

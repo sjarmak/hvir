@@ -40,6 +40,12 @@ describe('unfinished handoff detection', () => {
     await expectRefused(fixture.inspect({ terminalIds: ['terminal-1'] }), 'terminal')
   })
 
+  it('does not mark a worktree whose handoff main is still carrying out', async () => {
+    const fixture = await handoffFixture()
+
+    await expectRefused(fixture.inspect({ inFlight: true }), 'in flight')
+  })
+
   it('does not mark a branch with commits beyond its start point', async () => {
     const fixture = await handoffFixture()
     git(fixture.target.path, ['commit', '--allow-empty', '-m', 'agent work'])
@@ -128,6 +134,7 @@ async function handoffFixture() {
         readonly branch?: string
         readonly head?: string
         readonly terminalIds?: readonly string[]
+        readonly inFlight?: boolean
       } = {},
     ) =>
       inspectUnfinishedHandoff(
@@ -138,7 +145,10 @@ async function handoffFixture() {
           branch: overrides.branch ?? target.branch,
           head: overrides.head ?? target.commit,
         },
-        overrides.terminalIds ?? [],
+        {
+          terminalIds: overrides.terminalIds ?? [],
+          inFlight: overrides.inFlight ?? false,
+        },
       ),
   }
 }

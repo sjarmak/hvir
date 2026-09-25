@@ -256,7 +256,9 @@ export class ArchitectureReviewCoordinator {
   /**
    * Creates the prepared worktree once, writes the brief and issues the one launch the
    * agent session may spend. The plan is consumed before any mutation; a handoff that
-   * fails after its worktree exists is kept so preparing again finishes it there.
+   * fails after its worktree exists is kept so preparing again finishes it there. Main
+   * holds the worktree in flight from before its creation (or the retry) until the brief
+   * write settles, so no removal lands in between.
    */
   async handoff(
     owner: RendererOwner,
@@ -274,14 +276,17 @@ export class ArchitectureReviewCoordinator {
       throw new Error('Architecture review preview changed; prepare again')
     const resumed = review.unfinished?.planned === planned ? review.unfinished : undefined
     this.reviews.set(key, { ...review, plan: undefined, unfinished: undefined })
-    const step = resumed ?? {
-      planned,
-      added: await worktrees.addWorktree(request.root, planned.slug, commit),
-      briefWritten: false,
+    const held = resumed
+      ? await worktrees.holdWorktree(resumed.added)
+      : await worktrees.addWorktree(request.root, planned.slug, commit)
+    try {
+      const step = resumed ?? { planned, added: held.added, briefWritten: false }
+      if (!hostPathEquals(step.added.root, planned.plan.worktree))
+        throw new Error('Git created the handoff worktree somewhere else')
+      return await this.finishHandoff(owner, host, key, review.controller, step)
+    } finally {
+      held.release()
     }
-    if (!hostPathEquals(step.added.root, planned.plan.worktree))
-      throw new Error('Git created the handoff worktree somewhere else')
-    return this.finishHandoff(owner, host, key, review.controller, step)
   }
 
   /** Spends the launch before the native start: a session never silently duplicates. */

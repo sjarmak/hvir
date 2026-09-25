@@ -11,7 +11,7 @@ import {
   joinHostPath,
   type HostPath,
 } from '../../shared/host-path'
-import type { AddedWorktree } from '../git/mutation-coordinator'
+import type { AddedWorktree, HeldWorktree } from '../git/mutation-coordinator'
 import type { HvirWorktreeTarget } from '../git/hvir-worktrees'
 import type { ProjectHost } from '../project-host/project-host'
 import type { RendererOwner } from '../renderer-resource-scopes'
@@ -22,7 +22,10 @@ import { parseArchitectureBriefOrigin } from './handoff-brief'
 export interface ArchitectureWorktreePort {
   /** The exact target a handoff from the active `root` would create. */
   worktreeTarget(root: HostPath, slug: string, commit: string): HvirWorktreeTarget
-  addWorktree(root: HostPath, slug: string, commit: string): Promise<AddedWorktree>
+  /** Creates the worktree, held in flight until the handoff releases it (ADR-063). */
+  addWorktree(root: HostPath, slug: string, commit: string): Promise<HeldWorktree>
+  /** Holds the worktree an interrupted handoff created while a retry finishes it. */
+  holdWorktree(added: AddedWorktree): Promise<HeldWorktree>
 }
 
 const TIMEOUT = 30_000

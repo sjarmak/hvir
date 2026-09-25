@@ -253,12 +253,14 @@ describe('GitMutationCoordinator', () => {
     vi.mocked(registry.reconcileWorktrees).mockResolvedValueOnce(withWorktree)
     const commit = 'd'.repeat(40)
 
-    await expect(coordinator.addWorktree(root, 'review-1', commit)).resolves.toEqual({
+    const held = await coordinator.addWorktree(root, 'review-1', commit)
+    expect(held.added).toEqual({
       projectId: 'project-1',
       workspaceId: 'workspace-review',
       root: added,
       branch: 'hvir/architecture/review-1',
     })
+    held.release()
 
     const target = { branch: 'hvir/architecture/review-1', path: added.path, commit }
     expect(authorizations.grant).toHaveBeenCalledWith({
