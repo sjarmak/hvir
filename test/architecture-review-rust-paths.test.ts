@@ -157,3 +157,116 @@ describe('Cargo manifest tables', () => {
     ])
   })
 })
+
+describe('Rust use bindings that name nothing', () => {
+  const lib = () => rustFixture().find((file) => file.path === 'shop/src/lib.rs')!.content
+  const api = () => rustFixture().find((file) => file.path === 'shop/src/api.rs')!.content
+  const store = () =>
+    rustFixture().find((file) => file.path === 'shop/src/store/mod.rs')!.content
+  const named = (
+    files: readonly ArchitectureSourceFile[],
+    source: string,
+    specs: string[],
+  ) => resolutions(files, source).filter((entry) => specs.includes(entry.specifier))
+
+  it('does not let a use count as the item it imports', () => {
+    const files = withFiles({
+      'shop/src/lib.rs': `${lib()}\nuse self::nothing;\nuse crate::nothing2;\n`,
+      'shop/src/api.rs': `${api()}\nuse self::ghost;\n`,
+    })
+    expect(named(files, 'shop/src/lib.rs', ['self::nothing', 'crate::nothing2'])).toEqual(
+      [
+        { specifier: 'self::nothing', resolution: 'unresolved', target: undefined },
+        { specifier: 'crate::nothing2', resolution: 'unresolved', target: undefined },
+      ],
+    )
+    expect(named(files, 'shop/src/api.rs', ['self::ghost'])).toEqual([
+      { specifier: 'self::ghost', resolution: 'unresolved', target: undefined },
+    ])
+  })
+
+  it('binds a name through a glob only when the glob module provides it', () => {
+    const v1 = rustFixture().find((file) => file.path === 'shop/src/api/v1.rs')!.content
+    const files = withFiles({
+      'shop/src/api/v1.rs': `${v1}\nuse self::nothing;\nuse self::lookup;\n`,
+    })
+    expect(named(files, 'shop/src/api/v1.rs', ['self::nothing', 'self::lookup'])).toEqual(
+      [
+        { specifier: 'self::nothing', resolution: 'unresolved', target: undefined },
+        {
+          specifier: 'self::lookup',
+          resolution: 'internal',
+          target: 'shop/src/api/v1.rs',
+        },
+      ],
+    )
+  })
+
+  it('leaves two re-exports that name each other unresolved instead of a cycle', () => {
+    const files = withFiles({
+      'shop/src/api.rs': `${api()}\npub use crate::store::Phantom;\n`,
+      'shop/src/store/mod.rs': `${store()}\npub use crate::api::Phantom;\n`,
+    })
+    expect(named(files, 'shop/src/api.rs', ['crate::store::Phantom'])).toEqual([
+      { specifier: 'crate::store::Phantom', resolution: 'unresolved', target: undefined },
+    ])
+    expect(named(files, 'shop/src/store/mod.rs', ['crate::api::Phantom'])).toEqual([
+      { specifier: 'crate::api::Phantom', resolution: 'unresolved', target: undefined },
+    ])
+  })
+
+  it('still follows a chain of re-exports that ends at a declared item', () => {
+    const files = withFiles({
+      'shop/src/api.rs': `${api()}\npub use crate::Store as Item;\n`,
+      [PROBE]: 'use crate::api::Item;\n',
+    })
+    expect(resolutions(files, PROBE)).toEqual([
+      {
+        specifier: 'crate::api::Item',
+        resolution: 'internal',
+        target: 'shop/src/api.rs',
+      },
+    ])
+  })
+
+  it('leaves a path through a declared module whose file is missing unresolved', () => {
+    const files = withFiles({ 'shop/src/lib.rs': `${lib()}\nuse missing::X;\n` })
+    expect(named(files, 'shop/src/lib.rs', ['missing::X'])).toEqual([
+      { specifier: 'missing::X', resolution: 'unresolved', target: undefined },
+    ])
+  })
+})
+
+describe('Rust #[path] attributes', () => {
+  const commented = () =>
+    rustFixture()
+      .find((file) => file.path === 'shop/src/lib.rs')!
+      .content.replace(
+        '#[path = "generated/codes.rs"]\n',
+        '#[path = "generated/codes.rs"]\n/// Generated codes.\n// plain comment\n/* block */\n',
+      )
+
+  it('keeps a #[path] separated from its mod by doc and plain comments', () => {
+    const files = withFiles({ 'shop/src/lib.rs': commented() })
+    expect(resolutions(files, 'shop/src/lib.rs')).toContainEqual({
+      specifier: 'codes',
+      resolution: 'internal',
+      target: 'shop/src/generated/codes.rs',
+    })
+    expect(scan(files).diagnostics.map((entry) => entry.file)).not.toContain(
+      'shop/src/generated/codes.rs',
+    )
+  })
+
+  it('prefers the #[path] file over a same-named sibling file', () => {
+    const files = withFiles({
+      'shop/src/lib.rs': commented(),
+      'shop/src/codes.rs': 'pub const X: u8 = 1;\n',
+    })
+    expect(resolutions(files, 'shop/src/lib.rs')).toContainEqual({
+      specifier: 'codes',
+      resolution: 'internal',
+      target: 'shop/src/generated/codes.rs',
+    })
+  })
+})

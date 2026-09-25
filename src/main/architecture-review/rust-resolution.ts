@@ -64,6 +64,8 @@ const EXTERNAL: Located = { resolution: 'external' }
 
 class PathResolver {
   private readonly provided: ReadonlyMap<string, Provided>
+  /** Whether a file's `use` binding of a name leads somewhere, keyed by file and name. */
+  private readonly bindings = new Map<string, boolean>()
 
   constructor(
     private readonly tree: RustModuleTree,
@@ -82,7 +84,7 @@ class PathResolver {
       occurrence.form === 'mod'
         ? [this.declared(source, scope, occurrence)]
         : (occurrence.names ?? [occurrence.specifier ?? '']).map((path) =>
-            this.path(source, scope, leafPath(path).split('::')),
+            this.path(source, scope, leafPath(path).split('::'), NONE),
           )
     const distinct = new Map(
       located.map((entry) => [`${entry.resolution}:${entry.target}`, entry]),
@@ -108,25 +110,39 @@ class PathResolver {
     return file ? { resolution: 'internal', target: file } : UNRESOLVED
   }
 
-  private path(source: string, scope: readonly string[], segments: string[]): Located {
+  /**
+   * Where a path leads. `visiting` holds the `use` bindings already being followed, so a
+   * binding that leads back to itself names nothing instead of counting as its own item.
+   */
+  private path(
+    source: string,
+    scope: readonly string[],
+    segments: readonly string[],
+    visiting: Visiting,
+  ): Located {
     const here: RustModule = { file: source, scope }
     const [first = '', ...rest] = segments
-    if (first === '') return this.inCrate(rest[0], rest.slice(1))
+    if (first === '') return this.inCrate(rest[0], rest.slice(1), visiting)
     if (first === 'crate') {
       const root = this.tree.rootOf(source)
-      return root ? this.walk({ file: root, scope: [] }, rest) : UNRESOLVED
+      return root ? this.walk({ file: root, scope: [] }, rest, visiting) : UNRESOLVED
     }
     if (first === 'self' || first === 'super' || this.tree.child(here, first))
-      return this.walk(here, segments)
-    if (this.crates.has(first)) return this.inCrate(first, rest)
+      return this.walk(here, segments, visiting)
+    if (this.declaresMod(source, scope, first)) return UNRESOLVED
+    if (this.crates.has(first)) return this.inCrate(first, rest, visiting)
     return scope.length === 0 && this.declares(source, first)
       ? internal(source)
       : EXTERNAL
   }
 
-  private inCrate(name: string | undefined, rest: readonly string[]): Located {
+  private inCrate(
+    name: string | undefined,
+    rest: readonly string[],
+    visiting: Visiting,
+  ): Located {
     const library = name === undefined ? undefined : this.crates.get(name)
-    return library ? this.walk({ file: library, scope: [] }, rest) : EXTERNAL
+    return library ? this.walk({ file: library, scope: [] }, rest, visiting) : EXTERNAL
   }
 
   /**
@@ -134,7 +150,11 @@ class PathResolver {
    * module reached, which that module must declare or bind. Items inside inline modules are
    * not indexed, so a path through one is taken as written.
    */
-  private walk(start: RustModule, segments: readonly string[]): Located {
+  private walk(
+    start: RustModule,
+    segments: readonly string[],
+    visiting: Visiting,
+  ): Located {
     let current: RustModule | undefined = start
     for (const segment of segments) {
       if (segment === 'self') continue
@@ -149,17 +169,51 @@ class PathResolver {
         current = child
         continue
       }
-      return current.scope.length > 0 || this.provides(current.file, segment)
+      return current.scope.length > 0 || this.provides(current.file, segment, visiting)
         ? internal(current.file)
         : UNRESOLVED
     }
     return internal(current.file)
   }
 
-  /** Whether a file module declares an item by this name or binds it through `use`. */
-  private provides(file: string, name: string): boolean {
+  /**
+   * Whether a file module declares an item by this name, or binds it through a `use` whose
+   * own path leads somewhere; a glob `use p::*` binds the name when `p::name` leads somewhere.
+   * A binding reached again while it is being followed names
+   * nothing: rustc rejects `use self::x;` with no `x`, and two re-exports naming each other.
+   */
+  private provides(file: string, name: string, visiting: Visiting): boolean {
     const provided = this.provided.get(file)
-    return Boolean(provided && (provided.glob || provided.names.has(name)))
+    if (!provided) return false
+    if (provided.declared.has(name)) return true
+    const key = `${file}\u0000${name}`
+    if (visiting.has(key)) return false
+    const known = this.bindings.get(key)
+    if (known !== undefined) return known
+    const following = new Set([...visiting, key])
+    const globbed = (provided.bound.get(GLOB) ?? []).map(
+      (path) => `${path.slice(0, -GLOB.length)}${name}`,
+    )
+    const leads = [...(provided.bound.get(name) ?? []), ...globbed].some(
+      (path) =>
+        this.path(file, [], path.split('::'), following).resolution !== 'unresolved',
+    )
+    if (visiting.size === 0) this.bindings.set(key, leads)
+    return leads
+  }
+
+  /** Whether a module declares `mod name;` in this scope, whatever file it resolves to. */
+  private declaresMod(file: string, scope: readonly string[], name: string): boolean {
+    return Boolean(
+      this.facts
+        .get(file)
+        ?.imports.some(
+          (entry) =>
+            entry.form === 'mod' &&
+            entry.specifier === name &&
+            sameScope(entry.scope ?? [], scope),
+        ),
+    )
   }
 
   private declares(file: string, name: string): boolean {
@@ -169,25 +223,40 @@ class PathResolver {
 
 const internal = (target: string): Located => ({ resolution: 'internal', target })
 
+type Visiting = ReadonlySet<string>
+const NONE: Visiting = new Set()
+
+const sameScope = (left: readonly string[], right: readonly string[]): boolean =>
+  left.length === right.length && left.every((name, index) => name === right[index])
+
 const ALIAS = ' as '
 
 /** The path a use leaf names, without the `as` alias it binds. */
 const leafPath = (leaf: string): string => leaf.split(ALIAS)[0]!
 
-/** The names a file module makes available to paths through it; a glob `use` may bind any. */
+/**
+ * The names a file module makes available to paths through it: the items it declares, and
+ * each name a file-level `use` binds with the paths bound to it; globs are bound to `*`.
+ */
 interface Provided {
-  readonly names: ReadonlySet<string>
-  readonly glob: boolean
+  readonly declared: ReadonlySet<string>
+  readonly bound: ReadonlyMap<string, readonly string[]>
 }
 
+const GLOB = '*'
+
 function providedBy(facts: ModuleFacts): Provided {
-  const bound = facts.imports
+  const leaves = facts.imports
     .filter((entry) => entry.form !== 'mod' && (entry.scope ?? []).length === 0)
     .flatMap((entry) => entry.names ?? [entry.specifier ?? ''])
-    .map(boundName)
+  const bound = new Map<string, string[]>()
+  for (const leaf of leaves) {
+    const name = boundName(leaf)
+    bound.set(name, [...(bound.get(name) ?? []), leafPath(leaf)])
+  }
   return {
-    names: new Set([...facts.symbols.map((symbol) => symbol.name), ...bound]),
-    glob: bound.includes('*'),
+    declared: new Set(facts.symbols.map((symbol) => symbol.name)),
+    bound,
   }
 }
 

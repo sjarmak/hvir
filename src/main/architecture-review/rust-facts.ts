@@ -8,7 +8,7 @@ import { lineOf, syntaxDiagnostics } from './tree-sitter-syntax'
  * Bump whenever what `parseRustFacts` extracts changes. The scanner version adds a digest of
  * the runtime and grammar bytes, so a grammar upgrade changes it on its own.
  */
-export const RUST_FACTS_REVISION = 'rust-facts-2'
+export const RUST_FACTS_REVISION = 'rust-facts-3'
 
 type ModuleSymbol = ArchitectureModule['symbols'][number]
 
@@ -117,11 +117,16 @@ function inlineScope(node: Node): string[] {
   return scope
 }
 
-/** The `#[path = "..."]` among the attributes written directly above a declaration. */
+const COMMENTS: ReadonlySet<string> = new Set(['line_comment', 'block_comment'])
+
+/**
+ * The `#[path = "..."]` among the attributes written directly above a declaration; doc and
+ * plain comments between them do not separate an attribute from its item.
+ */
 function pathAttributeOf(node: Node): string | undefined {
   for (
     let sibling = node.previousNamedSibling;
-    sibling?.type === 'attribute_item';
+    sibling && (sibling.type === 'attribute_item' || COMMENTS.has(sibling.type));
     sibling = sibling.previousNamedSibling
   ) {
     const attribute = sibling.namedChildren.find((child) => child?.type === 'attribute')
