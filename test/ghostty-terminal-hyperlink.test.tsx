@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { ILink, Terminal } from 'ghostty-web'
 
-import { FileLinkProvider } from '../src/renderer/src/terminal/ghostty-terminal-pane'
+import { FileLinkProvider } from '../src/renderer/src/terminal/ghostty-terminal-file-link-provider'
 
 function line(
   ids: readonly number[],
