@@ -88,8 +88,30 @@ working tree. Two commits can never go stale; a snapshot whose current end is th
 is stale once that tree differs from what was read.
 _Avoid_: before/after (presentation words for the two sides), source/target, left/right
 
+**System**:
+The top level of a project's structure: a named group of subsystems that runs or ships as one
+part, such as the desktop app, the Companion page, or a background worker. Inferred from the
+project's own layout unless the person names them.
+_Avoid_: container, application, service, tier, layer
+
 **Subsystem**:
 The unit the review compares structure at: a named group of modules whose imports of one
 another are counted as one relationship. Modules and their individual imports are the
 evidence beneath it.
 _Avoid_: group, directory, package, area, layer
+
+**Module**:
+One source file as the review sees it: the smallest box, whose imports are the evidence for
+the relationships above it.
+_Avoid_: component, file (the bytes, not the unit), unit
+
+**Live review**:
+An architecture review that follows the working tree, taking a new snapshot each time the
+tree settles after writes, so the person watches structure change while an agent works.
+_Avoid_: watch mode, auto-refresh, live snapshot (a snapshot never changes)
+
+**Explanation**:
+An agent's written account of one snapshot: what changed and why, in its own words and
+diagrams. It is the agent's claim, shown apart from what the scan observed, and any system,
+subsystem or module it names that the snapshot lacks is flagged.
+_Avoid_: summary, review (the review is the person's), description, narrative

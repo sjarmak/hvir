@@ -691,14 +691,24 @@ upstream GitHub provenance and blocking source/dependency checks retain their au
 
 ### [ADR-063 — Architecture review over history, with agent worktrees](adr/ADR-063-architecture-review-history-and-agent-worktrees.md)
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-061](adr/ADR-061-pinned-native-architecture-review.md) | partial | The fixed comparison modes, the full recapture on revalidation, and the read-only single-file handoff consumed once per snapshot; pinned evidence, worker isolation, and launch authority remain.
 > Supersedes: [ADR-005](adr/ADR-005-system-git-engine.md) | partial | Creating no branch at all; the architecture review creates one hvir/architecture/ branch per agent launch.
 > Supersedes: [ADR-008](adr/ADR-008-project-worktree-workspaces.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
+> Superseded by: [ADR-064](adr/ADR-064-architecture-review-as-a-live-zoomable-canvas.md) | partial | The map opening on subsystem relationships in a fixed grid; it now opens on systems on a laid-out canvas that drills to subsystems and modules.
 
 A snapshot compares any two refs or a ref and the live tree from Git objects through a blob-keyed
 parse cache, opens on subsystem relationships across TypeScript, Python, Go and Rust, and hands
 an agent a worktree hvir owns so the review can re-snapshot the agent's change.
+
+### [ADR-064 — Architecture review as a live, zoomable canvas](adr/ADR-064-architecture-review-as-a-live-zoomable-canvas.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-063](adr/ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | The map opening on subsystem relationships in a fixed grid; it now opens on systems on a laid-out canvas that drills to subsystems and modules.
+
+The map becomes a pan and zoom canvas of Systems, Subsystems and Modules laid out off the render
+thread, a live review follows the working tree as a series of snapshots, and an agent's
+Explanation of a snapshot is shown as a claim beside what the scan observed.
 
 ## 5. Architecture
 

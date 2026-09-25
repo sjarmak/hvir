@@ -1,9 +1,10 @@
 # ADR-063: Architecture review over history, with agent worktrees
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-061](ADR-061-pinned-native-architecture-review.md) | partial | The fixed comparison modes, the full recapture on revalidation, and the read-only single-file handoff consumed once per snapshot; pinned evidence, worker isolation, and launch authority remain.
 > Supersedes: [ADR-005](ADR-005-system-git-engine.md) | partial | Creating no branch at all; the architecture review creates one hvir/architecture/ branch per agent launch.
 > Supersedes: [ADR-008](ADR-008-project-worktree-workspaces.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
+> Superseded by: [ADR-064](ADR-064-architecture-review-as-a-live-zoomable-canvas.md) | partial | The map opening on subsystem relationships in a fixed grid; it now opens on systems on a laid-out canvas that drills to subsystems and modules.
 
 ## Context
 
