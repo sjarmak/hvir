@@ -9,6 +9,10 @@ import type { ArchitectureScopeRefusal } from '../src/shared/architecture-scope'
 import { analyzeArchitecture } from '../src/main/architecture-review/analysis'
 import { ArchitectureReview } from '../src/renderer/src/architecture-review/ArchitectureReview'
 
+vi.mock('../src/renderer/src/architecture-review/architecture-layout-client', () => ({
+  requestArchitectureLayout: () => new Promise(() => undefined),
+}))
+
 const root = localPath('/repo')
 const files = { scope: '.', exclusions: [], files: [] }
 const snapshot = (scope: readonly string[]) => ({

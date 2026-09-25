@@ -138,70 +138,92 @@
   max-width: 65ch;
   line-height: 1.5;
 }
-.architecture-map-scroll {
-  overflow: auto;
-  max-height: 420px;
-  border-block: 1px solid var(--border-subtle);
-}
-.architecture-map-expanded .architecture-map-scroll {
-  flex: 0 0 70%;
-  min-height: 0;
-  max-height: none;
-}
 .architecture-map-canvas {
-  width: 580px;
-  position: relative;
+  width: 100%;
+  height: 420px;
+  border-block: 1px solid var(--border-subtle);
+  background: var(--surface-1);
 }
-.architecture-map-canvas svg {
-  position: absolute;
-  inset: 0;
-  color: var(--text-muted);
-  pointer-events: none;
+.architecture-map-expanded .architecture-map-canvas {
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
-.architecture-map-edge {
-  stroke: var(--border-strong);
-  stroke-width: 1.5;
-  fill: none;
-}
-.architecture-map-edge.change-added,
-.architecture-map-edge.change-changed {
-  stroke: var(--accent);
-}
-.architecture-map-edge.change-removed {
-  stroke: var(--danger-text);
-  stroke-dasharray: 4 4;
-}
-.architecture-review .architecture-subsystem {
-  position: absolute;
-  width: 244px;
-  height: 60px;
-  text-align: left;
-  padding: 8px 10px;
+.architecture-review .react-flow__controls button {
+  border: 0;
+  border-radius: 0;
+  color: var(--text);
   background: var(--surface-raised);
 }
-.architecture-subsystem strong {
+.architecture-review .react-flow__controls button svg {
+  fill: currentColor;
+}
+.architecture-review .react-flow__background {
+  fill: var(--border-subtle);
+}
+.architecture-review .architecture-canvas-node {
+  box-sizing: border-box;
+  width: 244px;
+  min-height: 64px;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--text);
+}
+.architecture-review .architecture-canvas-module {
+  width: 220px;
+  min-height: 52px;
+  background: var(--surface-1);
+}
+.architecture-canvas-node strong {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-strong);
 }
-.architecture-subsystem span {
+.architecture-canvas-node span {
   display: block;
   margin-top: 4px;
   font-size: calc(11px * var(--hvir-interface-scale));
   color: var(--text-muted);
 }
-.architecture-subsystem.nearby {
+.architecture-canvas-node.nearby {
   background: var(--surface-1);
 }
-.architecture-subsystem.absent {
-  opacity: 0.5;
-  border-style: dashed;
+.architecture-canvas-node.change-added {
+  border-color: var(--success-text);
 }
-.architecture-review .architecture-subsystem[aria-pressed='true'] {
+.architecture-canvas-node.change-changed {
+  border-color: var(--warning-text);
+}
+.architecture-canvas-node.change-removed,
+.architecture-canvas-node.ghost {
+  border-color: var(--danger-text);
+  border-style: dashed;
+  opacity: 0.62;
+}
+.architecture-review .architecture-canvas-node.selected {
   border-color: var(--accent);
   background: var(--surface-active);
+}
+.architecture-canvas-edge .react-flow__edge-path {
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+}
+.architecture-canvas-edge.change-added .react-flow__edge-path {
+  stroke: var(--success-text);
+}
+.architecture-canvas-edge.change-changed .react-flow__edge-path {
+  stroke: var(--warning-text);
+}
+.architecture-canvas-edge.change-removed .react-flow__edge-path,
+.architecture-canvas-edge.ghost .react-flow__edge-path {
+  stroke: var(--danger-text);
+  stroke-dasharray: 5 5;
+  opacity: 0.62;
 }
 .architecture-review .architecture-module {
   display: flex;
@@ -367,8 +389,8 @@
     border-left: 0;
     border-top: 1px solid var(--border-subtle);
   }
-  .architecture-map-scroll {
-    max-height: 280px;
+  .architecture-map-canvas {
+    height: 320px;
   }
 }
 .architecture-review-body:has(.architecture-map-expanded) {

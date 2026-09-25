@@ -4,6 +4,7 @@ import {
   type ArchitectureImportDelta,
   type ArchitectureLayout,
   type ArchitectureModuleDelta,
+  type ArchitectureRelationshipDelta,
 } from '../../../shared'
 
 export type ArchitectureMapMode = 'overlay' | 'before' | 'after'
@@ -13,10 +14,8 @@ export interface ArchitectureSubsystem {
   readonly modules: readonly ArchitectureModuleDelta[]
   readonly changed: number
   readonly nearby: boolean
-  readonly x: number
-  readonly y: number
+  readonly change: ArchitectureModuleDelta['change']
 }
-/** Layout depends on the captured union, never the selected comparison view. */
 export function subsystemMap(analysis: ArchitectureAnalysis, all: boolean) {
   const changed = new Set(
     analysis.modules.filter((m) => m.change !== 'unchanged').map((m) => m.subsystem),
@@ -46,18 +45,20 @@ export function subsystemMap(analysis: ArchitectureAnalysis, all: boolean) {
   const ids = [...visible].sort(
     (a, b) => Number(relevant.has(b)) - Number(relevant.has(a)) || a.localeCompare(b),
   )
-  const nodes: ArchitectureSubsystem[] = ids.slice(0, 40).map((id, index) => ({
-    id,
-    modules: [...(members.get(id) ?? [])].sort(
+  const nodes: ArchitectureSubsystem[] = ids.slice(0, 40).map((id) => {
+    const modules = [...(members.get(id) ?? [])].sort(
       (a, b) =>
         Number(b.change !== 'unchanged') - Number(a.change !== 'unchanged') ||
         a.path.localeCompare(b.path),
-    ),
-    changed: members.get(id)?.filter((m) => m.change !== 'unchanged').length ?? 0,
-    nearby: !relevant.has(id),
-    x: (index % 2) * 290 + 16,
-    y: Math.floor(index / 2) * 104 + 16,
-  }))
+    )
+    return {
+      id,
+      modules,
+      changed: modules.filter((module) => module.change !== 'unchanged').length,
+      nearby: !relevant.has(id),
+      change: combinedChange(modules.map((module) => module.change)),
+    }
+  })
   const shown = new Set(nodes.map((n) => n.id))
   const relationships = analysis.relationships
     .filter((r) => shown.has(r.source) && shown.has(r.target))
@@ -67,12 +68,165 @@ export function subsystemMap(analysis: ArchitectureAnalysis, all: boolean) {
         a.source.localeCompare(b.source) ||
         a.target.localeCompare(b.target),
     )
+  const layoutIds = [
+    ...new Set([
+      ...analysis.modules.map((module) => module.subsystem),
+      ...analysis.relationships.flatMap((relationship) => [
+        relationship.source,
+        relationship.target,
+      ]),
+    ]),
+  ].sort((left, right) => left.localeCompare(right))
+  const layoutRelationships = [...analysis.relationships].sort(
+    (left, right) =>
+      left.source.localeCompare(right.source) || left.target.localeCompare(right.target),
+  )
+  const layoutModules = [...analysis.modules].sort((left, right) =>
+    left.path.localeCompare(right.path),
+  )
   return {
     nodes,
     relationships: relationships.slice(0, 120),
+    layoutIds,
+    layoutRelationships,
+    layoutModules,
     omittedNodes: Math.max(0, ids.length - nodes.length),
     omittedRelationships: Math.max(0, relationships.length - 120),
   }
+}
+
+export interface ArchitectureCanvasNode {
+  readonly id: string
+  readonly label: string
+  readonly detail: string
+  readonly kind: 'subsystem' | 'module'
+  readonly change: ArchitectureModuleDelta['change']
+  readonly ghost: boolean
+  readonly nearby: boolean
+  readonly path?: string
+}
+
+export interface ArchitectureCanvasEdge {
+  readonly id: string
+  readonly source: string
+  readonly target: string
+  readonly change: ArchitectureModuleDelta['change']
+  readonly ghost: boolean
+  readonly relationship?: ArchitectureRelationshipDelta
+}
+
+export interface ArchitectureCanvasLayoutInput {
+  readonly nodes: readonly {
+    readonly id: string
+    readonly width: number
+    readonly height: number
+  }[]
+  readonly edges: readonly {
+    readonly id: string
+    readonly source: string
+    readonly target: string
+  }[]
+}
+
+export function architectureCanvasElements(
+  map: ReturnType<typeof subsystemMap>,
+  mode: ArchitectureMapMode,
+  expandedSubsystem?: string,
+): {
+  readonly nodes: readonly ArchitectureCanvasNode[]
+  readonly edges: readonly ArchitectureCanvasEdge[]
+  readonly layout: ArchitectureCanvasLayoutInput
+} {
+  const subsystemNodes = map.nodes.map((node) => ({
+    id: node.id,
+    label: node.id,
+    detail: node.modules.length
+      ? `${node.changed} changed · ${node.modules.length} files`
+      : 'External or unresolved import',
+    kind: 'subsystem' as const,
+    change: node.change,
+    ghost: absentInMode(node.change, mode),
+    nearby: node.nearby,
+  }))
+  const expanded = map.nodes.find((node) => node.id === expandedSubsystem)
+  const moduleNodes = (expanded?.modules ?? []).slice(0, 200).map((module) => ({
+    id: `module:${module.path}`,
+    label: module.path,
+    detail: moduleChangeLabel(module.change),
+    kind: 'module' as const,
+    change: module.change,
+    ghost: absentInMode(module.change, mode),
+    nearby: false,
+    path: module.path,
+  }))
+  const relationshipEdges = map.relationships.map((relationship) => ({
+    id: `relationship:${relationship.source}:${relationship.target}`,
+    source: relationship.source,
+    target: relationship.target,
+    change: relationship.change,
+    ghost: absentInMode(relationship.change, mode),
+    relationship,
+  }))
+  const membershipEdges = moduleNodes.map((node) => ({
+    id: `membership:${expandedSubsystem}:${node.id}`,
+    source: expandedSubsystem!,
+    target: node.id,
+    change: node.change,
+    ghost: node.ghost,
+  }))
+  const layoutModuleNodes = map.layoutModules
+    .filter((module) => module.subsystem === expandedSubsystem)
+    .slice(0, 200)
+    .map((module) => ({ id: `module:${module.path}`, width: 220, height: 52 }))
+  const layoutMembershipEdges = layoutModuleNodes.map((node) => ({
+    id: `membership:${expandedSubsystem}:${node.id}`,
+    source: expandedSubsystem!,
+    target: node.id,
+  }))
+  const nodes = [...subsystemNodes, ...moduleNodes]
+  const edges = [...relationshipEdges, ...membershipEdges]
+  return {
+    nodes,
+    edges,
+    layout: {
+      nodes: [
+        ...map.layoutIds.map((id) => ({ id, width: 244, height: 64 })),
+        ...layoutModuleNodes,
+      ],
+      edges: [
+        ...map.layoutRelationships.map(({ source, target }) => ({
+          id: `relationship:${source}:${target}`,
+          source,
+          target,
+        })),
+        ...layoutMembershipEdges,
+      ],
+    },
+  }
+}
+
+function combinedChange(
+  changes: readonly ArchitectureModuleDelta['change'][],
+): ArchitectureModuleDelta['change'] {
+  if (changes.length === 0 || changes.every((change) => change === 'unchanged'))
+    return 'unchanged'
+  if (changes.every((change) => change === 'added')) return 'added'
+  if (changes.every((change) => change === 'removed')) return 'removed'
+  return 'changed'
+}
+
+function absentInMode(
+  change: ArchitectureModuleDelta['change'],
+  mode: ArchitectureMapMode,
+): boolean {
+  return (
+    (mode === 'before' && change === 'added') ||
+    (mode === 'after' && change === 'removed')
+  )
+}
+
+function moduleChangeLabel(change: ArchitectureModuleDelta['change']): string {
+  return change[0]!.toUpperCase() + change.slice(1)
 }
 
 export interface ArchitectureModuleEvidence {
