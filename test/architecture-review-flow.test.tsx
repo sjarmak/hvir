@@ -13,6 +13,9 @@ import { claimArchitectureAgentLaunch } from '../src/renderer/src/architecture-r
 vi.mock('../src/renderer/src/viewer/DiffView', () => ({
   DiffView: () => <div data-testid="captured-diff" />,
 }))
+vi.mock('../src/renderer/src/architecture-review/architecture-layout-client', () => ({
+  requestArchitectureLayout: () => new Promise(() => undefined),
+}))
 const root = localPath('/repo')
 const analysis = analyzeArchitecture(
   { scope: '.', exclusions: [], files: [] },

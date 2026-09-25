@@ -5,6 +5,10 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ArchitectureMap } from '../src/renderer/src/architecture-review/ArchitectureMap'
 import { analyzeArchitecture } from '../src/main/architecture-review/analysis'
 
+vi.mock('../src/renderer/src/architecture-review/architecture-layout-client', () => ({
+  requestArchitectureLayout: () => new Promise(() => undefined),
+}))
+
 const before = {
   scope: '.',
   exclusions: [],
@@ -58,7 +62,7 @@ it('keeps subsystem positions and opens exact side-specific import evidence', ()
   )
   expect(evidence.mock.calls.at(-1)?.[2]).toBe('before')
   const positions = Array.from(
-    container.querySelectorAll<HTMLElement>('.architecture-subsystem'),
+    container.querySelectorAll<HTMLElement>('.architecture-canvas-node'),
   ).map((n) => n.style.cssText)
   let buttons = Array.from(
     container.querySelectorAll<HTMLButtonElement>('.architecture-relationship button'),
@@ -70,7 +74,7 @@ it('keeps subsystem positions and opens exact side-specific import evidence', ()
   expect(evidence).toHaveBeenLastCalledWith('ui/a.ts', 2, 'before')
   render('after')
   expect(
-    Array.from(container.querySelectorAll<HTMLElement>('.architecture-subsystem')).map(
+    Array.from(container.querySelectorAll<HTMLElement>('.architecture-canvas-node')).map(
       (n) => n.style.cssText,
     ),
   ).toEqual(positions)
@@ -122,19 +126,31 @@ it('offers an expanded map and makes file status scannable without color', () =>
   expect(map.classList.contains('architecture-map-expanded')).toBe(false)
 })
 
-it('opens on subsystem relationships and drills to modules, then their imports', () => {
+it('expands subsystem modules in the canvas and preserves relationship evidence', () => {
+  const evidence = vi.fn()
   act(() =>
     root.render(
       <ArchitectureMap
         analysis={analysis}
         mode="overlay"
         onMode={() => undefined}
-        onEvidence={() => undefined}
+        onEvidence={evidence}
       />,
     ),
   )
+  const subsystem = container.querySelector<HTMLElement>(
+    '[aria-label^="subsystem data"]',
+  )!
+  act(() => subsystem.click())
+  expect(container.querySelectorAll('.architecture-canvas-module')).toHaveLength(3)
+  act(() =>
+    container.querySelector<HTMLElement>('[aria-label^="module data/old.ts"]')!.click(),
+  )
+  expect(evidence).toHaveBeenLastCalledWith('data/old.ts', 1, 'before')
   const relationships = container.querySelector('[aria-label="Subsystem relationships"]')!
-  expect(relationships.querySelector('h3')?.textContent).toBe('Subsystem relationships')
+  expect(relationships.querySelector('h3')?.textContent).toBe(
+    'Subsystem relationships involving data',
+  )
   const relationship = relationships.querySelector('.architecture-relationship')!
   expect(relationship.querySelector('summary')?.textContent).toContain('ui → data')
   const module = relationship.querySelector('[aria-label="Imports in ui/a.ts"]')!

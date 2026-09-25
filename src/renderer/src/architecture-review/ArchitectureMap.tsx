@@ -1,14 +1,21 @@
+import { useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import {
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactElement,
-} from 'react'
-import type { ArchitectureAnalysis, ArchitectureRelationshipDelta } from '../../../shared'
-import { subsystemMap, type ArchitectureMapMode } from './architecture-review-model'
+  Background,
+  Controls,
+  MarkerType,
+  ReactFlow,
+  type Edge,
+  type Node,
+} from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
+import type { ArchitectureAnalysis } from '../../../shared'
+import {
+  architectureCanvasElements,
+  subsystemMap,
+  type ArchitectureMapMode,
+} from './architecture-review-model'
 import { ArchitectureRelationships } from './ArchitectureRelationships'
+import { useArchitectureLayout } from './use-architecture-layout'
 interface Props {
   readonly analysis: ArchitectureAnalysis
   readonly mode: ArchitectureMapMode
@@ -21,7 +28,6 @@ export function ArchitectureMap({
   onMode,
   onEvidence,
 }: Props): ReactElement {
-  const markerId = useId()
   const [all, setAll] = useState(false)
   const [selected, setSelected] = useState<string>()
   const [expanded, setExpanded] = useState(false)
@@ -34,13 +40,66 @@ export function ArchitectureMap({
     onEvidence(path, line, side)
   }
   const map = useMemo(() => subsystemMap(analysis, all), [analysis, all])
+  const elements = useMemo(
+    () => architectureCanvasElements(map, mode, selected),
+    [map, mode, selected],
+  )
+  const layoutInput = useMemo(
+    () => architectureCanvasElements(map, 'overlay', selected).layout,
+    [map, selected],
+  )
+  const layout = useArchitectureLayout(layoutInput)
+  const nodes = useMemo<readonly Node[]>(
+    () =>
+      elements.nodes.map((node, index) => ({
+        id: node.id,
+        position: layout.positions.get(node.id) ?? {
+          x: (index % 2) * 288,
+          y: Math.floor(index / 2) * 96,
+        },
+        data: {
+          label: (
+            <>
+              <strong>{node.label}</strong>
+              <span>{node.detail}</span>
+            </>
+          ),
+        },
+        className: [
+          'architecture-canvas-node',
+          `architecture-canvas-${node.kind}`,
+          `change-${node.change}`,
+          node.ghost ? 'ghost' : '',
+          node.nearby ? 'nearby' : '',
+          selected === node.id ? 'selected' : '',
+        ]
+          .filter(Boolean)
+          .join(' '),
+        draggable: false,
+        selectable: true,
+        ariaLabel: `${node.kind} ${node.label}, ${node.detail}`,
+      })),
+    [elements.nodes, layout.positions, selected],
+  )
+  const edges = useMemo<readonly Edge[]>(
+    () =>
+      elements.edges.map((edge) => ({
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        className: `architecture-canvas-edge change-${edge.change}${edge.ghost ? ' ghost' : ''}`,
+        markerEnd: { type: MarkerType.ArrowClosed },
+        selectable: Boolean(edge.relationship),
+        ariaLabel: edge.relationship
+          ? `${edge.relationship.source} to ${edge.relationship.target}, ${edge.change}`
+          : undefined,
+      })),
+    [elements.edges],
+  )
   const node = map.nodes.find((n) => n.id === selected)
   const links = map.relationships.filter(
     (r) => !selected || r.source === selected || r.target === selected,
   )
-  const height = Math.max(104, Math.ceil(map.nodes.length / 2) * 104 + 16)
-  const present = (r: ArchitectureRelationshipDelta) =>
-    mode === 'overlay' || (mode === 'before' ? r.before > 0 : r.after > 0)
   return (
     <div
       ref={mapElement}
@@ -82,9 +141,8 @@ export function ArchitectureMap({
         </label>
       </div>
       <p className="architecture-map-note">
-        Each node is a subsystem. Lines are observed imports between subsystems, not
-        responsibility claims. Select a subsystem to narrow the relationships and list its
-        modules.
+        Each top-level node is a subsystem. Lines are observed imports, not responsibility
+        claims. Select a subsystem to expand its modules in place.
       </p>
       {map.nodes.length === 0 ? (
         <p>
@@ -92,67 +150,38 @@ export function ArchitectureMap({
           captured files.
         </p>
       ) : null}
-      <div className="architecture-map-scroll">
-        <div className="architecture-map-canvas" style={{ height }}>
-          <svg width="580" height={height} aria-hidden="true">
-            <defs>
-              <marker
-                id={markerId}
-                viewBox="0 0 10 10"
-                refX="9"
-                refY="5"
-                markerWidth="6"
-                markerHeight="6"
-                orient="auto-start-reverse"
-              >
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor" />
-              </marker>
-            </defs>
-            {map.relationships.filter(present).map((r) => {
-              const from = map.nodes.find((n) => n.id === r.source)!
-              const to = map.nodes.find((n) => n.id === r.target)!
-              return (
-                <path
-                  key={JSON.stringify([r.source, r.target])}
-                  className={`architecture-map-edge change-${r.change}`}
-                  d={`M ${from.x + 122} ${from.y + 60} C ${from.x + 122} ${from.y + 92}, ${to.x + 122} ${to.y - 22}, ${to.x + 122} ${to.y}`}
-                  markerEnd={`url(#${markerId})`}
-                />
+      <div className="architecture-map-canvas" aria-label="Architecture canvas">
+        <ReactFlow
+          nodes={[...nodes]}
+          edges={[...edges]}
+          fitView
+          minZoom={0.2}
+          maxZoom={2}
+          nodesDraggable={false}
+          onNodeClick={(_, clicked) => {
+            const canvasNode = elements.nodes.find((item) => item.id === clicked.id)
+            if (canvasNode?.path) {
+              openEvidence(
+                canvasNode.path,
+                1,
+                mode === 'before' || canvasNode.change === 'removed' ? 'before' : 'after',
               )
-            })}
-          </svg>
-          {map.nodes.map((n) => {
-            const absent =
-              n.modules.length > 0 &&
-              n.modules.every((m) =>
-                mode === 'before'
-                  ? m.change === 'added'
-                  : mode === 'after'
-                    ? m.change === 'removed'
-                    : false,
-              )
-            return (
-              <button
-                key={n.id}
-                type="button"
-                className={`architecture-subsystem ${n.nearby ? 'nearby' : ''} ${absent ? 'absent' : ''}`}
-                style={{ left: n.x, top: n.y }}
-                aria-pressed={selected === n.id}
-                onClick={() => setSelected(selected === n.id ? undefined : n.id)}
-              >
-                <strong>{n.id}</strong>
-                <span>
-                  {absent
-                    ? `Absent ${mode}`
-                    : n.modules.length
-                      ? `${n.changed} changed · ${n.modules.length} files`
-                      : 'External or unresolved import'}
-                </span>
-              </button>
-            )
-          })}
-        </div>
+            } else {
+              setSelected(selected === clicked.id ? undefined : clicked.id)
+            }
+          }}
+          onEdgeClick={(_, clicked) => {
+            const relationship = elements.edges.find(
+              (item) => item.id === clicked.id,
+            )?.relationship
+            if (relationship) setSelected(relationship.source)
+          }}
+        >
+          <Background />
+          <Controls showInteractive={false} />
+        </ReactFlow>
       </div>
+      {layout.error ? <p role="alert">Layout unavailable: {layout.error}</p> : null}
       {map.omittedNodes || map.omittedRelationships ? (
         <p role="status">
           Map limit: {map.omittedNodes} additional subsystems and{' '}
@@ -161,27 +190,11 @@ export function ArchitectureMap({
         </p>
       ) : null}
       <ArchitectureRelationships
-        relationships={links.filter(present)}
+        relationships={links}
         mode={mode}
         subsystem={node?.id}
         onEvidence={openEvidence}
       />
-      {node ? (
-        <section
-          className="architecture-module-list"
-          aria-label={`Modules in ${node.id}`}
-        >
-          <h3>{node.id}</h3>
-          <ModuleGroups
-            modules={node.modules.slice(0, 200)}
-            mode={mode}
-            onEvidence={openEvidence}
-          />
-          {node.modules.length > 200 ? (
-            <p>Showing 200 files. Use file search below for the rest.</p>
-          ) : null}
-        </section>
-      ) : null}
       <ArchitectureFiles analysis={analysis} mode={mode} onEvidence={openEvidence} />
     </div>
   )
