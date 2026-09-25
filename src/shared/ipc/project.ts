@@ -49,6 +49,11 @@ export type PruneProjectWorktreesRequest = RefreshProjectRequest
 
 export type DismissWorkspaceRequest = SwitchWorkspaceRequest
 
+export type UnfinishedHandoffsRequest = PruneProjectWorktreesRequest
+
+/** Removes one worktree an interrupted architecture handoff left behind (ADR-063). */
+export type RemoveUnfinishedHandoffRequest = SwitchWorkspaceRequest
+
 export type AcknowledgeWorkspaceRequest = SwitchWorkspaceRequest
 
 export type PlanWorkspaceCloseRequest = SwitchWorkspaceRequest
@@ -169,6 +174,15 @@ export const projectIpc = {
       OperationResult<ProjectState>
     >(),
     'workspace:dismiss': invoke<DismissWorkspaceRequest, OperationResult<ProjectState>>(),
+    /** Workspace ids of the project's unfinished handoffs, judged from disk and Git. */
+    'workspace:unfinished-handoffs': invoke<
+      UnfinishedHandoffsRequest,
+      OperationResult<readonly string[]>
+    >(),
+    'workspace:remove-unfinished-handoff': invoke<
+      RemoveUnfinishedHandoffRequest,
+      OperationResult<ProjectState>
+    >(),
     'workspace:plan-close': invoke<
       PlanWorkspaceCloseRequest,
       OperationResult<WorkspaceClosePlan>

@@ -48,6 +48,7 @@ describe('missing workspace removal flow', () => {
     const htmlPreviews = new Set<string>()
     const cleanupOrder: string[] = []
     const removal = new WorkspaceRemovalCoordinator(registry, {
+      workspaceTerminalIds: () => [],
       forgetWorkspaceSessions: (candidate) => {
         cleanupOrder.push('forget-sessions')
         sessions.delete(candidate.path)

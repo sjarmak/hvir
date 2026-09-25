@@ -10,7 +10,16 @@ import { GIT_FETCH_ARGS, GIT_PULL_ARGS } from './git-engine'
 import { isHvirWorktreeTarget, type HvirWorktreeTarget } from './hvir-worktrees'
 
 export type GitMutationKind =
-  'worktree-prune' | 'worktree-add' | 'branch-switch' | 'fetch' | 'pull'
+  | 'worktree-prune'
+  | 'worktree-add'
+  | 'worktree-remove'
+  | 'branch-delete'
+  | 'branch-switch'
+  | 'fetch'
+  | 'pull'
+
+/** Kinds whose grant names one hvir-owned handoff worktree (ADR-063). */
+type HvirWorktreeKind = 'worktree-add' | 'worktree-remove' | 'branch-delete'
 
 export type GitMutationGrantRequest =
   | {
@@ -20,14 +29,18 @@ export type GitMutationGrantRequest =
       readonly target: string
     }
   | {
-      /** Creates the one worktree a review handoff owns (ADR-063). */
-      readonly kind: 'worktree-add'
+      /**
+       * Creates the one worktree a review handoff owns, or removes it and then deletes
+       * its branch at its creation commit when the person removes an unfinished handoff
+       * (ADR-063).
+       */
+      readonly kind: HvirWorktreeKind
       readonly projectId: string
       readonly root: HostPath
       readonly target: HvirWorktreeTarget
     }
   | {
-      readonly kind: Exclude<GitMutationKind, 'branch-switch' | 'worktree-add'>
+      readonly kind: Exclude<GitMutationKind, 'branch-switch' | HvirWorktreeKind>
       readonly projectId: string
       readonly root: HostPath
       readonly target?: never
@@ -42,6 +55,8 @@ export interface GitMutationAuthority {
 export interface GitHostCallPermissions {
   readonly allowWorktreePrune?: boolean
   readonly allowWorktreeAdd?: HvirWorktreeTarget
+  readonly allowWorktreeRemove?: HvirWorktreeTarget
+  readonly allowBranchDelete?: HvirWorktreeTarget
   readonly allowBranchSwitch?: string
   readonly allowFetch?: boolean
   readonly allowPull?: boolean
@@ -240,6 +255,13 @@ function workerMutation(call: WorkerHostCall): WorkerMutation | undefined {
     const [, , , branch = '', path = '', commit = ''] = command
     return { kind: 'worktree-add', root, target: worktreeKey({ branch, path, commit }) }
   }
+  if (command.length === 3 && command[0] === 'worktree' && command[1] === 'remove') {
+    return { kind: 'worktree-remove', root, target: JSON.stringify([command[2]]) }
+  }
+  if (command.length === 4 && command[0] === 'update-ref' && command[1] === '-d') {
+    const [, , ref = '', commit = ''] = command
+    return { kind: 'branch-delete', root, target: JSON.stringify([ref, commit]) }
+  }
   if (sameArgs(command, GIT_FETCH_ARGS)) return { kind: 'fetch', root }
   if (sameArgs(command, GIT_PULL_ARGS)) return { kind: 'pull', root }
   if (
@@ -259,6 +281,10 @@ function permissions(request: GitMutationGrantRequest): GitHostCallPermissions {
       return { allowWorktreePrune: true }
     case 'worktree-add':
       return { allowWorktreeAdd: request.target }
+    case 'worktree-remove':
+      return { allowWorktreeRemove: request.target }
+    case 'branch-delete':
+      return { allowBranchDelete: request.target }
     case 'branch-switch':
       return { allowBranchSwitch: request.target }
     case 'fetch':
@@ -300,14 +326,14 @@ function validateGrantRequest(request: GitMutationGrantRequest): void {
     throw new Error('Invalid Git mutation target')
   }
   if (
-    request.kind === 'worktree-add' &&
+    isHvirWorktreeKind(request.kind) &&
     !isHvirWorktreeTarget(request.root.path, request.target)
   ) {
     throw new Error('Invalid Git mutation target')
   }
   if (
     request.kind !== 'branch-switch' &&
-    request.kind !== 'worktree-add' &&
+    !isHvirWorktreeKind(request.kind) &&
     request.target !== undefined
   ) {
     throw new Error('Invalid Git mutation target')
@@ -317,10 +343,16 @@ function validateGrantRequest(request: GitMutationGrantRequest): void {
 function isGitMutationKind(value: string): value is GitMutationKind {
   return (
     value === 'worktree-prune' ||
-    value === 'worktree-add' ||
+    isHvirWorktreeKind(value) ||
     value === 'branch-switch' ||
     value === 'fetch' ||
     value === 'pull'
+  )
+}
+
+function isHvirWorktreeKind(value: string): value is HvirWorktreeKind {
+  return (
+    value === 'worktree-add' || value === 'worktree-remove' || value === 'branch-delete'
   )
 }
 
@@ -329,12 +361,25 @@ function grantKey(request: GitMutationGrantRequest): string {
     request.projectId,
     request.root,
     request.kind,
-    request.kind === 'branch-switch'
-      ? request.target
-      : request.kind === 'worktree-add'
-        ? worktreeKey(request.target)
-        : undefined,
+    request.kind === 'branch-switch' ? request.target : hvirTargetKey(request),
   )
+}
+
+/** The grant key part the matching worker argv reproduces in `workerMutation`. */
+function hvirTargetKey(request: GitMutationGrantRequest): string | undefined {
+  switch (request.kind) {
+    case 'worktree-add':
+      return worktreeKey(request.target)
+    case 'worktree-remove':
+      return JSON.stringify([request.target.path])
+    case 'branch-delete':
+      return JSON.stringify([
+        `refs/heads/${request.target.branch}`,
+        request.target.commit,
+      ])
+    default:
+      return undefined
+  }
 }
 
 function worktreeKey(target: HvirWorktreeTarget): string {
@@ -352,7 +397,7 @@ function exactGrantKey(
     root.hostId,
     root.path,
     kind,
-    kind === 'branch-switch' || kind === 'worktree-add' ? target : null,
+    kind === 'branch-switch' || isHvirWorktreeKind(kind) ? target : null,
   ])
 }
 

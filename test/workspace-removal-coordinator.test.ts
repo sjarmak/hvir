@@ -40,6 +40,7 @@ describe('WorkspaceRemovalCoordinator', () => {
           },
         },
         {
+          workspaceTerminalIds: () => [],
           forgetWorkspaceSessions: (candidate) => {
             expect(candidate).toEqual(root)
             calls.push('forget-sessions')
@@ -89,6 +90,7 @@ describe('WorkspaceRemovalCoordinator', () => {
         dismissWorkspace: () => Promise.resolve(state),
       },
       {
+        workspaceTerminalIds: () => [],
         forgetWorkspaceSessions: () => Promise.resolve(),
         revokeWorkspace: () => Promise.resolve(),
         closeWorkspaceWebPanes: () => Promise.resolve(),
@@ -118,6 +120,7 @@ describe('WorkspaceRemovalCoordinator', () => {
         dismissWorkspace: () => Promise.reject(new Error('must not dismiss twice')),
       },
       {
+        workspaceTerminalIds: () => [],
         forgetWorkspaceSessions: () => Promise.reject(new Error('must not forget twice')),
         revokeWorkspace: () => Promise.reject(new Error('must not revoke twice')),
         closeWorkspaceWebPanes: () => Promise.reject(new Error('must not close twice')),

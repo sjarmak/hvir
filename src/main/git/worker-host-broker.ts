@@ -9,7 +9,13 @@ import {
 } from '../../shared'
 import type { ProjectHost } from '../project-host'
 import { GIT_FETCH_ARGS, GIT_PULL_ARGS } from './git-engine'
-import { isHvirWorktreeTarget, sameHvirWorktreeTarget } from './hvir-worktrees'
+import {
+  hvirBranchRef,
+  isHvirCommit,
+  isHvirWorktreePath,
+  isHvirWorktreeTarget,
+  sameHvirWorktreeTarget,
+} from './hvir-worktrees'
 import type { GitHostCallPermissions } from './mutation-authorization'
 
 const canonicalRoots = new WeakMap<ProjectHost, Map<string, Promise<HostPath>>>()
@@ -61,6 +67,8 @@ export async function dispatchWorkerHostCall(
     '--verbose',
   ])
   const worktreeAdd = call.args[2] === 'worktree' && call.args[3] === 'add'
+  const worktreeRemove = call.args[2] === 'worktree' && call.args[3] === 'remove'
+  const branchDelete = call.args[2] === 'update-ref'
   const branchSwitch =
     call.args.length === 5 && call.args[2] === 'switch' && call.args[3] === '--no-guess'
   const fetch = sameArgs(call.args.slice(2), GIT_FETCH_ARGS)
@@ -79,6 +87,19 @@ export async function dispatchWorkerHostCall(
     })
   ) {
     throw new Error('git worker requested an unauthorized worktree add')
+  }
+  const removal = permissions.allowWorktreeRemove
+  if (worktreeRemove && (!removal || removal.path !== call.args[4])) {
+    throw new Error('git worker requested an unauthorized worktree remove')
+  }
+  const deletion = permissions.allowBranchDelete
+  if (
+    branchDelete &&
+    (!deletion ||
+      hvirBranchRef(deletion.branch) !== call.args[4] ||
+      deletion.commit !== call.args[5])
+  ) {
+    throw new Error('git worker requested an unauthorized branch delete')
   }
   if (branchSwitch && permissions.allowBranchSwitch !== call.args[4]) {
     throw new Error('git worker requested an unauthorized branch switch')
@@ -143,7 +164,7 @@ export async function dispatchWorkerHostCall(
       // data; otherwise content filters can rerun forever against a stale index.
       ...(fetch || pull
         ? { env: { GIT_TERMINAL_PROMPT: '0', GCM_INTERACTIVE: 'Never' } }
-        : worktreePrune || worktreeAdd || branchSwitch
+        : worktreePrune || worktreeAdd || worktreeRemove || branchDelete || branchSwitch
           ? {}
           : call.allowIndexRefresh
             ? {}
@@ -279,7 +300,19 @@ function validateGitInvocation(args: readonly string[]): void {
         sameArgs(rest, ['list', '--porcelain', '-z']) ||
         sameArgs(rest, ['list', '--porcelain']) ||
         sameArgs(rest, ['prune', '--expire', 'now', '--verbose']) ||
-        isHvirWorktreeAdd(commandRoot, rest)
+        isHvirWorktreeAdd(commandRoot, rest) ||
+        (rest.length === 2 &&
+          rest[0] === 'remove' &&
+          isHvirWorktreePath(commandRoot, rest[1]))
+      )
+        return
+      break
+    case 'update-ref':
+      if (
+        rest.length === 3 &&
+        rest[0] === '-d' &&
+        isHvirHandoffRef(rest[1] ?? '') &&
+        isHvirCommit(rest[2])
       )
         return
       break
@@ -314,6 +347,14 @@ function isHvirWorktreeAdd(commandRoot: string, rest: readonly string[]): boolea
       path,
       commit,
     })
+  )
+}
+
+/** `refs/heads/hvir/architecture/<slug>`: the only ref the broker lets hvir delete. */
+function isHvirHandoffRef(ref: string): boolean {
+  return (
+    ref.startsWith('refs/heads/') &&
+    hvirBranchRef(ref.slice('refs/heads/'.length)) === ref
   )
 }
 

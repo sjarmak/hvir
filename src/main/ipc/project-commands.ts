@@ -16,6 +16,8 @@ type ProjectCommandDeps = Pick<
   | 'closeProject'
   | 'pruneWorktrees'
   | 'dismissWorkspace'
+  | 'unfinishedHandoffs'
+  | 'removeUnfinishedHandoff'
   | 'planWorkspaceClose'
   | 'closeWorkspace'
   | 'reopenWorkspace'
@@ -53,6 +55,9 @@ export function createProjectCommands({
     pruneWorktrees: (projectId) => git.pruneWorktrees(projectId),
     dismissWorkspace: (projectId, workspaceId) =>
       projects.dismissWorkspace(projectId, workspaceId),
+    unfinishedHandoffs: (projectId) => git.unfinishedHandoffs(projectId),
+    removeUnfinishedHandoff: (projectId, workspaceId) =>
+      git.removeUnfinishedHandoff(projectId, workspaceId),
     planWorkspaceClose: (projectId, workspaceId) =>
       Promise.resolve(projects.planWorkspaceClose(projectId, workspaceId)),
     closeWorkspace: (projectId, workspaceId, expectedTerminalCount, terminateTerminals) =>

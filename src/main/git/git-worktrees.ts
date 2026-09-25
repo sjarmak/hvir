@@ -5,6 +5,11 @@ import type { HvirWorktreeTarget } from './hvir-worktrees'
 
 export type { HvirWorktreeTarget }
 
+export interface HvirWorktreeChange {
+  readonly operation: 'add' | 'remove' | 'delete-branch'
+  readonly target: HvirWorktreeTarget
+}
+
 export class GitWorktreeCapability {
   constructor(private readonly context: GitCommandContext) {}
 
@@ -44,15 +49,30 @@ export class GitWorktreeCapability {
     return this.discover(projectRoot)
   }
 
-  /** Creates the worktree a review handoff owns; main grants exactly this argv (ADR-063). */
-  async add(
+  /**
+   * Adds the worktree a review handoff owns, removes it without `--force`, or deletes its
+   * branch only while the branch still points at its creation commit. Main grants exactly
+   * the argv each operation builds (ADR-063).
+   */
+  async change(
     projectRoot: HostPath,
-    target: HvirWorktreeTarget,
+    change: HvirWorktreeChange,
   ): Promise<WorktreeDiscovery> {
     this.context.assertHost(projectRoot)
-    const args = ['worktree', 'add', '-b', target.branch, target.path, target.commit]
+    const args = hvirWorktreeArgs(change)
     const result = await this.context.mutate(projectRoot, args)
     if (result.code !== 0) throw gitError(args, result.stderr, result.code)
     return this.discover(projectRoot)
+  }
+}
+
+function hvirWorktreeArgs({ operation, target }: HvirWorktreeChange): readonly string[] {
+  switch (operation) {
+    case 'add':
+      return ['worktree', 'add', '-b', target.branch, target.path, target.commit]
+    case 'remove':
+      return ['worktree', 'remove', target.path]
+    case 'delete-branch':
+      return ['update-ref', '-d', `refs/heads/${target.branch}`, target.commit]
   }
 }

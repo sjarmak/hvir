@@ -9,7 +9,10 @@ import {
   type GitMutationWorkspacePort,
 } from '../src/main/git/mutation-coordinator'
 import type { ProjectHost } from '../src/main/project-host'
-import type { WorkspaceRemovalPort } from '../src/main/workspace-removal-coordinator'
+import type {
+  WorkspaceRemovalPort,
+  WorkspaceTerminalPort,
+} from '../src/main/workspace-removal-coordinator'
 import { localPath, type ProjectState, type WorktreeDiscovery } from '../src/shared'
 
 const root = localPath('/project')
@@ -81,6 +84,7 @@ function fixture() {
     },
     state: () => state,
     projectById: (id) => state.projects.find((project) => project.id === id),
+    authorityForPath: () => undefined,
     reconcileWorktrees: vi.fn(() => Promise.resolve(state)),
   }
   const pruned: WorktreeDiscovery = {
@@ -91,8 +95,11 @@ function fixture() {
     ],
   }
   const worker: GitMutationWorkerPort = {
+    discover: vi.fn(() => Promise.resolve(pruned)),
     pruneWorktrees: vi.fn(() => Promise.resolve(pruned)),
     addWorktree: vi.fn(() => Promise.resolve(pruned)),
+    removeWorktree: vi.fn(() => Promise.resolve(pruned)),
+    deleteHvirBranch: vi.fn(() => Promise.resolve(pruned)),
     switchBranch: vi.fn(() => Promise.resolve()),
     fetch: vi.fn(() => Promise.resolve()),
     pull: vi.fn(() => Promise.resolve()),
@@ -111,8 +118,9 @@ function fixture() {
     stopWatch: vi.fn(() => Promise.resolve()),
     replaceWatch: vi.fn(() => Promise.resolve()),
   }
-  const removal: WorkspaceRemovalPort = {
+  const removal: WorkspaceRemovalPort & WorkspaceTerminalPort = {
     removeMissingWorkspace: vi.fn(() => Promise.resolve(state)),
+    workspaceTerminalIds: () => [],
   }
   const revoke = vi.fn()
   const authorizations = {

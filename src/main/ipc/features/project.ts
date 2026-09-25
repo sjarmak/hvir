@@ -17,6 +17,8 @@ type ProjectIpcDeps = Pick<
   | 'closeProject'
   | 'pruneWorktrees'
   | 'dismissWorkspace'
+  | 'unfinishedHandoffs'
+  | 'removeUnfinishedHandoff'
   | 'planWorkspaceClose'
   | 'closeWorkspace'
   | 'reopenWorkspace'
@@ -80,6 +82,12 @@ export function registerProjectIpc(ipc: IpcRegistrar, deps: ProjectIpcDeps): voi
   )
   ipc.handle('workspace:dismiss', (req) =>
     operationResult(() => deps.dismissWorkspace(req.projectId, req.workspaceId)),
+  )
+  ipc.handle('workspace:unfinished-handoffs', (req) =>
+    operationResult(() => deps.unfinishedHandoffs(req.projectId)),
+  )
+  ipc.handle('workspace:remove-unfinished-handoff', (req) =>
+    operationResult(() => deps.removeUnfinishedHandoff(req.projectId, req.workspaceId)),
   )
   ipc.handle('workspace:plan-close', (req) =>
     operationResult(() => deps.planWorkspaceClose(req.projectId, req.workspaceId)),

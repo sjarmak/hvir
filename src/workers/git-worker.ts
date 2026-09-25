@@ -8,7 +8,7 @@ import {
   GIT_COMMIT_DETAIL_TYPE,
   GIT_WORKTREES_TYPE,
   GIT_PRUNE_WORKTREES_TYPE,
-  GIT_ADD_WORKTREE_TYPE,
+  GIT_HVIR_WORKTREE_TYPE,
   GIT_WORKSPACE_ACTIVITY_TYPE,
   GIT_BRANCHES_TYPE,
   GIT_FETCH_TYPE,
@@ -87,8 +87,8 @@ async function handle(request: WorkerRequest): Promise<void> {
       result = await engine.switchBranch(root, raw['branch'], relatedWorktreeRoots)
     } else if (request.type === GIT_PRUNE_WORKTREES_TYPE) {
       result = await engine.pruneWorktrees(root)
-    } else if (request.type === GIT_ADD_WORKTREE_TYPE) {
-      result = await engine.addWorktree(root, worktreeTarget(raw))
+    } else if (request.type === GIT_HVIR_WORKTREE_TYPE) {
+      result = await engine.hvirWorktree(root, worktreeChange(raw))
     } else if (request.type === GIT_WORKSPACE_ACTIVITY_TYPE) {
       result = await engine.workspaceActivity(root, relatedWorktreeRoots)
     } else if (request.type === GIT_DIFF_INPUTS_TYPE && isPayload(request.payload)) {
@@ -246,13 +246,14 @@ function assertProjectPath(path: HostPath, root: HostPath): void {
 }
 
 /** Main grants and the broker re-check the exact target; this only checks its shape. */
-function worktreeTarget(raw: Record<string, unknown>) {
-  const { branch, path, commit } = raw
+function worktreeChange(raw: Record<string, unknown>) {
+  const { operation, branch, path, commit } = raw
   if (
+    (operation !== 'add' && operation !== 'remove' && operation !== 'delete-branch') ||
     typeof branch !== 'string' ||
     typeof path !== 'string' ||
     typeof commit !== 'string'
   )
     throw new Error('invalid git worktree target')
-  return { branch, path, commit }
+  return { operation, target: { branch, path, commit } } as const
 }

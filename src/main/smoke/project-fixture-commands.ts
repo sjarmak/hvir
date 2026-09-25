@@ -72,6 +72,8 @@ export function createProjectFixtureCommands(options: {
     | 'closeProject'
     | 'pruneWorktrees'
     | 'dismissWorkspace'
+    | 'unfinishedHandoffs'
+    | 'removeUnfinishedHandoff'
     | 'planWorkspaceClose'
     | 'closeWorkspace'
     | 'reopenWorkspace'
@@ -145,6 +147,9 @@ export function createProjectFixtureCommands(options: {
     },
     pruneWorktrees: () => Promise.resolve(setSmokeProjectState(smokeProjectState())),
     dismissWorkspace: () => Promise.resolve(setSmokeProjectState(smokeProjectState())),
+    unfinishedHandoffs: () => Promise.resolve([]),
+    removeUnfinishedHandoff: () =>
+      Promise.reject(new Error('The smoke fixture has no unfinished handoff')),
     planWorkspaceClose: workspaceCloseCommands.planWorkspaceClose,
     closeWorkspace: workspaceCloseCommands.closeWorkspace,
     reopenWorkspace: workspaceCloseCommands.reopenWorkspace,

@@ -129,6 +129,11 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
     projectId: string,
     workspaceId: string,
   ) => Promise<ProjectState>
+  readonly unfinishedHandoffs: (projectId: string) => Promise<readonly string[]>
+  readonly removeUnfinishedHandoff: (
+    projectId: string,
+    workspaceId: string,
+  ) => Promise<ProjectState>
   readonly planWorkspaceClose: (
     projectId: string,
     workspaceId: string,

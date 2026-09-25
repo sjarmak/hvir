@@ -11,18 +11,31 @@ export interface WorkspaceRemovalCleanupPort {
   revokeWorkspace(root: HostPath): Promise<void>
   closeWorkspaceWebPanes(root: HostPath): Promise<void>
   releaseHtmlPreviews(root: HostPath): void
+  /** Terminal sessions hvir records or runs in this workspace. */
+  workspaceTerminalIds(root: HostPath): readonly string[]
 }
 
 export interface WorkspaceRemovalPort {
   removeMissingWorkspace(projectId: string, workspaceId: string): Promise<ProjectState>
 }
 
+export interface WorkspaceTerminalPort {
+  /** Terminal sessions hvir records or runs in this workspace. */
+  workspaceTerminalIds(root: HostPath): readonly string[]
+}
+
 /** Owns the shared resource and catalog lifecycle for a definitively missing workspace. */
-export class WorkspaceRemovalCoordinator implements WorkspaceRemovalPort {
+export class WorkspaceRemovalCoordinator
+  implements WorkspaceRemovalPort, WorkspaceTerminalPort
+{
   constructor(
     private readonly registry: WorkspaceRemovalRegistryPort,
     private readonly cleanup: WorkspaceRemovalCleanupPort,
   ) {}
+
+  workspaceTerminalIds(root: HostPath): readonly string[] {
+    return this.cleanup.workspaceTerminalIds(root)
+  }
 
   async removeMissingWorkspace(
     projectId: string,

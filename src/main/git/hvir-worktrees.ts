@@ -63,6 +63,30 @@ export function isHvirWorktreeTarget(rootPath: string, target: unknown): boolean
   )
 }
 
+/** The handoff slug a branch under `hvir/architecture/` names, or undefined. */
+export function hvirWorktreeSlug(branch: string | undefined): string | undefined {
+  if (!branch?.startsWith(HVIR_ARCHITECTURE_BRANCH_PREFIX)) return undefined
+  const slug = branch.slice(HVIR_ARCHITECTURE_BRANCH_PREFIX.length)
+  return SLUG.test(slug) ? slug : undefined
+}
+
+/** True only for `<root>.hvir-worktrees/<slug>` with a valid slug: never the root itself. */
+export function isHvirWorktreePath(rootPath: string, path: unknown): boolean {
+  const location = locationOf(rootPath)
+  if (location === undefined || typeof path !== 'string') return false
+  if (!path.startsWith(`${location}/`)) return false
+  return SLUG.test(path.slice(location.length + 1))
+}
+
+/** `refs/heads/hvir/architecture/<slug>` for a valid handoff branch, or undefined. */
+export function hvirBranchRef(branch: string): string | undefined {
+  return hvirWorktreeSlug(branch) === undefined ? undefined : `refs/heads/${branch}`
+}
+
+export function isHvirCommit(commit: unknown): commit is string {
+  return typeof commit === 'string' && COMMIT.test(commit)
+}
+
 export function sameHvirWorktreeTarget(
   a: HvirWorktreeTarget | undefined,
   b: HvirWorktreeTarget,

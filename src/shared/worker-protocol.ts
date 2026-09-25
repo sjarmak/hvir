@@ -126,7 +126,7 @@ export const GIT_BLAME_TYPE = 'git:blame' as const
 export const GIT_COMMIT_DETAIL_TYPE = 'git:commit-detail' as const
 export const GIT_WORKTREES_TYPE = 'git:worktrees' as const
 export const GIT_PRUNE_WORKTREES_TYPE = 'git:prune-worktrees' as const
-export const GIT_ADD_WORKTREE_TYPE = 'git:add-worktree' as const
+export const GIT_HVIR_WORKTREE_TYPE = 'git:hvir-worktree' as const
 export const GIT_WORKSPACE_ACTIVITY_TYPE = 'git:workspace-activity' as const
 export const GIT_BRANCHES_TYPE = 'git:branches' as const
 export const GIT_FETCH_TYPE = 'git:fetch' as const
@@ -164,10 +164,14 @@ export interface GitWorkerProtocol {
     { readonly root: HostPath },
     WorktreeDiscovery
   >
-  /** One exact, main-granted `worktree add` at the location hvir owns (ADR-063). */
-  readonly [GIT_ADD_WORKTREE_TYPE]: WorkerOperation<
+  /**
+   * One exact, main-granted change to a worktree at the location hvir owns: add it,
+   * remove it, or delete its branch at the creation commit (ADR-063).
+   */
+  readonly [GIT_HVIR_WORKTREE_TYPE]: WorkerOperation<
     {
       readonly root: HostPath
+      readonly operation: 'add' | 'remove' | 'delete-branch'
       readonly branch: string
       readonly path: string
       readonly commit: string

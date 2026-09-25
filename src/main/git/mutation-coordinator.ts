@@ -5,10 +5,19 @@ import {
   type RegisteredProjectState,
   type WorktreeDiscovery,
 } from '../../shared'
-import { hvirWorktreeTarget, type HvirWorktreeTarget } from './hvir-worktrees'
+import {
+  hvirWorktreeSlug,
+  hvirWorktreeTarget,
+  type HvirWorktreeTarget,
+} from './hvir-worktrees'
 import type { GitMutationGrant, GitMutationGrantRequest } from './mutation-authorization'
+import { inspectUnfinishedHandoff } from '../architecture-review/unfinished-handoff'
+import type { ProjectHost } from '../project-host'
 import type { ProjectWatchTarget } from '../project-watch'
-import type { WorkspaceRemovalPort } from '../workspace-removal-coordinator'
+import type {
+  WorkspaceRemovalPort,
+  WorkspaceTerminalPort,
+} from '../workspace-removal-coordinator'
 
 export interface GitMutationRegistryPort {
   readonly active: ProjectWatchTarget & {
@@ -16,6 +25,10 @@ export interface GitMutationRegistryPort {
   }
   state(): ProjectState
   projectById(projectId: string): RegisteredProjectState | undefined
+  authorityForPath(
+    hostId: string,
+    path: string,
+  ): { readonly host: ProjectHost } | undefined
   reconcileWorktrees(
     projectId: string,
     discovery: WorktreeDiscovery,
@@ -23,8 +36,11 @@ export interface GitMutationRegistryPort {
 }
 
 export interface GitMutationWorkerPort {
+  discover(root: HostPath): Promise<WorktreeDiscovery>
   pruneWorktrees(root: HostPath): Promise<WorktreeDiscovery>
   addWorktree(root: HostPath, target: HvirWorktreeTarget): Promise<WorktreeDiscovery>
+  removeWorktree(root: HostPath, target: HvirWorktreeTarget): Promise<WorktreeDiscovery>
+  deleteHvirBranch(root: HostPath, target: HvirWorktreeTarget): Promise<WorktreeDiscovery>
   switchBranch(
     root: HostPath,
     branch: string,
@@ -55,7 +71,7 @@ export interface GitMutationCoordinatorOptions {
   readonly authorizations: {
     grant(request: GitMutationGrantRequest): GitMutationGrant
   }
-  readonly removal: WorkspaceRemovalPort
+  readonly removal: WorkspaceRemovalPort & WorkspaceTerminalPort
   readonly onError?: (message: string, error: unknown) => void
 }
 
@@ -130,6 +146,110 @@ export class GitMutationCoordinator {
         root: workspace.root,
         branch: target.branch,
       }
+    })
+  }
+
+  /**
+   * The workspace ids of this project's unfinished handoffs (ADR-063), each judged from
+   * disk and Git as `inspectUnfinishedHandoff` documents. A worktree that cannot be
+   * inspected is reported and left unmarked.
+   */
+  async unfinishedHandoffs(projectId: string): Promise<readonly string[]> {
+    const project = this.options.registry.projectById(projectId)
+    if (!project || project.connectionState !== 'connected') return []
+    const candidates = project.workspaces.filter(
+      (workspace) =>
+        !workspace.main &&
+        !workspace.missing &&
+        hvirWorktreeSlug(workspace.branch) !== undefined,
+    )
+    if (candidates.length === 0) return []
+    const host = this.hostOf(project)
+    const marked = await Promise.all(
+      candidates.map(async (workspace) => {
+        try {
+          const verdict = await inspectUnfinishedHandoff(
+            host,
+            project.registeredRoot,
+            workspace,
+            this.options.removal.workspaceTerminalIds(workspace.root),
+          )
+          return verdict.unfinished
+        } catch (error) {
+          this.report(`[git] could not inspect ${workspace.root.path}`, error)
+          return false
+        }
+      }),
+    )
+    return candidates.filter((_, index) => marked[index]).map((workspace) => workspace.id)
+  }
+
+  /**
+   * Removes one unfinished handoff the person chose (ADR-063): re-reads Git and disk,
+   * refuses unless the worktree still qualifies, runs `git worktree remove` without
+   * `--force`, then deletes its branch only while it still points at its creation
+   * commit. Each Git call runs under its own exact one-shot grant.
+   */
+  removeUnfinishedHandoff(projectId: string, workspaceId: string): Promise<ProjectState> {
+    return this.options.workspaces.serialize(async () => {
+      const { registry, worker, removal, workspaces } = this.options
+      const project = registry.projectById(projectId)
+      if (!project) throw new Error('Unknown project')
+      if (project.connectionState !== 'connected') {
+        throw new Error('Connect to the project host before removing a worktree')
+      }
+      const workspace = project.workspaces.find(
+        (candidate) => candidate.id === workspaceId,
+      )
+      if (!workspace) throw new Error('Unknown workspace')
+      if (workspace.main) throw new Error('hvir never removes the main working tree')
+      if (
+        workspace.id === project.activeWorkspaceId ||
+        workspace.id === registry.active.workspaceId
+      ) {
+        throw new Error('Select another workspace before removing this one')
+      }
+      const root = project.registeredRoot
+      const refuse = (reason: string) =>
+        new Error(`Cannot remove ${workspace.root.path}: ${reason}`)
+      workspaces.invalidateProject(projectId)
+      await workspaces.settleProject(projectId)
+      const listed = (await worker.discover(root)).worktrees.find(
+        (worktree) =>
+          hostPathEquals(worktree.root, workspace.root) && worktree.prunable !== true,
+      )
+      if (!listed) throw refuse('Git does not list it as a worktree')
+      const verdict = await inspectUnfinishedHandoff(
+        this.hostOf(project),
+        root,
+        listed,
+        removal.workspaceTerminalIds(listed.root),
+      )
+      if (!verdict.unfinished) throw refuse(verdict.reason)
+      const { target } = verdict
+      const discovery = await this.granted(
+        'worktree-remove',
+        projectId,
+        root,
+        target,
+        () => worker.removeWorktree(root, target),
+      )
+      if (discovery.worktrees.some((worktree) => worktree.root.path === target.path)) {
+        throw refuse('Git still lists it after removal')
+      }
+      await registry.reconcileWorktrees(projectId, discovery)
+      await removal.removeMissingWorkspace(projectId, workspaceId)
+      try {
+        await this.granted('branch-delete', projectId, root, target, () =>
+          worker.deleteHvirBranch(root, target),
+        )
+      } catch (error) {
+        throw new Error(
+          `Removed ${target.path} but kept branch ${target.branch}: ${errorMessage(error)}`,
+          { cause: error },
+        )
+      }
+      return registry.state()
     })
   }
 
@@ -256,6 +376,28 @@ export class GitMutationCoordinator {
     return registry.state()
   }
 
+  private async granted<T>(
+    kind: 'worktree-remove' | 'branch-delete',
+    projectId: string,
+    root: HostPath,
+    target: HvirWorktreeTarget,
+    run: () => Promise<T>,
+  ): Promise<T> {
+    const grant = this.options.authorizations.grant({ kind, projectId, root, target })
+    try {
+      return await run()
+    } finally {
+      grant.revoke()
+    }
+  }
+
+  private hostOf(project: RegisteredProjectState): ProjectHost {
+    const { hostId, path } = project.registeredRoot
+    const host = this.options.registry.authorityForPath(hostId, path)?.host
+    if (!host) throw new Error('The project host is not connected')
+    return host
+  }
+
   private activeProject(): RegisteredProjectState {
     const project = this.options.registry.projectById(
       this.options.registry.active.projectId,
@@ -320,4 +462,8 @@ export class GitMutationCoordinator {
     if (this.options.onError) this.options.onError(message, error)
     else console.error(message, error)
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }

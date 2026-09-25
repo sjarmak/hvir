@@ -127,7 +127,7 @@ describe('Git worker host broker: worktree add', () => {
       root,
     )
 
-    const discovery = await engine.addWorktree(root, target)
+    const discovery = await engine.hvirWorktree(root, { operation: 'add', target })
 
     expect(discovery.worktrees.map((worktree) => worktree.root.path)).toContain(
       target.path,
