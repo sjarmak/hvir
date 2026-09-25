@@ -23,6 +23,7 @@ import type {
   ArchitectureHandoff,
 } from '../../shared/architecture-handoff'
 import { ARCHITECTURE_LIVE_REVISION } from '../../shared/architecture-review'
+import type { AddedWorktree } from '../git/mutation-coordinator'
 import type { ProjectHost } from '../project-host/project-host'
 import type {
   RendererOwner,
@@ -73,7 +74,14 @@ interface Review {
   readonly liveState?: string
   /** The approved-on-preview handoff; consumed by the one handoff it allows. */
   readonly plan?: PlannedHandoff
+  /** A handoff whose worktree exists but whose brief or launch did not finish. */
+  readonly unfinished?: UnfinishedHandoff
   readonly snapshot?: ArchitectureReviewSnapshot
+}
+interface UnfinishedHandoff {
+  readonly planned: PlannedHandoff
+  readonly added: AddedWorktree
+  readonly briefWritten: boolean
 }
 /** Workspace leases own bounded captured pairs; analysis owns no host authority. */
 export class ArchitectureReviewCoordinator {
@@ -228,6 +236,7 @@ export class ArchitectureReviewCoordinator {
     const worktrees = this.worktrees()
     const { key, commit } = await this.freshHandoffBase(owner, host, request)
     const review = this.reviews.get(key)!
+    if (review.unfinished) return this.reoffer(key, request, review.unfinished.planned)
     const capture = review.capture!
     const focus = [...capture.before, ...capture.after].find((file) =>
       hostPathEquals(joinHostPath(request.root, file.path), request.path),
@@ -241,18 +250,13 @@ export class ArchitectureReviewCoordinator {
       commit,
       target: worktrees.worktreeTarget(request.root, slug, commit),
     })
-    this.reviews.set(key, { ...this.reviews.get(key)!, plan: planned })
-    return {
-      ...request,
-      body: planned.body,
-      digest: planned.digest,
-      handoff: planned.plan,
-    }
+    return this.reoffer(key, request, planned)
   }
 
   /**
    * Creates the prepared worktree once, writes the brief and issues the one launch the
-   * agent session may spend. The plan is consumed before any mutation.
+   * agent session may spend. The plan is consumed before any mutation; a handoff that
+   * fails after its worktree exists is kept so preparing again finishes it there.
    */
   async handoff(
     owner: RendererOwner,
@@ -268,31 +272,16 @@ export class ArchitectureReviewCoordinator {
     const review = this.reviews.get(key)
     if (!review || review.plan !== planned || commit !== planned.plan.commit)
       throw new Error('Architecture review preview changed; prepare again')
-    this.reviews.set(key, { ...review, plan: undefined })
-    const added = await worktrees.addWorktree(request.root, planned.slug, commit)
-    if (!hostPathEquals(added.root, planned.plan.worktree))
-      throw new Error('Git created the handoff worktree somewhere else')
-    await (this.ports.handoff!.writeBrief ?? writeArchitectureBrief)(
-      host,
-      added.root,
-      planned.plan.brief,
-      AbortSignal.timeout(STRIP_TIMEOUT),
-    )
-    this.ports.resources.assertCurrent(owner)
-    const launch = this.launches.issue(
-      owner,
-      host,
-      added.root,
-      planned.digest,
-      planned.body,
-    )
-    return {
-      projectId: added.projectId,
-      workspaceId: added.workspaceId,
-      branch: added.branch,
-      worktree: added.root,
-      launch,
+    const resumed = review.unfinished?.planned === planned ? review.unfinished : undefined
+    this.reviews.set(key, { ...review, plan: undefined, unfinished: undefined })
+    const step = resumed ?? {
+      planned,
+      added: await worktrees.addWorktree(request.root, planned.slug, commit),
+      briefWritten: false,
     }
+    if (!hostPathEquals(step.added.root, planned.plan.worktree))
+      throw new Error('Git created the handoff worktree somewhere else')
+    return this.finishHandoff(owner, host, key, review.controller, step)
   }
 
   /** Spends the launch before the native start: a session never silently duplicates. */
@@ -346,6 +335,68 @@ export class ArchitectureReviewCoordinator {
     this.reviews.clear()
     this.launches.clear()
   }
+  /** Offers `planned` as the one handoff the review allows next. */
+  private reoffer(
+    key: string,
+    request: ArchitectureEvidenceRequest,
+    planned: PlannedHandoff,
+  ): ArchitecturePreparedReview {
+    this.reviews.set(key, { ...this.reviews.get(key)!, plan: planned })
+    return {
+      ...request,
+      snapshotId: planned.snapshotId,
+      path: joinHostPath(request.root, planned.path),
+      body: planned.body,
+      digest: planned.digest,
+      handoff: planned.plan,
+    }
+  }
+
+  /** Brief, then launch. A failure keeps the step for this review to finish later. */
+  private async finishHandoff(
+    owner: RendererOwner,
+    host: ProjectHost,
+    key: string,
+    controller: AbortController,
+    step: UnfinishedHandoff,
+  ): Promise<ArchitectureHandoff> {
+    const { planned, added } = step
+    let briefWritten = step.briefWritten
+    try {
+      if (!briefWritten)
+        await (this.ports.handoff!.writeBrief ?? writeArchitectureBrief)(
+          host,
+          added.root,
+          planned.plan.brief,
+          AbortSignal.timeout(STRIP_TIMEOUT),
+        )
+      briefWritten = true
+      this.ports.resources.assertCurrent(owner)
+    } catch (cause) {
+      const review = this.reviews.get(key)
+      if (review?.controller === controller)
+        this.reviews.set(key, { ...review, unfinished: { ...step, briefWritten } })
+      throw new Error(
+        `The agent worktree ${added.root.path} was created, but the handoff did not finish: ${cause instanceof Error ? cause.message : String(cause)}. Prepare the agent handoff again to finish it in that worktree.`,
+        { cause },
+      )
+    }
+    const launch = this.launches.issue(
+      owner,
+      host,
+      added.root,
+      planned.digest,
+      planned.body,
+    )
+    return {
+      projectId: added.projectId,
+      workspaceId: added.workspaceId,
+      branch: added.branch,
+      worktree: added.root,
+      launch,
+    }
+  }
+
   /** Fresh evidence and the commit a handoff from it starts at. */
   private async freshHandoffBase(
     owner: RendererOwner,

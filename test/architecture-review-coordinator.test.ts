@@ -398,3 +398,47 @@ it('lists the commit strip for the current renderer only', async () => {
   await expect(coordinator.commits(f.owner, f.host, { root })).rejects.toThrow(/revoked/)
   expect(commits).toHaveBeenCalledOnce()
 })
+it('finishes an interrupted handoff in the worktree it already created', async () => {
+  const f = setup()
+  const { preview } = await prepared(f)
+  f.writeBrief.mockRejectedValueOnce(new Error('host disconnected'))
+  const path = preview.handoff.worktree.path
+  await expect(f.coordinator.handoff(f.owner, f.host, preview)).rejects.toThrow(
+    new RegExp(`${path} was created.*host disconnected`),
+  )
+  const again = await f.coordinator.prepare(f.owner, f.host, preview)
+  expect(again.digest).toBe(preview.digest)
+  expect(again.handoff.worktree).toEqual(preview.handoff.worktree)
+  const handoff = await f.coordinator.handoff(f.owner, f.host, again)
+  expect(handoff.worktree).toEqual(preview.handoff.worktree)
+  expect(f.addWorktree).toHaveBeenCalledOnce()
+  expect(f.writeBrief).toHaveBeenCalledTimes(2)
+  expect(f.coordinator.launchPayload(f.owner, f.host, handoff.launch)).toBe(preview.body)
+  const next = await f.coordinator.prepare(f.owner, f.host, preview)
+  expect(next.digest).not.toBe(preview.digest)
+})
+it('does not rewrite a brief that landed before the handoff was interrupted', async () => {
+  const f = setup()
+  const { preview } = await prepared(f)
+  let briefs = 0
+  f.writeBrief.mockImplementation(() => {
+    briefs++
+    return Promise.resolve()
+  })
+  const assertCurrent = f.resources.assertCurrent.bind(f.resources)
+  let interrupted = false
+  vi.spyOn(f.resources, 'assertCurrent').mockImplementation((owner) => {
+    if (briefs === 1 && !interrupted) {
+      interrupted = true
+      throw new Error('renderer moved')
+    }
+    assertCurrent(owner)
+  })
+  await expect(f.coordinator.handoff(f.owner, f.host, preview)).rejects.toThrow(
+    /renderer moved/,
+  )
+  const again = await f.coordinator.prepare(f.owner, f.host, preview)
+  await f.coordinator.handoff(f.owner, f.host, again)
+  expect(f.addWorktree).toHaveBeenCalledOnce()
+  expect(briefs).toBe(1)
+})
