@@ -64,8 +64,10 @@ export function selectEntries(
   entries: readonly CaptureEntry[],
   layout: ArchitectureLayout = ARCHITECTURE_DEFAULT_LAYOUT,
 ): readonly CaptureEntry[] {
+  const cargoDirectories = cargoPackageDirectories(entries)
   const unique = [...new Map(entries.map((entry) => [entry.path, entry])).values()]
     .filter((entry) => inArchitectureScope(entry.path))
+    .filter((entry) => !isCargoBuildOutput(entry.path, cargoDirectories))
     .filter((entry) => !isSource(entry.path) || inLayoutScope(layout, entry.path))
     .sort((a, b) => a.path.localeCompare(b.path))
   for (const entry of unique) {
@@ -95,14 +97,52 @@ function assertRelative(path: string): void {
     throw new Error('Invalid repository source path')
 }
 
-/** Sources and the configs that resolve them, outside the excluded directories. */
+const CARGO_MANIFEST = 'Cargo.toml'
+const CARGO_TARGET = 'target'
+
+/** The directories holding a Cargo.toml, a workspace or package root; `''` is the root. */
+function cargoPackageDirectories(entries: readonly CaptureEntry[]): ReadonlySet<string> {
+  return new Set(
+    entries
+      .map((entry) => entry.path.split('/'))
+      .filter((parts) => parts.at(-1) === CARGO_MANIFEST)
+      .map((parts) => parts.slice(0, -1).join('/')),
+  )
+}
+
+/**
+ * Whether a path sits in Cargo's default build directory: a `target` directory beside a
+ * Cargo.toml. A first-party module directory named `target`, such as `src/target/mod.rs`,
+ * is not one. A `build.target-dir` set in Cargo configuration or CARGO_TARGET_DIR is not
+ * read: it can live outside the repository and in the environment.
+ */
+function isCargoBuildOutput(
+  path: string,
+  cargoDirectories: ReadonlySet<string>,
+): boolean {
+  const parts = path.split('/')
+  return parts
+    .slice(0, -1)
+    .some(
+      (part, index) =>
+        part === CARGO_TARGET && cargoDirectories.has(parts.slice(0, index).join('/')),
+    )
+}
+
+/**
+ * Sources and the configs that resolve them, outside the excluded directories. Cargo build
+ * output needs the whole listing to recognise, so `selectEntries` leaves it out; judged on
+ * its own, a path under `target` may be captured.
+ */
 export function inArchitectureScope(path: string): boolean {
   return (
     !path
       .split('/')
       .some((part) => (SCOPE.excludedDirectories as readonly string[]).includes(part)) &&
     (isSource(path) ||
-      /(?:^|\/)(?:tsconfig[^/]*\.json|jsconfig\.json|package\.json|go\.mod|Cargo\.toml)$/.test(path))
+      /(?:^|\/)(?:tsconfig[^/]*\.json|jsconfig\.json|package\.json|go\.mod|Cargo\.toml)$/.test(
+        path,
+      ))
   )
 }
 

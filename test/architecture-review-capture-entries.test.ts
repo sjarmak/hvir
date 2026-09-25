@@ -3,6 +3,7 @@ import {
   inArchitectureScope,
   isSource,
   parseTree,
+  selectEntries,
 } from '../src/main/architecture-review/capture-entries'
 
 describe('architecture capture scope', () => {
@@ -35,7 +36,59 @@ describe('architecture capture scope', () => {
     expect(inArchitectureScope('crates/shop/Cargo.toml')).toBe(true)
     expect(inArchitectureScope('Cargo.lock')).toBe(false)
     expect(inArchitectureScope('pyproject.toml')).toBe(false)
-    expect(inArchitectureScope('target/debug/build/shop-1/out/codes.rs')).toBe(false)
+  })
+
+  it('leaves out only the target directory beside a Cargo.toml, which is Cargo build output', () => {
+    const selected = (paths: readonly string[]) =>
+      selectEntries(paths.map((path) => ({ path }))).map((entry) => entry.path)
+    expect(
+      selected([
+        'Cargo.toml',
+        'src/lib.rs',
+        'target/debug/build/shop-1/out/codes.rs',
+        'target/package/shop-0.1.0/Cargo.toml',
+        'target/package/shop-0.1.0/src/lib.rs',
+        'src/target/mod.rs',
+        'src/target.rs',
+        'crates/shop/Cargo.toml',
+        'crates/shop/target/debug/out.rs',
+        'crates/shop/src/target/mod.rs',
+        'web/target/index.ts',
+        'docs/target/tool.py',
+      ]),
+    ).toEqual([
+      'Cargo.toml',
+      'crates/shop/Cargo.toml',
+      'crates/shop/src/target/mod.rs',
+      'docs/target/tool.py',
+      'src/lib.rs',
+      'src/target.rs',
+      'src/target/mod.rs',
+      'web/target/index.ts',
+    ])
+  })
+
+  it('keeps a target directory where no Cargo.toml sits beside it', () => {
+    expect(
+      selectEntries([{ path: 'target/a.ts' }, { path: 'lib/target/b.rs' }]).map(
+        (entry) => entry.path,
+      ),
+    ).toEqual(['lib/target/b.rs', 'target/a.ts'])
+  })
+
+  it('still leaves out environments and dependency trees beside a Cargo.toml', () => {
+    expect(
+      selectEntries(
+        [
+          'Cargo.toml',
+          'node_modules/pkg/index.ts',
+          '.venv/lib/site.py',
+          'venv/lib/python3.12/site-packages/x.py',
+          'vendor/crate/src/lib.rs',
+          'src/node_modules/x.ts',
+        ].map((path) => ({ path })),
+      ).map((entry) => entry.path),
+    ).toEqual(['Cargo.toml'])
   })
 
   it('leaves out Python environments and bytecode caches', () => {

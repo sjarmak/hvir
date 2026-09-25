@@ -130,6 +130,35 @@ it('captures renamed, deleted, untracked and excluded files truthfully', async (
   expect(result.after.map((f) => f.path)).toEqual(['src/new.js', 'src/renamed.ts'])
   expect(result.exclusions).toContain('node_modules')
 })
+it('excludes Cargo build output only in a target directory beside a Cargo.toml', async () => {
+  const f = await fixture()
+  const files: Readonly<Record<string, string>> = {
+    'Cargo.toml': '[package]\nname = "shop"\n',
+    'src/lib.rs': 'mod target;\n',
+    'src/target/mod.rs': 'pub fn aim() {}\n',
+    'target/debug/build/shop-1/out/codes.rs': 'pub const CODE: u16 = 1;\n',
+    'crates/member/Cargo.toml': '[package]\nname = "member"\n',
+    'crates/member/target/debug/out.rs': 'pub fn built() {}\n',
+    'web/target/index.ts': 'export const aim = 1\n',
+    'node_modules/pkg/index.ts': 'export const x = 1\n',
+    '.venv/lib/site.py': 'x = 1\n',
+  }
+  for (const [path, content] of Object.entries(files)) {
+    await mkdir(join(f.root, path, '..'), { recursive: true })
+    await writeFile(join(f.root, path), content)
+  }
+  git(f.root, 'add', '--force', '.')
+  git(f.root, 'commit', '-m', 'rust')
+  const expected = ['src/a.ts', 'src/lib.rs', 'src/target/mod.rs', 'web/target/index.ts']
+  const result = await f.capture({ baseline: 'HEAD' })
+  expect(result.before.map((file) => file.path)).toEqual(expected)
+  expect(result.after.map((file) => file.path)).toEqual(expected)
+  expect(result.configs.after.map((file) => file.path)).toEqual([
+    'Cargo.toml',
+    'crates/member/Cargo.toml',
+  ])
+  expect(result.exclusions).toContain('target beside a Cargo.toml (Cargo build output)')
+})
 it('fingerprints config and rejects path escapes, cancellation and invalid baselines', async () => {
   const f = await fixture()
   const first = await f.capture()

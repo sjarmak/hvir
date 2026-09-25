@@ -195,6 +195,7 @@ export async function captureArchitecture(
 
 const CAPTURE_EXCLUSIONS: readonly string[] = [
   ...SCOPE.excludedDirectories,
+  'target beside a Cargo.toml (Cargo build output)',
   '*.d.ts',
   'sources other than JavaScript, TypeScript, Python, Go and Rust',
   '*.pyi',

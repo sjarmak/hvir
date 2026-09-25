@@ -84,7 +84,6 @@ export const ARCHITECTURE_SCOPE = {
     '.nox',
     '.mypy_cache',
     '.pytest_cache',
-    'target',
   ],
   extensions: ['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'py', 'go', 'rs'],
 } as const
