@@ -63,11 +63,17 @@ const UNRESOLVED: Located = { resolution: 'unresolved' }
 const EXTERNAL: Located = { resolution: 'external' }
 
 class PathResolver {
+  private readonly provided: ReadonlyMap<string, Provided>
+
   constructor(
     private readonly tree: RustModuleTree,
     private readonly crates: ReadonlyMap<string, string>,
     private readonly facts: ReadonlyMap<string, ModuleFacts>,
-  ) {}
+  ) {
+    this.provided = new Map(
+      [...facts].map(([file, entry]) => [file, providedBy(entry)] as const),
+    )
+  }
 
   /** One fact per distinct place a declaration names, in the order its paths name them. */
   resolve(source: string, occurrence: ModuleImportOccurrence): ArchitectureImportFact[] {
@@ -76,7 +82,7 @@ class PathResolver {
       occurrence.form === 'mod'
         ? [this.declared(source, scope, occurrence)]
         : (occurrence.names ?? [occurrence.specifier ?? '']).map((path) =>
-            this.path(source, scope, path.split('::')),
+            this.path(source, scope, leafPath(path).split('::')),
           )
     const distinct = new Map(
       located.map((entry) => [`${entry.resolution}:${entry.target}`, entry]),
@@ -125,11 +131,12 @@ class PathResolver {
 
   /**
    * Descends through child modules; the first segment that is not one names an item of the
-   * module reached, which must be the last segment or a declared item such as an enum.
+   * module reached, which that module must declare or bind. Items inside inline modules are
+   * not indexed, so a path through one is taken as written.
    */
   private walk(start: RustModule, segments: readonly string[]): Located {
     let current: RustModule | undefined = start
-    for (const [index, segment] of segments.entries()) {
+    for (const segment of segments) {
       if (segment === 'self') continue
       if (segment === '*') break
       if (segment === 'super') {
@@ -142,14 +149,17 @@ class PathResolver {
         current = child
         continue
       }
-      const last = segments
-        .slice(index + 1)
-        .every((rest) => rest === '*' || rest === 'self')
-      return last || current.scope.length > 0 || this.declares(current.file, segment)
+      return current.scope.length > 0 || this.provides(current.file, segment)
         ? internal(current.file)
         : UNRESOLVED
     }
     return internal(current.file)
+  }
+
+  /** Whether a file module declares an item by this name or binds it through `use`. */
+  private provides(file: string, name: string): boolean {
+    const provided = this.provided.get(file)
+    return Boolean(provided && (provided.glob || provided.names.has(name)))
   }
 
   private declares(file: string, name: string): boolean {
@@ -158,3 +168,33 @@ class PathResolver {
 }
 
 const internal = (target: string): Located => ({ resolution: 'internal', target })
+
+const ALIAS = ' as '
+
+/** The path a use leaf names, without the `as` alias it binds. */
+const leafPath = (leaf: string): string => leaf.split(ALIAS)[0]!
+
+/** The names a file module makes available to paths through it; a glob `use` may bind any. */
+interface Provided {
+  readonly names: ReadonlySet<string>
+  readonly glob: boolean
+}
+
+function providedBy(facts: ModuleFacts): Provided {
+  const bound = facts.imports
+    .filter((entry) => entry.form !== 'mod' && (entry.scope ?? []).length === 0)
+    .flatMap((entry) => entry.names ?? [entry.specifier ?? ''])
+    .map(boundName)
+  return {
+    names: new Set([...facts.symbols.map((symbol) => symbol.name), ...bound]),
+    glob: bound.includes('*'),
+  }
+}
+
+/** `a::b as c` binds `c`, `a::b` and `a::b::self` bind `b`, and `a::*` binds any name. */
+function boundName(leaf: string): string {
+  const [path = '', alias] = leaf.split(ALIAS)
+  if (alias !== undefined) return alias
+  const segments = path.split('::')
+  return (segments.at(-1) === 'self' ? segments.at(-2) : segments.at(-1)) ?? ''
+}

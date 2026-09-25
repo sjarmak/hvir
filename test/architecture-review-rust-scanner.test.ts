@@ -100,10 +100,10 @@ describe('Rust scanner on web-tree-sitter', () => {
       ['shop_core', undefined],
       ['commands', undefined],
       ['::std::env', ['::std::env']],
-      ['clap::Parser as _', ['clap::Parser']],
+      ['clap::Parser as _', ['clap::Parser as _']],
       [
         'shop_core::{api, store::Store as ShopStore}',
-        ['shop_core::api', 'shop_core::store::Store'],
+        ['shop_core::api', 'shop_core::store::Store as ShopStore'],
       ],
     ])
     expect(parse('shop/src/store/sqlite.rs').imports[0]!.names).toEqual([

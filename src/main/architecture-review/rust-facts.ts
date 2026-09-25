@@ -8,7 +8,7 @@ import { lineOf, syntaxDiagnostics } from './tree-sitter-syntax'
  * Bump whenever what `parseRustFacts` extracts changes. The scanner version adds a digest of
  * the runtime and grammar bytes, so a grammar upgrade changes it on its own.
  */
-export const RUST_FACTS_REVISION = 'rust-facts-1'
+export const RUST_FACTS_REVISION = 'rust-facts-2'
 
 type ModuleSymbol = ArchitectureModule['symbols'][number]
 
@@ -134,7 +134,8 @@ function pathAttributeOf(node: Node): string | undefined {
 
 /**
  * Every path a use tree brings in, as segments: `a::{self, b::c as d, *}` gives `a::self`,
- * `a::b::c` and `a::*`. A leading `::` is an empty first segment.
+ * `a::b::c as d` and `a::*`, the alias kept because it is the name the module binds. A
+ * leading `::` is an empty first segment.
  */
 function useLeaves(node: Node, prefix: readonly string[]): string[][] {
   switch (node.type) {
@@ -150,7 +151,12 @@ function useLeaves(node: Node, prefix: readonly string[]): string[][] {
       )
     case 'use_as_clause': {
       const path = node.childForFieldName('path')
-      return path ? [[...prefix, ...segments(path)]] : []
+      const alias = node.childForFieldName('alias')
+      if (!path) return []
+      const leaf = [...prefix, ...segments(path)]
+      return alias
+        ? [[...leaf.slice(0, -1), `${leaf.at(-1)} as ${unraw(alias.text)}`]]
+        : [leaf]
     }
     case 'use_wildcard': {
       const path = node.namedChildren[0]

@@ -37,7 +37,7 @@ export function rustPackages(
     if (posix.basename(file.path) !== 'Cargo.toml') continue
     const manifest = readManifest(file)
     if (!manifest) continue
-    if (manifest.packageName === undefined)
+    if (!manifest.packageName)
       diagnostics.push({
         file: file.path,
         line: 1,
@@ -76,7 +76,8 @@ const CONVENTIONAL_ROOT =
 
 const isConventionalRoot = (relative: string): boolean => CONVENTIONAL_ROOT.test(relative)
 
-const TABLE = /^\[\[?\s*([A-Za-z0-9_.-]+)\s*\]\]?$/
+const KEY = String.raw`(?:[A-Za-z0-9_-]+|"[^"]*"|'[^']*')`
+const TABLE = new RegExp(String.raw`^\[\[?\s*(${KEY}(?:\s*\.\s*${KEY})*)\s*\]\]?$`)
 const STRING_KEY = /^([A-Za-z0-9_-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')$/
 
 /**
@@ -92,7 +93,7 @@ function readManifest(file: ArchitectureSourceFile): Manifest | undefined {
     const line = withoutComment(raw).trim()
     const header = TABLE.exec(line)
     if (header) {
-      table = header[1]!
+      table = tableName(header[1]!)
       hasPackage ||= table === 'package'
       continue
     }
@@ -110,6 +111,15 @@ function readManifest(file: ArchitectureSourceFile): Manifest | undefined {
     libraryPath: values.get('lib.path'),
     binaryPaths,
   }
+}
+
+/**
+ * A dotted table key with its parts unquoted, so `[ "lib" ]` is `lib` and
+ * `[target.'cfg(unix)'.dependencies]` is a table of its own rather than none.
+ */
+function tableName(key: string): string {
+  const parts = key.match(new RegExp(KEY, 'g')) ?? []
+  return parts.map((part) => part.replace(/^(["'])(.*)\1$/, '$2')).join('.')
 }
 
 /** Drops a `#` comment that is not inside a string. */
