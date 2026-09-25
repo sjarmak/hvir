@@ -157,3 +157,44 @@ it('shows why the scope could not be saved and does not scan', async () => {
     invoke.mock.calls.filter(([channel]) => channel === 'architecture-review:scan'),
   ).toHaveLength(scans)
 })
+
+it('drops a late scope-save failure once a newer scan has taken over', async () => {
+  saved = ['src']
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
+  await click(button('Scan snapshot'))
+  let fail: (cause: Error) => void = () => undefined
+  invoke.mockImplementationOnce(() => new Promise((_resolve, reject) => (fail = reject)))
+  await click(button('Save scope and scan'))
+  const scans = invoke.mock.calls.filter(
+    ([channel]) => channel === 'architecture-review:scan',
+  ).length
+  await click(button('Scan snapshot'))
+  expect(host.querySelector('.architecture-review-body')).not.toBeNull()
+  await act(async () => fail(new Error('disk write failed')))
+  expect(host.querySelector('[role="alert"]')).toBeNull()
+  expect(host.querySelector('.architecture-review-body')).not.toBeNull()
+  expect(
+    invoke.mock.calls.filter(([channel]) => channel === 'architecture-review:scan'),
+  ).toHaveLength(scans + 1)
+})
+
+it('does not rescan over a newer scan when a superseded scope save lands', async () => {
+  saved = ['src']
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
+  await click(button('Scan snapshot'))
+  let land: (record: unknown) => void = () => undefined
+  invoke.mockImplementationOnce(() => new Promise((resolve) => (land = resolve)))
+  await click(button('Save scope and scan'))
+  await click(button('Scan snapshot'))
+  const scans = invoke.mock.calls.filter(
+    ([channel]) => channel === 'architecture-review:scan',
+  ).length
+  await act(async () => land({ scope: ['src'], written: true }))
+  expect(
+    invoke.mock.calls.filter(([channel]) => channel === 'architecture-review:scan'),
+  ).toHaveLength(scans)
+})

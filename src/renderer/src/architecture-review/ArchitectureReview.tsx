@@ -96,8 +96,12 @@ export function ArchitectureReview({
       )
     }
   }
-  /** Saves the scope to the working tree's layout file, then scans with it. */
+  /**
+   * Saves the scope to the working tree's layout file, then scans with it. A scan or
+   * evidence request started meanwhile supersedes the save's error and its scan.
+   */
   const saveScope = async () => {
+    const epoch = requestEpoch.current
     setError(undefined)
     try {
       await window.hvir.invoke('architecture-review:scope', {
@@ -105,10 +109,11 @@ export function ArchitectureReview({
         scope: scopeFromText(scopeText ?? '').scope,
       })
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'The scope could not be saved.')
+      if (epoch === requestEpoch.current)
+        setError(cause instanceof Error ? cause.message : 'The scope could not be saved.')
       return
     }
-    await scan(parsed.ends)
+    if (epoch === requestEpoch.current) await scan(parsed.ends)
   }
   const chooseFromStrip = (ends: ArchitectureEnds) => {
     setBaselineText(ends.baseline ?? '')
