@@ -103,6 +103,7 @@ export async function verifyArchitectureReviewWorkflow(
       const module = await wait(() => [...body.querySelectorAll('.architecture-module-list .architecture-module')].find(node => node.querySelector('span')?.textContent === ${JSON.stringify(fixture.selectedPath)}), 'selected subsystem files');
       if (![...body.querySelectorAll('.architecture-module-list .architecture-module span')].some(node => node.textContent === 'architecture-smoke/ui/app.py')) throw new Error('Python module missing: the worker did not scan the live Python files');
       if (![...body.querySelectorAll('.architecture-module-list .architecture-module span')].some(node => node.textContent === 'architecture-smoke/ui/server.go')) throw new Error('Go module missing: the worker did not scan the live Go files');
+      if (![...body.querySelectorAll('.architecture-module-list .architecture-module span')].some(node => node.textContent === 'architecture-smoke/ui/lib.rs')) throw new Error('Rust module missing: the worker did not scan the live Rust files');
       module.click();
       await wait(() => document.querySelector('.architecture-evidence .diff-host .cm-content'), 'native DiffView');
       const contents = [...document.querySelectorAll('.architecture-evidence .cm-content')].map(node => node.textContent);

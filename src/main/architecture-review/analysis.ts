@@ -47,9 +47,15 @@ interface ScanModule {
   readonly kind: string
 }
 
+interface ParsedModule extends ScanModule {
+  readonly blob: string
+  readonly facts: ModuleFacts
+}
+
 /**
- * Parses every captured file a loaded scanner claims and resolves its imports against the
- * other modules of the same language. Files no scanner reads are disclosed, not dropped.
+ * Parses every captured file a loaded scanner claims, then resolves its imports against the
+ * other modules of the same language and what they parsed to. Files no scanner reads are
+ * disclosed, not dropped.
  */
 export function scanArchitecture(
   input: ArchitectureScanInput,
@@ -62,7 +68,9 @@ export function scanArchitecture(
   )
   const configs = input.configs ?? []
   const layout = input.layout ?? ARCHITECTURE_DEFAULT_LAYOUT
-  const claimed = claimModules(sorted, scanners)
+  const claimed = claimModules(sorted, scanners).map((entry) =>
+    parseModule(entry, factsOf),
+  )
   const resolvers = languageResolvers(claimed, configs)
   const modules: ArchitectureModule[] = []
   const imports: ArchitectureImportFact[] = []
@@ -71,7 +79,7 @@ export function scanArchitecture(
     ...unscannedDiagnostics(sorted.length - claimed.length),
   ]
   for (const entry of claimed) {
-    const scanned = scanModule(entry, resolvers.get(entry.scanner)!, factsOf, layout)
+    const scanned = scanModule(entry, resolvers.get(entry.scanner)!, layout)
     diagnostics.push(...scanned.diagnostics)
     modules.push(scanned.module)
     imports.push(
@@ -107,21 +115,38 @@ function claimModules(
   })
 }
 
+function parseModule(entry: ScanModule, factsOf: ModuleFactsSource): ParsedModule {
+  const { source, scanner, kind } = entry
+  const blob = blobHash(source)
+  const facts = factsOf({
+    path: source.path,
+    content: source.content,
+    blob,
+    scanner,
+    kind,
+  })
+  return { ...entry, blob, facts }
+}
+
 /** One resolver per language present, each seeing only that language's modules. */
 function languageResolvers(
-  claimed: readonly ScanModule[],
+  parsed: readonly ParsedModule[],
   configs: readonly ArchitectureSourceFile[],
 ): ReadonlyMap<LanguageScanner, ScanResolver> {
-  const byScanner = new Map<LanguageScanner, Map<string, string>>()
-  for (const { source, scanner } of claimed) {
-    const modules = byScanner.get(scanner) ?? new Map<string, string>()
-    modules.set(source.path, source.content)
-    byScanner.set(scanner, modules)
+  const byScanner = new Map<LanguageScanner, ParsedModule[]>()
+  for (const entry of parsed) {
+    const entries = byScanner.get(entry.scanner) ?? []
+    entries.push(entry)
+    byScanner.set(entry.scanner, entries)
   }
   return new Map(
-    [...byScanner].map(([scanner, modules]) => [
+    [...byScanner].map(([scanner, entries]) => [
       scanner,
-      scanner.resolver({ modules, configs }),
+      scanner.resolver({
+        modules: new Map(entries.map(({ source }) => [source.path, source.content])),
+        facts: new Map(entries.map(({ source, facts }) => [source.path, facts])),
+        configs,
+      }),
     ]),
   )
 }
@@ -160,23 +185,14 @@ function scanFingerprint(
 }
 
 function scanModule(
-  { source, scanner, kind }: ScanModule,
+  { source, blob, facts }: ParsedModule,
   resolver: ScanResolver,
-  factsOf: ModuleFactsSource,
   layout: ArchitectureLayout,
 ): {
   module: ArchitectureModule
   imports: readonly ArchitectureImportFact[]
   diagnostics: readonly ArchitectureDiagnostic[]
 } {
-  const blob = blobHash(source)
-  const facts = factsOf({
-    path: source.path,
-    content: source.content,
-    blob,
-    scanner,
-    kind,
-  })
   return {
     module: {
       path: source.path,

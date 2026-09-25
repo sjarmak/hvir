@@ -28,8 +28,8 @@ export const ARCHITECTURE_SMOKE_LAYOUT = `${JSON.stringify({
 })}\n`
 
 /**
- * Untracked Python and Go modules on the live side, inside an existing subsystem so the map
- * keeps its shape; the built worker must load both grammars to list them.
+ * Untracked Python, Go and Rust modules on the live side, inside an existing subsystem so
+ * the map keeps its shape; the built worker must load every grammar to list them.
  */
 const LIVE_GRAMMAR_SOURCES: Readonly<Record<string, string>> = {
   'architecture-smoke/ui/app.py': 'from . import helpers\nimport json\n',
@@ -37,6 +37,10 @@ const LIVE_GRAMMAR_SOURCES: Readonly<Record<string, string>> = {
   'architecture-smoke/go.mod': 'module example.com/smoke\n',
   'architecture-smoke/ui/server.go':
     'package ui\n\nimport "net/http"\n\nvar _ = http.StatusOK\n',
+  'architecture-smoke/Cargo.toml':
+    '[package]\nname = "smoke"\n\n[lib]\npath = "ui/lib.rs"\n',
+  'architecture-smoke/ui/lib.rs': 'mod view;\n\nuse std::fmt;\n',
+  'architecture-smoke/ui/view.rs': 'pub fn render() {}\n',
 }
 
 /**

@@ -28,6 +28,16 @@ describe('architecture capture scope', () => {
     expect(inArchitectureScope('vendor/github.com/google/uuid/uuid.go')).toBe(false)
   })
 
+  it('captures Rust files as sources and every Cargo.toml as a config', () => {
+    expect(isSource('shop/src/lib.rs')).toBe(true)
+    expect(isSource('Cargo.toml')).toBe(false)
+    expect(inArchitectureScope('Cargo.toml')).toBe(true)
+    expect(inArchitectureScope('crates/shop/Cargo.toml')).toBe(true)
+    expect(inArchitectureScope('Cargo.lock')).toBe(false)
+    expect(inArchitectureScope('pyproject.toml')).toBe(false)
+    expect(inArchitectureScope('target/debug/build/shop-1/out/codes.rs')).toBe(false)
+  })
+
   it('leaves out Python environments and bytecode caches', () => {
     expect(inArchitectureScope('.venv/lib/site.py')).toBe(false)
     expect(inArchitectureScope('.tox/py312/lib/a.py')).toBe(false)

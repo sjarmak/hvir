@@ -11,8 +11,9 @@ export interface ArchitectureScanInput {
   readonly files: readonly ArchitectureSourceFile[]
   /**
    * Captured tsconfig, jsconfig and package.json files, which configure TypeScript and
-   * JavaScript resolution, and go.mod files, which name Go module paths. Absent means none
-   * were captured, and the scan discloses what each language resolved without.
+   * JavaScript resolution, go.mod files, which name Go module paths, and Cargo.toml files,
+   * which name Rust crates. Absent means none were captured, and the scan discloses what
+   * each language resolved without.
    */
   readonly configs?: readonly ArchitectureSourceFile[]
   readonly scope: string
@@ -21,7 +22,10 @@ export interface ArchitectureScanInput {
   readonly layout?: ArchitectureLayout
 }
 
-/** How an import is written; `from-import` is Python's `from module import name`. */
+/**
+ * How an import is written; `from-import` is Python's `from module import name`, and `mod`
+ * is Rust's `mod name;`, which declares a child module that lives in its own file.
+ */
 export type ArchitectureImportForm =
   | 'import'
   | 'export'
@@ -30,6 +34,7 @@ export type ArchitectureImportForm =
   | 'dynamic-import'
   | 'require'
   | 'from-import'
+  | 'mod'
 
 export interface ArchitectureModule {
   readonly path: string

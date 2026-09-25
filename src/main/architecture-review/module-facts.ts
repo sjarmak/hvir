@@ -10,6 +10,10 @@ export interface ModuleImportOccurrence {
    * `from pkg import mod` imports the submodule `pkg.mod` when that module exists.
    */
   readonly names?: readonly string[]
+  /** The Rust inline modules (`mod a { ... }`) it is written inside, outermost first. */
+  readonly scope?: readonly string[]
+  /** A Rust `mod` declaration's `#[path = "..."]` attribute, as written. */
+  readonly pathAttribute?: string
   readonly typeOnly: boolean
   readonly line: number
   readonly column: number
@@ -34,12 +38,13 @@ const FORMS: ReadonlySet<string> = new Set<ArchitectureImportForm>([
   'dynamic-import',
   'require',
   'from-import',
+  'mod',
 ])
 const isPosition = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 1
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
-const isNames = (value: unknown): boolean =>
+const isOptionalStrings = (value: unknown): boolean =>
   value === undefined ||
   (Array.isArray(value) && value.every((name) => typeof name === 'string'))
 
@@ -49,7 +54,9 @@ function isOccurrence(entry: unknown): boolean {
     (entry.specifier === undefined || typeof entry.specifier === 'string') &&
     typeof entry.form === 'string' &&
     FORMS.has(entry.form) &&
-    isNames(entry.names) &&
+    isOptionalStrings(entry.names) &&
+    isOptionalStrings(entry.scope) &&
+    (entry.pathAttribute === undefined || typeof entry.pathAttribute === 'string') &&
     typeof entry.typeOnly === 'boolean' &&
     isPosition(entry.line) &&
     isPosition(entry.column)

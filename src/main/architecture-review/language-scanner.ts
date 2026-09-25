@@ -28,6 +28,11 @@ export interface LanguageScanner {
 export interface ResolutionContext {
   /** Every module of this scanner's language in the scan, by path. */
   readonly modules: ReadonlyMap<string, string>
+  /**
+   * What each of those modules parsed to. A language whose module tree is declared in the
+   * source, as Rust's is by `mod`, resolves against the declarations of every module.
+   */
+  readonly facts: ReadonlyMap<string, ModuleFacts>
   /** Captured configuration files; a scanner reads only the ones it understands. */
   readonly configs: readonly ArchitectureSourceFile[]
 }

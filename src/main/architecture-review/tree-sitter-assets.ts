@@ -25,4 +25,8 @@ export const TREE_SITTER_ASSETS = {
     file: 'tree-sitter-go.wasm',
     module: 'tree-sitter-go/tree-sitter-go.wasm',
   },
+  rust: {
+    file: 'tree-sitter-rust.wasm',
+    module: 'tree-sitter-rust/tree-sitter-rust.wasm',
+  },
 } as const satisfies Readonly<Record<string, TreeSitterAsset>>

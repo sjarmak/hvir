@@ -15,6 +15,10 @@ export const pythonFixture = (): readonly ArchitectureSourceFile[] =>
 export const goFixture = (): readonly ArchitectureSourceFile[] =>
   fixtureTree('architecture-go')
 
+/** The real Cargo workspace under test/fixtures, Cargo.toml files included. */
+export const rustFixture = (): readonly ArchitectureSourceFile[] =>
+  fixtureTree('architecture-rust')
+
 function fixtureTree(name: string): readonly ArchitectureSourceFile[] {
   const root = join(__dirname, 'fixtures', name)
   return readdirSync(root, { recursive: true, withFileTypes: true })

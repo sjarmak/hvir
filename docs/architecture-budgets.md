@@ -48,10 +48,10 @@ event base/head before using the same evaluator. Credentials are never policy-fi
 
 All maintained TypeScript/declarations, JavaScript, CSS, shell scripts and shell-shebang hooks
 are included across the ADR's roots and repository root. Existing native package C/header
-source is explicitly governed by the same ordinary 1,000-line ceiling, as are the Python
-and Go architecture-scanner fixtures under `test/fixtures`. An unknown extension
+source is explicitly governed by the same ordinary 1,000-line ceiling, as are the Python,
+Go and Rust architecture-scanner fixtures under `test/fixtures`. An unknown extension
 or non-shell executable shebang requires an explicit language disposition. JSON/YAML, prose,
-HTML templates, build manifests (go.mod among them), and binary/image assets are data rather than these source
+HTML templates, build manifests (go.mod and Cargo.toml among them), and binary/image assets are data rather than these source
 families. Renaming code to an unsupported source extension fails inventory; data files are
 not an alternate home for executable source. Added local files, even ignored maintained
 source, count. Local `.log`, `.tsbuildinfo`, and `.env`/`.env.*` artifacts have explicit data

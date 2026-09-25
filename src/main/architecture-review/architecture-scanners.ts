@@ -6,6 +6,8 @@ import { scannerSet, type LanguageScanner, type ScannerSet } from './language-sc
 import type { ModuleFacts } from './module-facts'
 import { parsePythonFacts, PYTHON_FACTS_REVISION } from './python-facts'
 import { pythonResolver } from './python-resolution'
+import { parseRustFacts, RUST_FACTS_REVISION } from './rust-facts'
+import { rustResolver } from './rust-resolution'
 import { TREE_SITTER_ASSETS, type TreeSitterAsset } from './tree-sitter-assets'
 import { TYPESCRIPT_SCANNER } from './typescript-scanner'
 
@@ -41,12 +43,20 @@ const GRAMMAR_LANGUAGES: readonly GrammarLanguage[] = [
     parse: parseGoFacts,
     resolver: goResolver,
   },
+  {
+    language: 'rust',
+    asset: TREE_SITTER_ASSETS.rust,
+    revision: RUST_FACTS_REVISION,
+    extension: '.rs',
+    parse: parseRustFacts,
+    resolver: rustResolver,
+  },
 ]
 
 /**
- * Every scanner this build ships (ADR-063): TypeScript through the compiler, then Python
- * and Go through web-tree-sitter. The bytes are passed in, so emscripten never looks for a
- * file.
+ * Every scanner this build ships (ADR-063): TypeScript through the compiler, then Python,
+ * Go and Rust through web-tree-sitter. The bytes are passed in, so emscripten never looks
+ * for a file.
  */
 export async function loadArchitectureScanners(
   read: ScannerAssetReader,
