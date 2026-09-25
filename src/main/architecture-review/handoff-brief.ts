@@ -54,8 +54,10 @@ export function architectureHandoffBrief(input: ArchitectureBriefInput): string 
     `- Baseline: ${endLabel(input.baselineRef, input.baselineRevision)}`,
     `- Current: ${endLabel(input.currentRef, input.currentRevision)}`,
     `- Worktree: ${input.plan.worktree.path} on branch ${input.plan.branch}, starting at the Current commit`,
-    `- Scope: ${input.scope}`,
-    `- Focus file: ${input.focus}`,
+    `- Scope: ${code(input.scope)}`,
+    `- Focus file: ${code(input.focus)}`,
+    '',
+    'Every value read from the repository appears as a code span, with control characters written as \\u escapes.',
     '',
     ...relationshipSection(input.relationships),
     '',
@@ -141,7 +143,7 @@ function relationshipSection(
   let total = 0
   for (const edge of changed.slice(0, MAX_RELATIONSHIPS)) {
     lines.push(
-      `- \`${edge.source}\` -> \`${edge.target}\`: ${edge.before} -> ${edge.after} imports (${edge.change})`,
+      `- ${code(edge.source)} -> ${code(edge.target)}: ${edge.before} -> ${edge.after} imports (${edge.change})`,
     )
     for (const fact of edge.evidence) {
       if (fact.change === 'unchanged') continue
@@ -149,7 +151,7 @@ function relationshipSection(
       if (listed >= MAX_EVIDENCE) continue
       listed++
       lines.push(
-        `  - \`${fact.source}:${fact.line}\` imports \`${fact.specifier}\` (${fact.change})`,
+        `  - ${code(`${fact.source}:${fact.line}`)} imports ${code(fact.specifier)} (${fact.change})`,
       )
     }
   }
@@ -163,13 +165,33 @@ function moduleSection(modules: readonly ArchitectureModuleDelta[]): readonly st
   const lines = ['## Modules that changed', '']
   if (changed.length === 0) lines.push('None in scope.')
   for (const module of changed.slice(0, MAX_MODULES))
-    lines.push(`- \`${module.path}\` (${module.subsystem}): ${module.change}`)
+    lines.push(`- ${code(module.path)} (${code(module.subsystem)}): ${module.change}`)
   lines.push(...omitted(changed.length - MAX_MODULES, 'module'))
   return lines
 }
 
 function omitted(count: number, noun: string): readonly string[] {
   return count > 0 ? ['', `${count} more ${noun}${count === 1 ? '' : 's'} omitted.`] : []
+}
+
+/**
+ * Repository text as one inline code span (CommonMark): control and line-separator
+ * characters become \u escapes so the value stays on its line, and the fence is longer
+ * than any backtick run inside it so the value cannot close the span.
+ */
+function code(value: string): string {
+  const escaped = value.replace(
+    /[\p{Cc}\u2028\u2029]/gu,
+    (char) => `\\u${char.codePointAt(0)!.toString(16).padStart(4, '0')}`,
+  )
+  const longest = Math.max(
+    0,
+    ...Array.from(escaped.matchAll(/`+/g), (run) => run[0].length),
+  )
+  const fence = '`'.repeat(longest + 1)
+  const pad =
+    escaped === '' || escaped.startsWith('`') || escaped.endsWith('`') ? ' ' : ''
+  return `${fence}${pad}${escaped}${pad}${fence}`
 }
 
 function endLabel(ref: string, revision: string): string {

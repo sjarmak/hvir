@@ -101,7 +101,7 @@ it('never marks a commit-to-commit snapshot stale and never reads the host to de
   expect(await review.stale()).toBe(false)
   const { handoff } = await review.prepare()
   expect(handoff.commit).toBe(scanned)
-  expect(handoff.brief).toContain('Focus file: src/a.ts')
+  expect(handoff.brief).toContain('Focus file: `src/a.ts`')
   expect(review.capture).toHaveBeenCalledTimes(1)
   expect(review.liveState).not.toHaveBeenCalled()
 })
