@@ -28,6 +28,15 @@ export interface ModuleFacts {
   readonly symbols: ArchitectureModule['symbols']
   readonly imports: readonly ModuleImportOccurrence[]
   readonly diagnostics: readonly { readonly line: number; readonly message: string }[]
+  /** Rust items declared inside inline modules (`mod a { ... }`), which `symbols` omits. */
+  readonly inlineItems?: readonly InlineItem[]
+}
+
+/** An item inside a Rust inline module, named by the inline modules around it. */
+export interface InlineItem {
+  readonly scope: readonly string[]
+  readonly name: string
+  readonly kind: string
 }
 
 const FORMS: ReadonlySet<string> = new Set<ArchitectureImportForm>([
@@ -66,7 +75,7 @@ function isOccurrence(entry: unknown): boolean {
 /** Structural check for facts read back from disk; anything else is discarded. */
 export function isModuleFacts(value: unknown): value is ModuleFacts {
   if (!isRecord(value)) return false
-  const { symbols, imports, diagnostics } = value
+  const { symbols, imports, diagnostics, inlineItems } = value
   return (
     Array.isArray(symbols) &&
     symbols.every(
@@ -82,6 +91,18 @@ export function isModuleFacts(value: unknown): value is ModuleFacts {
     diagnostics.every(
       (entry) =>
         isRecord(entry) && typeof entry.message === 'string' && isPosition(entry.line),
-    )
+    ) &&
+    (inlineItems === undefined ||
+      (Array.isArray(inlineItems) && inlineItems.every(isInlineItem)))
+  )
+}
+
+function isInlineItem(entry: unknown): boolean {
+  return (
+    isRecord(entry) &&
+    Array.isArray(entry.scope) &&
+    entry.scope.every((name) => typeof name === 'string') &&
+    typeof entry.name === 'string' &&
+    typeof entry.kind === 'string'
   )
 }

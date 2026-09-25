@@ -270,3 +270,88 @@ describe('Rust #[path] attributes', () => {
     })
   })
 })
+
+describe('Rust files loaded through #[path]', () => {
+  const lib = () => rustFixture().find((file) => file.path === 'shop/src/lib.rs')!.content
+  const codes = 'pub const NOT_FOUND: u16 = 404;\npub mod inner;\n'
+
+  it('looks for their child modules beside them, as rustc does for a mod-rs file', () => {
+    const files = withFiles({
+      'shop/src/lib.rs': `${lib()}\npub use codes::inner::X;\n`,
+      'shop/src/generated/codes.rs': codes,
+      'shop/src/generated/inner.rs': 'pub struct X;\n',
+    })
+    expect(resolutions(files, 'shop/src/generated/codes.rs')).toEqual([
+      {
+        specifier: 'inner',
+        resolution: 'internal',
+        target: 'shop/src/generated/inner.rs',
+      },
+    ])
+    expect(resolutions(files, 'shop/src/lib.rs')).toContainEqual({
+      specifier: 'codes::inner::X',
+      resolution: 'internal',
+      target: 'shop/src/generated/inner.rs',
+    })
+    expect(scan(files).diagnostics.map((entry) => entry.file)).not.toContain(
+      'shop/src/generated/inner.rs',
+    )
+  })
+
+  it('does not look in a directory named after the #[path] file', () => {
+    const files = withFiles({
+      'shop/src/generated/codes.rs': codes,
+      'shop/src/generated/codes/inner.rs': 'pub struct X;\n',
+    })
+    expect(resolutions(files, 'shop/src/generated/codes.rs')).toEqual([
+      { specifier: 'inner', resolution: 'unresolved', target: undefined },
+    ])
+  })
+})
+
+describe('Rust paths through inline modules', () => {
+  const lib = () => rustFixture().find((file) => file.path === 'shop/src/lib.rs')!.content
+  const inline = [
+    'pub mod outer {',
+    '    pub mod nested { pub fn f() {} }',
+    '    pub use crate::store::Store as Shelf;',
+    '    use nested::f as g;',
+    '}',
+  ].join('\n')
+
+  it('leaves a path naming no item of an inline module unresolved', () => {
+    const files = withFiles({
+      'shop/src/lib.rs': `${lib()}\n${inline}\n`,
+      [PROBE]: [
+        'use crate::errors::Nope;',
+        'use crate::errors::deep::Nope2;',
+        'use crate::errors::Error;',
+        'use crate::outer::nested::f;',
+        'use crate::outer::nested::missing;',
+        'use crate::outer::Shelf;',
+        'use crate::outer::Missing;',
+      ].join('\n'),
+    })
+    const at = (resolution: string, target?: string) => ({ resolution, target })
+    expect(
+      resolutions(files, PROBE).map(({ resolution, target }) => at(resolution, target)),
+    ).toEqual([
+      at('unresolved'),
+      at('unresolved'),
+      at('internal', 'shop/src/lib.rs'),
+      at('internal', 'shop/src/lib.rs'),
+      at('unresolved'),
+      at('internal', 'shop/src/lib.rs'),
+      at('unresolved'),
+    ])
+  })
+
+  it('resolves a use inside an inline module relative to that module', () => {
+    const files = withFiles({ 'shop/src/lib.rs': `${lib()}\n${inline}\n` })
+    expect(resolutions(files, 'shop/src/lib.rs')).toContainEqual({
+      specifier: 'nested::f as g',
+      resolution: 'internal',
+      target: 'shop/src/lib.rs',
+    })
+  })
+})

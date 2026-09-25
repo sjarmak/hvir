@@ -141,6 +141,27 @@ describe('Rust scanner on web-tree-sitter', () => {
     ])
   })
 
+  it('records items inside inline modules by their scope, valid for the parse cache', () => {
+    const facts = rust().parse(
+      'shop/src/x.rs',
+      'mod a {\n    pub struct S;\n    pub mod b { pub fn f() {} }\n    impl S { fn m() {} }\n}\n',
+    )
+    expect(facts.inlineItems).toEqual([
+      { scope: ['a'], name: 'S', kind: 'struct' },
+      { scope: ['a'], name: 'b', kind: 'module' },
+      { scope: ['a', 'b'], name: 'f', kind: 'function' },
+    ])
+    expect(isModuleFacts(JSON.parse(JSON.stringify(facts)))).toBe(true)
+    const item = facts.inlineItems![0]!
+    for (const inlineItems of [
+      [{ ...item, scope: 'a' }],
+      [{ ...item, name: 7 }],
+      [{ ...item, kind: null }],
+      'S',
+    ])
+      expect(isModuleFacts({ ...facts, inlineItems })).toBe(false)
+  })
+
   it('reports a syntax error as a diagnostic and keeps the imports before it', () => {
     const facts = parse('shop/src/broken.rs')
     expect(facts.diagnostics.length).toBeGreaterThan(0)

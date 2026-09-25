@@ -1,14 +1,14 @@
 import type { Node, Parser } from 'web-tree-sitter'
 import { ARCHITECTURE_ANALYSIS_LIMITS } from '../../shared'
 import type { ArchitectureModule } from '../../shared'
-import type { ModuleFacts, ModuleImportOccurrence } from './module-facts'
+import type { InlineItem, ModuleFacts, ModuleImportOccurrence } from './module-facts'
 import { lineOf, syntaxDiagnostics } from './tree-sitter-syntax'
 
 /**
  * Bump whenever what `parseRustFacts` extracts changes. The scanner version adds a digest of
  * the runtime and grammar bytes, so a grammar upgrade changes it on its own.
  */
-export const RUST_FACTS_REVISION = 'rust-facts-3'
+export const RUST_FACTS_REVISION = 'rust-facts-4'
 
 type ModuleSymbol = ArchitectureModule['symbols'][number]
 
@@ -39,20 +39,22 @@ export function parseRustFacts(parser: Parser, content: string): ModuleFacts {
   if (!tree) throw new Error('The Rust parser produced no syntax tree')
   try {
     const root = tree.rootNode
+    const inlineItems = root.namedChildren.flatMap((node) => itemsWithin(node, []))
     return {
       symbols: root.namedChildren
-        .flatMap(topLevelSymbol)
+        .flatMap(itemSymbol)
         .slice(0, ARCHITECTURE_ANALYSIS_LIMITS.maxSymbolsPerModule),
       imports: root.descendantsOfType([...DECLARATIONS]).flatMap(occurrence),
       diagnostics: syntaxDiagnostics(root),
+      ...(inlineItems.length > 0 ? { inlineItems } : {}),
     }
   } finally {
     tree.delete()
   }
 }
 
-/** Items at file level, plus inline modules; a file-backed `mod name;` is its own module. */
-function topLevelSymbol(node: Node | null): ModuleSymbol[] {
+/** A declared item, or an inline module; a file-backed `mod name;` is its own module. */
+function itemSymbol(node: Node | null): ModuleSymbol[] {
   if (!node) return []
   const kind =
     node.type === 'mod_item'
@@ -60,6 +62,25 @@ function topLevelSymbol(node: Node | null): ModuleSymbol[] {
       : ITEM_KINDS[node.type]
   const name = node.childForFieldName('name')
   return kind && name ? [{ name: unraw(name.text), line: lineOf(node), kind }] : []
+}
+
+/**
+ * The items declared inside an inline module and the inline modules nested in it, each named
+ * by its scope; `node` sits in `scope`, and is walked only when it is an inline module.
+ */
+function itemsWithin(node: Node | null, scope: readonly string[]): InlineItem[] {
+  const body = node?.type === 'mod_item' ? node.childForFieldName('body') : null
+  const name = node?.childForFieldName('name')
+  if (!body || !name) return []
+  const inner = [...scope, unraw(name.text)]
+  return body.namedChildren.flatMap((child) => [
+    ...itemSymbol(child).map((symbol) => ({
+      scope: inner,
+      name: symbol.name,
+      kind: symbol.kind,
+    })),
+    ...itemsWithin(child, inner),
+  ])
 }
 
 function occurrence(node: Node): ModuleImportOccurrence[] {

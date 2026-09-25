@@ -12,6 +12,11 @@ interface Placement {
   readonly root: string
   /** The module whose `mod` declaration loads this file; absent for a crate root. */
   readonly parent?: RustModule
+  /**
+   * Whether its own `mod name;` files sit beside it: a crate root, a `mod.rs`, or a file
+   * loaded through `#[path]`, which rustc treats as a mod-rs file wherever it points.
+   */
+  readonly modRs: boolean
 }
 
 const scopeKey = (scope: readonly string[]): string => scope.join('::')
@@ -102,19 +107,19 @@ export class RustModuleTree {
   }
 
   private isModRs(file: string): boolean {
-    const placement = this.placements.get(file)
-    if (placement)
-      return placement.parent === undefined || posix.basename(file) === 'mod.rs'
-    return MOD_RS_NAMES.has(posix.basename(file))
+    return this.placements.get(file)?.modRs ?? MOD_RS_NAMES.has(posix.basename(file))
   }
 
   private index(file: string, facts: ModuleFacts): void {
     const byScope = new Map<string, Map<string, ModuleImportOccurrence>>()
-    const inline = new Set(
-      facts.symbols
+    const inline = new Set([
+      ...facts.symbols
         .filter((symbol) => symbol.kind === 'module')
         .map((symbol) => symbol.name),
-    )
+      ...(facts.inlineItems ?? [])
+        .filter((item) => item.kind === 'module')
+        .map((item) => scopeKey([...item.scope, item.name])),
+    ])
     for (const occurrence of facts.imports) {
       const scope = occurrence.scope ?? []
       scope.forEach((_, index) => inline.add(scopeKey(scope.slice(0, index + 1))))
@@ -131,7 +136,7 @@ export class RustModuleTree {
   /** Breadth-first from one crate root; files already placed keep their first placement. */
   private grow(root: string): void {
     if (this.placements.has(root)) return
-    this.placements.set(root, { root })
+    this.placements.set(root, { root, modRs: true })
     const queue = [root]
     for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
       for (const [key, named] of this.declarations.get(next) ?? []) {
@@ -139,7 +144,13 @@ export class RustModuleTree {
         for (const declaration of named.values()) {
           const child = this.declaredFile(next, scope, declaration)
           if (!child || this.placements.has(child)) continue
-          this.placements.set(child, { root, parent: { file: next, scope } })
+          this.placements.set(child, {
+            root,
+            parent: { file: next, scope },
+            modRs:
+              declaration.pathAttribute !== undefined ||
+              posix.basename(child) === 'mod.rs',
+          })
           queue.push(child)
         }
       }

@@ -63,19 +63,16 @@ const UNRESOLVED: Located = { resolution: 'unresolved' }
 const EXTERNAL: Located = { resolution: 'external' }
 
 class PathResolver {
-  private readonly provided: ReadonlyMap<string, Provided>
-  /** Whether a file's `use` binding of a name leads somewhere, keyed by file and name. */
+  /** What each module provides, keyed by module; filled as modules are asked about. */
+  private readonly provided = new Map<string, Provided>()
+  /** Whether a module's `use` binding of a name leads somewhere, keyed by module and name. */
   private readonly bindings = new Map<string, boolean>()
 
   constructor(
     private readonly tree: RustModuleTree,
     private readonly crates: ReadonlyMap<string, string>,
     private readonly facts: ReadonlyMap<string, ModuleFacts>,
-  ) {
-    this.provided = new Map(
-      [...facts].map(([file, entry]) => [file, providedBy(entry)] as const),
-    )
-  }
+  ) {}
 
   /** One fact per distinct place a declaration names, in the order its paths name them. */
   resolve(source: string, occurrence: ModuleImportOccurrence): ArchitectureImportFact[] {
@@ -131,9 +128,7 @@ class PathResolver {
       return this.walk(here, segments, visiting)
     if (this.declaresMod(source, scope, first)) return UNRESOLVED
     if (this.crates.has(first)) return this.inCrate(first, rest, visiting)
-    return scope.length === 0 && this.declares(source, first)
-      ? internal(source)
-      : EXTERNAL
+    return this.providedBy(here)?.declared.has(first) ? internal(source) : EXTERNAL
   }
 
   private inCrate(
@@ -147,8 +142,7 @@ class PathResolver {
 
   /**
    * Descends through child modules; the first segment that is not one names an item of the
-   * module reached, which that module must declare or bind. Items inside inline modules are
-   * not indexed, so a path through one is taken as written.
+   * module reached, file or inline, which that module must declare or bind.
    */
   private walk(
     start: RustModule,
@@ -169,7 +163,7 @@ class PathResolver {
         current = child
         continue
       }
-      return current.scope.length > 0 || this.provides(current.file, segment, visiting)
+      return this.provides(current, segment, visiting)
         ? internal(current.file)
         : UNRESOLVED
     }
@@ -177,16 +171,16 @@ class PathResolver {
   }
 
   /**
-   * Whether a file module declares an item by this name, or binds it through a `use` whose
+   * Whether a module declares an item by this name, or binds it through a `use` whose
    * own path leads somewhere; a glob `use p::*` binds the name when `p::name` leads somewhere.
    * A binding reached again while it is being followed names
    * nothing: rustc rejects `use self::x;` with no `x`, and two re-exports naming each other.
    */
-  private provides(file: string, name: string, visiting: Visiting): boolean {
-    const provided = this.provided.get(file)
+  private provides(module: RustModule, name: string, visiting: Visiting): boolean {
+    const provided = this.providedBy(module)
     if (!provided) return false
     if (provided.declared.has(name)) return true
-    const key = `${file}\u0000${name}`
+    const key = `${moduleKey(module)}\u0000${name}`
     if (visiting.has(key)) return false
     const known = this.bindings.get(key)
     if (known !== undefined) return known
@@ -196,7 +190,8 @@ class PathResolver {
     )
     const leads = [...(provided.bound.get(name) ?? []), ...globbed].some(
       (path) =>
-        this.path(file, [], path.split('::'), following).resolution !== 'unresolved',
+        this.path(module.file, module.scope, path.split('::'), following).resolution !==
+        'unresolved',
     )
     if (visiting.size === 0) this.bindings.set(key, leads)
     return leads
@@ -216,10 +211,20 @@ class PathResolver {
     )
   }
 
-  private declares(file: string, name: string): boolean {
-    return Boolean(this.facts.get(file)?.symbols.some((symbol) => symbol.name === name))
+  private providedBy(module: RustModule): Provided | undefined {
+    const key = moduleKey(module)
+    const known = this.provided.get(key)
+    if (known) return known
+    const facts = this.facts.get(module.file)
+    if (!facts) return undefined
+    const provided = providedIn(facts, module.scope)
+    this.provided.set(key, provided)
+    return provided
   }
 }
+
+const moduleKey = (module: RustModule): string =>
+  [module.file, ...module.scope].join('\u0000')
 
 const internal = (target: string): Located => ({ resolution: 'internal', target })
 
@@ -235,8 +240,8 @@ const ALIAS = ' as '
 const leafPath = (leaf: string): string => leaf.split(ALIAS)[0]!
 
 /**
- * The names a file module makes available to paths through it: the items it declares, and
- * each name a file-level `use` binds with the paths bound to it; globs are bound to `*`.
+ * The names a module makes available to paths through it: the items it declares, and each
+ * name a `use` in that module binds with the paths bound to it; globs are bound to `*`.
  */
 interface Provided {
   readonly declared: ReadonlySet<string>
@@ -245,19 +250,20 @@ interface Provided {
 
 const GLOB = '*'
 
-function providedBy(facts: ModuleFacts): Provided {
+function providedIn(facts: ModuleFacts, scope: readonly string[]): Provided {
   const leaves = facts.imports
-    .filter((entry) => entry.form !== 'mod' && (entry.scope ?? []).length === 0)
+    .filter((entry) => entry.form !== 'mod' && sameScope(entry.scope ?? [], scope))
     .flatMap((entry) => entry.names ?? [entry.specifier ?? ''])
   const bound = new Map<string, string[]>()
   for (const leaf of leaves) {
     const name = boundName(leaf)
     bound.set(name, [...(bound.get(name) ?? []), leafPath(leaf)])
   }
-  return {
-    declared: new Set(facts.symbols.map((symbol) => symbol.name)),
-    bound,
-  }
+  const declared =
+    scope.length === 0
+      ? facts.symbols
+      : (facts.inlineItems ?? []).filter((item) => sameScope(item.scope, scope))
+  return { declared: new Set(declared.map((item) => item.name)), bound }
 }
 
 /** `a::b as c` binds `c`, `a::b` and `a::b::self` bind `b`, and `a::*` binds any name. */
