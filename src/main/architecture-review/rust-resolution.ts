@@ -1,15 +1,16 @@
 import type { ArchitectureDiagnostic, ArchitectureImportFact } from '../../shared'
 import type { ResolutionContext, ScanResolver } from './language-scanner'
 import type { ModuleFacts, ModuleImportOccurrence } from './module-facts'
-import { rustPackages } from './rust-crates'
+import { rustLibraries, rustPackages, type RustLibraries } from './rust-crates'
 import { RustModuleTree, type RustModule } from './rust-module-tree'
 
 /**
  * Rust resolution within the crate tree (ADR-063): a Rust module is a file within its crate.
  * Each captured Cargo package's crate roots are followed through their `mod` declarations,
  * so `crate::`, `self::` and `super::` paths walk the real module tree, `#[path]` included.
- * A path that starts with a repository crate's library name walks that crate; every other
- * extern crate is external.
+ * A path that starts with a repository crate's library name, or an `extern crate` alias of
+ * one, walks that crate; every other extern crate is external. A library name several
+ * packages build is disclosed, and unresolved outside those packages.
  */
 export function rustResolver({
   modules,
@@ -19,15 +20,12 @@ export function rustResolver({
   const files = new Set(modules.keys())
   const { packages, diagnostics } = rustPackages(configs, files)
   const tree = new RustModuleTree(facts, files, packages)
-  const crates = new Map(
-    packages.flatMap((entry) =>
-      entry.library ? [[entry.libraryName, entry.library] as const] : [],
-    ),
-  )
-  const resolver = new PathResolver(tree, crates, facts)
+  const libraries = rustLibraries(packages)
+  const resolver = new PathResolver(tree, libraries.libraries, facts)
   return {
     diagnostics: [
       ...diagnostics,
+      ...libraries.diagnostics,
       ...(packages.length === 0 ? [NO_PACKAGE] : unreached(tree, [...files].sort())),
     ],
     resolve: (source, occurrence) => resolver.resolve(source, occurrence),
@@ -70,7 +68,7 @@ class PathResolver {
 
   constructor(
     private readonly tree: RustModuleTree,
-    private readonly crates: ReadonlyMap<string, string>,
+    private readonly libraries: RustLibraries,
     private readonly facts: ReadonlyMap<string, ModuleFacts>,
   ) {}
 
@@ -119,7 +117,7 @@ class PathResolver {
   ): Located {
     const here: RustModule = { file: source, scope }
     const [first = '', ...rest] = segments
-    if (first === '') return this.inCrate(rest[0], rest.slice(1), visiting)
+    if (first === '') return this.inCrate(source, rest[0], rest.slice(1), visiting)
     if (first === 'crate') {
       const root = this.tree.rootOf(source)
       return root ? this.walk({ file: root, scope: [] }, rest, visiting) : UNRESOLVED
@@ -129,18 +127,32 @@ class PathResolver {
     if (this.declaresMod(source, scope, first)) return UNRESOLVED
     const aliased = this.externCrateAlias(here, first)
     if (aliased === 'self') return this.path(source, scope, ['crate', ...rest], visiting)
-    if (aliased !== undefined) return this.inCrate(aliased, rest, visiting)
-    if (this.crates.has(first)) return this.inCrate(first, rest, visiting)
+    if (aliased !== undefined) return this.inCrate(source, aliased, rest, visiting)
+    if (this.libraries.has(first)) return this.inCrate(source, first, rest, visiting)
     return this.providedBy(here)?.declared.has(first) ? internal(source) : EXTERNAL
   }
 
+  /**
+   * A path through a crate name: a repository library's module tree, or external. A name
+   * several packages build is unresolved, except from a crate of one of those packages,
+   * where Cargo gives a package's binaries, tests and examples its own library.
+   */
   private inCrate(
+    source: string,
     name: string | undefined,
     rest: readonly string[],
     visiting: Visiting,
   ): Located {
-    const library = name === undefined ? undefined : this.crates.get(name)
-    return library ? this.walk({ file: library, scope: [] }, rest, visiting) : EXTERNAL
+    const owners = name === undefined ? undefined : this.libraries.get(name)
+    if (!owners) return EXTERNAL
+    const root = this.tree.rootOf(source)
+    const owner =
+      owners.length === 1
+        ? owners[0]
+        : owners.find((entry) => root !== undefined && entry.roots.includes(root))
+    return owner?.library
+      ? this.walk({ file: owner.library, scope: [] }, rest, visiting)
+      : UNRESOLVED
   }
 
   /**

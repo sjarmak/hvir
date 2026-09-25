@@ -262,3 +262,108 @@ describe('Rust use declarations inside blocks', () => {
     ])
   })
 })
+
+describe('Rust packages that build libraries of the same name', () => {
+  const SEED = 'shop/src/bin/seed.rs'
+  const VENDORED = {
+    'vendored/shop/Cargo.toml': '[package]\nname = "shop_core"\nversion = "0.2.0"\n',
+    'vendored/shop/src/lib.rs': 'pub fn version() -> &\'static str {\n    "2"\n}\n',
+    'vendored/shop/src/bin/tool.rs': 'use shop_core::version;\n\nfn main() {}\n',
+  }
+  const DIAGNOSTIC = {
+    file: 'shop/Cargo.toml',
+    line: 1,
+    message:
+      'Several packages build a library named shop_core (shop/Cargo.toml, vendored/shop/Cargo.toml), so a path through shop_core is unresolved outside those packages.',
+  }
+
+  it('discloses the collision, naming both manifests', () => {
+    expect(scan(withFiles(VENDORED)).diagnostics).toContainEqual(DIAGNOSTIC)
+  })
+
+  it('leaves a path through the shared name unresolved outside the packages', () => {
+    const files = withFiles({
+      ...VENDORED,
+      [MAIN]: `extern crate shop_core as sc;\nuse ::shop_core::version;\nuse sc::version;\n${fixtureContent(MAIN)}`,
+    })
+    expect(
+      resolutionsOf(files, MAIN, [
+        'shop_core',
+        '::shop_core::version',
+        'sc::version',
+        'shop_core::{api, store::Store as ShopStore}',
+      ]),
+    ).toEqual([
+      unresolved('shop_core'),
+      unresolved('::shop_core::version'),
+      unresolved('sc::version'),
+      unresolved('shop_core'),
+      unresolved('shop_core::{api, store::Store as ShopStore}'),
+    ])
+  })
+
+  it("resolves the name inside each package's own crates to its own library", () => {
+    const files = withFiles(VENDORED)
+    expect(resolutionsOf(files, SEED, ['shop_core::store::Store'])).toEqual([
+      internal('shop_core::store::Store', 'shop/src/store/mod.rs'),
+    ])
+    expect(
+      resolutionsOf(files, 'vendored/shop/src/bin/tool.rs', ['shop_core::version']),
+    ).toEqual([internal('shop_core::version', 'vendored/shop/src/lib.rs')])
+  })
+
+  it('detects a collision made by a [lib] name, whatever order the manifests arrive in', () => {
+    const renamed = {
+      'tools/Cargo.toml': '[package]\nname = "tools"\n\n[lib]\nname = "shop_core"\n',
+      'tools/src/lib.rs': 'pub fn version() {}\n',
+    }
+    const files = withFiles(renamed)
+    const expected = {
+      file: 'shop/Cargo.toml',
+      line: 1,
+      message:
+        'Several packages build a library named shop_core (shop/Cargo.toml, tools/Cargo.toml), so a path through shop_core is unresolved outside those packages.',
+    }
+    for (const ordered of [files, [...files].reverse()]) {
+      const scanned = scan(ordered)
+      expect(
+        scanned.diagnostics.filter((entry) =>
+          entry.message.includes('build a library named'),
+        ),
+      ).toEqual([expected])
+      expect(
+        scanned.imports.find(
+          (fact) => fact.source === MAIN && fact.specifier === 'shop_core',
+        )!.resolution,
+      ).toBe('unresolved')
+    }
+  })
+
+  it('names every manifest when three packages collide', () => {
+    const files = withFiles({
+      ...VENDORED,
+      'tools/Cargo.toml': '[package]\nname = "shop-core"\n',
+      'tools/src/lib.rs': 'pub fn version() {}\n',
+    })
+    expect(scan(files).diagnostics).toContainEqual({
+      ...DIAGNOSTIC,
+      message:
+        'Several packages build a library named shop_core (shop/Cargo.toml, tools/Cargo.toml, vendored/shop/Cargo.toml), so a path through shop_core is unresolved outside those packages.',
+    })
+  })
+
+  it('does not count a package without a library as a collision', () => {
+    const files = withFiles({
+      'tools/Cargo.toml': '[package]\nname = "shop-core"\n',
+      'tools/src/main.rs': 'fn main() {}\n',
+    })
+    expect(
+      scan(files).diagnostics.some((entry) =>
+        entry.message.includes('build a library named'),
+      ),
+    ).toBe(false)
+    expect(resolutionsOf(files, SEED, ['shop_core::version'])).toEqual([
+      internal('shop_core::version', 'shop/src/lib.rs'),
+    ])
+  })
+})

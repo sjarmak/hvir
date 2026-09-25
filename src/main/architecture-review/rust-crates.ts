@@ -70,6 +70,40 @@ function packageOf(
   }
 }
 
+/** The repository libraries by the name paths use them by, each with its package. */
+export type RustLibraries = ReadonlyMap<string, readonly RustPackage[]>
+
+/**
+ * Every package with a scanned library, by library name. A name several packages build is
+ * disclosed with each manifest, never settled by whichever manifest was read last.
+ */
+export function rustLibraries(packages: readonly RustPackage[]): {
+  readonly libraries: RustLibraries
+  readonly diagnostics: ArchitectureDiagnostic[]
+} {
+  const libraries = new Map<string, RustPackage[]>()
+  const ordered = [...packages].sort((left, right) =>
+    manifestOf(left).localeCompare(manifestOf(right)),
+  )
+  for (const entry of ordered)
+    if (entry.library)
+      libraries.set(entry.libraryName, [
+        ...(libraries.get(entry.libraryName) ?? []),
+        entry,
+      ])
+  const diagnostics = [...libraries]
+    .filter(([, owners]) => owners.length > 1)
+    .map(([name, owners]) => ({
+      file: manifestOf(owners[0]!),
+      line: 1,
+      message: `Several packages build a library named ${name} (${owners.map(manifestOf).join(', ')}), so a path through ${name} is unresolved outside those packages.`,
+    }))
+  return { libraries, diagnostics }
+}
+
+const manifestOf = (entry: RustPackage): string =>
+  posix.join(entry.directory, 'Cargo.toml')
+
 /** Cargo's target auto-discovery, relative to the package directory. */
 const CONVENTIONAL_ROOT =
   /^(?:src\/main\.rs|build\.rs|src\/bin\/[^/]+\.rs|src\/bin\/[^/]+\/main\.rs|(?:tests|benches|examples)\/[^/]+\.rs|examples\/[^/]+\/main\.rs)$/
