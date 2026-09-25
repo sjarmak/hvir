@@ -8,7 +8,7 @@ import { lineOf, syntaxDiagnostics } from './tree-sitter-syntax'
  * Bump whenever what `parseRustFacts` extracts changes. The scanner version adds a digest of
  * the runtime and grammar bytes, so a grammar upgrade changes it on its own.
  */
-export const RUST_FACTS_REVISION = 'rust-facts-4'
+export const RUST_FACTS_REVISION = 'rust-facts-5'
 
 type ModuleSymbol = ArchitectureModule['symbols'][number]
 
@@ -91,10 +91,7 @@ function occurrence(node: Node): ModuleImportOccurrence[] {
     typeOnly: false,
     ...(scope.length > 0 ? { scope } : {}),
   }
-  if (node.type === 'extern_crate_declaration') {
-    const name = node.childForFieldName('name')
-    return name ? [{ specifier: unraw(name.text), form: 'import', ...position }] : []
-  }
+  if (node.type === 'extern_crate_declaration') return externCrate(node, position)
   if (node.type === 'mod_item') return modDeclaration(node, position)
   const argument = node.childForFieldName('argument')
   if (!argument) return []
@@ -106,6 +103,26 @@ function occurrence(node: Node): ModuleImportOccurrence[] {
       specifier: argument.text.replace(/\s+/g, ' '),
       form: exported ? 'export' : 'import',
       names: useLeaves(argument, []).map((path) => path.join('::')),
+      ...position,
+    },
+  ]
+}
+
+/** `extern crate alpha as al;` binds `al`, recorded as the use leaf `alpha as al` would be. */
+function externCrate(
+  node: Node,
+  position: Omit<ModuleImportOccurrence, 'form'>,
+): ModuleImportOccurrence[] {
+  const name = node.childForFieldName('name')
+  if (!name) return []
+  const crate = unraw(name.text)
+  const alias = node.childForFieldName('alias')
+  return [
+    {
+      specifier: crate,
+      form: 'import',
+      externCrate: true,
+      ...(alias ? { names: [`${crate} as ${unraw(alias.text)}`] } : {}),
       ...position,
     },
   ]

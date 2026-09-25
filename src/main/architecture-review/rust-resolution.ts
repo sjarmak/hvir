@@ -127,6 +127,9 @@ class PathResolver {
     if (first === 'self' || first === 'super' || this.tree.child(here, first))
       return this.walk(here, segments, visiting)
     if (this.declaresMod(source, scope, first)) return UNRESOLVED
+    const aliased = this.externCrateAlias(here, first)
+    if (aliased === 'self') return this.path(source, scope, ['crate', ...rest], visiting)
+    if (aliased !== undefined) return this.inCrate(aliased, rest, visiting)
     if (this.crates.has(first)) return this.inCrate(first, rest, visiting)
     return this.providedBy(here)?.declared.has(first) ? internal(source) : EXTERNAL
   }
@@ -195,6 +198,27 @@ class PathResolver {
     )
     if (visiting.size === 0) this.bindings.set(key, leads)
     return leads
+  }
+
+  /**
+   * The crate an `extern crate crate as name;` names, written in this module or at its crate
+   * root, where the alias joins the extern prelude every module of the crate sees.
+   */
+  private externCrateAlias(module: RustModule, name: string): string | undefined {
+    const root = this.tree.rootOf(module.file)
+    const places = root ? [module, { file: root, scope: [] }] : [module]
+    for (const place of places) {
+      const declaration = this.facts
+        .get(place.file)
+        ?.imports.find(
+          (entry) =>
+            entry.externCrate &&
+            sameScope(entry.scope ?? [], place.scope) &&
+            entry.names?.some((leaf) => boundName(leaf) === name),
+        )
+      if (declaration) return declaration.specifier
+    }
+    return undefined
   }
 
   /** Whether a module declares `mod name;` in this scope, whatever file it resolves to. */
