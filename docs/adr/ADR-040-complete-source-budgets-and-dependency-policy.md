@@ -43,7 +43,7 @@ Inventory repository-owned files, including added local files for pre-commit ver
 Installed dependencies, Git internals, and disposable build output are not maintained source;
 exclusions must name that role explicitly, and must not hide tracked maintained files. Symlinked
 skill aliases count their repository-owned target once; an unresolved or escaping source alias
-is an inventory error. A recognized source outside the named roots is a coverage error requiring
+is an inventory error unless it is untracked and Git ignores it, as tool-materialized aliases are. A recognized source outside the named roots is a coverage error requiring
 an explicit root disposition, never an exemption. An additional maintained source language
 requires an explicit policy before adoption; changing an extension is not an escape hatch.
 

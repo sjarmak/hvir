@@ -2,6 +2,7 @@ import { Buffer } from 'node:buffer'
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { chmodSync, symlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
@@ -99,7 +100,10 @@ describe('complete architecture budget policy', () => {
   it('keeps a tool-owned directory outside the inventory whether tracked, executable, or runtime', () => {
     const r = repo(),
       policy = ordinaryPolicy()
-    r.write('.beads/hooks/pre-commit', '#!/usr/bin/env sh\nbd hooks run pre-commit "$@"\n')
+    r.write(
+      '.beads/hooks/pre-commit',
+      '#!/usr/bin/env sh\nbd hooks run pre-commit "$@"\n',
+    )
     chmodSync(join(r.root, '.beads/hooks/pre-commit'), 0o755)
     r.write('.beads/issues.jsonl', '{"id":"hvir-1"}\n')
     r.write('.beads/config.yaml', 'sync: false\n')
@@ -218,6 +222,31 @@ describe('complete architecture budget policy', () => {
       expect(() => collectInventory(r.root, ordinaryPolicy())).toThrow()
     },
   )
+  it('skips only an untracked escaping or broken alias that Git ignores', () => {
+    const r = repo(),
+      policy = ordinaryPolicy()
+    r.source(1, 'src/owner.ts')
+    r.write(
+      '.git/info/exclude',
+      '/.claude/skills/tool\n/.claude/skills/stale\n/vendor/\n',
+    )
+    r.write('.claude/skills/.keep', '')
+    symlinkSync(tmpdir(), join(r.root, '.claude/skills/tool'))
+    symlinkSync('missing', join(r.root, '.claude/skills/stale'))
+    expect([...collectInventory(r.root, policy).keys()]).toEqual(['src/owner.ts'])
+    symlinkSync(tmpdir(), join(r.root, '.claude/skills/other'))
+    expect(() => collectInventory(r.root, policy)).toThrow(
+      /Escaping or unowned source alias: .claude\/skills\/other/,
+    )
+    r.remove('.claude/skills/other')
+    r.write('vendor/.keep', '')
+    symlinkSync(tmpdir(), join(r.root, 'vendor/link'))
+    r.git('add', '-f', 'vendor/link')
+    r.git('commit', '-m', 'tracked alias under an ignored directory')
+    expect(() => collectInventory(r.root, policy)).toThrow(
+      /Escaping or unowned source alias: vendor\/link/,
+    )
+  })
   it('does not turn a changed extension or ignored maintained file into an exemption', () => {
     const r = repo()
     r.write('.gitignore', 'src/hidden.ts\n')

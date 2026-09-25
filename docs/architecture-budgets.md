@@ -58,7 +58,7 @@ source, count. Local `.log`, `.tsbuildinfo`, and `.env`/`.env.*` artifacts have 
 dispositions; untracked status alone never excludes an unknown source language. Configured source
 extensions take precedence, and executable shell shebangs remain source even with a data suffix.
 Repository-owned aliases resolve once to their target; broken or escaping
-aliases fail. Installed `node_modules`, Git internals, `out`, `dist`, coverage, and native
+aliases fail unless they are untracked and Git ignores them (tool-materialized skill links). Installed `node_modules`, Git internals, `out`, `dist`, coverage, and native
 `packages/*/build` output are excluded by their disposable role. A tracked file under one of
 those roles is an error, never a silent exemption. The top-level `.beads` directory carries a
 tool-owned role: its tracked files are the beads issue tracker's managed configuration and hooks

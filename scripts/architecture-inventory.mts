@@ -174,6 +174,24 @@ export function createArchitectureInventory(repositoryRoot: string) {
     }
     const owned = new Set(tracked),
       visited = new Set<string>()
+    let ignoredPaths: string[] | null = null
+    // Tool-materialized aliases (agent skills, worktrees) that Git ignores are not repository
+    // source. Git decides: `--others` keeps tracked paths, even under ignored directories, owned.
+    function ignored(path: string): boolean {
+      ignoredPaths ??= git(root, [
+        'ls-files',
+        '--others',
+        '--ignored',
+        '--exclude-standard',
+        '--directory',
+        '-z',
+      ])
+        .split('\0')
+        .filter(Boolean)
+      return ignoredPaths.some(
+        (p) => p === path || (p.endsWith('/') && path.startsWith(p)),
+      )
+    }
     function walk(path: string): void {
       const absolute = join(root, path),
         info = lstatSync(absolute)
@@ -182,14 +200,17 @@ export function createArchitectureInventory(repositoryRoot: string) {
         try {
           target = relative(root, realpathSync(absolute)).replaceAll('\\', '/')
         } catch {
+          if (ignored(path)) return
           throw new Error(`Unresolved source alias: ${path}`)
         }
         if (
           target.startsWith('../') ||
           !target ||
           !tracked.some((p) => p === target || p.startsWith(`${target}/`))
-        )
+        ) {
+          if (ignored(path)) return
           throw new Error(`Escaping or unowned source alias: ${path}`)
+        }
         walk(target)
         return
       }
