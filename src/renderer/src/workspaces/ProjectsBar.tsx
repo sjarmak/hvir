@@ -32,6 +32,8 @@ import {
 } from '../workbench/middle-click-close'
 import { WorkbenchHealthControl } from '../health/WorkbenchHealthControl'
 import { ClosedWorktreesDialog, CloseWorkspaceDialog } from './WorkspaceCatalogDialogs'
+import { RemoveUnfinishedHandoffDialog } from './UnfinishedHandoffs'
+import { useUnfinishedHandoffs } from './use-unfinished-handoffs'
 
 interface ProjectsBarProps {
   readonly state: ProjectState
@@ -96,6 +98,7 @@ export function ProjectsBar({
   const [pruneProjectId, setPruneProjectId] = useState<string>()
   const [closeProjectId, setCloseProjectId] = useState<string>()
   const [catalogProjectId, setCatalogProjectId] = useState<string>()
+  const [removeHandoffId, setRemoveHandoffId] = useState<string>()
   const [planningWorkspaceId, setPlanningWorkspaceId] = useState<string>()
   const [closeWorkspaceRequest, setCloseWorkspaceRequest] = useState<{
     readonly projectId: string
@@ -117,6 +120,11 @@ export function ProjectsBar({
     ) ?? []
   const openWorkspaces =
     activeProject?.workspaces.filter((workspace) => !workspace.closed) ?? []
+  const unfinishedHandoffs = useUnfinishedHandoffs(activeProject, state.revision)
+  const removeHandoff = openWorkspaces.find(
+    (workspace) =>
+      workspace.id === removeHandoffId && unfinishedHandoffs.has(workspace.id),
+  )
   const closedWorkspaces =
     activeProject?.workspaces.filter((workspace) => workspace.closed) ?? []
   // A single-checkout project has nothing to switch between; reclaim the row.
@@ -360,11 +368,30 @@ export function ProjectsBar({
                   <span>{workspace.name}</span>
                   {workspace.main ? <small>project root</small> : null}
                   {workspace.prunableReason ? <small>prunable</small> : null}
+                  {unfinishedHandoffs.has(workspace.id) ? (
+                    <small>unfinished handoff</small>
+                  ) : null}
                   <WorkspaceAttention
                     actionable={workspaceActionableAttention(workspace.id, rollups)}
                     waiting={workspaceExternalAttention(workspace.id, external)}
                   />
                 </button>
+                {unfinishedHandoffs.has(workspace.id) ? (
+                  <button
+                    type="button"
+                    className="workspace-remove-handoff"
+                    disabled={busy || workspace.id === state.activeWorkspaceId}
+                    onClick={() => setRemoveHandoffId(workspace.id)}
+                    aria-label={`Remove unfinished handoff ${workspace.name}`}
+                    title={
+                      workspace.id === state.activeWorkspaceId
+                        ? 'Select another workspace before removing this one'
+                        : 'Remove this unfinished handoff worktree and its branch'
+                    }
+                  >
+                    <span aria-hidden="true">⌫</span>
+                  </button>
+                ) : null}
                 {!workspace.missing ? (
                   <button
                     type="button"
@@ -496,6 +523,13 @@ export function ProjectsBar({
             </div>
           </section>
         </>
+      ) : null}
+      {activeProject && removeHandoff ? (
+        <RemoveUnfinishedHandoffDialog
+          projectId={activeProject.id}
+          workspace={removeHandoff}
+          onClose={() => setRemoveHandoffId(undefined)}
+        />
       ) : null}
       {pruneProject && pruneTargets.length > 0 ? (
         <PruneWorktreesDialog

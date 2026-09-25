@@ -360,6 +360,7 @@
 }
 
 .workspace-dismiss,
+.workspace-remove-handoff,
 .workspace-close {
   width: 23px;
   padding: 0;
@@ -370,11 +371,13 @@
 }
 
 .workspace-dismiss:hover,
+.workspace-remove-handoff:hover:not(:disabled),
 .workspace-close:hover:not(:disabled) {
   background: #563238;
   color: #f1c2c6;
 }
 
+.workspace-remove-handoff:disabled,
 .workspace-close:disabled {
   cursor: default;
   opacity: 0.38;
