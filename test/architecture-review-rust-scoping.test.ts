@@ -165,11 +165,16 @@ describe('Rust use declarations inside blocks', () => {
         'mod outer {\n    fn f() {\n        mod inner { use a::b; }\n        use c::d;\n    }\n    use e::f;\n}\n',
       )
     expect(
-      facts.imports.map(({ specifier, scope, local }) => ({ specifier, scope, local })),
+      facts.imports.map(({ specifier, scope, local, blockScope }) => ({
+        specifier,
+        scope,
+        local,
+        blockScope,
+      })),
     ).toEqual([
-      { specifier: 'a::b', scope: ['outer'], local: true },
-      { specifier: 'c::d', scope: ['outer'], local: true },
-      { specifier: 'e::f', scope: ['outer'], local: undefined },
+      { specifier: 'a::b', scope: ['outer'], local: true, blockScope: ['inner'] },
+      { specifier: 'c::d', scope: ['outer'], local: true, blockScope: undefined },
+      { specifier: 'e::f', scope: ['outer'], local: undefined, blockScope: undefined },
     ])
     expect(isModuleFacts(JSON.parse(JSON.stringify(facts)))).toBe(true)
   })
@@ -260,6 +265,85 @@ describe('Rust use declarations inside blocks', () => {
     expect(resolutionsOf(files, MAIN, ['inner_sc::version'])).toEqual([
       external('inner_sc::version'),
     ])
+  })
+})
+
+describe('Rust #[path] modules declared inside blocks', () => {
+  const LIB = 'shop/src/lib.rs'
+  const B = 'shop/src/b.rs'
+  const HID = 'shop/src/hid.rs'
+  const withB = (b: string, extra: Readonly<Record<string, string>> = {}) =>
+    withFiles({
+      [LIB]: `${fixtureContent(LIB)}\npub mod b;\n`,
+      [B]: b,
+      [HID]: 'use crate::b;\nuse super::y;\n',
+      ...extra,
+    })
+  const unreachedFiles = (files: readonly ArchitectureSourceFile[]) =>
+    scan(files)
+      .diagnostics.filter((entry) => entry.message.startsWith('No crate root reaches'))
+      .map((entry) => entry.file)
+
+  it('reaches the file a #[path] mod inside a function body loads', () => {
+    const files = withB('pub fn y() {\n    #[path = "hid.rs"]\n    mod hid;\n}\n')
+    expect(unreachedFiles(files)).not.toContain(HID)
+    expect(resolutionsOf(files, B, ['hid'])).toEqual([internal('hid', HID)])
+    expect(resolutionsOf(files, HID, ['crate::b', 'super::y'])).toEqual([
+      internal('crate::b', B),
+      internal('super::y', B),
+    ])
+  })
+
+  it('does not bind a #[path] mod inside a function body as a child of the file', () => {
+    const files = withB('pub fn y() {\n    #[path = "hid.rs"]\n    mod hid;\n}\n', {
+      'shop/src/util/fmt.rs': 'use crate::b::hid;\n',
+    })
+    expect(resolutionsOf(files, 'shop/src/util/fmt.rs', ['crate::b::hid'])).toEqual([
+      unresolved('crate::b::hid'),
+    ])
+  })
+
+  it('leaves a mod without #[path] inside a function body unresolved, as rustc rejects it', () => {
+    const files = withB('fn z() {\n    mod nopath;\n}\n', {
+      'shop/src/b/nopath.rs': 'use crate::b;\n',
+    })
+    expect(resolutionsOf(files, B, ['nopath'])).toEqual([unresolved('nopath')])
+    expect(unreachedFiles(files)).toContain('shop/src/b/nopath.rs')
+  })
+
+  it('places a #[path] file under an inline module inside a block by rustc directory rules', () => {
+    const files = withB(
+      [
+        'pub fn y() {}',
+        'fn w() {',
+        '    mod inner {',
+        '        #[path = "deep.rs"]',
+        '        mod deep;',
+        '    }',
+        '}',
+        'pub mod outer {',
+        '    fn v() {',
+        '        #[path = "under.rs"]',
+        '        mod under;',
+        '    }',
+        '}',
+      ].join('\n'),
+      {
+        'shop/src/inner/deep.rs': 'use crate::b::y;\nuse super::super::y;\n',
+        'shop/src/b/outer/under.rs': 'use super::super::y;\n',
+      },
+    )
+    expect(resolutionsOf(files, B, ['deep', 'under'])).toEqual([
+      internal('deep', 'shop/src/inner/deep.rs'),
+      internal('under', 'shop/src/b/outer/under.rs'),
+    ])
+    expect(unreachedFiles(files)).not.toContain('shop/src/inner/deep.rs')
+    expect(
+      resolutionsOf(files, 'shop/src/inner/deep.rs', ['crate::b::y', 'super::super::y']),
+    ).toEqual([internal('crate::b::y', B), internal('super::super::y', B)])
+    expect(
+      resolutionsOf(files, 'shop/src/b/outer/under.rs', ['super::super::y']),
+    ).toEqual([internal('super::super::y', B)])
   })
 })
 

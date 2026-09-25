@@ -36,6 +36,11 @@ export class RustModuleTree {
   >()
   /** Per file: the inline modules it holds, by scope key. */
   private readonly inline = new Map<string, ReadonlySet<string>>()
+  /**
+   * Per file: the `#[path]` modules declared inside blocks. rustc compiles each as a module,
+   * but no path from outside the block can name it.
+   */
+  private readonly blockModules = new Map<string, readonly ModuleImportOccurrence[]>()
 
   constructor(
     facts: ReadonlyMap<string, ModuleFacts>,
@@ -69,7 +74,7 @@ export class RustModuleTree {
       .get(module.file)
       ?.get(scopeKey(module.scope))
       ?.get(name)
-    const file = declaration && this.declaredFile(module.file, module.scope, declaration)
+    const file = declaration && this.declaredFile(module.file, declaration)
     if (file) return { file, scope: [] }
     const scope = [...module.scope, name]
     return this.inline.get(module.file)?.has(scopeKey(scope))
@@ -80,13 +85,13 @@ export class RustModuleTree {
   /**
    * The file a `mod name;` loads (the Rust reference's rules): beside a mod-rs file, in a
    * directory named after any other file, under the inline modules around it, or where a
-   * `#[path]` attribute points relative to the declaring file's directory.
+   * `#[path]` attribute points relative to the declaring file's directory. Inside a block
+   * only a `#[path]` module loads a file, and rustc does not add the directory named after
+   * a non-mod-rs file for the inline modules within that block.
    */
-  declaredFile(
-    file: string,
-    scope: readonly string[],
-    declaration: ModuleImportOccurrence,
-  ): string | undefined {
+  declaredFile(file: string, declaration: ModuleImportOccurrence): string | undefined {
+    if (declaration.local && declaration.pathAttribute === undefined) return undefined
+    const scope = declaration.scope ?? []
     const directory = posix.dirname(file)
     const own = this.isModRs(file)
       ? directory
@@ -96,6 +101,7 @@ export class RustModuleTree {
         ? [
             posix.join(
               scope.length === 0 ? directory : posix.join(own, ...scope),
+              ...(declaration.blockScope ?? []),
               declaration.pathAttribute,
             ),
           ]
@@ -120,9 +126,14 @@ export class RustModuleTree {
         .filter((item) => item.kind === 'module')
         .map((item) => scopeKey([...item.scope, item.name])),
     ])
+    const blockModules: ModuleImportOccurrence[] = []
     for (const occurrence of facts.imports) {
       // A declaration inside a block belongs to no module a path can name.
-      if (occurrence.local) continue
+      if (occurrence.local) {
+        if (occurrence.form === 'mod' && occurrence.pathAttribute !== undefined)
+          blockModules.push(occurrence)
+        continue
+      }
       const scope = occurrence.scope ?? []
       scope.forEach((_, index) => inline.add(scopeKey(scope.slice(0, index + 1))))
       if (occurrence.form !== 'mod' || occurrence.specifier === undefined) continue
@@ -133,28 +144,36 @@ export class RustModuleTree {
     }
     this.declarations.set(file, byScope)
     this.inline.set(file, inline)
+    this.blockModules.set(file, blockModules)
   }
 
-  /** Breadth-first from one crate root; files already placed keep their first placement. */
+  /**
+   * Breadth-first from one crate root; files already placed keep their first placement. A
+   * module declared inside a block has the module around it as its parent, as `super` sees it.
+   */
   private grow(root: string): void {
     if (this.placements.has(root)) return
     this.placements.set(root, { root, modRs: true })
     const queue = [root]
     for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
-      for (const [key, named] of this.declarations.get(next) ?? []) {
-        const scope = key === '' ? [] : key.split('::')
-        for (const declaration of named.values()) {
-          const child = this.declaredFile(next, scope, declaration)
-          if (!child || this.placements.has(child)) continue
-          this.placements.set(child, {
-            root,
-            parent: { file: next, scope },
-            modRs:
-              declaration.pathAttribute !== undefined ||
-              posix.basename(child) === 'mod.rs',
-          })
-          queue.push(child)
-        }
+      const itemLevel = [...(this.declarations.get(next)?.values() ?? [])]
+      const declarations = [
+        ...itemLevel.flatMap((named) => [...named.values()]),
+        ...(this.blockModules.get(next) ?? []),
+      ]
+      for (const declaration of declarations) {
+        const child = this.declaredFile(next, declaration)
+        if (!child || this.placements.has(child)) continue
+        this.placements.set(child, {
+          root,
+          parent: {
+            file: next,
+            scope: [...(declaration.scope ?? []), ...(declaration.blockScope ?? [])],
+          },
+          modRs:
+            declaration.pathAttribute !== undefined || posix.basename(child) === 'mod.rs',
+        })
+        queue.push(child)
       }
     }
   }

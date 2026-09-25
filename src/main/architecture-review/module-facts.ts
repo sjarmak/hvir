@@ -17,6 +17,11 @@ export interface ModuleImportOccurrence {
    * its file, but binds no name and declares no module that paths from elsewhere can reach.
    */
   readonly local?: boolean
+  /**
+   * For a local Rust declaration, the inline modules around it inside its outermost block,
+   * outermost first; `scope` holds those outside that block.
+   */
+  readonly blockScope?: readonly string[]
   /** Whether it is a Rust `extern crate`, whose alias at a crate root joins the extern prelude. */
   readonly externCrate?: boolean
   /** A Rust `mod` declaration's `#[path = "..."]` attribute, as written. */
@@ -72,6 +77,7 @@ function isOccurrence(entry: unknown): boolean {
     FORMS.has(entry.form) &&
     isOptionalStrings(entry.names) &&
     isOptionalStrings(entry.scope) &&
+    isOptionalStrings(entry.blockScope) &&
     (entry.pathAttribute === undefined || typeof entry.pathAttribute === 'string') &&
     (entry.externCrate === undefined || typeof entry.externCrate === 'boolean') &&
     (entry.local === undefined || typeof entry.local === 'boolean') &&

@@ -8,7 +8,7 @@ import { lineOf, syntaxDiagnostics } from './tree-sitter-syntax'
  * Bump whenever what `parseRustFacts` extracts changes. The scanner version adds a digest of
  * the runtime and grammar bytes, so a grammar upgrade changes it on its own.
  */
-export const RUST_FACTS_REVISION = 'rust-facts-6'
+export const RUST_FACTS_REVISION = 'rust-facts-7'
 
 type ModuleSymbol = ArchitectureModule['symbols'][number]
 
@@ -84,13 +84,14 @@ function itemsWithin(node: Node | null, scope: readonly string[]): InlineItem[] 
 }
 
 function occurrence(node: Node): ModuleImportOccurrence[] {
-  const { scope, local } = placement(node)
+  const { scope, local, blockScope } = placement(node)
   const position = {
     line: lineOf(node),
     column: node.startPosition.column + 1,
     typeOnly: false,
     ...(scope.length > 0 ? { scope } : {}),
     ...(local ? { local } : {}),
+    ...(blockScope.length > 0 ? { blockScope } : {}),
   }
   if (node.type === 'extern_crate_declaration') return externCrate(node, position)
   if (node.type === 'mod_item') return modDeclaration(node, position)
@@ -150,8 +151,14 @@ function modDeclaration(
  * The item-level module a declaration belongs to: the names of the inline modules around it,
  * outermost first, stopping at the outermost block (a function body, a const initializer or
  * any other block). A declaration inside a block is local: rustc scopes it to that block.
+ * The inline modules between that block and the declaration are its block scope.
  */
-function placement(node: Node): { readonly scope: string[]; readonly local: boolean } {
+function placement(node: Node): {
+  readonly scope: string[]
+  readonly local: boolean
+  readonly blockScope: string[]
+} {
+  const all: string[] = []
   let scope: string[] = []
   let local = false
   for (let parent = node.parent; parent; parent = parent.parent) {
@@ -160,9 +167,12 @@ function placement(node: Node): { readonly scope: string[]; readonly local: bool
       local = true
     }
     const name = parent.type === 'mod_item' ? parent.childForFieldName('name') : null
-    if (name) scope.unshift(unraw(name.text))
+    if (name) {
+      scope.unshift(unraw(name.text))
+      all.unshift(unraw(name.text))
+    }
   }
-  return { scope, local }
+  return { scope, local, blockScope: all.slice(scope.length) }
 }
 
 const COMMENTS: ReadonlySet<string> = new Set(['line_comment', 'block_comment'])

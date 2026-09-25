@@ -77,7 +77,7 @@ class PathResolver {
     const scope = occurrence.scope ?? []
     const located =
       occurrence.form === 'mod'
-        ? [this.declared(source, scope, occurrence)]
+        ? [this.declared(source, occurrence)]
         : (occurrence.names ?? [occurrence.specifier ?? '']).map((path) =>
             this.path(source, scope, leafPath(path).split('::'), NONE),
           )
@@ -96,12 +96,8 @@ class PathResolver {
     }))
   }
 
-  private declared(
-    source: string,
-    scope: readonly string[],
-    occurrence: ModuleImportOccurrence,
-  ): Located {
-    const file = this.tree.declaredFile(source, scope, occurrence)
+  private declared(source: string, occurrence: ModuleImportOccurrence): Located {
+    const file = this.tree.declaredFile(source, occurrence)
     return file ? { resolution: 'internal', target: file } : UNRESOLVED
   }
 
