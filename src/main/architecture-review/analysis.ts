@@ -21,6 +21,7 @@ import type {
 import { gitBlobId } from './blob-id'
 import type { LanguageScanner, ScannerSet, ScanResolver } from './language-scanner'
 import type { ModuleFacts } from './module-facts'
+import { inferArchitectureSystems, systemOf } from './system-inference'
 import { TYPESCRIPT_ONLY_SCANNERS } from './typescript-scanner'
 
 const digest = (value: string): string => createHash('sha256').update(value).digest('hex')
@@ -68,6 +69,7 @@ export function scanArchitecture(
   )
   const configs = input.configs ?? []
   const layout = input.layout ?? ARCHITECTURE_DEFAULT_LAYOUT
+  const systems = inferArchitectureSystems(sorted, configs, layout)
   const claimed = claimModules(sorted, scanners).map((entry) =>
     parseModule(entry, factsOf),
   )
@@ -79,7 +81,7 @@ export function scanArchitecture(
     ...unscannedDiagnostics(sorted.length - claimed.length),
   ]
   for (const entry of claimed) {
-    const scanned = scanModule(entry, resolvers.get(entry.scanner)!, layout)
+    const scanned = scanModule(entry, resolvers.get(entry.scanner)!, layout, systems)
     diagnostics.push(...scanned.diagnostics)
     modules.push(scanned.module)
     imports.push(
@@ -188,6 +190,7 @@ function scanModule(
   { source, blob, facts }: ParsedModule,
   resolver: ScanResolver,
   layout: ArchitectureLayout,
+  systems: ReturnType<typeof inferArchitectureSystems>,
 ): {
   module: ArchitectureModule
   imports: readonly ArchitectureImportFact[]
@@ -196,6 +199,7 @@ function scanModule(
   return {
     module: {
       path: source.path,
+      system: systemOf(systems, source.path),
       subsystem: subsystemOf(layout, source.path),
       hash: blob,
       symbols: facts.symbols,
@@ -239,7 +243,13 @@ export function compareArchitecture(
         change: change(
           Boolean(old),
           Boolean(current),
-          Boolean(old && current && old.hash !== current.hash),
+          Boolean(
+            old &&
+            current &&
+            (old.hash !== current.hash ||
+              old.system !== current.system ||
+              old.subsystem !== current.subsystem),
+          ),
         ),
       }
     })

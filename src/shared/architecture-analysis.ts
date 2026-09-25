@@ -38,6 +38,7 @@ export type ArchitectureImportForm =
 
 export interface ArchitectureModule {
   readonly path: string
+  readonly system: string
   /** The Subsystem (CONTEXT.md) the module belongs to under the scan's layout. */
   readonly subsystem: string
   readonly hash: string

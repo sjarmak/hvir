@@ -39,6 +39,7 @@ const snapshot = {
     origin: 'override',
     scope: ['src', 'test'],
     sourceRoots: ['src'],
+    systems: [],
     subsystems: [{ name: 'ui', paths: ['src/renderer'] }],
   },
   capturedAt: '2026-09-23',

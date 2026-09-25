@@ -68,15 +68,6 @@ export function subsystemMap(analysis: ArchitectureAnalysis, all: boolean) {
         a.source.localeCompare(b.source) ||
         a.target.localeCompare(b.target),
     )
-  const layoutIds = [
-    ...new Set([
-      ...analysis.modules.map((module) => module.subsystem),
-      ...analysis.relationships.flatMap((relationship) => [
-        relationship.source,
-        relationship.target,
-      ]),
-    ]),
-  ].sort((left, right) => left.localeCompare(right))
   const layoutRelationships = [...analysis.relationships].sort(
     (left, right) =>
       left.source.localeCompare(right.source) || left.target.localeCompare(right.target),
@@ -87,7 +78,6 @@ export function subsystemMap(analysis: ArchitectureAnalysis, all: boolean) {
   return {
     nodes,
     relationships: relationships.slice(0, 120),
-    layoutIds,
     layoutRelationships,
     layoutModules,
     omittedNodes: Math.max(0, ids.length - nodes.length),
@@ -99,7 +89,7 @@ export interface ArchitectureCanvasNode {
   readonly id: string
   readonly label: string
   readonly detail: string
-  readonly kind: 'subsystem' | 'module'
+  readonly kind: 'system' | 'subsystem' | 'module'
   readonly change: ArchitectureModuleDelta['change']
   readonly ghost: boolean
   readonly nearby: boolean
@@ -131,24 +121,54 @@ export interface ArchitectureCanvasLayoutInput {
 export function architectureCanvasElements(
   map: ReturnType<typeof subsystemMap>,
   mode: ArchitectureMapMode,
+  expandedSystem?: string,
   expandedSubsystem?: string,
 ): {
   readonly nodes: readonly ArchitectureCanvasNode[]
   readonly edges: readonly ArchitectureCanvasEdge[]
   readonly layout: ArchitectureCanvasLayoutInput
 } {
-  const subsystemNodes = map.nodes.map((node) => ({
-    id: node.id,
-    label: node.id,
-    detail: node.modules.length
-      ? `${node.changed} changed · ${node.modules.length} files`
-      : 'External or unresolved import',
-    kind: 'subsystem' as const,
-    change: node.change,
-    ghost: absentInMode(node.change, mode),
-    nearby: node.nearby,
+  const systems = systemGroups(map.nodes)
+  const systemNodes = systems.map((system) => ({
+    id: `system:${system.name}`,
+    label: system.name,
+    detail: `${system.subsystems.length} subsystem${system.subsystems.length === 1 ? '' : 's'} · ${system.changed} changed`,
+    kind: 'system' as const,
+    change: combinedChange(system.subsystems.map((node) => node.change)),
+    ghost: system.subsystems.every((node) => absentInMode(node.change, mode)),
+    nearby: system.subsystems.every((node) => node.nearby),
   }))
-  const expanded = map.nodes.find((node) => node.id === expandedSubsystem)
+  const visibleSystems = new Set(systems.map((system) => system.name))
+  const systemRelationships = aggregateSystemRelationships(
+    map.relationships,
+    map.layoutModules,
+  ).filter(
+    (relationship) =>
+      visibleSystems.has(relationship.source) && visibleSystems.has(relationship.target),
+  )
+  const systemRelationshipEdges = systemRelationships.map((relationship) => ({
+    id: `system-relationship:${relationship.source}:${relationship.target}`,
+    source: `system:${relationship.source}`,
+    target: `system:${relationship.target}`,
+    change: relationship.change,
+    ghost: absentInMode(relationship.change, mode),
+  }))
+  const subsystemNodes = map.nodes
+    .filter((node) => node.modules.some((module) => module.system === expandedSystem))
+    .map((node) => ({
+      id: node.id,
+      label: node.id,
+      detail: node.modules.length
+        ? `${node.changed} changed · ${node.modules.length} files`
+        : 'External or unresolved import',
+      kind: 'subsystem' as const,
+      change: node.change,
+      ghost: absentInMode(node.change, mode),
+      nearby: node.nearby,
+    }))
+  const expanded = subsystemNodes.some((node) => node.id === expandedSubsystem)
+    ? map.nodes.find((node) => node.id === expandedSubsystem)
+    : undefined
   const moduleNodes = (expanded?.modules ?? []).slice(0, 200).map((module) => ({
     id: `module:${module.path}`,
     label: module.path,
@@ -159,13 +179,27 @@ export function architectureCanvasElements(
     nearby: false,
     path: module.path,
   }))
-  const relationshipEdges = map.relationships.map((relationship) => ({
-    id: `relationship:${relationship.source}:${relationship.target}`,
-    source: relationship.source,
-    target: relationship.target,
-    change: relationship.change,
-    ghost: absentInMode(relationship.change, mode),
-    relationship,
+  const visibleSubsystems = new Set(subsystemNodes.map((node) => node.id))
+  const relationshipEdges = map.relationships
+    .filter(
+      (relationship) =>
+        visibleSubsystems.has(relationship.source) &&
+        visibleSubsystems.has(relationship.target),
+    )
+    .map((relationship) => ({
+      id: `relationship:${relationship.source}:${relationship.target}`,
+      source: relationship.source,
+      target: relationship.target,
+      change: relationship.change,
+      ghost: absentInMode(relationship.change, mode),
+      relationship,
+    }))
+  const systemMembershipEdges = subsystemNodes.map((node) => ({
+    id: `system-membership:${expandedSystem}:${node.id}`,
+    source: `system:${expandedSystem}`,
+    target: node.id,
+    change: node.change,
+    ghost: node.ghost,
   }))
   const membershipEdges = moduleNodes.map((node) => ({
     id: `membership:${expandedSubsystem}:${node.id}`,
@@ -174,6 +208,13 @@ export function architectureCanvasElements(
     change: node.change,
     ghost: node.ghost,
   }))
+  const layoutSubsystems = [
+    ...new Set(
+      map.layoutModules
+        .filter((module) => module.system === expandedSystem)
+        .map((module) => module.subsystem),
+    ),
+  ].sort()
   const layoutModuleNodes = map.layoutModules
     .filter((module) => module.subsystem === expandedSubsystem)
     .slice(0, 200)
@@ -183,26 +224,94 @@ export function architectureCanvasElements(
     source: expandedSubsystem!,
     target: node.id,
   }))
-  const nodes = [...subsystemNodes, ...moduleNodes]
-  const edges = [...relationshipEdges, ...membershipEdges]
+  const layoutSystems = [
+    ...new Set(map.layoutModules.map((module) => module.system)),
+  ].sort()
+  const nodes = [...systemNodes, ...subsystemNodes, ...moduleNodes]
+  const edges = [
+    ...systemRelationshipEdges,
+    ...systemMembershipEdges,
+    ...relationshipEdges,
+    ...membershipEdges,
+  ]
   return {
     nodes,
     edges,
     layout: {
       nodes: [
-        ...map.layoutIds.map((id) => ({ id, width: 244, height: 64 })),
+        ...layoutSystems.map((id) => ({ id: `system:${id}`, width: 244, height: 64 })),
+        ...layoutSubsystems.map((id) => ({ id, width: 244, height: 64 })),
         ...layoutModuleNodes,
       ],
       edges: [
-        ...map.layoutRelationships.map(({ source, target }) => ({
-          id: `relationship:${source}:${target}`,
-          source,
-          target,
+        ...aggregateSystemRelationships(map.layoutRelationships, map.layoutModules).map(
+          ({ source, target }) => ({
+            id: `system-relationship:${source}:${target}`,
+            source: `system:${source}`,
+            target: `system:${target}`,
+          }),
+        ),
+        ...layoutSubsystems.map((id) => ({
+          id: `system-membership:${expandedSystem}:${id}`,
+          source: `system:${expandedSystem}`,
+          target: id,
         })),
+        ...map.layoutRelationships
+          .filter(
+            ({ source, target }) =>
+              layoutSubsystems.includes(source) && layoutSubsystems.includes(target),
+          )
+          .map(({ source, target }) => ({
+            id: `relationship:${source}:${target}`,
+            source,
+            target,
+          })),
         ...layoutMembershipEdges,
       ],
     },
   }
+}
+
+function aggregateSystemRelationships(
+  relationships: readonly ArchitectureRelationshipDelta[],
+  modules: readonly ArchitectureModuleDelta[],
+) {
+  const systems = new Map<string, string>()
+  for (const module of modules)
+    if (!systems.has(module.subsystem)) systems.set(module.subsystem, module.system)
+  const grouped = new Map<string, ArchitectureRelationshipDelta['change'][]>()
+  for (const relationship of relationships) {
+    const source = systems.get(relationship.source)
+    const target = systems.get(relationship.target)
+    if (!source || !target || source === target) continue
+    const key = JSON.stringify([source, target])
+    grouped.set(key, [...(grouped.get(key) ?? []), relationship.change])
+  }
+  return [...grouped]
+    .map(([key, changes]) => {
+      const [source, target] = JSON.parse(key) as [string, string]
+      return { source, target, change: combinedChange(changes) }
+    })
+    .sort(
+      (left, right) =>
+        left.source.localeCompare(right.source) ||
+        left.target.localeCompare(right.target),
+    )
+}
+
+function systemGroups(nodes: readonly ArchitectureSubsystem[]) {
+  const systems = new Map<string, ArchitectureSubsystem[]>()
+  for (const node of nodes) {
+    for (const system of new Set(node.modules.map((module) => module.system)))
+      systems.set(system, [...(systems.get(system) ?? []), node])
+  }
+  return [...systems]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([name, subsystems]) => ({
+      name,
+      subsystems,
+      changed: subsystems.reduce((total, subsystem) => total + subsystem.changed, 0),
+    }))
 }
 
 function combinedChange(
@@ -253,12 +362,16 @@ export function evidenceByModule(
 
 /** Where a snapshot's subsystems and scope came from, in words for its details. */
 export function layoutSummary(layout: ArchitectureLayout): {
+  readonly systems: string
   readonly subsystems: string
   readonly scope: string
 } {
   const roots = layout.sourceRoots.join(', ')
   const rules = layout.subsystems.length
   return {
+    systems: layout.systems.length
+      ? `${ARCHITECTURE_LAYOUT_FILE}: ${layout.systems.map((system) => system.name).join(', ')}`
+      : 'Inferred from project layout',
     subsystems:
       layout.origin === 'override'
         ? `${ARCHITECTURE_LAYOUT_FILE}: ${rules} rule${rules === 1 ? '' : 's'}, then the first directory under ${roots}`

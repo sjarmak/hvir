@@ -28,7 +28,13 @@ const snapshot = (scope: readonly string[]) => ({
   currentRevision: 'working-tree',
   fingerprint: 'f',
   exclusions: [],
-  layout: { origin: 'override', scope, sourceRoots: ['src'], subsystems: [] },
+  layout: {
+    origin: 'override',
+    scope,
+    sourceRoots: ['src'],
+    systems: [],
+    subsystems: [],
+  },
   capturedAt: '2026-09-24',
   metrics: { totalMs: 1, timingFaults: [], spans: [] },
 })

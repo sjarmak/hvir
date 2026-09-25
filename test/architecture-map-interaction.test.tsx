@@ -138,6 +138,8 @@ it('expands subsystem modules in the canvas and preserves relationship evidence'
       />,
     ),
   )
+  const system = container.querySelector<HTMLElement>('[aria-label^="system (project)"]')!
+  act(() => system.click())
   const subsystem = container.querySelector<HTMLElement>(
     '[aria-label^="subsystem data"]',
   )!

@@ -65,6 +65,7 @@ it('drills a relationship into its modules, each with its own import evidence', 
 
 it('summarises where subsystems and scope came from', () => {
   expect(layoutSummary(ARCHITECTURE_DEFAULT_LAYOUT)).toEqual({
+    systems: 'Inferred from project layout',
     subsystems: 'First directory under src (no .hvir/architecture.json)',
     scope: 'Whole repository',
   })
@@ -73,14 +74,25 @@ it('summarises where subsystems and scope came from', () => {
       origin: 'override',
       scope: ['lib'],
       sourceRoots: ['lib', 'app'],
+      systems: [],
       subsystems: [
         { name: 'a', paths: ['lib/a'] },
         { name: 'b', paths: ['lib/b'] },
       ],
     }),
   ).toEqual({
+    systems: 'Inferred from project layout',
     subsystems:
       '.hvir/architecture.json: 2 rules, then the first directory under lib, app',
     scope: 'lib',
   })
+  expect(
+    layoutSummary({
+      origin: 'override',
+      scope: [],
+      sourceRoots: ['src'],
+      systems: [{ name: 'desktop', paths: ['src'] }],
+      subsystems: [],
+    }).systems,
+  ).toBe('.hvir/architecture.json: desktop')
 })

@@ -48,6 +48,7 @@ const input = (relationships: readonly ArchitectureRelationshipDelta[]) =>
     modules: [
       {
         path: 'src/main/x.ts',
+        system: 'main',
         subsystem: 'main',
         hash: 'h',
         symbols: [],
@@ -55,6 +56,7 @@ const input = (relationships: readonly ArchitectureRelationshipDelta[]) =>
       },
       {
         path: 'src/shared/y.ts',
+        system: 'main',
         subsystem: 'shared',
         hash: 'h',
         symbols: [],

@@ -20,9 +20,11 @@ describe('architecture review analysis', () => {
         'src/b.ts': 'export interface B {}\nexport const b = 1',
       }),
     )
-    expect(result.modules.map((module) => [module.path, module.subsystem])).toEqual([
-      ['src/a.ts', 'src'],
-      ['src/b.ts', 'src'],
+    expect(
+      result.modules.map((module) => [module.path, module.system, module.subsystem]),
+    ).toEqual([
+      ['src/a.ts', '(project)', 'src'],
+      ['src/b.ts', '(project)', 'src'],
     ])
     expect(result.imports.map((fact) => [fact.form, fact.kind, fact.resolution])).toEqual(
       [
@@ -114,6 +116,21 @@ describe('architecture review analysis', () => {
     expect(
       result.relationships.map((r) => [r.source, r.target, r.before, r.after]),
     ).toEqual([['shell', 'src/data', 0, 2]])
+  })
+
+  it('assigns explicit systems before inferred systems', () => {
+    const layout = parseArchitectureLayout(
+      JSON.stringify({
+        version: 1,
+        systems: [{ name: 'desktop', paths: ['src'] }],
+      }),
+    )
+    const result = scanArchitecture({
+      ...input({ 'src/main/index.ts': '' }),
+      configs: [{ path: 'package.json', content: '{"dependencies":{"electron":"1"}}' }],
+      layout,
+    })
+    expect(result.modules[0]?.system).toBe('desktop')
   })
 
   it('fingerprints the layout with the files it groups', () => {

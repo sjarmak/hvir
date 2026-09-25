@@ -140,7 +140,7 @@ export function inArchitectureScope(path: string): boolean {
       .split('/')
       .some((part) => (SCOPE.excludedDirectories as readonly string[]).includes(part)) &&
     (isSource(path) ||
-      /(?:^|\/)(?:tsconfig[^/]*\.json|jsconfig\.json|package\.json|go\.mod|Cargo\.toml)$/.test(
+      /(?:^|\/)(?:tsconfig[^/]*\.json|jsconfig\.json|package\.json|go\.mod|go\.work|Cargo\.toml)$/.test(
         path,
       ))
   )

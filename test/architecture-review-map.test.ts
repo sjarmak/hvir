@@ -126,10 +126,10 @@ it('keeps layout stable when the expanded subsystem becomes hidden', async () =>
   )
   const [visibleLayout, hiddenLayout] = await Promise.all([
     layoutArchitectureGraph(
-      architectureCanvasElements(visible, 'overlay', 'src/d').layout,
+      architectureCanvasElements(visible, 'overlay', '(project)', 'src/d').layout,
     ),
     layoutArchitectureGraph(
-      architectureCanvasElements(hidden, 'overlay', 'src/d').layout,
+      architectureCanvasElements(hidden, 'overlay', '(project)', 'src/d').layout,
     ),
   ])
 
@@ -141,15 +141,14 @@ it('keeps layout stable when the expanded subsystem becomes hidden', async () =>
 it('projects change styling and expands subsystem modules into the canvas', () => {
   const map = subsystemMap(analyzeArchitecture(before, after), false)
   const collapsed = architectureCanvasElements(map, 'after')
-  const expanded = architectureCanvasElements(map, 'after', 'src/data')
+  const systemExpanded = architectureCanvasElements(map, 'after', '(project)')
+  const expanded = architectureCanvasElements(map, 'after', '(project)', 'src/data')
 
-  expect(collapsed.nodes.find((node) => node.id === 'src/data')).toMatchObject({
+  expect(collapsed.nodes.map((node) => node.id)).toEqual(['system:(project)'])
+  expect(systemExpanded.nodes.find((node) => node.id === 'src/data')).toMatchObject({
     change: 'changed',
     ghost: false,
   })
-  expect(collapsed.edges).toEqual([
-    expect.objectContaining({ change: 'changed', ghost: false }),
-  ])
   expect(expanded.nodes.map((node) => node.id)).toContain('module:src/data/a.ts')
   expect(expanded.nodes.map((node) => node.id)).toContain('module:src/data/b.ts')
   expect(expanded.nodes.find((node) => node.id === 'module:src/data/a.ts')).toMatchObject(
@@ -159,11 +158,53 @@ it('projects change styling and expands subsystem modules into the canvas', () =
     },
   )
   expect(
-    architectureCanvasElements(map, 'before', 'src/data').nodes.find(
+    architectureCanvasElements(map, 'before', '(project)', 'src/data').nodes.find(
       (node) => node.id === 'module:src/data/b.ts',
     ),
   ).toMatchObject({ change: 'added', ghost: true })
   expect(expanded.layout.nodes.map((node) => node.id)).toEqual(
-    expect.arrayContaining(['src/data', 'module:src/data/a.ts', 'module:src/data/b.ts']),
+    expect.arrayContaining([
+      'system:(project)',
+      'src/data',
+      'module:src/data/a.ts',
+      'module:src/data/b.ts',
+    ]),
   )
+})
+
+it('aggregates imports between systems before drilling into subsystems', () => {
+  const layout = {
+    origin: 'override' as const,
+    scope: [],
+    sourceRoots: ['src'],
+    systems: [
+      { name: 'desktop', paths: ['src/main'] },
+      { name: 'companion', paths: ['src/companion'] },
+    ],
+    subsystems: [],
+  }
+  const capture = {
+    scope: '.',
+    exclusions: [],
+    layout,
+    files: [
+      { path: 'src/main/index.ts', content: "import '../companion/page'" },
+      { path: 'src/companion/page.ts', content: '' },
+    ],
+  }
+  const elements = architectureCanvasElements(
+    subsystemMap(analyzeArchitecture({ ...capture, files: [] }, capture), false),
+    'overlay',
+  )
+  expect(elements.nodes.map((node) => node.id)).toEqual([
+    'system:companion',
+    'system:desktop',
+  ])
+  expect(elements.edges).toEqual([
+    expect.objectContaining({
+      source: 'system:desktop',
+      target: 'system:companion',
+      change: 'added',
+    }),
+  ])
 })

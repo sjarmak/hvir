@@ -29,7 +29,8 @@ export function ArchitectureMap({
   onEvidence,
 }: Props): ReactElement {
   const [all, setAll] = useState(false)
-  const [selected, setSelected] = useState<string>()
+  const [selectedSystem, setSelectedSystem] = useState<string>()
+  const [selectedSubsystem, setSelectedSubsystem] = useState<string>()
   const [expanded, setExpanded] = useState(false)
   const mapElement = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
@@ -41,12 +42,14 @@ export function ArchitectureMap({
   }
   const map = useMemo(() => subsystemMap(analysis, all), [analysis, all])
   const elements = useMemo(
-    () => architectureCanvasElements(map, mode, selected),
-    [map, mode, selected],
+    () => architectureCanvasElements(map, mode, selectedSystem, selectedSubsystem),
+    [map, mode, selectedSystem, selectedSubsystem],
   )
   const layoutInput = useMemo(
-    () => architectureCanvasElements(map, 'overlay', selected).layout,
-    [map, selected],
+    () =>
+      architectureCanvasElements(map, 'overlay', selectedSystem, selectedSubsystem)
+        .layout,
+    [map, selectedSystem, selectedSubsystem],
   )
   const layout = useArchitectureLayout(layoutInput)
   const nodes = useMemo<readonly Node[]>(
@@ -71,7 +74,9 @@ export function ArchitectureMap({
           `change-${node.change}`,
           node.ghost ? 'ghost' : '',
           node.nearby ? 'nearby' : '',
-          selected === node.id ? 'selected' : '',
+          selectedSystem === node.label || selectedSubsystem === node.id
+            ? 'selected'
+            : '',
         ]
           .filter(Boolean)
           .join(' '),
@@ -79,7 +84,7 @@ export function ArchitectureMap({
         selectable: true,
         ariaLabel: `${node.kind} ${node.label}, ${node.detail}`,
       })),
-    [elements.nodes, layout.positions, selected],
+    [elements.nodes, layout.positions, selectedSubsystem, selectedSystem],
   )
   const edges = useMemo<readonly Edge[]>(
     () =>
@@ -96,9 +101,12 @@ export function ArchitectureMap({
       })),
     [elements.edges],
   )
-  const node = map.nodes.find((n) => n.id === selected)
+  const node = map.nodes.find((n) => n.id === selectedSubsystem)
   const links = map.relationships.filter(
-    (r) => !selected || r.source === selected || r.target === selected,
+    (r) =>
+      !selectedSubsystem ||
+      r.source === selectedSubsystem ||
+      r.target === selectedSubsystem,
   )
   return (
     <div
@@ -137,17 +145,18 @@ export function ArchitectureMap({
             checked={all}
             onChange={(event) => setAll(event.target.checked)}
           />
-          All subsystems
+          All systems
         </label>
       </div>
       <p className="architecture-map-note">
-        Each top-level node is a subsystem. Lines are observed imports, not responsibility
-        claims. Select a subsystem to expand its modules in place.
+        Each top-level node is a system. Select a system to expand its subsystems, then a
+        subsystem to expand its modules. Lines are observed imports, not responsibility
+        claims.
       </p>
       {map.nodes.length === 0 ? (
         <p>
-          No source changes in this comparison. Enable All subsystems to explore the
-          captured files.
+          No source changes in this comparison. Enable All systems to explore the captured
+          files.
         </p>
       ) : null}
       <div className="architecture-map-canvas" aria-label="Architecture canvas">
@@ -166,15 +175,22 @@ export function ArchitectureMap({
                 1,
                 mode === 'before' || canvasNode.change === 'removed' ? 'before' : 'after',
               )
-            } else {
-              setSelected(selected === clicked.id ? undefined : clicked.id)
+            } else if (canvasNode?.kind === 'system') {
+              const next =
+                selectedSystem === canvasNode.label ? undefined : canvasNode.label
+              setSelectedSystem(next)
+              setSelectedSubsystem(undefined)
+            } else if (canvasNode?.kind === 'subsystem') {
+              setSelectedSubsystem(
+                selectedSubsystem === clicked.id ? undefined : clicked.id,
+              )
             }
           }}
           onEdgeClick={(_, clicked) => {
             const relationship = elements.edges.find(
               (item) => item.id === clicked.id,
             )?.relationship
-            if (relationship) setSelected(relationship.source)
+            if (relationship) setSelectedSubsystem(relationship.source)
           }}
         >
           <Background />

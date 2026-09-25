@@ -89,6 +89,7 @@ it('applies the layout file of a commit Current to both ends', async () => {
     origin: 'override',
     scope: ['src'],
     sourceRoots: ['src'],
+    systems: [],
     subsystems: LAYOUT.subsystems,
   })
   for (const side of [capture.before, capture.after])

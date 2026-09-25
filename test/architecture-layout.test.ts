@@ -22,18 +22,20 @@ describe('architecture layout file', () => {
     expect(ARCHITECTURE_LAYOUT_FILE).toBe('.hvir/architecture.json')
   })
 
-  it('reads version, scope, source roots and subsystem rules', () => {
+  it('reads version, scope, source roots, system rules and subsystem rules', () => {
     expect(
       parse({
         version: 1,
         scope: ['src', 'test/unit'],
         sourceRoots: ['src', 'packages/app/src'],
+        systems: [{ name: 'desktop', paths: ['src/main', 'src/renderer'] }],
         subsystems: [{ name: 'ui', paths: ['src/renderer', 'src/preload'] }],
       }),
     ).toEqual({
       origin: 'override',
       scope: ['src', 'test/unit'],
       sourceRoots: ['src', 'packages/app/src'],
+      systems: [{ name: 'desktop', paths: ['src/main', 'src/renderer'] }],
       subsystems: [{ name: 'ui', paths: ['src/renderer', 'src/preload'] }],
     })
   })
@@ -47,6 +49,7 @@ describe('architecture layout file', () => {
       origin: 'default',
       scope: [],
       sourceRoots: ['src'],
+      systems: [],
       subsystems: [],
     })
   })
@@ -102,6 +105,30 @@ describe('architecture layout file', () => {
         ],
       }),
     ).toMatch(/"subsystems\[1\].paths\[0\]" is already mapped to "a"/)
+  })
+
+  it('validates system rules at the same boundary', () => {
+    expect(problem({ version: 1, systems: [{ name: 'desktop' }] })).toMatch(
+      /"systems\[0\].paths" must be an array/,
+    )
+    expect(
+      problem({
+        version: 1,
+        systems: [
+          { name: 'desktop', paths: ['src/main'] },
+          { name: 'desktop', paths: ['src/renderer'] },
+        ],
+      }),
+    ).toMatch(/"systems\[1\].name" repeats "desktop"/)
+    expect(
+      problem({
+        version: 1,
+        systems: [
+          { name: 'desktop', paths: ['src'] },
+          { name: 'companion', paths: ['src'] },
+        ],
+      }),
+    ).toMatch(/"systems\[1\].paths\[0\]" is already mapped to "desktop"/)
   })
 
   it('refuses an oversized file before parsing it', () => {

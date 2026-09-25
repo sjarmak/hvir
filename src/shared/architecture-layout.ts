@@ -10,6 +10,11 @@ export interface ArchitectureSubsystemRule {
   readonly paths: readonly string[]
 }
 
+export interface ArchitectureSystemRule {
+  readonly name: string
+  readonly paths: readonly string[]
+}
+
 export interface ArchitectureLayout {
   /** `override` when the Current end carries the layout file. */
   readonly origin: 'default' | 'override'
@@ -17,6 +22,7 @@ export interface ArchitectureLayout {
   readonly scope: readonly string[]
   /** A module's default subsystem is the first directory under its source root. */
   readonly sourceRoots: readonly string[]
+  readonly systems: readonly ArchitectureSystemRule[]
   readonly subsystems: readonly ArchitectureSubsystemRule[]
 }
 
@@ -24,6 +30,7 @@ export const ARCHITECTURE_DEFAULT_LAYOUT: ArchitectureLayout = {
   origin: 'default',
   scope: [],
   sourceRoots: ['src'],
+  systems: [],
   subsystems: [],
 }
 export const ARCHITECTURE_ROOT_SUBSYSTEM = '(repository root)'
@@ -32,7 +39,7 @@ const MAX_LAYOUT_BYTES = 64 * 1024
 const MAX_ENTRIES = 256
 const MAX_NAME_LENGTH = 80
 const RESERVED_PREFIXES = ['external:', 'unresolved:'] as const
-const LAYOUT_KEYS = ['version', 'scope', 'sourceRoots', 'subsystems'] as const
+const LAYOUT_KEYS = ['version', 'scope', 'sourceRoots', 'systems', 'subsystems'] as const
 const RULE_KEYS = ['name', 'paths'] as const
 
 /** Refused layout text; the message names the offending field. */
@@ -57,7 +64,9 @@ export function parseArchitectureLayout(text: string): ArchitectureLayout {
       record.sourceRoots === undefined
         ? ARCHITECTURE_DEFAULT_LAYOUT.sourceRoots
         : pathList(record.sourceRoots, 'sourceRoots'),
-    subsystems: record.subsystems === undefined ? [] : subsystemRules(record.subsystems),
+    systems: record.systems === undefined ? [] : namedRules(record.systems, 'systems'),
+    subsystems:
+      record.subsystems === undefined ? [] : namedRules(record.subsystems, 'subsystems'),
   }
 }
 
@@ -172,11 +181,14 @@ function repositoryPath(value: unknown, field: string): string {
   return value
 }
 
-function subsystemRules(value: unknown): readonly ArchitectureSubsystemRule[] {
+function namedRules(
+  value: unknown,
+  collection: 'systems' | 'subsystems',
+): readonly ArchitectureSubsystemRule[] {
   const owners = new Map<string, string>()
   const names = new Set<string>()
-  return arrayOf(value, 'subsystems').map((entry, index) => {
-    const field = `subsystems[${index}]`
+  return arrayOf(value, collection).map((entry, index) => {
+    const field = `${collection}[${index}]`
     const record = objectWithKeys(entry, RULE_KEYS, `"${field}"`)
     const name = subsystemName(record.name, `${field}.name`)
     if (names.has(name))

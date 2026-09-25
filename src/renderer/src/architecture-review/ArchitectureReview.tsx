@@ -244,6 +244,10 @@ export function ArchitectureReview({
                 <dd>{snapshot.capturedAt}</dd>
               </div>
               <div>
+                <dt>Systems</dt>
+                <dd>{layoutSummary(snapshot.layout).systems}</dd>
+              </div>
+              <div>
                 <dt>Subsystems</dt>
                 <dd>{layoutSummary(snapshot.layout).subsystems}</dd>
               </div>

@@ -24,6 +24,7 @@ describe('architecture capture scope', () => {
     expect(isSource('go.mod')).toBe(false)
     expect(inArchitectureScope('go.mod')).toBe(true)
     expect(inArchitectureScope('tools/go.mod')).toBe(true)
+    expect(inArchitectureScope('go.work')).toBe(true)
     expect(inArchitectureScope('go.sum')).toBe(false)
     expect(inArchitectureScope('notgo.mod')).toBe(false)
     expect(inArchitectureScope('vendor/github.com/google/uuid/uuid.go')).toBe(false)
