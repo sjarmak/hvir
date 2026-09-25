@@ -121,6 +121,8 @@ export class RustModuleTree {
         .map((item) => scopeKey([...item.scope, item.name])),
     ])
     for (const occurrence of facts.imports) {
+      // A declaration inside a block belongs to no module a path can name.
+      if (occurrence.local) continue
       const scope = occurrence.scope ?? []
       scope.forEach((_, index) => inline.add(scopeKey(scope.slice(0, index + 1))))
       if (occurrence.form !== 'mod' || occurrence.specifier === undefined) continue

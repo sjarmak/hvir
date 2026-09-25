@@ -8,7 +8,7 @@ import { lineOf, syntaxDiagnostics } from './tree-sitter-syntax'
  * Bump whenever what `parseRustFacts` extracts changes. The scanner version adds a digest of
  * the runtime and grammar bytes, so a grammar upgrade changes it on its own.
  */
-export const RUST_FACTS_REVISION = 'rust-facts-5'
+export const RUST_FACTS_REVISION = 'rust-facts-6'
 
 type ModuleSymbol = ArchitectureModule['symbols'][number]
 
@@ -84,12 +84,13 @@ function itemsWithin(node: Node | null, scope: readonly string[]): InlineItem[] 
 }
 
 function occurrence(node: Node): ModuleImportOccurrence[] {
-  const scope = inlineScope(node)
+  const { scope, local } = placement(node)
   const position = {
     line: lineOf(node),
     column: node.startPosition.column + 1,
     typeOnly: false,
     ...(scope.length > 0 ? { scope } : {}),
+    ...(local ? { local } : {}),
   }
   if (node.type === 'extern_crate_declaration') return externCrate(node, position)
   if (node.type === 'mod_item') return modDeclaration(node, position)
@@ -145,14 +146,23 @@ function modDeclaration(
   ]
 }
 
-/** The names of the inline modules around a node, outermost first. */
-function inlineScope(node: Node): string[] {
-  const scope: string[] = []
+/**
+ * The item-level module a declaration belongs to: the names of the inline modules around it,
+ * outermost first, stopping at the outermost block (a function body, a const initializer or
+ * any other block). A declaration inside a block is local: rustc scopes it to that block.
+ */
+function placement(node: Node): { readonly scope: string[]; readonly local: boolean } {
+  let scope: string[] = []
+  let local = false
   for (let parent = node.parent; parent; parent = parent.parent) {
+    if (parent.type === 'block') {
+      scope = []
+      local = true
+    }
     const name = parent.type === 'mod_item' ? parent.childForFieldName('name') : null
     if (name) scope.unshift(unraw(name.text))
   }
-  return scope
+  return { scope, local }
 }
 
 const COMMENTS: ReadonlySet<string> = new Set(['line_comment', 'block_comment'])

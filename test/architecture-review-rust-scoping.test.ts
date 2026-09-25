@@ -3,6 +3,7 @@ import type { ArchitectureSourceFile } from '../src/shared/architecture-analysis
 import { scanArchitecture } from '../src/main/architecture-review/analysis'
 import { isSource } from '../src/main/architecture-review/capture-entries'
 import type { ScannerSet } from '../src/main/architecture-review/language-scanner'
+import { isModuleFacts } from '../src/main/architecture-review/module-facts'
 import { loadInstalledScanners, rustFixture } from './architecture-scanner-fixtures'
 
 let scanners: ScannerSet
@@ -146,6 +147,118 @@ describe('Rust extern crate aliases', () => {
     expect(resolutionsOf(files, MAIN, ['self', 'me::commands::run'])).toEqual([
       internal('self', MAIN),
       internal('me::commands::run', COMMANDS),
+    ])
+  })
+})
+
+describe('Rust use declarations inside blocks', () => {
+  const API = 'shop/src/api.rs'
+  const PROBE = 'shop/src/util/fmt.rs'
+  const withApi = (tail: string, probe: string) =>
+    withFiles({ [API]: `${fixtureContent(API)}\n${tail}\n`, [PROBE]: probe })
+
+  it('marks a declaration inside a block local and keeps it in its item-level module', () => {
+    const facts = scanners
+      .scannerFor(API)!
+      .scanner.parse(
+        API,
+        'mod outer {\n    fn f() {\n        mod inner { use a::b; }\n        use c::d;\n    }\n    use e::f;\n}\n',
+      )
+    expect(
+      facts.imports.map(({ specifier, scope, local }) => ({ specifier, scope, local })),
+    ).toEqual([
+      { specifier: 'a::b', scope: ['outer'], local: true },
+      { specifier: 'c::d', scope: ['outer'], local: true },
+      { specifier: 'e::f', scope: ['outer'], local: undefined },
+    ])
+    expect(isModuleFacts(JSON.parse(JSON.stringify(facts)))).toBe(true)
+  })
+
+  it('does not let a use inside a function body bind a name for other modules', () => {
+    const files = withApi(
+      'fn local() {\n    use crate::store::Store as Real;\n}',
+      'use crate::api::Real;\n',
+    )
+    expect(resolutionsOf(files, PROBE, ['crate::api::Real'])).toEqual([
+      unresolved('crate::api::Real'),
+    ])
+  })
+
+  it('still counts a use inside a function body as an import of its file', () => {
+    const files = withApi('fn local() {\n    use crate::store::Store as Real;\n}', '')
+    expect(resolutionsOf(files, API, ['crate::store::Store as Real'])).toEqual([
+      internal('crate::store::Store as Real', 'shop/src/store/mod.rs'),
+    ])
+  })
+
+  it('keeps uses in method bodies, closures, const blocks and nested blocks local', () => {
+    const files = withApi(
+      [
+        'pub struct Holder;',
+        'impl Holder {',
+        '    fn method() { use crate::store::Store as InMethod; }',
+        '}',
+        'const _: () = { use crate::store::Store as InConst; };',
+        'fn closure() { let _ = || { use crate::store::Store as InClosure; }; }',
+        'fn nested() { if true { { use crate::store::Store as InNested; } } }',
+      ].join('\n'),
+      [
+        'use crate::api::InMethod;',
+        'use crate::api::InConst;',
+        'use crate::api::InClosure;',
+        'use crate::api::InNested;',
+        'use crate::api::Holder;',
+      ].join('\n'),
+    )
+    expect(
+      resolutionsOf(files, PROBE, [
+        'crate::api::InMethod',
+        'crate::api::InConst',
+        'crate::api::InClosure',
+        'crate::api::InNested',
+        'crate::api::Holder',
+      ]),
+    ).toEqual([
+      unresolved('crate::api::InMethod'),
+      unresolved('crate::api::InConst'),
+      unresolved('crate::api::InClosure'),
+      unresolved('crate::api::InNested'),
+      internal('crate::api::Holder', API),
+    ])
+  })
+
+  it('keeps a use inside a function of an inline module out of that module', () => {
+    const files = withApi(
+      'pub mod inner {\n    pub fn f() { use crate::store::Store as Hidden; }\n    pub use crate::store::Store as Shown;\n}',
+      'use crate::api::inner::Hidden;\nuse crate::api::inner::Shown;\n',
+    )
+    expect(
+      resolutionsOf(files, PROBE, [
+        'crate::api::inner::Hidden',
+        'crate::api::inner::Shown',
+      ]),
+    ).toEqual([
+      unresolved('crate::api::inner::Hidden'),
+      internal('crate::api::inner::Shown', API),
+    ])
+  })
+
+  it('does not make a module declared inside a function body a child of the file', () => {
+    const files = withApi(
+      'fn local() {\n    mod hidden {\n        pub use crate::store::Store;\n    }\n}',
+      'use crate::api::hidden::Store;\n',
+    )
+    expect(resolutionsOf(files, PROBE, ['crate::api::hidden::Store'])).toEqual([
+      unresolved('crate::api::hidden::Store'),
+    ])
+  })
+
+  it('does not let an extern crate alias inside a function reach item-level paths', () => {
+    const files = withFiles({
+      [MAIN]: `fn local() { extern crate shop_core as inner_sc; }\nuse inner_sc::version;\n${fixtureContent(MAIN)}`,
+    })
+    expect(resolutionsOf(files, MAIN, ['inner_sc::version'])).toEqual([
+      external('inner_sc::version'),
     ])
   })
 })

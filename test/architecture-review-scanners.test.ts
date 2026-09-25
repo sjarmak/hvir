@@ -47,7 +47,7 @@ describe('architecture scanner set', () => {
       .update(installed(TREE_SITTER_ASSETS.rust.module))
       .digest('hex')
       .slice(0, 16)
-    expect(scanners.scannerFor('a.rs')!.scanner.version).toBe(`rust-facts-5+wasm-${rust}`)
+    expect(scanners.scannerFor('a.rs')!.scanner.version).toBe(`rust-facts-6+wasm-${rust}`)
     expect(scanners.scannerFor('a.ts')!.scanner.version).toMatch(
       /^typescript-facts-1\+typescript-\d+\.\d+\.\d+/,
     )

@@ -213,6 +213,7 @@ class PathResolver {
         ?.imports.find(
           (entry) =>
             entry.externCrate &&
+            !entry.local &&
             sameScope(entry.scope ?? [], place.scope) &&
             entry.names?.some((leaf) => boundName(leaf) === name),
         )
@@ -229,6 +230,7 @@ class PathResolver {
         ?.imports.some(
           (entry) =>
             entry.form === 'mod' &&
+            !entry.local &&
             entry.specifier === name &&
             sameScope(entry.scope ?? [], scope),
         ),
@@ -265,7 +267,8 @@ const leafPath = (leaf: string): string => leaf.split(ALIAS)[0]!
 
 /**
  * The names a module makes available to paths through it: the items it declares, and each
- * name a `use` in that module binds with the paths bound to it; globs are bound to `*`.
+ * name an item-level `use` in that module binds with the paths bound to it; globs are bound
+ * to `*`. A `use` inside a block binds only within that block.
  */
 interface Provided {
   readonly declared: ReadonlySet<string>
@@ -276,7 +279,10 @@ const GLOB = '*'
 
 function providedIn(facts: ModuleFacts, scope: readonly string[]): Provided {
   const leaves = facts.imports
-    .filter((entry) => entry.form !== 'mod' && sameScope(entry.scope ?? [], scope))
+    .filter(
+      (entry) =>
+        entry.form !== 'mod' && !entry.local && sameScope(entry.scope ?? [], scope),
+    )
     .flatMap((entry) => entry.names ?? [entry.specifier ?? ''])
   const bound = new Map<string, string[]>()
   for (const leaf of leaves) {

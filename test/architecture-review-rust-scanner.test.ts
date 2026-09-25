@@ -124,6 +124,7 @@ describe('Rust scanner on web-tree-sitter', () => {
     expect(isModuleFacts(withImport({ scope: 'util' }))).toBe(false)
     expect(isModuleFacts(withImport({ pathAttribute: 7 }))).toBe(false)
     expect(isModuleFacts(withImport({ externCrate: 'yes' }))).toBe(false)
+    expect(isModuleFacts(withImport({ local: 'yes' }))).toBe(false)
     expect(isModuleFacts(withImport({ form: 'include' }))).toBe(false)
   })
 

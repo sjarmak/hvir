@@ -12,6 +12,11 @@ export interface ModuleImportOccurrence {
   readonly names?: readonly string[]
   /** The Rust inline modules (`mod a { ... }`) it is written inside, outermost first. */
   readonly scope?: readonly string[]
+  /**
+   * Whether a Rust declaration sits inside a block, such as a function body: it imports for
+   * its file, but binds no name and declares no module that paths from elsewhere can reach.
+   */
+  readonly local?: boolean
   /** Whether it is a Rust `extern crate`, whose alias at a crate root joins the extern prelude. */
   readonly externCrate?: boolean
   /** A Rust `mod` declaration's `#[path = "..."]` attribute, as written. */
@@ -69,6 +74,7 @@ function isOccurrence(entry: unknown): boolean {
     isOptionalStrings(entry.scope) &&
     (entry.pathAttribute === undefined || typeof entry.pathAttribute === 'string') &&
     (entry.externCrate === undefined || typeof entry.externCrate === 'boolean') &&
+    (entry.local === undefined || typeof entry.local === 'boolean') &&
     typeof entry.typeOnly === 'boolean' &&
     isPosition(entry.line) &&
     isPosition(entry.column)
