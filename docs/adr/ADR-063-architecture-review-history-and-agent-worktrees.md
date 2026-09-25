@@ -60,6 +60,19 @@ re-snapshot the worktree at any time, by default against the original Current en
 only the agent's change, and one click away against the original Baseline to show the
 cumulative result. Direct edits to the person's working tree remain excluded.
 
+**The person removes an unfinished handoff; hvir never does.** A handoff interrupted after
+its worktree was created but before its brief landed leaves a worktree no agent ever ran in.
+The workspace list labels it "unfinished handoff", judged from disk and Git alone: its branch
+is `hvir/architecture/<slug>` at the one location a handoff creates, resolving to itself and
+not the main tree; no hvir terminal session is recorded or running in it; the brief is
+absent; the branch reflog holds only its creation entry, at HEAD; and `git status` reports
+nothing, ignored files included. Removal happens only when the person confirms it on that
+tab, and only through two exact one-shot grants: `git worktree remove` without `--force`,
+then deletion of the branch only while it still points at its creation commit. Main re-reads
+every fact before each removal and refuses the main working tree, the active workspace, any
+branch outside the prefix, any path outside the owned location, and any worktree that no
+longer qualifies. This is the only removal authority the review holds.
+
 ## Consequences
 
 History comparison becomes a git-object read plus a cache lookup, so stepping the strip is
@@ -67,7 +80,10 @@ cheap after the first parse. The disk cache is new state to bound and to invalid
 scanner upgrades. web-tree-sitter adds a WebAssembly dependency and per-language grammars to
 package. Worktree creation is a new write authority for the review; ADR-061's read-only
 promise no longer holds for the review as a whole, though it still holds for the person's own
-working tree. The one-shot launch rule is replaced by one worktree per launch.
+working tree. The one-shot launch rule is replaced by one worktree per launch. The narrow,
+person-triggered removal of an unfinished handoff is the one delete authority added beside
+it; a worktree with any commit, change, brief or session is never removed by hvir, so an
+interrupted handoff with work in it stays until the person deals with it in Git.
 
 ## Rejected alternatives
 
