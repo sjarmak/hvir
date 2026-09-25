@@ -23,7 +23,9 @@ import {
  * 3. the snapshot brief is absent;
  * 4. the branch reflog holds exactly its creation entry, at the worktree's HEAD: nothing
  *    was committed, reset or amended since the handoff created it;
- * 5. `git status` reports nothing, ignored files included, so removal loses nothing.
+ * 5. `git status` reports nothing, ignored files included, and no index entry carries the
+ *    assume-unchanged or skip-worktree bit that would hide a tracked edit from that status,
+ *    so removal loses nothing.
  */
 export interface HandoffWorktreeFacts {
   readonly root: HostPath
@@ -69,6 +71,10 @@ export async function inspectUnfinishedHandoff(
     return refuse('its branch has commits or history beyond its start point')
   if (!(await clean(host, worktree.root)))
     return refuse('it has changes, untracked or ignored files')
+  if (await mayHideEdits(host, worktree.root))
+    return refuse(
+      'an index entry is marked assume-unchanged or skip-worktree, so edits may be hidden',
+    )
   return { unfinished: true, target }
 }
 
@@ -122,6 +128,27 @@ async function clean(host: ProjectHost, worktree: HostPath): Promise<boolean> {
   if (result.code !== 0)
     throw new Error(`Could not read the worktree status: ${result.stderr.trim()}`)
   return result.stdout === ''
+}
+
+/**
+ * True when any index entry carries the assume-unchanged bit (a lowercase `ls-files -v`
+ * tag) or the skip-worktree bit (`S` or `s`), either of which keeps an edit out of
+ * `git status`. An index too large to read whole counts as hiding, never as clean.
+ */
+async function mayHideEdits(host: ProjectHost, worktree: HostPath): Promise<boolean> {
+  const result = await git(host, worktree, ['ls-files', '-v', '-z'], {
+    allowTruncatedOutput: true,
+  })
+  if (result.outputTruncated) return true
+  if (result.code !== 0)
+    throw new Error(`Could not read the worktree index: ${result.stderr.trim()}`)
+  return result.stdout
+    .split('\0')
+    .some((entry) => entry !== '' && hidesEdits(entry[0]!))
+}
+
+function hidesEdits(tag: string): boolean {
+  return tag === 'S' || tag !== tag.toUpperCase()
 }
 
 function git(

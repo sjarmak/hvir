@@ -65,10 +65,12 @@ its worktree was created but before its brief landed leaves a worktree no agent 
 The workspace list labels it "unfinished handoff", judged from disk and Git alone: its branch
 is `hvir/architecture/<slug>` at the one location a handoff creates, resolving to itself and
 not the main tree; no hvir terminal session is recorded or running in it; the brief is
-absent; the branch reflog holds only its creation entry, at HEAD; and `git status` reports
-nothing, ignored files included. Removal happens only when the person confirms it on that
-tab, and only through two exact one-shot grants: `git worktree remove` without `--force`,
-then deletion of the branch only while it still points at its creation commit. Main re-reads
+absent; the branch reflog holds only its creation entry, at HEAD; `git status` reports
+nothing, ignored files included; and no index entry carries the assume-unchanged or
+skip-worktree bit, either of which would keep a tracked edit out of that status. Removal
+happens only when the person confirms it on that tab, and only through two exact one-shot
+grants: `git worktree remove` without `--force`, then deletion of the branch only while it
+still points at its creation commit. Main re-reads
 every fact before each removal and refuses the main working tree, the active workspace, any
 branch outside the prefix, any path outside the owned location, and any worktree that no
 longer qualifies. This is the only removal authority the review holds.

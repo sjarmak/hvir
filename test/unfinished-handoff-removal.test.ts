@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -136,6 +136,28 @@ describe('removing an unfinished handoff', () => {
     ).rejects.toThrow('terminal')
     expect(f.grants).toEqual([])
   })
+  it.each([
+    ['assume-unchanged', '--assume-unchanged'],
+    ['skip-worktree', '--skip-worktree'],
+  ] as const)(
+    'refuses a worktree whose edit is hidden as %s',
+    async (_label, flag) => {
+      const f = await fixture()
+      const file = join(f.target.path, 'tracked.txt')
+      await writeFile(file, 'hidden edit\n')
+      git(f.target.path, ['update-index', flag, 'tracked.txt'])
+      expect(git(f.target.path, ['status', '--porcelain', '--ignored'])).toBe('')
+
+      await expect(f.coordinator.unfinishedHandoffs('project-1')).resolves.not.toContain(
+        'review-1',
+      )
+      await expect(
+        f.coordinator.removeUnfinishedHandoff('project-1', 'review-1'),
+      ).rejects.toThrow('hidden')
+      expect(f.grants).toEqual([])
+      await expect(readFile(file, 'utf8')).resolves.toBe('hidden edit\n')
+    },
+  )
 })
 
 async function fixture(options: { readonly terminalIds?: readonly string[] } = {}) {
@@ -144,7 +166,9 @@ async function fixture(options: { readonly terminalIds?: readonly string[] } = {
   git(rootPath, ['init', '-b', 'main'])
   git(rootPath, ['config', 'user.email', 'hvir@example.test'])
   git(rootPath, ['config', 'user.name', 'hvir test'])
-  git(rootPath, ['commit', '--allow-empty', '-m', 'base'])
+  await writeFile(join(rootPath, 'tracked.txt'), 'base\n')
+  git(rootPath, ['add', 'tracked.txt'])
+  git(rootPath, ['commit', '-m', 'base'])
   const head = git(rootPath, ['rev-parse', 'HEAD']).trim()
   const root = localPath(rootPath)
   const target = hvirWorktreeTarget(root, 'review-1', head)
