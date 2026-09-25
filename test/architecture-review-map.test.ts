@@ -208,3 +208,49 @@ it('aggregates imports between systems before drilling into subsystems', () => {
     }),
   ])
 })
+
+it('keeps modules inside their selected system when systems share a subsystem', () => {
+  const layout = {
+    origin: 'override' as const,
+    scope: [],
+    sourceRoots: ['src'],
+    systems: [
+      { name: 'renderer', paths: ['src/renderer'] },
+      { name: 'companion', paths: ['src/renderer/companion'] },
+    ],
+    subsystems: [],
+  }
+  const capture = {
+    scope: '.',
+    exclusions: [],
+    layout,
+    files: [
+      { path: 'src/renderer/index.ts', content: 'export const renderer = 1' },
+      {
+        path: 'src/renderer/companion/index.ts',
+        content: 'export const companion = 1',
+      },
+    ],
+  }
+  const map = subsystemMap(
+    analyzeArchitecture({ ...capture, files: [] }, capture),
+    false,
+  )
+  const renderer = architectureCanvasElements(
+    map,
+    'overlay',
+    'renderer',
+    'src/renderer',
+  )
+  const companion = architectureCanvasElements(
+    map,
+    'overlay',
+    'companion',
+    'src/renderer',
+  )
+
+  expect(renderer.nodes.filter((node) => node.kind === 'module').map((node) => node.id))
+    .toEqual(['module:src/renderer/index.ts'])
+  expect(companion.nodes.filter((node) => node.kind === 'module').map((node) => node.id))
+    .toEqual(['module:src/renderer/companion/index.ts'])
+})

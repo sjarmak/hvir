@@ -153,8 +153,9 @@ export function architectureCanvasElements(
     change: relationship.change,
     ghost: absentInMode(relationship.change, mode),
   }))
-  const subsystemNodes = map.nodes
-    .filter((node) => node.modules.some((module) => module.system === expandedSystem))
+  const systemSubsystems =
+    systems.find((system) => system.name === expandedSystem)?.subsystems ?? []
+  const subsystemNodes = systemSubsystems
     .map((node) => ({
       id: node.id,
       label: node.id,
@@ -166,9 +167,7 @@ export function architectureCanvasElements(
       ghost: absentInMode(node.change, mode),
       nearby: node.nearby,
     }))
-  const expanded = subsystemNodes.some((node) => node.id === expandedSubsystem)
-    ? map.nodes.find((node) => node.id === expandedSubsystem)
-    : undefined
+  const expanded = systemSubsystems.find((node) => node.id === expandedSubsystem)
   const moduleNodes = (expanded?.modules ?? []).slice(0, 200).map((module) => ({
     id: `module:${module.path}`,
     label: module.path,
@@ -216,7 +215,10 @@ export function architectureCanvasElements(
     ),
   ].sort()
   const layoutModuleNodes = map.layoutModules
-    .filter((module) => module.subsystem === expandedSubsystem)
+    .filter(
+      (module) =>
+        module.system === expandedSystem && module.subsystem === expandedSubsystem,
+    )
     .slice(0, 200)
     .map((module) => ({ id: `module:${module.path}`, width: 220, height: 52 }))
   const layoutMembershipEdges = layoutModuleNodes.map((node) => ({
@@ -302,8 +304,18 @@ function aggregateSystemRelationships(
 function systemGroups(nodes: readonly ArchitectureSubsystem[]) {
   const systems = new Map<string, ArchitectureSubsystem[]>()
   for (const node of nodes) {
-    for (const system of new Set(node.modules.map((module) => module.system)))
-      systems.set(system, [...(systems.get(system) ?? []), node])
+    for (const system of new Set(node.modules.map((module) => module.system))) {
+      const modules = node.modules.filter((module) => module.system === system)
+      systems.set(system, [
+        ...(systems.get(system) ?? []),
+        {
+          ...node,
+          modules,
+          changed: modules.filter((module) => module.change !== 'unchanged').length,
+          change: combinedChange(modules.map((module) => module.change)),
+        },
+      ])
+    }
   }
   return [...systems]
     .sort(([left], [right]) => left.localeCompare(right))
