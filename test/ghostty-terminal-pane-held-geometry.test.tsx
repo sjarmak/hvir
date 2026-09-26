@@ -18,6 +18,7 @@ const OWN = { cols: 100, rows: 25 }
 
 describe('GhosttyTerminalPane held geometry (ADR-058)', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
     ghosttyState.instances.splice(0)
     ghosttyWebMock.init.mockClear()
     vi.stubGlobal(
@@ -29,6 +30,7 @@ describe('GhosttyTerminalPane held geometry (ADR-058)', () => {
     )
   })
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
     document.body.replaceChildren()
   })
@@ -137,6 +139,6 @@ async function mountedPane() {
   return { pane, container, state }
 }
 
-function settleTerminalFit(delay = 100): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, delay))
+async function settleTerminalFit(delay = 100): Promise<void> {
+  await vi.advanceTimersByTimeAsync(delay)
 }
