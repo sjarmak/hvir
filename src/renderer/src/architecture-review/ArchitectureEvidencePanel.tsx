@@ -16,6 +16,7 @@ import {
   type ViewerPositionCapture,
 } from '../viewer/viewer-position'
 import { queueArchitectureAgentLaunch } from './architecture-review-launch'
+import { selectArchitectureReviewProfiles } from './architecture-review-profiles'
 import { ArchitectureHandoffPreview } from './ArchitectureHandoffPreview'
 import { ArchitectureFindingForm } from './ArchitectureFindingForm'
 
@@ -61,17 +62,7 @@ export function ArchitectureEvidencePanel({
     ])
       .then(([providers, catalog]) => {
         if (disposed) return
-        setProfiles(
-          catalog.filter(
-            (profile) =>
-              providers.some(
-                (provider) =>
-                  provider.id === profile.providerId && provider.architectureReviewLaunch,
-              ) &&
-              profile.executable.kind === 'provider-default' &&
-              profile.args.length === 0,
-          ),
-        )
+        setProfiles(selectArchitectureReviewProfiles(providers, catalog))
       })
       .catch((cause: unknown) => {
         if (!disposed)

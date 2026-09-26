@@ -5,6 +5,7 @@ import {
   type ArchitectureExplanationState,
   type HarnessProfile,
   type HarnessProfileId,
+  type HarnessProviderDescriptor,
   type HostPath,
 } from '../../../shared'
 import type {
@@ -12,6 +13,10 @@ import type {
   ArchitectureReviewSnapshot,
 } from '../../../shared/architecture-review'
 import { queueArchitectureAgentLaunch } from './architecture-review-launch'
+import {
+  selectArchitectureReviewProfiles,
+  selectArchitectureReviewTemplateProvider,
+} from './architecture-review-profiles'
 
 export function ArchitectureExplanation({
   root,
@@ -26,10 +31,11 @@ export function ArchitectureExplanation({
 }) {
   const epoch = useRef(0)
   const [profiles, setProfiles] = useState<readonly HarnessProfile[]>([])
+  const [creationProvider, setCreationProvider] = useState<HarnessProviderDescriptor>()
   const [profileId, setProfileId] = useState<HarnessProfileId>()
   const [prepared, setPrepared] = useState<ArchitecturePreparedExplanation>()
   const [state, setState] = useState<ArchitectureExplanationState>()
-  const [busy, setBusy] = useState<'preparing' | 'launching'>()
+  const [busy, setBusy] = useState<'preparing' | 'launching' | 'creating-profile'>()
   const [error, setError] = useState<string>()
 
   useEffect(() => {
@@ -42,17 +48,8 @@ export function ArchitectureExplanation({
     ])
       .then(([providers, catalog, explanation]) => {
         if (disposed) return
-        setProfiles(
-          (catalog ?? []).filter(
-            (profile) =>
-              (providers ?? []).some(
-                (provider) =>
-                  provider.id === profile.providerId && provider.architectureReviewLaunch,
-              ) &&
-              profile.executable.kind === 'provider-default' &&
-              profile.args.length === 0,
-          ),
-        )
+        setCreationProvider(selectArchitectureReviewTemplateProvider(providers ?? []))
+        setProfiles(selectArchitectureReviewProfiles(providers ?? [], catalog ?? []))
         setState(explanation ?? undefined)
       })
       .catch((cause: unknown) => {
@@ -101,6 +98,36 @@ export function ArchitectureExplanation({
           cause instanceof Error
             ? cause.message
             : 'Explanation handoff could not be prepared.',
+        )
+    } finally {
+      if (request === epoch.current) setBusy(undefined)
+    }
+  }
+
+  const createProfile = async () => {
+    if (!creationProvider || busy) return
+    const request = ++epoch.current
+    setBusy('creating-profile')
+    setError(undefined)
+    try {
+      const created = await window.hvir.invoke('harness:profile-materialize', {
+        root,
+        providerIds: [creationProvider.id],
+      })
+      const [eligible] = selectArchitectureReviewProfiles([creationProvider], created)
+      if (!eligible) {
+        throw new Error('The created profile does not support architecture review.')
+      }
+      if (request === epoch.current) {
+        setProfiles((current) => [...current, eligible])
+        setProfileId(eligible.id)
+      }
+    } catch (cause) {
+      if (request === epoch.current)
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : 'The native architecture-review profile could not be created.',
         )
     } finally {
       if (request === epoch.current) setBusy(undefined)
@@ -204,7 +231,19 @@ export function ArchitectureExplanation({
         </div>
       )}
       {prepared && profiles.length === 0 && (
-        <p role="status">No native architecture-review profile is available.</p>
+        <div>
+          <p role="status">
+            Architecture review requires a supported provider, its default executable, and
+            no custom arguments. None of the current profiles qualify.
+          </p>
+          {creationProvider && (
+            <button type="button" onClick={() => void createProfile()} disabled={!!busy}>
+              {busy === 'creating-profile'
+                ? 'Creating profile…'
+                : `Create ${creationProvider.profileTemplate?.displayName ?? creationProvider.displayName} profile`}
+            </button>
+          )}
+        </div>
       )}
       {error && (
         <p className="architecture-review-state error" role="alert">

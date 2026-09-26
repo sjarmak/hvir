@@ -118,7 +118,17 @@ beforeEach(() => {
       }
     if (channel === 'architecture-review:commits') return commits
     if (channel === 'harness:catalog')
-      return [{ id: 'codex', architectureReviewLaunch: true }]
+      return [
+        {
+          id: 'codex',
+          displayName: 'Codex',
+          architectureReviewLaunch: true,
+          profileTemplate: {
+            displayName: 'Codex',
+            description: 'Codex with exact rollout discovery and recovery.',
+          },
+        },
+      ]
     if (channel === 'harness:profiles')
       return [
         {
@@ -320,6 +330,52 @@ it('renders the explanation as an agent claim and flags unknown snapshot names',
   expect(host.querySelector('.architecture-explanation-names .absent')?.textContent).toBe(
     'InventedNot found in snapshot',
   )
+})
+it('explains native profile requirements and creates a qualifying profile', async () => {
+  const original = invoke.getMockImplementation()!
+  invoke.mockImplementation(async (channel: string, request?: ScanRequest) => {
+    if (channel === 'harness:profiles')
+      return [
+        {
+          id: 'customized',
+          displayName: 'Customized Codex',
+          providerId: 'codex',
+          launchRevision: 3,
+          executable: { kind: 'provider-default' },
+          args: [{ parts: [{ kind: 'literal', value: '--full-auto' }] }],
+        },
+      ]
+    if (channel === 'architecture-review:prepare-explanation') return prepared
+    if (channel === 'harness:profile-materialize')
+      return [
+        {
+          id: 'native',
+          displayName: 'Codex',
+          providerId: 'codex',
+          launchRevision: 1,
+          executable: { kind: 'provider-default' },
+          args: [],
+        },
+      ]
+    return original(channel, request)
+  })
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
+  await click(button('Scan snapshot'))
+  await click(button('Explain this change'))
+  expect(host.textContent).toContain(
+    'Architecture review requires a supported provider, its default executable, and no custom arguments.',
+  )
+  await click(button('Create Codex profile'))
+  expect(invoke).toHaveBeenCalledWith('harness:profile-materialize', {
+    root,
+    providerIds: ['codex'],
+  })
+  expect(
+    host.querySelector<HTMLSelectElement>('.architecture-explanation-launch select')
+      ?.value,
+  ).toBe('native')
 })
 it('clears the prior snapshot claim while the selected snapshot loads', async () => {
   const original = invoke.getMockImplementation()!
