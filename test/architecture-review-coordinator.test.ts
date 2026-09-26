@@ -46,10 +46,10 @@ function setup(
 ) {
   const resources = new RendererResourceScopes()
   const owner = resources.activateOwner(1)
-  let watchEvent: (() => void) | undefined
+  let watchEvent: ((path: HostPath) => void) | undefined
   const stopWatch = vi.fn<() => void>()
   const watch = vi.fn<ProjectHost['watch']>((_path, onEvent) => {
-    watchEvent = () => onEvent({ type: 'change', path: root })
+    watchEvent = (path) => onEvent({ type: 'change', path })
     return stopWatch
   })
   const readTextFilePrefix = vi.fn<ProjectHost['readTextFilePrefix']>(() =>
@@ -146,7 +146,7 @@ function setup(
     watch,
     stopWatch,
     readTextFilePrefix,
-    emitWatch: () => watchEvent?.(),
+    emitWatch: (path = localPath('/repo/a.ts')) => watchEvent?.(path),
     request: { root, baseline: 'HEAD', reviewId: 'tab-1' },
   }
 }
@@ -173,6 +173,25 @@ it('publishes one live refresh after writes settle and stops immediately when pa
     f.coordinator.pause(f.owner, f.request)
     expect(f.stopWatch).toHaveBeenCalledOnce()
     f.emitWatch()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(publish).toHaveBeenCalledOnce()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('ignores unrelated writes and publishes one settled source refresh', async () => {
+  vi.useFakeTimers()
+  try {
+    const f = setup()
+    const publish = vi.fn()
+    await f.coordinator.scan(f.owner, f.host, f.request)
+    f.coordinator.follow(f.owner, f.host, f.request, publish)
+    f.emitWatch(root)
+    f.emitWatch(localPath('/repo/.beads/store.db'))
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(publish).not.toHaveBeenCalled()
+    f.emitWatch(localPath('/repo/src/new.ts'))
     await vi.advanceTimersByTimeAsync(2_000)
     expect(publish).toHaveBeenCalledOnce()
   } finally {

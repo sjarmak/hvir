@@ -81,7 +81,7 @@ export function ArchitectureReview({
     setEvidence(undefined)
     setSelection(undefined)
     setRefusal(undefined)
-    setState('loading')
+    if (!append) setState('loading')
     setError(undefined)
     try {
       const result = await window.hvir.invoke('architecture-review:scan', {

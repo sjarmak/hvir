@@ -222,6 +222,51 @@ it('follows settled working-tree snapshots, pauses, and scrubs immutable history
   })
   expect(scans()).toHaveLength(scansBefore)
 })
+it('keeps the canvas mounted and scrolled during a live refresh', async () => {
+  let resolveRefresh: ((value: typeof snapshot) => void) | undefined
+  let sequence = 0
+  const original = invoke.getMockImplementation()!
+  invoke.mockImplementation(async (channel: string, request?: ScanRequest) => {
+    if (channel !== 'architecture-review:scan') return original(channel, request)
+    sequence += 1
+    if (sequence === 1)
+      return { ...snapshot, id: 'snapshot-1', currentRevision: 'working-tree' }
+    return new Promise<typeof snapshot>((resolve) => {
+      resolveRefresh = resolve
+    })
+  })
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
+  await click(button('Scan snapshot'))
+  const canvas = host.querySelector<HTMLElement>('.architecture-review-map')!
+  canvas.scrollTop = 73
+  const liveReviewId = (
+    invoke.mock.calls.find(
+      ([channel]) => channel === 'architecture-review:follow',
+    )?.[1] as { reviewId: string }
+  ).reviewId
+  await act(async () => {
+    listeners.get('architecture-review:changed')?.({ root, reviewId: liveReviewId })
+    await Promise.resolve()
+  })
+  expect(host.querySelector('.architecture-review-map')).toBe(canvas)
+  expect(canvas.scrollTop).toBe(73)
+  await act(async () => {
+    resolveRefresh?.({
+      ...snapshot,
+      id: 'snapshot-2',
+      currentRevision: 'working-tree',
+      capturedAt: 'capture-2',
+    })
+    await Promise.resolve()
+  })
+  expect(host.querySelector('.architecture-review-map')).toBe(canvas)
+  expect(canvas.scrollTop).toBe(73)
+  expect(
+    host.querySelector<HTMLInputElement>('[aria-label="Review timeline"]')?.max,
+  ).toBe('1')
+})
 afterEach(() => {
   act(() => app.unmount())
   host.remove()

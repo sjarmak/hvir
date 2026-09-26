@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { hostPathEquals, joinHostPath, type HostPath } from '../../shared/host-path'
+import {
+  containsHostPath,
+  hostPathEquals,
+  joinHostPath,
+  type HostPath,
+} from '../../shared/host-path'
 import type {
   ArchitectureScopeRecord,
   ArchitectureScopeRequest,
@@ -38,6 +43,7 @@ import type {
   RendererResourceScopes,
 } from '../renderer-resource-scopes'
 import { captureArchitecture, validateArchitectureRequest } from './capture'
+import { affectsArchitectureCapture } from './capture-entries'
 import { listArchitectureCommits } from './commit-range'
 import { hasLiveCurrent } from './ends'
 import { readArchitectureLiveBase, readArchitectureLiveState } from './freshness'
@@ -188,7 +194,9 @@ export class ArchitectureReviewCoordinator {
       host,
       stop: host.watch(
         request.root,
-        () => {
+        (event) => {
+          const changedPath = relativeArchitecturePath(request.root, event.path)
+          if (!changedPath || !affectsArchitectureCapture(changedPath)) return
           if (follower.timer) clearTimeout(follower.timer)
           follower.timer = setTimeout(() => {
             follower.timer = undefined
@@ -706,6 +714,15 @@ function reviewKey(owner: RendererOwner, request: ArchitectureReviewKey): string
     request.root.path,
     request.reviewId,
   ])
+}
+
+function relativeArchitecturePath(
+  root: HostPath,
+  candidate: HostPath,
+): string | undefined {
+  if (!containsHostPath(root, candidate) || hostPathEquals(root, candidate))
+    return undefined
+  return candidate.path.slice(root.path === '/' ? 1 : root.path.length + 1)
 }
 
 /**
