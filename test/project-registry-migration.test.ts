@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ProjectHostCatalog } from '../src/main/project-host'
 import { ProjectRegistry } from '../src/main/project-registry'
@@ -16,6 +16,75 @@ afterEach(async () => {
 })
 
 describe('ProjectRegistry persistence compatibility', () => {
+  it.each([
+    [
+      'an unknown version',
+      (root: string) =>
+        JSON.stringify({
+          version: 999,
+          projects: [
+            {
+              hostId: 'local',
+              path: root,
+              displayName: 'project',
+              workspaces: [{ path: root }],
+            },
+          ],
+        }),
+    ],
+    ['malformed JSON', () => '{'],
+    ['an invalid registry shape', () => 'null'],
+  ])('refuses to replace %s', async (_case, contentForRoot) => {
+    const createdRoot = await mkdtemp(join(tmpdir(), 'hvir-registry-rejected-'))
+    cleanups.push(createdRoot)
+    const projectsFile = join(createdRoot, 'projects.json')
+    const content = contentForRoot(createdRoot)
+    await writeFile(projectsFile, content)
+    const catalog = await ProjectHostCatalog.create({
+      prompter: { prompt: () => Promise.resolve(undefined) },
+      trustFile: localPath(join(createdRoot, 'known-hosts.json')),
+      home: createdRoot,
+    })
+    catalogs.push(catalog)
+
+    await expect(
+      ProjectRegistry.create(
+        localPath(createdRoot),
+        catalog,
+        projectsFile,
+        () => undefined,
+      ),
+    ).rejects.toThrow(`Failed to load project registry at ${projectsFile}`)
+    expect(await readFile(projectsFile, 'utf8')).toBe(content)
+  })
+
+  it('refuses to replace an unreadable registry', async () => {
+    const createdRoot = await mkdtemp(join(tmpdir(), 'hvir-registry-unreadable-'))
+    cleanups.push(createdRoot)
+    const projectsFile = join(createdRoot, 'projects.json')
+    const content = JSON.stringify({ version: 3, projects: [] })
+    await writeFile(projectsFile, content)
+    const catalog = await ProjectHostCatalog.create({
+      prompter: { prompt: () => Promise.resolve(undefined) },
+      trustFile: localPath(join(createdRoot, 'known-hosts.json')),
+      home: createdRoot,
+    })
+    catalogs.push(catalog)
+    vi.spyOn(catalog.local, 'readTextFile').mockRejectedValue(
+      Object.assign(new Error('permission denied'), { code: 'EACCES' }),
+    )
+
+    await expect(
+      ProjectRegistry.create(
+        localPath(createdRoot),
+        catalog,
+        projectsFile,
+        () => undefined,
+      ),
+    ).rejects.toThrow(`Failed to load project registry at ${projectsFile}`)
+    expect(await readFile(projectsFile, 'utf8')).toBe(content)
+  })
+
   it.each([1, 2, 3] as const)(
     'loads version %i and writes the exact current version 3 shape',
     async (version) => {

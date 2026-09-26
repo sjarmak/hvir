@@ -853,7 +853,9 @@ async function loadProjects(
 ): Promise<{ activeProjectId: string; projects: ProjectRecord[] } | undefined> {
   try {
     const value: unknown = JSON.parse(await host.readTextFile(file))
-    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('Invalid project registry')
+    }
     const stored = value as Record<string, unknown>
     if (
       (stored['version'] !== PROJECT_REGISTRY_VERSION &&
@@ -863,7 +865,7 @@ async function loadProjects(
       stored['projects'].length === 0 ||
       stored['projects'].length > MAX_PROJECTS
     ) {
-      return undefined
+      throw new Error('Unsupported or invalid project registry')
     }
     const projects: ProjectRecord[] = []
     let workspaceCount = 0
@@ -983,7 +985,7 @@ async function loadProjects(
         workspaces: workspaces.sort(compareWorkspaces),
       })
     }
-    if (projects.length === 0) return undefined
+    if (projects.length === 0) throw new Error('Project registry has no valid projects')
     const rawActive = stored['activeProjectId']
     const activeProjectId =
       typeof rawActive === 'string' &&
@@ -991,7 +993,8 @@ async function loadProjects(
         ? rawActive
         : projects[0]!.id
     return { activeProjectId, projects }
-  } catch {
-    return undefined
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return undefined
+    throw new Error(`Failed to load project registry at ${file.path}`, { cause: error })
   }
 }
