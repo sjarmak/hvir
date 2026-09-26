@@ -1,10 +1,22 @@
 import { expect, it } from 'vitest'
+import ELK from 'elkjs/lib/elk.bundled.js'
 import { analyzeArchitecture } from '../src/main/architecture-review/analysis'
 import {
   architectureCanvasElements,
   subsystemMap,
 } from '../src/renderer/src/architecture-review/architecture-review-model'
-import { layoutArchitectureGraph } from '../src/renderer/src/architecture-review/architecture-layout'
+import {
+  architectureLayoutGraph,
+  architectureNodePositions,
+} from '../src/renderer/src/architecture-review/architecture-layout'
+
+const elk = new ELK({ algorithms: ['layered'] })
+
+async function layoutArchitectureGraph(
+  input: Parameters<typeof architectureLayoutGraph>[0],
+) {
+  return architectureNodePositions(await elk.layout(architectureLayoutGraph(input)))
+}
 const before = {
   files: [
     { path: 'src/ui/a.ts', content: 'import {a} from "../data/a"' },

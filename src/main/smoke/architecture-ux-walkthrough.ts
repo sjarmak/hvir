@@ -26,6 +26,7 @@ export async function runArchitectureUxWalkthrough(
     configuration.journey,
   )
   const capture = async (id: string, title: string): Promise<void> => {
+    await assertArchitectureLayout(win)
     manifest = await captureUxWalkthroughStep(
       host,
       win,
@@ -84,6 +85,27 @@ export async function runArchitectureUxWalkthrough(
   } finally {
     win.setContentSize(originalSize[0]!, originalSize[1]!)
   }
+}
+
+async function assertArchitectureLayout(win: BrowserWindow): Promise<void> {
+  await win.webContents.executeJavaScript(`
+    new Promise((resolve, reject) => {
+      const deadline = Date.now() + 30000;
+      const check = () => {
+        const body = document.querySelector('.architecture-review-body');
+        const alert = body?.querySelector('[role="alert"]');
+        if (alert) return reject(new Error(alert.textContent || 'Architecture layout failed'));
+        const nodes = body?.querySelectorAll('.architecture-canvas-node') ?? [];
+        if (nodes.length && [...nodes].every(node => node instanceof HTMLElement && node.style.transform)) {
+          body.querySelector('.architecture-map-canvas')?.scrollIntoView({ block: 'center' });
+          return requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
+        }
+        if (Date.now() >= deadline) return reject(new Error('Timed out waiting for architecture nodes'));
+        setTimeout(check, 40);
+      };
+      check();
+    })
+  `)
 }
 
 async function openArchitecture(win: BrowserWindow): Promise<void> {
@@ -151,7 +173,10 @@ async function expandArchitectureSystem(win: BrowserWindow): Promise<void> {
         if (system instanceof HTMLElement) {
           system.click();
           const expanded = () => {
-            if (document.querySelector('.architecture-canvas-subsystem')) return resolve(true);
+            if (document.querySelector('.architecture-canvas-subsystem')) {
+              document.querySelector('.react-flow__controls-fitview')?.click();
+              return requestAnimationFrame(() => requestAnimationFrame(() => resolve(true)));
+            }
             if (Date.now() >= deadline) return reject(new Error('Timed out waiting for expanded architecture system'));
             setTimeout(expanded, 40);
           };

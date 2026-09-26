@@ -1,19 +1,21 @@
-import type { ArchitectureCanvasLayoutInput } from './architecture-review-model'
-import type { ArchitectureNodePosition } from './architecture-layout'
+import type { ElkNode } from 'elkjs/lib/elk-api'
 
-export interface ArchitectureLayoutRequest {
-  readonly id: number
-  readonly input: ArchitectureCanvasLayoutInput
+export interface ArchitectureLayoutRegistration {
+  readonly cmd: 'register'
+  readonly id: 0
+  readonly algorithms: readonly ['layered']
 }
 
-export type ArchitectureLayoutResponse =
-  | {
-      readonly id: number
-      readonly type: 'layout'
-      readonly positions: readonly ArchitectureNodePosition[]
-    }
-  | {
-      readonly id: number
-      readonly type: 'error'
-      readonly message: string
-    }
+export interface ArchitectureLayoutRequest {
+  readonly cmd: 'layout'
+  readonly id: number
+  readonly graph: ElkNode
+  readonly layoutOptions: Record<string, never>
+  readonly options: Record<string, never>
+}
+
+export interface ArchitectureLayoutResponse {
+  readonly id: number
+  readonly data?: ElkNode
+  readonly error?: unknown
+}
