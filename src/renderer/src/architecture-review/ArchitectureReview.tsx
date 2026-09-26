@@ -254,6 +254,42 @@ export function ArchitectureReview({
           {state === 'loading' ? 'Scanning…' : 'Scan snapshot'}
         </button>
       </header>
+      {state === 'ready' && snapshot && (
+        <div className="architecture-review-body">
+          {snapshot.analysis.modules.length === 0 ? (
+            <p className="architecture-review-state">
+              No supported TypeScript, JavaScript, Python, Go or Rust modules were
+              captured.
+            </p>
+          ) : (
+            <ArchitectureMap
+              analysis={snapshot.analysis}
+              mode={mapMode}
+              onMode={setMapMode}
+              onEvidence={(path, line, side) => void openEvidence(path, line, side)}
+            />
+          )}
+          {evidence && selection ? (
+            <ArchitectureEvidencePanel
+              key={`${snapshot.id}:${selection.path}`}
+              root={root}
+              reviewId={reviewId}
+              snapshot={snapshot}
+              path={selection.path}
+              evidence={evidence}
+              freshnessError={error}
+              location={selection}
+              onHandoff={onHandoff}
+            />
+          ) : (
+            <p className="architecture-review-state">
+              {selection
+                ? 'Loading captured evidence…'
+                : 'Select a module or relationship to inspect its captured diff.'}
+            </p>
+          )}
+        </div>
+      )}
       <ArchitectureEndsControls
         baseline={baselineText}
         current={currentText}
@@ -405,40 +441,6 @@ export function ArchitectureReview({
             snapshot={snapshot}
             onHandoff={onHandoff}
           />
-          <div className="architecture-review-body">
-            {snapshot.analysis.modules.length === 0 ? (
-              <p className="architecture-review-state">
-                No supported TypeScript, JavaScript, Python, Go or Rust modules were
-                captured.
-              </p>
-            ) : (
-              <ArchitectureMap
-                analysis={snapshot.analysis}
-                mode={mapMode}
-                onMode={setMapMode}
-                onEvidence={(path, line, side) => void openEvidence(path, line, side)}
-              />
-            )}
-            {evidence && selection ? (
-              <ArchitectureEvidencePanel
-                key={`${snapshot.id}:${selection.path}`}
-                root={root}
-                reviewId={reviewId}
-                snapshot={snapshot}
-                path={selection.path}
-                evidence={evidence}
-                freshnessError={error}
-                location={selection}
-                onHandoff={onHandoff}
-              />
-            ) : (
-              <p className="architecture-review-state">
-                {selection
-                  ? 'Loading captured evidence…'
-                  : 'Select a module or relationship to inspect its captured diff.'}
-              </p>
-            )}
-          </div>
         </>
       )}
     </section>
