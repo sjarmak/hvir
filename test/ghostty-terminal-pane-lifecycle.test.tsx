@@ -24,6 +24,7 @@ vi.mock('ghostty-web', async () => {
 })
 describe('GhosttyTerminalPane lifecycle', () => {
   beforeEach(() => {
+    vi.useFakeTimers()
     ghosttyState.instances.splice(0)
     vi.stubGlobal(
       'ResizeObserver',
@@ -34,6 +35,7 @@ describe('GhosttyTerminalPane lifecycle', () => {
     )
   })
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     Reflect.deleteProperty(window, 'hvir')
@@ -858,7 +860,6 @@ describe('GhosttyTerminalPane lifecycle', () => {
   })
 
   it('borrows the one actual pane for Sessions and gates input, resize, focus, and restoration by its lease', async () => {
-    vi.useFakeTimers()
     const invoke = vi.fn(() =>
       Promise.resolve({
         outcome: 'started' as const,
@@ -979,7 +980,6 @@ describe('GhosttyTerminalPane lifecycle', () => {
     expect(send).toHaveBeenCalledWith('pty:kill', { id: 'terminal-1' })
     expect(revoked).toHaveBeenCalledExactlyOnceWith('owner-disposed')
     expect(finalLease.focus(detail)).toBe(false)
-    vi.useRealTimers()
   })
 
   it('starts fresh once and keeps React ownership through the identity handoff', async () => {
@@ -1182,8 +1182,8 @@ const theme = () => terminalThemeForAppearance('dark')
 const typography = () => ({ fontFamily: 'ui-monospace, monospace', fontSize: 13 })
 const cursorDefaults = () => ({ shape: 'block', blink: 'terminal' }) as const
 
-function settleTerminalFit(delay = 100): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, delay))
+async function settleTerminalFit(delay = 100): Promise<void> {
+  await vi.advanceTimersByTimeAsync(delay)
 }
 
 function deliveryPresentation(container: HTMLElement): 'visible' | 'hidden' | undefined {
