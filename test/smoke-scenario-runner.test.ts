@@ -764,6 +764,9 @@ describe('Electron smoke command contracts', () => {
     expect(packageJson.scripts['smoke:scenario']).toBe(
       'npm run build:smoke && node scripts/run-smoke-scenarios.mts',
     )
+    expect(packageJson.scripts['ux:walkthrough']).toBe(
+      'npm run build:smoke && node scripts/run-ux-walkthrough.mts',
+    )
     expect(packageJson.scripts['build:smoke']).toBe('electron-vite build --mode smoke')
     expect(packageJson.scripts['smoke:macos']).not.toMatch(
       /terminal-presentation capacity/,

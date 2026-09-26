@@ -272,7 +272,7 @@ not launch Electron, require a display, or access the network.
 reports a result for every scheduled group. Direct single-process invocations require
 `HVIR_SMOKE_SCENARIO`; missing and invalid names fail with a selection diagnostic. Select one group locally with
 `npm run smoke:scenario -- <name>`; the complete name set is `pty-native`, `viewer-position`, `viewer-content`,
-`git-workflow`, `architecture-review`, `workspace-remote`, `web-pane`, `renderer-authority`, `platform-contracts`,
+`git-workflow`, `architecture-review`, `ux-walkthrough`, `workspace-remote`, `web-pane`, `renderer-authority`, `platform-contracts`,
 `diagnostic-report-restart`, `renderer-recovery`, `sessions-projection`, `document-review`, `development-performance`,
 `terminal-presentation`, `terminal-lifecycle`, `native-host-worker`, `workbench-health`,
 `terminal-theme`, `terminal-move`, `workbench-layout`, `terminal-split`, `app-settings`,
@@ -282,6 +282,9 @@ smoke:development-performance`; the restart scenario is reserved for the package
 fixture. `npm run smoke:macos` runs the focused PTY, viewer, Git, workspace/remote, web-pane,
 renderer-authority, platform-contract, renderer-recovery, terminal-presentation, and
 document-review, terminal-presentation, and terminal-lifecycle correctness groups.
+
+The contributor-only [`ux:walkthrough`](docs/ux-walkthrough.md) command drives a named user
+journey through the smoke build and retains ordered screenshots and state notes for agent critique.
 
 Viewer and Git evidence follows the same ownership rule. `viewer-position` proves CodeMirror
 virtualization, source/rendered/diff anchors, remounts, pending and empty diffs, scoped commands,

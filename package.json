@@ -75,6 +75,7 @@
     "smoke:macos": "npm run build:smoke && node scripts/run-smoke-scenarios.mts pty-native viewer-position viewer-content git-workflow workspace-remote web-pane renderer-authority platform-contracts renderer-recovery sessions-projection document-review terminal-presentation terminal-lifecycle",
     "smoke:macos:ci": "npm run build:smoke && node scripts/run-smoke-scenarios.mts pty-native viewer-position viewer-content git-workflow workspace-remote web-pane renderer-authority platform-contracts renderer-recovery sessions-projection document-review",
     "smoke:scenario": "npm run build:smoke && node scripts/run-smoke-scenarios.mts",
+    "ux:walkthrough": "npm run build:smoke && node scripts/run-ux-walkthrough.mts",
     "smoke:isolation": "npm run build:smoke && node scripts/run-smoke-interruption.mts",
     "acceptance:ssh:real-host": "vite build --config scripts/real-host-ssh.vite.config.mts && node out/real-host-ssh/real-host-ssh-acceptance.cjs",
     "bench:architecture-review": "node scripts/architecture-review-bench.mts",

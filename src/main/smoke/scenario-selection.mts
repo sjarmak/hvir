@@ -4,6 +4,7 @@ export const ELECTRON_SMOKE_SCENARIOS = [
   'viewer-content',
   'git-workflow',
   'architecture-review',
+  'ux-walkthrough',
   'workspace-remote',
   'web-pane',
   'renderer-authority',
