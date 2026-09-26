@@ -511,15 +511,70 @@ describe('Electron smoke process failure artifacts', () => {
   it('settles containment after SIGKILL when an escaped descendant retains pipes', async () => {
     if (process.platform === 'win32') return
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
-    onTestFinished(() => consoleError.mockRestore())
     const directory = await mkdtemp(join(tmpdir(), 'hvir-smoke-forced-settle-'))
-    onTestFinished(() => rm(directory, { recursive: true, force: true }))
     const descendantPath = join(directory, 'descendant.pid')
+    let publishDescendant: (pid: number) => void = () => undefined
+    const descendantPublished = new Promise<number>((resolve) => {
+      publishDescendant = resolve
+    })
+    let rejectReadiness: (error: Error) => void = () => undefined
+    const readinessExpired = new Promise<never>((_resolve, reject) => {
+      rejectReadiness = reject
+    })
+    const clearReadinessTimeout = clearTimeout
+    const readinessTimeout = setTimeout(
+      () => rejectReadiness(new Error('descendant readiness was not published')),
+      5_000,
+    )
+    readinessTimeout.unref()
+    let descendantPid: number | undefined
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      const match = String(chunk).match(/HVIR_DESCENDANT_PID=(\d+)/)
+      if (match) publishDescendant(Number(match[1]))
+      return true
+    })
+    vi.useFakeTimers()
+    onTestFinished(async () => {
+      clearReadinessTimeout(readinessTimeout)
+      let cleanupError: Error | undefined
+      try {
+        await vi.advanceTimersByTimeAsync(200)
+      } catch (error) {
+        cleanupError = error instanceof Error ? error : new Error(String(error))
+      }
+      vi.useRealTimers()
+      consoleError.mockRestore()
+      stdout.mockRestore()
+      try {
+        if (descendantPid === undefined) {
+          try {
+            const publishedPid = Number(await readFile(descendantPath, 'utf8'))
+            if (!Number.isSafeInteger(publishedPid) || publishedPid <= 0) {
+              throw new Error('descendant pid file was invalid')
+            }
+            descendantPid = publishedPid
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+              cleanupError ??= error instanceof Error ? error : new Error(String(error))
+            }
+          }
+        }
+        if (descendantPid !== undefined) terminateFixtureProcess(descendantPid)
+      } catch (error) {
+        cleanupError ??= error instanceof Error ? error : new Error(String(error))
+      }
+      try {
+        await rm(directory, { recursive: true, force: true })
+      } catch (error) {
+        cleanupError ??= error instanceof Error ? error : new Error(String(error))
+      }
+      if (cleanupError !== undefined) throw cleanupError
+    })
     const invocation = invokeSmokeScenario('web-pane', 1, 1, {
       command: process.execPath,
       args: [
         '-e',
-        `const { spawn } = require('node:child_process'); const { writeFileSync } = require('node:fs'); const child = spawn(process.execPath, ['-e', 'setInterval(() => undefined, 1000)'], { detached: true, stdio: ['ignore', 'inherit', 'inherit'] }); child.unref(); writeFileSync(process.argv[1], String(child.pid)); setInterval(() => undefined, 1000)`,
+        `const { spawn } = require('node:child_process'); const { writeFileSync } = require('node:fs'); const child = spawn(process.execPath, ['-e', 'setInterval(() => undefined, 1000)'], { detached: true, stdio: ['ignore', 'inherit', 'inherit'] }); child.unref(); writeFileSync(process.argv[1], String(child.pid)); process.stdout.write('HVIR_DESCENDANT_PID=' + child.pid + '\\n'); setInterval(() => undefined, 1000)`,
         descendantPath,
       ],
       environment: {},
@@ -528,8 +583,9 @@ describe('Electron smoke process failure artifacts', () => {
       forceKillSettleMs: 50,
       artifactDirectory: directory,
     })
-    const descendantPid = await waitForPid(descendantPath)
-    onTestFinished(() => terminateFixtureProcess(descendantPid))
+    descendantPid = await Promise.race([descendantPublished, readinessExpired])
+    clearReadinessTimeout(readinessTimeout)
+    await vi.advanceTimersByTimeAsync(200)
 
     await expect(invocation).resolves.toMatchObject({
       status: 'failed',
