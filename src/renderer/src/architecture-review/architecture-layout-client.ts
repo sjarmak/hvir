@@ -41,8 +41,25 @@ function createWorker(): Worker {
   const next = new Worker(new URL('./architecture-layout.worker.ts', import.meta.url), {
     type: 'module',
   })
+  const rejectPendingAndTerminate = (error: Error) => {
+    for (const request of pending.values()) request.reject(error)
+    pending.clear()
+    next.terminate()
+    worker = undefined
+  }
   next.onmessage = (event: MessageEvent<ArchitectureLayoutResponse>) => {
     const response = event.data
+    if (response.id === 0 && response.error) {
+      const detail = errorMessage(response.error)
+      rejectPendingAndTerminate(
+        new Error(
+          detail
+            ? `Architecture layout worker registration failed: ${detail}`
+            : 'Architecture layout worker registration failed',
+        ),
+      )
+      return
+    }
     const request = pending.get(response.id)
     if (!request) return
     pending.delete(response.id)
@@ -57,10 +74,7 @@ function createWorker(): Worker {
         ? `Architecture layout worker failed: ${detail}`
         : 'Architecture layout worker failed',
     )
-    for (const request of pending.values()) request.reject(error)
-    pending.clear()
-    next.terminate()
-    worker = undefined
+    rejectPendingAndTerminate(error)
   }
   next.onerror = fail
   next.onmessageerror = fail
