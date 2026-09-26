@@ -277,6 +277,26 @@ it('keeps the canvas mounted and scrolled during a live refresh', async () => {
     host.querySelector<HTMLInputElement>('[aria-label="Review timeline"]')?.max,
   ).toBe('1')
 })
+it('places the architecture map first while keeping every review control reachable', async () => {
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
+  await click(button('Scan snapshot'))
+  const map = host.querySelector('.architecture-review-body')!
+  for (const selector of [
+    '.architecture-review-controls',
+    '.architecture-strip',
+    '.architecture-review-timeline',
+    '.architecture-review-metadata',
+    '.architecture-review-scope',
+    '.architecture-explanation',
+  ]) {
+    const secondary = host.querySelector(selector)!
+    expect(
+      map.compareDocumentPosition(secondary) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  }
+})
 afterEach(() => {
   act(() => app.unmount())
   host.remove()
@@ -384,7 +404,11 @@ it('clears the prior snapshot claim while the selected snapshot loads', async ()
   invoke.mockImplementation(async (channel: string, request?: ScanRequest) => {
     if (channel === 'architecture-review:scan') {
       scanSequence += 1
-      return { ...snapshot, id: `snapshot-${scanSequence}`, currentRevision: 'working-tree' }
+      return {
+        ...snapshot,
+        id: `snapshot-${scanSequence}`,
+        currentRevision: 'working-tree',
+      }
     }
     if (channel === 'architecture-review:explanation') {
       if (request?.snapshotId === 'snapshot-2')
@@ -416,7 +440,9 @@ it('clears the prior snapshot claim while the selected snapshot loads', async ()
     listeners.get('architecture-review:changed')?.({
       root,
       reviewId: (
-        invoke.mock.calls.find(([channel]) => channel === 'architecture-review:follow')?.[1] as {
+        invoke.mock.calls.find(
+          ([channel]) => channel === 'architecture-review:follow',
+        )?.[1] as {
           reviewId: string
         }
       ).reviewId,
@@ -627,6 +653,10 @@ const scans = () =>
     })
 const commitButton = (digit: string) =>
   host.querySelector<HTMLButtonElement>(`button[title="${revision(digit)}"]`)!
+const checkbox = (label: string) =>
+  Array.from(host.querySelectorAll('label'))
+    .find((node) => node.textContent?.startsWith(label))!
+    .querySelector<HTMLInputElement>('input[type="checkbox"]')!
 async function type(label: string, value: string) {
   const input = Array.from(host.querySelectorAll('label'))
     .find((node) => node.textContent?.startsWith(label))!
@@ -678,16 +708,12 @@ it('steps the strip pairwise, then against a locked baseline', async () => {
   expect(commitButton('2').getAttribute('aria-pressed')).toBe('true')
   await click(button('Next commit'))
   await click(commitButton('1'))
-  await act(async () =>
-    host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
-  )
+  await act(async () => checkbox('Lock baseline').click())
   expect(host.textContent).toContain(`Baseline held at ${revision('0').slice(0, 8)}`)
   await click(button('Next commit'))
   await click(button('Next commit'))
   expect(button('Next commit').disabled).toBe(true)
-  await act(async () =>
-    host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click(),
-  )
+  await act(async () => checkbox('Lock baseline').click())
   await click(button('Previous commit'))
   expect(scans()).toEqual([
     { baseline: revision('1'), current: revision('2') },

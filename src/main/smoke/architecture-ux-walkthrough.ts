@@ -138,6 +138,13 @@ async function scanLiveReview(win: BrowserWindow): Promise<void> {
         if (scan.disabled || scan.textContent?.trim() === 'Scanning…') started = true;
         return started && !scan.disabled && scan.textContent?.trim() === 'Scan snapshot' && review.querySelector('.architecture-review-body') && review.querySelector('.architecture-review-timeline');
       }, 'live architecture map');
+      const canvas = await wait(() => review.querySelector('.architecture-map-canvas'), 'architecture canvas');
+      const reviewBounds = review.getBoundingClientRect();
+      const canvasBounds = canvas.getBoundingClientRect();
+      const visibleCanvasHeight = Math.min(canvasBounds.bottom, reviewBounds.bottom) - Math.max(canvasBounds.top, reviewBounds.top);
+      if (review.scrollTop !== 0 || visibleCanvasHeight < 240) {
+        throw new Error('Architecture map has only ' + Math.max(0, visibleCanvasHeight) + ' visible pixels when the review opens');
+      }
     })()
   `)
 }
