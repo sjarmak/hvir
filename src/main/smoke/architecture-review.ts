@@ -81,7 +81,16 @@ export async function verifyArchitectureReviewWorkflow(
       baseline.dispatchEvent(new Event('input', { bubbles: true }));
       await wait(() => baseline.value === 'HEAD', 'typed Baseline ref');
       button('Scan snapshot').click();
-      const body = await wait(() => document.querySelector('.architecture-review-body'), 'map');
+      const body = await wait(() => {
+        const current = document.querySelector('.architecture-review-body');
+        if (!(current instanceof HTMLElement)) return false;
+        const alert = current.querySelector('[role="alert"]');
+        if (alert) throw new Error(alert.textContent || 'Architecture layout failed');
+        const node = current.querySelector('.architecture-canvas-node');
+        if (!(node instanceof HTMLElement)) return false;
+        if (!node.style.transform || node.style.transform === 'translate(0px, 0px)') return false;
+        return current;
+      }, 'architecture worker layout');
       const stages = [...document.querySelectorAll('table[aria-label="Scan timings"] tbody th')].map(node => node.textContent);
       for (const stage of ['listing', 'live-read', 'worker-transfer', 'parse', 'worker-return', 'renderer-payload'])
         if (!stages.includes(stage)) throw new Error('Snapshot details miss scan stage ' + stage + ': ' + stages.join(','));
@@ -95,15 +104,21 @@ export async function verifyArchitectureReviewWorkflow(
       if (!detail('Subsystems').startsWith('.hvir/architecture.json') || detail('Scope') !== 'architecture-smoke') throw new Error('Snapshot details do not name the tracked layout: ' + detail('Subsystems') + ' / ' + detail('Scope'));
       const relationship = [...body.querySelectorAll('[aria-label="Subsystem relationships"] .architecture-relationship')].find(node => node.querySelector('summary')?.textContent?.startsWith('architecture-smoke/ui → architecture-smoke/new-data'));
       if (!relationship?.querySelector('[aria-label="Imports in ${fixture.selectedPath}"] button')) throw new Error('Subsystem relationship does not drill to module import evidence');
-      const subsystem = [...body.querySelectorAll('.architecture-subsystem')].find(node => node.querySelector('strong')?.textContent === 'architecture-smoke/ui');
-      if (!subsystem) throw new Error('Changed subsystem missing');
+      const system = [...body.querySelectorAll('.architecture-canvas-system')].find(node => node.querySelector('strong')?.textContent === '(project)');
+      if (!(system instanceof HTMLElement)) throw new Error('Architecture system missing');
+      system.click();
+      const subsystem = await wait(() => {
+        const alert = document.querySelector('.architecture-review-body [role="alert"]');
+        if (alert) throw new Error(alert.textContent || 'Expanded architecture layout failed');
+        return [...document.querySelectorAll('.architecture-canvas-subsystem')].find(node => node.querySelector('strong')?.textContent === 'architecture-smoke/ui');
+      }, 'expanded architecture system');
       subsystem.focus();
       if (document.activeElement !== subsystem) throw new Error('Subsystem cannot receive keyboard focus');
       subsystem.click();
-      const module = await wait(() => [...body.querySelectorAll('.architecture-module-list .architecture-module')].find(node => node.querySelector('span')?.textContent === ${JSON.stringify(fixture.selectedPath)}), 'selected subsystem files');
-      if (![...body.querySelectorAll('.architecture-module-list .architecture-module span')].some(node => node.textContent === 'architecture-smoke/ui/app.py')) throw new Error('Python module missing: the worker did not scan the live Python files');
-      if (![...body.querySelectorAll('.architecture-module-list .architecture-module span')].some(node => node.textContent === 'architecture-smoke/ui/server.go')) throw new Error('Go module missing: the worker did not scan the live Go files');
-      if (![...body.querySelectorAll('.architecture-module-list .architecture-module span')].some(node => node.textContent === 'architecture-smoke/ui/lib.rs')) throw new Error('Rust module missing: the worker did not scan the live Rust files');
+      const module = await wait(() => [...document.querySelectorAll('.architecture-canvas-module')].find(node => node.querySelector('strong')?.textContent === ${JSON.stringify(fixture.selectedPath)}), 'selected subsystem files');
+      if (![...document.querySelectorAll('.architecture-canvas-module strong')].some(node => node.textContent === 'architecture-smoke/ui/app.py')) throw new Error('Python module missing: the worker did not scan the live Python files');
+      if (![...document.querySelectorAll('.architecture-canvas-module strong')].some(node => node.textContent === 'architecture-smoke/ui/server.go')) throw new Error('Go module missing: the worker did not scan the live Go files');
+      if (![...document.querySelectorAll('.architecture-canvas-module strong')].some(node => node.textContent === 'architecture-smoke/ui/lib.rs')) throw new Error('Rust module missing: the worker did not scan the live Rust files');
       module.click();
       await wait(() => document.querySelector('.architecture-evidence .diff-host .cm-content'), 'native DiffView');
       const contents = [...document.querySelectorAll('.architecture-evidence .cm-content')].map(node => node.textContent);

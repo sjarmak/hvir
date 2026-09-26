@@ -1,7 +1,5 @@
-import ELK from 'elkjs/lib/elk.bundled.js'
+import type { ElkNode } from 'elkjs/lib/elk-api'
 import type { ArchitectureCanvasLayoutInput } from './architecture-review-model'
-
-const elk = new ELK()
 
 export interface ArchitectureNodePosition {
   readonly id: string
@@ -9,10 +7,10 @@ export interface ArchitectureNodePosition {
   readonly y: number
 }
 
-export async function layoutArchitectureGraph(
+export function architectureLayoutGraph(
   input: ArchitectureCanvasLayoutInput,
-): Promise<readonly ArchitectureNodePosition[]> {
-  const result = await elk.layout({
+): ElkNode {
+  return {
     id: 'architecture',
     layoutOptions: {
       'elk.algorithm': 'layered',
@@ -27,7 +25,12 @@ export async function layoutArchitectureGraph(
       sources: [edge.source],
       targets: [edge.target],
     })),
-  })
+  }
+}
+
+export function architectureNodePositions(
+  result: ElkNode,
+): readonly ArchitectureNodePosition[] {
   return (result.children ?? [])
     .map((node) => ({
       id: node.id,
