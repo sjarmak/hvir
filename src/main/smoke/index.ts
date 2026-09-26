@@ -52,10 +52,8 @@ import { verifyDiagnosticRestart } from './diagnostic-report-restart'
 import { verifyDevelopmentPerformanceMode } from './development-performance'
 import { verifyDocumentReviewWorkflow } from './document-review'
 import { runGitWorkflowSmoke } from './git-workflow'
-import {
-  createSmokeArchitectureReview,
-  runArchitectureReviewSmoke,
-} from './architecture-review'
+import * as architectureReview from './architecture-review'
+import { runArchitectureUxWalkthrough } from './architecture-ux-walkthrough'
 import { verifyPlatformContracts } from './platform-contracts'
 import { verifyRendererAuthorityLifecycle } from './renderer-authority'
 import { createExternalMoveSmokeControl } from './external-file-move'
@@ -366,7 +364,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     )
     const readiness = new SmokeRendererReadiness()
     const ipcRouter = registerIpcHandlers({
-      architectureReview: createSmokeArchitectureReview(
+      architectureReview: architectureReview.createSmokeArchitectureReview(
         rendererResources,
         cleanup,
         worktrees,
@@ -649,7 +647,9 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
         untrackedPath: liveReloadPath,
       })
     if (mode === 'architecture-review')
-      return await runArchitectureReviewSmoke(win, smokeRoot, host)
+      return await architectureReview.runArchitectureReviewSmoke(win, smokeRoot, host)
+    if (mode === 'ux-walkthrough')
+      return await runArchitectureUxWalkthrough(win, smokeRoot, host)
     if (mode === 'terminal-presentation') {
       const presentation = await verifyTerminalPresentationLifecycle(
         win,

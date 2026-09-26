@@ -18,6 +18,7 @@ npm-debug.log*
 
 # vitest / coverage
 coverage
+ux-walkthrough-artifacts/
 
 # Beads / Dolt files (added by bd init)
 .dolt/
