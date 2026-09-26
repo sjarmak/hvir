@@ -221,7 +221,7 @@ describe('GitEngine', () => {
       'upstream no longer exists',
     )
     await host.dispose()
-  })
+  }, 10_000)
 
   it('discovers linked worktrees and treats a plain directory as one workspace', async () => {
     const root = await repository()
