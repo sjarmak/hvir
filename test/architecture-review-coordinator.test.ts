@@ -46,10 +46,17 @@ function setup(
 ) {
   const resources = new RendererResourceScopes()
   const owner = resources.activateOwner(1)
+  let watchEvent: (() => void) | undefined
+  const stopWatch = vi.fn<() => void>()
+  const watch = vi.fn<ProjectHost['watch']>((_path, onEvent) => {
+    watchEvent = () => onEvent({ type: 'change', path: root })
+    return stopWatch
+  })
   const host = {
     hostId: root.hostId,
     connectionState: 'connected',
     onConnectionState: () => () => undefined,
+    watch,
   } as unknown as ProjectHost
   const emptyScan = {
     fingerprint: '',
@@ -132,9 +139,52 @@ function setup(
     coordinator,
     capture,
     analyze,
+    watch,
+    stopWatch,
+    emitWatch: () => watchEvent?.(),
     request: { root, baseline: 'HEAD', reviewId: 'tab-1' },
   }
 }
+
+it('publishes one live refresh after writes settle and stops immediately when paused', async () => {
+  vi.useFakeTimers()
+  try {
+    const f = setup()
+    const publish = vi.fn()
+    await f.coordinator.scan(f.owner, f.host, f.request)
+    f.coordinator.follow(f.owner, f.host, f.request, publish)
+    expect(f.watch).toHaveBeenCalledWith(
+      root,
+      expect.any(Function),
+      expect.objectContaining({ recursive: true }),
+    )
+    f.emitWatch()
+    await vi.advanceTimersByTimeAsync(1_500)
+    f.emitWatch()
+    await vi.advanceTimersByTimeAsync(1_999)
+    expect(publish).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(publish).toHaveBeenCalledOnce()
+    f.coordinator.pause(f.owner, f.request)
+    expect(f.stopWatch).toHaveBeenCalledOnce()
+    f.emitWatch()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(publish).toHaveBeenCalledOnce()
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('keeps the live watch across replacement snapshots and releases it on close', async () => {
+  const f = setup()
+  await f.coordinator.scan(f.owner, f.host, f.request)
+  f.coordinator.follow(f.owner, f.host, f.request, vi.fn())
+  await f.coordinator.scan(f.owner, f.host, f.request)
+  expect(f.stopWatch).not.toHaveBeenCalled()
+  expect(f.watch).toHaveBeenCalledOnce()
+  f.coordinator.close(f.owner, f.request)
+  expect(f.stopWatch).toHaveBeenCalledOnce()
+})
 it('returns captured deleted-source evidence and rejects a different host or renderer', async () => {
   const f = setup()
   const result = await f.coordinator.scan(f.owner, f.host, f.request)

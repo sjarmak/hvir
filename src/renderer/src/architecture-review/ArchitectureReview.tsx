@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { joinHostPath, type HostPath } from '../../../shared'
+import { hostPathEquals, joinHostPath, type HostPath } from '../../../shared'
 import {
   ARCHITECTURE_LIVE_REVISION,
   type ArchitectureEvidence,
@@ -30,12 +30,19 @@ export function ArchitectureReview({
   readonly onHandoff: (projectId: string, workspaceId: string) => void
 }) {
   const requestEpoch = useRef(0)
+  const liveScanActive = useRef(false)
+  const pendingLiveScan = useRef(false)
+  const pausedRef = useRef(false)
   const [reviewId] = useState(() => crypto.randomUUID())
   const [baselineText, setBaselineText] = useState('')
   const [currentText, setCurrentText] = useState('')
   const parsed = endsFromText(baselineText, currentText)
   const endsInvalid = Object.keys(parsed.problems).length > 0
-  const [snapshot, setSnapshot] = useState<ArchitectureReviewSnapshot>()
+  const [timeline, setTimeline] = useState<readonly ArchitectureReviewSnapshot[]>([])
+  const [timelineIndex, setTimelineIndex] = useState(0)
+  const snapshot = timeline[timelineIndex]
+  const [paused, setPaused] = useState(false)
+  pausedRef.current = paused
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'refused' | 'error'>(
     'idle',
   )
@@ -62,9 +69,14 @@ export function ArchitectureReview({
     [root, reviewId],
   )
 
-  const scan = async (ends: ArchitectureEnds) => {
+  const scan = async (ends: ArchitectureEnds, append = false) => {
+    if (append && liveScanActive.current) {
+      pendingLiveScan.current = true
+      return
+    }
+    if (append) liveScanActive.current = true
+    else pendingLiveScan.current = false
     const epoch = ++requestEpoch.current
-    setSnapshot(undefined)
     setEvidence(undefined)
     setSelection(undefined)
     setRefusal(undefined)
@@ -83,9 +95,31 @@ export function ArchitectureReview({
         setState('refused')
         return
       }
-      setSnapshot(result)
+      const live = result.currentRevision === ARCHITECTURE_LIVE_REVISION
+      if (append) {
+        setTimeline((current) => {
+          const next = [...current, result]
+          setTimelineIndex(next.length - 1)
+          return next
+        })
+      } else {
+        setTimeline([result])
+        setTimelineIndex(0)
+      }
       setScopeText(textOfScope(result.layout.scope))
       setState('ready')
+      try {
+        if (live && !pausedRef.current)
+          await window.hvir.invoke('architecture-review:follow', { root, reviewId })
+        else await window.hvir.invoke('architecture-review:pause', { root, reviewId })
+      } catch (cause) {
+        if (epoch === requestEpoch.current)
+          setError(
+            cause instanceof Error
+              ? cause.message
+              : 'Live architecture review could not be updated.',
+          )
+      }
     } catch (cause) {
       if (epoch !== requestEpoch.current) return
       setState('error')
@@ -94,7 +128,61 @@ export function ArchitectureReview({
           ? cause.message
           : 'Architecture review could not be loaded.',
       )
+    } finally {
+      if (append) liveScanActive.current = false
+      if (append && pendingLiveScan.current && !pausedRef.current) {
+        pendingLiveScan.current = false
+        void scan(ends, true)
+      }
     }
+  }
+  const scanRef = useRef(scan)
+  scanRef.current = scan
+  const liveEndsRef = useRef(parsed.ends)
+  liveEndsRef.current = parsed.ends
+  useEffect(() => {
+    const dispose = window.hvir.on('architecture-review:changed', (event) => {
+      if (
+        !active ||
+        pausedRef.current ||
+        event.reviewId !== reviewId ||
+        !hostPathEquals(event.root, root)
+      )
+        return
+      void scanRef.current(liveEndsRef.current, true)
+    })
+    return () => {
+      void Promise.resolve(dispose()).catch((cause: unknown) =>
+        console.error('Architecture review event cleanup failed', cause),
+      )
+    }
+  }, [active, reviewId, root])
+  const togglePaused = async () => {
+    const next = !paused
+    pausedRef.current = next
+    setPaused(next)
+    try {
+      if (next) {
+        pendingLiveScan.current = false
+        await window.hvir.invoke('architecture-review:pause', { root, reviewId })
+      } else {
+        await window.hvir.invoke('architecture-review:follow', { root, reviewId })
+      }
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'Live architecture review could not be updated.',
+      )
+    }
+  }
+  const scrubTimeline = (index: number) => {
+    requestEpoch.current += 1
+    if (liveScanActive.current) pendingLiveScan.current = true
+    setTimelineIndex(index)
+    setEvidence(undefined)
+    setSelection(undefined)
+    setError(undefined)
   }
   /**
    * Saves the scope to the working tree's layout file, then scans with it. A scan or
@@ -196,6 +284,24 @@ export function ArchitectureReview({
         disabled={state === 'loading'}
         onChoose={chooseFromStrip}
       />
+      {snapshot?.currentRevision === ARCHITECTURE_LIVE_REVISION ? (
+        <div className="architecture-review-timeline">
+          <button type="button" onClick={() => void togglePaused()}>
+            {paused ? 'Resume live review' : 'Pause live review'}
+          </button>
+          <label>
+            Snapshot {timelineIndex + 1} of {timeline.length}
+            <input
+              aria-label="Review timeline"
+              type="range"
+              min="0"
+              max={Math.max(0, timeline.length - 1)}
+              value={timelineIndex}
+              onChange={(event) => scrubTimeline(Number(event.currentTarget.value))}
+            />
+          </label>
+        </div>
+      ) : null}
       {error ? (
         <p className="architecture-review-state error" role="alert">
           {error}

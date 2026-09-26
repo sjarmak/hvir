@@ -102,6 +102,19 @@ export function registerArchitectureReviewIpc(ipc: IpcRegistrar, deps: Deps): vo
     project(request)
     return result
   })
+  ipc.handle('architecture-review:follow', async (request, context) => {
+    const active = project(request)
+    await ipc.authority.projectPath(request.root, active.root, active.host)
+    const owner = context.owner()
+    deps.architectureReview.follow(owner, active.host, request, () => {
+      if (!context.sender.isDestroyed())
+        context.sender.send('architecture-review:changed', request)
+    })
+  })
+  ipc.handle('architecture-review:pause', (request, context) => {
+    project(request)
+    deps.architectureReview.pause(context.owner(), request)
+  })
   // Closing a previous workspace's own lease remains possible after navigation.
   ipc.handle('architecture-review:close', (request, context) => {
     reconstructIpcHostPath(request.root)

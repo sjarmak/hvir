@@ -1,4 +1,4 @@
-import { invoke, type IpcFeatureContract } from '../ipc-contract'
+import { invoke, payload, type IpcFeatureContract } from '../ipc-contract'
 import type {
   ArchitectureScanOutcome,
   ArchitectureScopeRecord,
@@ -13,6 +13,7 @@ import type {
   ArchitectureCommitRangeRequest,
   ArchitectureCommitRange,
   ArchitectureReviewLaunch,
+  ArchitectureReviewChanged,
 } from '../architecture-review'
 import type {
   ArchitectureHandoff,
@@ -47,7 +48,11 @@ export const architectureReviewIpc = {
       ArchitectureCommitRange
     >(),
     'architecture-review:close': invoke<ArchitectureReviewKey, void>(),
+    'architecture-review:follow': invoke<ArchitectureReviewKey, void>(),
+    'architecture-review:pause': invoke<ArchitectureReviewKey, void>(),
   },
   send: {},
-  event: {},
+  event: {
+    'architecture-review:changed': payload<ArchitectureReviewChanged>(),
+  },
 } satisfies IpcFeatureContract

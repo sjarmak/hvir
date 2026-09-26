@@ -62,6 +62,8 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
     | 'scan'
     | 'recordScope'
     | 'commits'
+    | 'follow'
+    | 'pause'
     | 'evidence'
     | 'close'
     | 'prepare'

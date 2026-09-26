@@ -5,6 +5,7 @@ import type { ProjectHost } from '../src/main/project-host/project-host'
 import type { IpcRegistrar } from '../src/main/ipc/authority-router'
 import { ArchitectureScopeRefusalError } from '../src/main/architecture-review/scope-cap'
 import type { ArchitectureScopeRefusal } from '../src/shared/architecture-scope'
+import type { ArchitectureReviewCoordinator } from '../src/main/architecture-review/coordinator'
 
 type TestContext = {
   readonly owner: () => { readonly id: number; readonly generation: number }
@@ -113,6 +114,41 @@ describe('architecture review IPC authority', () => {
       root,
       from: 'v1',
     })
+  })
+
+  it('publishes settled live changes only to the renderer that started following', async () => {
+    const root = localPath('/repo')
+    const host = {
+      hostId: root.hostId,
+      connectionState: 'connected',
+    } as unknown as ProjectHost
+    const follow = vi.fn<ArchitectureReviewCoordinator['follow']>(
+      (_owner, _host, _request, publish) => publish(),
+    )
+    const send = vi.fn()
+    const handlers = new Map<string, TestHandler>()
+    registerArchitectureReviewIpc(
+      {
+        handle: (channel: string, handler: TestHandler) => handlers.set(channel, handler),
+        authority: { projectPath: vi.fn() },
+      } as unknown as IpcRegistrar,
+      {
+        getProject: () => ({ root, host }),
+        architectureReview: { follow },
+      } as unknown as Parameters<typeof registerArchitectureReviewIpc>[1],
+    )
+    const request = { root, reviewId: 'r-live' }
+    await handlers.get('architecture-review:follow')?.(request, {
+      owner: () => ({ id: 1, generation: 1 }),
+      sender: { isDestroyed: () => false, send },
+    } as unknown as TestContext)
+    expect(follow).toHaveBeenCalledWith(
+      { id: 1, generation: 1 },
+      host,
+      request,
+      expect.any(Function),
+    )
+    expect(send).toHaveBeenCalledWith('architecture-review:changed', request)
   })
 
   it('returns an over-cap scan as a refusal, not as a failure', async () => {

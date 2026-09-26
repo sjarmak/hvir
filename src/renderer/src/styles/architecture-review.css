@@ -104,6 +104,22 @@
   border-color: var(--accent);
   color: var(--text-strong);
 }
+.architecture-review-timeline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.architecture-review-timeline label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+.architecture-review-timeline input {
+  flex: 1;
+}
 .architecture-review-body {
   display: grid;
   grid-template-columns: minmax(250px, 1fr) minmax(300px, 1.2fr);
@@ -195,15 +211,18 @@
 }
 .architecture-canvas-node.change-added {
   border-color: var(--success-text);
+  animation: architecture-change-enter 180ms ease-out;
 }
 .architecture-canvas-node.change-changed {
   border-color: var(--warning-text);
+  animation: architecture-change-pulse 240ms ease-out;
 }
 .architecture-canvas-node.change-removed,
 .architecture-canvas-node.ghost {
   border-color: var(--danger-text);
   border-style: dashed;
   opacity: 0.62;
+  animation: architecture-change-exit 220ms ease-out;
 }
 .architecture-review .architecture-canvas-node.selected {
   border-color: var(--accent);
@@ -215,6 +234,7 @@
 }
 .architecture-canvas-edge.change-added .react-flow__edge-path {
   stroke: var(--success-text);
+  animation: architecture-edge-enter 180ms ease-out;
 }
 .architecture-canvas-edge.change-changed .react-flow__edge-path {
   stroke: var(--warning-text);
@@ -224,6 +244,38 @@
   stroke: var(--danger-text);
   stroke-dasharray: 5 5;
   opacity: 0.62;
+  animation: architecture-edge-exit 220ms ease-out;
+}
+@keyframes architecture-change-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+@keyframes architecture-change-pulse {
+  from {
+    filter: brightness(1.5);
+  }
+}
+@keyframes architecture-change-exit {
+  from {
+    opacity: 1;
+  }
+}
+@keyframes architecture-edge-enter {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes architecture-edge-exit {
+  from {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .architecture-review :is(.architecture-canvas-node, .react-flow__edge-path) {
+    animation: none;
+  }
 }
 .architecture-review .architecture-module {
   display: flex;

@@ -92,6 +92,7 @@ export interface ArchitectureReviewKey {
   readonly root: HostPath
   readonly reviewId: string
 }
+export type ArchitectureReviewChanged = ArchitectureReviewKey
 export interface ArchitectureReviewRequest
   extends ArchitectureCaptureRequest, ArchitectureReviewKey {}
 export interface ArchitectureReviewSnapshot extends Omit<

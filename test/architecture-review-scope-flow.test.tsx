@@ -77,7 +77,7 @@ beforeEach(() => {
       return undefined
     },
   )
-  vi.stubGlobal('hvir', { invoke })
+  vi.stubGlobal('hvir', { invoke, on: vi.fn(() => () => undefined) })
   host = document.createElement('div')
   document.body.append(host)
   app = createRoot(host)

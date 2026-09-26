@@ -93,11 +93,13 @@ const commits = {
   })),
   truncated: false,
 }
-type ScanRequest = { baseline?: string; current?: string }
+type ScanRequest = { baseline?: string; current?: string; capturedOnly?: boolean }
+type TestInvoke = (channel: string, request?: ScanRequest) => Promise<unknown>
 let host: HTMLDivElement
 let app: ReturnType<typeof createRoot>
 let stale: boolean
-const invoke = vi.fn()
+const invoke = vi.fn<TestInvoke>()
+const listeners = new Map<string, (payload: unknown) => void>()
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   stale = false
@@ -140,10 +142,80 @@ beforeEach(() => {
     if (channel === 'architecture-review:handoff') return handoff
     return undefined
   })
-  vi.stubGlobal('hvir', { invoke })
+  listeners.clear()
+  vi.stubGlobal('hvir', {
+    invoke,
+    on: vi.fn((channel: string, listener: (payload: unknown) => void) => {
+      listeners.set(channel, listener)
+      return () => listeners.delete(channel)
+    }),
+  })
   host = document.createElement('div')
   document.body.append(host)
   app = createRoot(host)
+})
+
+it('follows settled working-tree snapshots, pauses, and scrubs immutable history', async () => {
+  let sequence = 0
+  const original = invoke.getMockImplementation()!
+  invoke.mockImplementation(async (channel: string, request?: ScanRequest) => {
+    if (channel !== 'architecture-review:scan') return original(channel, request)
+    sequence += 1
+    return {
+      ...snapshot,
+      id: `snapshot-${sequence}`,
+      currentRevision: 'working-tree',
+      capturedAt: `capture-${sequence}`,
+    }
+  })
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
+  await click(button('Scan snapshot'))
+  const liveReviewId = (
+    invoke.mock.calls.find(
+      ([channel]) => channel === 'architecture-review:follow',
+    )?.[1] as {
+      reviewId: string
+    }
+  ).reviewId
+  expect(invoke).toHaveBeenCalledWith('architecture-review:follow', {
+    root,
+    reviewId: liveReviewId,
+  })
+  await act(async () => {
+    listeners.get('architecture-review:changed')?.({
+      root,
+      reviewId: liveReviewId,
+    })
+    await Promise.resolve()
+  })
+  expect(host.textContent).toContain('capture-2')
+  expect(
+    host.querySelector<HTMLInputElement>('[aria-label="Review timeline"]')?.max,
+  ).toBe('1')
+  await act(async () => {
+    const timeline = host.querySelector<HTMLInputElement>(
+      '[aria-label="Review timeline"]',
+    )!
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+      timeline,
+      '0',
+    )
+    timeline.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(host.textContent).toContain('capture-1')
+  await click(button('Pause live review'))
+  expect(invoke).toHaveBeenCalledWith('architecture-review:pause', {
+    root,
+    reviewId: liveReviewId,
+  })
+  const scansBefore = scans().length
+  await act(async () => {
+    listeners.get('architecture-review:changed')?.({ root, reviewId: liveReviewId })
+    await Promise.resolve()
+  })
+  expect(scans()).toHaveLength(scansBefore)
 })
 afterEach(() => {
   act(() => app.unmount())
@@ -223,16 +295,12 @@ it('offers the agent change and the cumulative change in a handed-off worktree',
   )!
   expect(baseline.value).toBe(origin.currentRevision)
   await click(button('Scan the cumulative change'))
-  expect(invoke).toHaveBeenLastCalledWith(
-    'architecture-review:scan',
-    expect.objectContaining({ baseline: origin.baselineRevision }),
-  )
+  expect(scans().at(-1)).toEqual({
+    baseline: origin.baselineRevision,
+    current: undefined,
+  })
   await click(button("Scan the agent's change"))
-  expect(invoke).toHaveBeenLastCalledWith(
-    'architecture-review:scan',
-    expect.objectContaining({ baseline: origin.currentRevision }),
-  )
-  expect(invoke.mock.calls.at(-1)?.[1]).not.toHaveProperty('current')
+  expect(scans().at(-1)).toEqual({ baseline: origin.currentRevision, current: undefined })
 })
 it('shows stale captured evidence but prevents prompt preparation and finding submission', async () => {
   stale = true
@@ -261,10 +329,10 @@ it('shows the captured diff while freshness is pending and keeps actions blocked
   const original: (channel: string) => Promise<unknown> = invoke.getMockImplementation()!
   let resolve!: (value: unknown) => void
   invoke.mockImplementation(
-    async (channel: string, request: { capturedOnly?: boolean }) => {
+    async (channel: string, request?: ScanRequest) => {
       if (channel !== 'architecture-review:evidence') return original(channel)
       const evidence = (await original(channel)) as ArchitectureEvidence
-      if (request.capturedOnly) return { ...evidence, stale: null }
+      if (request?.capturedOnly) return { ...evidence, stale: null }
       return new Promise((done) => {
         resolve = done
       })
@@ -283,9 +351,9 @@ it('shows the captured diff while freshness is pending and keeps actions blocked
 it('retains readable pinned evidence after validation fails, without allowing actions', async () => {
   const original: (channel: string) => Promise<unknown> = invoke.getMockImplementation()!
   invoke.mockImplementation(
-    async (channel: string, request: { capturedOnly?: boolean }) => {
+    async (channel: string, request?: ScanRequest) => {
       if (channel !== 'architecture-review:evidence') return original(channel)
-      if (!request.capturedOnly) throw new Error('SSH disconnected')
+      if (!request?.capturedOnly) throw new Error('SSH disconnected')
       return { ...((await original(channel)) as ArchitectureEvidence), stale: null }
     },
   )
@@ -301,9 +369,9 @@ it('ignores late freshness completion after a replacement scan', async () => {
   const original: (channel: string) => Promise<unknown> = invoke.getMockImplementation()!
   let resolve!: (value: unknown) => void
   invoke.mockImplementation(
-    async (channel: string, request: { capturedOnly?: boolean }) => {
+    async (channel: string, request?: ScanRequest) => {
       if (channel !== 'architecture-review:evidence') return original(channel)
-      if (request.capturedOnly)
+      if (request?.capturedOnly)
         return { ...((await original(channel)) as ArchitectureEvidence), stale: null }
       return new Promise((done) => {
         resolve = done

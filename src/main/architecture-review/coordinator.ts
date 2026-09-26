@@ -22,7 +22,10 @@ import type {
   ArchitectureAgentLaunch,
   ArchitectureHandoff,
 } from '../../shared/architecture-handoff'
-import { ARCHITECTURE_LIVE_REVISION } from '../../shared/architecture-review'
+import {
+  ARCHITECTURE_LIVE_REVISION,
+  ARCHITECTURE_SCOPE,
+} from '../../shared/architecture-review'
 import type { AddedWorktree } from '../git/mutation-coordinator'
 import type { ProjectHost } from '../project-host/project-host'
 import type {
@@ -46,6 +49,7 @@ import { recordArchitectureScope } from './scope-record'
 
 const MAX_REVIEWS = 4
 const STRIP_TIMEOUT = 60_000
+const LIVE_SETTLE_MS = 2_000
 export interface ArchitectureReviewPorts {
   readonly resources: RendererResourceScopes
   readonly capture?: typeof captureArchitecture
@@ -83,9 +87,15 @@ interface UnfinishedHandoff {
   readonly added: AddedWorktree
   readonly briefWritten: boolean
 }
+interface Follower {
+  readonly host: ProjectHost
+  readonly stop: () => void | Promise<void>
+  timer?: ReturnType<typeof setTimeout>
+}
 /** Workspace leases own bounded captured pairs; analysis owns no host authority. */
 export class ArchitectureReviewCoordinator {
   private readonly reviews = new Map<string, Review>()
+  private readonly followers = new Map<string, Follower>()
   private readonly launches = new ArchitectureLaunches()
   constructor(private readonly ports: ArchitectureReviewPorts) {}
 
@@ -96,7 +106,7 @@ export class ArchitectureReviewCoordinator {
   ): Promise<ArchitectureReviewSnapshot> {
     this.ports.resources.assertCurrent(owner)
     const key = reviewKey(owner, request)
-    this.close(owner, request)
+    this.closeReview(owner, request)
     if (this.reviews.size >= MAX_REVIEWS)
       throw new Error('Close an architecture review before opening another')
     const controller = new AbortController()
@@ -149,6 +159,48 @@ export class ArchitectureReviewCoordinator {
       if (this.reviews.get(key)?.controller === controller) this.close(owner, request)
       throw error
     }
+  }
+
+  follow(
+    owner: RendererOwner,
+    host: ProjectHost,
+    request: ArchitectureReviewKey,
+    publish: () => void,
+  ): void {
+    this.ports.resources.assertCurrent(owner)
+    const key = reviewKey(owner, request)
+    const review = this.reviews.get(key)
+    if (!review || review.host !== host || !hasLiveCurrent(review.request))
+      throw new Error('A live architecture snapshot is required before following')
+    if (this.followers.get(key)?.host === host) return
+    this.stopFollower(key)
+    const follower: Follower = {
+      host,
+      stop: host.watch(
+        request.root,
+        () => {
+          if (follower.timer) clearTimeout(follower.timer)
+          follower.timer = setTimeout(() => {
+            follower.timer = undefined
+            if (this.followers.get(key) === follower) publish()
+          }, LIVE_SETTLE_MS)
+        },
+        {
+          recursive: true,
+          excludeDirectoryNames: ARCHITECTURE_SCOPE.excludedDirectories,
+          onError: (error) => {
+            this.stopFollower(key)
+            console.error('[architecture-review] live watch failed', error)
+          },
+        },
+      ),
+    }
+    this.followers.set(key, follower)
+  }
+
+  pause(owner: RendererOwner, request: ArchitectureReviewKey): void {
+    this.ports.resources.assertCurrent(owner)
+    this.stopFollower(reviewKey(owner, request))
   }
 
   /**
@@ -310,6 +362,11 @@ export class ArchitectureReviewCoordinator {
 
   close(owner: RendererOwner, request: ArchitectureReviewKey): void {
     const key = reviewKey(owner, request)
+    this.stopFollower(key)
+    this.closeReview(owner, request)
+  }
+  private closeReview(owner: RendererOwner, request: ArchitectureReviewKey): void {
+    const key = reviewKey(owner, request)
     const review = this.reviews.get(key)
     if (!review) return
     this.reviews.delete(key)
@@ -325,6 +382,7 @@ export class ArchitectureReviewCoordinator {
     review.lease.release()
   }
   dispose(): void {
+    for (const key of this.followers.keys()) this.stopFollower(key)
     for (const review of this.reviews.values()) {
       review.controller.abort(new Error('Architecture review disposed'))
       void Promise.resolve()
@@ -339,6 +397,15 @@ export class ArchitectureReviewCoordinator {
     }
     this.reviews.clear()
     this.launches.clear()
+  }
+  private stopFollower(key: string): void {
+    const follower = this.followers.get(key)
+    if (!follower) return
+    this.followers.delete(key)
+    if (follower.timer) clearTimeout(follower.timer)
+    void Promise.resolve(follower.stop()).catch((error: unknown) => {
+      console.error('[architecture-review] live watch cleanup failed', error)
+    })
   }
   /** Offers `planned` as the one handoff the review allows next. */
   private reoffer(
