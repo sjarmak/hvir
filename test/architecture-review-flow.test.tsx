@@ -93,7 +93,12 @@ const commits = {
   })),
   truncated: false,
 }
-type ScanRequest = { baseline?: string; current?: string; capturedOnly?: boolean }
+type ScanRequest = {
+  baseline?: string
+  current?: string
+  capturedOnly?: boolean
+  snapshotId?: string
+}
 type TestInvoke = (channel: string, request?: ScanRequest) => Promise<unknown>
 let host: HTMLDivElement
 let app: ReturnType<typeof createRoot>
@@ -235,6 +240,91 @@ async function openEvidence(onHandoff = vi.fn()) {
   await click(button('Scan snapshot'))
   await click(host.querySelector<HTMLElement>('.architecture-module')!)
 }
+it('renders the explanation as an agent claim and flags unknown snapshot names', async () => {
+  const original = invoke.getMockImplementation()!
+  invoke.mockImplementation(async (channel: string, request?: ScanRequest) => {
+    if (channel !== 'architecture-review:explanation') return original(channel, request)
+    return {
+      status: 'ready',
+      explanation: {
+        snapshotId: 's',
+        claim: {
+          version: 1,
+          snapshotId: 's',
+          whatChanged: 'The launch path changed.',
+          why: 'The provider owns the launch.',
+          sequenceDiagram: 'sequenceDiagram\n  User->>hvir: Explain',
+          touched: { systems: ['Invented'], subsystems: [], modules: [] },
+        },
+        names: {
+          systems: [{ name: 'Invented', present: false }],
+          subsystems: [],
+          modules: [],
+        },
+      },
+    }
+  })
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
+  await click(button('Scan snapshot'))
+  expect(
+    host.querySelector('[aria-label="Agent explanation claim"]')?.textContent,
+  ).toContain('Agent claim, checked against snapshot names')
+  expect(host.textContent).toContain('The launch path changed.')
+  expect(host.querySelector('.architecture-explanation-names .absent')?.textContent).toBe(
+    'InventedNot found in snapshot',
+  )
+})
+it('clears the prior snapshot claim while the selected snapshot loads', async () => {
+  const original = invoke.getMockImplementation()!
+  let scanSequence = 0
+  let finishSecond!: (value: null) => void
+  invoke.mockImplementation(async (channel: string, request?: ScanRequest) => {
+    if (channel === 'architecture-review:scan') {
+      scanSequence += 1
+      return { ...snapshot, id: `snapshot-${scanSequence}`, currentRevision: 'working-tree' }
+    }
+    if (channel === 'architecture-review:explanation') {
+      if (request?.snapshotId === 'snapshot-2')
+        return new Promise<null>((resolve) => (finishSecond = resolve))
+      return {
+        status: 'ready',
+        explanation: {
+          snapshotId: 'snapshot-1',
+          claim: {
+            version: 1,
+            snapshotId: 'snapshot-1',
+            whatChanged: 'Prior snapshot claim',
+            why: 'Prior snapshot reason',
+            sequenceDiagram: 'sequenceDiagram\n  User->>hvir: Explain',
+            touched: { systems: [], subsystems: [], modules: [] },
+          },
+          names: { systems: [], subsystems: [], modules: [] },
+        },
+      }
+    }
+    return original(channel, request)
+  })
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
+  await click(button('Scan snapshot'))
+  expect(host.textContent).toContain('Prior snapshot claim')
+  await act(async () => {
+    listeners.get('architecture-review:changed')?.({
+      root,
+      reviewId: (
+        invoke.mock.calls.find(([channel]) => channel === 'architecture-review:follow')?.[1] as {
+          reviewId: string
+        }
+      ).reviewId,
+    })
+    await Promise.resolve()
+  })
+  expect(host.textContent).not.toContain('Prior snapshot claim')
+  await act(async () => finishSecond(null))
+})
 it('previews the exact handoff, creates the worktree once and queues its launch', async () => {
   const onHandoff = vi.fn()
   await openEvidence(onHandoff)
@@ -328,16 +418,14 @@ it('drops a pending preparation result after a fresh snapshot replaces its evide
 it('shows the captured diff while freshness is pending and keeps actions blocked', async () => {
   const original: (channel: string) => Promise<unknown> = invoke.getMockImplementation()!
   let resolve!: (value: unknown) => void
-  invoke.mockImplementation(
-    async (channel: string, request?: ScanRequest) => {
-      if (channel !== 'architecture-review:evidence') return original(channel)
-      const evidence = (await original(channel)) as ArchitectureEvidence
-      if (request?.capturedOnly) return { ...evidence, stale: null }
-      return new Promise((done) => {
-        resolve = done
-      })
-    },
-  )
+  invoke.mockImplementation(async (channel: string, request?: ScanRequest) => {
+    if (channel !== 'architecture-review:evidence') return original(channel)
+    const evidence = (await original(channel)) as ArchitectureEvidence
+    if (request?.capturedOnly) return { ...evidence, stale: null }
+    return new Promise((done) => {
+      resolve = done
+    })
+  })
   await openEvidence()
   expect(host.querySelector('[data-testid="captured-diff"]')).not.toBeNull()
   expect(host.textContent).toContain('Checking snapshot freshness')
@@ -350,13 +438,11 @@ it('shows the captured diff while freshness is pending and keeps actions blocked
 
 it('retains readable pinned evidence after validation fails, without allowing actions', async () => {
   const original: (channel: string) => Promise<unknown> = invoke.getMockImplementation()!
-  invoke.mockImplementation(
-    async (channel: string, request?: ScanRequest) => {
-      if (channel !== 'architecture-review:evidence') return original(channel)
-      if (!request?.capturedOnly) throw new Error('SSH disconnected')
-      return { ...((await original(channel)) as ArchitectureEvidence), stale: null }
-    },
-  )
+  invoke.mockImplementation(async (channel: string, request?: ScanRequest) => {
+    if (channel !== 'architecture-review:evidence') return original(channel)
+    if (!request?.capturedOnly) throw new Error('SSH disconnected')
+    return { ...((await original(channel)) as ArchitectureEvidence), stale: null }
+  })
   await openEvidence()
   expect(host.querySelector('[data-testid="captured-diff"]')).not.toBeNull()
   expect(host.textContent).toContain('SSH disconnected')
@@ -368,16 +454,14 @@ it('retains readable pinned evidence after validation fails, without allowing ac
 it('ignores late freshness completion after a replacement scan', async () => {
   const original: (channel: string) => Promise<unknown> = invoke.getMockImplementation()!
   let resolve!: (value: unknown) => void
-  invoke.mockImplementation(
-    async (channel: string, request?: ScanRequest) => {
-      if (channel !== 'architecture-review:evidence') return original(channel)
-      if (request?.capturedOnly)
-        return { ...((await original(channel)) as ArchitectureEvidence), stale: null }
-      return new Promise((done) => {
-        resolve = done
-      })
-    },
-  )
+  invoke.mockImplementation(async (channel: string, request?: ScanRequest) => {
+    if (channel !== 'architecture-review:evidence') return original(channel)
+    if (request?.capturedOnly)
+      return { ...((await original(channel)) as ArchitectureEvidence), stale: null }
+    return new Promise((done) => {
+      resolve = done
+    })
+  })
   await openEvidence()
   await click(button('Scan snapshot'))
   await act(async () => resolve(await original('architecture-review:evidence')))

@@ -67,6 +67,47 @@ export function registerArchitectureReviewIpc(ipc: IpcRegistrar, deps: Deps): vo
     context.owner()
     return result
   })
+  ipc.handle('architecture-review:prepare-explanation', async (request, context) => {
+    const active = project(request)
+    const owner = context.owner()
+    await ipc.authority.projectPath(request.root, active.root, active.host)
+    project(request)
+    const result = await deps.architectureReview.prepareExplanation(
+      owner,
+      active.host,
+      request,
+    )
+    context.owner()
+    project(request)
+    return result
+  })
+  ipc.handle('architecture-review:handoff-explanation', async (request, context) => {
+    const active = project(request)
+    const owner = context.owner()
+    await ipc.authority.projectPath(request.root, active.root, active.host)
+    project(request)
+    const result = await deps.architectureReview.handoffExplanation(
+      owner,
+      active.host,
+      request,
+      (state) => {
+        if (!context.sender.isDestroyed())
+          context.sender.send('architecture-review:explanation-changed', {
+            root: request.root,
+            reviewId: request.reviewId,
+            snapshotId: request.snapshotId,
+            state,
+          })
+      },
+    )
+    context.owner()
+    return result
+  })
+  ipc.handle('architecture-review:explanation', async (request, context) => {
+    const active = project(request)
+    await ipc.authority.projectPath(request.root, active.root, active.host)
+    return deps.architectureReview.explanation(context.owner(), active.host, request)
+  })
   ipc.handle('architecture-review:origin', async (request, context) => {
     const active = project(request)
     context.owner()

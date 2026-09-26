@@ -577,3 +577,64 @@
 .architecture-review-state.refused {
   color: var(--text);
 }
+.architecture-explanation {
+  display: grid;
+  gap: 10px;
+  margin: 10px 14px;
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-1));
+}
+.architecture-explanation > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.architecture-explanation :is(h3, h4, p) {
+  margin: 0;
+}
+.architecture-explanation header p {
+  color: var(--text-muted);
+}
+.architecture-explanation-launch,
+.architecture-explanation-claim {
+  display: grid;
+  gap: 8px;
+}
+.architecture-explanation-claim {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+.architecture-explanation-claim pre {
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  border-radius: 4px;
+  background: var(--surface-raised);
+}
+.architecture-explanation-names {
+  display: grid;
+  gap: 4px;
+}
+.architecture-explanation-names ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.architecture-explanation-names li {
+  display: inline-flex;
+  gap: 6px;
+  padding: 3px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+}
+.architecture-explanation-names li.absent,
+.architecture-explanation-invalid {
+  color: var(--danger-text);
+  border-color: var(--danger-text);
+}

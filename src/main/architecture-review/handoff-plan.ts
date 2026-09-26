@@ -6,13 +6,18 @@ import type {
 } from '../../shared/architecture-review'
 import type { HvirWorktreeTarget } from '../git/hvir-worktrees'
 import { hostPath } from '../../shared/host-path'
-import { architectureHandoffBrief, architectureHandoffPrompt } from './handoff-brief'
+import {
+  architectureExplanationPrompt,
+  architectureHandoffBrief,
+  architectureHandoffPrompt,
+} from './handoff-brief'
 
 /** Everything a prepared handoff pins: the exact worktree, brief and prompt it will use. */
 export interface PlannedHandoff {
+  readonly kind: 'review' | 'explanation'
   readonly snapshotId: string
   /** The evidence path the launch was prepared from. */
-  readonly path: string
+  readonly path?: string
   readonly slug: string
   readonly body: string
   readonly digest: string
@@ -31,6 +36,16 @@ export interface HandoffPlanInput {
 }
 
 export function planArchitectureHandoff(input: HandoffPlanInput): PlannedHandoff {
+  return plan(input, 'review')
+}
+
+export function planArchitectureExplanation(
+  input: Omit<HandoffPlanInput, 'focus'>,
+): PlannedHandoff {
+  return plan({ ...input, focus: '' }, 'explanation')
+}
+
+function plan(input: HandoffPlanInput, kind: PlannedHandoff['kind']): PlannedHandoff {
   const { capture, snapshot, target, commit } = input
   if (target.commit !== commit) throw new Error('Handoff worktree target changed commit')
   const worktree = hostPath(capture.root.hostId, target.path)
@@ -54,10 +69,14 @@ export function planArchitectureHandoff(input: HandoffPlanInput): PlannedHandoff
     commit,
     brief: architectureHandoffBrief(briefInput),
   }
-  const body = architectureHandoffPrompt(briefInput)
+  const body =
+    kind === 'review'
+      ? architectureHandoffPrompt(briefInput)
+      : architectureExplanationPrompt(briefInput)
   return {
+    kind,
     snapshotId: snapshot.id,
-    path: input.focus,
+    path: kind === 'review' ? input.focus : undefined,
     slug: input.slug,
     body,
     digest: handoffDigest(body, plan),

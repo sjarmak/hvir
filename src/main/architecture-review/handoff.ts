@@ -5,6 +5,7 @@ import {
   type ArchitectureAgentLaunch,
   type ArchitectureHandoffOrigin,
 } from '../../shared/architecture-handoff'
+import { ARCHITECTURE_EXPLANATION_FILE } from '../../shared/architecture-explanation'
 import {
   hostPath,
   hostPathEquals,
@@ -31,7 +32,10 @@ export interface ArchitectureWorktreePort {
 const TIMEOUT = 30_000
 const MAX_LAUNCHES = 16
 const MAX_MARKER_BYTES = 4 * 1024
-const EXCLUDE_ENTRY = `/${ARCHITECTURE_BRIEF_FILE}`
+const EXCLUDE_ENTRIES = [
+  `/${ARCHITECTURE_BRIEF_FILE}`,
+  `/${ARCHITECTURE_EXPLANATION_FILE}`,
+]
 
 /**
  * The commit the handoff worktree starts at: the Current commit, or for a live Current the
@@ -92,11 +96,13 @@ async function gitPath(
 
 async function appendExclude(host: ProjectHost, file: HostPath): Promise<void> {
   const existing = await readOptional(host, file)
-  if (existing?.split('\n').includes(EXCLUDE_ENTRY)) return
   if (existing === undefined) await ensureDirectory(host, parentOf(file))
   const text = existing ?? ''
+  const lines = new Set(text.split('\n'))
+  const additions = EXCLUDE_ENTRIES.filter((entry) => !lines.has(entry))
+  if (additions.length === 0) return
   const separator = text === '' || text.endsWith('\n') ? '' : '\n'
-  await host.writeFile(file, `${text}${separator}${EXCLUDE_ENTRY}\n`)
+  await host.writeFile(file, `${text}${separator}${additions.join('\n')}\n`)
 }
 
 async function readOptional(

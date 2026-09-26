@@ -125,6 +125,20 @@ export interface ArchitecturePreparedReview extends ArchitectureReviewLaunch {
   readonly handoff: import('./architecture-handoff').ArchitectureHandoffPlan
 }
 
+export interface ArchitectureExplanationRequest extends ArchitectureReviewKey {
+  readonly snapshotId: string
+}
+export interface ArchitectureExplanationLaunch extends ArchitectureExplanationRequest {
+  readonly digest: string
+}
+export interface ArchitecturePreparedExplanation extends ArchitectureExplanationLaunch {
+  readonly body: string
+  readonly handoff: import('./architecture-handoff').ArchitectureHandoffPlan
+}
+export interface ArchitectureExplanationChanged extends ArchitectureExplanationRequest {
+  readonly state: import('./architecture-explanation').ArchitectureExplanationState
+}
+
 /** A commit on the strip, with the first parent pairwise stepping compares it to. */
 export interface ArchitectureCommit {
   readonly revision: string

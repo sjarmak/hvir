@@ -14,7 +14,12 @@ import type {
   ArchitectureCommitRange,
   ArchitectureReviewLaunch,
   ArchitectureReviewChanged,
+  ArchitectureExplanationRequest,
+  ArchitectureExplanationLaunch,
+  ArchitecturePreparedExplanation,
+  ArchitectureExplanationChanged,
 } from '../architecture-review'
+import type { ArchitectureExplanationState } from '../architecture-explanation'
 import type {
   ArchitectureHandoff,
   ArchitectureHandoffOrigin,
@@ -38,7 +43,22 @@ export const architectureReviewIpc = {
       ArchitectureEvidenceRequest,
       ArchitecturePreparedReview
     >(),
-    'architecture-review:handoff': invoke<ArchitectureReviewLaunch, ArchitectureHandoff>(),
+    'architecture-review:handoff': invoke<
+      ArchitectureReviewLaunch,
+      ArchitectureHandoff
+    >(),
+    'architecture-review:prepare-explanation': invoke<
+      ArchitectureExplanationRequest,
+      ArchitecturePreparedExplanation
+    >(),
+    'architecture-review:handoff-explanation': invoke<
+      ArchitectureExplanationLaunch,
+      ArchitectureHandoff
+    >(),
+    'architecture-review:explanation': invoke<
+      ArchitectureExplanationRequest,
+      ArchitectureExplanationState | null
+    >(),
     'architecture-review:origin': invoke<
       ArchitectureOriginRequest,
       ArchitectureHandoffOrigin | null
@@ -54,5 +74,6 @@ export const architectureReviewIpc = {
   send: {},
   event: {
     'architecture-review:changed': payload<ArchitectureReviewChanged>(),
+    'architecture-review:explanation-changed': payload<ArchitectureExplanationChanged>(),
   },
 } satisfies IpcFeatureContract

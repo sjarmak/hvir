@@ -74,7 +74,7 @@ it('adds the exclude line once and never overwrites an existing brief', async ()
     writeArchitectureBrief(host, localPath(worktree), 'two', signal),
   ).rejects.toMatchObject({ code: 'EEXIST' })
   expect(await readFile(join(root, '.git', 'info', 'exclude'), 'utf8')).toBe(
-    '*.log\n/.hvir-architecture-brief.md\n',
+    '*.log\n/.hvir-architecture-brief.md\n/.hvir-architecture-explanation.json\n',
   )
   expect(await readFile(join(worktree, '.hvir-architecture-brief.md'), 'utf8')).toBe(
     'one',

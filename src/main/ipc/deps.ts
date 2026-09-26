@@ -68,6 +68,9 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
     | 'close'
     | 'prepare'
     | 'handoff'
+    | 'prepareExplanation'
+    | 'handoffExplanation'
+    | 'explanation'
     | 'launchPayload'
     | 'assertLaunchCurrent'
   >

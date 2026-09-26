@@ -13,6 +13,7 @@ import { ArchitectureMap } from './ArchitectureMap'
 import { ArchitectureCommitStrip } from './ArchitectureCommitStrip'
 import { ArchitectureEndsControls } from './ArchitectureEndsControls'
 import { ArchitectureEvidencePanel } from './ArchitectureEvidencePanel'
+import { ArchitectureExplanation } from './ArchitectureExplanation'
 import { ArchitectureHandoffOrigin } from './ArchitectureHandoffOrigin'
 import { ArchitectureScanTimings } from './ArchitectureScanTimings'
 import { ArchitectureScopeControls } from './ArchitectureScopeControls'
@@ -397,6 +398,13 @@ export function ArchitectureReview({
             exports and Python import paths set at run time may be unresolved. See
             snapshot details for analysis notices.
           </p>
+          <ArchitectureExplanation
+            key={snapshot.id}
+            root={root}
+            reviewId={reviewId}
+            snapshot={snapshot}
+            onHandoff={onHandoff}
+          />
           <div className="architecture-review-body">
             {snapshot.analysis.modules.length === 0 ? (
               <p className="architecture-review-state">

@@ -17,7 +17,11 @@ import type {
   ArchitectureReviewKey,
   ArchitectureReviewRequest,
   ArchitectureReviewSnapshot,
+  ArchitectureExplanationRequest,
+  ArchitectureExplanationLaunch,
+  ArchitecturePreparedExplanation,
 } from '../../shared/architecture-review'
+import type { ArchitectureExplanationState } from '../../shared/architecture-explanation'
 import type {
   ArchitectureAgentLaunch,
   ArchitectureHandoff,
@@ -44,8 +48,13 @@ import {
   writeArchitectureBrief,
   type ArchitectureWorktreePort,
 } from './handoff'
-import { planArchitectureHandoff, type PlannedHandoff } from './handoff-plan'
+import {
+  planArchitectureExplanation,
+  planArchitectureHandoff,
+  type PlannedHandoff,
+} from './handoff-plan'
 import { recordArchitectureScope } from './scope-record'
+import { ArchitectureExplanationStore } from './explanation-store'
 
 const MAX_REVIEWS = 4
 const STRIP_TIMEOUT = 60_000
@@ -96,6 +105,7 @@ interface Follower {
 export class ArchitectureReviewCoordinator {
   private readonly reviews = new Map<string, Review>()
   private readonly followers = new Map<string, Follower>()
+  private readonly explanations = new ArchitectureExplanationStore()
   private readonly launches = new ArchitectureLaunches()
   constructor(private readonly ports: ArchitectureReviewPorts) {}
 
@@ -106,7 +116,7 @@ export class ArchitectureReviewCoordinator {
   ): Promise<ArchitectureReviewSnapshot> {
     this.ports.resources.assertCurrent(owner)
     const key = reviewKey(owner, request)
-    this.closeReview(owner, request)
+    this.closeReview(owner, request, true)
     if (this.reviews.size >= MAX_REVIEWS)
       throw new Error('Close an architecture review before opening another')
     const controller = new AbortController()
@@ -341,6 +351,70 @@ export class ArchitectureReviewCoordinator {
     }
   }
 
+  async prepareExplanation(
+    owner: RendererOwner,
+    host: ProjectHost,
+    request: ArchitectureExplanationRequest,
+  ): Promise<ArchitecturePreparedExplanation> {
+    const worktrees = this.worktrees()
+    const { key, commit } = await this.freshSnapshotBase(owner, host, request)
+    const review = this.reviews.get(key)!
+    if (review.unfinished)
+      return this.reofferExplanation(key, request, review.unfinished.planned)
+    const slug = `explain-${randomUUID().slice(0, 8)}`
+    const planned = planArchitectureExplanation({
+      capture: review.capture!,
+      snapshot: review.snapshot!,
+      slug,
+      commit,
+      target: worktrees.worktreeTarget(request.root, slug, commit),
+    })
+    return this.reofferExplanation(key, request, planned)
+  }
+
+  async handoffExplanation(
+    owner: RendererOwner,
+    host: ProjectHost,
+    request: ArchitectureExplanationLaunch,
+    publish: (state: ArchitectureExplanationState) => void,
+  ): Promise<ArchitectureHandoff> {
+    const worktrees = this.worktrees()
+    const planned = this.reviews.get(reviewKey(owner, request))?.plan
+    if (!planned || !matchesExplanationPlan(planned, request))
+      throw new Error('Architecture explanation preview changed; prepare again')
+    const { key, commit } = await this.freshSnapshotBase(owner, host, request)
+    const review = this.reviews.get(key)
+    if (!review || review.plan !== planned || commit !== planned.plan.commit)
+      throw new Error('Architecture explanation preview changed; prepare again')
+    const resumed = review.unfinished?.planned === planned ? review.unfinished : undefined
+    this.reviews.set(key, { ...review, plan: undefined, unfinished: undefined })
+    const held = resumed
+      ? await worktrees.holdWorktree(resumed.added)
+      : await worktrees.addWorktree(request.root, planned.slug, commit)
+    try {
+      const step = resumed ?? { planned, added: held.added, briefWritten: false }
+      if (!hostPathEquals(step.added.root, planned.plan.worktree))
+        throw new Error('Git created the handoff worktree somewhere else')
+      const handoff = await this.finishHandoff(owner, host, key, review.controller, step)
+      this.explanations.watch(key, host, handoff.worktree, review.snapshot!, publish)
+      return handoff
+    } finally {
+      held.release()
+    }
+  }
+
+  explanation(
+    owner: RendererOwner,
+    host: ProjectHost,
+    request: ArchitectureExplanationRequest,
+  ): ArchitectureExplanationState | null {
+    this.ports.resources.assertCurrent(owner)
+    const key = reviewKey(owner, request)
+    if (this.reviews.get(key)?.host !== host)
+      throw new Error('Architecture snapshot is unavailable; refresh the review')
+    return this.explanations.get(key, request.snapshotId)
+  }
+
   /** Spends the launch before the native start: a session never silently duplicates. */
   launchPayload(
     owner: RendererOwner,
@@ -365,11 +439,16 @@ export class ArchitectureReviewCoordinator {
     this.stopFollower(key)
     this.closeReview(owner, request)
   }
-  private closeReview(owner: RendererOwner, request: ArchitectureReviewKey): void {
+  private closeReview(
+    owner: RendererOwner,
+    request: ArchitectureReviewKey,
+    preserveExplanations = false,
+  ): void {
     const key = reviewKey(owner, request)
     const review = this.reviews.get(key)
     if (!review) return
     this.reviews.delete(key)
+    if (!preserveExplanations) this.explanations.clearScope(key)
     review.controller.abort(new Error('Architecture review cancelled or revoked'))
     void Promise.resolve()
       .then(() => review.stopConnection?.())
@@ -396,6 +475,7 @@ export class ArchitectureReviewCoordinator {
       review.lease.release()
     }
     this.reviews.clear()
+    this.explanations.clear()
     this.launches.clear()
   }
   private stopFollower(key: string): void {
@@ -413,11 +493,30 @@ export class ArchitectureReviewCoordinator {
     request: ArchitectureEvidenceRequest,
     planned: PlannedHandoff,
   ): ArchitecturePreparedReview {
+    if (planned.kind !== 'review' || planned.path === undefined)
+      throw new Error('Architecture review preview changed; prepare again')
     this.reviews.set(key, { ...this.reviews.get(key)!, plan: planned })
     return {
       ...request,
       snapshotId: planned.snapshotId,
       path: joinHostPath(request.root, planned.path),
+      body: planned.body,
+      digest: planned.digest,
+      handoff: planned.plan,
+    }
+  }
+
+  private reofferExplanation(
+    key: string,
+    request: ArchitectureExplanationRequest,
+    planned: PlannedHandoff,
+  ): ArchitecturePreparedExplanation {
+    if (planned.kind !== 'explanation')
+      throw new Error('Finish the existing architecture review handoff first')
+    this.reviews.set(key, { ...this.reviews.get(key)!, plan: planned })
+    return {
+      ...request,
+      snapshotId: planned.snapshotId,
       body: planned.body,
       digest: planned.digest,
       handoff: planned.plan,
@@ -489,6 +588,46 @@ export class ArchitectureReviewCoordinator {
     const live = capture!.currentRevision === ARCHITECTURE_LIVE_REVISION
     const commit = handoffCommit(live ? undefined : capture!.currentRevision, base)
     return { key, commit }
+  }
+
+  private async freshSnapshotBase(
+    owner: RendererOwner,
+    host: ProjectHost,
+    request: ArchitectureExplanationRequest,
+  ): Promise<{ key: string; commit: string }> {
+    const { key, review } = this.currentSnapshot(owner, host, request)
+    this.assertLive(owner, key, review.controller)
+    if (await this.isStale(review))
+      throw new Error('Architecture snapshot is stale; refresh before launching')
+    this.assertLive(owner, key, review.controller)
+    const base = await (this.ports.handoff?.liveBase ?? readArchitectureLiveBase)(
+      host,
+      request.root,
+      review.controller.signal,
+    )
+    this.assertLive(owner, key, review.controller)
+    const live = review.capture!.currentRevision === ARCHITECTURE_LIVE_REVISION
+    return {
+      key,
+      commit: handoffCommit(live ? undefined : review.capture!.currentRevision, base),
+    }
+  }
+
+  private currentSnapshot(
+    owner: RendererOwner,
+    host: ProjectHost,
+    request: ArchitectureExplanationRequest,
+  ): { key: string; review: Review } {
+    const key = reviewKey(owner, request)
+    const review = this.reviews.get(key)
+    if (
+      !review?.capture ||
+      !review.snapshot ||
+      review.snapshot.id !== request.snapshotId ||
+      review.host !== host
+    )
+      throw new Error('Architecture snapshot is unavailable; refresh the review')
+    return { key, review }
   }
 
   private worktrees(): ArchitectureWorktreePort {
@@ -592,11 +731,24 @@ function matchesPlan(
   planned: PlannedHandoff,
   request: ArchitectureReviewLaunch,
 ): boolean {
+  if (planned.kind !== 'review' || planned.path === undefined) return false
   return (
     typeof request.digest === 'string' &&
     request.digest === planned.digest &&
     request.snapshotId === planned.snapshotId &&
     !!request.path &&
     hostPathEquals(joinHostPath(request.root, planned.path), request.path)
+  )
+}
+
+function matchesExplanationPlan(
+  planned: PlannedHandoff,
+  request: ArchitectureExplanationLaunch,
+): boolean {
+  return (
+    planned.kind === 'explanation' &&
+    typeof request.digest === 'string' &&
+    request.digest === planned.digest &&
+    request.snapshotId === planned.snapshotId
   )
 }

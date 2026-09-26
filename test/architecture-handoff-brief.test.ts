@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 import {
   architectureHandoffBrief,
   architectureHandoffPrompt,
+  architectureExplanationPrompt,
   parseArchitectureBriefOrigin,
   type ArchitectureBriefInput,
 } from '../src/main/architecture-review/handoff-brief'
@@ -77,11 +78,13 @@ it('opens with a machine origin marker naming both original ends as commits', ()
   })
 })
 
-it('lists changed relationships with evidence paths and changed modules only', () => {
+it('lists changed relationships with evidence paths and exact changed module names', () => {
   const brief = architectureHandoffBrief(input([relationship('main', 'shared')]))
   expect(brief).toContain('`main` -> `shared`: 1 -> 2 imports (changed)')
   expect(brief).toContain('`main/x.ts:3` imports `../shared/y` (added)')
-  expect(brief).toContain('`src/main/x.ts` (`main`): changed')
+  expect(brief).toContain(
+    '`src/main/x.ts` (system `main`, subsystem `main`): changed',
+  )
   expect(brief).not.toContain('src/shared/y.ts')
   expect(brief).toContain('hvir/architecture/review-1')
   expect(brief).toContain('src/main/x.ts')
@@ -101,6 +104,18 @@ it('points the prompt at the brief inside the worktree without inlining evidence
   expect(prompt).toContain('.hvir-architecture-brief.md')
   expect(prompt).toContain('/repo.hvir-worktrees/review-1')
   expect(prompt).toContain('hvir/architecture/review-1')
+  expect(prompt).not.toContain('../shared/y')
+})
+
+it('asks an explaining agent for one strict result file without changing the worktree', () => {
+  const prompt = architectureExplanationPrompt(input([relationship('main', 'shared')]))
+  expect(prompt).toContain('.hvir-architecture-explanation.json')
+  expect(prompt).toContain('whatChanged')
+  expect(prompt).toContain('sequenceDiagram')
+  expect(prompt).toContain('systems')
+  expect(prompt).toContain('subsystems')
+  expect(prompt).toContain('modules')
+  expect(prompt).toContain('Do not change source files or create a commit')
   expect(prompt).not.toContain('../shared/y')
 })
 
