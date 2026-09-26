@@ -263,12 +263,12 @@ export function App(): ReactElement {
       data-viewer-pane={pane}
       tabIndex={-1}
       onPointerDownCapture={(event) => {
-        if (event.button !== 0) return
+        if (event.button !== 0 || architecture.handlesPointerActivation(root, pane))
+          return
         if (
           paneTab &&
           !(graphPane && gitGraphActive) &&
-          !(pane === 'primary' && web.active) &&
-          !architecture.active(root, pane)
+          !(pane === 'primary' && web.active)
         ) {
           viewer.focusPane(pane, paneTab.id)
         } else {

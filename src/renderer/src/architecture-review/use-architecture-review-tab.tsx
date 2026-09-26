@@ -22,11 +22,14 @@ export function useArchitectureReviewTab(ports: {
     pane === 'primary' && tab !== undefined && hostPathEquals(tab.root, root)
   const active = (root: HostPath, pane = 'primary') =>
     belongs(root, pane) && tab?.active === true
+  const handlesPointerActivation = (root: HostPath, pane = 'primary') =>
+    active(root, pane)
   return {
     open,
     close,
     deactivate,
     active,
+    handlesPointerActivation,
     stripProps: (root: HostPath, pane: string) => ({
       architectureReviewOpen: belongs(root, pane),
       architectureReviewActive: active(root, pane),
