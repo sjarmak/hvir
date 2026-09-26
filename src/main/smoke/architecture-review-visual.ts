@@ -48,7 +48,7 @@ export async function verifyArchitectureReviewVisuals(
     }
     if (backgrounds.size !== 2)
       throw new Error('Architecture light/dark themes did not change computed colors')
-    win.setContentSize(1280, 900)
+    win.setContentSize(1440, 1000)
     let expansionError: Error | undefined
     try {
       await win.webContents.executeJavaScript(`
@@ -61,7 +61,9 @@ export async function verifyArchitectureReviewVisuals(
             return reject(new Error('Architecture map expansion controls disappeared'));
           }
           const collapsedWidth = map.getBoundingClientRect().width;
-          const collapsedViewport = map.querySelector('.architecture-map-scroll')?.getBoundingClientRect().height ?? 0;
+          const canvas = map.querySelector('.architecture-map-canvas');
+          if (!(canvas instanceof HTMLElement)) return reject(new Error('Architecture canvas disappeared'));
+          const collapsedViewport = canvas.getBoundingClientRect().height;
           const surface = document.querySelector('.architecture-review');
           if (!(surface instanceof HTMLElement)) return reject(new Error('Architecture surface disappeared'));
           const visibleHeight = (element) => {
@@ -69,12 +71,13 @@ export async function verifyArchitectureReviewVisuals(
             const surfaceRect = surface.getBoundingClientRect();
             return Math.max(0, Math.min(elementRect.bottom, surfaceRect.bottom) - Math.max(elementRect.top, surfaceRect.top));
           };
-          const collapsedVisible = visibleHeight(map.querySelector('.architecture-map-scroll'));
+          const collapsedVisible = visibleHeight(canvas);
           button.click();
           requestAnimationFrame(() => requestAnimationFrame(() => {
             const expandedWidth = map.getBoundingClientRect().width;
             const expandedHeight = map.getBoundingClientRect().height;
-            const expandedViewport = map.querySelector('.architecture-map-scroll')?.getBoundingClientRect().height ?? 0;
+            const expandedViewport = canvas.getBoundingClientRect().height;
+            const nodeCount = canvas.querySelectorAll('.architecture-canvas-node').length;
             if (button.getAttribute('aria-expanded') !== 'true' || !map.classList.contains('architecture-map-expanded')) {
               return reject(new Error('Architecture map did not enter expanded state'));
             }
@@ -82,9 +85,12 @@ export async function verifyArchitectureReviewVisuals(
               return reject(new Error('Expanded architecture map did not occupy more space'));
             }
             if (expandedHeight < surface.getBoundingClientRect().height * 0.9) {
-              return reject(new Error('Expanded architecture viewport geometry: ' + JSON.stringify({ expandedHeight, surfaceHeight: surface.getBoundingClientRect().height, expandedViewport, collapsedViewport, visible: visibleHeight(map.querySelector('.architecture-map-scroll')), collapsedVisible })));
+              return reject(new Error('Expanded architecture viewport geometry: ' + JSON.stringify({ expandedHeight, surfaceHeight: surface.getBoundingClientRect().height, expandedViewport, collapsedViewport, visible: visibleHeight(canvas), collapsedVisible })));
             }
-            if (visibleHeight(map.querySelector('.architecture-map-scroll')) <= collapsedVisible) {
+            if (expandedViewport < surface.getBoundingClientRect().height * 0.6 || nodeCount === 0) {
+              return reject(new Error('Expanded architecture canvas geometry: ' + JSON.stringify({ canvasHeight: expandedViewport, surfaceHeight: surface.getBoundingClientRect().height, ratio: expandedViewport / surface.getBoundingClientRect().height, nodeCount })));
+            }
+            if (visibleHeight(canvas) <= collapsedVisible) {
               return reject(new Error('Expanded architecture graph did not gain visible review space'));
             }
             resolve(true);
@@ -97,7 +103,7 @@ export async function verifyArchitectureReviewVisuals(
     }
     const expandedImage = await win.webContents.capturePage()
     await host.writeFile(
-      joinHostPath(directory, '1280-expanded-dark.png'),
+      joinHostPath(directory, '1440-expanded-dark.png'),
       expandedImage.toPNG(),
     )
     console.log('[smoke] expanded architecture artifact: ' + directory.path)

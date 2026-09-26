@@ -162,8 +162,7 @@
   background: var(--surface-1);
 }
 .architecture-map-expanded .architecture-map-canvas {
-  flex: 1;
-  min-height: 0;
+  flex: 0 0 100%;
   height: auto;
 }
 .architecture-review .react-flow__controls button {
