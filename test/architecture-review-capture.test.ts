@@ -8,6 +8,10 @@ import { asHostId, hostPath, localPath } from '../src/shared/host-path'
 import type { ExecOptions, ProjectHost } from '../src/main/project-host/project-host'
 import { captureArchitecture } from '../src/main/architecture-review/capture'
 import { ArchitectureScanRecorder } from '../src/main/architecture-review/scan-recorder'
+import {
+  architectureBlobCache,
+  type ArchitectureBlobCache,
+} from '../src/main/architecture-review/scan-caches'
 import { analyzeCaptureTimed } from '../src/main/architecture-review/timed-analysis'
 import { expectMonotoneMetrics, stagesOf } from './architecture-scan-metrics-fixture'
 
@@ -221,8 +225,8 @@ it('records listing, blob, one live-read and hashing spans for a live Current sc
   expect(span('blob-read')).toMatchObject({
     side: 'baseline',
     items: 1,
-    bytes: bytes(capture.before),
-    hostCalls: 1,
+    bytes: 0,
+    hostCalls: 0,
   })
   // The whole live side, consistency check included, is one host command.
   expect(span('live-read')).toMatchObject({
@@ -445,4 +449,83 @@ it('credits every host round trip to a span for every kind of end', async () => 
     expect({ ends, credited }).toEqual({ ends, credited: calls() })
     expect(calls()).toBeGreaterThan(0)
   }
+})
+
+async function cachedScan(
+  host: ProjectHost,
+  root: string,
+  ends: { baseline?: string; current?: string },
+  blobs: ArchitectureBlobCache,
+) {
+  const recorder = new ArchitectureScanRecorder()
+  const capture = await captureArchitecture(
+    host,
+    { root: localPath(root), ...ends },
+    new AbortController().signal,
+    recorder,
+    blobs,
+  )
+  const reads = {
+    current: { hostCalls: 0, bytes: 0 },
+    baseline: { hostCalls: 0, bytes: 0 },
+  }
+  for (const span of recorder.metrics().spans) {
+    if (span.stage !== 'blob-read' || !span.side) continue
+    reads[span.side].hostCalls += span.hostCalls
+    reads[span.side].bytes += span.bytes
+  }
+  return { capture, reads }
+}
+it('reuses blobs across scans of one pair and re-reads only a changed file', async () => {
+  const f = await fixture()
+  git(f.root, 'switch', '-c', 'feature')
+  await writeFile(join(f.root, 'src/a.ts'), 'export const value = 2\n')
+  await writeFile(join(f.root, 'src/b.ts'), 'export const b = 1\n')
+  git(f.root, 'add', '.')
+  git(f.root, 'commit', '-m', 'change')
+  const blobs = architectureBlobCache()
+  const scan = () => cachedScan(f.host, f.root, { current: 'HEAD' }, blobs)
+  const first = await scan()
+  expect(first.reads.current).toEqual({ hostCalls: 1, bytes: 42 })
+  expect(first.reads.baseline).toEqual({ hostCalls: 1, bytes: 23 })
+  const second = await scan()
+  expect(second.reads).toEqual({
+    current: { hostCalls: 0, bytes: 0 },
+    baseline: { hostCalls: 0, bytes: 0 },
+  })
+  expect(second.capture.fingerprint).toBe(first.capture.fingerprint)
+  expect(second.capture.before).toEqual(first.capture.before)
+  expect(second.capture.after).toEqual(first.capture.after)
+  await writeFile(join(f.root, 'src/b.ts'), 'export const b = 2\n')
+  git(f.root, 'commit', '-am', 'edit b')
+  const third = await scan()
+  expect(third.reads.current).toEqual({ hostCalls: 1, bytes: 19 })
+  expect(third.reads.baseline).toEqual({ hostCalls: 0, bytes: 0 })
+  expect(third.capture.fingerprint).not.toBe(first.capture.fingerprint)
+  expect(third.capture.after.map((file) => [file.path, file.content])).toEqual([
+    ['src/a.ts', 'export const value = 2\n'],
+    ['src/b.ts', 'export const b = 2\n'],
+  ])
+  expect(third.capture.after[1]?.object).toBe(git(f.root, 'rev-parse', 'HEAD:src/b.ts'))
+})
+it('stores verified live files so a later commit of the same bytes is never read again', async () => {
+  const f = await fixture()
+  await writeFile(join(f.root, 'src/a.ts'), 'export const value = 2\n')
+  const blobs = architectureBlobCache()
+  const live = await cachedScan(f.host, f.root, { baseline: 'HEAD' }, blobs)
+  expect(live.reads.baseline).toEqual({ hostCalls: 1, bytes: 23 })
+  git(f.root, 'commit', '-am', 'change')
+  const pair = await cachedScan(
+    f.host,
+    f.root,
+    { baseline: f.baseline, current: 'HEAD' },
+    blobs,
+  )
+  expect(pair.reads).toEqual({
+    current: { hostCalls: 0, bytes: 0 },
+    baseline: { hostCalls: 0, bytes: 0 },
+  })
+  expect(pair.capture.after).toEqual(live.capture.after)
+  expect(pair.capture.before).toEqual(live.capture.before)
+  expect(pair.capture.after[0]?.object).toBe(git(f.root, 'rev-parse', 'HEAD:src/a.ts'))
 })

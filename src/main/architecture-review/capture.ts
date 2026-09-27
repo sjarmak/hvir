@@ -30,6 +30,7 @@ import { LiveTreeOverCapError, readLiveTree } from './live-tree'
 import { readCaptureLayout, scopedLayout } from './capture-layout'
 import { assertWithinScopeCap, liveBytesRefusal } from './scope-cap'
 import { ArchitectureScanRecorder } from './scan-recorder'
+import { architectureBlobCache, type ArchitectureBlobCache } from './scan-caches'
 
 interface Side {
   readonly sources: readonly ArchitectureSource[]
@@ -57,6 +58,7 @@ export async function captureArchitecture(
   request: ArchitectureCaptureRequest,
   signal: AbortSignal,
   recorder: ArchitectureScanRecorder = new ArchitectureScanRecorder(),
+  blobs: ArchitectureBlobCache = architectureBlobCache(),
 ): Promise<ArchitectureCapture> {
   signal.throwIfAborted()
   validateArchitectureRequest(host, request)
@@ -157,37 +159,47 @@ export async function captureArchitecture(
   }
   function readBlobs(selected: readonly CaptureEntry[], side: SideName) {
     signal.throwIfAborted()
-    return recorder.measure(
-      'blob-read',
-      async () => {
-        const blobs = await readArchitectureBlobs(
-          context,
-          request.root,
-          selected.map((entry) => entry.object!),
-        )
-        return selected.map((entry) => ({
-          path: entry.path,
-          content: blobs.get(entry.object!)!,
-          object: entry.object!,
-        }))
-      },
-      (result) => ({ bytes: totalBytes(result), items: result.length, side }),
-    )
+    return recorder
+      .measure(
+        'blob-read',
+        async () => {
+          const read = await readArchitectureBlobs(
+            context,
+            request.root,
+            selected.map((entry) => entry.object!),
+            blobs,
+          )
+          const files = selected.map((entry) => ({
+            path: entry.path,
+            content: read.contents.get(entry.object!)!,
+            object: entry.object!,
+          }))
+          return { files, fetchedBytes: read.fetchedBytes }
+        },
+        (result) => ({ bytes: result.fetchedBytes, items: result.files.length, side }),
+      )
+      .then((result) => result.files)
   }
   function readLive(selected: readonly CaptureEntry[]) {
     signal.throwIfAborted()
     return recorder.measure(
       'live-read',
-      async () => [
-        ...(
-          await readLiveTree(
-            (command, args, options) => counted(() => host.exec(command, args, options)),
-            request.root,
-            selected.map((entry) => entry.path),
-            signal,
-          )
-        ).values(),
-      ],
+      async () => {
+        const files = [
+          ...(
+            await readLiveTree(
+              (command, args, options) =>
+                counted(() => host.exec(command, args, options)),
+              request.root,
+              selected.map((entry) => entry.path),
+              signal,
+            )
+          ).values(),
+        ]
+        for (const file of files)
+          blobs.store(file.object, file.content, Buffer.byteLength(file.content))
+        return files
+      },
       (result) => ({ bytes: totalBytes(result), items: result.length, side: 'current' }),
     )
   }

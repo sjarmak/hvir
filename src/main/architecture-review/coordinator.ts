@@ -55,6 +55,7 @@ import {
 import { hasLiveCurrent } from './ends'
 import { readArchitectureLiveBase, readArchitectureLiveState } from './freshness'
 import { ArchitectureScanRecorder } from './scan-recorder'
+import { architectureAnalysisCache, architectureBlobCache } from './scan-caches'
 import {
   ArchitectureLaunches,
   handoffCommit,
@@ -122,10 +123,16 @@ export class ArchitectureReviewCoordinator {
   private readonly followers = new Map<string, Follower>()
   private readonly explanations = new ArchitectureExplanationStore()
   private readonly launches = new ArchitectureLaunches()
+  private readonly blobs = architectureBlobCache()
+  private readonly analyses = architectureAnalysisCache()
   private readonly classifier: ArchitectureCommitClassifier | undefined
   constructor(private readonly ports: ArchitectureReviewPorts) {
     this.classifier = ports.imports
-      ? new ArchitectureCommitClassifier({ imports: ports.imports, scan: this.scanPair })
+      ? new ArchitectureCommitClassifier({
+          imports: ports.imports,
+          scan: this.scanPair,
+          blobs: this.blobs,
+        })
       : undefined
   }
 
@@ -137,6 +144,7 @@ export class ArchitectureReviewCoordinator {
         request,
         signal,
         recorder,
+        this.blobs,
       )
       return await this.ports.analyze(capture, signal, recorder)
     } catch (error) {
@@ -185,16 +193,19 @@ export class ArchitectureReviewCoordinator {
         recorder,
       )
       this.assertLive(owner, key, controller)
-      const analysis = await this.ports.analyze(capture, controller.signal, recorder)
+      const analysis =
+        this.analyses.lookup(capture.fingerprint) ??
+        (await this.ports.analyze(capture, controller.signal, recorder))
       this.assertLive(owner, key, controller)
       const { before: _before, after: _after, configs: _configs, ...metadata } = capture
       const payload = { ...metadata, id: randomUUID(), analysis }
       // The renderer receives this payload over IPC; its serialized size is the transfer cost.
-      recorder.measureSync(
+      const payloadBytes = recorder.measureSync(
         'renderer-payload',
         () => Buffer.byteLength(JSON.stringify(payload)),
         (bytes) => ({ bytes, items: 1 }),
       )
+      this.analyses.store(capture.fingerprint, analysis, payloadBytes)
       const snapshot: ArchitectureReviewSnapshot = {
         ...payload,
         metrics: recorder.metrics(),
@@ -706,6 +717,7 @@ export class ArchitectureReviewCoordinator {
       request,
       signal,
       recorder,
+      this.blobs,
     )
     return { capture, liveState }
   }

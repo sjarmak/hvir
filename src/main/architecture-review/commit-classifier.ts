@@ -36,6 +36,7 @@ import {
 import { CommitChangeCache, type CommitChangeKey } from './commit-change-cache'
 import { fleetCommitChange, readFleetClassifications } from './fleet-classification'
 import { readArchitectureBlobs, readArchitectureBlobSizes } from './git-blobs'
+import type { ArchitectureBlobCache } from './scan-caches'
 import { architectureGitContext, validateArchitectureRoot } from './git-context'
 import type {
   ModuleEdgesRequest,
@@ -67,6 +68,7 @@ export interface ArchitectureCommitClassifierPorts {
   readonly scan?: PairScanPort
   readonly cacheEntries?: number
   readonly budget?: ReadBudget
+  readonly blobs?: ArchitectureBlobCache
 }
 
 const HASH = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/
@@ -135,8 +137,10 @@ export class ArchitectureCommitClassifier {
     const head = (await run(['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
     if (!HASH.test(head)) throw new Error('Git did not name HEAD')
     if (request.revisions.length === 0) return { head, classifications: [] }
-    const layout = await readHeadLayout(run, (objects) =>
-      readArchitectureBlobs(context, root, objects),
+    const layout = await readHeadLayout(
+      run,
+      async (objects) =>
+        (await readArchitectureBlobs(context, root, objects, this.ports.blobs)).contents,
     )
     const revisions = [...new Set(request.revisions)]
     const diffs = parseCommitDiffs(await run([...RAW_LOG, ...revisions, '--']))
@@ -412,7 +416,12 @@ export class ArchitectureCommitClassifier {
         wanted.set(modified.before, modified.path)
         wanted.set(modified.after, modified.path)
       }
-    const contents = await readArchitectureBlobs(context, root, [...wanted.keys()])
+    const { contents } = await readArchitectureBlobs(
+      context,
+      root,
+      [...wanted.keys()],
+      this.ports.blobs,
+    )
     const file = (object: string, path: string): ArchitectureSourceFile => ({
       path,
       object,

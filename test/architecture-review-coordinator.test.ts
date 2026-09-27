@@ -17,6 +17,7 @@ import type { HostPath } from '../src/shared/host-path'
 import type { AddedWorktree } from '../src/main/git/mutation-coordinator'
 import { expectMonotoneMetrics, stagesOf } from './architecture-scan-metrics-fixture'
 import { gitBlobId } from '../src/main/architecture-review/blob-id'
+import { ByteBoundedCache } from '../src/main/architecture-review/byte-bounded-cache'
 
 const source = (path: string, content: string) => ({
   path,
@@ -666,4 +667,23 @@ it('holds the handoff worktree in flight from creation until its brief write set
   expect(during).toEqual([true, true])
   expect(f.holdWorktree).toHaveBeenCalledOnce()
   expect(f.held.has(path)).toBe(false)
+})
+
+it('keeps one blob cache across scans and reuses the analysis of an unchanged fingerprint', async () => {
+  const f = setup()
+  const first = await f.coordinator.scan(f.owner, f.host, f.request)
+  const second = await f.coordinator.scan(f.owner, f.host, f.request)
+  expect(f.analyze).toHaveBeenCalledOnce()
+  expect(f.capture.mock.calls[0]?.[4]).toBeInstanceOf(ByteBoundedCache)
+  expect(f.capture.mock.calls[1]?.[4]).toBe(f.capture.mock.calls[0]?.[4])
+  expect(second.analysis).toEqual(first.analysis)
+  expect(second.id).not.toBe(first.id)
+  expectMonotoneMetrics(second.metrics)
+  expect(stagesOf(second.metrics)).toEqual(['renderer-payload'])
+  f.capture.mockResolvedValueOnce({ ...snapshot, fingerprint: 'other-bytes' })
+  await f.coordinator.scan(f.owner, f.host, f.request)
+  expect(f.analyze).toHaveBeenCalledTimes(2)
+  expect(f.analyze.mock.calls[1]?.[0]?.fingerprint).toBe('other-bytes')
+  await f.coordinator.scan(f.owner, f.host, f.request)
+  expect(f.analyze).toHaveBeenCalledTimes(2)
 })

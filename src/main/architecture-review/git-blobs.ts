@@ -2,25 +2,56 @@ import type { HostPath } from '../../shared'
 import { ARCHITECTURE_SCOPE } from '../../shared/architecture-review'
 import type { GitCommandContext } from '../git/git-command-context'
 import { gitBlobId, objectFormat } from './blob-id'
+import type { ArchitectureBlobCache } from './scan-caches'
+
+export interface ArchitectureBlobRead {
+  readonly contents: ReadonlyMap<string, string>
+  readonly fetchedBytes: number
+}
+
+interface FetchedBlob {
+  readonly id: string
+  readonly content: string
+  readonly bytes: number
+}
+
+const OBJECT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/
 
 /** Git's length-delimited batch protocol avoids one process per captured source. */
 export async function readArchitectureBlobs(
   context: GitCommandContext,
   root: HostPath,
   objects: readonly string[],
-): Promise<ReadonlyMap<string, string>> {
+  cache?: ArchitectureBlobCache,
+): Promise<ArchitectureBlobRead> {
   const ids = [...new Set(objects)]
-  if (ids.length === 0) return new Map()
-  if (ids.some((id) => !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(id)))
+  if (ids.some((id) => !OBJECT_ID.test(id)))
     throw new Error('Invalid architecture source object')
+  const contents = new Map<string, string>()
+  const missing: string[] = []
+  for (const id of ids) {
+    const cached = cache?.lookup(id)
+    if (cached === undefined) missing.push(id)
+    else contents.set(id, cached)
+  }
+  if (missing.length === 0) return { contents, fetchedBytes: 0 }
   const result = await context.readOnly(root, ['cat-file', '--batch'], {
-    input: `${ids.join('\n')}\n`,
-    maxBuffer: ARCHITECTURE_SCOPE.maxTotalBytes + ids.length * 100,
+    input: `${missing.join('\n')}\n`,
+    maxBuffer: ARCHITECTURE_SCOPE.maxTotalBytes + missing.length * 100,
   })
   if (result.code !== 0)
     throw new Error(`Architecture source read failed: ${result.stderr}`)
-  const bytes = Buffer.from(result.stdout, 'utf8')
-  const contents = new Map<string, string>()
+  let fetchedBytes = 0
+  for (const blob of parseBlobBatch(Buffer.from(result.stdout, 'utf8'), missing)) {
+    contents.set(blob.id, blob.content)
+    cache?.store(blob.id, blob.content, blob.bytes)
+    fetchedBytes += blob.bytes
+  }
+  return { contents, fetchedBytes }
+}
+
+function parseBlobBatch(bytes: Buffer, ids: readonly string[]): readonly FetchedBlob[] {
+  const blobs: FetchedBlob[] = []
   let offset = 0
   for (const id of ids) {
     const end = bytes.indexOf(10, offset)
@@ -33,16 +64,14 @@ export async function readArchitectureBlobs(
       throw new Error('Unsupported large architecture source')
     const content = bytes.subarray(end + 1, end + 1 + size)
     const hash = gitBlobId(content, objectFormat(id))
-    // Buffered ProjectHost output is UTF-8 text. Re-hashing proves decoding did
-    // not replace invalid bytes and that the exact pinned object was returned.
     if (content.length !== size || bytes[end + 1 + size] !== 10 || hash !== id)
       throw new Error('Unsupported invalid UTF-8 or changed architecture source object')
-    contents.set(id, content.toString('utf8'))
+    blobs.push({ id, content: content.toString('utf8'), bytes: size })
     offset = end + size + 2
   }
   if (offset !== bytes.length)
     throw new Error('Unexpected architecture source batch data')
-  return contents
+  return blobs
 }
 
 export async function readArchitectureBlobSizes(
@@ -52,7 +81,7 @@ export async function readArchitectureBlobSizes(
 ): Promise<ReadonlyMap<string, number>> {
   const ids = [...new Set(objects)]
   if (ids.length === 0) return new Map()
-  if (ids.some((id) => !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(id)))
+  if (ids.some((id) => !OBJECT_ID.test(id)))
     throw new Error('Invalid architecture source object')
   const result = await context.readOnly(root, ['cat-file', '--batch-check'], {
     input: `${ids.join('\n')}\n`,

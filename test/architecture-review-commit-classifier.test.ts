@@ -26,6 +26,7 @@ import {
 import { TYPESCRIPT_ONLY_SCANNERS } from '../src/main/architecture-review/typescript-scanner'
 import { LocalHost } from '../src/main/project-host/local-host'
 import { localPath } from '../src/shared/host-path'
+import { architectureBlobCache } from '../src/main/architecture-review/scan-caches'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -648,4 +649,31 @@ it('agrees with a full pair scan on every fast-path answer', async () => {
     const scanned = changeFromAnalysis(pairScan(entry.parent, entry.revision), 1)
     expect([revisions[index], scanned]).toEqual([revisions[index], entry.change])
   }
+})
+
+it('reads the modules it compares through a shared blob cache', async () => {
+  const r = await repository()
+  await r.commit('add modules', {
+    'src/a.ts': "import { b } from './b'\nexport const a = b\n",
+    'src/b.ts': 'export const b = 1\n',
+    'src/c.ts': 'export const c = 3\n',
+  })
+  const rewired = await r.commit('rewire', {
+    'src/a.ts': "import { c } from './c'\nexport const a = c\n",
+  })
+  const blobs = architectureBlobCache()
+  const imports = vi.fn<ModuleImportsPort>((request, root) =>
+    readModuleEdges(request, root, undefined, TYPESCRIPT_ONLY_SCANNERS),
+  )
+  const subject = new ArchitectureCommitClassifier({ imports, blobs })
+  const { classifications } = await subject.classify(
+    r.host,
+    { root: localPath(r.root), revisions: [rewired] },
+    signal(),
+  )
+  expect(classifications[0]?.change).toBe('architecture')
+  const before = git(r.root, 'rev-parse', `${rewired}^:src/a.ts`)
+  const after = git(r.root, 'rev-parse', `${rewired}:src/a.ts`)
+  expect(blobs.lookup(before)).toBe("import { b } from './b'\nexport const a = b\n")
+  expect(blobs.lookup(after)).toBe("import { c } from './c'\nexport const a = c\n")
 })
