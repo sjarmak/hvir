@@ -14,7 +14,10 @@ import {
 } from '../../shared/host-path'
 import type { AddedWorktree, HeldWorktree } from '../git/mutation-coordinator'
 import type { HvirWorktreeTarget } from '../git/hvir-worktrees'
-import type { ProjectHost } from '../project-host/project-host'
+import {
+  isProjectPathExistsError,
+  type ProjectHost,
+} from '../project-host/project-host'
 import type { RendererOwner } from '../renderer-resource-scopes'
 import type { ArchitectureLiveBase } from './freshness'
 import { parseArchitectureBriefOrigin } from './handoff-brief'
@@ -70,8 +73,16 @@ export async function writeArchitectureBrief(
   const exclude = await gitPath(host, worktree, 'info/exclude', signal)
   await appendExclude(host, exclude)
   const file = joinHostPath(worktree, ARCHITECTURE_BRIEF_FILE)
-  await host.createFileExclusive(file, { mode: 0o644, signal })
-  await host.writeFile(file, brief, { signal })
+  let expectedMtimeMs: number | undefined
+  try {
+    await host.createFileExclusive(file, { mode: 0o644, signal })
+  } catch (reason) {
+    if (!isProjectPathExistsError(reason)) throw reason
+    const existing = await host.stat(file)
+    if (existing.type !== 'file' || existing.size !== 0) throw reason
+    expectedMtimeMs = existing.mtimeMs
+  }
+  await host.writeFile(file, brief, { signal, expectedMtimeMs })
 }
 
 async function gitPath(

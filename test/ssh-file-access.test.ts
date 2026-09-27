@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events'
+import { createRequire } from 'node:module'
 import { PassThrough, Readable, Writable } from 'node:stream'
 
 import type { SFTPWrapper } from 'ssh2'
@@ -6,6 +7,17 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { SshFileAccess } from '../src/main/project-host/ssh-file-access'
 import { asHostId, hostPath } from '../src/shared'
+
+const require = createRequire(import.meta.url)
+const { SFTP } = require('ssh2/lib/protocol/SFTP.js') as {
+  SFTP: {
+    prototype: {
+      createWriteStream(path: string, options?: object): Writable & {
+        readonly bytesWritten: number
+      }
+    }
+  }
+}
 
 describe('SshFileAccess', () => {
   it('invalidates cached descendants and parent listings', () => {
@@ -177,6 +189,7 @@ describe('SshFileAccess', () => {
     const hostId = asHostId('ssh:test')
     const path = hostPath(hostId, '/project/brief.md')
     const stream = Object.assign(new EventEmitter(), {
+      bytesWritten: Buffer.byteLength('handoff'),
       destroy: vi.fn(),
       end: vi.fn(function (this: EventEmitter, _data: Buffer) {
         queueMicrotask(() => this.emit('close'))
@@ -239,6 +252,68 @@ describe('SshFileAccess', () => {
     ).rejects.toThrow('SSH file write interrupted before completion')
 
     expect(session.ext_openssh_rename).not.toHaveBeenCalled()
+    expect(session.unlink).toHaveBeenCalledOnce()
+    files.dispose()
+  })
+
+  it('rejects a close-only ssh2 stream write error without publishing the temporary', async () => {
+    const hostId = asHostId('ssh:test')
+    const path = hostPath(hostId, '/project/brief.md')
+    const failure = new Error('remote disk is full')
+    const missing = Object.assign(new Error('No such file'), { code: 2 })
+    const session = Object.assign(new EventEmitter(), {
+      server: false,
+      lstat: vi.fn(
+        (_path: string, callback: (error: Error | undefined) => void) => callback(missing),
+      ),
+      createWriteStream(path: string, options?: object) {
+        return SFTP.prototype.createWriteStream.call(this, path, options)
+      },
+      open: vi.fn(
+        (
+          _path: string,
+          _flags: string,
+          _mode: number,
+          callback: (error: Error | undefined, handle: Buffer) => void,
+        ) => callback(undefined, Buffer.from('handle')),
+      ),
+      fchmod: vi.fn(
+        (_handle: Buffer, _mode: number, callback: (error?: Error) => void) =>
+          callback(),
+      ),
+      write: vi.fn(
+        (
+          _handle: Buffer,
+          _data: Buffer,
+          _offset: number,
+          _length: number,
+          _position: number,
+          callback: (error?: Error) => void,
+        ) => callback(failure),
+      ),
+      close: vi.fn((_handle: Buffer, callback: (error?: Error) => void) => callback()),
+      ext_openssh_rename: vi.fn(
+        (_source: string, _target: string, callback: (error?: Error) => void) =>
+          callback(),
+      ),
+      rename: vi.fn(
+        (_source: string, _target: string, callback: (error?: Error) => void) =>
+          callback(),
+      ),
+      unlink: vi.fn((_path: string, callback: (error?: Error) => void) => callback()),
+      end: vi.fn(),
+    })
+    const files = new SshFileAccess(
+      { hostId, openSftp: () => Promise.resolve(session as unknown as SFTPWrapper) },
+      {},
+    )
+
+    await expect(
+      files.writeFile(path, 'handoff', { signal: new AbortController().signal }),
+    ).rejects.toBe(failure)
+
+    expect(session.ext_openssh_rename).not.toHaveBeenCalled()
+    expect(session.rename).not.toHaveBeenCalled()
     expect(session.unlink).toHaveBeenCalledOnce()
     files.dispose()
   })

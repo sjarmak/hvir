@@ -81,6 +81,22 @@ it('adds the exclude line once and never overwrites an existing brief', async ()
   )
 })
 
+it('finishes a retry when an interrupted handoff left its empty brief placeholder', async () => {
+  const { worktree } = await repositoryWithWorktree()
+  const host = new LocalHost()
+  const file = join(worktree, '.hvir-architecture-brief.md')
+  await writeFile(file, '')
+
+  await writeArchitectureBrief(
+    host,
+    localPath(worktree),
+    'retried brief',
+    AbortSignal.timeout(10_000),
+  )
+
+  expect(await readFile(file, 'utf8')).toBe('retried brief')
+})
+
 it('reads a worktree origin from the brief marker, null when absent or forged', async () => {
   const { worktree } = await repositoryWithWorktree()
   const host = new LocalHost()

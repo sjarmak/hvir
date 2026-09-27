@@ -13,6 +13,10 @@ export function writeSftpFile(
     return
   }
   const stream = session.createWriteStream(path, mode === undefined ? {} : { mode })
+  const state = stream as typeof stream & {
+    readonly bytesWritten: number
+    readonly _writableState?: { readonly errored?: Error | null }
+  }
   let settled = false
   const abort = () => {
     stream.destroy()
@@ -29,7 +33,14 @@ export function writeSftpFile(
     done(reason, undefined)
   }
   const onError = (reason: Error) => finish(reason)
-  const onClose = () => finish()
+  const onClose = () =>
+    queueMicrotask(() => {
+      const reason = state.errored ?? state._writableState?.errored
+      if (reason) finish(reason)
+      else if (state.bytesWritten !== data.length)
+        finish(new Error('SSH file write interrupted before completion'))
+      else finish()
+    })
   const onSessionError = (reason: Error) => finish(reason)
   const onSessionClose = () =>
     finish(new Error('SSH file write interrupted before completion'))
