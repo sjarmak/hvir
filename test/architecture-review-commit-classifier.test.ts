@@ -211,7 +211,7 @@ it('reconsiders a commit modifying more than two hundred modules on every reques
   expect(first.classifications[0]?.change).toBe('unclassified')
   const second = await subject.classify(r.host, request, signal())
   expect(second.classifications[0]?.change).toBe('unclassified')
-  expect(lookup.mock.results.map((result) => result.value)).toEqual(
+  expect(lookup.mock.results.map((result) => result.value as unknown)).toEqual(
     lookup.mock.results.map(() => undefined),
   )
   expect(lookup.mock.calls.length).toBeGreaterThanOrEqual(2)

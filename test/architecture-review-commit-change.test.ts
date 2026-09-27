@@ -252,7 +252,7 @@ describe('changeFromAnalysis', () => {
     const duplicated = analysis([module('src/a.ts', 'a')], [module('src/a.ts', 'a')], {
       imports: [
         { ...importFact, change: 'unchanged' },
-        { ...importFact, form: 'dynamic', line: 9, change: 'added' },
+        { ...importFact, form: 'dynamic-import', line: 9, change: 'added' },
       ],
     })
     expect(changeFromAnalysis(duplicated, 1)).toBe('code')
