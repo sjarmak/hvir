@@ -19,8 +19,18 @@ import { ArchitectureScanTimings } from './ArchitectureScanTimings'
 import { ArchitectureScopeControls } from './ArchitectureScopeControls'
 import { ArchitectureExplanationStateSession } from './architecture-explanation-state'
 import { scopeFromText, scopeText as textOfScope } from './architecture-scope-model'
-import { endsFromText, type ArchitectureEnds } from './architecture-ends-model'
+import {
+  endsFromText,
+  type ArchitectureCommitDescriptions,
+  type ArchitectureEnds,
+} from './architecture-ends-model'
 import { layoutSummary, type ArchitectureMapMode } from './architecture-review-model'
+
+export interface ArchitectureEndsRequest {
+  readonly ends: ArchitectureEnds
+  readonly serial: number
+  readonly described?: ArchitectureCommitDescriptions
+}
 
 export function ArchitectureReview({
   root,
@@ -31,7 +41,7 @@ export function ArchitectureReview({
 }: {
   readonly root: HostPath
   readonly active: boolean
-  readonly request?: { readonly ends: ArchitectureEnds; readonly serial: number }
+  readonly request?: ArchitectureEndsRequest
   readonly explanationStateSession?: ArchitectureExplanationStateSession
   readonly onHandoff: (projectId: string, workspaceId: string) => void
 }) {
@@ -56,6 +66,7 @@ export function ArchitectureReview({
   const [reviewId] = useState(() => crypto.randomUUID())
   const [baselineText, setBaselineText] = useState('')
   const [currentText, setCurrentText] = useState('')
+  const [described, setDescribed] = useState<ArchitectureCommitDescriptions>({})
   const parsed = endsFromText(baselineText, currentText)
   const endsInvalid = Object.keys(parsed.problems).length > 0
   const [timeline, setTimeline] = useState<readonly ArchitectureReviewSnapshot[]>([])
@@ -223,7 +234,11 @@ export function ArchitectureReview({
     }
     if (epoch === requestEpoch.current) await scan(parsed.ends)
   }
-  const chooseFromStrip = (ends: ArchitectureEnds) => {
+  const chooseFromStrip = (
+    ends: ArchitectureEnds,
+    descriptions: ArchitectureCommitDescriptions = {},
+  ) => {
+    setDescribed((known) => ({ ...known, ...descriptions }))
     setBaselineText(ends.baseline ?? '')
     setCurrentText(ends.current ?? '')
     void scan(ends)
@@ -234,7 +249,7 @@ export function ArchitectureReview({
   useEffect(() => {
     if (!request || servedRequest.current === request.serial) return
     servedRequest.current = request.serial
-    chooseRequested.current(request.ends)
+    chooseRequested.current(request.ends, request.described)
   }, [request])
   const openEvidence = async (path: string, line: number, side: 'before' | 'after') => {
     if (!snapshot) return
@@ -321,6 +336,7 @@ export function ArchitectureReview({
         baseline={baselineText}
         current={currentText}
         problems={parsed.problems}
+        described={described}
         onBaseline={setBaselineText}
         onCurrent={setCurrentText}
       />

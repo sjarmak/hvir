@@ -189,7 +189,9 @@ it('leaves a commit whose modules exceed the read budget unclassified', async ()
 it('scans a config or layout change against its parent and caches the answer', async () => {
   const r = await repository()
   await r.commit('module', { 'src/a.ts': 'export const a = 1\n' })
-  const tsconfig = await r.commit('tsconfig', { 'tsconfig.json': '{"compilerOptions":{}}\n' })
+  const tsconfig = await r.commit('tsconfig', {
+    'tsconfig.json': '{"compilerOptions":{}}\n',
+  })
   const layoutCommit = await r.commit('layout', {
     '.hvir/architecture.json': '{"version":1,"scope":["src"]}\n',
   })
@@ -233,7 +235,11 @@ it('leaves a config change unclassified when the scan refuses or is unavailable'
 it('spends the aggregate read budget commit by commit and never fails the request', async () => {
   const r = await repository()
   const body = (n: number) => `export const s = "${String(n).repeat(1024)}"\n`
-  await r.commit('seed', { 'src/a.ts': body(1), 'src/b.ts': body(2), 'src/c.ts': body(3) })
+  await r.commit('seed', {
+    'src/a.ts': body(1),
+    'src/b.ts': body(2),
+    'src/c.ts': body(3),
+  })
   const first = await r.commit('a', { 'src/a.ts': body(4) })
   const second = await r.commit('b', { 'src/b.ts': body(5) })
   const third = await r.commit('c', { 'src/c.ts': body(6) })
@@ -247,7 +253,11 @@ it('spends the aggregate read budget commit by commit and never fails the reques
     { root: localPath(r.root), revisions: [third, second, first] },
     signal(),
   )
-  expect(result.map((entry) => entry.change)).toEqual(['code', 'unclassified', 'unclassified'])
+  expect(result.map((entry) => entry.change)).toEqual([
+    'code',
+    'unclassified',
+    'unclassified',
+  ])
   expect(imports).toHaveBeenCalledTimes(1)
   expect(imports.mock.calls[0]![0].map((source) => source.path)).toEqual([
     'src/c.ts',

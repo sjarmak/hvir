@@ -3,6 +3,7 @@ import {
   architectureRefProblem,
   type ArchitectureCommitRange,
 } from '../../../shared/architecture-review'
+import type { GitCommitSummary } from '../../../shared/git-types'
 
 /** Snapshot ends as the scan request takes them; an omitted end is the default. */
 export interface ArchitectureEnds {
@@ -91,4 +92,40 @@ export function handoffEnds(
   return {
     baseline: compare === 'change' ? origin.currentRevision : origin.baselineRevision,
   }
+}
+
+export interface ArchitectureCommitDescription {
+  readonly subject: string
+  readonly authoredAt: string
+}
+export type ArchitectureCommitDescriptions = Readonly<
+  Record<string, ArchitectureCommitDescription>
+>
+
+export function describeShownCommit(
+  commit: GitCommitSummary,
+  loaded: readonly GitCommitSummary[],
+): ArchitectureCommitDescriptions {
+  const parent = loaded.find((candidate) => candidate.hash === commit.parents[0])
+  return Object.fromEntries(
+    [commit, ...(parent ? [parent] : [])].map((each) => [
+      each.hash,
+      { subject: each.subject, authoredAt: each.authoredAt },
+    ]),
+  )
+}
+
+export function describeCommits(
+  range: ArchitectureCommitRange,
+  ends: ArchitectureEnds,
+): ArchitectureCommitDescriptions {
+  const named = [ends.baseline, ends.current].filter((end) => end !== undefined)
+  return Object.fromEntries(
+    [range.base, ...range.commits]
+      .filter((commit) => named.includes(commit.revision))
+      .map((commit) => [
+        commit.revision,
+        { subject: commit.subject, authoredAt: commit.authoredAt },
+      ]),
+  )
 }

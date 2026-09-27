@@ -18,10 +18,12 @@ import {
   type CommitClassificationState,
 } from './use-commit-classifications'
 import {
+  describeCommits,
   lockedBaseline,
   stripEnds,
   stripPosition,
   stripStep,
+  type ArchitectureCommitDescriptions,
   type ArchitectureEnds,
   type StripStepping,
 } from './architecture-ends-model'
@@ -33,7 +35,10 @@ interface ArchitectureCommitStripProps {
   /** The scanned Current commit, when the snapshot has one. */
   readonly current?: string
   readonly disabled: boolean
-  readonly onChoose: (ends: ArchitectureEnds) => void
+  readonly onChoose: (
+    ends: ArchitectureEnds,
+    described: ArchitectureCommitDescriptions,
+  ) => void
 }
 
 export function ArchitectureCommitStrip(props: ArchitectureCommitStripProps) {
@@ -64,7 +69,7 @@ export function ArchitectureCommitStrip(props: ArchitectureCommitStripProps) {
   const choose = (index: number | undefined) => {
     const chosen =
       range && index !== undefined ? stripEnds(range, index, stepping) : undefined
-    if (chosen) onChoose(chosen)
+    if (chosen && range) onChoose(chosen, describeCommits(range, chosen))
   }
   const step = (direction: 1 | -1) =>
     range ? stripStep(range, position, direction, shown) : undefined

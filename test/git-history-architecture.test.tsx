@@ -133,7 +133,9 @@ it('hides rows still classifying under the filter and says so, keeping unclassif
     generation: 0,
   })
   expect(rowText()).toEqual(['Add modules'])
-  expect(host.querySelector('[role="status"]')?.textContent).toBe('Classifying 2 commits…')
+  expect(host.querySelector('[role="status"]')?.textContent).toBe(
+    'Classifying 2 commits…',
+  )
   expect(host.querySelector('.git-rail-commit-change')?.textContent).toBe('Unclassified')
   expect(host.querySelector('.git-empty')).toBeNull()
   render(true, { known: new Map(), pending: new Set(), generation: 1, error: 'boom' })

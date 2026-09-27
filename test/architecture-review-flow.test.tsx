@@ -833,7 +833,8 @@ it('lists the strip newest first with dates, filters it and steps over hidden co
 it('hides strip rows still classifying under the filter and counts them in the note', async () => {
   invoke.mockImplementation(async (channel: string) => {
     if (channel === 'architecture-review:commits') return commits
-    if (channel === 'architecture-review:classify-commits') return new Promise(() => undefined)
+    if (channel === 'architecture-review:classify-commits')
+      return new Promise(() => undefined)
     return undefined
   })
   const cold = localPath('/repo-classifying')
@@ -875,6 +876,38 @@ it('scans the ends History asked for, once per request', async () => {
     { baseline: revision('1'), current: revision('2') },
     { baseline: revision('1'), current: revision('2') },
   ])
+})
+
+it('shows the subject and date of an end History or the strip named, over its hash', async () => {
+  const described = {
+    [revision('2')]: { subject: 'commit 2', authoredAt: '2026-09-25T23:30:00-05:00' },
+  }
+  const request = {
+    ends: { baseline: revision('1'), current: revision('2') },
+    serial: 1,
+    described,
+  }
+  await act(async () =>
+    app.render(
+      <ArchitectureReview root={root} active request={request} onHandoff={vi.fn()} />,
+    ),
+  )
+  const field = (label: string) =>
+    Array.from(host.querySelectorAll('.architecture-review-controls label')).find(
+      (node) => node.textContent?.startsWith(label),
+    )!
+  expect(field('Current').querySelector('strong')?.textContent).toBe('commit 2')
+  expect(field('Current').textContent).toContain('2026-09-25')
+  expect(field('Current').querySelector('input')?.value).toBe(revision('2'))
+  expect(
+    field('Current').querySelector('.architecture-review-ref-secondary'),
+  ).not.toBeNull()
+  expect(field('Baseline').querySelector('strong')).toBeNull()
+  await click(commitButton('3'))
+  expect(field('Current').querySelector('strong')?.textContent).toBe('commit 3')
+  expect(field('Baseline').querySelector('strong')?.textContent).toBe('commit 2')
+  await type('Current', 'main')
+  expect(field('Current').querySelector('strong')).toBeNull()
 })
 
 it('widens the strip from any ref', async () => {

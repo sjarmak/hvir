@@ -1,5 +1,7 @@
 import { expect, it } from 'vitest'
 import {
+  describeCommits,
+  describeShownCommit,
   endsFromText,
   lockedBaseline,
   stripEnds,
@@ -74,4 +76,42 @@ it('reads blank fields as the default ends and reports refused refs', () => {
   const { problems } = endsFromText('-x', 'a b')
   expect(problems.baseline).toMatch(/"-"/)
   expect(problems.current).toMatch(/spaces/)
+})
+
+it('describes the shown History commit and its parent when History has loaded it', () => {
+  const summary = (hash: string, parents: readonly string[], subject: string) => ({
+    hash,
+    shortHash: hash.slice(0, 7),
+    parents,
+    refs: [],
+    author: 'Ada',
+    authoredAt: '2026-09-26T10:00:00+00:00',
+    subject,
+  })
+  const loaded = [
+    summary('c3', ['c2'], 'third'),
+    summary('c2', ['c1'], 'second'),
+    summary('c1', ['b'], 'first'),
+  ]
+  expect(describeShownCommit(loaded[1]!, loaded)).toEqual({
+    c2: { subject: 'second', authoredAt: '2026-09-26T10:00:00+00:00' },
+    c1: { subject: 'first', authoredAt: '2026-09-26T10:00:00+00:00' },
+  })
+  expect(describeShownCommit(loaded[2]!, loaded)).toEqual({
+    c1: { subject: 'first', authoredAt: '2026-09-26T10:00:00+00:00' },
+  })
+})
+
+it('describes the strip commits an end names', () => {
+  expect(describeCommits(range, { baseline: 'c1', current: 'c2' })).toEqual({
+    c1: { subject: 'subject c1', authoredAt: '2026-09-26T10:00:00+00:00' },
+    c2: { subject: 'subject c2', authoredAt: '2026-09-26T10:00:00+00:00' },
+  })
+  expect(describeCommits(range, { baseline: 'b', current: 'c1' })).toEqual({
+    b: { subject: 'subject b', authoredAt: '2026-09-26T10:00:00+00:00' },
+    c1: { subject: 'subject c1', authoredAt: '2026-09-26T10:00:00+00:00' },
+  })
+  expect(describeCommits(range, { baseline: 'main', current: 'c1' })).toEqual({
+    c1: { subject: 'subject c1', authoredAt: '2026-09-26T10:00:00+00:00' },
+  })
 })

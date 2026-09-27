@@ -5,7 +5,10 @@ import {
   type CommitClassificationState,
 } from './commit-classification-store'
 
-export type { CommitClassifications, CommitClassificationState } from './commit-classification-store'
+export type {
+  CommitClassifications,
+  CommitClassificationState,
+} from './commit-classification-store'
 
 export function useCommitClassifications(
   root: HostPath,

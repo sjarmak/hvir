@@ -127,17 +127,30 @@ export class ArchitectureCommitClassifier {
         answers.set(revision, cached)
         continue
       }
-      const pending = { diff, key, modified: modifiedSources(diff.entries, layout.layout) }
+      const pending = {
+        diff,
+        key,
+        modified: modifiedSources(diff.entries, layout.layout),
+      }
       const structural = this.decideWithoutReading(diff, layout.layout)
       if (structural) {
-        this.cache.store({ ...key, scanners: COMMIT_CHANGE_CLASSIFIER_VERSION }, structural)
+        this.cache.store(
+          { ...key, scanners: COMMIT_CHANGE_CLASSIFIER_VERSION },
+          structural,
+        )
         answers.set(revision, structural)
       } else if (configChanged(diff.entries, layout.layout)) scans.push(pending)
       else reads.push(pending)
     }
     for (const [revision, change] of await this.scanAll(host, root, scans, signal))
       answers.set(revision, change)
-    for (const [revision, change] of await this.readAll(root, context, reads, layout, signal))
+    for (const [revision, change] of await this.readAll(
+      root,
+      context,
+      reads,
+      layout,
+      signal,
+    ))
       answers.set(revision, change)
     const classifications = request.revisions.map((revision) => {
       const diff = byRevision.get(revision)!
@@ -198,7 +211,10 @@ export class ArchitectureCommitClassifier {
         continue
       }
       const change = changeFromAnalysis(analysis, entry.modified.length)
-      this.cache.store({ ...entry.key, scanners: COMMIT_CHANGE_CLASSIFIER_VERSION }, change)
+      this.cache.store(
+        { ...entry.key, scanners: COMMIT_CHANGE_CLASSIFIER_VERSION },
+        change,
+      )
       answers.set(entry.diff.revision, change)
     }
     return answers
@@ -240,7 +256,9 @@ export class ArchitectureCommitClassifier {
     let total = 0
     for (const entry of pending) {
       const wanted = [
-        ...new Set(entry.modified.flatMap((modified) => [modified.before, modified.after])),
+        ...new Set(
+          entry.modified.flatMap((modified) => [modified.before, modified.after]),
+        ),
       ]
       const sized = wanted.map((object) => sizes.get(object) ?? Number.POSITIVE_INFINITY)
       if (sized.some((size) => size > this.budget.maxFileBytes)) continue

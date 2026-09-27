@@ -208,7 +208,10 @@ describe('changeFromAnalysis', () => {
   })
   it('is architecture when a module, its subsystem or an import changed', () => {
     expect(
-      changeFromAnalysis(analysis([module('src/a.ts', 'a')], [module('src/a.ts', 'b')]), 0),
+      changeFromAnalysis(
+        analysis([module('src/a.ts', 'a')], [module('src/a.ts', 'b')]),
+        0,
+      ),
     ).toBe('architecture')
     expect(changeFromAnalysis(analysis([], [module('src/a.ts', 'a')]), 0)).toBe(
       'architecture',

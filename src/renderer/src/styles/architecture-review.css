@@ -68,6 +68,16 @@
 .architecture-review-ref-problem {
   color: var(--danger-text);
 }
+.architecture-review-ref-primary {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--text-strong);
+}
+.architecture-review-ref-secondary {
+  font-size: calc(11px * var(--hvir-interface-scale));
+  color: var(--text-muted);
+}
 .architecture-strip {
   padding: 8px 14px;
   border-bottom: 1px solid var(--border-subtle);

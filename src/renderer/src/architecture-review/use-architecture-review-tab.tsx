@@ -1,7 +1,10 @@
 import { useCallback, useRef, useState, type RefObject } from 'react'
 import { hostPathEquals, type HostPath } from '../../../shared'
-import { ArchitectureReview } from './ArchitectureReview'
-import type { ArchitectureEnds } from './architecture-ends-model'
+import { ArchitectureReview, type ArchitectureEndsRequest } from './ArchitectureReview'
+import type {
+  ArchitectureCommitDescriptions,
+  ArchitectureEnds,
+} from './architecture-ends-model'
 import { ArchitectureExplanationStateSession } from './architecture-explanation-state'
 
 /** A workspace-qualified native review tab; file tabs retain their document owner. */
@@ -16,7 +19,7 @@ export function useArchitectureReviewTab(ports: {
   const [tab, setTab] = useState<{
     readonly root: HostPath
     readonly active: boolean
-    readonly request?: { readonly ends: ArchitectureEnds; readonly serial: number }
+    readonly request?: ArchitectureEndsRequest
   }>()
   const requests = useRef(0)
   const deactivate = useCallback(
@@ -24,7 +27,7 @@ export function useArchitectureReviewTab(ports: {
     [],
   )
   const close = useCallback(() => setTab(undefined), [])
-  const open = (ends?: ArchitectureEnds) => {
+  const open = (ends?: ArchitectureEnds, described?: ArchitectureCommitDescriptions) => {
     if (!ports.root.current) return
     ports.activateViewer()
     const root = ports.root.current
@@ -36,7 +39,7 @@ export function useArchitectureReviewTab(ports: {
           ? current && hostPathEquals(current.root, root)
             ? current.request
             : undefined
-          : { ends, serial: ++requests.current },
+          : { ends, serial: ++requests.current, described },
     }))
   }
   const belongs = (root: HostPath, pane = 'primary') =>

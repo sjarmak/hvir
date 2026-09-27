@@ -17,7 +17,13 @@ let host: HTMLDivElement
 let app: ReturnType<typeof createRoot>
 const seen = new Map<string, CommitClassificationState>()
 
-function Probe({ name, revisions }: { readonly name: string; readonly revisions: readonly string[] }) {
+function Probe({
+  name,
+  revisions,
+}: {
+  readonly name: string
+  readonly revisions: readonly string[]
+}) {
   seen.set(name, useCommitClassifications(root, revisions))
   return <span>{name}</span>
 }

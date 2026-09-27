@@ -7,7 +7,11 @@ import {
   type HostConnectionState,
   type HostPath,
 } from '../../../shared'
-import type { ArchitectureEnds } from '../architecture-review/architecture-ends-model'
+import {
+  describeShownCommit,
+  type ArchitectureCommitDescriptions,
+  type ArchitectureEnds,
+} from '../architecture-review/architecture-ends-model'
 import {
   setArchitectureFilter,
   useArchitectureFilter,
@@ -26,7 +30,10 @@ interface GitPanelProps {
   readonly onOpenChange: (path: HostPath, base: DiffBase, untracked?: boolean) => void
   readonly onOpenHistory: (path: HostPath, revision: string) => void
   readonly onOpenGraph: (hash?: string) => void
-  readonly onOpenArchitectureReview: (ends?: ArchitectureEnds) => void
+  readonly onOpenArchitectureReview: (
+    ends?: ArchitectureEnds,
+    described?: ArchitectureCommitDescriptions,
+  ) => void
   readonly onChanges: (changes: GitChanges | undefined) => void
   readonly connectionState?: HostConnectionState
   readonly hidden?: boolean
@@ -150,10 +157,10 @@ export function GitPanel({
             architectureOnly={architectureOnly}
             onArchitectureOnly={setArchitectureFilter}
             onShowInArchitecture={(commit) =>
-              onOpenArchitectureReview({
-                baseline: commit.parents[0],
-                current: commit.hash,
-              })
+              onOpenArchitectureReview(
+                { baseline: commit.parents[0], current: commit.hash },
+                describeShownCommit(commit, model.commits),
+              )
             }
             onVisibleCommits={onVisibleCommits}
             onOpenGraph={onOpenGraph}
