@@ -143,16 +143,15 @@ describe('SshFileAccess', () => {
       write: (_chunk, _encoding, _callback) => undefined,
     })
     const destroy = vi.spyOn(stream, 'destroy')
-    const session = {
+    const session = Object.assign(new EventEmitter(), {
       lstat: vi.fn(
         (_path: string, callback: (error: Error | undefined, value: unknown) => void) =>
           callback(undefined, { mode: 0o100600, mtime: 100, size: 0, atime: 100 }),
       ),
       createWriteStream: vi.fn(() => stream),
       unlink: vi.fn((_path: string, callback: (error?: Error) => void) => callback()),
-      once: vi.fn(),
       end: vi.fn(),
-    }
+    })
     const files = new SshFileAccess(
       {
         hostId,
@@ -170,6 +169,76 @@ describe('SshFileAccess', () => {
 
     await expect(writing).rejects.toMatchObject({ name: 'AbortError' })
     expect(destroy).toHaveBeenCalledOnce()
+    expect(session.unlink).toHaveBeenCalledOnce()
+    files.dispose()
+  })
+
+  it('publishes a write when ssh2 closes its handle without emitting finish', async () => {
+    const hostId = asHostId('ssh:test')
+    const path = hostPath(hostId, '/project/brief.md')
+    const stream = Object.assign(new EventEmitter(), {
+      destroy: vi.fn(),
+      end: vi.fn(function (this: EventEmitter, _data: Buffer) {
+        queueMicrotask(() => this.emit('close'))
+      }),
+    })
+    const missing = Object.assign(new Error('No such file'), { code: 2 })
+    const session = Object.assign(new EventEmitter(), {
+      lstat: vi.fn(
+        (_path: string, callback: (error: Error | undefined) => void) => callback(missing),
+      ),
+      createWriteStream: vi.fn(() => stream),
+      ext_openssh_rename: vi.fn(
+        (_source: string, _target: string, callback: (error?: Error) => void) => callback(),
+      ),
+      unlink: vi.fn((_path: string, callback: (error?: Error) => void) => callback()),
+      end: vi.fn(),
+    })
+    const files = new SshFileAccess(
+      { hostId, openSftp: () => Promise.resolve(session as unknown as SFTPWrapper) },
+      {},
+    )
+
+    await expect(
+      files.writeFile(path, 'handoff', { signal: new AbortController().signal }),
+    ).resolves.toBeUndefined()
+
+    expect(stream.end).toHaveBeenCalledWith(Buffer.from('handoff'))
+    expect(session.ext_openssh_rename).toHaveBeenCalledOnce()
+    expect(session.unlink).not.toHaveBeenCalled()
+    files.dispose()
+  })
+
+  it('rejects and removes its temporary when the SFTP session closes mid-write', async () => {
+    const hostId = asHostId('ssh:test')
+    const path = hostPath(hostId, '/project/brief.md')
+    const sessionEvents = new EventEmitter()
+    const stream = Object.assign(new EventEmitter(), {
+      destroy: vi.fn(),
+      end: vi.fn(function (_data: Buffer) {
+        queueMicrotask(() => sessionEvents.emit('close'))
+      }),
+    })
+    const missing = Object.assign(new Error('No such file'), { code: 2 })
+    const session = Object.assign(sessionEvents, {
+      lstat: vi.fn(
+        (_path: string, callback: (error: Error | undefined) => void) => callback(missing),
+      ),
+      createWriteStream: vi.fn(() => stream),
+      ext_openssh_rename: vi.fn(),
+      unlink: vi.fn((_path: string, callback: (error?: Error) => void) => callback()),
+      end: vi.fn(),
+    })
+    const files = new SshFileAccess(
+      { hostId, openSftp: () => Promise.resolve(session as unknown as SFTPWrapper) },
+      {},
+    )
+
+    await expect(
+      files.writeFile(path, 'handoff', { signal: new AbortController().signal }),
+    ).rejects.toThrow('SSH file write interrupted before completion')
+
+    expect(session.ext_openssh_rename).not.toHaveBeenCalled()
     expect(session.unlink).toHaveBeenCalledOnce()
     files.dispose()
   })
