@@ -31,6 +31,7 @@ export function ownArchitectureReview(
     new ArchitectureReviewCoordinator({
       resources,
       analyze: worker.analyze,
+      imports: worker.imports,
       handoff: { worktrees },
     }),
     (review) => review.dispose(),

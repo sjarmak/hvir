@@ -1,5 +1,10 @@
 import type { ArchitectureCapture } from '../../shared/architecture-review'
-import type { ArchitectureAnalysis } from '../../shared/architecture-analysis'
+import type {
+  ArchitectureAnalysis,
+  ArchitectureSourceFile,
+} from '../../shared/architecture-analysis'
+import type { HostPath } from '../../shared/host-path'
+import type { ModuleImportsResult } from './module-imports'
 import type { WorkerOperation } from '../../shared/worker-protocol'
 import { createWorkerClient, workerPath, type WorkerClient } from '../worker-host'
 import { ArchitectureScanRecorder, processClock } from './scan-recorder'
@@ -24,8 +29,14 @@ export interface ArchitectureWorkerResult {
   readonly analysis: ArchitectureAnalysis
   readonly timings: ArchitectureWorkerTimings
 }
+export interface ArchitectureImportsRequest {
+  readonly root: HostPath
+  readonly sources: readonly ArchitectureSourceFile[]
+  readonly cache?: ArchitectureParseCacheLocation
+}
 export interface ArchitectureWorkerProtocol {
   readonly analyze: WorkerOperation<ArchitectureWorkerRequest, ArchitectureWorkerResult>
+  readonly imports: WorkerOperation<ArchitectureImportsRequest, ModuleImportsResult>
 }
 type Client = WorkerClient<ArchitectureWorkerProtocol>
 
@@ -74,6 +85,35 @@ export class ArchitectureAnalysisWorker {
       if (marks) placeWorkerSpans(recorder, capture, marks, window)
       this.keepIdle(client)
       return result.analysis
+    } catch (error) {
+      client.dispose()
+      throw error
+    } finally {
+      clearTimeout(timeout)
+      signal.removeEventListener('abort', stop)
+    }
+  }
+
+  readonly imports = async (
+    sources: readonly ArchitectureSourceFile[],
+    root: HostPath,
+    signal: AbortSignal,
+  ): Promise<ModuleImportsResult> => {
+    signal.throwIfAborted()
+    if (this.disposed) throw new Error('Architecture analysis worker disposed')
+    const warm = this.takeIdle()
+    const client = warm ?? spawnClient()
+    const stop = () => client.dispose()
+    signal.addEventListener('abort', stop, { once: true })
+    const timeout = setTimeout(stop, REQUEST_TIMEOUT_MS)
+    try {
+      const request = this.options.cache
+        ? { root, sources, cache: this.options.cache }
+        : { root, sources }
+      const result = await client.request('imports', request)
+      signal.throwIfAborted()
+      this.keepIdle(client)
+      return result
     } catch (error) {
       client.dispose()
       throw error

@@ -143,6 +143,15 @@ export function registerArchitectureReviewIpc(ipc: IpcRegistrar, deps: Deps): vo
     project(request)
     return result
   })
+  ipc.handle('architecture-review:classify-commits', async (request, context) => {
+    const active = project(request)
+    const owner = context.owner()
+    await ipc.authority.projectPath(request.root, active.root, active.host)
+    const result = await deps.architectureReview.classify(owner, active.host, request)
+    context.owner()
+    project(request)
+    return result
+  })
   ipc.handle('architecture-review:follow', async (request, context) => {
     const active = project(request)
     await ipc.authority.projectPath(request.root, active.root, active.host)

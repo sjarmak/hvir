@@ -426,3 +426,33 @@ describe('warm architecture analysis worker', () => {
     expect(clients).toHaveLength(0)
   })
 })
+
+describe('architecture analysis worker imports', () => {
+  it('reads module imports through the same warm process and disposes it on abort', async () => {
+    const worker = new ArchitectureAnalysisWorker()
+    const sources = [source('a.ts', "import './b'")]
+    respond = async (payload) => {
+      expect(payload).toEqual({ root: localPath('/repo'), sources })
+      return { scanners: 'commit-change-1;typescript=1', imports: [] }
+    }
+    const result = await worker.imports(
+      sources,
+      localPath('/repo'),
+      new AbortController().signal,
+    )
+    expect(result.scanners).toBe('commit-change-1;typescript=1')
+    expect(clients[0]?.request).toHaveBeenCalledWith('imports', {
+      root: localPath('/repo'),
+      sources,
+    })
+    respond = undefined
+    const controller = new AbortController()
+    const pending = worker.imports(sources, localPath('/repo'), controller.signal)
+    const assertion = expect(pending).rejects.toThrow('worker client disposed')
+    controller.abort(new Error('cancelled'))
+    await assertion
+    expect(clients).toHaveLength(1)
+    expect(clients[0]?.dispose).toHaveBeenCalled()
+    worker.dispose()
+  })
+})
