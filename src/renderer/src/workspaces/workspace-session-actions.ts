@@ -38,18 +38,17 @@ export function createWorkspaceSessionActions(options: WorkspaceSessionActionsOp
       plan: WorkspaceClosePlan,
       terminateTerminals: boolean,
     ): Promise<void> => {
-      await options.runTransition(async () => {
-        const state = unwrapOperation(
+      const state = await options.runTransition(async () =>
+        unwrapOperation(
           await window.hvir.invoke('workspace:close', {
             projectId,
             workspaceId,
             expectedTerminalCount: plan.terminalCount,
             terminateTerminals,
           }),
-        )
-        options.onWorkspaceClosed(projectId, workspaceId)
-        return state
-      })
+        ),
+      )
+      if (state !== undefined) options.onWorkspaceClosed(projectId, workspaceId)
     },
     reopenWorkspace: async (projectId: string, workspaceId: string): Promise<void> => {
       await options.runTransition(async () => {

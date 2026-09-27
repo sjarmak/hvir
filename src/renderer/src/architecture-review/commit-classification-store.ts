@@ -33,6 +33,7 @@ export class CommitClassificationStore {
   private epoch = 0
   private generation = 0
   private inFlight = false
+  private released = false
   private snapshot: CommitClassificationState = {
     known: new Map(),
     pending: new Set(),
@@ -54,6 +55,7 @@ export class CommitClassificationStore {
   }
 
   request(revisions: readonly string[]): void {
+    if (this.released) return
     let added = false
     for (const revision of revisions) {
       if (this.requested.has(revision)) continue
@@ -68,10 +70,21 @@ export class CommitClassificationStore {
   }
 
   invalidate(head: string): void {
-    if (head === this.head) return
+    if (this.released || head === this.head) return
+    this.head = head
+    this.reset()
+  }
+
+  release(): void {
+    if (this.released) return
+    this.released = true
+    this.head = undefined
+    this.reset()
+  }
+
+  private reset(): void {
     this.epoch += 1
     this.generation += 1
-    this.head = head
     this.known.clear()
     this.requested.clear()
     this.queue = []
@@ -134,16 +147,21 @@ const stores = new Map<string, CommitClassificationStore>()
 
 const keyOf = (root: HostPath) => `${root.hostId}\0${root.path}`
 
-export function commitClassificationStore(root: HostPath): CommitClassificationStore {
+export function commitClassificationStore(
+  root: HostPath,
+  invoke: ClassifyInvoke = defaultInvoke,
+): CommitClassificationStore {
   const key = keyOf(root)
   let store = stores.get(key)
   if (!store) {
-    store = new CommitClassificationStore(root)
+    store = new CommitClassificationStore(root, invoke)
     stores.set(key, store)
   }
   return store
 }
 
 export function releaseCommitClassificationStore(root: HostPath): void {
-  stores.delete(keyOf(root))
+  const key = keyOf(root)
+  stores.get(key)?.release()
+  stores.delete(key)
 }
