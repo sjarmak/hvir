@@ -43,18 +43,27 @@ async function repository() {
   return { root, m1, m2, f1, merge, f2, host: new LocalHost() }
 }
 
-it('lists first-parent commits from the branch point to HEAD, oldest first', async () => {
+it('lists first-parent commits from the branch point to HEAD, newest first', async () => {
   const r = await repository()
   const range = await listArchitectureCommits(
     r.host,
     { root: localPath(r.root) },
     signal(),
   )
-  expect(range.base).toEqual({ revision: r.m2, parent: r.m1, subject: 'add m2' })
+  const authoredAt = expect.stringMatching(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/,
+  )
+  expect(range.base).toEqual({
+    revision: r.m2,
+    parent: r.m1,
+    merge: false,
+    subject: 'add m2',
+    authoredAt,
+  })
   expect(range.commits).toEqual([
-    { revision: r.f1, parent: r.m2, subject: 'add f1' },
-    { revision: r.merge, parent: r.f1, subject: 'merge side' },
-    { revision: r.f2, parent: r.merge, subject: 'add f2' },
+    { revision: r.f2, parent: r.merge, merge: false, subject: 'add f2', authoredAt },
+    { revision: r.merge, parent: r.f1, merge: true, subject: 'merge side', authoredAt },
+    { revision: r.f1, parent: r.m2, merge: false, subject: 'add f1', authoredAt },
   ])
   expect(range.truncated).toBe(false)
 })
@@ -71,10 +80,10 @@ it('widens the strip back to any ref', async () => {
   )
   expect(range.base.revision).toBe(r.m1)
   expect(range.commits.map((commit) => commit.subject)).toEqual([
-    'add m2',
-    'add f1',
-    'merge side',
     'add f2',
+    'merge side',
+    'add f1',
+    'add m2',
   ])
 })
 
@@ -86,7 +95,7 @@ it('keeps the newest commits and says so when the range is over the limit', asyn
     signal(),
     2,
   )
-  expect(range.commits.map((commit) => commit.revision)).toEqual([r.merge, r.f2])
+  expect(range.commits.map((commit) => commit.revision)).toEqual([r.f2, r.merge])
   expect(range.truncated).toBe(true)
 })
 

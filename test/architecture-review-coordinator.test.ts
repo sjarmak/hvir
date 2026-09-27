@@ -400,8 +400,12 @@ it('publishes only the newest explanation read when host reads overlap', async (
     const result = await f.coordinator.scan(f.owner, f.host, f.request)
     const request = { ...f.request, snapshotId: result.id }
     const preview = await f.coordinator.prepareExplanation(f.owner, f.host, request)
-    let finishFirst!: (value: Awaited<ReturnType<ProjectHost['readTextFilePrefix']>>) => void
-    let finishSecond!: (value: Awaited<ReturnType<ProjectHost['readTextFilePrefix']>>) => void
+    let finishFirst!: (
+      value: Awaited<ReturnType<ProjectHost['readTextFilePrefix']>>,
+    ) => void
+    let finishSecond!: (
+      value: Awaited<ReturnType<ProjectHost['readTextFilePrefix']>>,
+    ) => void
     f.readTextFilePrefix
       .mockImplementationOnce(() => new Promise((resolve) => (finishFirst = resolve)))
       .mockImplementationOnce(() => new Promise((resolve) => (finishSecond = resolve)))
@@ -573,7 +577,7 @@ it('keys commit-pair evidence to its Current commit and never checks freshness',
 it('lists the commit strip for the current renderer only', async () => {
   const f = setup()
   const range = {
-    base: { revision: 'a', parent: null, subject: 's' },
+    base: { revision: 'a', parent: null, merge: false, subject: 's', authoredAt: '' },
     commits: [],
     truncated: false,
   }

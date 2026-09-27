@@ -11,20 +11,22 @@ import type { ArchitectureCommitRange } from '../src/shared/architecture-review'
 const commit = (revision: string, parent: string | null) => ({
   revision,
   parent,
+  merge: false,
   subject: `subject ${revision}`,
+  authoredAt: '2026-09-26T10:00:00+00:00',
 })
 const range: ArchitectureCommitRange = {
   base: commit('b', 'z'),
-  commits: [commit('c1', 'b'), commit('c2', 'c1'), commit('c3', 'c2')],
+  commits: [commit('c3', 'c2'), commit('c2', 'c1'), commit('c1', 'b')],
   truncated: false,
 }
 
 it('steps pairwise from each commit to its first parent by default', () => {
-  expect(stripEnds(range, 0, { kind: 'pairwise' })).toEqual({
+  expect(stripEnds(range, 2, { kind: 'pairwise' })).toEqual({
     baseline: 'b',
     current: 'c1',
   })
-  expect(stripEnds(range, 2, { kind: 'pairwise' })).toEqual({
+  expect(stripEnds(range, 0, { kind: 'pairwise' })).toEqual({
     baseline: 'c2',
     current: 'c3',
   })
@@ -35,8 +37,8 @@ it('steps pairwise from each commit to its first parent by default', () => {
 
 it('keeps a locked baseline while Current steps', () => {
   const locked = { kind: 'locked', baseline: 'b' } as const
-  expect(stripEnds(range, 0, locked)).toEqual({ baseline: 'b', current: 'c1' })
-  expect(stripEnds(range, 2, locked)).toEqual({ baseline: 'b', current: 'c3' })
+  expect(stripEnds(range, 2, locked)).toEqual({ baseline: 'b', current: 'c1' })
+  expect(stripEnds(range, 0, locked)).toEqual({ baseline: 'b', current: 'c3' })
 })
 
 it('locks the chosen Baseline, or the strip base when none is chosen', () => {
@@ -44,14 +46,14 @@ it('locks the chosen Baseline, or the strip base when none is chosen', () => {
   expect(lockedBaseline({}, range)).toBe('b')
 })
 
-it('finds where Current sits on the strip and steps within it', () => {
+it('finds where Current sits on the strip and steps newer or older within it', () => {
   expect(stripPosition(range, 'c2')).toBe(1)
   expect(stripPosition(range, 'working-tree')).toBe(-1)
-  expect(stripStep(range, 1, 1)).toBe(2)
-  expect(stripStep(range, 2, 1)).toBeUndefined()
-  expect(stripStep(range, 0, -1)).toBeUndefined()
-  expect(stripStep(range, -1, 1)).toBe(0)
-  expect(stripStep(range, -1, -1)).toBe(2)
+  expect(stripStep(range, 1, 1)).toBe(0)
+  expect(stripStep(range, 0, 1)).toBeUndefined()
+  expect(stripStep(range, 2, -1)).toBeUndefined()
+  expect(stripStep(range, -1, 1)).toBe(2)
+  expect(stripStep(range, -1, -1)).toBe(0)
   expect(stripStep({ ...range, commits: [] }, -1, 1)).toBeUndefined()
 })
 

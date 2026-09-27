@@ -39,17 +39,14 @@ export function stripPosition(range: ArchitectureCommitRange, revision: string):
   return range.commits.findIndex((commit) => commit.revision === revision)
 }
 
-/**
- * The index one step from `position`. Off the strip, a forward step starts at the oldest
- * commit and a backward step at the newest.
- */
 export function stripStep(
   range: ArchitectureCommitRange,
   position: number,
   direction: 1 | -1,
 ): number | undefined {
-  const next =
-    position < 0 ? (direction === 1 ? 0 : range.commits.length - 1) : position + direction
+  const newest = 0
+  const oldest = range.commits.length - 1
+  const next = position < 0 ? (direction === 1 ? oldest : newest) : position - direction
   return next >= 0 && next < range.commits.length ? next : undefined
 }
 

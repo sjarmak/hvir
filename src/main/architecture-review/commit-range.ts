@@ -9,14 +9,9 @@ import type { ProjectHost } from '../project-host/project-host'
 import { branchPoint, commitOf, type EndsGit } from './ends'
 import { architectureGitContext, validateArchitectureRoot } from './git-context'
 
-/** Hash, parents and subject; -z ends each commit with NUL, which no subject contains. */
-const FORMAT = '--format=%H%x1f%P%x1f%s'
+const FORMAT = '--format=%H%x1f%P%x1f%aI%x1f%s'
 const MAX_OUTPUT = 1024 * 1024
 
-/**
- * The commit strip (ADR-063): first-parent commits from the branch point with the default
- * branch, or with `from` when widened, to HEAD. The newest `limit` are kept.
- */
 export async function listArchitectureCommits(
   host: ProjectHost,
   request: ArchitectureCommitRangeRequest,
@@ -52,7 +47,7 @@ export async function listArchitectureCommits(
   )
   return {
     base: baseCommit,
-    commits: newest.slice(0, limit).reverse(),
+    commits: newest.slice(0, limit),
     truncated: newest.length > limit,
   }
 }
@@ -71,12 +66,16 @@ function parseCommits(output: string): readonly ArchitectureCommit[] {
     .map((record) => record.replace(/^\n/, ''))
     .filter(Boolean)
     .map((record) => {
-      const [revision = '', parents = '', ...subject] = record.split('\x1f')
+      const [revision = '', parents = '', authoredAt = '', ...subject] =
+        record.split('\x1f')
       if (!/^[a-f0-9]{40,64}$/.test(revision)) throw new Error('Malformed Git log entry')
+      const parentList = parents.split(' ').filter(Boolean)
       return {
         revision,
-        parent: parents.split(' ').find(Boolean) ?? null,
+        parent: parentList[0] ?? null,
+        merge: parentList.length > 1,
         subject: subject.join('\x1f'),
+        authoredAt,
       }
     })
 }
