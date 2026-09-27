@@ -14,7 +14,7 @@ const FLEET_LOG = [
   'log',
   '--no-walk=unsorted',
   `--notes=${FLEET_CLASSIFICATION_NOTES_REF}`,
-  '--format=%x1e%H%x1f%(trailers:only,unfold)%x1f%N',
+  '--format=%x1e%H%x1f%(trailers:only,unfold)%x1f%N%x1f',
 ] as const
 const RECORD = '\x1e'
 const FIELD = '\x1f'
@@ -41,7 +41,7 @@ export async function readFleetClassifications(
   for (const record of output.split(RECORD)) {
     const [revision = '', message = '', note = ''] = record.split(FIELD)
     if (!HASH.test(revision)) continue
-    const classification = parseFleetClassification(note.trim() === '' ? message : note)
+    const classification = parseFleetClassification(note === '' ? message : note)
     if (classification) found.set(revision, classification)
   }
   return found

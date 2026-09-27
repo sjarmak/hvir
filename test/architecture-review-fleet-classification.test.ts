@@ -49,6 +49,21 @@ async function repository() {
       text,
       revision,
     )
+  const rawNote = (revision: string, text: string) => {
+    const blob = execFileSync('git', ['-C', root, 'hash-object', '-w', '--stdin'], {
+      input: text,
+      encoding: 'utf8',
+    }).trim()
+    git(
+      root,
+      'notes',
+      `--ref=${FLEET_CLASSIFICATION_NOTES_REF}`,
+      'add',
+      '-C',
+      blob,
+      revision,
+    )
+  }
   const path = localPath(root)
   const context = architectureGitContext(
     new LocalHost(),
@@ -56,7 +71,7 @@ async function repository() {
     new AbortController().signal,
   )
   const run = (args: readonly string[]) => context.run(path, args)
-  return { root, commit, note, run }
+  return { root, commit, note, rawNote, run }
 }
 const NOTE = [
   'Change-Type: Performance',
@@ -138,6 +153,19 @@ it('leaves a commit unclassified when its note lacks a Change-Type, whatever its
   r.note(overridden, 'Reviewed by hand, not a classification.\n\nClassified-By: jev')
   const found = await readFleetClassifications(r.run, [labelled, overridden])
   expect(found.get(labelled)).toEqual({ type: 'Feature', risk: 'low', beads: [] })
+  expect(found.has(overridden)).toBe(false)
+})
+
+it('leaves a commit unclassified when its note holds only whitespace', async () => {
+  const r = await repository()
+  const overridden = await r.commit('label\n\nChange-Type: Feature', {
+    'src/a.ts': 'export {}\n',
+  })
+  r.rawNote(overridden, '   ')
+  expect(
+    git(r.root, 'notes', `--ref=${FLEET_CLASSIFICATION_NOTES_REF}`, 'list', overridden),
+  ).toMatch(/^[0-9a-f]{40}$/)
+  const found = await readFleetClassifications(r.run, [overridden])
   expect(found.has(overridden)).toBe(false)
 })
 

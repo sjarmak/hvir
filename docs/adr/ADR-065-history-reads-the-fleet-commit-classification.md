@@ -52,7 +52,11 @@ value the fleet spells differently is shown as written rather than dropped.
 **Absence is ordinary.** A missing notes ref, a commit with no note and no trailers, and a
 note without a Change-Type are all the same "not classified" answer, never an error. Git
 exits cleanly for a notes ref that does not exist, so the read costs one command per batch
-whether or not the fleet has reached the repository.
+whether or not the fleet has reached the repository. Whether a note exists is read from the
+note field itself, which the log format terminates so that a note of any content, blank
+included, is told apart from no note at all. Two notes `%N` prints as nothing, an empty note
+and one holding a single line ending, read as no note; `git notes add` refuses to write
+either without `--allow-empty`, so neither is a shape the fleet's tooling produces.
 
 **The heuristic is the permanent fallback, not a shim.** A commit the fleet has not classified
 is marked exactly as ADR-063 marks it: from its diff and the import edges of its modified
