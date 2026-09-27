@@ -25,11 +25,13 @@ import { layoutSummary, type ArchitectureMapMode } from './architecture-review-m
 export function ArchitectureReview({
   root,
   active,
+  request,
   explanationStateSession,
   onHandoff,
 }: {
   readonly root: HostPath
   readonly active: boolean
+  readonly request?: { readonly ends: ArchitectureEnds; readonly serial: number }
   readonly explanationStateSession?: ArchitectureExplanationStateSession
   readonly onHandoff: (projectId: string, workspaceId: string) => void
 }) {
@@ -226,6 +228,14 @@ export function ArchitectureReview({
     setCurrentText(ends.current ?? '')
     void scan(ends)
   }
+  const chooseRequested = useRef(chooseFromStrip)
+  chooseRequested.current = chooseFromStrip
+  const servedRequest = useRef<number>(undefined)
+  useEffect(() => {
+    if (!request || servedRequest.current === request.serial) return
+    servedRequest.current = request.serial
+    chooseRequested.current(request.ends)
+  }, [request])
   const openEvidence = async (path: string, line: number, side: 'before' | 'after') => {
     if (!snapshot) return
     const epoch = ++requestEpoch.current

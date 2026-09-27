@@ -36,13 +36,13 @@ export async function verifyArchitectureCommitStrip(
       (await wait(() => commit(${JSON.stringify(before)}), 'fixture commit on the strip')).click();
       await scanned(${JSON.stringify(parent)}, ${JSON.stringify(before)}, 'pairwise commit');
       if (commit(${JSON.stringify(before)}).getAttribute('aria-pressed') !== 'true') throw new Error('Strip does not mark the scanned Current commit');
-      button('Next commit').click();
+      button('Newer commit').click();
       await scanned(${JSON.stringify(before)}, ${JSON.stringify(label)}, 'pairwise step');
       commit(${JSON.stringify(before)}).click();
       await scanned(${JSON.stringify(parent)}, ${JSON.stringify(before)}, 'return to first fixture commit');
       strip().querySelector('input[type="checkbox"]').click();
       await wait(() => strip().textContent.includes('Baseline held at ' + ${JSON.stringify(parent.slice(0, 8))}), 'locked baseline');
-      button('Next commit').click();
+      button('Newer commit').click();
       await scanned(${JSON.stringify(parent)}, ${JSON.stringify(label)}, 'step against the locked baseline');
       const subsystem = await wait(() => [...surface().querySelectorAll('.architecture-subsystem')].find(node => node.querySelector('strong')?.textContent === 'architecture-smoke/ui'), 'commit-pair subsystem');
       subsystem.click();

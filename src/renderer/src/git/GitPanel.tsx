@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import { useCallback, useState, type ReactElement } from 'react'
 
 import {
   basenameHostPath,
@@ -7,6 +7,12 @@ import {
   type HostConnectionState,
   type HostPath,
 } from '../../../shared'
+import type { ArchitectureEnds } from '../architecture-review/architecture-ends-model'
+import {
+  setArchitectureFilter,
+  useArchitectureFilter,
+} from '../architecture-review/architecture-history-filter'
+import { useCommitClassifications } from '../architecture-review/use-commit-classifications'
 import { GitBranchControls } from './GitBranchControls'
 import { GitChangesView } from './GitChangesView'
 import { GitHistoryView } from './GitHistoryView'
@@ -20,7 +26,7 @@ interface GitPanelProps {
   readonly onOpenChange: (path: HostPath, base: DiffBase, untracked?: boolean) => void
   readonly onOpenHistory: (path: HostPath, revision: string) => void
   readonly onOpenGraph: (hash?: string) => void
-  readonly onOpenArchitectureReview: () => void
+  readonly onOpenArchitectureReview: (ends?: ArchitectureEnds) => void
   readonly onChanges: (changes: GitChanges | undefined) => void
   readonly connectionState?: HostConnectionState
   readonly hidden?: boolean
@@ -66,6 +72,16 @@ export function GitPanel({
   })
   const details = useGitCommitDetails(root)
   const { model } = controller
+  const architectureOnly = useArchitectureFilter()
+  const [visibleCommits, setVisibleCommits] = useState<readonly string[]>([])
+  const onVisibleCommits = useCallback(
+    (hashes: readonly string[]) => setVisibleCommits(hashes),
+    [],
+  )
+  const classifications = useCommitClassifications(
+    root,
+    model.view === 'history' && !hidden ? visibleCommits : [],
+  )
 
   return (
     <section className="rail-section git-panel" aria-label="Git" hidden={hidden}>
@@ -99,7 +115,7 @@ export function GitPanel({
         </button>
         <button
           type="button"
-          onClick={onOpenArchitectureReview}
+          onClick={() => onOpenArchitectureReview()}
           disabled={connectionState !== 'connected'}
         >
           Architecture
@@ -129,6 +145,16 @@ export function GitPanel({
             expanded={details.expanded}
             detailStates={details.detailStates}
             collapsedDirectories={details.collapsedDirectories}
+            classifications={classifications}
+            architectureOnly={architectureOnly}
+            onArchitectureOnly={setArchitectureFilter}
+            onShowInArchitecture={(commit) =>
+              onOpenArchitectureReview({
+                baseline: commit.parents[0],
+                current: commit.hash,
+              })
+            }
+            onVisibleCommits={onVisibleCommits}
             onOpenGraph={onOpenGraph}
             onOpenFile={onOpenHistory}
             onLoadMore={controller.loadMoreHistory}

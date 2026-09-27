@@ -57,6 +57,14 @@ it('finds where Current sits on the strip and steps newer or older within it', (
   expect(stripStep({ ...range, commits: [] }, -1, 1)).toBeUndefined()
 })
 
+it('steps over commits the filter hides', () => {
+  const shown = (index: number) => index !== 1
+  expect(stripStep(range, 2, 1, shown)).toBe(0)
+  expect(stripStep(range, 0, -1, shown)).toBe(2)
+  expect(stripStep(range, -1, 1, shown)).toBe(2)
+  expect(stripStep(range, -1, -1, () => false)).toBeUndefined()
+})
+
 it('reads blank fields as the default ends and reports refused refs', () => {
   expect(endsFromText(' ', '')).toEqual({ ends: {}, problems: {} })
   expect(endsFromText(' HEAD~2 ', 'v1')).toEqual({

@@ -431,9 +431,9 @@ describe('architecture analysis worker imports', () => {
   it('reads module imports through the same warm process and disposes it on abort', async () => {
     const worker = new ArchitectureAnalysisWorker()
     const sources = [source('a.ts', "import './b'")]
-    respond = async (payload) => {
+    respond = (payload) => {
       expect(payload).toEqual({ root: localPath('/repo'), sources })
-      return { scanners: 'commit-change-1;typescript=1', imports: [] }
+      return Promise.resolve({ scanners: 'commit-change-1;typescript=1', imports: [] })
     }
     const result = await worker.imports(
       sources,

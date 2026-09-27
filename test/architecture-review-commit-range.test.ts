@@ -50,7 +50,7 @@ it('lists first-parent commits from the branch point to HEAD, newest first', asy
     { root: localPath(r.root) },
     signal(),
   )
-  const authoredAt = expect.stringMatching(
+  const authoredAt: unknown = expect.stringMatching(
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/,
   )
   expect(range.base).toEqual({

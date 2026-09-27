@@ -3,7 +3,10 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { ArchitectureCommitClassifier } from '../src/main/architecture-review/commit-classifier'
+import {
+  ArchitectureCommitClassifier,
+  type ModuleImportsPort,
+} from '../src/main/architecture-review/commit-classifier'
 import { readModuleImports } from '../src/main/architecture-review/module-imports'
 import { TYPESCRIPT_ONLY_SCANNERS } from '../src/main/architecture-review/typescript-scanner'
 import { LocalHost } from '../src/main/project-host/local-host'
@@ -37,7 +40,7 @@ async function repository() {
   return { root, commit, host: new LocalHost() }
 }
 function classifier() {
-  const imports = vi.fn((sources, root, _signal) =>
+  const imports = vi.fn<ModuleImportsPort>((sources, root) =>
     readModuleImports(sources, root, undefined, TYPESCRIPT_ONLY_SCANNERS),
   )
   return { imports, classifier: new ArchitectureCommitClassifier({ imports }) }

@@ -43,11 +43,16 @@ export function stripStep(
   range: ArchitectureCommitRange,
   position: number,
   direction: 1 | -1,
+  shown: (index: number) => boolean = () => true,
 ): number | undefined {
   const newest = 0
   const oldest = range.commits.length - 1
-  const next = position < 0 ? (direction === 1 ? oldest : newest) : position - direction
-  return next >= 0 && next < range.commits.length ? next : undefined
+  let next = position < 0 ? (direction === 1 ? oldest : newest) : position - direction
+  while (next >= 0 && next < range.commits.length) {
+    if (shown(next)) return next
+    next -= direction
+  }
+  return undefined
 }
 
 export interface ParsedEnds {

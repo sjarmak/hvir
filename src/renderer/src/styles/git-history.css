@@ -285,3 +285,65 @@
   margin: 8px 10px;
   padding: 5px 8px;
 }
+
+.git-history-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.git-history-filter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #8a95a3;
+  font-size: calc(9px * var(--hvir-interface-scale));
+  white-space: nowrap;
+}
+
+.git-rail-commit-change {
+  margin-right: 4px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: calc(8px * var(--hvir-interface-scale));
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.git-rail-commit-change.architecture {
+  background: #2d4a6b;
+  color: #cfe3ff;
+}
+
+.git-rail-commit-change.code,
+.git-rail-commit-change.unclassified,
+.git-rail-commit-change.merge {
+  background: #262c35;
+  color: #8a95a3;
+}
+
+.git-rail-show-architecture {
+  width: 23px;
+  height: 23px;
+  position: absolute;
+  top: 8px;
+  right: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #788392;
+  cursor: pointer;
+}
+
+.git-rail-history-row.commit:hover .git-rail-show-architecture,
+.git-rail-history-row.commit:focus-within .git-rail-show-architecture,
+.git-rail-show-architecture:focus-visible {
+  color: #cfe3ff;
+}
+
+.git-rail-history-row.commit .git-rail-commit {
+  padding-right: 52px;
+}
