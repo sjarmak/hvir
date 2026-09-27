@@ -84,6 +84,15 @@ describe('harness launch composition', () => {
     expect(resolved.artifact.environment).toEqual({
       CLAUDE_CONFIG_DIR: configDirectory,
     })
+    expect(commandPreview(resolved, 'fresh').environment).toContainEqual({
+      name: 'CLAUDE_CONFIG_DIR',
+      operation: 'set',
+      displayValue: configDirectory,
+      redacted: false,
+    })
+    expect(commandPreview(resolved, 'fresh').command).toContain(
+      `CLAUDE_CONFIG_DIR='${configDirectory}'`,
+    )
   })
 
   it('places Codex profile flags before the resume subcommand and resolves grants', async () => {

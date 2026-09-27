@@ -66,12 +66,23 @@ export const claudeCodeProvider: HarnessProvider = {
       if (result.code !== 0 || !home.startsWith('/')) {
         throw new Error('Claude identity requires an absolute home directory')
       }
+      const configDirectory = `${home}/.claude-homes/account${account}/.claude`
       return {
-        ...spec,
-        env: {
-          ...spec.env,
-          CLAUDE_CONFIG_DIR: `${home}/.claude-homes/account${account}/.claude`,
+        spec: {
+          ...spec,
+          env: {
+            ...spec.env,
+            CLAUDE_CONFIG_DIR: configDirectory,
+          },
         },
+        previewEnvironment: [
+          {
+            name: 'CLAUDE_CONFIG_DIR',
+            operation: 'set',
+            displayValue: configDirectory,
+            redacted: false,
+          },
+        ],
       }
     },
     applyArgs: (_mode, providerArgs, profileArgs) => [...providerArgs, ...profileArgs],

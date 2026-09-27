@@ -2,6 +2,7 @@
 
 import type {
   ComposerSubmitMode,
+  HarnessCommandPreviewEnvironment,
   HarnessContextPresentation,
   HarnessContextPressurePolicy,
   HarnessModifiedKeyProtocol,
@@ -197,7 +198,10 @@ export interface HarnessProfileContract {
     host: ProjectHost,
     identityId: string,
     spec: HarnessLaunchSpec,
-  ): Promise<HarnessLaunchSpec>
+  ): Promise<{
+    readonly spec: HarnessLaunchSpec
+    readonly previewEnvironment: readonly HarnessCommandPreviewEnvironment[]
+  }>
   applyArgs(
     mode: HarnessLaunchMode,
     providerArgs: readonly string[],

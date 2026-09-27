@@ -112,11 +112,18 @@ export async function resolveHarnessLaunch(
     env: specEnvironment,
   }
   let spec = baseSpec
+  let previewEnvironment = environment.preview
   if (profile.identityId !== undefined) {
     if (!provider.profile.applyIdentity) {
       throw new Error('Harness provider cannot apply the selected identity')
     }
-    spec = await provider.profile.applyIdentity(host, profile.identityId, baseSpec)
+    const identityLaunch = await provider.profile.applyIdentity(
+      host,
+      profile.identityId,
+      baseSpec,
+    )
+    spec = identityLaunch.spec
+    previewEnvironment = [...previewEnvironment, ...identityLaunch.previewEnvironment]
   }
   const artifact = deriveArtifactContext(
     provider,
@@ -139,7 +146,7 @@ export async function resolveHarnessLaunch(
             request.context.architectureReviewBody,
           ),
     unsetEnvironment: environment.unset,
-    previewEnvironment: environment.preview,
+    previewEnvironment,
     artifactIdentity: artifact.identity,
     artifact,
   }
