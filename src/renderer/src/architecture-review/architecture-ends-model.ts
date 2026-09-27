@@ -129,3 +129,51 @@ export function describeCommits(
       ]),
   )
 }
+
+export interface HistoryCommitRange {
+  readonly olderCommit: GitCommitSummary
+  readonly newerCommit: GitCommitSummary
+  readonly hashes: readonly string[]
+}
+
+export function historyRange(
+  anchor: string,
+  target: string,
+  shown: readonly GitCommitSummary[],
+): HistoryCommitRange | undefined {
+  const a = shown.findIndex((commit) => commit.hash === anchor)
+  const t = shown.findIndex((commit) => commit.hash === target)
+  if (a < 0 || t < 0 || a === t) return undefined
+  const newest = Math.min(a, t)
+  const oldest = Math.max(a, t)
+  const members = shown.slice(newest, oldest + 1)
+  return {
+    olderCommit: members[members.length - 1]!,
+    newerCommit: members[0]!,
+    hashes: members.map((commit) => commit.hash),
+  }
+}
+
+export interface HistoryRangeEnds {
+  readonly baseline: string
+  readonly current: string
+}
+
+export function historyRangeEnds(
+  range: HistoryCommitRange,
+): HistoryRangeEnds | undefined {
+  const baseline = range.olderCommit.parents[0]
+  return baseline === undefined
+    ? undefined
+    : { baseline, current: range.newerCommit.hash }
+}
+
+export function describeHistoryRange(
+  range: HistoryCommitRange,
+  loaded: readonly GitCommitSummary[],
+): ArchitectureCommitDescriptions {
+  return {
+    ...describeShownCommit(range.olderCommit, loaded),
+    ...describeShownCommit(range.newerCommit, loaded),
+  }
+}

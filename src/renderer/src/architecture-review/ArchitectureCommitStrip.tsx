@@ -35,6 +35,8 @@ interface ArchitectureCommitStripProps {
   /** The scanned Current commit, when the snapshot has one. */
   readonly current?: string
   readonly disabled: boolean
+  readonly locked?: string
+  readonly onLock: (baseline: string | undefined) => void
   readonly onChoose: (
     ends: ArchitectureEnds,
     described: ArchitectureCommitDescriptions,
@@ -42,9 +44,8 @@ interface ArchitectureCommitStripProps {
 }
 
 export function ArchitectureCommitStrip(props: ArchitectureCommitStripProps) {
-  const { root, ends, current, disabled, onChoose } = props
+  const { root, ends, current, disabled, locked, onLock, onChoose } = props
   const strip = useCommitRange(root)
-  const [locked, setLocked] = useState<string>()
   const range = strip.range
   const stepping: StripStepping =
     locked === undefined ? { kind: 'pairwise' } : { kind: 'locked', baseline: locked }
@@ -91,7 +92,7 @@ export function ArchitectureCommitStrip(props: ArchitectureCommitStripProps) {
             checked={locked !== undefined}
             disabled={!range}
             onChange={(event) =>
-              setLocked(
+              onLock(
                 event.target.checked && range ? lockedBaseline(ends, range) : undefined,
               )
             }

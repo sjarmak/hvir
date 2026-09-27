@@ -41,6 +41,7 @@ const classifications: CommitClassificationState = {
 let host: HTMLDivElement
 let app: ReturnType<typeof createRoot>
 const onShowInArchitecture = vi.fn()
+const onShowRangeInArchitecture = vi.fn()
 const onArchitectureOnly = vi.fn()
 const onVisibleCommits = vi.fn()
 
@@ -60,6 +61,7 @@ function render(architectureOnly: boolean, state = classifications): void {
         architectureOnly={architectureOnly}
         onArchitectureOnly={onArchitectureOnly}
         onShowInArchitecture={onShowInArchitecture}
+        onShowRangeInArchitecture={onShowRangeInArchitecture}
         onVisibleCommits={onVisibleCommits}
         onOpenGraph={vi.fn()}
         onOpenFile={vi.fn()}
@@ -141,4 +143,66 @@ it('hides rows still classifying under the filter and says so, keeping unclassif
   expect(host.querySelector('.git-empty')).toBeNull()
   render(true, { known: new Map(), pending: new Set(), generation: 1, error: 'boom' })
   expect(host.querySelector('.tree-error')?.textContent).toContain('boom')
+})
+
+const commitButton = (n: number) =>
+  rows()
+    .find((row) => row.textContent?.includes(hash(n).slice(0, 7)))!
+    .querySelector<HTMLButtonElement>('.git-rail-commit')!
+const clickRow = (n: number, shiftKey = false): void =>
+  act(() => {
+    commitButton(n).dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true, shiftKey }),
+    )
+  })
+const rangeBar = () => host.querySelector('.git-history-range')
+const showRange = () => host.querySelector<HTMLButtonElement>('.git-history-range-show')!
+const selectedRows = () =>
+  rows()
+    .filter((row) => row.classList.contains('selected'))
+    .map((row) => row.querySelector('strong > span')?.textContent)
+
+it('shift-clicks a range and opens it in architecture, oldest commit first', () => {
+  render(false)
+  expect(rangeBar()).toBeNull()
+  clickRow(2)
+  expect(rangeBar()).toBeNull()
+  clickRow(4, true)
+  expect(rangeBar()?.textContent).toContain('3 commits selected')
+  expect(selectedRows()).toEqual(['Merge side', 'Rewire modules', 'Fix a body'])
+  act(() => showRange().click())
+  expect(onShowRangeInArchitecture).toHaveBeenCalledWith({
+    olderCommit: commits[2],
+    newerCommit: commits[0],
+    hashes: [hash(4), hash(3), hash(2)],
+  })
+  act(() => host.querySelector<HTMLButtonElement>('.git-history-range-clear')!.click())
+  expect(rangeBar()).toBeNull()
+  expect(selectedRows()).toEqual([])
+})
+
+it('orders a reversed shift-click the same way and restarts on a plain click', () => {
+  render(false)
+  clickRow(4)
+  clickRow(2, true)
+  act(() => showRange().click())
+  expect(onShowRangeInArchitecture).toHaveBeenLastCalledWith({
+    olderCommit: commits[2],
+    newerCommit: commits[0],
+    hashes: [hash(4), hash(3), hash(2)],
+  })
+  clickRow(3)
+  expect(rangeBar()).toBeNull()
+  clickRow(4, true)
+  expect(selectedRows()).toEqual(['Merge side', 'Rewire modules'])
+})
+
+it('refuses a range whose oldest commit has no parent and says why', () => {
+  render(false)
+  clickRow(1)
+  clickRow(3, true)
+  expect(rangeBar()?.textContent).toContain(`${hash(1).slice(0, 7)} has no parent`)
+  expect(showRange().disabled).toBe(true)
+  act(() => showRange().click())
+  expect(onShowRangeInArchitecture).not.toHaveBeenCalled()
 })

@@ -4,6 +4,7 @@ import { ArchitectureReview, type ArchitectureEndsRequest } from './Architecture
 import type {
   ArchitectureCommitDescriptions,
   ArchitectureEnds,
+  StripStepping,
 } from './architecture-ends-model'
 import { ArchitectureExplanationStateSession } from './architecture-explanation-state'
 
@@ -27,7 +28,11 @@ export function useArchitectureReviewTab(ports: {
     [],
   )
   const close = useCallback(() => setTab(undefined), [])
-  const open = (ends?: ArchitectureEnds, described?: ArchitectureCommitDescriptions) => {
+  const open = (
+    ends?: ArchitectureEnds,
+    described?: ArchitectureCommitDescriptions,
+    stepping?: StripStepping,
+  ) => {
     if (!ports.root.current) return
     ports.activateViewer()
     const root = ports.root.current
@@ -39,7 +44,7 @@ export function useArchitectureReviewTab(ports: {
           ? current && hostPathEquals(current.root, root)
             ? current.request
             : undefined
-          : { ends, serial: ++requests.current, described },
+          : { ends, serial: ++requests.current, described, stepping },
     }))
   }
   const belongs = (root: HostPath, pane = 'primary') =>

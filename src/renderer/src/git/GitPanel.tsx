@@ -8,9 +8,13 @@ import {
   type HostPath,
 } from '../../../shared'
 import {
+  describeHistoryRange,
   describeShownCommit,
+  historyRangeEnds,
   type ArchitectureCommitDescriptions,
   type ArchitectureEnds,
+  type HistoryCommitRange,
+  type StripStepping,
 } from '../architecture-review/architecture-ends-model'
 import {
   setArchitectureFilter,
@@ -33,6 +37,7 @@ interface GitPanelProps {
   readonly onOpenArchitectureReview: (
     ends?: ArchitectureEnds,
     described?: ArchitectureCommitDescriptions,
+    stepping?: StripStepping,
   ) => void
   readonly onChanges: (changes: GitChanges | undefined) => void
   readonly connectionState?: HostConnectionState
@@ -85,6 +90,14 @@ export function GitPanel({
     (hashes: readonly string[]) => setVisibleCommits(hashes),
     [],
   )
+  const showRangeInArchitecture = (range: HistoryCommitRange): void => {
+    const ends = historyRangeEnds(range)
+    if (!ends) return
+    onOpenArchitectureReview(ends, describeHistoryRange(range, model.commits), {
+      kind: 'locked',
+      baseline: ends.baseline,
+    })
+  }
   const classifications = useCommitClassifications(
     root,
     model.view === 'history' && !hidden ? visibleCommits : [],
@@ -162,6 +175,7 @@ export function GitPanel({
                 describeShownCommit(commit, model.commits),
               )
             }
+            onShowRangeInArchitecture={showRangeInArchitecture}
             onVisibleCommits={onVisibleCommits}
             onOpenGraph={onOpenGraph}
             onOpenFile={onOpenHistory}

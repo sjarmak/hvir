@@ -14,6 +14,10 @@ import type {
   HostPath,
 } from '../../../shared'
 import type { ArchitectureCommitChange } from '../../../shared/architecture-review'
+import {
+  historyRange,
+  type HistoryCommitRange,
+} from '../architecture-review/architecture-ends-model'
 import { commitShownUnderFilter } from '../architecture-review/architecture-history-filter'
 import { commitDate } from './commit-date'
 import type { CommitClassificationState } from '../architecture-review/use-commit-classifications'
@@ -27,6 +31,7 @@ import {
 import { buildGitGraphLayout, type GitGraphRow } from './git-graph-layout'
 import { gitGraphWidth, RAIL_GRAPH_LANE_METRICS } from './git-graph-lane-metrics'
 import { GitGraphCell, GitGraphContinuation } from './GitGraphLanes'
+import { GitHistoryRangeBar } from './GitHistoryRangeBar'
 import type { RailCommitDetailState } from './use-git-commit-details'
 import { measureVariableRows, variableVirtualRange } from './virtual-range'
 
@@ -48,6 +53,7 @@ interface GitHistoryViewProps {
   readonly architectureOnly: boolean
   readonly onArchitectureOnly: (on: boolean) => void
   readonly onShowInArchitecture: (commit: GitCommitSummary) => void
+  readonly onShowRangeInArchitecture: (range: HistoryCommitRange) => void
   readonly onVisibleCommits: (hashes: readonly string[]) => void
   readonly onOpenGraph: (hash?: string) => void
   readonly onOpenFile: (path: HostPath, revision: string) => void
@@ -66,7 +72,15 @@ export function GitHistoryView(props: GitHistoryViewProps): ReactElement {
     architectureOnly,
     onArchitectureOnly,
     onOpenGraph,
+    onShowRangeInArchitecture,
+    root,
   } = props
+  const [selection, setSelection] = useState<{
+    readonly anchor?: string
+    readonly target?: string
+  }>({})
+  const rootKey = `${root.hostId}\0${root.path}`
+  useEffect(() => setSelection({}), [rootKey])
   const shown = useMemo(
     () =>
       commits.filter((commit) =>
@@ -82,6 +96,19 @@ export function GitHistoryView(props: GitHistoryViewProps): ReactElement {
     () => commits.filter((commit) => classifications.pending.has(commit.hash)).length,
     [classifications, commits],
   )
+  const range = useMemo(
+    () =>
+      selection.anchor !== undefined && selection.target !== undefined
+        ? historyRange(selection.anchor, selection.target, shown)
+        : undefined,
+    [selection, shown],
+  )
+  const selectCommit = (hash: string, extend: boolean): void =>
+    setSelection((current) =>
+      extend && current.anchor !== undefined
+        ? { anchor: current.anchor, target: hash }
+        : { anchor: hash },
+    )
   return (
     <div className="git-history">
       <div className="git-history-tools">
@@ -98,6 +125,13 @@ export function GitHistoryView(props: GitHistoryViewProps): ReactElement {
           Architecture only
         </label>
       </div>
+      {range ? (
+        <GitHistoryRangeBar
+          range={range}
+          onShowRangeInArchitecture={onShowRangeInArchitecture}
+          onClear={() => setSelection({})}
+        />
+      ) : null}
       {architectureOnly && classifying > 0 ? (
         <div className="git-history-classifying" role="status">
           Classifying {classifying} {classifying === 1 ? 'commit' : 'commits'}…
@@ -118,7 +152,14 @@ export function GitHistoryView(props: GitHistoryViewProps): ReactElement {
       ) : !error && commits.length > 0 && shown.length === 0 && classifying === 0 ? (
         <div className="git-empty">No architecture changes among loaded commits</div>
       ) : null}
-      {commits.length > 0 ? <HistoryCommitList {...props} shown={shown} /> : null}
+      {commits.length > 0 ? (
+        <HistoryCommitList
+          {...props}
+          shown={shown}
+          selected={range?.hashes ?? []}
+          onSelectCommit={selectCommit}
+        />
+      ) : null}
     </div>
   )
 }
@@ -174,8 +215,12 @@ function HistoryCommitList({
   onLoadMore,
   onToggleCommit,
   onToggleDirectory,
+  selected,
+  onSelectCommit,
 }: GitHistoryViewProps & {
   readonly shown: readonly GitCommitSummary[]
+  readonly selected: readonly string[]
+  readonly onSelectCommit: (hash: string, extend: boolean) => void
 }): ReactElement {
   const viewport = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
@@ -341,9 +386,10 @@ function HistoryCommitList({
           if (item.kind === 'commit') {
             const commit = item.graphRow.commit
             const isExpanded = expanded.has(commit.hash)
+            const isSelected = selected.includes(commit.hash)
             return (
               <div
-                className="git-rail-history-row commit"
+                className={`git-rail-history-row commit${isSelected ? ' selected' : ''}`}
                 key={item.key}
                 role="listitem"
                 aria-posinset={item.position + 1}
@@ -356,7 +402,9 @@ function HistoryCommitList({
                   aria-expanded={isExpanded}
                   title={commit.subject || '(no subject)'}
                   style={{ gridTemplateColumns: `${graphWidth}px minmax(0, 1fr)` }}
-                  onClick={() => {
+                  onClick={(event) => {
+                    onSelectCommit(commit.hash, event.shiftKey)
+                    if (event.shiftKey) return
                     if (commitClickTimers.current.has(commit.hash)) return
                     const timer = window.setTimeout(() => {
                       commitClickTimers.current.delete(commit.hash)

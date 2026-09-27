@@ -878,6 +878,26 @@ it('scans the ends History asked for, once per request', async () => {
   ])
 })
 
+it('opens a History range locked to its baseline and steps from there', async () => {
+  const request = {
+    ends: { baseline: revision('0'), current: revision('2') },
+    serial: 1,
+    stepping: { kind: 'locked', baseline: revision('0') } as const,
+  }
+  await act(async () =>
+    app.render(
+      <ArchitectureReview root={root} active request={request} onHandoff={vi.fn()} />,
+    ),
+  )
+  expect(checkbox('Lock baseline').checked).toBe(true)
+  expect(host.textContent).toContain(`Baseline held at ${revision('0').slice(0, 8)}`)
+  await click(button('Newer commit'))
+  expect(scans()).toEqual([
+    { baseline: revision('0'), current: revision('2') },
+    { baseline: revision('0'), current: revision('3') },
+  ])
+})
+
 it('shows the subject and date of an end History or the strip named, over its hash', async () => {
   const described = {
     [revision('2')]: { subject: 'commit 2', authoredAt: '2026-09-25T23:30:00-05:00' },

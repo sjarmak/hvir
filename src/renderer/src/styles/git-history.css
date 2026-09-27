@@ -353,3 +353,37 @@
 .git-rail-history-row.commit .git-rail-commit {
   padding-right: 52px;
 }
+
+.git-history-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 10px 6px;
+  color: #8a95a3;
+  font-size: calc(9px * var(--hvir-interface-scale));
+}
+
+.git-history-range span {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.git-history-range button {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border: 1px solid #2d4a6b;
+  border-radius: 3px;
+  background: transparent;
+  color: #cfe3ff;
+  cursor: pointer;
+}
+
+.git-history-range button:disabled {
+  border-color: #262c35;
+  color: #788392;
+  cursor: default;
+}
+
+.git-rail-history-row.commit.selected {
+  background: #22314a;
+}

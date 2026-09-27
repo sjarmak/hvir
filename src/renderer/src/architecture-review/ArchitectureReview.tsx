@@ -23,6 +23,7 @@ import {
   endsFromText,
   type ArchitectureCommitDescriptions,
   type ArchitectureEnds,
+  type StripStepping,
 } from './architecture-ends-model'
 import { layoutSummary, type ArchitectureMapMode } from './architecture-review-model'
 
@@ -30,6 +31,7 @@ export interface ArchitectureEndsRequest {
   readonly ends: ArchitectureEnds
   readonly serial: number
   readonly described?: ArchitectureCommitDescriptions
+  readonly stepping?: StripStepping
 }
 
 export function ArchitectureReview({
@@ -67,6 +69,7 @@ export function ArchitectureReview({
   const [baselineText, setBaselineText] = useState('')
   const [currentText, setCurrentText] = useState('')
   const [described, setDescribed] = useState<ArchitectureCommitDescriptions>({})
+  const [locked, setLocked] = useState<string>()
   const parsed = endsFromText(baselineText, currentText)
   const endsInvalid = Object.keys(parsed.problems).length > 0
   const [timeline, setTimeline] = useState<readonly ArchitectureReviewSnapshot[]>([])
@@ -249,6 +252,11 @@ export function ArchitectureReview({
   useEffect(() => {
     if (!request || servedRequest.current === request.serial) return
     servedRequest.current = request.serial
+    if (request.stepping) {
+      setLocked(
+        request.stepping.kind === 'locked' ? request.stepping.baseline : undefined,
+      )
+    }
     chooseRequested.current(request.ends, request.described)
   }, [request])
   const openEvidence = async (path: string, line: number, side: 'before' | 'after') => {
@@ -362,6 +370,8 @@ export function ArchitectureReview({
             : undefined
         }
         disabled={state === 'loading'}
+        locked={locked}
+        onLock={setLocked}
         onChoose={chooseFromStrip}
       />
       {snapshot?.currentRevision === ARCHITECTURE_LIVE_REVISION ? (

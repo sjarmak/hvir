@@ -72,7 +72,17 @@ batches of fifty; a failed batch is shown, does not strand the batches behind it
 retried on the next drain. Every answer names the HEAD it was computed against; when HEAD
 or the branch moves within a workspace, held classifications are dropped and late answers
 are discarded. Every row with a parent offers "Show in architecture", which opens the
-review on that commit against its first parent. One "Architecture changes only" filter,
+review on that commit against its first parent. Shift-clicking a second row after a
+first selects the inclusive range between them as History shows it, whichever was
+clicked first, and "Show range in architecture" opens the review with the baseline
+locked at the first parent of the oldest selected commit and Current at the newest, so
+stepping continues from the locked state the strip already offers rather than a second
+comparison mode. A range is two trees compared, not a chain walked: a merge at either
+end is treated as every merge in this feature is, by its first parent, so a range whose
+oldest commit is a merge starts from the mainline just before it and a range ending on a
+merge includes what the merge brought in. A range whose oldest commit is a root has no
+state before it and is refused inline. Under the filter the range spans the hidden rows
+between its ends. One "Architecture changes only" filter,
 remembered across sessions, hides merges and commits without an architecture change from
 both History and the strip, so the two always agree on order and on which commits show.
 Under the filter a row still classifying is hidden behind a visible "Classifying"
