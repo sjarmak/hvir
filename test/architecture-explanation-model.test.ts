@@ -91,6 +91,26 @@ it('rejects Codex because its read-only sandbox still exposes repository tools',
   expect(f.exec).not.toHaveBeenCalled()
 })
 
+it('surfaces stdout detail when the process fails with empty stderr', async () => {
+  const f = fixture('claude-code')
+  f.exec.mockResolvedValue({
+    stdout: 'Not logged in · Please run /login',
+    stderr: '',
+    code: 1,
+    signal: null,
+  })
+  await expect(
+    f.model.generate(f.host, {
+      projectRoot: root,
+      workspaceRoot: root,
+      profileId: f.selected.id,
+      launchRevision: f.selected.launchRevision,
+      prompt: 'Explain this exact snapshot without tools.',
+      signal: new AbortController().signal,
+    }),
+  ).rejects.toThrow(/Not logged in/)
+})
+
 it('rejects customized profiles before starting a process', async () => {
   const f = fixture('claude-code')
   const customized = {

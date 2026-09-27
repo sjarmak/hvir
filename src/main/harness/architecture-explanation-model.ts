@@ -50,7 +50,7 @@ export class HarnessArchitectureExplanationModel implements ArchitectureExplanat
       maxBuffer: MAX_OUTPUT_BYTES,
     })
     if (result.code !== 0) {
-      const detail = result.stderr.trim()
+      const detail = result.stderr.trim() || result.stdout.trim()
       throw new Error(
         detail
           ? `Architecture explanation model failed: ${detail}`
