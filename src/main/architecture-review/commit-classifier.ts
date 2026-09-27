@@ -40,7 +40,7 @@ export interface ArchitectureCommitClassifierPorts {
   readonly cacheEntries?: number
 }
 
-const HASH = /^[a-f0-9]{40,64}$/
+const HASH = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/
 const MAX_OUTPUT = 16 * 1024 * 1024
 const MAX_MODULES_PER_COMMIT = 200
 const DEFAULT_CACHE_ENTRIES = 4_000

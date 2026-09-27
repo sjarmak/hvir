@@ -1,5 +1,4 @@
 // @vitest-environment happy-dom
-/* eslint-disable @typescript-eslint/require-await */
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -39,8 +38,8 @@ const onShowInArchitecture = vi.fn()
 const onArchitectureOnly = vi.fn()
 const onVisibleCommits = vi.fn()
 
-function render(architectureOnly: boolean) {
-  return act(async () =>
+function render(architectureOnly: boolean): void {
+  return act(() =>
     app.render(
       <GitHistoryView
         commits={commits}
@@ -74,14 +73,14 @@ beforeEach(() => {
   document.body.append(host)
   app = createRoot(host)
 })
-afterEach(async () => {
-  await act(async () => app.unmount())
+afterEach(() => {
+  act(() => app.unmount())
   host.remove()
   vi.clearAllMocks()
 })
 
 it('marks each row with its architecture change, its date and a secondary hash', async () => {
-  await render(false)
+  render(false)
   expect(rowText()).toEqual(['Merge side', 'Rewire modules', 'Fix a body', 'Add modules'])
   const markers = rows().map(
     (row) => row.querySelector('.git-rail-commit-change')?.textContent ?? '',
@@ -96,8 +95,8 @@ it('marks each row with its architecture change, its date and a secondary hash',
 })
 
 it('opens the Architecture tab for a commit against its first parent', async () => {
-  await render(false)
-  await act(async () =>
+  render(false)
+  act(() =>
     host
       .querySelector<HTMLButtonElement>(
         `button[aria-label="Show ${hash(3).slice(0, 7)} in architecture"]`,
@@ -113,14 +112,14 @@ it('opens the Architecture tab for a commit against its first parent', async () 
 })
 
 it('filters to architecture changes and hides merges, remembering the choice', async () => {
-  await render(false)
+  render(false)
   const toggle = host.querySelector<HTMLInputElement>(
     'input[type="checkbox"][aria-label="Architecture changes only"]',
   )!
   expect(toggle.checked).toBe(false)
-  await act(async () => toggle.click())
+  act(() => toggle.click())
   expect(onArchitectureOnly).toHaveBeenCalledWith(true)
-  await render(true)
+  render(true)
   expect(rowText()).toEqual(['Rewire modules', 'Add modules'])
   expect(onVisibleCommits).toHaveBeenLastCalledWith(commits.map((c) => c.hash))
 })

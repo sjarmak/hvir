@@ -205,14 +205,17 @@ describe('classifyCommitChange properties', () => {
     }
   })
   it('is code only when every in-scope change is a modification with equal imports', () => {
+    let codeCases = 0
     for (let seed = 1; seed <= 400; seed += 1) {
       const { entries, table } = generate(seed)
       if (classifyCommitChange(entries, layout, table) !== 'code') continue
+      codeCases += 1
       for (const e of entries.filter((candidate) => touchesScope([candidate]))) {
         expect(['M', 'T']).toContain(e.status)
         expect(table.get(e.before)).toBeDefined()
         expect(table.get(e.after)).toBeDefined()
       }
     }
+    expect(codeCases).toBeGreaterThan(0)
   })
 })

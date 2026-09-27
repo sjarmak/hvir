@@ -113,9 +113,17 @@ it('refuses malformed revisions, oversize requests and unknown commits', async (
   const head = await r.commit('one', { 'src/a.ts': 'export {}\n' })
   const { classifier: subject } = classifier()
   const root = localPath(r.root)
+  const exec = vi.spyOn(r.host, 'exec')
   await expect(
     subject.classify(r.host, { root, revisions: ['HEAD'] }, signal()),
   ).rejects.toThrow(/revision/)
+  await expect(
+    subject.classify(r.host, { root, revisions: [`${head}0`] }, signal()),
+  ).rejects.toThrow(/revision/)
+  await expect(
+    subject.classify(r.host, { root, revisions: [head.toUpperCase()] }, signal()),
+  ).rejects.toThrow(/revision/)
+  expect(exec).not.toHaveBeenCalled()
   await expect(
     subject.classify(r.host, { root, revisions: Array(51).fill(head) }, signal()),
   ).rejects.toThrow(/at most 50/)
