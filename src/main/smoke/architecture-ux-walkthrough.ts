@@ -25,8 +25,13 @@ export async function runArchitectureUxWalkthrough(
     configuration.directory,
     configuration.journey,
   )
-  const capture = async (id: string, title: string): Promise<void> => {
+  const capture = async (
+    id: string,
+    title: string,
+    prepare?: () => Promise<void>,
+  ): Promise<void> => {
     await assertArchitectureLayout(win)
+    await prepare?.()
     manifest = await captureUxWalkthroughStep(
       host,
       win,
@@ -78,7 +83,17 @@ export async function runArchitectureUxWalkthrough(
 
     await compareCommit(win, fixture.history.label)
     await prepareExplanation(win)
-    await capture('explain-change', 'Prepare an agent explanation handoff')
+    await capture('explain-change', 'Prepare an agent explanation handoff', () =>
+      focusExplanation(win),
+    )
+
+    await collapseExplanation(win)
+    await capture(
+      'collapse-explanation',
+      'Collapse the Explanation panel to its header',
+      () => focusExplanation(win),
+    )
+    await expandExplanation(win)
 
     manifest = await completeUxWalkthrough(host, configuration.directory, manifest)
     console.log(
@@ -376,6 +391,71 @@ async function prepareExplanation(win: BrowserWindow): Promise<void> {
         setTimeout(wait, 40);
       };
       wait();
+    })
+  `)
+}
+
+async function focusExplanation(win: BrowserWindow): Promise<void> {
+  await win.webContents.executeJavaScript(`
+    new Promise((resolve, reject) => {
+      const surface = document.querySelector('[aria-label="Architecture review"]:not([hidden])');
+      const explanation = surface?.querySelector('.architecture-explanation');
+      if (!(surface instanceof HTMLElement) || !(explanation instanceof HTMLElement)) {
+        return reject(new Error('Explanation panel is missing'));
+      }
+      explanation.scrollIntoView({ block: 'center' });
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const surfaceBounds = surface.getBoundingClientRect();
+        const explanationBounds = explanation.getBoundingClientRect();
+        const visibleTop = Math.max(0, surfaceBounds.top);
+        const visibleBottom = Math.min(innerHeight, surfaceBounds.bottom);
+        if (explanationBounds.top < visibleTop - 1 || explanationBounds.bottom > visibleBottom + 1) {
+          return reject(new Error('Explanation panel did not scroll fully into view'));
+        }
+        resolve(true);
+      }));
+    })
+  `)
+}
+
+async function collapseExplanation(win: BrowserWindow): Promise<void> {
+  await win.webContents.executeJavaScript(`
+    new Promise((resolve, reject) => {
+      const explanation = document.querySelector('[aria-label="Architecture review"]:not([hidden]) .architecture-explanation');
+      const button = explanation?.querySelector('[aria-label="Collapse explanation panel"]');
+      if (!(explanation instanceof HTMLElement) || !(button instanceof HTMLButtonElement)) {
+        return reject(new Error('Explanation panel collapse control is missing'));
+      }
+      button.click();
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const expand = explanation.querySelector('[aria-label="Expand explanation panel"]');
+        const headerOnly = explanation.children.length === 1 && explanation.firstElementChild?.tagName === 'HEADER';
+        if (!(expand instanceof HTMLButtonElement) || expand.getAttribute('aria-expanded') !== 'false' || !headerOnly) {
+          return reject(new Error('Explanation panel did not collapse to its header'));
+        }
+        resolve(true);
+      }));
+    })
+  `)
+}
+
+async function expandExplanation(win: BrowserWindow): Promise<void> {
+  await win.webContents.executeJavaScript(`
+    new Promise((resolve, reject) => {
+      const explanation = document.querySelector('[aria-label="Architecture review"]:not([hidden]) .architecture-explanation');
+      const button = explanation?.querySelector('[aria-label="Expand explanation panel"]');
+      if (!(explanation instanceof HTMLElement) || !(button instanceof HTMLButtonElement)) {
+        return reject(new Error('Explanation panel expand control is missing'));
+      }
+      button.click();
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const collapse = explanation.querySelector('[aria-label="Collapse explanation panel"]');
+        const explain = [...explanation.querySelectorAll('button')].some(node => node.textContent?.trim() === 'Explain this change');
+        if (!(collapse instanceof HTMLButtonElement) || collapse.getAttribute('aria-expanded') !== 'true' || !explain) {
+          return reject(new Error('Explanation panel did not expand'));
+        }
+        resolve(true);
+      }));
     })
   `)
 }
