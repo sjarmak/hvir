@@ -21,6 +21,7 @@ import {
 
 export type BeadsSectionKey =
   | 'needsYou'
+  | 'answeredByYou'
   | 'inFlight'
   | 'readyToShip'
   | 'readyNext'
@@ -100,6 +101,7 @@ export interface ClassifyOptions {
 
 const SECTION_LABELS: Record<BeadsSectionKey, string> = {
   needsYou: 'Needs you',
+  answeredByYou: 'Answered by you, waiting on us to deliver',
   inFlight: 'In flight',
   readyToShip: 'Ready to ship',
   readyNext: 'Ready next',
@@ -117,6 +119,7 @@ const DEPENDENCY_READY_LABEL = 'Dependency-ready / needs classification'
 
 const SECTION_ORDER: readonly BeadsSectionKey[] = [
   'needsYou',
+  'answeredByYou',
   'inFlight',
   'readyToShip',
   'readyNext',
@@ -194,6 +197,7 @@ export function classifyBeads(
 
   const buckets: Record<BeadsSectionKey, BeadCard[]> = {
     needsYou: [],
+    answeredByYou: [],
     inFlight: [],
     readyToShip: [],
     readyNext: [],
@@ -223,6 +227,8 @@ export function classifyBeads(
     const card = buildCard(issue)
     if (needsHuman(issue, category)) {
       buckets.needsYou.push(card)
+    } else if (isAnsweredDecision(issue, category)) {
+      buckets.answeredByYou.push(card)
     } else if (issue.status === 'in_progress') {
       buckets.inFlight.push(withLiveness(card, now, staleAfterMs))
     } else if (issue.status === 'blocked' || card.blockedBy.length > 0) {
@@ -351,14 +357,26 @@ function isDecision(issueType: string): boolean {
  * `needs-human` label. Never inferred from a "Decide:" title or prose.
  */
 function needsHuman(issue: BeadIssue, category: string): boolean {
+  const labelled = issue.labels.some((label) => label.toLowerCase() === 'needs-human')
+  if (labelled) return true
   if (
     category === 'outcome' &&
     isDecision(issue.issueType) &&
-    issue.status !== 'closed'
+    issue.status !== 'closed' &&
+    !isAnsweredDecision(issue, category)
   ) {
     return true
   }
-  return issue.labels.some((label) => label.toLowerCase() === 'needs-human')
+  return false
+}
+
+function isAnsweredDecision(issue: BeadIssue, category: string): boolean {
+  return (
+    category === 'outcome' &&
+    isDecision(issue.issueType) &&
+    issue.status !== 'closed' &&
+    (issue.metadata?.['gc.answered']?.length ?? 0) > 0
+  )
 }
 
 /** Human-readable gate labels for the typed `gc.outcome` values. */

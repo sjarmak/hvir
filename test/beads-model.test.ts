@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import * as hegel from '@hegeldev/hegel'
+import * as generators from '@hegeldev/hegel/generators'
 
 import {
   classifyBeads,
@@ -103,6 +105,59 @@ describe('classifyBeads — containers never inflate human counts', () => {
 })
 
 describe('classifyBeads — human / deferred / ship / blocked routing', () => {
+  it('separates answered decisions while preserving label-based human work', () => {
+    const issues = [
+      issue({
+        id: 'answered',
+        issueType: 'decision',
+        metadata: { 'gc.answered': '2026-09-27' },
+      }),
+      issue({
+        id: 'empty-answer',
+        issueType: 'decision',
+        metadata: { 'gc.answered': '' },
+      }),
+      issue({ id: 'unanswered', issueType: 'decision' }),
+      issue({
+        id: 'labelled',
+        issueType: 'decision',
+        labels: ['needs-human'],
+        metadata: { 'gc.answered': 'yes' },
+      }),
+    ]
+    const view = classifyBeads(snapshot({ issues }))
+
+    expect(section(view, 'needsYou').cards.map((card) => card.issue.id)).toEqual([
+      'empty-answer',
+      'labelled',
+      'unanswered',
+    ])
+    expect(section(view, 'answeredByYou').label).toBe(
+      'Answered by you, waiting on us to deliver',
+    )
+    expect(section(view, 'answeredByYou').cards.map((card) => card.issue.id)).toEqual([
+      'answered',
+    ])
+  })
+
+  it('routes every answered decision type out of Needs you', () =>
+    hegel.test((testCase) => {
+      const issueType = testCase.draw(generators.sampledFrom(['decision', 'dec', 'adr']))
+      const answer = testCase.draw(generators.text({ minSize: 1, maxSize: 40 }))
+      const view = classifyBeads(
+        snapshot({
+          issues: [
+            issue({ id: 'answered', issueType, metadata: { 'gc.answered': answer } }),
+          ],
+        }),
+      )
+
+      expect(section(view, 'needsYou').count).toBe(0)
+      expect(section(view, 'answeredByYou').cards.map((card) => card.issue.id)).toEqual([
+        'answered',
+      ])
+    }))
+
   it('routes non-executable work by deterministic precedence, never to Ready next', () => {
     // Corrections 2, 3, 6: decision→Needs you, merge-request→Ready to ship,
     // deferred→Planned, blocked→Blocked. Even if the scheduler wrongly listed
