@@ -68,6 +68,7 @@ export function ArchitectureExplanation({
     const profile = profiles.find((candidate) => candidate.id === profileId)
     if (!profile || busy) return
     const request = ++epoch.current
+    const previous = state
     setBusy('explaining')
     setError(undefined)
     setState({ status: 'waiting', snapshotId: snapshot.id })
@@ -81,12 +82,14 @@ export function ArchitectureExplanation({
       })
       if (request === epoch.current) setState(result)
     } catch (cause) {
-      if (request === epoch.current)
+      if (request === epoch.current) {
+        setState(previous)
         setError(
           cause instanceof Error
             ? cause.message
             : 'Architecture explanation could not be generated.',
         )
+      }
     } finally {
       if (request === epoch.current) setBusy(undefined)
     }

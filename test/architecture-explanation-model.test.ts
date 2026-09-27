@@ -43,32 +43,56 @@ function fixture(providerId: 'claude-code' | 'codex') {
   return { selected, exec, host, model: new HarnessArchitectureExplanationModel(store) }
 }
 
-it.each(['claude-code', 'codex'] as const)(
-  'runs %s as one ephemeral model call with the prompt on stdin',
-  async (providerId) => {
-    const f = fixture(providerId)
-    await expect(
-      f.model.generate(f.host, {
-        projectRoot: root,
-        workspaceRoot: root,
-        profileId: f.selected.id,
-        launchRevision: f.selected.launchRevision,
-        prompt: 'Explain this exact snapshot without tools.',
-        signal: new AbortController().signal,
-      }),
-    ).resolves.toBe('{"version":1}')
-    expect(f.exec).toHaveBeenCalledOnce()
-    expect(f.exec.mock.calls[0]?.[2]).toMatchObject({
-      cwd: root,
-      input: 'Explain this exact snapshot without tools.',
-      loginShell: true,
-    })
-    expect(f.exec.mock.calls[0]?.[1]).not.toContain('--worktree')
-  },
-)
+it('runs Claude Code as one tool-free model call with the prompt on stdin', async () => {
+  const f = fixture('claude-code')
+  await expect(
+    f.model.generate(f.host, {
+      projectRoot: root,
+      workspaceRoot: root,
+      profileId: f.selected.id,
+      launchRevision: f.selected.launchRevision,
+      prompt: 'Explain this exact snapshot without tools.',
+      signal: new AbortController().signal,
+    }),
+  ).resolves.toBe('{"version":1}')
+  expect(f.exec).toHaveBeenCalledOnce()
+  expect(f.exec.mock.calls[0]?.[2]).toMatchObject({
+    cwd: root,
+    input: 'Explain this exact snapshot without tools.',
+    loginShell: true,
+  })
+  expect(f.exec.mock.calls[0]?.[1]).toEqual([
+    '--print',
+    '--no-session-persistence',
+    '--safe-mode',
+    '--tools',
+    '',
+    '--permission-mode',
+    'dontAsk',
+    '--permission-prompts',
+    'none',
+    '--output-format',
+    'text',
+  ])
+})
+
+it('rejects Codex because its read-only sandbox still exposes repository tools', async () => {
+  const f = fixture('codex')
+  await expect(
+    f.model.generate(f.host, {
+      projectRoot: root,
+      workspaceRoot: root,
+      profileId: f.selected.id,
+      launchRevision: f.selected.launchRevision,
+      prompt: 'prompt',
+      signal: new AbortController().signal,
+    }),
+  ).rejects.toThrow(/cannot explain architecture/)
+  expect(f.exec).not.toHaveBeenCalled()
+})
 
 it('rejects customized profiles before starting a process', async () => {
-  const f = fixture('codex')
+  const f = fixture('claude-code')
   const customized = {
     ...f.selected,
     args: [{ parts: [{ kind: 'literal' as const, value: '--full-auto' }] }],
