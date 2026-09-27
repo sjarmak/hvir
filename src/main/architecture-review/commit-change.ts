@@ -1,13 +1,17 @@
+import { posix } from 'node:path'
 import {
   ARCHITECTURE_LAYOUT_FILE,
   inLayoutScope,
   type ArchitectureLayout,
 } from '../../shared/architecture-layout'
-import type { ArchitectureAnalysis } from '../../shared/architecture-analysis'
+import type {
+  ArchitectureAnalysis,
+  ArchitectureImportFact,
+} from '../../shared/architecture-analysis'
 import type { ArchitectureCommitChange } from '../../shared/architecture-review'
 import { inArchitectureScope, isSource } from './capture-entries'
 
-export const COMMIT_CHANGE_CLASSIFIER_VERSION = 'commit-change-1'
+export const COMMIT_CHANGE_CLASSIFIER_VERSION = 'commit-change-2'
 
 export interface CommitDiffEntry {
   readonly path: string
@@ -101,7 +105,8 @@ export function classifyCommitChange(
     const before = imports.get(entry.before)
     const after = imports.get(entry.after)
     if (before === undefined || after === undefined) change = 'unclassified'
-    else if (signatureKey(before) !== signatureKey(after)) return 'architecture'
+    else if (!sameSet(edgesOf(entry.path, before), edgesOf(entry.path, after)))
+      return 'architecture'
   }
   return change
 }
@@ -111,20 +116,43 @@ export function changeFromAnalysis(
   modifiedSourceCount: number,
 ): ArchitectureCommitChange {
   const placed = (side: ArchitectureAnalysis['before']) =>
-    side.modules.map((module) => `${module.path}\0${module.system}\0${module.subsystem}`)
-  const remapped =
-    placed(analysis.before).sort().join('\n') !== placed(analysis.after).sort().join('\n')
-  const rewired = analysis.imports.some((fact) => fact.change !== 'unchanged')
+    new Set(
+      side.modules.map(
+        (module) => `${module.path}\0${module.system}\0${module.subsystem}`,
+      ),
+    )
+  const edges = (
+    kept: (change: ArchitectureAnalysis['imports'][number]['change']) => boolean,
+  ) => new Set(analysis.imports.filter((fact) => kept(fact.change)).map(edgeOfFact))
+  const remapped = !sameSet(placed(analysis.before), placed(analysis.after))
+  const rewired = !sameSet(
+    edges((change) => change !== 'added'),
+    edges((change) => change !== 'removed'),
+  )
   if (remapped || rewired) return 'architecture'
   return modifiedSourceCount > 0 ? 'code' : 'none'
 }
 
-function signatureKey(signatures: readonly ImportSignature[] | null): string {
-  if (signatures === null) return ''
-  return signatures
-    .map((signature) =>
-      JSON.stringify([signature.specifier ?? '', signature.form, signature.typeOnly]),
-    )
-    .sort()
-    .join('\n')
+export function edgeOfFact(fact: ArchitectureImportFact): string {
+  return `${fact.source}\0${fact.target ?? `${fact.resolution}: ${fact.specifier}`}`
+}
+
+function edgesOf(
+  path: string,
+  signatures: readonly ImportSignature[] | null,
+): ReadonlySet<string> {
+  return new Set(
+    (signatures ?? []).map((signature) => targetOf(path, signature.specifier)),
+  )
+}
+
+function targetOf(path: string, specifier: string | undefined): string {
+  if (specifier === undefined) return '<computed>'
+  if (!specifier.startsWith('./') && !specifier.startsWith('../')) return specifier
+  const resolved = posix.normalize(posix.join(posix.dirname(path), specifier))
+  return resolved.replace(/\.[cm]?[jt]sx?$/, '').replace(/(?:^|\/)index$/, '')
+}
+
+function sameSet(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {
+  return left.size === right.size && [...left].every((item) => right.has(item))
 }

@@ -13,6 +13,12 @@ import type {
   ArchitectureImportDelta,
 } from '../src/shared/architecture-analysis'
 import { readModuleImports } from '../src/main/architecture-review/module-imports'
+import {
+  compareArchitecture,
+  scanArchitecture,
+} from '../src/main/architecture-review/analysis'
+import { changeFromAnalysis } from '../src/main/architecture-review/commit-change'
+import { isSource } from '../src/main/architecture-review/capture-entries'
 import { TYPESCRIPT_ONLY_SCANNERS } from '../src/main/architecture-review/typescript-scanner'
 import { LocalHost } from '../src/main/project-host/local-host'
 import { localPath } from '../src/shared/host-path'
@@ -269,4 +275,82 @@ it('spends the aggregate read budget commit by commit and never fails the reques
     signal(),
   )
   expect(again.classifications[0]?.change).toBe('code')
+})
+
+it('agrees with a full pair scan on every fast-path answer', async () => {
+  const r = await repository()
+  const a = "import { b } from './b'\nexport const a = b\n"
+  const steps: readonly (readonly [string, Record<string, string>])[] = [
+    [
+      'add',
+      {
+        'src/a.ts': a,
+        'src/b.ts': 'export const b = 1\n',
+        'src/c.ts': 'export const c = 3\n',
+      },
+    ],
+    ['body', { 'src/b.ts': 'export const b = 2\n' }],
+    ['duplicate', { 'src/a.ts': `${a}export const again = () => import('./b')\n` }],
+    [
+      'type only',
+      { 'src/a.ts': "import type { b } from './b'\nexport const a: typeof b = 1\n" },
+    ],
+    [
+      'respell',
+      { 'src/a.ts': "import type { b } from './b.js'\nexport const a: typeof b = 1\n" },
+    ],
+    ['rewire', { 'src/a.ts': "import { c } from './c'\nexport const a = c\n" }],
+    [
+      'external',
+      {
+        'src/a.ts':
+          "import { c } from './c'\nimport { join } from 'node:path'\nexport const a = join(c)\n",
+      },
+    ],
+    [
+      'reorder',
+      {
+        'src/a.ts':
+          "import { join } from 'node:path'\nimport { c } from './c'\nexport const a = join(c)\n",
+      },
+    ],
+    ['module', { 'src/d.ts': 'export const d = 4\n' }],
+  ]
+  const revisions: string[] = []
+  for (const [message, files] of steps) revisions.push(await r.commit(message, files))
+  const { classifier: subject } = classifier()
+  const { classifications } = await subject.classify(
+    r.host,
+    { root: localPath(r.root), revisions },
+    signal(),
+  )
+  const expected = [
+    'architecture',
+    'code',
+    'code',
+    'code',
+    'code',
+    'architecture',
+    'architecture',
+    'code',
+    'architecture',
+  ]
+  expect(classifications.map((entry) => entry.change)).toEqual(expected)
+  const scanAt = (revision: string) => {
+    const paths = git(r.root, 'ls-tree', '-r', '--name-only', revision).split('\n')
+    const files = paths.filter(isSource).map((path) => ({
+      path,
+      content: git(r.root, 'show', `${revision}:${path}`),
+    }))
+    return scanArchitecture(
+      { files, scope: '.', exclusions: [] },
+      TYPESCRIPT_ONLY_SCANNERS,
+    )
+  }
+  for (const [index, entry] of classifications.entries()) {
+    if (entry.parent === null) continue
+    const analysis = compareArchitecture(scanAt(entry.parent), scanAt(entry.revision))
+    const scanned = changeFromAnalysis(analysis, 1)
+    expect([revisions[index], scanned]).toEqual([revisions[index], entry.change])
+  }
 })

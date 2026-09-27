@@ -108,7 +108,7 @@ describe('classifyCommitChange', () => {
       ),
     ).toBe('architecture')
   })
-  it('is architecture when a modified module imports differently, else code', () => {
+  it('is architecture when a modified module reaches a different set of targets, else code', () => {
     const same = imports([
       [blob('b'), [runtime('./x')]],
       [blob('a'), [runtime('./x')]],
@@ -121,18 +121,52 @@ describe('classifyCommitChange', () => {
     expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, rewired)).toBe(
       'architecture',
     )
+    const gained = imports([
+      [blob('b'), [runtime('./x')]],
+      [blob('a'), [runtime('./x'), runtime('node:fs')]],
+    ])
+    expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, gained)).toBe(
+      'architecture',
+    )
     const reordered = imports([
       [blob('b'), [runtime('./x'), runtime('./y')]],
       [blob('a'), [runtime('./y'), runtime('./x')]],
     ])
     expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, reordered)).toBe('code')
+  })
+  it('is code when only the count, form, type-only flag or spelling of an import changed', () => {
+    const duplicated = imports([
+      [
+        blob('b'),
+        [runtime('./x'), { specifier: './x', form: 'dynamic', typeOnly: false }],
+      ],
+      [
+        blob('a'),
+        [
+          runtime('./x'),
+          { specifier: './x', form: 'dynamic', typeOnly: false },
+          { specifier: './x', form: 'dynamic', typeOnly: false },
+        ],
+      ],
+    ])
+    expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, duplicated)).toBe(
+      'code',
+    )
+    const reformed = imports([
+      [blob('b'), [runtime('./x')]],
+      [blob('a'), [{ specifier: './x', form: 'dynamic', typeOnly: false }]],
+    ])
+    expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, reformed)).toBe('code')
     const typeFlip = imports([
       [blob('b'), [runtime('./x')]],
       [blob('a'), [{ ...runtime('./x'), typeOnly: true }]],
     ])
-    expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, typeFlip)).toBe(
-      'architecture',
-    )
+    expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, typeFlip)).toBe('code')
+    const respelled = imports([
+      [blob('b'), [runtime('./x'), runtime('../src/y/index.js')]],
+      [blob('a'), [runtime('./x.ts'), runtime('./y')]],
+    ])
+    expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, respelled)).toBe('code')
   })
   it('treats a file no scanner reads as code, and a file it could not read as unclassified', () => {
     expect(
@@ -190,6 +224,7 @@ describe('changeFromAnalysis', () => {
   })
   const importFact = {
     source: 'src/a.ts',
+    target: 'src/b.ts',
     specifier: './b',
     form: 'import' as const,
     kind: 'runtime' as const,
@@ -197,7 +232,16 @@ describe('changeFromAnalysis', () => {
     line: 1,
     column: 1,
   }
-  it('is none or code when the scan shows the same modules, mapping and imports', () => {
+  const external = {
+    source: 'src/a.ts',
+    specifier: 'x',
+    form: 'import' as const,
+    kind: 'runtime' as const,
+    resolution: 'external' as const,
+    line: 1,
+    column: 1,
+  }
+  it('is none or code when the scan shows the same modules, mapping and edges', () => {
     const same = analysis([module('src/a.ts', 'a')], [module('src/a.ts', 'a', 'h2')])
     expect(changeFromAnalysis(same, 0)).toBe('none')
     expect(changeFromAnalysis(same, 1)).toBe('code')
@@ -205,8 +249,22 @@ describe('changeFromAnalysis', () => {
       imports: [{ ...importFact, change: 'unchanged', beforeLine: 3, beforeColumn: 1 }],
     })
     expect(changeFromAnalysis(moved, 1)).toBe('code')
+    const duplicated = analysis([module('src/a.ts', 'a')], [module('src/a.ts', 'a')], {
+      imports: [
+        { ...importFact, change: 'unchanged' },
+        { ...importFact, form: 'dynamic', line: 9, change: 'added' },
+      ],
+    })
+    expect(changeFromAnalysis(duplicated, 1)).toBe('code')
+    const typeFlip = analysis([module('src/a.ts', 'a')], [module('src/a.ts', 'a')], {
+      imports: [
+        { ...importFact, change: 'removed' },
+        { ...importFact, kind: 'type-only', change: 'added' },
+      ],
+    })
+    expect(changeFromAnalysis(typeFlip, 1)).toBe('code')
   })
-  it('is architecture when a module, its subsystem or an import changed', () => {
+  it('is architecture when a module, its subsystem or an edge changed', () => {
     expect(
       changeFromAnalysis(
         analysis([module('src/a.ts', 'a')], [module('src/a.ts', 'b')]),
@@ -220,6 +278,28 @@ describe('changeFromAnalysis', () => {
       changeFromAnalysis(
         analysis([module('src/a.ts', 'a')], [module('src/a.ts', 'a')], {
           imports: [{ ...importFact, change: 'added' }],
+        }),
+        0,
+      ),
+    ).toBe('architecture')
+    expect(
+      changeFromAnalysis(
+        analysis([module('src/a.ts', 'a')], [module('src/a.ts', 'a')], {
+          imports: [
+            { ...importFact, change: 'unchanged' },
+            { ...importFact, target: 'src/c.ts', specifier: './c', change: 'removed' },
+          ],
+        }),
+        0,
+      ),
+    ).toBe('architecture')
+    expect(
+      changeFromAnalysis(
+        analysis([module('src/a.ts', 'a')], [module('src/a.ts', 'a')], {
+          imports: [
+            { ...external, change: 'removed' },
+            { ...external, resolution: 'unresolved', change: 'added' },
+          ],
         }),
         0,
       ),
