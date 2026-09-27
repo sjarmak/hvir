@@ -20,6 +20,7 @@ import {
   selectRelativeWorkspace,
 } from './project-session-model'
 import { createWorkspaceSessionActions } from './workspace-session-actions'
+import { releaseCommitClassificationStore } from '../architecture-review/commit-classification-store'
 import { projectFolderPickerClient } from './project-folder-picker-client'
 
 const WATCH_REFRESH_DELAY_MS = 250
@@ -252,6 +253,12 @@ export function useProjectSession(options: UseProjectSessionOptions) {
         ensureProjectConnected,
         reportError: (reason) =>
           dispatch({ type: 'reported-error', error: errorMessage(reason) }),
+        onWorkspaceClosed: (projectId, workspaceId) => {
+          const root = modelRef.current.projectState?.projects
+            .find((project) => project.id === projectId)
+            ?.workspaces.find((workspace) => workspace.id === workspaceId)?.root
+          if (root) releaseCommitClassificationStore(root)
+        },
       }),
     [ensureProjectConnected, runTransition],
   )

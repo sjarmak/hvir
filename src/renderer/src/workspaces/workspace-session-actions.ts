@@ -10,6 +10,7 @@ interface WorkspaceSessionActionsOptions {
   ) => Promise<ProjectState | undefined>
   readonly ensureProjectConnected: (projectId: string) => Promise<void>
   readonly reportError: (reason: unknown) => void
+  readonly onWorkspaceClosed: (projectId: string, workspaceId: string) => void
 }
 
 /** Renderer adapter for the closed-workspace lifecycle IPC owned by main. */
@@ -37,16 +38,18 @@ export function createWorkspaceSessionActions(options: WorkspaceSessionActionsOp
       plan: WorkspaceClosePlan,
       terminateTerminals: boolean,
     ): Promise<void> => {
-      await options.runTransition(async () =>
-        unwrapOperation(
+      await options.runTransition(async () => {
+        const state = unwrapOperation(
           await window.hvir.invoke('workspace:close', {
             projectId,
             workspaceId,
             expectedTerminalCount: plan.terminalCount,
             terminateTerminals,
           }),
-        ),
-      )
+        )
+        options.onWorkspaceClosed(projectId, workspaceId)
+        return state
+      })
     },
     reopenWorkspace: async (projectId: string, workspaceId: string): Promise<void> => {
       await options.runTransition(async () => {

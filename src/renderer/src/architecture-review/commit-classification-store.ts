@@ -132,12 +132,18 @@ export class CommitClassificationStore {
 
 const stores = new Map<string, CommitClassificationStore>()
 
+const keyOf = (root: HostPath) => `${root.hostId}\0${root.path}`
+
 export function commitClassificationStore(root: HostPath): CommitClassificationStore {
-  const key = `${root.hostId}\0${root.path}`
+  const key = keyOf(root)
   let store = stores.get(key)
   if (!store) {
     store = new CommitClassificationStore(root)
     stores.set(key, store)
   }
   return store
+}
+
+export function releaseCommitClassificationStore(root: HostPath): void {
+  stores.delete(keyOf(root))
 }

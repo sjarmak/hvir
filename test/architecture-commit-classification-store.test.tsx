@@ -6,6 +6,8 @@ import type {
 } from '../src/shared/architecture-review'
 import {
   CommitClassificationStore,
+  commitClassificationStore,
+  releaseCommitClassificationStore,
   type ClassifyInvoke,
 } from '../src/renderer/src/architecture-review/commit-classification-store'
 
@@ -125,4 +127,14 @@ it('starts over when a response reports a different HEAD than the answers it hol
   await flush()
   expect([...store.read().known.keys()]).toEqual(revisions(10, 20))
   expect(store.read().head).toBe(revision(902))
+})
+
+it('shares one store per workspace until the workspace is released', () => {
+  const shared = commitClassificationStore(localPath('/released'))
+  expect(commitClassificationStore(localPath('/released'))).toBe(shared)
+  releaseCommitClassificationStore(localPath('/released'))
+  const fresh = commitClassificationStore(localPath('/released'))
+  expect(fresh).not.toBe(shared)
+  expect(fresh.read().known.size).toBe(0)
+  releaseCommitClassificationStore(localPath('/released'))
 })
