@@ -47,7 +47,11 @@ import type {
 import { captureArchitecture, validateArchitectureRequest } from './capture'
 import { affectsArchitectureCapture } from './capture-entries'
 import { listArchitectureCommits } from './commit-range'
-import { ArchitectureCommitClassifier, type ModuleImportsPort } from './commit-classifier'
+import {
+  ArchitectureCommitClassifier,
+  type ModuleImportsPort,
+  type PairScanPort,
+} from './commit-classifier'
 import { hasLiveCurrent } from './ends'
 import { readArchitectureLiveBase, readArchitectureLiveState } from './freshness'
 import { ArchitectureScanRecorder } from './scan-recorder'
@@ -62,6 +66,7 @@ import {
   planArchitectureHandoff,
   type PlannedHandoff,
 } from './handoff-plan'
+import { ArchitectureScopeRefusalError } from './scope-cap'
 import { recordArchitectureScope } from './scope-record'
 import { ArchitectureExplanationStore } from './explanation-store'
 
@@ -120,8 +125,24 @@ export class ArchitectureReviewCoordinator {
   private readonly classifier: ArchitectureCommitClassifier | undefined
   constructor(private readonly ports: ArchitectureReviewPorts) {
     this.classifier = ports.imports
-      ? new ArchitectureCommitClassifier({ imports: ports.imports })
+      ? new ArchitectureCommitClassifier({ imports: ports.imports, scan: this.scanPair })
       : undefined
+  }
+
+  private readonly scanPair: PairScanPort = async (host, request, signal) => {
+    const recorder = new ArchitectureScanRecorder()
+    try {
+      const capture = await (this.ports.capture ?? captureArchitecture)(
+        host,
+        request,
+        signal,
+        recorder,
+      )
+      return await this.ports.analyze(capture, signal, recorder)
+    } catch (error) {
+      if (error instanceof ArchitectureScopeRefusalError) return undefined
+      throw error
+    }
   }
 
   async scan(

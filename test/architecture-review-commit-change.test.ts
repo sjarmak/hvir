@@ -1,11 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import {
+  changeFromAnalysis,
   classifyCommitChange,
+  configChanged,
   parseCommitDiffs,
   type CommitDiffEntry,
   type ImportSignature,
 } from '../src/main/architecture-review/commit-change'
 import { ARCHITECTURE_DEFAULT_LAYOUT } from '../src/shared/architecture-layout'
+import type {
+  ArchitectureAnalysis,
+  ArchitectureModule,
+  ArchitectureScanResult,
+} from '../src/shared/architecture-analysis'
 
 const NONE = '0'.repeat(40)
 const blob = (name: string) => Buffer.from(name).toString('hex').padEnd(40, '0')
@@ -70,7 +77,7 @@ describe('classifyCommitChange', () => {
       ),
     ).toBe('none')
   })
-  it('is architecture when a module is added, removed, or its layout or config changes', () => {
+  it('is architecture when a module is added or removed', () => {
     expect(
       classifyCommitChange([entry('src/a.ts', 'A', NONE)], layout, imports([])),
     ).toBe('architecture')
@@ -81,12 +88,25 @@ describe('classifyCommitChange', () => {
         imports([]),
       ),
     ).toBe('architecture')
+  })
+  it('lets the scan decide a layout or config change, and is unclassified without one', () => {
+    const configs = [entry('.hvir/architecture.json', 'M'), entry('tsconfig.json', 'M')]
+    for (const config of configs) {
+      expect(configChanged([config], layout)).toBe(true)
+      expect(classifyCommitChange([config], layout, imports([]))).toBe('unclassified')
+      expect(classifyCommitChange([config], layout, imports([]), 'none')).toBe('none')
+      expect(classifyCommitChange([config], layout, imports([]), 'architecture')).toBe(
+        'architecture',
+      )
+    }
+    expect(configChanged([entry('src/a.ts', 'M')], layout)).toBe(false)
     expect(
-      classifyCommitChange([entry('.hvir/architecture.json', 'M')], layout, imports([])),
+      classifyCommitChange(
+        [entry('tsconfig.json', 'M'), entry('src/a.ts', 'A', NONE)],
+        layout,
+        imports([]),
+      ),
     ).toBe('architecture')
-    expect(classifyCommitChange([entry('tsconfig.json', 'M')], layout, imports([]))).toBe(
-      'architecture',
-    )
   })
   it('is architecture when a modified module imports differently, else code', () => {
     const same = imports([
@@ -135,8 +155,72 @@ describe('classifyCommitChange', () => {
       classifyCommitChange([entry('src/lib/a.ts', 'A', NONE)], scoped, imports([])),
     ).toBe('none')
     expect(classifyCommitChange([entry('package.json', 'M')], scoped, imports([]))).toBe(
+      'unclassified',
+    )
+  })
+})
+
+describe('changeFromAnalysis', () => {
+  const module = (path: string, subsystem: string, hash = 'h'): ArchitectureModule => ({
+    path,
+    system: 'app',
+    subsystem,
+    hash,
+    symbols: [],
+  })
+  const side = (modules: readonly ArchitectureModule[]): ArchitectureScanResult => ({
+    fingerprint: 'f',
+    scope: 'src',
+    exclusions: [],
+    modules,
+    imports: [],
+    diagnostics: [],
+  })
+  const analysis = (
+    before: readonly ArchitectureModule[],
+    after: readonly ArchitectureModule[],
+    rest: Partial<ArchitectureAnalysis> = {},
+  ): ArchitectureAnalysis => ({
+    before: side(before),
+    after: side(after),
+    modules: [],
+    imports: [],
+    relationships: [],
+    ...rest,
+  })
+  const importFact = {
+    source: 'src/a.ts',
+    specifier: './b',
+    form: 'import' as const,
+    kind: 'runtime' as const,
+    resolution: 'internal' as const,
+    line: 1,
+    column: 1,
+  }
+  it('is none or code when the scan shows the same modules, mapping and imports', () => {
+    const same = analysis([module('src/a.ts', 'a')], [module('src/a.ts', 'a', 'h2')])
+    expect(changeFromAnalysis(same, 0)).toBe('none')
+    expect(changeFromAnalysis(same, 1)).toBe('code')
+    const moved = analysis([module('src/a.ts', 'a')], [module('src/a.ts', 'a')], {
+      imports: [{ ...importFact, change: 'unchanged', beforeLine: 3, beforeColumn: 1 }],
+    })
+    expect(changeFromAnalysis(moved, 1)).toBe('code')
+  })
+  it('is architecture when a module, its subsystem or an import changed', () => {
+    expect(
+      changeFromAnalysis(analysis([module('src/a.ts', 'a')], [module('src/a.ts', 'b')]), 0),
+    ).toBe('architecture')
+    expect(changeFromAnalysis(analysis([], [module('src/a.ts', 'a')]), 0)).toBe(
       'architecture',
     )
+    expect(
+      changeFromAnalysis(
+        analysis([module('src/a.ts', 'a')], [module('src/a.ts', 'a')], {
+          imports: [{ ...importFact, change: 'added' }],
+        }),
+        0,
+      ),
+    ).toBe('architecture')
   })
 })
 

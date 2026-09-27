@@ -79,7 +79,7 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-it('marks each row with its architecture change, its date and a secondary hash', async () => {
+it('marks each row with its architecture change, its date and a secondary hash', () => {
   render(false)
   expect(rowText()).toEqual(['Merge side', 'Rewire modules', 'Fix a body', 'Add modules'])
   const markers = rows().map(
@@ -94,7 +94,7 @@ it('marks each row with its architecture change, its date and a secondary hash',
   expect(onVisibleCommits).toHaveBeenLastCalledWith(commits.map((c) => c.hash))
 })
 
-it('opens the Architecture tab for a commit against its first parent', async () => {
+it('opens the Architecture tab for a commit against its first parent', () => {
   render(false)
   act(() =>
     host
@@ -111,7 +111,7 @@ it('opens the Architecture tab for a commit against its first parent', async () 
   ).toBeNull()
 })
 
-it('filters to architecture changes and hides merges, remembering the choice', async () => {
+it('filters to architecture changes and hides merges, remembering the choice', () => {
   render(false)
   const toggle = host.querySelector<HTMLInputElement>(
     'input[type="checkbox"][aria-label="Architecture changes only"]',

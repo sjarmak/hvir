@@ -3,6 +3,7 @@ import {
   inLayoutScope,
   type ArchitectureLayout,
 } from '../../shared/architecture-layout'
+import type { ArchitectureAnalysis } from '../../shared/architecture-analysis'
 import type { ArchitectureCommitChange } from '../../shared/architecture-review'
 import { inArchitectureScope, isSource } from './capture-entries'
 
@@ -74,17 +75,25 @@ export function structurallyChanged(
   layout: ArchitectureLayout,
 ): boolean {
   return entries.some(
-    (entry) =>
-      inScope(layout, entry) && (!isSource(entry.path) || !isModification(entry)),
+    (entry) => inScope(layout, entry) && isSource(entry.path) && !isModification(entry),
   )
+}
+
+export function configChanged(
+  entries: readonly CommitDiffEntry[],
+  layout: ArchitectureLayout,
+): boolean {
+  return entries.some((entry) => inScope(layout, entry) && !isSource(entry.path))
 }
 
 export function classifyCommitChange(
   entries: readonly CommitDiffEntry[],
   layout: ArchitectureLayout,
   imports: ImportTable,
+  scanned?: ArchitectureCommitChange,
 ): ArchitectureCommitChange {
   if (structurallyChanged(entries, layout)) return 'architecture'
+  if (configChanged(entries, layout)) return scanned ?? 'unclassified'
   const modified = modifiedSources(entries, layout)
   if (modified.length === 0) return 'none'
   let change: ArchitectureCommitChange = 'code'
@@ -95,6 +104,19 @@ export function classifyCommitChange(
     else if (signatureKey(before) !== signatureKey(after)) return 'architecture'
   }
   return change
+}
+
+export function changeFromAnalysis(
+  analysis: ArchitectureAnalysis,
+  modifiedSourceCount: number,
+): ArchitectureCommitChange {
+  const placed = (side: ArchitectureAnalysis['before']) =>
+    side.modules.map((module) => `${module.path}\0${module.system}\0${module.subsystem}`)
+  const remapped =
+    placed(analysis.before).sort().join('\n') !== placed(analysis.after).sort().join('\n')
+  const rewired = analysis.imports.some((fact) => fact.change !== 'unchanged')
+  if (remapped || rewired) return 'architecture'
+  return modifiedSourceCount > 0 ? 'code' : 'none'
 }
 
 function signatureKey(signatures: readonly ImportSignature[] | null): string {

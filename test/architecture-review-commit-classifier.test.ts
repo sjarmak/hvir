@@ -6,7 +6,12 @@ import { afterEach, expect, it, vi } from 'vitest'
 import {
   ArchitectureCommitClassifier,
   type ModuleImportsPort,
+  type PairScanPort,
 } from '../src/main/architecture-review/commit-classifier'
+import type {
+  ArchitectureAnalysis,
+  ArchitectureImportDelta,
+} from '../src/shared/architecture-analysis'
 import { readModuleImports } from '../src/main/architecture-review/module-imports'
 import { TYPESCRIPT_ONLY_SCANNERS } from '../src/main/architecture-review/typescript-scanner'
 import { LocalHost } from '../src/main/project-host/local-host'
@@ -38,6 +43,31 @@ async function repository() {
     return git(root, 'rev-parse', 'HEAD')
   }
   return { root, commit, host: new LocalHost() }
+}
+const EMPTY_SIDE = {
+  fingerprint: 'f',
+  scope: 'src',
+  exclusions: [],
+  modules: [],
+  imports: [],
+  diagnostics: [],
+}
+const EMPTY_ANALYSIS: ArchitectureAnalysis = {
+  before: EMPTY_SIDE,
+  after: EMPTY_SIDE,
+  modules: [],
+  imports: [],
+  relationships: [],
+}
+const addedImport: ArchitectureImportDelta = {
+  source: 'src/a.ts',
+  specifier: './b',
+  form: 'import',
+  kind: 'runtime',
+  resolution: 'internal',
+  line: 1,
+  column: 1,
+  change: 'added',
 }
 function classifier() {
   const imports = vi.fn<ModuleImportsPort>((sources, root) =>
@@ -149,4 +179,83 @@ it('leaves a commit whose modules exceed the read budget unclassified', async ()
   )
   expect(result[0]?.change).toBe('unclassified')
   expect(imports).not.toHaveBeenCalled()
+})
+
+it('scans a config or layout change against its parent and caches the answer', async () => {
+  const r = await repository()
+  await r.commit('module', { 'src/a.ts': 'export const a = 1\n' })
+  const tsconfig = await r.commit('tsconfig', { 'tsconfig.json': '{"compilerOptions":{}}\n' })
+  const layoutCommit = await r.commit('layout', {
+    '.hvir/architecture.json': '{"version":1,"scope":["src"]}\n',
+  })
+  const { imports } = classifier()
+  const scan = vi.fn<PairScanPort>((_host, request) =>
+    Promise.resolve(
+      request.current === layoutCommit
+        ? { ...EMPTY_ANALYSIS, modules: [], relationships: [], imports: [addedImport] }
+        : EMPTY_ANALYSIS,
+    ),
+  )
+  const scanning = new ArchitectureCommitClassifier({ imports, scan })
+  const request = { root: localPath(r.root), revisions: [layoutCommit, tsconfig] }
+  const result = await scanning.classify(r.host, request, signal())
+  expect(result.map((entry) => entry.change)).toEqual(['architecture', 'none'])
+  expect(scan.mock.calls.map(([, sent]) => [sent.baseline, sent.current])).toEqual([
+    [tsconfig, layoutCommit],
+    [git(r.root, 'rev-parse', `${tsconfig}~1`), tsconfig],
+  ])
+  expect(imports).not.toHaveBeenCalled()
+  await scanning.classify(r.host, request, signal())
+  expect(scan).toHaveBeenCalledTimes(2)
+})
+
+it('leaves a config change unclassified when the scan refuses or is unavailable', async () => {
+  const r = await repository()
+  await r.commit('module', { 'src/a.ts': 'export const a = 1\n' })
+  const tsconfig = await r.commit('tsconfig', { 'tsconfig.json': '{}\n' })
+  const { imports, classifier: subject } = classifier()
+  const request = { root: localPath(r.root), revisions: [tsconfig] }
+  expect((await subject.classify(r.host, request, signal()))[0]?.change).toBe(
+    'unclassified',
+  )
+  const scan = vi.fn<PairScanPort>(() => Promise.resolve(undefined))
+  const refusing = new ArchitectureCommitClassifier({ imports, scan })
+  expect((await refusing.classify(r.host, request, signal()))[0]?.change).toBe(
+    'unclassified',
+  )
+  expect((await refusing.classify(r.host, request, signal()))[0]?.change).toBe(
+    'unclassified',
+  )
+  expect(scan).toHaveBeenCalledTimes(2)
+})
+
+it('spends the aggregate read budget commit by commit and never fails the request', async () => {
+  const r = await repository()
+  const body = (n: number) => `export const s = "${String(n).repeat(1024)}"\n`
+  await r.commit('seed', { 'src/a.ts': body(1), 'src/b.ts': body(2), 'src/c.ts': body(3) })
+  const first = await r.commit('a', { 'src/a.ts': body(4) })
+  const second = await r.commit('b', { 'src/b.ts': body(5) })
+  const third = await r.commit('c', { 'src/c.ts': body(6) })
+  const { imports } = classifier()
+  const subject = new ArchitectureCommitClassifier({
+    imports,
+    budget: { maxFileBytes: 4 * 1024, maxTotalBytes: 3 * 1024 },
+  })
+  const result = await subject.classify(
+    r.host,
+    { root: localPath(r.root), revisions: [third, second, first] },
+    signal(),
+  )
+  expect(result.map((entry) => entry.change)).toEqual(['code', 'unclassified', 'unclassified'])
+  expect(imports).toHaveBeenCalledTimes(1)
+  expect(imports.mock.calls[0]![0].map((source) => source.path)).toEqual([
+    'src/c.ts',
+    'src/c.ts',
+  ])
+  const again = await subject.classify(
+    r.host,
+    { root: localPath(r.root), revisions: [second] },
+    signal(),
+  )
+  expect(again[0]?.change).toBe('code')
 })
