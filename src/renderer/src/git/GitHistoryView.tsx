@@ -13,12 +13,16 @@ import type {
   GitRepositoryState,
   HostPath,
 } from '../../../shared'
-import type { ArchitectureCommitChange } from '../../../shared/architecture-review'
+import type {
+  ArchitectureCommitChange,
+  FleetCommitClassification,
+} from '../../../shared/architecture-review'
 import {
   historyRange,
   type HistoryCommitRange,
 } from '../architecture-review/architecture-ends-model'
 import { commitShownUnderFilter } from '../architecture-review/architecture-history-filter'
+import { fleetChangeTitle } from '../architecture-review/fleet-classification-label'
 import { commitDate } from './commit-date'
 import type { CommitClassificationState } from '../architecture-review/use-commit-classifications'
 import {
@@ -436,6 +440,7 @@ function HistoryCommitList({
                       <CommitChangeMarker
                         merge={commit.parents.length > 1}
                         change={classifications.known.get(commit.hash)}
+                        fleet={classifications.fleet.get(commit.hash)}
                       />
                       {commitDate(commit.authoredAt)} · {commit.author} ·{' '}
                       {commit.shortHash}
@@ -506,14 +511,24 @@ const CHANGE_LABELS: Record<ArchitectureCommitChange, string | undefined> = {
 function CommitChangeMarker({
   merge,
   change,
+  fleet,
 }: {
   readonly merge: boolean
   readonly change: ArchitectureCommitChange | undefined
+  readonly fleet: FleetCommitClassification | undefined
 }): ReactElement | null {
-  if (merge) return <b className="git-rail-commit-change merge">Merge</b>
-  const label = change === undefined ? undefined : CHANGE_LABELS[change]
+  const kind = merge ? 'merge' : change
+  if (kind === undefined) return null
+  const label = kind === 'merge' ? 'Merge' : (fleet?.type ?? CHANGE_LABELS[kind])
   if (label === undefined) return null
-  return <b className={`git-rail-commit-change ${change}`}>{label}</b>
+  return (
+    <b
+      className={`git-rail-commit-change ${kind}`}
+      title={fleet === undefined ? undefined : fleetChangeTitle(fleet)}
+    >
+      {label}
+    </b>
+  )
 }
 
 function RailHistoryChild({

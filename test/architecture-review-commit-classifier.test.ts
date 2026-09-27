@@ -136,6 +136,48 @@ it('classifies each commit against its first parent and caches the answers', asy
   expect(imports).toHaveBeenCalledTimes(1)
 })
 
+it('marks a commit the fleet has classified from its note, reading no modules', async () => {
+  const r = await repository()
+  await r.commit('seed', { 'src/a.ts': "import { b } from './b'\nexport const a = b\n" })
+  const cached = await r.commit('cache', {
+    'src/b.ts': "export const b = 'redis'\n",
+  })
+  const testOnly = await r.commit('tests', { 'src/c.test.ts': "import './a'\n" })
+  const docs = await r.commit('docs', { 'README.md': 'hello\n' })
+  const plain = await r.commit('plain', { 'src/b.ts': 'export const b = 2\n' })
+  const note = (revision: string, text: string) =>
+    git(r.root, 'notes', '--ref=refs/notes/classification', 'add', '-m', text, revision)
+  note(cached, 'Change-Type: Performance\nArchitectural: architectural\nRisk: medium')
+  note(testOnly, 'Change-Type: Tests / validation\nArchitectural: none\nBead: hvir-1')
+  note(docs, 'Change-Type: Documentation\nArchitectural: none')
+  const { imports, classifier: subject } = classifier()
+  const request = { root: localPath(r.root), revisions: [plain, docs, testOnly, cached] }
+  const { classifications: result } = await subject.classify(r.host, request, signal())
+  expect(result.map((entry) => [entry.change, entry.fleet])).toEqual([
+    ['code', undefined],
+    ['none', { type: 'Documentation', architectural: 'none', beads: [] }],
+    ['code', { type: 'Tests / validation', architectural: 'none', beads: ['hvir-1'] }],
+    [
+      'architecture',
+      { type: 'Performance', architectural: 'architectural', risk: 'medium', beads: [] },
+    ],
+  ])
+  expect(imports).toHaveBeenCalledTimes(1)
+  expect(imports.mock.calls[0]![0].sources.map((source) => source.path)).toEqual([
+    'src/b.ts',
+    'src/b.ts',
+  ])
+  git(r.root, 'notes', '--ref=refs/notes/classification', 'remove', testOnly)
+  const again = await subject.classify(r.host, request, signal())
+  expect(again.classifications[2]).toEqual({
+    revision: testOnly,
+    parent: cached,
+    merge: false,
+    change: 'architecture',
+  })
+  expect(imports).toHaveBeenCalledTimes(1)
+})
+
 it('reads modules only inside the layout scope at HEAD', async () => {
   const r = await repository()
   await r.commit('layout', {

@@ -324,6 +324,7 @@
 }
 
 .git-rail-commit-change.code,
+.git-rail-commit-change.none,
 .git-rail-commit-change.unclassified,
 .git-rail-commit-change.merge {
   background: #262c35;

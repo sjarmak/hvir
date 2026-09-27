@@ -676,6 +676,7 @@
   color: var(--text-strong);
 }
 .architecture-strip-change.code,
+.architecture-strip-change.none,
 .architecture-strip-change.unclassified,
 .architecture-strip-change.merge {
   background: var(--border-subtle);

@@ -5,6 +5,7 @@
 > Supersedes: [ADR-005](ADR-005-system-git-engine.md) | partial | Creating no branch at all; the architecture review creates one hvir/architecture/ branch per agent launch.
 > Supersedes: [ADR-008](ADR-008-project-worktree-workspaces.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
 > Superseded by: [ADR-064](ADR-064-architecture-review-as-a-live-zoomable-canvas.md) | partial | The map opening on subsystem relationships in a fixed grid; it now opens on systems on a laid-out canvas that drills to subsystems and modules.
+> Superseded by: [ADR-065](ADR-065-history-reads-the-fleet-commit-classification.md) | partial | Marking every History row and strip commit from its diff and import edges alone; a commit the fleet has classified is marked from its Architectural trailer instead.
 
 ## Context
 

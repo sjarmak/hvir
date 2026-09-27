@@ -69,6 +69,32 @@ it('classifies in batches of at most fifty, one request in flight per workspace'
   expect(git.calls).toHaveLength(2)
 })
 
+it('keeps the fleet classification beside the marker and drops it with the head', async () => {
+  const git = manualInvoke()
+  const store = new CommitClassificationStore(root, git.invoke)
+  store.request(revisions(0, 2))
+  const fleet = { type: 'Feature', architectural: 'architectural', beads: ['hvir-1'] }
+  git.calls[0]!.resolve({
+    head: HEAD,
+    classifications: [
+      { revision: revision(0), parent: null, merge: false, change: 'code' },
+      {
+        revision: revision(1),
+        parent: null,
+        merge: false,
+        change: 'architecture',
+        fleet,
+      },
+    ],
+  })
+  await flush()
+  expect(store.read().fleet.get(revision(0))).toBeUndefined()
+  expect(store.read().fleet.get(revision(1))).toEqual(fleet)
+  store.invalidate(revision(901))
+  expect(store.read().fleet.size).toBe(0)
+  expect(store.read().known.size).toBe(0)
+})
+
 it('reports a failed batch, keeps draining and retries the failed commits on the next request', async () => {
   const git = manualInvoke()
   const store = new CommitClassificationStore(root, git.invoke)

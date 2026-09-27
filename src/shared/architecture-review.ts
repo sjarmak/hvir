@@ -161,11 +161,22 @@ export interface ArchitectureCommitRange {
 export const ARCHITECTURE_COMMIT_STRIP_LIMIT = 200
 
 export type ArchitectureCommitChange = 'architecture' | 'code' | 'none' | 'unclassified'
+export interface FleetCommitClassification {
+  readonly type: string
+  readonly scope?: string
+  readonly architectural?: string
+  readonly behavior?: string
+  readonly compatibility?: string
+  readonly risk?: string
+  readonly beads: readonly string[]
+  readonly classifiedBy?: string
+}
 export interface ArchitectureCommitClassification {
   readonly revision: string
   readonly parent: string | null
   readonly merge: boolean
   readonly change: ArchitectureCommitChange
+  readonly fleet?: FleetCommitClassification
 }
 export interface ArchitectureCommitClassifyResult {
   readonly head: string

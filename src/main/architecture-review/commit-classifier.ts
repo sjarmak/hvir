@@ -5,6 +5,7 @@ import {
   type ArchitectureCommitClassifyRequest,
   type ArchitectureCommitClassifyResult,
   type ArchitectureCommitChange,
+  type FleetCommitClassification,
 } from '../../shared/architecture-review'
 import type {
   ArchitectureAnalysis,
@@ -33,6 +34,7 @@ import {
   type EdgeTable,
 } from './commit-change'
 import { CommitChangeCache, type CommitChangeKey } from './commit-change-cache'
+import { fleetCommitChange, readFleetClassifications } from './fleet-classification'
 import { readArchitectureBlobs, readArchitectureBlobSizes } from './git-blobs'
 import { architectureGitContext, validateArchitectureRoot } from './git-context'
 import type {
@@ -102,6 +104,13 @@ interface Layout {
 
 type Context = ReturnType<typeof architectureGitContext>
 type Run = (args: readonly string[]) => Promise<string>
+type Fleet = ReadonlyMap<string, FleetCommitClassification>
+
+interface Triage {
+  readonly answers: ReadonlyMap<string, ArchitectureCommitChange>
+  readonly scans: readonly Pending[]
+  readonly reads: readonly Pending[]
+}
 
 export class ArchitectureCommitClassifier {
   private readonly cache: CommitChangeCache
@@ -129,14 +138,63 @@ export class ArchitectureCommitClassifier {
     const layout = await readHeadLayout(run, (objects) =>
       readArchitectureBlobs(context, root, objects),
     )
-    const diffs = parseCommitDiffs(await run([...RAW_LOG, ...request.revisions, '--']))
+    const revisions = [...new Set(request.revisions)]
+    const diffs = parseCommitDiffs(await run([...RAW_LOG, ...revisions, '--']))
     const byRevision = new Map(diffs.map((diff) => [diff.revision, diff]))
+    const fleet = await readFleetClassifications(run, revisions)
+    const triage = this.triage(root, revisions, byRevision, fleet, layout)
+    const answers = new Map(triage.answers)
+    const budget = { scans: 0 }
+    for (const [revision, change] of await this.scanAll(
+      host,
+      root,
+      triage.scans,
+      budget,
+      signal,
+    ))
+      answers.set(revision, change)
+    const read = await this.readAll(root, context, run, triage.reads, layout, signal)
+    for (const [revision, change] of read.answers) answers.set(revision, change)
+    for (const [revision, change] of await this.scanAll(
+      host,
+      root,
+      read.needsScan,
+      budget,
+      signal,
+    ))
+      answers.set(revision, change)
+    const classifications = request.revisions.map((revision) => {
+      const diff = byRevision.get(revision)!
+      const labelled = fleet.get(revision)
+      return {
+        revision,
+        parent: diff.parents[0] ?? null,
+        merge: diff.parents.length > 1,
+        change: answers.get(revision)!,
+        ...(labelled === undefined ? {} : { fleet: labelled }),
+      }
+    })
+    return { head, classifications }
+  }
+
+  private triage(
+    root: HostPath,
+    revisions: readonly string[],
+    byRevision: ReadonlyMap<string, CommitDiff>,
+    fleet: Fleet,
+    layout: Layout,
+  ): Triage {
     const answers = new Map<string, ArchitectureCommitChange>()
     const scans: Pending[] = []
     const reads: Pending[] = []
-    for (const revision of new Set(request.revisions)) {
+    for (const revision of revisions) {
       const diff = byRevision.get(revision)
       if (!diff) throw new Error(`Git did not describe commit ${revision}`)
+      const labelled = fleet.get(revision)
+      if (labelled) {
+        answers.set(revision, fleetCommitChange(labelled, diff.entries, layout.layout))
+        continue
+      }
       const key = this.keyOf(root, diff, layout.id)
       const cached =
         this.cache.lookup({ ...key, scanners: COMMIT_CHANGE_CLASSIFIER_VERSION }) ??
@@ -157,35 +215,7 @@ export class ArchitectureCommitClassifier {
       } else if (configChanged(diff.entries, layout.layout)) scans.push(pending)
       else reads.push(pending)
     }
-    const budget = { scans: 0 }
-    for (const [revision, change] of await this.scanAll(
-      host,
-      root,
-      scans,
-      budget,
-      signal,
-    ))
-      answers.set(revision, change)
-    const read = await this.readAll(root, context, run, reads, layout, signal)
-    for (const [revision, change] of read.answers) answers.set(revision, change)
-    for (const [revision, change] of await this.scanAll(
-      host,
-      root,
-      read.needsScan,
-      budget,
-      signal,
-    ))
-      answers.set(revision, change)
-    const classifications = request.revisions.map((revision) => {
-      const diff = byRevision.get(revision)!
-      return {
-        revision,
-        parent: diff.parents[0] ?? null,
-        merge: diff.parents.length > 1,
-        change: answers.get(revision)!,
-      }
-    })
-    return { head, classifications }
+    return { answers, scans, reads }
   }
 
   private remember(key: CommitChangeKey, change: ArchitectureCommitChange): void {

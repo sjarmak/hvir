@@ -8,6 +8,7 @@ import {
 export type {
   CommitClassifications,
   CommitClassificationState,
+  FleetClassifications,
 } from './commit-classification-store'
 
 export function useCommitClassifications(

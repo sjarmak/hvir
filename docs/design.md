@@ -696,6 +696,7 @@ upstream GitHub provenance and blocking source/dependency checks retain their au
 > Supersedes: [ADR-005](adr/ADR-005-system-git-engine.md) | partial | Creating no branch at all; the architecture review creates one hvir/architecture/ branch per agent launch.
 > Supersedes: [ADR-008](adr/ADR-008-project-worktree-workspaces.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
 > Superseded by: [ADR-064](adr/ADR-064-architecture-review-as-a-live-zoomable-canvas.md) | partial | The map opening on subsystem relationships in a fixed grid; it now opens on systems on a laid-out canvas that drills to subsystems and modules.
+> Superseded by: [ADR-065](adr/ADR-065-history-reads-the-fleet-commit-classification.md) | partial | Marking every History row and strip commit from its diff and import edges alone; a commit the fleet has classified is marked from its Architectural trailer instead.
 
 A snapshot compares any two refs or a ref and the live tree from Git objects through a blob-keyed
 parse cache, opens on subsystem relationships across TypeScript, Python, Go and Rust, and hands
@@ -711,6 +712,16 @@ and opens the review on any commit; the commit strip lists the same commits newe
 The map becomes a pan and zoom canvas of Systems, Subsystems and Modules laid out off the render
 thread, a live review follows the working tree as a series of snapshots, and an agent's
 Explanation of a snapshot is shown as a claim beside what the scan observed.
+
+### [ADR-065 — History reads the fleet's commit classification](adr/ADR-065-history-reads-the-fleet-commit-classification.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-063](adr/ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | Marking every History row and strip commit from its diff and import edges alone; a commit the fleet has classified is marked from its Architectural trailer instead.
+
+History and the strip read the fleet's commit classification, one primary change type and its
+orthogonal dimensions, from each commit's trailers and its note under refs/notes/classification,
+mark a classified commit from its Architectural trailer, and keep the ADR-063 heuristic as the
+permanent fallback for every commit the fleet has not classified.
 
 ## 5. Architecture
 

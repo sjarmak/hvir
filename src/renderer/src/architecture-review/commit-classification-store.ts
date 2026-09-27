@@ -4,12 +4,15 @@ import {
   type ArchitectureCommitChange,
   type ArchitectureCommitClassifyRequest,
   type ArchitectureCommitClassifyResult,
+  type FleetCommitClassification,
 } from '../../../shared/architecture-review'
 
 export type CommitClassifications = ReadonlyMap<string, ArchitectureCommitChange>
+export type FleetClassifications = ReadonlyMap<string, FleetCommitClassification>
 
 export interface CommitClassificationState {
   readonly known: CommitClassifications
+  readonly fleet: FleetClassifications
   readonly pending: ReadonlySet<string>
   readonly generation: number
   readonly head?: string
@@ -25,6 +28,7 @@ const defaultInvoke: ClassifyInvoke = (request) =>
 
 export class CommitClassificationStore {
   private readonly known = new Map<string, ArchitectureCommitChange>()
+  private readonly fleet = new Map<string, FleetCommitClassification>()
   private readonly requested = new Set<string>()
   private queue: string[] = []
   private readonly listeners = new Set<() => void>()
@@ -36,6 +40,7 @@ export class CommitClassificationStore {
   private released = false
   private snapshot: CommitClassificationState = {
     known: new Map(),
+    fleet: new Map(),
     pending: new Set(),
     generation: 0,
   }
@@ -86,6 +91,7 @@ export class CommitClassificationStore {
     this.epoch += 1
     this.generation += 1
     this.known.clear()
+    this.fleet.clear()
     this.requested.clear()
     this.queue = []
     this.error = undefined
@@ -118,12 +124,15 @@ export class CommitClassificationStore {
     if (this.head !== undefined && result.head !== this.head) {
       this.generation += 1
       this.known.clear()
+      this.fleet.clear()
       for (const revision of this.requested)
         if (!this.queue.includes(revision)) this.requested.delete(revision)
     }
     this.head = result.head
     for (const answer of result.classifications) {
       this.known.set(answer.revision, answer.change)
+      if (answer.fleet) this.fleet.set(answer.revision, answer.fleet)
+      else this.fleet.delete(answer.revision)
       this.requested.add(answer.revision)
     }
   }
@@ -134,6 +143,7 @@ export class CommitClassificationStore {
       if (!this.known.has(revision)) pending.add(revision)
     this.snapshot = {
       known: new Map(this.known),
+      fleet: new Map(this.fleet),
       pending,
       generation: this.generation,
       ...(this.head === undefined ? {} : { head: this.head }),

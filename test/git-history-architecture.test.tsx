@@ -35,6 +35,7 @@ const known = new Map<string, ArchitectureCommitChange>([
 ])
 const classifications: CommitClassificationState = {
   known,
+  fleet: new Map(),
   pending: new Set(),
   generation: 0,
 }
@@ -102,6 +103,54 @@ it('marks each row with its architecture change, its date and a secondary hash',
   expect(onVisibleCommits).toHaveBeenLastCalledWith(commits.map((c) => c.hash))
 })
 
+it('labels a fleet-classified row by its change type and describes the dimensions', () => {
+  render(false, {
+    ...classifications,
+    known: new Map([...known, [hash(3), 'code'], [hash(2), 'none']]),
+    fleet: new Map([
+      [
+        hash(3),
+        {
+          type: 'Performance',
+          scope: 'subsystem',
+          architectural: 'none',
+          behavior: 'modification',
+          compatibility: 'compatible',
+          risk: 'low',
+          beads: ['hvir-1', 'hvir-2'],
+          classifiedBy: 'jev',
+        },
+      ],
+      [hash(2), { type: 'Documentation', beads: [] }],
+      [hash(4), { type: 'Feature', architectural: 'architectural', beads: [] }],
+    ]),
+  })
+  const markers = rows().map((row) => row.querySelector('.git-rail-commit-change'))
+  expect(markers.map((marker) => marker?.textContent)).toEqual([
+    'Merge',
+    'Performance',
+    'Documentation',
+    'Architecture',
+  ])
+  expect(markers.map((marker) => marker?.className)).toEqual([
+    'git-rail-commit-change merge',
+    'git-rail-commit-change code',
+    'git-rail-commit-change none',
+    'git-rail-commit-change architecture',
+  ])
+  expect(markers[1]?.getAttribute('title')).toBe(
+    [
+      'Performance · Non-architectural · Subsystem · Compatible · Low risk',
+      'Behavior: modification',
+      'Bead: hvir-1, hvir-2',
+      'Classified by: jev',
+    ].join('\n'),
+  )
+  expect(markers[2]?.getAttribute('title')).toBe('Documentation')
+  expect(markers[0]?.getAttribute('title')).toBe('Feature · Architectural')
+  expect(markers[3]?.hasAttribute('title')).toBe(false)
+})
+
 it('opens the Architecture tab for any commit with a parent, merges included', () => {
   render(false)
   const show = (n: number) =>
@@ -132,6 +181,7 @@ it('filters to architecture changes and hides merges, remembering the choice', (
 it('hides rows still classifying under the filter and says so, keeping unclassified rows', () => {
   render(true, {
     known: new Map([[hash(1), 'unclassified']]),
+    fleet: new Map(),
     pending: new Set([hash(3), hash(2)]),
     generation: 0,
   })
@@ -141,7 +191,13 @@ it('hides rows still classifying under the filter and says so, keeping unclassif
   )
   expect(host.querySelector('.git-rail-commit-change')?.textContent).toBe('Unclassified')
   expect(host.querySelector('.git-empty')).toBeNull()
-  render(true, { known: new Map(), pending: new Set(), generation: 1, error: 'boom' })
+  render(true, {
+    known: new Map(),
+    fleet: new Map(),
+    pending: new Set(),
+    generation: 1,
+    error: 'boom',
+  })
   expect(host.querySelector('.tree-error')?.textContent).toContain('boom')
 })
 
