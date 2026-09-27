@@ -8,6 +8,7 @@ import { localPath } from '../src/shared'
 import type { ArchitectureEvidence } from '../src/shared/architecture-review'
 import { analyzeArchitecture } from '../src/main/architecture-review/analysis'
 import { ArchitectureReview } from '../src/renderer/src/architecture-review/ArchitectureReview'
+import { ArchitectureExplanationStateSession } from '../src/renderer/src/architecture-review/architecture-explanation-state'
 import { claimArchitectureAgentLaunch } from '../src/renderer/src/architecture-review/architecture-review-launch'
 
 vi.mock('../src/renderer/src/viewer/DiffView', () => ({
@@ -349,6 +350,54 @@ it('renders the explanation as an agent claim and flags unknown snapshot names',
   expect(host.textContent).toContain('The launch path changed.')
   expect(host.querySelector('.architecture-explanation-names .absent')?.textContent).toBe(
     'InventedNot found in snapshot',
+  )
+})
+it('collapses the explanation to its header and restores its action', async () => {
+  const explanationStateSession = new ArchitectureExplanationStateSession()
+  await act(async () =>
+    app.render(
+      <ArchitectureReview
+        root={root}
+        active
+        explanationStateSession={explanationStateSession}
+        onHandoff={vi.fn()}
+      />,
+    ),
+  )
+  await click(button('Scan snapshot'))
+  const explanation = host.querySelector<HTMLElement>('.architecture-explanation')!
+  const collapse = explanation.querySelector<HTMLButtonElement>(
+    '[aria-label="Collapse explanation panel"]',
+  )!
+  expect(collapse.getAttribute('aria-expanded')).toBe('true')
+  expect(explanation.textContent).toContain('Explain this change')
+  await click(collapse)
+  const expand = explanation.querySelector<HTMLButtonElement>(
+    '[aria-label="Expand explanation panel"]',
+  )!
+  expect(expand.getAttribute('aria-expanded')).toBe('false')
+  expect(explanation.textContent).toBe('ExplanationExpand')
+  await click(expand)
+  expect(explanation.textContent).toContain('Explain this change')
+  await click(
+    explanation.querySelector<HTMLButtonElement>(
+      '[aria-label="Collapse explanation panel"]',
+    )!,
+  )
+  await act(async () => app.render(null))
+  await act(async () =>
+    app.render(
+      <ArchitectureReview
+        root={root}
+        active
+        explanationStateSession={explanationStateSession}
+        onHandoff={vi.fn()}
+      />,
+    ),
+  )
+  await click(button('Scan snapshot'))
+  expect(host.querySelector('.architecture-explanation')?.textContent).toBe(
+    'ExplanationExpand',
   )
 })
 it('explains native profile requirements and creates a qualifying profile', async () => {
