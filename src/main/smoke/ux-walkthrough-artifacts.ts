@@ -126,6 +126,9 @@ async function captureVisibleState(win: BrowserWindow): Promise<unknown> {
         };
       };
       const surface = document.querySelector('[aria-label="Architecture review"]:not([hidden])');
+      const canvas = surface?.querySelector('.architecture-map-canvas');
+      const surfaceBounds = surface?.getBoundingClientRect();
+      const canvasBounds = canvas?.getBoundingClientRect();
       const timings = [...document.querySelectorAll('table[aria-label="Scan timings"] tbody tr')].map((row) =>
         [...row.querySelectorAll('th, td')].map((cell) => cell.textContent?.trim() || ''),
       );
@@ -153,6 +156,15 @@ async function captureVisibleState(win: BrowserWindow): Promise<unknown> {
           alert: surface.querySelector('[role="alert"]')?.textContent?.trim() || null,
           status: surface.querySelector('[role="status"]')?.textContent?.trim() || null,
           mapVisible: Boolean(surface.querySelector('.architecture-review-map')),
+          mapExpanded: surface.querySelector('[aria-label="Collapse architecture map"]')?.getAttribute('aria-expanded') === 'true',
+          canvas: surfaceBounds && canvasBounds ? {
+            width: canvasBounds.width,
+            height: canvasBounds.height,
+            visibleHeight: Math.max(0, Math.min(canvasBounds.bottom, surfaceBounds.bottom) - Math.max(canvasBounds.top, surfaceBounds.top)),
+            surfaceHeight: surfaceBounds.height,
+            heightRatio: canvasBounds.height / surfaceBounds.height,
+          } : null,
+          nodeCount: surface.querySelectorAll('.architecture-canvas-node').length,
           systemCount: surface.querySelectorAll('.architecture-canvas-system').length,
           subsystemCount: surface.querySelectorAll('.architecture-canvas-subsystem').length,
         } : null,

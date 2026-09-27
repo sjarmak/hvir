@@ -22,10 +22,11 @@ and points to one PNG screenshot and one JSON state note per step. Each note rec
 controls, viewport dimensions, relevant scroll extents, scan timings, and Architecture state. A
 failed run leaves its completed steps and an incomplete manifest for diagnosis.
 
-The `architecture-live-review` journey opens Architecture, expands a system, compares two commits,
-returns to the working tree, observes idle stability, follows one scripted file edit, pauses,
-rescans while paused, and prepares an explanation handoff. Those actions preserve the regression
-paths for the live-review snapshot loop and the Architecture tab closing during a manual scan.
+The `architecture-live-review` journey opens Architecture, expands and restores the map, expands a
+system, compares two commits, returns to the working tree, observes idle stability, follows one
+scripted file edit, pauses, rescans while paused, and prepares an explanation handoff. Those actions
+preserve the regression paths for map geometry, the live-review snapshot loop, and the Architecture
+tab closing during a manual scan.
 
 ## Agent critique
 

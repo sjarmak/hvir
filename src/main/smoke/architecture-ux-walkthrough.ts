@@ -42,6 +42,10 @@ export async function runArchitectureUxWalkthrough(
     await scanLiveReview(win)
     await capture('open-architecture', 'Open Architecture and scan the working tree')
 
+    const collapsedCanvasHeight = await expandArchitectureMap(win)
+    await capture('expand-map', 'Expand the architecture map')
+    await collapseArchitectureMap(win, collapsedCanvasHeight)
+
     await expandArchitectureSystem(win)
     await capture('expand-system', 'Expand a system on the architecture map')
 
@@ -193,6 +197,55 @@ async function expandArchitectureSystem(win: BrowserWindow): Promise<void> {
         setTimeout(wait, 40);
       };
       wait();
+    })
+  `)
+}
+
+async function expandArchitectureMap(win: BrowserWindow): Promise<number> {
+  return (await win.webContents.executeJavaScript(`
+    new Promise((resolve, reject) => {
+      const surface = document.querySelector('[aria-label="Architecture review"]:not([hidden])');
+      const canvas = surface?.querySelector('.architecture-map-canvas');
+      const button = surface?.querySelector('[aria-label="Expand architecture map"]');
+      if (!(surface instanceof HTMLElement) || !(canvas instanceof HTMLElement) || !(button instanceof HTMLButtonElement)) {
+        return reject(new Error('Architecture map expansion controls disappeared'));
+      }
+      const collapsedHeight = canvas.getBoundingClientRect().height;
+      button.click();
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const surfaceBounds = surface.getBoundingClientRect();
+        const canvasBounds = canvas.getBoundingClientRect();
+        const nodeCount = canvas.querySelectorAll('.architecture-canvas-node').length;
+        if (button.getAttribute('aria-expanded') !== 'true') return reject(new Error('Architecture map did not expand'));
+        if (canvasBounds.height < surfaceBounds.height * 0.6 || nodeCount === 0) {
+          return reject(new Error('Expanded architecture canvas geometry: ' + JSON.stringify({ canvasHeight: canvasBounds.height, surfaceHeight: surfaceBounds.height, ratio: canvasBounds.height / surfaceBounds.height, nodeCount })));
+        }
+        resolve(collapsedHeight);
+      }));
+    })
+  `)) as number
+}
+
+async function collapseArchitectureMap(
+  win: BrowserWindow,
+  collapsedCanvasHeight: number,
+): Promise<void> {
+  await win.webContents.executeJavaScript(`
+    new Promise((resolve, reject) => {
+      const surface = document.querySelector('[aria-label="Architecture review"]:not([hidden])');
+      const canvas = surface?.querySelector('.architecture-map-canvas');
+      const button = surface?.querySelector('[aria-label="Collapse architecture map"]');
+      if (!(canvas instanceof HTMLElement) || !(button instanceof HTMLButtonElement)) {
+        return reject(new Error('Architecture map collapse controls disappeared'));
+      }
+      button.click();
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const restoredHeight = canvas.getBoundingClientRect().height;
+        if (button.getAttribute('aria-expanded') !== 'false' || Math.abs(restoredHeight - ${collapsedCanvasHeight}) > 2) {
+          return reject(new Error('Architecture map did not restore collapsed geometry: ' + JSON.stringify({ expectedHeight: ${collapsedCanvasHeight}, restoredHeight })));
+        }
+        resolve(true);
+      }));
     })
   `)
 }
