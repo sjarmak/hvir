@@ -116,6 +116,39 @@ describe('architecture review IPC authority', () => {
     })
   })
 
+  it('classifies commits only for the active workspace, through its host', async () => {
+    const root = localPath('/repo')
+    const host = {
+      hostId: root.hostId,
+      connectionState: 'connected',
+    } as unknown as ProjectHost
+    const answer = [
+      { revision: 'a'.repeat(40), parent: null, merge: false, change: 'none' },
+    ]
+    const classify = vi.fn(() => Promise.resolve(answer))
+    const projectPath = vi.fn()
+    const handlers = new Map<string, TestHandler>()
+    registerArchitectureReviewIpc(
+      {
+        handle: (channel: string, handler: TestHandler) => handlers.set(channel, handler),
+        authority: { projectPath },
+      } as unknown as IpcRegistrar,
+      {
+        getProject: () => ({ root, host }),
+        architectureReview: { classify },
+      } as unknown as Parameters<typeof registerArchitectureReviewIpc>[1],
+    )
+    const handler = handlers.get('architecture-review:classify-commits')!
+    await expect(
+      handler({ root: hostPath(asHostId('ssh'), '/repo'), revisions: [] }, context()),
+    ).rejects.toThrow(/active workspace/)
+    expect(classify).not.toHaveBeenCalled()
+    const request = { root, revisions: ['a'.repeat(40)] }
+    await expect(handler(request, context())).resolves.toBe(answer)
+    expect(projectPath).toHaveBeenCalledWith(root, root, host)
+    expect(classify).toHaveBeenCalledWith({ id: 1, generation: 1 }, host, request)
+  })
+
   it('publishes settled live changes only to the renderer that started following', async () => {
     const root = localPath('/repo')
     const host = {

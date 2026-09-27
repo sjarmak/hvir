@@ -15,6 +15,8 @@ import type {
   ArchitectureCapture,
   ArchitectureCommitRange,
   ArchitectureCommitRangeRequest,
+  ArchitectureCommitClassifyResult,
+  ArchitectureCommitClassifyRequest,
   ArchitectureEvidence,
   ArchitecturePreparedReview,
   ArchitectureReviewLaunch,
@@ -45,6 +47,11 @@ import type {
 import { captureArchitecture, validateArchitectureRequest } from './capture'
 import { affectsArchitectureCapture } from './capture-entries'
 import { listArchitectureCommits } from './commit-range'
+import {
+  ArchitectureCommitClassifier,
+  type ModuleImportsPort,
+  type PairScanPort,
+} from './commit-classifier'
 import { hasLiveCurrent } from './ends'
 import { readArchitectureLiveBase, readArchitectureLiveState } from './freshness'
 import { ArchitectureScanRecorder } from './scan-recorder'
@@ -59,6 +66,7 @@ import {
   planArchitectureHandoff,
   type PlannedHandoff,
 } from './handoff-plan'
+import { ArchitectureScopeRefusalError } from './scope-cap'
 import { recordArchitectureScope } from './scope-record'
 import { ArchitectureExplanationStore } from './explanation-store'
 
@@ -70,6 +78,7 @@ export interface ArchitectureReviewPorts {
   readonly capture?: typeof captureArchitecture
   readonly liveState?: typeof readArchitectureLiveState
   readonly commits?: typeof listArchitectureCommits
+  readonly imports?: ModuleImportsPort
   /** Worktree creation and brief writing for the agent handoff (ADR-063). */
   readonly handoff?: {
     readonly worktrees: ArchitectureWorktreePort
@@ -113,7 +122,28 @@ export class ArchitectureReviewCoordinator {
   private readonly followers = new Map<string, Follower>()
   private readonly explanations = new ArchitectureExplanationStore()
   private readonly launches = new ArchitectureLaunches()
-  constructor(private readonly ports: ArchitectureReviewPorts) {}
+  private readonly classifier: ArchitectureCommitClassifier | undefined
+  constructor(private readonly ports: ArchitectureReviewPorts) {
+    this.classifier = ports.imports
+      ? new ArchitectureCommitClassifier({ imports: ports.imports, scan: this.scanPair })
+      : undefined
+  }
+
+  private readonly scanPair: PairScanPort = async (host, request, signal) => {
+    const recorder = new ArchitectureScanRecorder()
+    try {
+      const capture = await (this.ports.capture ?? captureArchitecture)(
+        host,
+        request,
+        signal,
+        recorder,
+      )
+      return await this.ports.analyze(capture, signal, recorder)
+    } catch (error) {
+      if (error instanceof ArchitectureScopeRefusalError) return undefined
+      throw error
+    }
+  }
 
   async scan(
     owner: RendererOwner,
@@ -251,6 +281,22 @@ export class ArchitectureReviewCoordinator {
     )
     this.ports.resources.assertCurrent(owner)
     return range
+  }
+
+  async classify(
+    owner: RendererOwner,
+    host: ProjectHost,
+    request: ArchitectureCommitClassifyRequest,
+  ): Promise<ArchitectureCommitClassifyResult> {
+    this.ports.resources.assertCurrent(owner)
+    if (!this.classifier) throw new Error('Commit classification is unavailable')
+    const result = await this.classifier.classify(
+      host,
+      request,
+      AbortSignal.timeout(STRIP_TIMEOUT),
+    )
+    this.ports.resources.assertCurrent(owner)
+    return result
   }
 
   async evidence(

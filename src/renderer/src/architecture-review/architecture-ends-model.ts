@@ -3,6 +3,7 @@ import {
   architectureRefProblem,
   type ArchitectureCommitRange,
 } from '../../../shared/architecture-review'
+import type { GitCommitSummary } from '../../../shared/git-types'
 
 /** Snapshot ends as the scan request takes them; an omitted end is the default. */
 export interface ArchitectureEnds {
@@ -39,18 +40,20 @@ export function stripPosition(range: ArchitectureCommitRange, revision: string):
   return range.commits.findIndex((commit) => commit.revision === revision)
 }
 
-/**
- * The index one step from `position`. Off the strip, a forward step starts at the oldest
- * commit and a backward step at the newest.
- */
 export function stripStep(
   range: ArchitectureCommitRange,
   position: number,
   direction: 1 | -1,
+  shown: (index: number) => boolean = () => true,
 ): number | undefined {
-  const next =
-    position < 0 ? (direction === 1 ? 0 : range.commits.length - 1) : position + direction
-  return next >= 0 && next < range.commits.length ? next : undefined
+  const newest = 0
+  const oldest = range.commits.length - 1
+  let next = position < 0 ? (direction === 1 ? oldest : newest) : position - direction
+  while (next >= 0 && next < range.commits.length) {
+    if (shown(next)) return next
+    next -= direction
+  }
+  return undefined
 }
 
 export interface ParsedEnds {
@@ -89,4 +92,40 @@ export function handoffEnds(
   return {
     baseline: compare === 'change' ? origin.currentRevision : origin.baselineRevision,
   }
+}
+
+export interface ArchitectureCommitDescription {
+  readonly subject: string
+  readonly authoredAt: string
+}
+export type ArchitectureCommitDescriptions = Readonly<
+  Record<string, ArchitectureCommitDescription>
+>
+
+export function describeShownCommit(
+  commit: GitCommitSummary,
+  loaded: readonly GitCommitSummary[],
+): ArchitectureCommitDescriptions {
+  const parent = loaded.find((candidate) => candidate.hash === commit.parents[0])
+  return Object.fromEntries(
+    [commit, ...(parent ? [parent] : [])].map((each) => [
+      each.hash,
+      { subject: each.subject, authoredAt: each.authoredAt },
+    ]),
+  )
+}
+
+export function describeCommits(
+  range: ArchitectureCommitRange,
+  ends: ArchitectureEnds,
+): ArchitectureCommitDescriptions {
+  const named = [ends.baseline, ends.current].filter((end) => end !== undefined)
+  return Object.fromEntries(
+    [range.base, ...range.commits]
+      .filter((commit) => named.includes(commit.revision))
+      .map((commit) => [
+        commit.revision,
+        { subject: commit.subject, authoredAt: commit.authoredAt },
+      ]),
+  )
 }

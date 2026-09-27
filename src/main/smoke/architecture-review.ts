@@ -43,6 +43,7 @@ export function createSmokeArchitectureReview(
       new ArchitectureReviewCoordinator({
         resources,
         analyze: worker.analyze,
+        imports: worker.imports,
         handoff: { worktrees },
       }),
     (review) => review.dispose(),

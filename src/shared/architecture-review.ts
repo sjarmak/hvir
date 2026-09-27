@@ -143,14 +143,15 @@ export interface ArchitectureExplanationChanged extends ArchitectureExplanationR
 export interface ArchitectureCommit {
   readonly revision: string
   readonly parent: string | null
+  readonly merge: boolean
   readonly subject: string
+  readonly authoredAt: string
 }
 export interface ArchitectureCommitRangeRequest {
   readonly root: HostPath
   /** Widens the strip back to this ref; omitted means the default branch. */
   readonly from?: string
 }
-/** First-parent commits from `base` (exclusive) to HEAD, oldest first. */
 export interface ArchitectureCommitRange {
   readonly base: ArchitectureCommit
   readonly commits: readonly ArchitectureCommit[]
@@ -158,3 +159,20 @@ export interface ArchitectureCommitRange {
   readonly truncated: boolean
 }
 export const ARCHITECTURE_COMMIT_STRIP_LIMIT = 200
+
+export type ArchitectureCommitChange = 'architecture' | 'code' | 'none' | 'unclassified'
+export interface ArchitectureCommitClassification {
+  readonly revision: string
+  readonly parent: string | null
+  readonly merge: boolean
+  readonly change: ArchitectureCommitChange
+}
+export interface ArchitectureCommitClassifyResult {
+  readonly head: string
+  readonly classifications: readonly ArchitectureCommitClassification[]
+}
+export interface ArchitectureCommitClassifyRequest {
+  readonly root: HostPath
+  readonly revisions: readonly string[]
+}
+export const ARCHITECTURE_CLASSIFY_LIMIT = 50

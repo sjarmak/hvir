@@ -1,15 +1,29 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import type { HostPath } from '../../../shared'
 import {
   ARCHITECTURE_BRANCH_POINT,
   architectureRefProblem,
+  type ArchitectureCommit,
+  type ArchitectureCommitChange,
   type ArchitectureCommitRange,
 } from '../../../shared/architecture-review'
 import {
+  commitShownUnderFilter,
+  setArchitectureFilter,
+  useArchitectureFilter,
+} from './architecture-history-filter'
+import { commitDate } from '../git/commit-date'
+import {
+  useCommitClassifications,
+  type CommitClassificationState,
+} from './use-commit-classifications'
+import {
+  describeCommits,
   lockedBaseline,
   stripEnds,
   stripPosition,
   stripStep,
+  type ArchitectureCommitDescriptions,
   type ArchitectureEnds,
   type StripStepping,
 } from './architecture-ends-model'
@@ -21,10 +35,12 @@ interface ArchitectureCommitStripProps {
   /** The scanned Current commit, when the snapshot has one. */
   readonly current?: string
   readonly disabled: boolean
-  readonly onChoose: (ends: ArchitectureEnds) => void
+  readonly onChoose: (
+    ends: ArchitectureEnds,
+    described: ArchitectureCommitDescriptions,
+  ) => void
 }
 
-/** First-parent commits to step Current through, pairwise or against a locked Baseline. */
 export function ArchitectureCommitStrip(props: ArchitectureCommitStripProps) {
   const { root, ends, current, disabled, onChoose } = props
   const strip = useCommitRange(root)
@@ -33,17 +49,42 @@ export function ArchitectureCommitStrip(props: ArchitectureCommitStripProps) {
   const stepping: StripStepping =
     locked === undefined ? { kind: 'pairwise' } : { kind: 'locked', baseline: locked }
   const position = range && current ? stripPosition(range, current) : -1
+  const architectureOnly = useArchitectureFilter()
+  const revisions = useMemo(
+    () => (range ? range.commits.map((commit) => commit.revision) : []),
+    [range],
+  )
+  const classifications = useCommitClassifications(root, revisions)
+  const shown = (index: number) => {
+    const commit = range?.commits[index]
+    return (
+      commit !== undefined &&
+      commitShownUnderFilter(
+        architectureOnly,
+        commit.merge,
+        classifications.known.get(commit.revision),
+      )
+    )
+  }
   const choose = (index: number | undefined) => {
     const chosen =
       range && index !== undefined ? stripEnds(range, index, stepping) : undefined
-    if (chosen) onChoose(chosen)
+    if (chosen && range) onChoose(chosen, describeCommits(range, chosen))
   }
   const step = (direction: 1 | -1) =>
-    range ? stripStep(range, position, direction) : undefined
+    range ? stripStep(range, position, direction, shown) : undefined
   return (
     <section className="architecture-strip" aria-label="Commit strip">
       <div className="architecture-strip-controls">
         <StripFrom loading={strip.loading} onLoad={strip.load} />
+        <label>
+          <input
+            type="checkbox"
+            checked={architectureOnly}
+            onChange={(event) => setArchitectureFilter(event.target.checked)}
+          />
+          Architecture changes only
+        </label>
         <label>
           <input
             type="checkbox"
@@ -63,19 +104,24 @@ export function ArchitectureCommitStrip(props: ArchitectureCommitStripProps) {
           disabled={disabled || step(-1) === undefined}
           onClick={() => choose(step(-1))}
         >
-          Previous commit
+          Older commit
         </button>
         <button
           type="button"
           disabled={disabled || step(1) === undefined}
           onClick={() => choose(step(1))}
         >
-          Next commit
+          Newer commit
         </button>
       </div>
       {strip.error && (
         <p className="architecture-review-state error" role="alert">
           {strip.error}
+        </p>
+      )}
+      {classifications.error !== undefined && (
+        <p className="architecture-review-state error">
+          Classification failed: {classifications.error}
         </p>
       )}
       {range && (
@@ -84,6 +130,8 @@ export function ArchitectureCommitStrip(props: ArchitectureCommitStripProps) {
           position={position}
           disabled={disabled}
           stepping={stepping}
+          shown={shown}
+          classifications={classifications}
           onChoose={choose}
         />
       )}
@@ -96,25 +144,36 @@ function StripCommits({
   position,
   disabled,
   stepping,
+  shown,
+  classifications,
   onChoose,
 }: {
   readonly range: ArchitectureCommitRange
   readonly position: number
   readonly disabled: boolean
   readonly stepping: StripStepping
+  readonly shown: (index: number) => boolean
+  readonly classifications: CommitClassificationState
   readonly onChoose: (index: number) => void
 }) {
+  const listed = range.commits.map((commit, index) => ({ commit, index }))
+  const visible = listed.filter(({ index }) => shown(index))
+  const classifying = listed.filter(({ commit }) =>
+    classifications.pending.has(commit.revision),
+  ).length
   return (
     <>
       <p className="architecture-strip-note">
         {range.truncated ? 'Newest ' : ''}
-        {range.commits.length} commits after {shortRef(range.base.revision)} ·{' '}
+        {range.commits.length} commits after {shortRef(range.base.revision)}, newest first
+        {visible.length < listed.length ? `, ${visible.length} shown` : ''}
+        {classifying > 0 ? `, ${classifying} classifying` : ''} ·{' '}
         {stepping.kind === 'pairwise'
           ? 'each against its parent'
           : 'each against the held baseline'}
       </p>
       <ol className="architecture-strip-commits">
-        {range.commits.map((commit, index) => (
+        {visible.map(({ commit, index }) => (
           <li key={commit.revision}>
             <button
               type="button"
@@ -123,12 +182,46 @@ function StripCommits({
               disabled={disabled || !stripEnds(range, index, stepping)}
               onClick={() => onChoose(index)}
             >
-              <code>{shortRef(commit.revision)}</code> {commit.subject}
+              <StripChange
+                commit={commit}
+                change={classifications.known.get(commit.revision)}
+              />
+              <span>{commit.subject}</span>
+              <small>
+                {commitDate(commit.authoredAt)} · <code>{shortRef(commit.revision)}</code>
+              </small>
             </button>
           </li>
         ))}
       </ol>
     </>
+  )
+}
+
+const STRIP_CHANGE_LABELS: Record<ArchitectureCommitChange, string | undefined> = {
+  architecture: 'Architecture',
+  code: 'Code',
+  unclassified: 'Unclassified',
+  none: undefined,
+}
+
+function StripChange({
+  commit,
+  change,
+}: {
+  readonly commit: ArchitectureCommit
+  readonly change: ArchitectureCommitChange | undefined
+}) {
+  const label = commit.merge
+    ? 'Merge'
+    : change === undefined
+      ? undefined
+      : STRIP_CHANGE_LABELS[change]
+  if (label === undefined) return null
+  return (
+    <b className={`architecture-strip-change ${commit.merge ? 'merge' : change}`}>
+      {label}
+    </b>
   )
 }
 

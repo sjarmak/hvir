@@ -13,6 +13,10 @@ import type {
   GitRepositoryState,
   HostPath,
 } from '../../../shared'
+import type { ArchitectureCommitChange } from '../../../shared/architecture-review'
+import { commitShownUnderFilter } from '../architecture-review/architecture-history-filter'
+import { commitDate } from './commit-date'
+import type { CommitClassificationState } from '../architecture-review/use-commit-classifications'
 import {
   commitTreeEntryHeight,
   flattenCommitFiles,
@@ -40,6 +44,11 @@ interface GitHistoryViewProps {
   readonly expanded: ReadonlySet<string>
   readonly detailStates: ReadonlyMap<string, RailCommitDetailState>
   readonly collapsedDirectories: ReadonlyMap<string, ReadonlySet<string>>
+  readonly classifications: CommitClassificationState
+  readonly architectureOnly: boolean
+  readonly onArchitectureOnly: (on: boolean) => void
+  readonly onShowInArchitecture: (commit: GitCommitSummary) => void
+  readonly onVisibleCommits: (hashes: readonly string[]) => void
   readonly onOpenGraph: (hash?: string) => void
   readonly onOpenFile: (path: HostPath, revision: string) => void
   readonly onLoadMore: () => void
@@ -53,13 +62,50 @@ export function GitHistoryView(props: GitHistoryViewProps): ReactElement {
     error,
     initialLoading,
     repositoryState,
+    classifications,
+    architectureOnly,
+    onArchitectureOnly,
     onOpenGraph,
   } = props
+  const shown = useMemo(
+    () =>
+      commits.filter((commit) =>
+        commitShownUnderFilter(
+          architectureOnly,
+          commit.parents.length > 1,
+          classifications.known.get(commit.hash),
+        ),
+      ),
+    [architectureOnly, classifications, commits],
+  )
+  const classifying = useMemo(
+    () => commits.filter((commit) => classifications.pending.has(commit.hash)).length,
+    [classifications, commits],
+  )
   return (
     <div className="git-history">
-      <button type="button" className="git-open-graph" onClick={() => onOpenGraph()}>
-        Open full graph <span aria-hidden="true">→</span>
-      </button>
+      <div className="git-history-tools">
+        <button type="button" className="git-open-graph" onClick={() => onOpenGraph()}>
+          Open full graph <span aria-hidden="true">→</span>
+        </button>
+        <label className="git-history-filter">
+          <input
+            type="checkbox"
+            aria-label="Architecture changes only"
+            checked={architectureOnly}
+            onChange={(event) => onArchitectureOnly(event.target.checked)}
+          />
+          Architecture only
+        </label>
+      </div>
+      {architectureOnly && classifying > 0 ? (
+        <div className="git-history-classifying" role="status">
+          Classifying {classifying} {classifying === 1 ? 'commit' : 'commits'}…
+        </div>
+      ) : null}
+      {classifications.error !== undefined ? (
+        <div className="tree-error">Classification failed: {classifications.error}</div>
+      ) : null}
       {error ? <div className="tree-error">History unavailable: {error}</div> : null}
       {initialLoading ? (
         <div className="git-empty">Loading history…</div>
@@ -69,8 +115,10 @@ export function GitHistoryView(props: GitHistoryViewProps): ReactElement {
         <div className="git-empty">
           {repositoryState === 'unborn' ? 'No commits yet' : 'No history'}
         </div>
+      ) : !error && commits.length > 0 && shown.length === 0 && classifying === 0 ? (
+        <div className="git-empty">No architecture changes among loaded commits</div>
       ) : null}
-      {commits.length > 0 ? <HistoryCommitList {...props} /> : null}
+      {commits.length > 0 ? <HistoryCommitList {...props} shown={shown} /> : null}
     </div>
   )
 }
@@ -111,17 +159,24 @@ type RailHistoryItem =
 
 function HistoryCommitList({
   commits,
+  shown,
   hasMore,
   root,
   expanded,
   detailStates,
   collapsedDirectories,
+  classifications,
+  architectureOnly,
+  onShowInArchitecture,
+  onVisibleCommits,
   onOpenGraph,
   onOpenFile,
   onLoadMore,
   onToggleCommit,
   onToggleDirectory,
-}: GitHistoryViewProps): ReactElement {
+}: GitHistoryViewProps & {
+  readonly shown: readonly GitCommitSummary[]
+}): ReactElement {
   const viewport = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(320)
@@ -156,7 +211,7 @@ function HistoryCommitList({
     }
   }, [commits.length, expanded, hasMore, onLoadMore])
 
-  const layout = useMemo(() => buildGitGraphLayout(commits), [commits])
+  const layout = useMemo(() => buildGitGraphLayout(shown), [shown])
   const graphWidth = gitGraphWidth(layout.laneCount, RAIL_GRAPH_LANE_METRICS)
   const items = useMemo<readonly RailHistoryItem[]>(() => {
     const next: RailHistoryItem[] = []
@@ -229,6 +284,16 @@ function HistoryCommitList({
     scrollTop,
     viewportHeight,
     HISTORY_OVERSCAN,
+  )
+  const visibleKey = useMemo(() => {
+    if (architectureOnly) return commits.map((commit) => commit.hash).join('\n')
+    const hashes = new Set<string>()
+    for (const item of items.slice(start, end)) hashes.add(item.graphRow.commit.hash)
+    return Array.from(hashes).join('\n')
+  }, [architectureOnly, commits, end, items, start])
+  useEffect(
+    () => onVisibleCommits(visibleKey === '' ? [] : visibleKey.split('\n')),
+    [onVisibleCommits, visibleKey],
   )
 
   const handleCommitKey = (
@@ -319,10 +384,26 @@ function HistoryCommitList({
                       <span>{commit.subject || '(no subject)'}</span>
                     </strong>
                     <small>
-                      {commit.shortHash} · {commit.author}
+                      <CommitChangeMarker
+                        merge={commit.parents.length > 1}
+                        change={classifications.known.get(commit.hash)}
+                      />
+                      {commitDate(commit.authoredAt)} · {commit.author} ·{' '}
+                      {commit.shortHash}
                     </small>
                   </span>
                 </button>
+                {commit.parents.length > 0 ? (
+                  <button
+                    type="button"
+                    className="git-rail-show-architecture"
+                    aria-label={`Show ${commit.shortHash} in architecture`}
+                    title="Show in architecture"
+                    onClick={() => onShowInArchitecture(commit)}
+                  >
+                    ◈
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="git-rail-open-full"
@@ -364,6 +445,26 @@ function HistoryCommitList({
       ) : null}
     </div>
   )
+}
+
+const CHANGE_LABELS: Record<ArchitectureCommitChange, string | undefined> = {
+  architecture: 'Architecture',
+  code: 'Code',
+  unclassified: 'Unclassified',
+  none: undefined,
+}
+
+function CommitChangeMarker({
+  merge,
+  change,
+}: {
+  readonly merge: boolean
+  readonly change: ArchitectureCommitChange | undefined
+}): ReactElement | null {
+  if (merge) return <b className="git-rail-commit-change merge">Merge</b>
+  const label = change === undefined ? undefined : CHANGE_LABELS[change]
+  if (label === undefined) return null
+  return <b className={`git-rail-commit-change ${change}`}>{label}</b>
 }
 
 function RailHistoryChild({

@@ -3,12 +3,18 @@ import {
   ARCHITECTURE_BRANCH_POINT,
   ARCHITECTURE_WORKING_TREE,
 } from '../../../shared/architecture-review'
-import type { ParsedEnds } from './architecture-ends-model'
+import { commitDate } from '../git/commit-date'
+import type {
+  ArchitectureCommitDescription,
+  ArchitectureCommitDescriptions,
+  ParsedEnds,
+} from './architecture-ends-model'
 
 interface ArchitectureEndsControlsProps {
   readonly baseline: string
   readonly current: string
   readonly problems: ParsedEnds['problems']
+  readonly described: ArchitectureCommitDescriptions
   readonly onBaseline: (text: string) => void
   readonly onCurrent: (text: string) => void
 }
@@ -18,6 +24,7 @@ export function ArchitectureEndsControls({
   baseline,
   current,
   problems,
+  described,
   onBaseline,
   onCurrent,
 }: ArchitectureEndsControlsProps) {
@@ -28,6 +35,7 @@ export function ArchitectureEndsControls({
         value={baseline}
         placeholder={ARCHITECTURE_BRANCH_POINT}
         problem={problems.baseline}
+        described={described[baseline.trim()]}
         onChange={onBaseline}
       />
       <RefField
@@ -35,6 +43,7 @@ export function ArchitectureEndsControls({
         value={current}
         placeholder={ARCHITECTURE_WORKING_TREE}
         problem={problems.current}
+        described={described[current.trim()]}
         onChange={onCurrent}
       />
     </div>
@@ -46,19 +55,33 @@ function RefField({
   value,
   placeholder,
   problem,
+  described,
   onChange,
 }: {
   readonly label: string
   readonly value: string
   readonly placeholder: string
   readonly problem?: string
+  readonly described?: ArchitectureCommitDescription
   readonly onChange: (text: string) => void
 }) {
   const problemId = useId()
   return (
-    <label>
+    <label
+      className={
+        described === undefined ? undefined : 'architecture-review-ref-described'
+      }
+    >
       {label}
+      {described !== undefined && (
+        <span className="architecture-review-ref-primary">
+          <strong>{described.subject}</strong> {commitDate(described.authoredAt)}
+        </span>
+      )}
       <input
+        className={
+          described === undefined ? undefined : 'architecture-review-ref-secondary'
+        }
         value={value}
         placeholder={placeholder}
         spellCheck={false}

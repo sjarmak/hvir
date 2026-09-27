@@ -24,9 +24,60 @@ verification loop.
 **Two ends, any refs.** A snapshot compares a Baseline to a Current end. Either end may be any
 commit reachable in the repository; only the Current end may be the live working tree. Both
 tree ends are read from Git objects by one listing and one batched blob read per side; no
-checkout or worktree is needed to compare history. A commit strip lists the range from the
-merge-base with the default branch to HEAD by default, widenable by ref, and steps either
-pairwise or against a locked baseline.
+checkout or worktree is needed to compare history. A commit strip lists the same commits
+the History tab lists from the merge-base with the default branch to HEAD, in topological
+order newest first with merges included, widenable by ref, capped at the newest 200 and
+saying so when older commits were left off. Each commit is labelled by subject and author
+calendar date as recorded, with its hash secondary. Stepping moves to the newer or the
+older commit, either pairwise against each commit's first parent or against a locked
+baseline. Once History or the strip has named an end, Baseline and Current show that
+commit's subject and date with the hash secondary; a ref typed by hand shows as typed.
+
+**History reaches the review.** Each History row is classified against its first parent,
+merges included: an architecture change when a module or subsystem in scope was added,
+removed or moved, or a module-to-module relationship in scope was added or removed; a code
+change when sources changed with no such change; nothing when no source, config or layout
+in scope changed. A relationship is identified the way the architecture analysis identifies
+its evidence: the importing module and the resolved target module, or the resolution and
+specifier when nothing in scope resolves. The set of distinct relationships is compared,
+not the occurrences, so a second import of a module already imported, an import that
+becomes type-only or dynamic, a respelled specifier for the same target, or a reordering
+is a code change. The map includes external and unresolved targets, type-only imports and
+every scanned file, test files included, and the classifier counts exactly those edges and
+no others. Each modified module is resolved by the same language resolver the map uses,
+against the module listing and configs of its own tree: the parent tree for the before
+side and the commit tree for the after side, so a tsconfig or jsconfig path, a package
+exports subpath, an index file and an extension resolve exactly as the map resolves them.
+Each side is listed once per request, under the same scope selection and cap as a capture,
+and its config blobs count against the read budget; a side that cannot be listed or
+afforded leaves the commit unclassified. A language whose resolver needs the facts of
+every module in the tree (Rust) cannot be decided from the modified modules alone, and
+such a commit takes a pair scan within the scan budget. A commit with no source change is never marked from its diff alone; a config
+or layout change is marked architecture only when its pair scan shows a module or
+relationship delta. A request scans at most four such commits, and the rest stay
+unclassified until a later request reaches them. A root commit has no parent to scan
+against, so a root commit that adds config or layout with no source stays unclassified.
+Modified sources are read within a per-request budget of 16 MiB in total and 512 KiB per
+file; a commit the remaining budget cannot cover, or one modifying more than two hundred
+modules, is reported unclassified rather than failing the request, and nothing
+unclassified is cached: every unclassified commit is decided again on the next request.
+Every revision sent for classification is a full 40- or 64-character lowercase hash,
+checked at the IPC boundary. Classification runs lazily for the rows on screen, off the
+render thread in the architecture worker, and is cached by commit pair, scanner versions
+and layout. One classification store lives per open workspace and is released once the
+close transition has returned; release deactivates the store, so a late answer is dropped,
+queued batches are never sent, later requests are ignored, and a reopened workspace gets a
+fresh store. One request is in flight per workspace, shared by History and the strip, in
+batches of fifty; a failed batch is shown, does not strand the batches behind it, and is
+retried on the next drain. Every answer names the HEAD it was computed against; when HEAD
+or the branch moves within a workspace, held classifications are dropped and late answers
+are discarded. Every row with a parent offers "Show in architecture", which opens the
+review on that commit against its first parent. One "Architecture changes only" filter,
+remembered across sessions, hides merges and commits without an architecture change from
+both History and the strip, so the two always agree on order and on which commits show.
+Under the filter a row still classifying is hidden behind a visible "Classifying"
+status, never shown as if it were an architecture change, and an unclassified row stays
+visible with its own marker.
 
 **Nothing is read twice.** The live side is read by one batched host command per scan. Parsed
 module facts are cached on disk per host and repository, keyed by blob identity and scanner
@@ -86,7 +137,12 @@ is the only removal authority the review holds.
 ## Consequences
 
 History comparison becomes a git-object read plus a cache lookup, so stepping the strip is
-cheap after the first parse. The disk cache is new state to bound and to invalidate on
+cheap after the first parse. Marking History costs one batched raw log per fifty commits, a
+size check and a blob read for each modified module in scope, and up to four pair scans for
+config and layout commits; commits that only add, delete, rename or touch non-source files
+are decided from the diff alone. Under the filter every loaded commit is classified rather
+than only the visible rows, so the filter is bounded by the loaded page, and the strip is
+bounded by its 200-commit cap. The disk cache is new state to bound and to invalidate on
 scanner upgrades. web-tree-sitter adds a WebAssembly dependency and per-language grammars to
 package. Worktree creation is a new write authority for the review; ADR-061's read-only
 promise no longer holds for the review as a whole, though it still holds for the person's own
@@ -108,3 +164,8 @@ it in Git.
 - Letting the agent create its own worktree and report back: needs a result channel that
   hvir owns anyway once it created the worktree.
 - Silent truncation over the size cap: makes the map lie.
+- Marking History from a full snapshot scan per commit: correct but costs a whole analysis
+  per row; comparing the sets of relationships of the modified modules answers the same
+  question from the changed blobs alone.
+- Classifying commits in the renderer from the History diff summary: file counts cannot tell
+  a rewired import from an edited body.

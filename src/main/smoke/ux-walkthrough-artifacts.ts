@@ -126,6 +126,15 @@ async function captureVisibleState(win: BrowserWindow): Promise<unknown> {
         };
       };
       const surface = document.querySelector('[aria-label="Architecture review"]:not([hidden])');
+      const history = document.querySelector('[aria-label="Git"]:not([hidden]) .git-history');
+      const markerCounts = (scope) => {
+        const counts = {};
+        for (const marker of scope.querySelectorAll('.git-rail-commit-change, .architecture-strip-change')) {
+          const kind = marker.textContent?.trim() || '';
+          counts[kind] = (counts[kind] || 0) + 1;
+        }
+        return counts;
+      };
       const canvas = surface?.querySelector('.architecture-map-canvas');
       const explanation = surface?.querySelector('.architecture-explanation');
       const explanationButtons = [...(explanation?.querySelectorAll('button') || [])];
@@ -187,6 +196,15 @@ async function captureVisibleState(win: BrowserWindow): Promise<unknown> {
           } : null,
         } : null,
         timings,
+        history: history ? {
+          rows: history.querySelectorAll('.git-rail-history-row.commit').length,
+          architectureOnly: history.querySelector('input[aria-label="Architecture changes only"]')?.checked ?? null,
+          markers: markerCounts(history),
+        } : null,
+        strip: surface?.querySelector('[aria-label="Commit strip"]') ? {
+          commits: surface.querySelectorAll('.architecture-strip-commits button').length,
+          markers: markerCounts(surface.querySelector('[aria-label="Commit strip"]')),
+        } : null,
       };
     })()
   `)

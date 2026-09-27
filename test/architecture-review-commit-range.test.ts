@@ -40,22 +40,51 @@ async function repository() {
   git(root, 'merge', '--no-ff', '-m', 'merge side', 'side')
   const merge = git(root, 'rev-parse', 'HEAD')
   const f2 = await commit('f2')
-  return { root, m1, m2, f1, merge, f2, host: new LocalHost() }
+  const s1 = git(root, 'rev-parse', `${merge}^2`)
+  return { root, m1, m2, f1, s1, merge, f2, host: new LocalHost() }
 }
 
-it('lists first-parent commits from the branch point to HEAD, oldest first', async () => {
+it('lists every commit from the branch point to HEAD in History order, merges included', async () => {
   const r = await repository()
   const range = await listArchitectureCommits(
     r.host,
     { root: localPath(r.root) },
     signal(),
   )
-  expect(range.base).toEqual({ revision: r.m2, parent: r.m1, subject: 'add m2' })
-  expect(range.commits).toEqual([
-    { revision: r.f1, parent: r.m2, subject: 'add f1' },
-    { revision: r.merge, parent: r.f1, subject: 'merge side' },
-    { revision: r.f2, parent: r.merge, subject: 'add f2' },
-  ])
+  const authoredAt: unknown = expect.stringMatching(
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/,
+  )
+  expect(range.base).toEqual({
+    revision: r.m2,
+    parent: r.m1,
+    merge: false,
+    subject: 'add m2',
+    authoredAt,
+  })
+  const historyOrder = git(
+    r.root,
+    'log',
+    '--topo-order',
+    '--format=%H',
+    `${r.m2}..HEAD`,
+  ).split('\n')
+  expect(range.commits.map((commit) => commit.revision)).toEqual(historyOrder)
+  expect(historyOrder).toHaveLength(4)
+  expect(range.commits.map((commit) => commit.subject)).toContain('add s1')
+  expect(range.commits[0]).toEqual({
+    revision: r.f2,
+    parent: r.merge,
+    merge: false,
+    subject: 'add f2',
+    authoredAt,
+  })
+  expect(range.commits[1]).toEqual({
+    revision: r.merge,
+    parent: r.f1,
+    merge: true,
+    subject: 'merge side',
+    authoredAt,
+  })
   expect(range.truncated).toBe(false)
 })
 
@@ -70,12 +99,10 @@ it('widens the strip back to any ref', async () => {
     signal(),
   )
   expect(range.base.revision).toBe(r.m1)
-  expect(range.commits.map((commit) => commit.subject)).toEqual([
-    'add m2',
-    'add f1',
-    'merge side',
-    'add f2',
-  ])
+  expect(range.commits.map((commit) => commit.subject)).toEqual(
+    git(r.root, 'log', '--topo-order', '--format=%s', `${r.m1}..HEAD`).split('\n'),
+  )
+  expect(range.commits).toHaveLength(5)
 })
 
 it('keeps the newest commits and says so when the range is over the limit', async () => {
@@ -86,7 +113,7 @@ it('keeps the newest commits and says so when the range is over the limit', asyn
     signal(),
     2,
   )
-  expect(range.commits.map((commit) => commit.revision)).toEqual([r.merge, r.f2])
+  expect(range.commits.map((commit) => commit.revision)).toEqual([r.f2, r.merge])
   expect(range.truncated).toBe(true)
 })
 

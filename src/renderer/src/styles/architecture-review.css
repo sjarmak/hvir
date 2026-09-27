@@ -68,6 +68,16 @@
 .architecture-review-ref-problem {
   color: var(--danger-text);
 }
+.architecture-review-ref-primary {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+  color: var(--text-strong);
+}
+.architecture-review-ref-secondary {
+  font-size: calc(11px * var(--hvir-interface-scale));
+  color: var(--text-muted);
+}
 .architecture-strip {
   padding: 8px 14px;
   border-bottom: 1px solid var(--border-subtle);
@@ -643,4 +653,31 @@
 .architecture-explanation-invalid {
   color: var(--danger-text);
   border-color: var(--danger-text);
+}
+.architecture-strip-commits button > span,
+.architecture-strip-commits button > small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.architecture-strip-commits button > small {
+  color: var(--text-muted);
+}
+.architecture-strip-change {
+  margin-right: 4px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 0.8em;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.architecture-strip-change.architecture {
+  background: var(--accent);
+  color: var(--text-strong);
+}
+.architecture-strip-change.code,
+.architecture-strip-change.unclassified,
+.architecture-strip-change.merge {
+  background: var(--border-subtle);
+  color: var(--text-muted);
 }

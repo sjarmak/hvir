@@ -44,3 +44,28 @@ export async function readArchitectureBlobs(
     throw new Error('Unexpected architecture source batch data')
   return contents
 }
+
+export async function readArchitectureBlobSizes(
+  context: GitCommandContext,
+  root: HostPath,
+  objects: readonly string[],
+): Promise<ReadonlyMap<string, number>> {
+  const ids = [...new Set(objects)]
+  if (ids.length === 0) return new Map()
+  if (ids.some((id) => !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(id)))
+    throw new Error('Invalid architecture source object')
+  const result = await context.readOnly(root, ['cat-file', '--batch-check'], {
+    input: `${ids.join('\n')}\n`,
+    maxBuffer: ids.length * 128 + 1024,
+  })
+  if (result.code !== 0)
+    throw new Error(`Architecture source size read failed: ${result.stderr}`)
+  const sizes = new Map<string, number>()
+  for (const line of result.stdout.split('\n').filter(Boolean)) {
+    const match = /^([a-f0-9]+) blob (\d+)$/.exec(line)
+    if (!match) continue
+    const size = Number(match[2])
+    if (Number.isSafeInteger(size)) sizes.set(match[1]!, size)
+  }
+  return sizes
+}

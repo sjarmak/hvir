@@ -1,5 +1,7 @@
 import { expect, it } from 'vitest'
 import {
+  describeCommits,
+  describeShownCommit,
   endsFromText,
   lockedBaseline,
   stripEnds,
@@ -11,20 +13,22 @@ import type { ArchitectureCommitRange } from '../src/shared/architecture-review'
 const commit = (revision: string, parent: string | null) => ({
   revision,
   parent,
+  merge: false,
   subject: `subject ${revision}`,
+  authoredAt: '2026-09-26T10:00:00+00:00',
 })
 const range: ArchitectureCommitRange = {
   base: commit('b', 'z'),
-  commits: [commit('c1', 'b'), commit('c2', 'c1'), commit('c3', 'c2')],
+  commits: [commit('c3', 'c2'), commit('c2', 'c1'), commit('c1', 'b')],
   truncated: false,
 }
 
 it('steps pairwise from each commit to its first parent by default', () => {
-  expect(stripEnds(range, 0, { kind: 'pairwise' })).toEqual({
+  expect(stripEnds(range, 2, { kind: 'pairwise' })).toEqual({
     baseline: 'b',
     current: 'c1',
   })
-  expect(stripEnds(range, 2, { kind: 'pairwise' })).toEqual({
+  expect(stripEnds(range, 0, { kind: 'pairwise' })).toEqual({
     baseline: 'c2',
     current: 'c3',
   })
@@ -35,8 +39,8 @@ it('steps pairwise from each commit to its first parent by default', () => {
 
 it('keeps a locked baseline while Current steps', () => {
   const locked = { kind: 'locked', baseline: 'b' } as const
-  expect(stripEnds(range, 0, locked)).toEqual({ baseline: 'b', current: 'c1' })
-  expect(stripEnds(range, 2, locked)).toEqual({ baseline: 'b', current: 'c3' })
+  expect(stripEnds(range, 2, locked)).toEqual({ baseline: 'b', current: 'c1' })
+  expect(stripEnds(range, 0, locked)).toEqual({ baseline: 'b', current: 'c3' })
 })
 
 it('locks the chosen Baseline, or the strip base when none is chosen', () => {
@@ -44,15 +48,23 @@ it('locks the chosen Baseline, or the strip base when none is chosen', () => {
   expect(lockedBaseline({}, range)).toBe('b')
 })
 
-it('finds where Current sits on the strip and steps within it', () => {
+it('finds where Current sits on the strip and steps newer or older within it', () => {
   expect(stripPosition(range, 'c2')).toBe(1)
   expect(stripPosition(range, 'working-tree')).toBe(-1)
-  expect(stripStep(range, 1, 1)).toBe(2)
-  expect(stripStep(range, 2, 1)).toBeUndefined()
-  expect(stripStep(range, 0, -1)).toBeUndefined()
-  expect(stripStep(range, -1, 1)).toBe(0)
-  expect(stripStep(range, -1, -1)).toBe(2)
+  expect(stripStep(range, 1, 1)).toBe(0)
+  expect(stripStep(range, 0, 1)).toBeUndefined()
+  expect(stripStep(range, 2, -1)).toBeUndefined()
+  expect(stripStep(range, -1, 1)).toBe(2)
+  expect(stripStep(range, -1, -1)).toBe(0)
   expect(stripStep({ ...range, commits: [] }, -1, 1)).toBeUndefined()
+})
+
+it('steps over commits the filter hides', () => {
+  const shown = (index: number) => index !== 1
+  expect(stripStep(range, 2, 1, shown)).toBe(0)
+  expect(stripStep(range, 0, -1, shown)).toBe(2)
+  expect(stripStep(range, -1, 1, shown)).toBe(2)
+  expect(stripStep(range, -1, -1, () => false)).toBeUndefined()
 })
 
 it('reads blank fields as the default ends and reports refused refs', () => {
@@ -64,4 +76,42 @@ it('reads blank fields as the default ends and reports refused refs', () => {
   const { problems } = endsFromText('-x', 'a b')
   expect(problems.baseline).toMatch(/"-"/)
   expect(problems.current).toMatch(/spaces/)
+})
+
+it('describes the shown History commit and its parent when History has loaded it', () => {
+  const summary = (hash: string, parents: readonly string[], subject: string) => ({
+    hash,
+    shortHash: hash.slice(0, 7),
+    parents,
+    refs: [],
+    author: 'Ada',
+    authoredAt: '2026-09-26T10:00:00+00:00',
+    subject,
+  })
+  const loaded = [
+    summary('c3', ['c2'], 'third'),
+    summary('c2', ['c1'], 'second'),
+    summary('c1', ['b'], 'first'),
+  ]
+  expect(describeShownCommit(loaded[1]!, loaded)).toEqual({
+    c2: { subject: 'second', authoredAt: '2026-09-26T10:00:00+00:00' },
+    c1: { subject: 'first', authoredAt: '2026-09-26T10:00:00+00:00' },
+  })
+  expect(describeShownCommit(loaded[2]!, loaded)).toEqual({
+    c1: { subject: 'first', authoredAt: '2026-09-26T10:00:00+00:00' },
+  })
+})
+
+it('describes the strip commits an end names', () => {
+  expect(describeCommits(range, { baseline: 'c1', current: 'c2' })).toEqual({
+    c1: { subject: 'subject c1', authoredAt: '2026-09-26T10:00:00+00:00' },
+    c2: { subject: 'subject c2', authoredAt: '2026-09-26T10:00:00+00:00' },
+  })
+  expect(describeCommits(range, { baseline: 'b', current: 'c1' })).toEqual({
+    b: { subject: 'subject b', authoredAt: '2026-09-26T10:00:00+00:00' },
+    c1: { subject: 'subject c1', authoredAt: '2026-09-26T10:00:00+00:00' },
+  })
+  expect(describeCommits(range, { baseline: 'main', current: 'c1' })).toEqual({
+    c1: { subject: 'subject c1', authoredAt: '2026-09-26T10:00:00+00:00' },
+  })
 })

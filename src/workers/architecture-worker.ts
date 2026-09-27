@@ -4,23 +4,25 @@ import { localPath } from '../shared/host-path'
 import { loadArchitectureScanners } from '../main/architecture-review/architecture-scanners'
 import { TREE_SITTER_ASSET_DIRECTORY } from '../main/architecture-review/tree-sitter-assets'
 import { analyzeCaptureTimed } from '../main/architecture-review/timed-analysis'
+import { readModuleEdges } from '../main/architecture-review/module-edges'
 import { ModuleFactsCache } from '../main/architecture-review/module-facts-cache'
 import { LocalHost } from '../main/project-host/local-host'
 import { processClock } from '../main/architecture-review/scan-recorder'
 import { translateClock } from '../main/architecture-review/wall-clock'
 import { reportWorkerTimings } from '../main/architecture-review/worker-timings'
 import type {
+  ArchitectureImportsRequest,
   ArchitectureParseCacheLocation,
   ArchitectureWorkerRequest,
   ArchitectureWorkerResult,
 } from '../main/architecture-review/worker'
+import type { ModuleEdgesResult } from '../main/architecture-review/module-edges'
 
+type Request =
+  WorkerRequest<ArchitectureWorkerRequest> | WorkerRequest<ArchitectureImportsRequest>
 interface ParentPort {
-  on(
-    event: 'message',
-    listener: (event: { data: WorkerRequest<ArchitectureWorkerRequest> }) => void,
-  ): void
-  postMessage(message: WorkerResponse<ArchitectureWorkerResult>): void
+  on(event: 'message', listener: (event: { data: Request }) => void): void
+  postMessage(message: WorkerResponse<ArchitectureWorkerResult | ModuleEdgesResult>): void
 }
 const port = (process as unknown as { parentPort?: ParentPort }).parentPort
 if (!port) throw new Error('Architecture analysis requires a utility process')
@@ -47,16 +49,19 @@ function cacheFor(
   return cache.cache
 }
 
-async function answer(
-  channel: ParentPort,
-  data: WorkerRequest<ArchitectureWorkerRequest>,
-): Promise<void> {
+async function answer(channel: ParentPort, data: Request): Promise<void> {
   try {
     // A request that arrives while the grammars load is received once they are ready.
     const { scanners, readyMark } = await ready
     const receivedMark = processClock()
+    if (data.type === 'imports') {
+      const { root, edges, cache: location } = data.payload as ArchitectureImportsRequest
+      const result = await readModuleEdges(edges, root, cacheFor(location), scanners)
+      channel.postMessage({ id: data.id, ok: true, result })
+      return
+    }
     if (data.type !== 'analyze') throw new Error('Unknown architecture analysis request')
-    const { capture, cache: location } = data.payload
+    const { capture, cache: location } = data.payload as ArchitectureWorkerRequest
     const { analysis, stages } = await analyzeCaptureTimed(
       capture,
       processClock,

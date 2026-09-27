@@ -85,12 +85,21 @@ const handoff = {
   launch: { handoffId: 'h', root: prepared.handoff.worktree, digest: 'd' },
 }
 const revision = (digit: string) => digit.repeat(40)
+const authoredAt = '2026-09-26T10:00:00+00:00'
 const commits = {
-  base: { revision: revision('0'), parent: null, subject: 'base' },
-  commits: ['1', '2', '3'].map((digit, index) => ({
+  base: {
+    revision: revision('0'),
+    parent: null,
+    merge: false,
+    subject: 'base',
+    authoredAt,
+  },
+  commits: ['3', '2', '1'].map((digit) => ({
     revision: revision(digit),
-    parent: revision(String(index)),
+    parent: revision(String(Number(digit) - 1)),
+    merge: false,
     subject: `commit ${digit}`,
+    authoredAt,
   })),
   truncated: false,
 }
@@ -755,15 +764,15 @@ it('steps the strip pairwise, then against a locked baseline', async () => {
   expect(invoke).toHaveBeenCalledWith('architecture-review:commits', { root })
   await click(commitButton('2'))
   expect(commitButton('2').getAttribute('aria-pressed')).toBe('true')
-  await click(button('Next commit'))
+  await click(button('Newer commit'))
   await click(commitButton('1'))
   await act(async () => checkbox('Lock baseline').click())
   expect(host.textContent).toContain(`Baseline held at ${revision('0').slice(0, 8)}`)
-  await click(button('Next commit'))
-  await click(button('Next commit'))
-  expect(button('Next commit').disabled).toBe(true)
+  await click(button('Newer commit'))
+  await click(button('Newer commit'))
+  expect(button('Newer commit').disabled).toBe(true)
   await act(async () => checkbox('Lock baseline').click())
-  await click(button('Previous commit'))
+  await click(button('Older commit'))
   expect(scans()).toEqual([
     { baseline: revision('1'), current: revision('2') },
     { baseline: revision('2'), current: revision('3') },
@@ -772,6 +781,133 @@ it('steps the strip pairwise, then against a locked baseline', async () => {
     { baseline: revision('0'), current: revision('3') },
     { baseline: revision('1'), current: revision('2') },
   ])
+})
+
+it('lists the strip newest first with dates, filters it and steps over hidden commits', async () => {
+  invoke.mockImplementation(async (channel: string, request?: ScanRequest) => {
+    if (channel === 'architecture-review:commits') return commits
+    if (channel === 'architecture-review:classify-commits')
+      return {
+        head: revision('3'),
+        classifications: (
+          request as unknown as { revisions: readonly string[] }
+        ).revisions.map((rev) => ({
+          revision: rev,
+          parent: null,
+          merge: false,
+          change: rev === revision('2') ? 'code' : 'architecture',
+        })),
+      }
+    if (channel === 'architecture-review:scan')
+      return {
+        ...snapshot,
+        baselineRef: request?.baseline ?? 'branch point',
+        currentRef: request?.current ?? 'working tree',
+        currentRevision: request?.current ?? 'working-tree',
+      }
+    return undefined
+  })
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
+  const listed = () =>
+    Array.from(host.querySelectorAll('.architecture-strip-commits button')).map(
+      (node) => node.querySelector('span')?.textContent,
+    )
+  expect(listed()).toEqual(['commit 3', 'commit 2', 'commit 1'])
+  expect(commitButton('3').textContent).toContain('2026-09-26')
+  expect(commitButton('2').querySelector('.architecture-strip-change')?.textContent).toBe(
+    'Code',
+  )
+  await act(async () => checkbox('Architecture changes only').click())
+  expect(listed()).toEqual(['commit 3', 'commit 1'])
+  await click(commitButton('1'))
+  await click(button('Newer commit'))
+  expect(scans()).toEqual([
+    { baseline: revision('0'), current: revision('1') },
+    { baseline: revision('2'), current: revision('3') },
+  ])
+  await act(async () => checkbox('Architecture changes only').click())
+})
+
+it('hides strip rows still classifying under the filter and counts them in the note', async () => {
+  invoke.mockImplementation(async (channel: string) => {
+    if (channel === 'architecture-review:commits') return commits
+    if (channel === 'architecture-review:classify-commits')
+      return new Promise(() => undefined)
+    return undefined
+  })
+  const cold = localPath('/repo-classifying')
+  await act(async () =>
+    app.render(<ArchitectureReview root={cold} active onHandoff={vi.fn()} />),
+  )
+  await act(async () => checkbox('Architecture changes only').click())
+  expect(host.querySelectorAll('.architecture-strip-commits button')).toHaveLength(0)
+  expect(host.querySelector('.architecture-strip-note')?.textContent).toContain(
+    '3 classifying',
+  )
+  expect(host.textContent).not.toContain('No architecture changes')
+  await act(async () => checkbox('Architecture changes only').click())
+})
+
+it('scans the ends History asked for, once per request', async () => {
+  const request = { ends: { baseline: revision('1'), current: revision('2') }, serial: 1 }
+  await act(async () =>
+    app.render(
+      <ArchitectureReview root={root} active request={request} onHandoff={vi.fn()} />,
+    ),
+  )
+  await act(async () =>
+    app.render(
+      <ArchitectureReview root={root} active request={request} onHandoff={vi.fn()} />,
+    ),
+  )
+  await act(async () =>
+    app.render(
+      <ArchitectureReview
+        root={root}
+        active
+        request={{ ...request, serial: 2 }}
+        onHandoff={vi.fn()}
+      />,
+    ),
+  )
+  expect(scans()).toEqual([
+    { baseline: revision('1'), current: revision('2') },
+    { baseline: revision('1'), current: revision('2') },
+  ])
+})
+
+it('shows the subject and date of an end History or the strip named, over its hash', async () => {
+  const described = {
+    [revision('2')]: { subject: 'commit 2', authoredAt: '2026-09-25T23:30:00-05:00' },
+  }
+  const request = {
+    ends: { baseline: revision('1'), current: revision('2') },
+    serial: 1,
+    described,
+  }
+  await act(async () =>
+    app.render(
+      <ArchitectureReview root={root} active request={request} onHandoff={vi.fn()} />,
+    ),
+  )
+  const field = (label: string) =>
+    Array.from(host.querySelectorAll('.architecture-review-controls label')).find(
+      (node) => node.textContent?.startsWith(label),
+    )!
+  expect(field('Current').querySelector('strong')?.textContent).toBe('commit 2')
+  expect(field('Current').textContent).toContain('2026-09-25')
+  expect(field('Current').querySelector('input')?.value).toBe(revision('2'))
+  expect(
+    field('Current').querySelector('.architecture-review-ref-secondary'),
+  ).not.toBeNull()
+  expect(field('Baseline').querySelector('strong')).toBeNull()
+  await click(commitButton('3'))
+  expect(field('Current').querySelector('strong')?.textContent).toBe('commit 3')
+  expect(field('Baseline').querySelector('strong')?.textContent).toBe('commit 2')
+  await type('Current', 'main')
+  expect(field('Current').querySelector('strong')).toBeNull()
 })
 
 it('widens the strip from any ref', async () => {

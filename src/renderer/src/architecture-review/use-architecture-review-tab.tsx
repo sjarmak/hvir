@@ -1,6 +1,10 @@
 import { useCallback, useRef, useState, type RefObject } from 'react'
 import { hostPathEquals, type HostPath } from '../../../shared'
-import { ArchitectureReview } from './ArchitectureReview'
+import { ArchitectureReview, type ArchitectureEndsRequest } from './ArchitectureReview'
+import type {
+  ArchitectureCommitDescriptions,
+  ArchitectureEnds,
+} from './architecture-ends-model'
 import { ArchitectureExplanationStateSession } from './architecture-explanation-state'
 
 /** A workspace-qualified native review tab; file tabs retain their document owner. */
@@ -12,16 +16,31 @@ export function useArchitectureReviewTab(ports: {
   if (!explanationStateSession.current) {
     explanationStateSession.current = new ArchitectureExplanationStateSession()
   }
-  const [tab, setTab] = useState<{ readonly root: HostPath; readonly active: boolean }>()
+  const [tab, setTab] = useState<{
+    readonly root: HostPath
+    readonly active: boolean
+    readonly request?: ArchitectureEndsRequest
+  }>()
+  const requests = useRef(0)
   const deactivate = useCallback(
     () => setTab((current) => (current ? { ...current, active: false } : current)),
     [],
   )
   const close = useCallback(() => setTab(undefined), [])
-  const open = () => {
+  const open = (ends?: ArchitectureEnds, described?: ArchitectureCommitDescriptions) => {
     if (!ports.root.current) return
     ports.activateViewer()
-    setTab({ root: ports.root.current, active: true })
+    const root = ports.root.current
+    setTab((current) => ({
+      root,
+      active: true,
+      request:
+        ends === undefined
+          ? current && hostPathEquals(current.root, root)
+            ? current.request
+            : undefined
+          : { ends, serial: ++requests.current, described },
+    }))
   }
   const belongs = (root: HostPath, pane = 'primary') =>
     pane === 'primary' && tab !== undefined && hostPathEquals(tab.root, root)
@@ -38,7 +57,7 @@ export function useArchitectureReviewTab(ports: {
     stripProps: (root: HostPath, pane: string) => ({
       architectureReviewOpen: belongs(root, pane),
       architectureReviewActive: active(root, pane),
-      onActivateArchitectureReview: open,
+      onActivateArchitectureReview: () => open(),
       onCloseArchitectureReview: close,
     }),
     panel: (
@@ -52,6 +71,7 @@ export function useArchitectureReviewTab(ports: {
             key={JSON.stringify(root)}
             root={root}
             active={active(root, pane)}
+            request={tab?.request}
             explanationStateSession={explanationStateSession.current}
             onHandoff={(projectId, workspaceId) =>
               void switchWorkspace(projectId, workspaceId)
