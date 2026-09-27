@@ -13,6 +13,10 @@ export function writeSftpFile(
     return
   }
   const stream = session.createWriteStream(path, mode === undefined ? {} : { mode })
+  const state = stream as typeof stream & {
+    readonly bytesWritten: number
+    readonly _writableState?: { readonly errored?: Error | null }
+  }
   let settled = false
   const abort = () => {
     stream.destroy()
@@ -23,16 +27,27 @@ export function writeSftpFile(
     settled = true
     signal?.removeEventListener('abort', abort)
     stream.removeListener('error', onError)
-    stream.removeListener('finish', onFinish)
     stream.removeListener('close', onClose)
+    session.removeListener('error', onSessionError)
+    session.removeListener('close', onSessionClose)
     done(reason, undefined)
   }
   const onError = (reason: Error) => finish(reason)
-  const onFinish = () => finish()
-  const onClose = () => finish(new Error('SSH file write closed before completion'))
+  const onClose = () =>
+    queueMicrotask(() => {
+      const reason = state.errored ?? state._writableState?.errored
+      if (reason) finish(reason)
+      else if (state.bytesWritten !== data.length)
+        finish(new Error('SSH file write interrupted before completion'))
+      else finish()
+    })
+  const onSessionError = (reason: Error) => finish(reason)
+  const onSessionClose = () =>
+    finish(new Error('SSH file write interrupted before completion'))
   stream.once('error', onError)
-  stream.once('finish', onFinish)
   stream.once('close', onClose)
+  session.once('error', onSessionError)
+  session.once('close', onSessionClose)
   signal?.addEventListener('abort', abort, { once: true })
   stream.end(data)
 }
