@@ -8,7 +8,7 @@ import { localPath } from '../src/shared'
 import type { ArchitectureEvidence } from '../src/shared/architecture-review'
 import { analyzeArchitecture } from '../src/main/architecture-review/analysis'
 import { ArchitectureReview } from '../src/renderer/src/architecture-review/ArchitectureReview'
-import { ArchitectureReviewPanelStateSession } from '../src/renderer/src/architecture-review/architecture-review-panel-state'
+import { ArchitectureExplanationStateSession } from '../src/renderer/src/architecture-review/architecture-explanation-state'
 import { claimArchitectureAgentLaunch } from '../src/renderer/src/architecture-review/architecture-review-launch'
 
 vi.mock('../src/renderer/src/viewer/DiffView', () => ({
@@ -353,13 +353,13 @@ it('renders the explanation as an agent claim and flags unknown snapshot names',
   )
 })
 it('collapses the explanation to its header and restores its action', async () => {
-  const panelStateSession = new ArchitectureReviewPanelStateSession()
+  const explanationStateSession = new ArchitectureExplanationStateSession()
   await act(async () =>
     app.render(
       <ArchitectureReview
         root={root}
         active
-        panelStateSession={panelStateSession}
+        explanationStateSession={explanationStateSession}
         onHandoff={vi.fn()}
       />,
     ),
@@ -390,7 +390,7 @@ it('collapses the explanation to its header and restores its action', async () =
       <ArchitectureReview
         root={root}
         active
-        panelStateSession={panelStateSession}
+        explanationStateSession={explanationStateSession}
         onHandoff={vi.fn()}
       />,
     ),
