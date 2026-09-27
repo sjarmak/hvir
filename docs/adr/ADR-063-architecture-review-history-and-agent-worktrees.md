@@ -44,7 +44,15 @@ not the occurrences, so a second import of a module already imported, an import 
 becomes type-only or dynamic, a respelled specifier for the same target, or a reordering
 is a code change. The map includes external and unresolved targets, type-only imports and
 every scanned file, test files included, and the classifier counts exactly those edges and
-no others. A commit with no source change is never marked from its diff alone; a config
+no others. Each modified module is resolved by the same language resolver the map uses,
+against the module listing and configs of its own tree: the parent tree for the before
+side and the commit tree for the after side, so a tsconfig or jsconfig path, a package
+exports subpath, an index file and an extension resolve exactly as the map resolves them.
+Each side is listed once per request, under the same scope selection and cap as a capture,
+and its config blobs count against the read budget; a side that cannot be listed or
+afforded leaves the commit unclassified. A language whose resolver needs the facts of
+every module in the tree (Rust) cannot be decided from the modified modules alone, and
+such a commit takes a pair scan within the scan budget. A commit with no source change is never marked from its diff alone; a config
 or layout change is marked architecture only when its pair scan shows a module or
 relationship delta. A request scans at most four such commits, and the rest stay
 unclassified until a later request reaches them. A root commit has no parent to scan
@@ -56,8 +64,10 @@ unclassified is cached: every unclassified commit is decided again on the next r
 Every revision sent for classification is a full 40- or 64-character lowercase hash,
 checked at the IPC boundary. Classification runs lazily for the rows on screen, off the
 render thread in the architecture worker, and is cached by commit pair, scanner versions
-and layout. One classification store lives per open workspace and is released when the
-workspace closes. One request is in flight per workspace, shared by History and the strip, in
+and layout. One classification store lives per open workspace and is released once the
+close transition has returned; release deactivates the store, so a late answer is dropped,
+queued batches are never sent, later requests are ignored, and a reopened workspace gets a
+fresh store. One request is in flight per workspace, shared by History and the strip, in
 batches of fifty; a failed batch is shown, does not strand the batches behind it, and is
 retried on the next drain. Every answer names the HEAD it was computed against; when HEAD
 or the branch moves within a workspace, held classifications are dropped and late answers
