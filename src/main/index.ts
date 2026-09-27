@@ -355,7 +355,7 @@ function createWorkbenchEntry(): void {
     runtime.own(
       'IPC authority router',
       registerIpcHandlers({
-        architectureReview: ownArchitectureReview(rendererScopes, runtime, gitMutations),
+        architectureReview: ownArchitectureReview(rendererScopes, runtime, gitMutations, harnessProfileStore),
         echoWorker,
         gitWorker,
         filenameSearch,

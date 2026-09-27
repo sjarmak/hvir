@@ -116,6 +116,45 @@ describe('architecture review IPC authority', () => {
     })
   })
 
+  it('runs an explanation against the authorized project root', async () => {
+    const root = localPath('/repo/worktree')
+    const projectRoot = localPath('/repo')
+    const host = {
+      hostId: root.hostId,
+      connectionState: 'connected',
+    } as unknown as ProjectHost
+    const state = { status: 'waiting' as const, snapshotId: 'snapshot-1' }
+    const explain = vi.fn(() => Promise.resolve(state))
+    const projectPath = vi.fn(() => Promise.resolve(root))
+    const handlers = new Map<string, TestHandler>()
+    registerArchitectureReviewIpc(
+      {
+        handle: (channel: string, handler: TestHandler) => handlers.set(channel, handler),
+        authority: { projectPath, projectRoot: vi.fn(() => projectRoot) },
+      } as unknown as IpcRegistrar,
+      {
+        getProject: () => ({ root, host }),
+        architectureReview: { explain },
+      } as unknown as Parameters<typeof registerArchitectureReviewIpc>[1],
+    )
+    const request = {
+      root,
+      reviewId: 'review-1',
+      snapshotId: 'snapshot-1',
+      profileId: 'codex',
+      launchRevision: 2,
+    }
+    await expect(
+      handlers.get('architecture-review:explain')?.(request, context()),
+    ).resolves.toBe(state)
+    expect(explain).toHaveBeenCalledWith(
+      { id: 1, generation: 1 },
+      host,
+      projectRoot,
+      request,
+    )
+  })
+
   it('classifies commits only for the active workspace, through its host', async () => {
     const root = localPath('/repo')
     const host = {

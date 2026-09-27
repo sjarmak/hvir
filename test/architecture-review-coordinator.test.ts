@@ -18,6 +18,8 @@ import type { AddedWorktree } from '../src/main/git/mutation-coordinator'
 import { expectMonotoneMetrics, stagesOf } from './architecture-scan-metrics-fixture'
 import { gitBlobId } from '../src/main/architecture-review/blob-id'
 import { ByteBoundedCache } from '../src/main/architecture-review/byte-bounded-cache'
+import { asHarnessProfileId } from '../src/shared'
+import type { ArchitectureExplanationModelPort } from '../src/main/architecture-review/explanation-model'
 
 const source = (path: string, content: string) => ({
   path,
@@ -53,15 +55,11 @@ function setup(
     watchEvent = (path) => onEvent({ type: 'change', path })
     return stopWatch
   })
-  const readTextFilePrefix = vi.fn<ProjectHost['readTextFilePrefix']>(() =>
-    Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' })),
-  )
   const host = {
     hostId: root.hostId,
     connectionState: 'connected',
     onConnectionState: () => () => undefined,
     watch,
-    readTextFilePrefix,
   } as unknown as ProjectHost
   const emptyScan = {
     fingerprint: '',
@@ -120,6 +118,11 @@ function setup(
   )
   const holdWorktree = vi.fn((added: AddedWorktree) => Promise.resolve(hold(added)))
   const writeBrief = vi.fn<typeof writeArchitectureBrief>(() => Promise.resolve())
+  const explanationModel = {
+    generate: vi.fn<ArchitectureExplanationModelPort['generate']>(() =>
+      Promise.resolve('{}'),
+    ),
+  }
   const coordinator = new ArchitectureReviewCoordinator({
     resources,
     capture,
@@ -130,6 +133,7 @@ function setup(
       liveBase,
       writeBrief,
     },
+    explanationModel,
   })
   return {
     held,
@@ -137,6 +141,7 @@ function setup(
     liveBase,
     addWorktree,
     writeBrief,
+    explanationModel,
     liveState,
     resources,
     owner,
@@ -146,7 +151,6 @@ function setup(
     analyze,
     watch,
     stopWatch,
-    readTextFilePrefix,
     emitWatch: (path = localPath('/repo/a.ts')) => watchEvent?.(path),
     request: { root, baseline: 'HEAD', reviewId: 'tab-1' },
   }
@@ -339,111 +343,73 @@ it('previews the exact worktree, brief and prompt, then hands off and launches o
     /already used/,
   )
 })
-it('stores a validated explanation per snapshot and flags names absent from it', async () => {
-  vi.useFakeTimers()
-  try {
-    const f = setup()
-    const result = await f.coordinator.scan(f.owner, f.host, f.request)
-    const request = { ...f.request, snapshotId: result.id }
-    const preview = await f.coordinator.prepareExplanation(f.owner, f.host, request)
-    expect(preview.body).toContain('.hvir-architecture-explanation.json')
-    f.readTextFilePrefix.mockResolvedValue({
-      content: JSON.stringify({
-        version: 1,
-        snapshotId: result.id,
-        whatChanged: 'The handoff changed.',
-        why: 'To explain the snapshot.',
-        sequenceDiagram: 'sequenceDiagram\n  User->>hvir: Explain',
-        touched: { systems: ['Invented'], subsystems: [], modules: ['missing.ts'] },
-      }),
-      byteLength: 1,
-      lineCount: 1,
-      complete: true,
-      validUtf8: true,
-    })
-    const publish = vi.fn()
-    await f.coordinator.handoffExplanation(f.owner, f.host, preview, publish)
-    expect(publish).toHaveBeenCalledWith({ status: 'waiting', snapshotId: result.id })
-    await vi.advanceTimersByTimeAsync(250)
-    expect(f.coordinator.explanation(f.owner, f.host, request)).toMatchObject({
-      status: 'ready',
-      explanation: {
-        names: {
-          systems: [{ name: 'Invented', present: false }],
-          modules: [{ name: 'missing.ts', present: false }],
-        },
-      },
-    })
-    expect(f.stopWatch).toHaveBeenCalledOnce()
-  } finally {
-    vi.useRealTimers()
-  }
-})
-it('keeps snapshot explanations across rescans and stops their watches on review close', async () => {
+it('generates and validates an explanation without creating a worktree', async () => {
   const f = setup()
   const result = await f.coordinator.scan(f.owner, f.host, f.request)
   const request = { ...f.request, snapshotId: result.id }
-  const preview = await f.coordinator.prepareExplanation(f.owner, f.host, request)
-  await f.coordinator.handoffExplanation(f.owner, f.host, preview, vi.fn())
-  await f.coordinator.scan(f.owner, f.host, f.request)
-  expect(f.coordinator.explanation(f.owner, f.host, request)).toEqual({
-    status: 'waiting',
-    snapshotId: result.id,
-  })
-  expect(f.stopWatch).not.toHaveBeenCalled()
-  f.coordinator.close(f.owner, f.request)
-  expect(f.stopWatch).toHaveBeenCalledOnce()
-})
-it('publishes only the newest explanation read when host reads overlap', async () => {
-  vi.useFakeTimers()
-  try {
-    const f = setup()
-    const result = await f.coordinator.scan(f.owner, f.host, f.request)
-    const request = { ...f.request, snapshotId: result.id }
-    const preview = await f.coordinator.prepareExplanation(f.owner, f.host, request)
-    let finishFirst!: (
-      value: Awaited<ReturnType<ProjectHost['readTextFilePrefix']>>,
-    ) => void
-    let finishSecond!: (
-      value: Awaited<ReturnType<ProjectHost['readTextFilePrefix']>>,
-    ) => void
-    f.readTextFilePrefix
-      .mockImplementationOnce(() => new Promise((resolve) => (finishFirst = resolve)))
-      .mockImplementationOnce(() => new Promise((resolve) => (finishSecond = resolve)))
-    await f.coordinator.handoffExplanation(f.owner, f.host, preview, vi.fn())
-    await vi.advanceTimersByTimeAsync(250)
-    f.emitWatch()
-    await vi.advanceTimersByTimeAsync(250)
-    const content = (whatChanged: string) => ({
-      content: JSON.stringify({
-        version: 1,
-        snapshotId: result.id,
-        whatChanged,
-        why: 'To explain the snapshot.',
-        sequenceDiagram: 'sequenceDiagram\n  User->>hvir: Explain',
-        touched: { systems: [], subsystems: [], modules: [] },
-      }),
-      byteLength: 1,
-      lineCount: 1,
-      complete: true,
-      validUtf8: true,
-    })
-    finishFirst(content('Older claim'))
-    await Promise.resolve()
-    expect(f.coordinator.explanation(f.owner, f.host, request)).toEqual({
-      status: 'waiting',
+  f.explanationModel.generate.mockResolvedValue(
+    JSON.stringify({
+      version: 1,
       snapshotId: result.id,
-    })
-    finishSecond(content('Newest claim'))
-    await vi.waitFor(() =>
-      expect(f.coordinator.explanation(f.owner, f.host, request)).toMatchObject({
-        status: 'ready',
-        explanation: { claim: { whatChanged: 'Newest claim' } },
-      }),
-    )
-  } finally {
-    vi.useRealTimers()
-  }
+      whatChanged: 'The direct model call changed.',
+      why: 'To explain the snapshot.',
+      sequenceDiagram: 'sequenceDiagram\n  User->>hvir: Explain',
+      touched: { systems: ['Invented'], subsystems: [], modules: ['missing.ts'] },
+    }),
+  )
+  await expect(
+    f.coordinator.explain(f.owner, f.host, root, {
+      ...request,
+      profileId: asHarnessProfileId('codex'),
+      launchRevision: 2,
+    }),
+  ).resolves.toMatchObject({
+    status: 'ready',
+    explanation: {
+      names: {
+        systems: [{ name: 'Invented', present: false }],
+        modules: [{ name: 'missing.ts', present: false }],
+      },
+    },
+  })
+  expect(f.explanationModel.generate).toHaveBeenCalledOnce()
+  expect(f.explanationModel.generate.mock.calls[0]?.[0]).toBe(f.host)
+  const modelRequest = f.explanationModel.generate.mock.calls[0]?.[1]
+  expect(modelRequest).toMatchObject({
+    projectRoot: root,
+    workspaceRoot: root,
+    profileId: asHarnessProfileId('codex'),
+  })
+  expect(modelRequest?.prompt).toContain(result.id)
+  expect(f.addWorktree).not.toHaveBeenCalled()
+  expect(f.writeBrief).not.toHaveBeenCalled()
+  expect(f.watch).not.toHaveBeenCalled()
+})
+it('keeps a generated explanation across rescans and clears it on close', async () => {
+  const f = setup()
+  const result = await f.coordinator.scan(f.owner, f.host, f.request)
+  const request = { ...f.request, snapshotId: result.id }
+  f.explanationModel.generate.mockResolvedValue(
+    JSON.stringify({
+      version: 1,
+      snapshotId: result.id,
+      whatChanged: 'Changed.',
+      why: 'Reason.',
+      sequenceDiagram: 'sequenceDiagram\n  User->>hvir: Explain',
+      touched: { systems: [], subsystems: [], modules: [] },
+    }),
+  )
+  await f.coordinator.explain(f.owner, f.host, root, {
+    ...request,
+    profileId: asHarnessProfileId('codex'),
+    launchRevision: 2,
+  })
+  await f.coordinator.scan(f.owner, f.host, f.request)
+  expect(f.coordinator.explanation(f.owner, f.host, request)).toMatchObject({
+    status: 'ready',
+  })
+  f.coordinator.close(f.owner, f.request)
+  expect(() => f.coordinator.explanation(f.owner, f.host, request)).toThrow(/unavailable/)
 })
 it('refuses a stale, dirty or subdirectory handoff before creating a worktree', async () => {
   const f = setup()

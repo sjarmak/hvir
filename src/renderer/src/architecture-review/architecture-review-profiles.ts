@@ -6,7 +6,7 @@ export function selectArchitectureReviewProfiles(
 ): readonly HarnessProfile[] {
   const providerIds = new Set(
     providers
-      .filter((provider) => provider.architectureReviewLaunch)
+      .filter((provider) => provider.architectureExplanation)
       .map((provider) => provider.id),
   )
   return profiles.filter(
@@ -22,8 +22,6 @@ export function selectArchitectureReviewTemplateProvider(
 ): HarnessProviderDescriptor | undefined {
   return providers.find(
     (provider) =>
-      provider.architectureReviewLaunch &&
-      !provider.default &&
-      provider.profileTemplate,
+      provider.architectureExplanation && !provider.default && provider.profileTemplate,
   )
 }

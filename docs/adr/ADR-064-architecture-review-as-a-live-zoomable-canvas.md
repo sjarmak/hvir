@@ -1,7 +1,7 @@
 # ADR-064: Architecture review as a live, zoomable canvas
 
 > Lifecycle: Active
-> Supersedes: [ADR-063](ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | The map opening on subsystem relationships in a fixed grid; it now opens on systems on a laid-out canvas that drills to subsystems and modules.
+> Supersedes: [ADR-063](ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | The map now opens on systems on a laid-out canvas that drills to subsystems and modules; explanation-only requests no longer create an agent branch, worktree, brief or terminal session, while architecture-improvement launches retain the worktree handoff.
 
 ## Context
 
@@ -40,12 +40,16 @@ the person may pause it. A snapshot still never changes. The snapshots of one li
 a timeline the person can scrub, held for the application session only; commits remain the
 durable history.
 
-**The agent explains; the scan observes.** An "Explain this change" action hands one snapshot
-to an agent through the existing handoff. The agent returns an Explanation: what changed and
-why, one sequence diagram, and the systems, subsystems and modules it says it touched. hvir
-stores the Explanation against that snapshot, shows it apart from what the scan observed, and
-flags every name it gives that the snapshot lacks. The workbench never generates or judges an
-Explanation itself.
+**The model explains; the scan observes.** An "Explain this change" action sends one bounded,
+in-memory snapshot prompt through a supported native harness profile and waits for one
+non-interactive model response. The provider owns its one-shot invocation flags; the main
+process passes the prompt on standard input and returns the response over IPC. The action
+creates no branch, worktree, brief, result file, terminal pane or resumable harness session,
+and does not start file watching. The model returns an Explanation: what changed and why, one
+sequence diagram, and the systems, subsystems and modules it says it touched. hvir stores the
+Explanation against that snapshot, shows it apart from what the scan observed, and flags every
+name it gives that the snapshot lacks. The workbench validates the response shape and claimed
+names but never generates or semantically judges an Explanation itself.
 
 **Ideas, not code.** hvir takes whiteboard's hierarchy, canvas and layout libraries and its
 agent-written account of intent. It copies none of its source, since whiteboard's map is
@@ -58,9 +62,10 @@ working, and opens at a scale a person can take in at once. Two new renderer dep
 arrive (`@xyflow/react`, `elkjs`) and fall under the dependency policy of ADR-040. System
 inference is a new scanner concern with its own failure mode, a wrong grouping, which the
 tracked override answers. Live review multiplies scans; the blob-keyed parse cache of ADR-063
-keeps a settled rescan to the files that changed. An Explanation costs an agent session each
-time and can be wrong; the unknown-name check catches invented structure but not a wrong
-account of intent, which is why it is always shown as a claim.
+keeps a settled rescan to the files that changed. An Explanation costs one model call plus the
+native CLI's one-shot startup, without Git, filesystem handoff, terminal or watch latency. It
+can be wrong; the unknown-name check catches invented structure but not a wrong account of
+intent, which is why it is always shown as a claim.
 
 Revisit if a live review's scan cost on a large project over SSH makes the settle interval
 unusable, or if people consistently rearrange the map by hand in other tools and ask to keep
@@ -87,6 +92,10 @@ settled tree would store mostly noise.
 
 **Explanations generated for every snapshot.** Spends an agent session per scan whether or
 not anyone reads it.
+
+**Using the architecture-improvement worktree handoff for explanations.** It adds Git writes,
+filesystem coordination, terminal startup and a watched result file to a single model request,
+and leaves disposable branches and worktrees for a read-only answer.
 
 **Keeping the grid beside the canvas.** Two maps of the same data to maintain, and nothing in
 the grid the canvas does not show.

@@ -490,7 +490,6 @@ export function ArchitectureReview({
             snapshot={snapshot}
             collapsed={explanationCollapsed}
             onCollapsedChange={setExplanationCollapsed}
-            onHandoff={onHandoff}
           />
         </>
       )}

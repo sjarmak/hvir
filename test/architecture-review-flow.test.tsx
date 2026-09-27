@@ -133,6 +133,7 @@ beforeEach(() => {
           id: 'codex',
           displayName: 'Codex',
           architectureReviewLaunch: true,
+          architectureExplanation: true,
           profileTemplate: {
             displayName: 'Codex',
             description: 'Codex with exact rollout discovery and recovery.',
@@ -423,7 +424,6 @@ it('explains native profile requirements and creates a qualifying profile', asyn
           args: [{ parts: [{ kind: 'literal', value: '--full-auto' }] }],
         },
       ]
-    if (channel === 'architecture-review:prepare-explanation') return prepared
     if (channel === 'harness:profile-materialize')
       return [
         {
@@ -441,7 +441,6 @@ it('explains native profile requirements and creates a qualifying profile', asyn
     app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
   )
   await click(button('Scan snapshot'))
-  await click(button('Explain this change'))
   expect(host.textContent).toContain(
     'Architecture review requires a supported provider, its default executable, and no custom arguments.',
   )
@@ -451,9 +450,38 @@ it('explains native profile requirements and creates a qualifying profile', asyn
     providerIds: ['codex'],
   })
   expect(
-    host.querySelector<HTMLSelectElement>('.architecture-explanation-launch select')
+    host.querySelector<HTMLSelectElement>('.architecture-explanation-profile select')
       ?.value,
   ).toBe('native')
+})
+it('requests an explanation directly without handing off a worktree', async () => {
+  const original = invoke.getMockImplementation()!
+  invoke.mockImplementation(async (channel: string, request?: ScanRequest) => {
+    if (channel === 'architecture-review:explain') return undefined
+    return original(channel, request)
+  })
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
+  await click(button('Scan snapshot'))
+  await click(button('Explain this change'))
+  const reviewId = (
+    invoke.mock.calls.find(
+      ([channel]) => channel === 'architecture-review:follow',
+    )?.[1] as {
+      reviewId: string
+    }
+  ).reviewId
+  expect(invoke).toHaveBeenCalledWith('architecture-review:explain', {
+    root,
+    reviewId,
+    snapshotId: 's',
+    profileId: 'p',
+    launchRevision: 2,
+  })
+  expect(
+    invoke.mock.calls.some(([channel]) => channel === 'architecture-review:handoff'),
+  ).toBe(false)
 })
 it('clears the prior snapshot claim while the selected snapshot loads', async () => {
   const original = invoke.getMockImplementation()!

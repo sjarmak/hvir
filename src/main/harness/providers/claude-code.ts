@@ -69,6 +69,23 @@ export const claudeCodeProvider: HarnessProvider = {
     args: [...spec.args, '--', body],
   }),
 
+  architectureExplanation: (spec) => ({
+    ...spec,
+    args: [
+      '--print',
+      '--no-session-persistence',
+      '--safe-mode',
+      '--tools',
+      '',
+      '--permission-mode',
+      'dontAsk',
+      '--permission-prompts',
+      'none',
+      '--output-format',
+      'text',
+    ],
+  }),
+
   launch(ctx): HarnessLaunchSpec {
     return {
       file: 'claude',

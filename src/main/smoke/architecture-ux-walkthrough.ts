@@ -469,16 +469,14 @@ async function prepareExplanation(win: BrowserWindow): Promise<void> {
       const surface = document.querySelector('[aria-label="Architecture review"]:not([hidden])');
       const button = [...(surface?.querySelectorAll('button') || [])].find(node => node.textContent?.trim() === 'Explain this change');
       if (!(button instanceof HTMLButtonElement)) return reject(new Error('Explain this change control is missing'));
-      button.click();
       const deadline = Date.now() + 30000;
       const wait = () => {
         const explanation = surface.querySelector('.architecture-explanation');
-        const busy = [...(explanation?.querySelectorAll('button') || [])].some(node => node.textContent?.trim() === 'Preparing…');
-        const launch = explanation?.querySelector('.architecture-explanation-launch');
+        const profile = explanation?.querySelector('.architecture-explanation-profile select');
         const failure = explanation?.querySelector('[role="alert"]');
-        if (!busy && launch) return resolve(true);
-        if (!busy && failure) return reject(new Error(failure.textContent?.trim() || 'Explanation handoff failed'));
-        if (Date.now() >= deadline) return reject(new Error('Timed out preparing the explanation handoff'));
+        if (!button.disabled && profile) return resolve(true);
+        if (failure) return reject(new Error(failure.textContent?.trim() || 'Explanation setup failed'));
+        if (Date.now() >= deadline) return reject(new Error('Timed out preparing the explanation action'));
         setTimeout(wait, 40);
       };
       wait();

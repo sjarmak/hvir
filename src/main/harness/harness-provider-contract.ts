@@ -235,6 +235,8 @@ export interface HarnessProvider {
   /** Provider-owned initial prompt for an explicit pinned architecture review. */
   architectureReviewLaunch?(spec: HarnessLaunchSpec, body: string): HarnessLaunchSpec
 
+  architectureExplanation?(spec: HarnessLaunchSpec): HarnessLaunchSpec
+
   /** Command to start a fresh session. */
   launch(ctx: HarnessLaunchContext): HarnessLaunchSpec
   /** Command to resume `ctx.sessionId`. */

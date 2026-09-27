@@ -34,6 +34,9 @@ export class HarnessProviderRegistry {
       ...(provider.architectureReviewLaunch
         ? { architectureReviewLaunch: true as const }
         : {}),
+      ...(provider.architectureExplanation
+        ? { architectureExplanation: true as const }
+        : {}),
       capabilities: harnessProviderCapabilities(provider),
       terminalInput: {
         modifiedKeyProtocol: provider.manifest.modifiedKeyProtocol ?? 'none',

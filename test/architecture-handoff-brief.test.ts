@@ -82,9 +82,7 @@ it('lists changed relationships with evidence paths and exact changed module nam
   const brief = architectureHandoffBrief(input([relationship('main', 'shared')]))
   expect(brief).toContain('`main` -> `shared`: 1 -> 2 imports (changed)')
   expect(brief).toContain('`main/x.ts:3` imports `../shared/y` (added)')
-  expect(brief).toContain(
-    '`src/main/x.ts` (system `main`, subsystem `main`): changed',
-  )
+  expect(brief).toContain('`src/main/x.ts` (system `main`, subsystem `main`): changed')
   expect(brief).not.toContain('src/shared/y.ts')
   expect(brief).toContain('hvir/architecture/review-1')
   expect(brief).toContain('src/main/x.ts')
@@ -107,16 +105,16 @@ it('points the prompt at the brief inside the worktree without inlining evidence
   expect(prompt).not.toContain('../shared/y')
 })
 
-it('asks an explaining agent for one strict result file without changing the worktree', () => {
+it('asks for one strict in-memory explanation from the supplied snapshot facts', () => {
   const prompt = architectureExplanationPrompt(input([relationship('main', 'shared')]))
-  expect(prompt).toContain('.hvir-architecture-explanation.json')
+  expect(prompt).toContain('Return exactly one JSON object')
   expect(prompt).toContain('whatChanged')
   expect(prompt).toContain('sequenceDiagram')
   expect(prompt).toContain('systems')
   expect(prompt).toContain('subsystems')
   expect(prompt).toContain('modules')
-  expect(prompt).toContain('Do not change source files or create a commit')
-  expect(prompt).not.toContain('../shared/y')
+  expect(prompt).toContain('Do not call tools or read the repository')
+  expect(prompt).toContain('../shared/y')
 })
 
 it('refuses a forged or malformed origin marker', () => {

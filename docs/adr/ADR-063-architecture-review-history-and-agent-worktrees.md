@@ -4,7 +4,7 @@
 > Supersedes: [ADR-061](ADR-061-pinned-native-architecture-review.md) | partial | The fixed comparison modes, the full recapture on revalidation, and the read-only single-file handoff consumed once per snapshot; pinned evidence, worker isolation, and launch authority remain.
 > Supersedes: [ADR-005](ADR-005-system-git-engine.md) | partial | Creating no branch at all; the architecture review creates one hvir/architecture/ branch per agent launch.
 > Supersedes: [ADR-008](ADR-008-project-worktree-workspaces.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
-> Superseded by: [ADR-064](ADR-064-architecture-review-as-a-live-zoomable-canvas.md) | partial | The map opening on subsystem relationships in a fixed grid; it now opens on systems on a laid-out canvas that drills to subsystems and modules.
+> Superseded by: [ADR-064](ADR-064-architecture-review-as-a-live-zoomable-canvas.md) | partial | The map now opens on systems on a laid-out canvas that drills to subsystems and modules; explanation-only requests no longer create an agent branch, worktree, brief or terminal session, while architecture-improvement launches retain the worktree handoff.
 > Superseded by: [ADR-065](ADR-065-history-reads-the-fleet-commit-classification.md) | partial | Marking every History row and strip commit from its diff and import edges alone; a commit the fleet has classified is marked from its Architectural trailer instead.
 
 ## Context
@@ -114,7 +114,7 @@ grammars in the same utility process, in the order Python, Go, Rust. A Go module
 directory; a Python module is a file within its package directory; a Rust module is a file
 within its crate.
 
-**The agent works in a worktree hvir owns.** On launch, hvir creates a worktree and branch
+**An architecture-improvement agent works in a worktree hvir owns.** On launch, hvir creates a worktree and branch
 through its mutation authorization path, writes an untracked snapshot brief into it holding
 the subsystem deltas, changed relationships and evidence paths, and starts the provider
 session there with a prompt that points at the brief. The worktree appears as an ordinary
@@ -122,6 +122,7 @@ worktree tab. Because hvir created it, no report from the agent is needed: the r
 re-snapshot the worktree at any time, by default against the original Current end to show
 only the agent's change, and one click away against the original Baseline to show the
 cumulative result. Direct edits to the person's working tree remain excluded.
+The explanation-only action is governed by ADR-064 and does not use this handoff.
 
 **The person removes an unfinished handoff; hvir never does.** A handoff interrupted after
 its worktree was created but before its brief landed leaves a worktree no agent ever ran in.
