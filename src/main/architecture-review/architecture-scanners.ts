@@ -24,6 +24,7 @@ interface GrammarLanguage {
   readonly extension: string
   readonly parse: (parser: Parser, content: string) => ModuleFacts
   readonly resolver: LanguageScanner['resolver']
+  readonly resolvesFromFacts?: true
 }
 
 const GRAMMAR_LANGUAGES: readonly GrammarLanguage[] = [
@@ -50,6 +51,7 @@ const GRAMMAR_LANGUAGES: readonly GrammarLanguage[] = [
     extension: '.rs',
     parse: parseRustFacts,
     resolver: rustResolver,
+    resolvesFromFacts: true,
   },
 ]
 
@@ -93,6 +95,7 @@ async function grammarScanner(
     kindOf: (path) => (path.endsWith(entry.extension) ? entry.extension : undefined),
     parse: (_path, content) => entry.parse(parser, content),
     resolver: entry.resolver,
+    ...(entry.resolvesFromFacts ? { resolvesFromFacts: true } : {}),
   }
 }
 

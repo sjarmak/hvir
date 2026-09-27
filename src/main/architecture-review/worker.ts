@@ -1,10 +1,7 @@
 import type { ArchitectureCapture } from '../../shared/architecture-review'
-import type {
-  ArchitectureAnalysis,
-  ArchitectureSourceFile,
-} from '../../shared/architecture-analysis'
+import type { ArchitectureAnalysis } from '../../shared/architecture-analysis'
 import type { HostPath } from '../../shared/host-path'
-import type { ModuleImportsResult } from './module-imports'
+import type { ModuleEdgesRequest, ModuleEdgesResult } from './module-edges'
 import type { WorkerOperation } from '../../shared/worker-protocol'
 import { createWorkerClient, workerPath, type WorkerClient } from '../worker-host'
 import { ArchitectureScanRecorder, processClock } from './scan-recorder'
@@ -31,12 +28,12 @@ export interface ArchitectureWorkerResult {
 }
 export interface ArchitectureImportsRequest {
   readonly root: HostPath
-  readonly sources: readonly ArchitectureSourceFile[]
+  readonly edges: ModuleEdgesRequest
   readonly cache?: ArchitectureParseCacheLocation
 }
 export interface ArchitectureWorkerProtocol {
   readonly analyze: WorkerOperation<ArchitectureWorkerRequest, ArchitectureWorkerResult>
-  readonly imports: WorkerOperation<ArchitectureImportsRequest, ModuleImportsResult>
+  readonly imports: WorkerOperation<ArchitectureImportsRequest, ModuleEdgesResult>
 }
 type Client = WorkerClient<ArchitectureWorkerProtocol>
 
@@ -95,10 +92,10 @@ export class ArchitectureAnalysisWorker {
   }
 
   readonly imports = async (
-    sources: readonly ArchitectureSourceFile[],
+    edges: ModuleEdgesRequest,
     root: HostPath,
     signal: AbortSignal,
-  ): Promise<ModuleImportsResult> => {
+  ): Promise<ModuleEdgesResult> => {
     signal.throwIfAborted()
     if (this.disposed) throw new Error('Architecture analysis worker disposed')
     const warm = this.takeIdle()
@@ -108,8 +105,8 @@ export class ArchitectureAnalysisWorker {
     const timeout = setTimeout(stop, REQUEST_TIMEOUT_MS)
     try {
       const request = this.options.cache
-        ? { root, sources, cache: this.options.cache }
-        : { root, sources }
+        ? { root, edges, cache: this.options.cache }
+        : { root, edges }
       const result = await client.request('imports', request)
       signal.throwIfAborted()
       this.keepIdle(client)

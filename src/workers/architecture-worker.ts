@@ -4,7 +4,7 @@ import { localPath } from '../shared/host-path'
 import { loadArchitectureScanners } from '../main/architecture-review/architecture-scanners'
 import { TREE_SITTER_ASSET_DIRECTORY } from '../main/architecture-review/tree-sitter-assets'
 import { analyzeCaptureTimed } from '../main/architecture-review/timed-analysis'
-import { readModuleImports } from '../main/architecture-review/module-imports'
+import { readModuleEdges } from '../main/architecture-review/module-edges'
 import { ModuleFactsCache } from '../main/architecture-review/module-facts-cache'
 import { LocalHost } from '../main/project-host/local-host'
 import { processClock } from '../main/architecture-review/scan-recorder'
@@ -16,15 +16,13 @@ import type {
   ArchitectureWorkerRequest,
   ArchitectureWorkerResult,
 } from '../main/architecture-review/worker'
-import type { ModuleImportsResult } from '../main/architecture-review/module-imports'
+import type { ModuleEdgesResult } from '../main/architecture-review/module-edges'
 
 type Request =
   WorkerRequest<ArchitectureWorkerRequest> | WorkerRequest<ArchitectureImportsRequest>
 interface ParentPort {
   on(event: 'message', listener: (event: { data: Request }) => void): void
-  postMessage(
-    message: WorkerResponse<ArchitectureWorkerResult | ModuleImportsResult>,
-  ): void
+  postMessage(message: WorkerResponse<ArchitectureWorkerResult | ModuleEdgesResult>): void
 }
 const port = (process as unknown as { parentPort?: ParentPort }).parentPort
 if (!port) throw new Error('Architecture analysis requires a utility process')
@@ -57,12 +55,8 @@ async function answer(channel: ParentPort, data: Request): Promise<void> {
     const { scanners, readyMark } = await ready
     const receivedMark = processClock()
     if (data.type === 'imports') {
-      const {
-        root,
-        sources,
-        cache: location,
-      } = data.payload as ArchitectureImportsRequest
-      const result = await readModuleImports(sources, root, cacheFor(location), scanners)
+      const { root, edges, cache: location } = data.payload as ArchitectureImportsRequest
+      const result = await readModuleEdges(edges, root, cacheFor(location), scanners)
       channel.postMessage({ id: data.id, ok: true, result })
       return
     }

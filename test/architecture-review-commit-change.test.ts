@@ -4,8 +4,10 @@ import {
   classifyCommitChange,
   configChanged,
   parseCommitDiffs,
+  edgeKey,
+  type CommitDiff,
   type CommitDiffEntry,
-  type ImportSignature,
+  type EdgeTable,
 } from '../src/main/architecture-review/commit-change'
 import { ARCHITECTURE_DEFAULT_LAYOUT } from '../src/shared/architecture-layout'
 import type {
@@ -22,14 +24,22 @@ const entry = (
   before = blob('b'),
   after = blob('a'),
 ): CommitDiffEntry => ({ path, status, before, after })
-const runtime = (specifier: string): ImportSignature => ({
-  specifier,
-  form: 'import',
-  typeOnly: false,
+const PARENT = blob('parent')
+const COMMIT = blob('commit')
+const diff = (entries: readonly CommitDiffEntry[]): CommitDiff => ({
+  revision: COMMIT,
+  parents: [PARENT],
+  entries,
 })
-const imports = (
-  pairs: readonly (readonly [string, readonly ImportSignature[] | null])[],
-) => new Map(pairs)
+const edges = (
+  before: readonly string[] | null,
+  after: readonly string[] | null,
+): EdgeTable =>
+  new Map([
+    [edgeKey(PARENT, blob('b')), before],
+    [edgeKey(COMMIT, blob('a')), after],
+  ])
+const none: EdgeTable = new Map()
 const layout = ARCHITECTURE_DEFAULT_LAYOUT
 
 describe('parseCommitDiffs', () => {
@@ -64,131 +74,119 @@ describe('parseCommitDiffs', () => {
 
 describe('classifyCommitChange', () => {
   it('is none when nothing in scope changed', () => {
-    expect(classifyCommitChange([], layout, imports([]))).toBe('none')
+    expect(classifyCommitChange(diff([]), layout, none)).toBe('none')
     expect(
       classifyCommitChange(
-        [
-          entry('README.md', 'M'),
-          entry('docs/x.ts', 'M'),
-          entry('node_modules/a/i.ts', 'A'),
-        ],
-        { ...layout, scope: ['src'] },
-        imports([]),
+        diff([entry('README.md', 'M'), entry('dist/out.js', 'A', NONE)]),
+        layout,
+        none,
       ),
     ).toBe('none')
   })
-  it('is architecture when a module is added or removed', () => {
+  it('is architecture when a module is added, deleted, renamed or moved', () => {
+    expect(classifyCommitChange(diff([entry('src/a.ts', 'A', NONE)]), layout, none)).toBe(
+      'architecture',
+    )
     expect(
-      classifyCommitChange([entry('src/a.ts', 'A', NONE)], layout, imports([])),
-    ).toBe('architecture')
-    expect(
-      classifyCommitChange(
-        [entry('src/a.ts', 'D', blob('b'), NONE)],
-        layout,
-        imports([]),
-      ),
+      classifyCommitChange(diff([entry('src/a.ts', 'D', blob('b'), NONE)]), layout, none),
     ).toBe('architecture')
   })
-  it('lets the scan decide a layout or config change, and is unclassified without one', () => {
-    const configs = [entry('.hvir/architecture.json', 'M'), entry('tsconfig.json', 'M')]
-    for (const config of configs) {
+  it('needs a scan when a config changed without a structural change', () => {
+    for (const config of [
+      entry('package.json', 'M'),
+      entry('tsconfig.json', 'M'),
+      entry('.hvir/architecture.json', 'M'),
+    ]) {
       expect(configChanged([config], layout)).toBe(true)
-      expect(classifyCommitChange([config], layout, imports([]))).toBe('unclassified')
-      expect(classifyCommitChange([config], layout, imports([]), 'none')).toBe('none')
-      expect(classifyCommitChange([config], layout, imports([]), 'architecture')).toBe(
+      expect(classifyCommitChange(diff([config]), layout, none)).toBe('unclassified')
+      expect(classifyCommitChange(diff([config]), layout, none, 'none')).toBe('none')
+      expect(classifyCommitChange(diff([config]), layout, none, 'architecture')).toBe(
         'architecture',
       )
     }
     expect(configChanged([entry('src/a.ts', 'M')], layout)).toBe(false)
     expect(
       classifyCommitChange(
-        [entry('tsconfig.json', 'M'), entry('src/a.ts', 'A', NONE)],
+        diff([entry('tsconfig.json', 'M'), entry('src/a.ts', 'A', NONE)]),
         layout,
-        imports([]),
+        none,
       ),
     ).toBe('architecture')
   })
   it('is architecture when a modified module reaches a different set of targets, else code', () => {
-    const same = imports([
-      [blob('b'), [runtime('./x')]],
-      [blob('a'), [runtime('./x')]],
-    ])
-    expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, same)).toBe('code')
-    const rewired = imports([
-      [blob('b'), [runtime('./x')]],
-      [blob('a'), [runtime('./y')]],
-    ])
-    expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, rewired)).toBe(
-      'architecture',
-    )
-    const gained = imports([
-      [blob('b'), [runtime('./x')]],
-      [blob('a'), [runtime('./x'), runtime('node:fs')]],
-    ])
-    expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, gained)).toBe(
-      'architecture',
-    )
-    const reordered = imports([
-      [blob('b'), [runtime('./x'), runtime('./y')]],
-      [blob('a'), [runtime('./y'), runtime('./x')]],
-    ])
-    expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, reordered)).toBe('code')
-  })
-  it('is code when only the count, form, type-only flag or spelling of an import changed', () => {
-    const duplicated = imports([
-      [
-        blob('b'),
-        [runtime('./x'), { specifier: './x', form: 'dynamic', typeOnly: false }],
-      ],
-      [
-        blob('a'),
-        [
-          runtime('./x'),
-          { specifier: './x', form: 'dynamic', typeOnly: false },
-          { specifier: './x', form: 'dynamic', typeOnly: false },
-        ],
-      ],
-    ])
-    expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, duplicated)).toBe(
-      'code',
-    )
-    const reformed = imports([
-      [blob('b'), [runtime('./x')]],
-      [blob('a'), [{ specifier: './x', form: 'dynamic', typeOnly: false }]],
-    ])
-    expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, reformed)).toBe('code')
-    const typeFlip = imports([
-      [blob('b'), [runtime('./x')]],
-      [blob('a'), [{ ...runtime('./x'), typeOnly: true }]],
-    ])
-    expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, typeFlip)).toBe('code')
-    const respelled = imports([
-      [blob('b'), [runtime('./x'), runtime('../src/y/index.js')]],
-      [blob('a'), [runtime('./x.ts'), runtime('./y')]],
-    ])
-    expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, respelled)).toBe('code')
-  })
-  it('treats a file no scanner reads as code, and a file it could not read as unclassified', () => {
+    const modified = diff([entry('src/a.ts', 'M')])
+    expect(
+      classifyCommitChange(modified, layout, edges(['src/x.ts'], ['src/x.ts'])),
+    ).toBe('code')
+    expect(
+      classifyCommitChange(modified, layout, edges(['src/x.ts'], ['src/y.ts'])),
+    ).toBe('architecture')
     expect(
       classifyCommitChange(
-        [entry('src/a.ts', 'M')],
+        modified,
         layout,
-        imports([
-          [blob('b'), null],
-          [blob('a'), null],
-        ]),
+        edges(['src/x.ts'], ['src/x.ts', 'external: node:fs']),
+      ),
+    ).toBe('architecture')
+    expect(
+      classifyCommitChange(
+        modified,
+        layout,
+        edges(['src/x.ts', 'src/y.ts'], ['src/y.ts', 'src/x.ts']),
       ),
     ).toBe('code')
-    expect(classifyCommitChange([entry('src/a.ts', 'M')], layout, imports([]))).toBe(
-      'unclassified',
-    )
+    expect(
+      classifyCommitChange(
+        modified,
+        layout,
+        edges(['src/x.ts', 'src/x.ts'], ['src/x.ts']),
+      ),
+    ).toBe('code')
+  })
+  it('is unclassified when any side of a modified module is missing', () => {
+    const modified = diff([entry('src/a.ts', 'M')])
+    expect(classifyCommitChange(modified, layout, none)).toBe('unclassified')
+    expect(
+      classifyCommitChange(
+        modified,
+        layout,
+        new Map([[edgeKey(PARENT, blob('b')), ['src/x.ts']]]),
+      ),
+    ).toBe('unclassified')
+    expect(
+      classifyCommitChange(
+        modified,
+        layout,
+        new Map([[edgeKey(COMMIT, blob('a')), ['src/x.ts']]]),
+      ),
+    ).toBe('unclassified')
+    expect(
+      classifyCommitChange(
+        { ...modified, parents: [] },
+        layout,
+        edges(['src/x.ts'], ['src/x.ts']),
+      ),
+    ).toBe('unclassified')
+  })
+  it('keys edges by side so the same blob on both sides is read at each tree', () => {
+    const modified = diff([entry('src/a.ts', 'M', blob('s'), blob('s'))])
+    const table = new Map([
+      [edgeKey(PARENT, blob('s')), ['src/x.ts']],
+      [edgeKey(COMMIT, blob('s')), ['src/x/index.ts']],
+    ])
+    expect(classifyCommitChange(modified, layout, table)).toBe('architecture')
+  })
+  it('treats a file no scanner reads as code', () => {
+    expect(
+      classifyCommitChange(diff([entry('src/a.ts', 'M')]), layout, edges(null, null)),
+    ).toBe('code')
   })
   it('ignores a source outside the layout scope but never a config outside it', () => {
     const scoped = { ...layout, scope: ['src/app'] }
     expect(
-      classifyCommitChange([entry('src/lib/a.ts', 'A', NONE)], scoped, imports([])),
+      classifyCommitChange(diff([entry('src/lib/a.ts', 'A', NONE)]), scoped, none),
     ).toBe('none')
-    expect(classifyCommitChange([entry('package.json', 'M')], scoped, imports([]))).toBe(
+    expect(classifyCommitChange(diff([entry('package.json', 'M')]), scoped, none)).toBe(
       'unclassified',
     )
   })
@@ -326,25 +324,25 @@ describe('classifyCommitChange properties', () => {
     'dist/f.ts',
   ]
   const statuses = ['A', 'D', 'M', 'T']
-  const signatures: readonly (readonly ImportSignature[] | null)[] = [
+  const edgeSets: readonly (readonly string[] | null)[] = [
     [],
-    [runtime('./x')],
-    [runtime('./y')],
-    [runtime('./x'), runtime('./y')],
+    ['src/x.ts'],
+    ['src/y.ts'],
+    ['src/x.ts', 'src/y.ts'],
     null,
   ]
   const generate = (seed: number) => {
     const next = random(seed)
     const count = Math.floor(next() * 5)
     const entries: CommitDiffEntry[] = []
-    const table = new Map<string, readonly ImportSignature[] | null>()
+    const table = new Map<string, readonly string[] | null>()
     for (let index = 0; index < count; index += 1) {
       const status = pick(next, statuses)
       const before = status === 'A' ? NONE : blob(`b${seed}-${index}`)
       const after = status === 'D' ? NONE : blob(`a${seed}-${index}`)
       entries.push({ path: pick(next, paths), status, before, after })
-      if (next() < 0.85) table.set(before, pick(next, signatures))
-      if (next() < 0.85) table.set(after, pick(next, signatures))
+      if (next() < 0.85) table.set(edgeKey(PARENT, before), pick(next, edgeSets))
+      if (next() < 0.85) table.set(edgeKey(COMMIT, after), pick(next, edgeSets))
     }
     return { entries, table }
   }
@@ -357,7 +355,7 @@ describe('classifyCommitChange properties', () => {
   it('never reports architecture without an in-scope change and never none with one', () => {
     for (let seed = 1; seed <= 400; seed += 1) {
       const { entries, table } = generate(seed)
-      const change = classifyCommitChange(entries, layout, table)
+      const change = classifyCommitChange(diff(entries), layout, table)
       if (!touchesScope(entries)) expect(change).toBe('none')
       else expect(change).not.toBe('none')
     }
@@ -366,8 +364,8 @@ describe('classifyCommitChange properties', () => {
     for (let seed = 1; seed <= 400; seed += 1) {
       const { entries, table } = generate(seed)
       const reversed = [...entries].reverse()
-      expect(classifyCommitChange(reversed, layout, table)).toBe(
-        classifyCommitChange(entries, layout, table),
+      expect(classifyCommitChange(diff(reversed), layout, table)).toBe(
+        classifyCommitChange(diff(entries), layout, table),
       )
     }
   })
@@ -375,12 +373,12 @@ describe('classifyCommitChange properties', () => {
     let codeCases = 0
     for (let seed = 1; seed <= 400; seed += 1) {
       const { entries, table } = generate(seed)
-      if (classifyCommitChange(entries, layout, table) !== 'code') continue
+      if (classifyCommitChange(diff(entries), layout, table) !== 'code') continue
       codeCases += 1
       for (const e of entries.filter((candidate) => touchesScope([candidate]))) {
         expect(['M', 'T']).toContain(e.status)
-        expect(table.get(e.before)).toBeDefined()
-        expect(table.get(e.after)).toBeDefined()
+        expect(table.get(edgeKey(PARENT, e.before))).toBeDefined()
+        expect(table.get(edgeKey(COMMIT, e.after))).toBeDefined()
       }
     }
     expect(codeCases).toBeGreaterThan(0)

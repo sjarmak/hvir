@@ -430,24 +430,27 @@ describe('warm architecture analysis worker', () => {
 describe('architecture analysis worker imports', () => {
   it('reads module imports through the same warm process and disposes it on abort', async () => {
     const worker = new ArchitectureAnalysisWorker()
-    const sources = [source('a.ts', "import './b'")]
+    const edges = {
+      sides: [{ revision: 'c', modules: ['a.ts', 'b.ts'], configs: [] }],
+      sources: [{ ...source('a.ts', "import './b'"), side: 'c' }],
+    }
     respond = (payload) => {
-      expect(payload).toEqual({ root: localPath('/repo'), sources })
-      return Promise.resolve({ scanners: 'commit-change-1;typescript=1', imports: [] })
+      expect(payload).toEqual({ root: localPath('/repo'), edges })
+      return Promise.resolve({ scanners: 'commit-change-3;typescript=1', edges: [] })
     }
     const result = await worker.imports(
-      sources,
+      edges,
       localPath('/repo'),
       new AbortController().signal,
     )
-    expect(result.scanners).toBe('commit-change-1;typescript=1')
+    expect(result.scanners).toBe('commit-change-3;typescript=1')
     expect(clients[0]?.request).toHaveBeenCalledWith('imports', {
       root: localPath('/repo'),
-      sources,
+      edges,
     })
     respond = undefined
     const controller = new AbortController()
-    const pending = worker.imports(sources, localPath('/repo'), controller.signal)
+    const pending = worker.imports(edges, localPath('/repo'), controller.signal)
     const assertion = expect(pending).rejects.toThrow('worker client disposed')
     controller.abort(new Error('cancelled'))
     await assertion

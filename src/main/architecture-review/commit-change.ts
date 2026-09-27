@@ -1,4 +1,3 @@
-import { posix } from 'node:path'
 import {
   ARCHITECTURE_LAYOUT_FILE,
   inLayoutScope,
@@ -11,7 +10,7 @@ import type {
 import type { ArchitectureCommitChange } from '../../shared/architecture-review'
 import { inArchitectureScope, isSource } from './capture-entries'
 
-export const COMMIT_CHANGE_CLASSIFIER_VERSION = 'commit-change-2'
+export const COMMIT_CHANGE_CLASSIFIER_VERSION = 'commit-change-3'
 
 export interface CommitDiffEntry {
   readonly path: string
@@ -24,12 +23,9 @@ export interface CommitDiff {
   readonly parents: readonly string[]
   readonly entries: readonly CommitDiffEntry[]
 }
-export interface ImportSignature {
-  readonly specifier?: string
-  readonly form: string
-  readonly typeOnly: boolean
-}
-export type ImportTable = ReadonlyMap<string, readonly ImportSignature[] | null>
+export type EdgeTable = ReadonlyMap<string, readonly string[] | null>
+
+export const edgeKey = (side: string, object: string): string => `${side}\0${object}`
 
 const HASH = /^[a-f0-9]{40,64}$/
 const RAW_ENTRY = /^:(\d{6}) (\d{6}) ([a-f0-9]{40,64}) ([a-f0-9]{40,64}) ([A-Z])(\d*)$/
@@ -91,22 +87,24 @@ export function configChanged(
 }
 
 export function classifyCommitChange(
-  entries: readonly CommitDiffEntry[],
+  diff: CommitDiff,
   layout: ArchitectureLayout,
-  imports: ImportTable,
+  edges: EdgeTable,
   scanned?: ArchitectureCommitChange,
 ): ArchitectureCommitChange {
+  const { entries } = diff
   if (structurallyChanged(entries, layout)) return 'architecture'
   if (configChanged(entries, layout)) return scanned ?? 'unclassified'
   const modified = modifiedSources(entries, layout)
   if (modified.length === 0) return 'none'
+  const parent = diff.parents[0]
+  if (parent === undefined) return 'unclassified'
   let change: ArchitectureCommitChange = 'code'
   for (const entry of modified) {
-    const before = imports.get(entry.before)
-    const after = imports.get(entry.after)
+    const before = edges.get(edgeKey(parent, entry.before))
+    const after = edges.get(edgeKey(diff.revision, entry.after))
     if (before === undefined || after === undefined) change = 'unclassified'
-    else if (!sameSet(edgesOf(entry.path, before), edgesOf(entry.path, after)))
-      return 'architecture'
+    else if (!sameSet(new Set(before ?? []), new Set(after ?? []))) return 'architecture'
   }
   return change
 }
@@ -135,22 +133,6 @@ export function changeFromAnalysis(
 
 export function edgeOfFact(fact: ArchitectureImportFact): string {
   return `${fact.source}\0${fact.target ?? `${fact.resolution}: ${fact.specifier}`}`
-}
-
-function edgesOf(
-  path: string,
-  signatures: readonly ImportSignature[] | null,
-): ReadonlySet<string> {
-  return new Set(
-    (signatures ?? []).map((signature) => targetOf(path, signature.specifier)),
-  )
-}
-
-function targetOf(path: string, specifier: string | undefined): string {
-  if (specifier === undefined) return '<computed>'
-  if (!specifier.startsWith('./') && !specifier.startsWith('../')) return specifier
-  const resolved = posix.normalize(posix.join(posix.dirname(path), specifier))
-  return resolved.replace(/\.[cm]?[jt]sx?$/, '').replace(/(?:^|\/)index$/, '')
 }
 
 function sameSet(left: ReadonlySet<string>, right: ReadonlySet<string>): boolean {

@@ -12,14 +12,17 @@ import type {
   ArchitectureAnalysis,
   ArchitectureImportDelta,
 } from '../src/shared/architecture-analysis'
-import { readModuleImports } from '../src/main/architecture-review/module-imports'
+import { readModuleEdges } from '../src/main/architecture-review/module-edges'
 import {
   compareArchitecture,
   scanArchitecture,
 } from '../src/main/architecture-review/analysis'
 import { changeFromAnalysis } from '../src/main/architecture-review/commit-change'
 import { CommitChangeCache } from '../src/main/architecture-review/commit-change-cache'
-import { isSource } from '../src/main/architecture-review/capture-entries'
+import {
+  inArchitectureScope,
+  isSource,
+} from '../src/main/architecture-review/capture-entries'
 import { TYPESCRIPT_ONLY_SCANNERS } from '../src/main/architecture-review/typescript-scanner'
 import { LocalHost } from '../src/main/project-host/local-host'
 import { localPath } from '../src/shared/host-path'
@@ -77,8 +80,8 @@ const addedImport: ArchitectureImportDelta = {
   change: 'added',
 }
 function classifier() {
-  const imports = vi.fn<ModuleImportsPort>((sources, root) =>
-    readModuleImports(sources, root, undefined, TYPESCRIPT_ONLY_SCANNERS),
+  const imports = vi.fn<ModuleImportsPort>((request, root) =>
+    readModuleEdges(request, root, undefined, TYPESCRIPT_ONLY_SCANNERS),
   )
   return { imports, classifier: new ArchitectureCommitClassifier({ imports }) }
 }
@@ -218,6 +221,68 @@ it('reconsiders a commit modifying more than two hundred modules on every reques
   expect(imports).not.toHaveBeenCalled()
 })
 
+it('scans a commit whose language resolves from every module facts, within the scan budget', async () => {
+  const r = await repository()
+  await r.commit('seed', { 'src/a.ts': "import './b'\n", 'src/b.ts': 'export {}\n' })
+  const edited = await r.commit('edit', { 'src/a.ts': "import './b'\nexport {}\n" })
+  const imports = vi.fn<ModuleImportsPort>((request) =>
+    Promise.resolve({
+      scanners: 'facts',
+      edges: request.sources.map((source) => ({
+        side: source.side,
+        object: source.object!,
+        edges: null,
+        needsFacts: true,
+      })),
+    }),
+  )
+  const request = { root: localPath(r.root), revisions: [edited] }
+  const { classifications: unscanned } = await new ArchitectureCommitClassifier({
+    imports,
+  }).classify(r.host, request, signal())
+  expect(unscanned[0]?.change).toBe('unclassified')
+  const scan = vi.fn<PairScanPort>(() => Promise.resolve(EMPTY_ANALYSIS))
+  const scanning = new ArchitectureCommitClassifier({ imports, scan })
+  const { classifications } = await scanning.classify(r.host, request, signal())
+  expect(classifications[0]?.change).toBe('code')
+  expect(scan.mock.calls.map(([, sent]) => [sent.baseline, sent.current])).toEqual([
+    [git(r.root, 'rev-parse', `${edited}~1`), edited],
+  ])
+  await scanning.classify(r.host, request, signal())
+  expect(scan).toHaveBeenCalledTimes(1)
+})
+
+it('lists each side once per request and passes its configs to the resolver', async () => {
+  const r = await repository()
+  await r.commit('seed', {
+    'tsconfig.json': '{}\n',
+    'src/a.ts': "import './b'\n",
+    'src/b.ts': 'export {}\n',
+  })
+  const one = await r.commit('one', { 'src/a.ts': "import './b'\nexport {}\n" })
+  const two = await r.commit('two', { 'src/b.ts': 'export const b = 1\n' })
+  const { imports, classifier: subject } = classifier()
+  const exec = vi.spyOn(r.host, 'exec')
+  await subject.classify(
+    r.host,
+    { root: localPath(r.root), revisions: [two, one] },
+    signal(),
+  )
+  const listings = exec.mock.calls.filter(
+    ([, args]) => args.includes('ls-tree') && args.includes('-r'),
+  )
+  expect(listings).toHaveLength(3)
+  expect(imports).toHaveBeenCalledTimes(1)
+  const sent = imports.mock.calls[0]![0]
+  expect(sent.sides.map((side) => side.revision).sort()).toEqual(
+    [git(r.root, 'rev-parse', `${one}~1`), one, two].sort(),
+  )
+  for (const side of sent.sides) {
+    expect(side.modules).toEqual(['src/a.ts', 'src/b.ts'])
+    expect(side.configs.map((config) => config.path)).toEqual(['tsconfig.json'])
+  }
+})
+
 it('scans a config or layout change against its parent and caches the answer', async () => {
   const r = await repository()
   await r.commit('module', { 'src/a.ts': 'export const a = 1\n' })
@@ -291,7 +356,7 @@ it('spends the aggregate read budget commit by commit and never fails the reques
     'unclassified',
   ])
   expect(imports).toHaveBeenCalledTimes(1)
-  expect(imports.mock.calls[0]![0].map((source) => source.path)).toEqual([
+  expect(imports.mock.calls[0]![0].sources.map((source) => source.path)).toEqual([
     'src/c.ts',
     'src/c.ts',
   ])
@@ -306,6 +371,15 @@ it('spends the aggregate read budget commit by commit and never fails the reques
 it('agrees with a full pair scan on every fast-path answer', async () => {
   const r = await repository()
   const a = "import { b } from './b'\nexport const a = b\n"
+  const external =
+    "import { c } from './c'\nimport { join } from 'node:path'\nexport const a = join(c)\n"
+  const alias = JSON.stringify({
+    compilerOptions: { baseUrl: '.', paths: { '@lib/*': ['src/*'] } },
+  })
+  const pkg = JSON.stringify({
+    name: 'app',
+    exports: { './util': './src/x/index.ts', './other': './src/b.ts' },
+  })
   const steps: readonly (readonly [string, Record<string, string>])[] = [
     [
       'add',
@@ -326,13 +400,7 @@ it('agrees with a full pair scan on every fast-path answer', async () => {
       { 'src/a.ts': "import type { b } from './b.js'\nexport const a: typeof b = 1\n" },
     ],
     ['rewire', { 'src/a.ts': "import { c } from './c'\nexport const a = c\n" }],
-    [
-      'external',
-      {
-        'src/a.ts':
-          "import { c } from './c'\nimport { join } from 'node:path'\nexport const a = join(c)\n",
-      },
-    ],
+    ['external', { 'src/a.ts': external }],
     [
       'reorder',
       {
@@ -341,10 +409,67 @@ it('agrees with a full pair scan on every fast-path answer', async () => {
       },
     ],
     ['module', { 'src/d.ts': 'export const d = 4\n' }],
+    [
+      'alias config',
+      {
+        'tsconfig.json': alias,
+        'src/a.ts':
+          "import { c } from '@lib/c'\nimport { join } from 'node:path'\nexport const a = join(c)\n",
+      },
+    ],
+    ['alias respelled', { 'src/a.ts': external }],
+    [
+      'index twin',
+      {
+        'src/x.ts': 'export const x = 1\n',
+        'src/x/index.ts': 'export const x = 2\n',
+        'src/a.ts': "import { x } from './x'\nexport const a = x\n",
+      },
+    ],
+    [
+      'index respelled',
+      { 'src/a.ts': "import { x } from './x/index'\nexport const a = x\n" },
+    ],
+    [
+      'exports config',
+      {
+        'package.json': pkg,
+        'src/a.ts': "import { x } from 'app/util'\nexport const a = x\n",
+      },
+    ],
+    [
+      'exports subpath',
+      { 'src/a.ts': "import { b } from 'app/other'\nexport const a = b\n" },
+    ],
+    [
+      'exports respelled',
+      { 'src/a.ts': "import { b } from './b'\nexport const a = b\n" },
+    ],
   ]
   const revisions: string[] = []
   for (const [message, files] of steps) revisions.push(await r.commit(message, files))
-  const { classifier: subject } = classifier()
+  const scanAt = (revision: string) => {
+    const paths = git(r.root, 'ls-tree', '-r', '--name-only', revision).split('\n')
+    const read = (path: string) => ({
+      path,
+      content: git(r.root, 'show', `${revision}:${path}`),
+    })
+    const files = paths.filter(isSource).map(read)
+    const configs = paths
+      .filter((path) => inArchitectureScope(path) && !isSource(path))
+      .map(read)
+    return scanArchitecture(
+      { files, configs, scope: '.', exclusions: [] },
+      TYPESCRIPT_ONLY_SCANNERS,
+    )
+  }
+  const pairScan = (baseline: string, current: string) =>
+    compareArchitecture(scanAt(baseline), scanAt(current))
+  const { imports } = classifier()
+  const scan = vi.fn<PairScanPort>((_host, request) =>
+    Promise.resolve(pairScan(request.baseline ?? 'HEAD', request.current ?? 'HEAD')),
+  )
+  const subject = new ArchitectureCommitClassifier({ imports, scan })
   const { classifications } = await subject.classify(
     r.host,
     { root: localPath(r.root), revisions },
@@ -360,23 +485,19 @@ it('agrees with a full pair scan on every fast-path answer', async () => {
     'architecture',
     'code',
     'architecture',
+    'code',
+    'code',
+    'architecture',
+    'architecture',
+    'code',
+    'architecture',
+    'code',
   ]
   expect(classifications.map((entry) => entry.change)).toEqual(expected)
-  const scanAt = (revision: string) => {
-    const paths = git(r.root, 'ls-tree', '-r', '--name-only', revision).split('\n')
-    const files = paths.filter(isSource).map((path) => ({
-      path,
-      content: git(r.root, 'show', `${revision}:${path}`),
-    }))
-    return scanArchitecture(
-      { files, scope: '.', exclusions: [] },
-      TYPESCRIPT_ONLY_SCANNERS,
-    )
-  }
+  expect(scan).toHaveBeenCalledTimes(2)
   for (const [index, entry] of classifications.entries()) {
     if (entry.parent === null) continue
-    const analysis = compareArchitecture(scanAt(entry.parent), scanAt(entry.revision))
-    const scanned = changeFromAnalysis(analysis, 1)
+    const scanned = changeFromAnalysis(pairScan(entry.parent, entry.revision), 1)
     expect([revisions[index], scanned]).toEqual([revisions[index], entry.change])
   }
 })

@@ -18,29 +18,36 @@ import {
   type ArchitectureLayout,
 } from '../../shared/architecture-layout'
 import type { ProjectHost } from '../project-host/project-host'
-import { parseTree } from './capture-entries'
+import { isSource, parseTree, selectEntries, type CaptureEntry } from './capture-entries'
 import {
   changeFromAnalysis,
   classifyCommitChange,
   COMMIT_CHANGE_CLASSIFIER_VERSION,
   configChanged,
+  edgeKey,
   modifiedSources,
   parseCommitDiffs,
   structurallyChanged,
   type CommitDiff,
   type CommitDiffEntry,
-  type ImportSignature,
+  type EdgeTable,
 } from './commit-change'
 import { CommitChangeCache, type CommitChangeKey } from './commit-change-cache'
 import { readArchitectureBlobs, readArchitectureBlobSizes } from './git-blobs'
 import { architectureGitContext, validateArchitectureRoot } from './git-context'
-import type { ModuleImportsResult } from './module-imports'
+import type {
+  ModuleEdgesRequest,
+  ModuleEdgesResult,
+  ModuleSide,
+  ModuleSource,
+} from './module-edges'
+import { assertWithinScopeCap } from './scope-cap'
 
 export type ModuleImportsPort = (
-  sources: readonly ArchitectureSourceFile[],
+  request: ModuleEdgesRequest,
   root: HostPath,
   signal: AbortSignal,
-) => Promise<ModuleImportsResult>
+) => Promise<ModuleEdgesResult>
 
 export type PairScanPort = (
   host: ProjectHost,
@@ -82,8 +89,19 @@ interface Pending {
   readonly modified: readonly CommitDiffEntry[]
 }
 
+interface SideListing {
+  readonly revision: string
+  readonly modules: readonly string[]
+  readonly configs: readonly CaptureEntry[]
+}
+
+interface Layout {
+  readonly id: string
+  readonly layout: ArchitectureLayout
+}
+
 type Context = ReturnType<typeof architectureGitContext>
-type ImportTable = ReadonlyMap<string, readonly ImportSignature[] | null>
+type Run = (args: readonly string[]) => Promise<string>
 
 export class ArchitectureCommitClassifier {
   private readonly cache: CommitChangeCache
@@ -139,13 +157,22 @@ export class ArchitectureCommitClassifier {
       } else if (configChanged(diff.entries, layout.layout)) scans.push(pending)
       else reads.push(pending)
     }
-    for (const [revision, change] of await this.scanAll(host, root, scans, signal))
-      answers.set(revision, change)
-    for (const [revision, change] of await this.readAll(
+    const budget = { scans: 0 }
+    for (const [revision, change] of await this.scanAll(
+      host,
       root,
-      context,
-      reads,
-      layout,
+      scans,
+      budget,
+      signal,
+    ))
+      answers.set(revision, change)
+    const read = await this.readAll(root, context, run, reads, layout, signal)
+    for (const [revision, change] of read.answers) answers.set(revision, change)
+    for (const [revision, change] of await this.scanAll(
+      host,
+      root,
+      read.needsScan,
+      budget,
       signal,
     ))
       answers.set(revision, change)
@@ -191,17 +218,21 @@ export class ArchitectureCommitClassifier {
     host: ProjectHost,
     root: HostPath,
     pending: readonly Pending[],
+    budget: { scans: number },
     signal: AbortSignal,
   ): Promise<ReadonlyMap<string, ArchitectureCommitChange>> {
     const answers = new Map<string, ArchitectureCommitChange>()
-    let scans = 0
     for (const entry of pending) {
       const parent = entry.diff.parents[0]
-      if (!this.ports.scan || parent === undefined || scans >= MAX_SCANS_PER_REQUEST) {
+      if (
+        !this.ports.scan ||
+        parent === undefined ||
+        budget.scans >= MAX_SCANS_PER_REQUEST
+      ) {
         answers.set(entry.diff.revision, 'unclassified')
         continue
       }
-      scans += 1
+      budget.scans += 1
       const analysis = await this.ports.scan(
         host,
         { root, baseline: parent, current: entry.diff.revision },
@@ -221,43 +252,100 @@ export class ArchitectureCommitClassifier {
   private async readAll(
     root: HostPath,
     context: Context,
+    run: Run,
     pending: readonly Pending[],
-    layout: { readonly layout: ArchitectureLayout },
+    layout: Layout,
     signal: AbortSignal,
-  ): Promise<ReadonlyMap<string, ArchitectureCommitChange>> {
+  ): Promise<{
+    readonly answers: ReadonlyMap<string, ArchitectureCommitChange>
+    readonly needsScan: readonly Pending[]
+  }> {
     const answers = new Map<string, ArchitectureCommitChange>()
-    if (pending.length === 0) return answers
-    const affordable = await this.withinBudget(root, context, pending)
+    const needsScan: Pending[] = []
+    if (pending.length === 0) return { answers, needsScan }
+    const sides = await this.listSides(run, pending, layout)
+    const listed = pending.filter((entry) =>
+      sidesOf(entry).every((revision) => sides.has(revision)),
+    )
     for (const entry of pending)
+      if (!listed.includes(entry)) answers.set(entry.diff.revision, 'unclassified')
+    const affordable = await this.withinBudget(root, context, listed, sides)
+    for (const entry of listed)
       if (!affordable.includes(entry)) answers.set(entry.diff.revision, 'unclassified')
-    if (affordable.length === 0) return answers
-    const table = await this.importsOf(affordable, root, context, signal)
+    if (affordable.length === 0) return { answers, needsScan }
+    const result = await this.edgesOf(affordable, sides, root, context, signal)
+    const table: EdgeTable = new Map(
+      result.edges.map((entry) => [edgeKey(entry.side, entry.object), entry.edges]),
+    )
+    const facts = new Set(
+      result.edges.flatMap((entry) =>
+        entry.needsFacts ? [edgeKey(entry.side, entry.object)] : [],
+      ),
+    )
     for (const entry of affordable) {
-      const change = classifyCommitChange(entry.diff.entries, layout.layout, table)
+      if (
+        entry.modified.some((modified) =>
+          facts.has(edgeKey(entry.diff.revision, modified.after)),
+        )
+      ) {
+        needsScan.push(entry)
+        continue
+      }
+      const change = classifyCommitChange(entry.diff, layout.layout, table)
       this.remember({ ...entry.key, scanners: this.scanners }, change)
       answers.set(entry.diff.revision, change)
     }
-    return answers
+    return { answers, needsScan }
+  }
+
+  private async listSides(
+    run: Run,
+    pending: readonly Pending[],
+    layout: Layout,
+  ): Promise<ReadonlyMap<string, SideListing>> {
+    const sides = new Map<string, SideListing>()
+    for (const revision of new Set(pending.flatMap(sidesOf))) {
+      const listing = await run(['ls-tree', '-r', '-l', '-z', revision, '--', '.'])
+      let selected: readonly CaptureEntry[]
+      try {
+        selected = selectEntries(parseTree(listing), layout.layout)
+        assertWithinScopeCap(selected, { end: revision, scope: layout.layout.scope })
+      } catch {
+        continue
+      }
+      sides.set(revision, {
+        revision,
+        modules: selected.filter((entry) => isSource(entry.path)).map((e) => e.path),
+        configs: selected.filter((entry) => !isSource(entry.path)),
+      })
+    }
+    return sides
   }
 
   private async withinBudget(
     root: HostPath,
     context: Context,
     pending: readonly Pending[],
+    sides: ReadonlyMap<string, SideListing>,
   ): Promise<readonly Pending[]> {
-    const objects = pending.flatMap((entry) =>
-      entry.modified.flatMap((modified) => [modified.before, modified.after]),
+    const wantedOf = (entry: Pending) => [
+      ...new Set([
+        ...entry.modified.flatMap((modified) => [modified.before, modified.after]),
+        ...sidesOf(entry).flatMap((revision) =>
+          sides.get(revision)!.configs.map((config) => config.object!),
+        ),
+      ]),
+    ]
+    const sizes = await readArchitectureBlobSizes(
+      context,
+      root,
+      pending.flatMap(wantedOf),
     )
-    const sizes = await readArchitectureBlobSizes(context, root, objects)
     const affordable: Pending[] = []
     const counted = new Set<string>()
     let total = 0
     for (const entry of pending) {
-      const wanted = [
-        ...new Set(
-          entry.modified.flatMap((modified) => [modified.before, modified.after]),
-        ),
-      ]
+      const wanted = wantedOf(entry)
       const sized = wanted.map((object) => sizes.get(object) ?? Number.POSITIVE_INFINITY)
       if (sized.some((size) => size > this.budget.maxFileBytes)) continue
       const added = wanted.reduce(
@@ -272,29 +360,54 @@ export class ArchitectureCommitClassifier {
     return affordable
   }
 
-  private async importsOf(
+  private async edgesOf(
     pending: readonly Pending[],
+    sides: ReadonlyMap<string, SideListing>,
     root: HostPath,
     context: Context,
     signal: AbortSignal,
-  ): Promise<ImportTable> {
+  ): Promise<ModuleEdgesResult> {
+    const revisions = new Set(pending.flatMap(sidesOf))
     const wanted = new Map<string, string>()
+    for (const revision of revisions)
+      for (const config of sides.get(revision)!.configs)
+        wanted.set(config.object!, config.path)
     for (const entry of pending)
       for (const modified of entry.modified) {
         wanted.set(modified.before, modified.path)
         wanted.set(modified.after, modified.path)
       }
     const contents = await readArchitectureBlobs(context, root, [...wanted.keys()])
-    const sources = [...wanted].map(([object, path]) => ({
+    const file = (object: string, path: string): ArchitectureSourceFile => ({
       path,
       object,
       content: contents.get(object) ?? '',
-    }))
-    const result = await this.ports.imports(sources, root, signal)
+    })
+    const request: ModuleEdgesRequest = {
+      sides: [...revisions].map((revision): ModuleSide => ({
+        revision,
+        modules: sides.get(revision)!.modules,
+        configs: sides
+          .get(revision)!
+          .configs.map((config) => file(config.object!, config.path)),
+      })),
+      sources: pending.flatMap((entry) =>
+        entry.modified.flatMap((modified): ModuleSource[] => [
+          { ...file(modified.before, modified.path), side: entry.diff.parents[0]! },
+          { ...file(modified.after, modified.path), side: entry.diff.revision },
+        ]),
+      ),
+    }
+    const result = await this.ports.imports(request, root, signal)
     this.scanners = result.scanners
-    return new Map(result.imports.map((entry) => [entry.object, entry.imports]))
+    return result
   }
 }
+
+const sidesOf = (entry: Pending): readonly string[] => [
+  entry.diff.parents[0]!,
+  entry.diff.revision,
+]
 
 function validateRevisions(revisions: readonly string[]): void {
   if (revisions.length > ARCHITECTURE_CLASSIFY_LIMIT)

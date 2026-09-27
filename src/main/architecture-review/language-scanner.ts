@@ -23,6 +23,7 @@ export interface LanguageScanner {
   /** Never throws for malformed source: syntax errors become diagnostics. */
   readonly parse: (path: string, content: string) => ModuleFacts
   readonly resolver: (context: ResolutionContext) => ScanResolver
+  readonly resolvesFromFacts?: true
 }
 
 export interface ResolutionContext {
