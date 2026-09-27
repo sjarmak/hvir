@@ -69,6 +69,25 @@ it('surfaces the underlying worker failure', async () => {
   )
 })
 
+it('surfaces an ELK registration failure to pending layouts', async () => {
+  vi.stubGlobal('Worker', LayoutWorker)
+  const { requestArchitectureLayout } = await import(
+    '../src/renderer/src/architecture-review/architecture-layout-client'
+  )
+  const result = requestArchitectureLayout({ nodes: [], edges: [] })
+
+  LayoutWorker.instance.onmessage?.(
+    new MessageEvent('message', {
+      data: { id: 0, error: 'Unknown algorithm: layered' },
+    }),
+  )
+
+  await expect(result).rejects.toThrow(
+    'Architecture layout worker registration failed: Unknown algorithm: layered',
+  )
+  expect(LayoutWorker.instance.terminated).toBe(true)
+})
+
 it('terminates the worker and rejects pending layouts when its module is replaced', async () => {
   vi.stubGlobal('Worker', LayoutWorker)
   const { disposeArchitectureLayoutWorker, requestArchitectureLayout } = await import(
