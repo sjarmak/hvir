@@ -134,10 +134,7 @@ export class ArchitectureCommitClassifier {
       }
       const structural = this.decideWithoutReading(diff, layout.layout)
       if (structural) {
-        this.cache.store(
-          { ...key, scanners: COMMIT_CHANGE_CLASSIFIER_VERSION },
-          structural,
-        )
+        this.remember({ ...key, scanners: COMMIT_CHANGE_CLASSIFIER_VERSION }, structural)
         answers.set(revision, structural)
       } else if (configChanged(diff.entries, layout.layout)) scans.push(pending)
       else reads.push(pending)
@@ -162,6 +159,10 @@ export class ArchitectureCommitClassifier {
       }
     })
     return { head, classifications }
+  }
+
+  private remember(key: CommitChangeKey, change: ArchitectureCommitChange): void {
+    if (change !== 'unclassified') this.cache.store(key, change)
   }
 
   private keyOf(root: HostPath, diff: CommitDiff, layout: string): CommitChangeKey {
@@ -211,10 +212,7 @@ export class ArchitectureCommitClassifier {
         continue
       }
       const change = changeFromAnalysis(analysis, entry.modified.length)
-      this.cache.store(
-        { ...entry.key, scanners: COMMIT_CHANGE_CLASSIFIER_VERSION },
-        change,
-      )
+      this.remember({ ...entry.key, scanners: COMMIT_CHANGE_CLASSIFIER_VERSION }, change)
       answers.set(entry.diff.revision, change)
     }
     return answers
@@ -236,7 +234,7 @@ export class ArchitectureCommitClassifier {
     const table = await this.importsOf(affordable, root, context, signal)
     for (const entry of affordable) {
       const change = classifyCommitChange(entry.diff.entries, layout.layout, table)
-      this.cache.store({ ...entry.key, scanners: this.scanners }, change)
+      this.remember({ ...entry.key, scanners: this.scanners }, change)
       answers.set(entry.diff.revision, change)
     }
     return answers

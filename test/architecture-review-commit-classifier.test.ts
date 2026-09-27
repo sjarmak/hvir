@@ -18,6 +18,7 @@ import {
   scanArchitecture,
 } from '../src/main/architecture-review/analysis'
 import { changeFromAnalysis } from '../src/main/architecture-review/commit-change'
+import { CommitChangeCache } from '../src/main/architecture-review/commit-change-cache'
 import { isSource } from '../src/main/architecture-review/capture-entries'
 import { TYPESCRIPT_ONLY_SCANNERS } from '../src/main/architecture-review/typescript-scanner'
 import { LocalHost } from '../src/main/project-host/local-host'
@@ -189,6 +190,31 @@ it('leaves a commit whose modules exceed the read budget unclassified', async ()
     signal(),
   )
   expect(result[0]?.change).toBe('unclassified')
+  expect(imports).not.toHaveBeenCalled()
+})
+
+it('reconsiders a commit modifying more than two hundred modules on every request', async () => {
+  const r = await repository()
+  const many = (body: string) =>
+    Object.fromEntries(
+      Array.from({ length: 201 }, (_, i) => [
+        `src/m${i}.ts`,
+        `export const m = ${body}\n`,
+      ]),
+    )
+  await r.commit('many', many('1'))
+  const wide = await r.commit('touch all', many('2'))
+  const { imports, classifier: subject } = classifier()
+  const lookup = vi.spyOn(CommitChangeCache.prototype, 'lookup')
+  const request = { root: localPath(r.root), revisions: [wide] }
+  const first = await subject.classify(r.host, request, signal())
+  expect(first.classifications[0]?.change).toBe('unclassified')
+  const second = await subject.classify(r.host, request, signal())
+  expect(second.classifications[0]?.change).toBe('unclassified')
+  expect(lookup.mock.results.map((result) => result.value)).toEqual(
+    lookup.mock.results.map(() => undefined),
+  )
+  expect(lookup.mock.calls.length).toBeGreaterThanOrEqual(2)
   expect(imports).not.toHaveBeenCalled()
 })
 
