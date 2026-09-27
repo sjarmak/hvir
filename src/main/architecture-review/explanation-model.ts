@@ -8,6 +8,7 @@ export interface ArchitectureExplanationModelRequest {
   readonly launchRevision: number
   readonly prompt: string
   readonly signal: AbortSignal
+  readonly onOutput: (output: string) => void
 }
 
 export interface ArchitectureExplanationModelPort {

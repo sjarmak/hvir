@@ -9,6 +9,10 @@ import type { ArchitectureReviewCoordinator } from '../src/main/architecture-rev
 
 type TestContext = {
   readonly owner: () => { readonly id: number; readonly generation: number }
+  readonly sender: {
+    readonly isDestroyed: () => boolean
+    readonly send: (channel: string, payload: unknown) => void
+  }
 }
 type TestHandler = (request: unknown, context: TestContext) => unknown
 
@@ -123,8 +127,23 @@ describe('architecture review IPC authority', () => {
       hostId: root.hostId,
       connectionState: 'connected',
     } as unknown as ProjectHost
-    const state = { status: 'waiting' as const, snapshotId: 'snapshot-1' }
-    const explain = vi.fn(() => Promise.resolve(state))
+    const state = { status: 'waiting' as const, snapshotId: 'snapshot-1', output: '' }
+    const explain = vi.fn(
+      (
+        _owner: unknown,
+        _host: unknown,
+        _projectRoot: unknown,
+        _request: unknown,
+        publish: (progressState: {
+          readonly status: 'waiting'
+          readonly snapshotId: string
+          readonly output: string
+        }) => void,
+      ) => {
+        publish(state)
+        return Promise.resolve(state)
+      },
+    )
     const projectPath = vi.fn(() => Promise.resolve(root))
     const handlers = new Map<string, TestHandler>()
     registerArchitectureReviewIpc(
@@ -144,14 +163,25 @@ describe('architecture review IPC authority', () => {
       profileId: 'codex',
       launchRevision: 2,
     }
+    const ipcContext = context()
     await expect(
-      handlers.get('architecture-review:explain')?.(request, context()),
+      handlers.get('architecture-review:explain')?.(request, ipcContext),
     ).resolves.toBe(state)
     expect(explain).toHaveBeenCalledWith(
       { id: 1, generation: 1 },
       host,
       projectRoot,
       request,
+      expect.any(Function),
+    )
+    expect(ipcContext.sender.send).toHaveBeenCalledWith(
+      'architecture-review:explanation-progress',
+      {
+        root,
+        reviewId: request.reviewId,
+        snapshotId: request.snapshotId,
+        state,
+      },
     )
   })
 
@@ -213,7 +243,7 @@ describe('architecture review IPC authority', () => {
     await handlers.get('architecture-review:follow')?.(request, {
       owner: () => ({ id: 1, generation: 1 }),
       sender: { isDestroyed: () => false, send },
-    } as unknown as TestContext)
+    })
     expect(follow).toHaveBeenCalledWith(
       { id: 1, generation: 1 },
       host,
@@ -297,5 +327,8 @@ describe('architecture review IPC authority', () => {
 })
 
 function context() {
-  return { owner: () => ({ id: 1, generation: 1 }) }
+  return {
+    owner: () => ({ id: 1, generation: 1 }),
+    sender: { isDestroyed: () => false, send: vi.fn() },
+  }
 }

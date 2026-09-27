@@ -18,6 +18,7 @@ import type {
   ArchitectureReviewChanged,
   ArchitectureExplanationRequest,
   ArchitectureExplainRequest,
+  ArchitectureExplanationProgress,
 } from '../architecture-review'
 import type { ArchitectureExplanationState } from '../architecture-explanation'
 import type {
@@ -74,5 +75,7 @@ export const architectureReviewIpc = {
   send: {},
   event: {
     'architecture-review:changed': payload<ArchitectureReviewChanged>(),
+    'architecture-review:explanation-progress':
+      payload<ArchitectureExplanationProgress>(),
   },
 } satisfies IpcFeatureContract

@@ -17,6 +17,11 @@ import {
   documentReviewInsertContract,
 } from '../harness-composer-contracts'
 
+const CLAUDE_IDENTITIES = [1, 3, 4, 5].map((account) => ({
+  id: `claude-${account}`,
+  displayName: `claude-${account}`,
+}))
+
 const CLAUDE_CONTEXT_PRESSURE: HarnessContextPressurePolicy = {
   assumedWindowTokens: 1_000_000,
   warningPercent: 20,
@@ -36,7 +41,7 @@ export const claudeCodeProvider: HarnessProvider = {
     metaEnterAliasesControl: true,
   },
   profile: {
-    version: 3,
+    version: 4,
     defaultProfile: {
       id: asHarnessProfileId('claude-code-default'),
       displayName: 'Claude Code',
@@ -47,6 +52,28 @@ export const claudeCodeProvider: HarnessProvider = {
     artifactEnvironmentKeys: ['CLAUDE_CONFIG_DIR'],
     artifactExecutable: true,
     artifactPathBindings: [],
+    identities: CLAUDE_IDENTITIES,
+    async applyIdentity(host, identityId, spec) {
+      const identity = CLAUDE_IDENTITIES.find(({ id }) => id === identityId)
+      if (!identity) throw new Error(`Unknown Claude identity '${identityId}'`)
+      const account = identityId.slice('claude-'.length)
+      const result = await host.exec('printenv', ['HOME'], {
+        loginShell: true,
+        timeout: 5_000,
+        maxBuffer: 16 * 1024,
+      })
+      const home = result.stdout.trim()
+      if (result.code !== 0 || !home.startsWith('/')) {
+        throw new Error('Claude identity requires an absolute home directory')
+      }
+      return {
+        ...spec,
+        env: {
+          ...spec.env,
+          CLAUDE_CONFIG_DIR: `${home}/.claude-homes/account${account}/.claude`,
+        },
+      }
+    },
     applyArgs: (_mode, providerArgs, profileArgs) => [...providerArgs, ...profileArgs],
   },
   supportsResume: true,

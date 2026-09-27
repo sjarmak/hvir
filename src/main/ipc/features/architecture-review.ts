@@ -78,6 +78,16 @@ export function registerArchitectureReviewIpc(ipc: IpcRegistrar, deps: Deps): vo
       active.host,
       projectRoot,
       request,
+      (state) => {
+        if (!context.sender.isDestroyed()) {
+          context.sender.send('architecture-review:explanation-progress', {
+            root: request.root,
+            reviewId: request.reviewId,
+            snapshotId: request.snapshotId,
+            state,
+          })
+        }
+      },
     )
     context.owner()
     project(request)

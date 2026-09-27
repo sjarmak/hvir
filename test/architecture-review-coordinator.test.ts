@@ -347,22 +347,32 @@ it('generates and validates an explanation without creating a worktree', async (
   const f = setup()
   const result = await f.coordinator.scan(f.owner, f.host, f.request)
   const request = { ...f.request, snapshotId: result.id }
-  f.explanationModel.generate.mockResolvedValue(
-    JSON.stringify({
-      version: 1,
-      snapshotId: result.id,
-      whatChanged: 'The direct model call changed.',
-      why: 'To explain the snapshot.',
-      sequenceDiagram: 'sequenceDiagram\n  User->>hvir: Explain',
-      touched: { systems: ['Invented'], subsystems: [], modules: ['missing.ts'] },
-    }),
-  )
+  f.explanationModel.generate.mockImplementation((_host, modelRequest) => {
+    modelRequest.onOutput('{"version":1')
+    return Promise.resolve(
+      JSON.stringify({
+        version: 1,
+        snapshotId: result.id,
+        whatChanged: 'The direct model call changed.',
+        why: 'To explain the snapshot.',
+        sequenceDiagram: 'sequenceDiagram\n  User->>hvir: Explain',
+        touched: { systems: ['Invented'], subsystems: [], modules: ['missing.ts'] },
+      }),
+    )
+  })
+  const progress = vi.fn()
   await expect(
-    f.coordinator.explain(f.owner, f.host, root, {
-      ...request,
-      profileId: asHarnessProfileId('codex'),
-      launchRevision: 2,
-    }),
+    f.coordinator.explain(
+      f.owner,
+      f.host,
+      root,
+      {
+        ...request,
+        profileId: asHarnessProfileId('codex'),
+        launchRevision: 2,
+      },
+      progress,
+    ),
   ).resolves.toMatchObject({
     status: 'ready',
     explanation: {
@@ -381,6 +391,11 @@ it('generates and validates an explanation without creating a worktree', async (
     profileId: asHarnessProfileId('codex'),
   })
   expect(modelRequest?.prompt).toContain(result.id)
+  expect(progress).toHaveBeenCalledWith({
+    status: 'waiting',
+    snapshotId: result.id,
+    output: '{"version":1',
+  })
   expect(f.addWorktree).not.toHaveBeenCalled()
   expect(f.writeBrief).not.toHaveBeenCalled()
   expect(f.watch).not.toHaveBeenCalled()

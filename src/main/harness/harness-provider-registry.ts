@@ -50,6 +50,7 @@ export class HarnessProviderRegistry {
         : undefined,
       profileGuidance: {
         reservedArguments: provider.profile.reservedArguments,
+        identities: provider.profile.identities,
       },
     }))
   }

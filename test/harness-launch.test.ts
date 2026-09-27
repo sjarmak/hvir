@@ -1,5 +1,6 @@
 import { mkdir, rm, symlink } from 'node:fs/promises'
 import { join } from 'node:path'
+import { homedir } from 'node:os'
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
@@ -67,6 +68,21 @@ describe('harness launch composition', () => {
       args: ['--session-id', 'test-session-id', '--dangerously-skip-permissions'],
       env: {},
       shellEnvironment: true,
+    })
+  })
+
+  it('applies a selected Claude identity to every provider-owned launch', async () => {
+    const profile = await store.save({
+      input: input({
+        providerId: asHarnessProviderId('claude-code'),
+        identityId: 'claude-3',
+      }),
+    })
+    const resolved = await resolve(profile, 'fresh')
+    const configDirectory = join(homedir(), '.claude-homes/account3/.claude')
+    expect(resolved.spec.env).toEqual({ CLAUDE_CONFIG_DIR: configDirectory })
+    expect(resolved.artifact.environment).toEqual({
+      CLAUDE_CONFIG_DIR: configDirectory,
     })
   })
 
@@ -139,9 +155,9 @@ describe('harness launch composition', () => {
   })
 
   it('reserves provider fork arguments from profile configuration', () => {
-    expect(() =>
-      store.save({ input: input({ args: [literal('fork')] }) }),
-    ).toThrow(/owned by the harness provider/)
+    expect(() => store.save({ input: input({ args: [literal('fork')] }) })).toThrow(
+      /owned by the harness provider/,
+    )
     expect(() =>
       store.save({
         input: input({

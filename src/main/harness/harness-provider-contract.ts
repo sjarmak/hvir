@@ -189,6 +189,15 @@ export interface HarnessProfileContract {
   readonly artifactEnvironmentKeys: readonly string[]
   readonly artifactExecutable: boolean
   readonly artifactPathBindings: readonly string[]
+  readonly identities?: readonly {
+    readonly id: string
+    readonly displayName: string
+  }[]
+  applyIdentity?(
+    host: ProjectHost,
+    identityId: string,
+    spec: HarnessLaunchSpec,
+  ): Promise<HarnessLaunchSpec>
   applyArgs(
     mode: HarnessLaunchMode,
     providerArgs: readonly string[],

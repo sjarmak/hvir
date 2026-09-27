@@ -134,10 +134,10 @@ whether a project is local or remote. Remoteness is latency, not a second produc
   `localhost` / `127.0.0.1` / `::1`. `additionalPaths` is capped at 256 in both hosts.
 - **`ssh-config.ts` drops wildcard `Host *` blocks entirely** — a user relying on a wildcard
   silently gets defaults.
-- **Fork note:** `loginShell` is a *buffered-`exec`-only* option on the SSH side —
-  `execStream` and `openTerminalPtyChannel` still build commands without it. See the fork
-  section in `AGENTS.md`; `ssh-remote-command.ts` was extracted verbatim from `ssh-host.ts`
-  so the extraction stays mergeable with upstream.
+- **Fork note:** `loginShell` is supported by buffered and streaming exec on the SSH side;
+  `openTerminalPtyChannel` still builds commands without it. See the fork section in
+  `AGENTS.md`; `ssh-remote-command.ts` was extracted verbatim from `ssh-host.ts` so the
+  extraction stays mergeable with upstream.
 
 ## Failure modes seen here
 

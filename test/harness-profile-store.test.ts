@@ -74,7 +74,7 @@ describe('HarnessProfileStore', () => {
       {
         providerId: asHarnessProviderId('claude-code'),
         profileId: asHarnessProfileId('claude-code-default'),
-        launchRevision: 3,
+        launchRevision: 4,
       },
       {
         providerId: asHarnessProviderId('codex'),
@@ -86,7 +86,7 @@ describe('HarnessProfileStore', () => {
     expect(imported[0]).toMatchObject({
       id: 'claude-code-default',
       providerId: 'claude-code',
-      launchRevision: 3,
+      launchRevision: 4,
       builtIn: false,
     })
     expect(store.get(asHarnessProfileId('codex-default'))).toBeUndefined()
@@ -114,6 +114,30 @@ describe('HarnessProfileStore', () => {
     })
     expect(launchChanged.launchRevision).toBe(created.launchRevision + 1)
     expect(launchChanged.metadataRevision).toBe(renamed.metadataRevision)
+  })
+
+  it('validates provider identities and treats changes as launch configuration', async () => {
+    const created = await store.save({
+      input: input({
+        providerId: asHarnessProviderId('claude-code'),
+        identityId: 'claude-1',
+      }),
+    })
+    const changed = await store.save({
+      id: created.id,
+      expectedLaunchRevision: created.launchRevision,
+      expectedMetadataRevision: created.metadataRevision,
+      input: { ...created, identityId: 'claude-5' },
+    })
+    expect(changed.launchRevision).toBe(created.launchRevision + 1)
+    expect(() =>
+      store.save({
+        input: input({
+          providerId: asHarnessProviderId('claude-code'),
+          identityId: 'claude-2',
+        }),
+      }),
+    ).toThrow(/Unknown identity/)
   })
 
   it('rejects stale launch edits even when metadata did not change', async () => {
@@ -238,7 +262,7 @@ describe('HarnessProfileStore', () => {
 
     const migrated = await HarnessProfileStore.load(host, profileFile)
     expect(migrated.get(claudeId)).toMatchObject({
-      providerContractVersion: 3,
+      providerContractVersion: 4,
       launchRevision: 5,
       metadataRevision: 2,
     })

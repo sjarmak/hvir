@@ -278,7 +278,8 @@ export class LocalHost implements ProjectHost {
     opts: ExecOptions = {},
   ): ExecStreamHandle {
     const environment = childEnvironment(opts.env, opts.unsetEnv)
-    const child = spawn(command, [...args], {
+    const invocation = loginShellInvocation(command, args, opts.loginShell)
+    const child = spawn(invocation.command, invocation.args, {
       cwd: opts.cwd ? this.resolve(opts.cwd) : undefined,
       env: environment,
       signal: opts.signal,

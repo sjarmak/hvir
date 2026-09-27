@@ -132,6 +132,12 @@ export interface ArchitectureExplainRequest extends ArchitectureExplanationReque
   readonly profileId: import('./harness-profile').HarnessProfileId
   readonly launchRevision: number
 }
+export interface ArchitectureExplanationProgress extends ArchitectureExplanationRequest {
+  readonly state: Extract<
+    import('./architecture-explanation').ArchitectureExplanationState,
+    { readonly status: 'waiting' }
+  >
+}
 /** A commit on the strip, with the first parent pairwise stepping compares it to. */
 export interface ArchitectureCommit {
   readonly revision: string

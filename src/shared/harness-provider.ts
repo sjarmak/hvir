@@ -61,6 +61,10 @@ export interface HarnessProviderDescriptor {
   }
   readonly profileGuidance: {
     readonly reservedArguments: readonly string[]
+    readonly identities?: readonly {
+      readonly id: string
+      readonly displayName: string
+    }[]
   }
 }
 

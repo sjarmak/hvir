@@ -105,11 +105,18 @@ export async function resolveHarnessLaunch(
   const args = provider.profile.applyArgs(request.mode, base.args, profileArgs)
   const specEnvironment = { ...base.env, ...environment.values }
   for (const name of environment.inherit) delete specEnvironment[name]
-  const spec: HarnessLaunchSpec = {
+  const baseSpec: HarnessLaunchSpec = {
     ...base,
     file: executable,
     args,
     env: specEnvironment,
+  }
+  let spec = baseSpec
+  if (profile.identityId !== undefined) {
+    if (!provider.profile.applyIdentity) {
+      throw new Error('Harness provider cannot apply the selected identity')
+    }
+    spec = await provider.profile.applyIdentity(host, profile.identityId, baseSpec)
   }
   const artifact = deriveArtifactContext(
     provider,

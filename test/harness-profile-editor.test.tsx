@@ -38,9 +38,7 @@ describe('HarnessProfileEditor', () => {
     renderEditor()
 
     const disclosures = [
-      ...document.querySelectorAll<HTMLDetailsElement>(
-        '.settings-profile-disclosure',
-      ),
+      ...document.querySelectorAll<HTMLDetailsElement>('.settings-profile-disclosure'),
     ]
     const summaries = disclosures.map((details) => details.querySelector('summary'))
     expect(summaries.map((summary) => summary?.textContent)).toEqual([
@@ -189,6 +187,21 @@ describe('HarnessProfileEditor', () => {
     act(() => buttonByLabel('Move profile later').click())
     expect(onInput).toHaveBeenLastCalledWith(expect.objectContaining({ order: 2 }))
   })
+
+  it('selects a provider-owned identity and clears it when the provider changes', () => {
+    const onInput = vi.fn<(input: HarnessProfileInput) => void>()
+    renderEditor({ onInput })
+
+    changeSelect(labelledSelect('Provider'), 'bundled')
+    changeSelect(labelledSelect('Identity'), 'claude-3')
+    expect(onInput).toHaveBeenLastCalledWith(
+      expect.objectContaining({ identityId: 'claude-3' }),
+    )
+
+    changeSelect(labelledSelect('Provider'), 'custom')
+    expect(onInput.mock.lastCall?.[0].identityId).toBeUndefined()
+    expect(() => labelledSelect('Identity')).toThrow()
+  })
 })
 
 function renderEditor(options: EditorHarnessOptions = {}): void {
@@ -276,10 +289,19 @@ function testProviders(): readonly HarnessProviderDescriptor[] {
   })
   return [
     descriptor('test', { default: false, profileTemplate: undefined }),
-    descriptor('bundled', {
-      default: false,
-      profileTemplate: { displayName: 'Bundled', description: 'Bundled provider' },
-    }),
+    {
+      ...descriptor('bundled', {
+        default: false,
+        profileTemplate: { displayName: 'Bundled', description: 'Bundled provider' },
+      }),
+      profileGuidance: {
+        reservedArguments: [],
+        identities: [
+          { id: 'claude-1', displayName: 'claude-1' },
+          { id: 'claude-3', displayName: 'claude-3' },
+        ],
+      },
+    },
     descriptor('custom', { default: false, profileTemplate: undefined }),
   ]
 }

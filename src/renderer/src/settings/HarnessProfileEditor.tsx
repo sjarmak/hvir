@@ -141,6 +141,7 @@ function ProfileIdentityFields({
   HarnessProfileEditorProps,
   'draft' | 'providers' | 'projectRoot' | 'onUpdateInput'
 >): ReactElement {
+  const provider = providers.find(({ id }) => id === draft.input.providerId)
   return (
     <div className="settings-profile-grid">
       <label>
@@ -165,6 +166,7 @@ function ProfileIdentityFields({
             onUpdateInput((input) => ({
               ...input,
               providerId,
+              identityId: undefined,
               executable: selectedProvider?.profileTemplate
                 ? { kind: 'provider-default' }
                 : { kind: 'command', command: '' },
@@ -178,6 +180,25 @@ function ProfileIdentityFields({
           ))}
         </select>
       </label>
+      {provider?.profileGuidance.identities && (
+        <label>
+          <span>Identity</span>
+          <select
+            value={draft.input.identityId ?? ''}
+            onChange={(event) => {
+              const identityId = event.currentTarget.value || undefined
+              onUpdateInput((input) => ({ ...input, identityId }))
+            }}
+          >
+            <option value="">Default identity</option>
+            {provider.profileGuidance.identities.map((identity) => (
+              <option key={identity.id} value={identity.id}>
+                {identity.displayName}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label>
         <span>Scope</span>
         <select

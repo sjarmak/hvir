@@ -530,6 +530,35 @@ describe('LocalHost', () => {
     stream.dispose()
   })
 
+  it('routes a streaming login-shell exec through $SHELL', async () => {
+    const fakeShell = join(dir, 'fake-stream-login-shell.sh')
+    await writeFile(
+      fakeShell,
+      '#!/bin/sh\nprintf "INVOKED %s\\n" "$*"\nshift 2\neval "$1"\n',
+      { mode: 0o755 },
+    )
+    const previousShell = process.env.SHELL
+    process.env.SHELL = fakeShell
+    try {
+      const stream = host.execStream('printf', ['hi'], { loginShell: true })
+      let stdout = ''
+      stream.onStdout((chunk) => {
+        stdout += chunk
+      })
+      await new Promise<void>((resolve, reject) => {
+        stream.onError(reject)
+        stream.onExit(() => resolve())
+      })
+
+      expect(stdout).toContain('INVOKED -l -c')
+      expect(stdout).toContain('hi')
+      stream.dispose()
+    } finally {
+      if (previousShell === undefined) delete process.env.SHELL
+      else process.env.SHELL = previousShell
+    }
+  })
+
   it('applies streaming environment values after inherited unsets', async () => {
     const name = 'HVIR_LOCAL_HOST_STREAM_OVERRIDE_TEST'
     const previous = process.env[name]

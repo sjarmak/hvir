@@ -29,7 +29,7 @@ export interface ArchitectureExplanation {
 }
 
 export type ArchitectureExplanationState =
-  | { readonly status: 'waiting'; readonly snapshotId: string }
+  | { readonly status: 'waiting'; readonly snapshotId: string; readonly output: string }
   | { readonly status: 'invalid'; readonly snapshotId: string; readonly message: string }
   | { readonly status: 'ready'; readonly explanation: ArchitectureExplanation }
 

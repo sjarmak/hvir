@@ -904,13 +904,15 @@ export class SshHost implements ProjectHost {
     args: readonly string[],
     opts: ExecOptions,
   ): Promise<{ channel: ClientChannel }> {
+    const loginShell = opts.loginShell ? await this.defaultShell() : undefined
     const channel = await this.transportPool.openChannel(
       'control',
       (client) =>
         new Promise<ClientChannel>((resolve, reject) => {
           try {
-            client.exec(remoteCommand(command, args, opts), (error, stream) =>
-              error ? reject(error) : resolve(stream),
+            client.exec(
+              remoteCommand(command, args, opts, loginShell),
+              (error, stream) => (error ? reject(error) : resolve(stream)),
             )
           } catch (error) {
             reject(asError(error))

@@ -406,10 +406,20 @@ describe('Harness providers', () => {
       displayName: 'Claude Code',
       description: 'Claude Code with exact hvir-managed session recovery.',
     })
+    expect(catalog.find(({ id }) => id === 'claude-code')?.architectureExplanation).toBe(
+      true,
+    )
     expect(
-      catalog.find(({ id }) => id === 'claude-code')?.architectureExplanation,
-    ).toBe(true)
-    expect(catalog.find(({ id }) => id === 'codex')?.architectureExplanation).toBeUndefined()
+      catalog.find(({ id }) => id === 'claude-code')?.profileGuidance.identities,
+    ).toEqual([
+      { id: 'claude-1', displayName: 'claude-1' },
+      { id: 'claude-3', displayName: 'claude-3' },
+      { id: 'claude-4', displayName: 'claude-4' },
+      { id: 'claude-5', displayName: 'claude-5' },
+    ])
+    expect(
+      catalog.find(({ id }) => id === 'codex')?.architectureExplanation,
+    ).toBeUndefined()
     expect(catalog.find(({ id }) => id === 'custom')?.profileTemplate).toBeUndefined()
     expect(catalog.find(({ id }) => id === 'claude-code')?.capabilities).toEqual({
       sessionIdentity: 'preassigned',

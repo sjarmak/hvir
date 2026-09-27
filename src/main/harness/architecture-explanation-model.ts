@@ -40,23 +40,77 @@ export class HarnessArchitectureExplanationModel implements ArchitectureExplanat
     })
     const spec = resolved.provider.architectureExplanation?.(resolved.spec)
     if (!spec) throw new Error('This harness provider cannot explain architecture')
-    const result = await host.exec(spec.file, spec.args, {
+    const stream = host.execStream(spec.file, spec.args, {
       cwd: request.workspaceRoot,
       env: spec.env,
       unsetEnv: resolved.unsetEnvironment,
-      input: request.prompt,
       signal: AbortSignal.any([request.signal, AbortSignal.timeout(MODEL_TIMEOUT_MS)]),
+      keepStdinOpen: true,
       loginShell: spec.shellEnvironment,
       maxBuffer: MAX_OUTPUT_BYTES,
     })
-    if (result.code !== 0) {
-      const detail = result.stderr.trim() || result.stdout.trim()
-      throw new Error(
-        detail
-          ? `Architecture explanation model failed: ${detail}`
-          : 'Architecture explanation model failed',
-      )
-    }
-    return result.stdout.trim()
+    return new Promise<string>((resolve, reject) => {
+      let stdout = ''
+      let stderr = ''
+      let outputBytes = 0
+      let settled = false
+      const finish = (result: () => void) => {
+        if (settled) return
+        settled = true
+        stream.dispose()
+        result()
+      }
+      stream.onStdout((chunk) => {
+        outputBytes += Buffer.byteLength(chunk, 'utf8')
+        if (outputBytes > MAX_OUTPUT_BYTES) {
+          finish(() =>
+            reject(
+              new Error(
+                `Architecture explanation model output exceeded ${MAX_OUTPUT_BYTES} bytes`,
+              ),
+            ),
+          )
+          return
+        }
+        stdout += chunk
+        request.onOutput(stdout)
+      })
+      stream.onStderr((chunk) => {
+        outputBytes += Buffer.byteLength(chunk, 'utf8')
+        if (outputBytes > MAX_OUTPUT_BYTES) {
+          finish(() =>
+            reject(
+              new Error(
+                `Architecture explanation model output exceeded ${MAX_OUTPUT_BYTES} bytes`,
+              ),
+            ),
+          )
+          return
+        }
+        stderr += chunk
+      })
+      stream.onError((error) => finish(() => reject(error)))
+      stream.onExit(({ code }) => {
+        if (code === 0) {
+          finish(() => resolve(stdout.trim()))
+          return
+        }
+        const detail = stderr.trim() || stdout.trim()
+        finish(() =>
+          reject(
+            new Error(
+              detail
+                ? `Architecture explanation model failed: ${detail}`
+                : 'Architecture explanation model failed',
+            ),
+          ),
+        )
+      })
+      void stream
+        .end(request.prompt)
+        .catch((error: unknown) =>
+          finish(() => reject(error instanceof Error ? error : new Error(String(error)))),
+        )
+    })
   }
 }

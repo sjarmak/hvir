@@ -62,6 +62,7 @@ export interface HarnessProfileInput {
   readonly displayName: string
   readonly description?: string
   readonly providerId: HarnessProviderId
+  readonly identityId?: string
   readonly scope: HarnessProfileScope
   readonly executable: HarnessProfileExecutable
   readonly args: readonly HarnessProfileArgument[]

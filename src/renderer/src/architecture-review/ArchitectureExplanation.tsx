@@ -6,6 +6,7 @@ import {
   type HarnessProfileId,
   type HarnessProviderDescriptor,
   type HostPath,
+  hostPathEquals,
 } from '../../../shared'
 import type { ArchitectureReviewSnapshot } from '../../../shared/architecture-review'
 import {
@@ -64,6 +65,26 @@ export function ArchitectureExplanation({
     }
   }, [reviewId, root, snapshot.id])
 
+  useEffect(() => {
+    const dispose = window.hvir.on(
+      'architecture-review:explanation-progress',
+      (progress) => {
+        if (
+          progress.reviewId === reviewId &&
+          progress.snapshotId === snapshot.id &&
+          hostPathEquals(progress.root, root)
+        ) {
+          setState(progress.state)
+        }
+      },
+    )
+    return () => {
+      void Promise.resolve(dispose()).catch((cause: unknown) =>
+        console.error('Architecture explanation event cleanup failed', cause),
+      )
+    }
+  }, [reviewId, root, snapshot.id])
+
   const explain = async () => {
     const profile = profiles.find((candidate) => candidate.id === profileId)
     if (!profile || busy) return
@@ -71,7 +92,7 @@ export function ArchitectureExplanation({
     const previous = state
     setBusy('explaining')
     setError(undefined)
-    setState({ status: 'waiting', snapshotId: snapshot.id })
+    setState({ status: 'waiting', snapshotId: snapshot.id, output: '' })
     try {
       const result = await window.hvir.invoke('architecture-review:explain', {
         root,
@@ -173,7 +194,10 @@ export function ArchitectureExplanation({
             </div>
           )}
           {state?.status === 'waiting' && (
-            <p role="status">Waiting for the agent claim…</p>
+            <div role="status">
+              <p>Waiting for the agent claim…</p>
+              {state.output && <pre>{state.output}</pre>}
+            </div>
           )}
           {state?.status === 'invalid' && (
             <p className="architecture-explanation-invalid" role="alert">

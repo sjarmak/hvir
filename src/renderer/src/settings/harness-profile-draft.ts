@@ -29,6 +29,7 @@ export function harnessProfileDraft(profile: HarnessProfile): HarnessProfileDraf
       displayName: profile.displayName,
       description: profile.description,
       providerId: profile.providerId,
+      identityId: profile.identityId,
       scope: profile.scope,
       executable: profile.executable,
       args: profile.args,
@@ -130,6 +131,7 @@ export function isHarnessProfileDraftDirty(
     input.displayName !== profile.displayName ||
     input.description !== profile.description ||
     input.providerId !== profile.providerId ||
+    input.identityId !== profile.identityId ||
     !same(input.scope, profile.scope) ||
     !same(input.executable, profile.executable) ||
     !same(args, profile.args) ||

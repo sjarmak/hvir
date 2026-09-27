@@ -9,6 +9,7 @@ import { ArchitectureExplanation } from '../src/renderer/src/architecture-review
 const root = localPath('/repo')
 const snapshot = { id: 'snapshot' } as ArchitectureReviewSnapshot
 const invoke = vi.fn<(channel: string) => Promise<unknown>>()
+let progress: ((payload: unknown) => void) | undefined
 let host: HTMLDivElement
 let app: ReturnType<typeof createRoot>
 
@@ -46,10 +47,69 @@ beforeEach(() => {
       })
     return Promise.reject(new Error('Model unavailable'))
   })
-  vi.stubGlobal('hvir', { invoke, on: vi.fn() })
+  vi.stubGlobal('hvir', {
+    invoke,
+    on: vi.fn((channel: string, handler: (payload: unknown) => void) => {
+      if (channel === 'architecture-review:explanation-progress') progress = handler
+      return () => undefined
+    }),
+  })
   host = document.createElement('div')
   document.body.append(host)
   app = createRoot(host)
+})
+
+it('renders model output before the final explanation resolves', async () => {
+  let resolveExplanation!: (value: unknown) => void
+  invoke.mockImplementation((channel) => {
+    if (channel === 'harness:catalog')
+      return Promise.resolve([{ id: 'claude-code', architectureExplanation: true }])
+    if (channel === 'harness:profiles')
+      return Promise.resolve([
+        {
+          id: 'native',
+          providerId: 'claude-code',
+          displayName: 'Claude Code',
+          launchRevision: 4,
+          executable: { kind: 'provider-default' },
+          args: [],
+        },
+      ])
+    if (channel === 'architecture-review:explanation') return Promise.resolve(null)
+    return new Promise((resolve) => {
+      resolveExplanation = resolve
+    })
+  })
+  await act(async () => {
+    app.render(
+      <ArchitectureExplanation
+        root={root}
+        reviewId="review"
+        snapshot={snapshot}
+        collapsed={false}
+        onCollapsedChange={vi.fn()}
+      />,
+    )
+    await Promise.resolve()
+  })
+  const button = [...host.querySelectorAll('button')].find(
+    (candidate) => candidate.textContent === 'Explain this change',
+  )!
+  await act(async () => {
+    button.click()
+    await Promise.resolve()
+    progress?.({
+      root,
+      reviewId: 'review',
+      snapshotId: snapshot.id,
+      state: { status: 'waiting', snapshotId: snapshot.id, output: '{"version":1' },
+    })
+  })
+  expect(host.textContent).toContain('{"version":1')
+  await act(async () => {
+    resolveExplanation({ status: 'invalid', snapshotId: snapshot.id, message: 'done' })
+    await Promise.resolve()
+  })
 })
 
 afterEach(() => {

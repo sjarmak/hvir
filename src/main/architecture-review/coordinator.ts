@@ -423,6 +423,9 @@ export class ArchitectureReviewCoordinator {
     host: ProjectHost,
     projectRoot: HostPath,
     request: ArchitectureExplainRequest,
+    publish: (
+      state: Extract<ArchitectureExplanationState, { status: 'waiting' }>,
+    ) => void = () => undefined,
   ): Promise<ArchitectureExplanationState> {
     const model = this.ports.explanationModel
     if (!model) throw new Error('Architecture explanation is unavailable in this window')
@@ -445,8 +448,13 @@ export class ArchitectureReviewCoordinator {
     const previous = this.explanations.get(stateKey)
     if (previous?.status === 'waiting')
       throw new Error('Architecture explanation is already running')
-    this.explanations.set(stateKey, { status: 'waiting', snapshotId: request.snapshotId })
+    this.explanations.set(stateKey, {
+      status: 'waiting',
+      snapshotId: request.snapshotId,
+      output: '',
+    })
     let text: string
+    let acceptingOutput = true
     try {
       text = await model.generate(host, {
         projectRoot,
@@ -455,8 +463,21 @@ export class ArchitectureReviewCoordinator {
         launchRevision: request.launchRevision,
         prompt,
         signal: review.controller.signal,
+        onOutput: (output) => {
+          if (!acceptingOutput || this.reviews.get(key)?.controller !== review.controller)
+            return
+          const state = {
+            status: 'waiting' as const,
+            snapshotId: request.snapshotId,
+            output,
+          }
+          this.explanations.set(stateKey, state)
+          publish(state)
+        },
       })
+      acceptingOutput = false
     } catch (cause) {
+      acceptingOutput = false
       if (previous) this.explanations.set(stateKey, previous)
       else this.explanations.delete(stateKey)
       throw cause

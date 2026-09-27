@@ -339,6 +339,7 @@ export class HarnessProfileStore implements HarnessProfileStoreContract {
         displayName: `${source.displayName} copy`.slice(0, MAX_NAME),
         description: source.description,
         providerId: source.providerId,
+        identityId: source.identityId,
         scope: source.scope,
         executable: source.executable,
         args: source.args,
@@ -473,6 +474,7 @@ export function validateProfileInput(value: HarnessProfileInput): HarnessProfile
   const displayName = cleanRequiredText(value.displayName, MAX_NAME, 'profile name')
   const description = cleanOptionalText(value.description, MAX_TEXT, 'description')
   if (!isHarnessProviderId(value.providerId)) throw new Error('Invalid provider id')
+  const identityId = cleanOptionalText(value.identityId, MAX_NAME, 'identity')
   const scope = validateScope(value.scope)
   const executable = validateExecutable(value.executable, scope)
   if (!Array.isArray(value.args) || value.args.length > MAX_ARGUMENTS) {
@@ -531,6 +533,7 @@ export function validateProfileInput(value: HarnessProfileInput): HarnessProfile
     displayName,
     description,
     providerId: value.providerId,
+    identityId,
     scope,
     executable,
     args,
@@ -544,6 +547,14 @@ function validateProviderProfile(
   provider: HarnessProvider,
   input: HarnessProfileInput,
 ): void {
+  if (input.identityId !== undefined) {
+    if (!provider.profile.identities?.some(({ id }) => id === input.identityId)) {
+      throw new Error(`Unknown identity '${input.identityId}' for this harness provider`)
+    }
+    if (!provider.profile.applyIdentity) {
+      throw new Error('Harness provider cannot apply its advertised identities')
+    }
+  }
   if (provider.manifest.id === 'custom' && input.executable.kind === 'provider-default') {
     throw new Error('Custom profiles require an executable')
   }
@@ -586,6 +597,7 @@ function launchIdentity(
   value: Pick<
     HarnessProfile,
     | 'providerId'
+    | 'identityId'
     | 'scope'
     | 'executable'
     | 'args'
@@ -596,6 +608,7 @@ function launchIdentity(
 ): string {
   return JSON.stringify({
     providerId: value.providerId,
+    identityId: value.identityId,
     providerContractVersion: value.providerContractVersion,
     scope: value.scope,
     executable: value.executable,
