@@ -699,7 +699,9 @@ upstream GitHub provenance and blocking source/dependency checks retain their au
 
 A snapshot compares any two refs or a ref and the live tree from Git objects through a blob-keyed
 parse cache, opens on subsystem relationships across TypeScript, Python, Go and Rust, and hands
-an agent a worktree hvir owns so the review can re-snapshot the agent's change.
+an agent a worktree hvir owns so the review can re-snapshot the agent's change. The History tab
+marks each commit's architecture change against its parent, filters to architecture changes,
+and opens the review on any commit; the commit strip lists the same commits newest first.
 
 ### [ADR-064 — Architecture review as a live, zoomable canvas](adr/ADR-064-architecture-review-as-a-live-zoomable-canvas.md)
 

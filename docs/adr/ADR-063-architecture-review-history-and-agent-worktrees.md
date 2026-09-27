@@ -24,9 +24,22 @@ verification loop.
 **Two ends, any refs.** A snapshot compares a Baseline to a Current end. Either end may be any
 commit reachable in the repository; only the Current end may be the live working tree. Both
 tree ends are read from Git objects by one listing and one batched blob read per side; no
-checkout or worktree is needed to compare history. A commit strip lists the range from the
-merge-base with the default branch to HEAD by default, widenable by ref, and steps either
-pairwise or against a locked baseline.
+checkout or worktree is needed to compare history. A commit strip lists the first-parent
+range from the merge-base with the default branch to HEAD by default, widenable by ref,
+newest first in the order the History tab uses, each commit labelled by subject and author
+date with its hash secondary. Stepping moves to the newer or the older commit, either
+pairwise against each commit's first parent or against a locked baseline.
+
+**History reaches the review.** Each History row is classified against its first parent:
+an architecture change when a module, subsystem or relationship in scope was added, removed
+or changed; a code change when sources changed with no such change; nothing when no source,
+config or layout in scope changed. Classification runs lazily for the rows on screen, off the
+render thread in the architecture worker, and is cached by commit pair, scanner versions and
+layout. A commit that changes no source is never marked as an architecture change. Every row
+offers "Show in architecture", which opens the review on that commit against its parent. One
+"Architecture changes only" filter, remembered across sessions, hides merges and commits
+without an architecture change from both History and the strip, so the two always agree on
+order and on which commits show.
 
 **Nothing is read twice.** The live side is read by one batched host command per scan. Parsed
 module facts are cached on disk per host and repository, keyed by blob identity and scanner
@@ -86,7 +99,10 @@ is the only removal authority the review holds.
 ## Consequences
 
 History comparison becomes a git-object read plus a cache lookup, so stepping the strip is
-cheap after the first parse. The disk cache is new state to bound and to invalidate on
+cheap after the first parse. Marking History costs one batched raw log per fifty commits and
+a blob read for each modified module in scope; commits that only add, delete, rename or
+touch non-source files are decided from the diff alone. Under the filter every loaded commit
+is classified rather than only the visible rows, so the filter is bounded by the loaded page. The disk cache is new state to bound and to invalidate on
 scanner upgrades. web-tree-sitter adds a WebAssembly dependency and per-language grammars to
 package. Worktree creation is a new write authority for the review; ADR-061's read-only
 promise no longer holds for the review as a whole, though it still holds for the person's own
@@ -108,3 +124,8 @@ it in Git.
 - Letting the agent create its own worktree and report back: needs a result channel that
   hvir owns anyway once it created the worktree.
 - Silent truncation over the size cap: makes the map lie.
+- Marking History from a full snapshot scan per commit: correct but costs a whole analysis
+  per row; comparing import signatures of the modified modules answers the same question
+  from the changed blobs alone.
+- Classifying commits in the renderer from the History diff summary: file counts cannot tell
+  a rewired import from an edited body.
