@@ -588,14 +588,20 @@
 }
 .architecture-explanation > header {
   display: flex;
-  align-items: start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 .architecture-explanation :is(h3, h4, p) {
   margin: 0;
 }
-.architecture-explanation header p {
+.architecture-explanation-intro {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.architecture-explanation-intro p {
   color: var(--text-muted);
 }
 .architecture-explanation-launch,

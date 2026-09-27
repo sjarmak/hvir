@@ -22,11 +22,15 @@ export function ArchitectureExplanation({
   root,
   reviewId,
   snapshot,
+  collapsed,
+  onCollapsedChange,
   onHandoff,
 }: {
   readonly root: HostPath
   readonly reviewId: string
   readonly snapshot: ArchitectureReviewSnapshot
+  readonly collapsed: boolean
+  readonly onCollapsedChange: (collapsed: boolean) => void
   readonly onHandoff: (projectId: string, workspaceId: string) => void
 }) {
   const epoch = useRef(0)
@@ -173,82 +177,104 @@ export function ArchitectureExplanation({
   return (
     <section className="architecture-explanation" aria-label="Agent explanation claim">
       <header>
-        <div>
-          <h3>Explanation</h3>
-          <p>Agent claim, checked against snapshot names</p>
-        </div>
-        <button type="button" onClick={() => void prepare()} disabled={!!busy}>
-          {busy === 'preparing' ? 'Preparing…' : 'Explain this change'}
+        <h3>Explanation</h3>
+        <button
+          type="button"
+          aria-label={
+            collapsed ? 'Expand explanation panel' : 'Collapse explanation panel'
+          }
+          aria-expanded={!collapsed}
+          onClick={() => onCollapsedChange(!collapsed)}
+        >
+          {collapsed ? 'Expand' : 'Collapse'}
         </button>
       </header>
-      {prepared && (
-        <div className="architecture-explanation-launch">
-          <p>
-            New worktree <code>{prepared.handoff.worktree.path}</code> on{' '}
-            <code>{prepared.handoff.branch}</code>
-          </p>
-          <label>
-            Explanation profile{' '}
-            <select
-              value={profileId ?? ''}
-              onChange={(event) => setProfileId(event.target.value as HarnessProfileId)}
-            >
-              <option value="">Select a native profile</option>
-              {profiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.displayName}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            onClick={() => void launch()}
-            disabled={!profileId || !!busy}
-          >
-            {busy === 'launching' ? 'Launching…' : 'Create worktree and launch agent'}
-          </button>
-        </div>
-      )}
-      {state?.status === 'waiting' && <p role="status">Waiting for the agent claim…</p>}
-      {state?.status === 'invalid' && (
-        <p className="architecture-explanation-invalid" role="alert">
-          The agent claim is invalid: {state.message}
-        </p>
-      )}
-      {state?.status === 'ready' && (
-        <div className="architecture-explanation-claim">
-          <h4>What changed</h4>
-          <p>{state.explanation.claim.whatChanged}</p>
-          <h4>Why</h4>
-          <p>{state.explanation.claim.why}</p>
-          <h4>Sequence</h4>
-          <pre>{state.explanation.claim.sequenceDiagram}</pre>
-          <h4>Touched names</h4>
-          <NameList label="Systems" names={state.explanation.names.systems} />
-          <NameList label="Subsystems" names={state.explanation.names.subsystems} />
-          <NameList label="Modules" names={state.explanation.names.modules} />
-        </div>
-      )}
-      {prepared && profiles.length === 0 && (
-        <div>
-          <p role="status">
-            Architecture review requires a supported provider, its default executable, and
-            no custom arguments. None of the current profiles qualify.
-          </p>
-          {creationProvider && (
-            <button type="button" onClick={() => void createProfile()} disabled={!!busy}>
-              {busy === 'creating-profile'
-                ? 'Creating profile…'
-                : `Create ${creationProvider.profileTemplate?.displayName ?? creationProvider.displayName} profile`}
+      {!collapsed && (
+        <>
+          <div className="architecture-explanation-intro">
+            <p>Agent claim, checked against snapshot names</p>
+            <button type="button" onClick={() => void prepare()} disabled={!!busy}>
+              {busy === 'preparing' ? 'Preparing…' : 'Explain this change'}
             </button>
+          </div>
+          {prepared && (
+            <div className="architecture-explanation-launch">
+              <p>
+                New worktree <code>{prepared.handoff.worktree.path}</code> on{' '}
+                <code>{prepared.handoff.branch}</code>
+              </p>
+              <label>
+                Explanation profile{' '}
+                <select
+                  value={profileId ?? ''}
+                  onChange={(event) =>
+                    setProfileId(event.target.value as HarnessProfileId)
+                  }
+                >
+                  <option value="">Select a native profile</option>
+                  {profiles.map((profile) => (
+                    <option key={profile.id} value={profile.id}>
+                      {profile.displayName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => void launch()}
+                disabled={!profileId || !!busy}
+              >
+                {busy === 'launching' ? 'Launching…' : 'Create worktree and launch agent'}
+              </button>
+            </div>
           )}
-        </div>
-      )}
-      {error && (
-        <p className="architecture-review-state error" role="alert">
-          {error}
-        </p>
+          {state?.status === 'waiting' && (
+            <p role="status">Waiting for the agent claim…</p>
+          )}
+          {state?.status === 'invalid' && (
+            <p className="architecture-explanation-invalid" role="alert">
+              The agent claim is invalid: {state.message}
+            </p>
+          )}
+          {state?.status === 'ready' && (
+            <div className="architecture-explanation-claim">
+              <h4>What changed</h4>
+              <p>{state.explanation.claim.whatChanged}</p>
+              <h4>Why</h4>
+              <p>{state.explanation.claim.why}</p>
+              <h4>Sequence</h4>
+              <pre>{state.explanation.claim.sequenceDiagram}</pre>
+              <h4>Touched names</h4>
+              <NameList label="Systems" names={state.explanation.names.systems} />
+              <NameList label="Subsystems" names={state.explanation.names.subsystems} />
+              <NameList label="Modules" names={state.explanation.names.modules} />
+            </div>
+          )}
+          {prepared && profiles.length === 0 && (
+            <div>
+              <p role="status">
+                Architecture review requires a supported provider, its default executable,
+                and no custom arguments. None of the current profiles qualify.
+              </p>
+              {creationProvider && (
+                <button
+                  type="button"
+                  onClick={() => void createProfile()}
+                  disabled={!!busy}
+                >
+                  {busy === 'creating-profile'
+                    ? 'Creating profile…'
+                    : `Create ${creationProvider.profileTemplate?.displayName ?? creationProvider.displayName} profile`}
+                </button>
+              )}
+            </div>
+          )}
+          {error && (
+            <p className="architecture-review-state error" role="alert">
+              {error}
+            </p>
+          )}
+        </>
       )}
     </section>
   )

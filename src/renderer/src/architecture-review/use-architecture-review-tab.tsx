@@ -1,12 +1,17 @@
-import { useCallback, useState, type RefObject } from 'react'
+import { useCallback, useRef, useState, type RefObject } from 'react'
 import { hostPathEquals, type HostPath } from '../../../shared'
 import { ArchitectureReview } from './ArchitectureReview'
+import { ArchitectureReviewPanelStateSession } from './architecture-review-panel-state'
 
 /** A workspace-qualified native review tab; file tabs retain their document owner. */
 export function useArchitectureReviewTab(ports: {
   readonly root: RefObject<HostPath | undefined>
   readonly activateViewer: () => void
 }) {
+  const panelStateSession = useRef<ArchitectureReviewPanelStateSession>(undefined)
+  if (!panelStateSession.current) {
+    panelStateSession.current = new ArchitectureReviewPanelStateSession()
+  }
   const [tab, setTab] = useState<{ readonly root: HostPath; readonly active: boolean }>()
   const deactivate = useCallback(
     () => setTab((current) => (current ? { ...current, active: false } : current)),
@@ -47,6 +52,7 @@ export function useArchitectureReviewTab(ports: {
             key={JSON.stringify(root)}
             root={root}
             active={active(root, pane)}
+            panelStateSession={panelStateSession.current}
             onHandoff={(projectId, workspaceId) =>
               void switchWorkspace(projectId, workspaceId)
             }

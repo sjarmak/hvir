@@ -17,6 +17,7 @@ import { ArchitectureExplanation } from './ArchitectureExplanation'
 import { ArchitectureHandoffOrigin } from './ArchitectureHandoffOrigin'
 import { ArchitectureScanTimings } from './ArchitectureScanTimings'
 import { ArchitectureScopeControls } from './ArchitectureScopeControls'
+import { ArchitectureReviewPanelStateSession } from './architecture-review-panel-state'
 import { scopeFromText, scopeText as textOfScope } from './architecture-scope-model'
 import { endsFromText, type ArchitectureEnds } from './architecture-ends-model'
 import { layoutSummary, type ArchitectureMapMode } from './architecture-review-model'
@@ -24,12 +25,26 @@ import { layoutSummary, type ArchitectureMapMode } from './architecture-review-m
 export function ArchitectureReview({
   root,
   active,
+  panelStateSession,
   onHandoff,
 }: {
   readonly root: HostPath
   readonly active: boolean
+  readonly panelStateSession?: ArchitectureReviewPanelStateSession
   readonly onHandoff: (projectId: string, workspaceId: string) => void
 }) {
+  const ownedPanelStateSession = useRef<ArchitectureReviewPanelStateSession>(undefined)
+  if (!ownedPanelStateSession.current) {
+    ownedPanelStateSession.current = new ArchitectureReviewPanelStateSession()
+  }
+  const activePanelStateSession = panelStateSession ?? ownedPanelStateSession.current
+  const [explanationCollapsed, setExplanationCollapsedState] = useState(
+    () => activePanelStateSession.read(root).explanationCollapsed,
+  )
+  const setExplanationCollapsed = (collapsed: boolean): void => {
+    activePanelStateSession.write(root, { explanationCollapsed: collapsed })
+    setExplanationCollapsedState(collapsed)
+  }
   const requestEpoch = useRef(0)
   const liveScanActive = useRef(false)
   const pendingLiveScan = useRef(false)
@@ -439,6 +454,8 @@ export function ArchitectureReview({
             root={root}
             reviewId={reviewId}
             snapshot={snapshot}
+            collapsed={explanationCollapsed}
+            onCollapsedChange={setExplanationCollapsed}
             onHandoff={onHandoff}
           />
         </>
