@@ -24,9 +24,12 @@ failed run leaves its completed steps and an incomplete manifest for diagnosis.
 
 The `architecture-live-review` journey opens Architecture, expands and restores the map, expands a
 system, compares two commits, returns to the working tree, observes idle stability, follows one
-scripted file edit, pauses, rescans while paused, and prepares an explanation handoff. Those actions
-preserve the regression paths for map geometry, the live-review snapshot loop, and the Architecture
-tab closing during a manual scan.
+scripted file edit, pauses, rescans while paused, and prepares an explanation handoff. It scrolls
+the Explanation panel into view, captures its prepared state, collapses it to the header for a
+second capture, and expands it again. Explanation notes record whether the panel is collapsed,
+whether its primary action is present, whether only the header remains, and its current status.
+Those actions preserve the regression paths for map geometry, the live-review snapshot loop, the
+collapsible Explanation panel, and the Architecture tab closing during a manual scan.
 
 ## Agent critique
 
