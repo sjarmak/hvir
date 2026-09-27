@@ -723,6 +723,16 @@ orthogonal dimensions, from each commit's trailers and its note under refs/notes
 mark a classified commit from its Architectural trailer, and keep the ADR-063 heuristic as the
 permanent fallback for every commit the fleet has not classified.
 
+### [ADR-066 — Scans reuse blobs by object id and analyses by fingerprint](adr/ADR-066-scans-reuse-blobs-by-object-id-and-analyses-by-fingerprint.md)
+
+> Lifecycle: Active
+
+The architecture review coordinator keeps two in-memory, byte-bounded, least-recently-used
+caches for the life of the process: blob text by verified Git object id, shared by review scans
+and the History classifier and filled by live reads too, and analyses by capture fingerprint, so
+a repeat scan of an unchanged pair transfers no blobs and runs no worker. The blob-read span
+reports transferred bytes and host calls only.
+
 ## 5. Architecture
 
 ### Process model
