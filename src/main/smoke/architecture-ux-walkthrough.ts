@@ -49,6 +49,19 @@ export async function runArchitectureUxWalkthrough(
     await expandArchitectureSystem(win)
     await capture('expand-system', 'Expand a system on the architecture map')
 
+    await openHistoryMarkers(win)
+    await capture('history-markers', 'Read architecture markers on the History tab')
+
+    await setArchitectureFilter(win, true)
+    await capture('history-filter', 'Filter History to architecture changes only')
+
+    await showInArchitecture(win, 'Add architecture smoke label', fixture.history.label)
+    await capture(
+      'history-show-in-architecture',
+      'Open the Architecture tab for one History commit against its parent',
+    )
+    await setArchitectureFilter(win, false)
+
     await compareCommit(win, fixture.history.label)
     await capture('compare-two-commits', 'Compare two commits from the commit strip')
 
@@ -247,6 +260,84 @@ async function collapseArchitectureMap(
         resolve(true);
       }));
     })
+  `)
+}
+
+async function openHistoryMarkers(win: BrowserWindow): Promise<void> {
+  await win.webContents.executeJavaScript(`
+    (async () => {
+      const wait = async (read, label) => {
+        const deadline = Date.now() + 30000;
+        while (Date.now() < deadline) {
+          const value = read();
+          if (value) return value;
+          await new Promise(resolve => setTimeout(resolve, 40));
+        }
+        throw new Error('Timed out waiting for ' + label);
+      };
+      const rail = [...document.querySelectorAll('nav[aria-label="Project views"] button')].find(node => node.textContent?.trim().startsWith('Git'));
+      rail?.click();
+      const panel = await wait(() => document.querySelector('[aria-label="Git"]:not([hidden])'), 'Git panel');
+      [...panel.querySelectorAll('.git-tabs button')].find(node => node.textContent?.trim() === 'History')?.click();
+      await wait(() => {
+        const rows = [...panel.querySelectorAll('.git-rail-history-row.commit')];
+        const fixture = rows.filter(row => row.querySelector('.git-rail-commit')?.getAttribute('title')?.startsWith('Add architecture smoke'));
+        return fixture.length === 2 && fixture.every(row => row.querySelector('.git-rail-commit-change.architecture'));
+      }, 'History markers');
+    })()
+  `)
+}
+
+async function setArchitectureFilter(win: BrowserWindow, on: boolean): Promise<void> {
+  await win.webContents.executeJavaScript(`
+    (async () => {
+      const wait = async (read, label) => {
+        const deadline = Date.now() + 30000;
+        while (Date.now() < deadline) {
+          const value = read();
+          if (value) return value;
+          await new Promise(resolve => setTimeout(resolve, 40));
+        }
+        throw new Error('Timed out waiting for ' + label);
+      };
+      const toggle = await wait(() => [...document.querySelectorAll('input[type="checkbox"]')].find(node => (node.getAttribute('aria-label') || node.parentElement?.textContent?.trim()) === 'Architecture changes only' && node.checkVisibility()), 'architecture filter');
+      if (toggle.checked !== ${on}) toggle.click();
+      await wait(() => [...document.querySelectorAll('input[type="checkbox"]')].filter(node => (node.getAttribute('aria-label') || node.parentElement?.textContent?.trim()) === 'Architecture changes only').every(node => node.checked === ${on}), 'filter state');
+      await wait(() => {
+        const panel = document.querySelector('[aria-label="Git"]:not([hidden])');
+        if (!panel) return true;
+        const hidden = [...panel.querySelectorAll('.git-rail-commit-change')].filter(node => !node.classList.contains('architecture'));
+        return ${on} ? hidden.length === 0 : true;
+      }, 'filtered History rows');
+    })()
+  `)
+}
+
+async function showInArchitecture(
+  win: BrowserWindow,
+  subject: string,
+  revision: string,
+): Promise<void> {
+  await win.webContents.executeJavaScript(`
+    (async () => {
+      const wait = async (read, label) => {
+        const deadline = Date.now() + 30000;
+        while (Date.now() < deadline) {
+          const value = read();
+          if (value) return value;
+          await new Promise(resolve => setTimeout(resolve, 40));
+        }
+        throw new Error('Timed out waiting for ' + label);
+      };
+      const row = await wait(() => [...document.querySelectorAll('[aria-label="Git"]:not([hidden]) .git-rail-history-row.commit')].find(node => node.querySelector('.git-rail-commit')?.getAttribute('title') === ${JSON.stringify(subject)}), 'History row');
+      row.querySelector('.git-rail-show-architecture').click();
+      await wait(() => {
+        const surface = document.querySelector('[aria-label="Architecture review"]:not([hidden])');
+        const commit = surface?.querySelector('[aria-label="Commit strip"] button[title=${JSON.stringify(revision)}]');
+        const scan = [...(surface?.querySelectorAll('button') || [])].find(node => node.textContent?.trim() === 'Scan snapshot');
+        return commit?.getAttribute('aria-pressed') === 'true' && scan && surface.querySelector('.architecture-review-body');
+      }, 'architecture snapshot for the History commit');
+    })()
   `)
 }
 
