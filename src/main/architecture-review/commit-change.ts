@@ -25,7 +25,8 @@ export interface CommitDiff {
 }
 export type EdgeTable = ReadonlyMap<string, readonly string[] | null>
 
-export const edgeKey = (side: string, object: string): string => `${side}\0${object}`
+export const edgeKey = (side: string, path: string, object: string): string =>
+  `${side}\0${path}\0${object}`
 
 const HASH = /^[a-f0-9]{40,64}$/
 const RAW_ENTRY = /^:(\d{6}) (\d{6}) ([a-f0-9]{40,64}) ([a-f0-9]{40,64}) ([A-Z])(\d*)$/
@@ -101,8 +102,8 @@ export function classifyCommitChange(
   if (parent === undefined) return 'unclassified'
   let change: ArchitectureCommitChange = 'code'
   for (const entry of modified) {
-    const before = edges.get(edgeKey(parent, entry.before))
-    const after = edges.get(edgeKey(diff.revision, entry.after))
+    const before = edges.get(edgeKey(parent, entry.path, entry.before))
+    const after = edges.get(edgeKey(diff.revision, entry.path, entry.after))
     if (before === undefined || after === undefined) change = 'unclassified'
     else if (!sameSet(new Set(before ?? []), new Set(after ?? []))) return 'architecture'
   }

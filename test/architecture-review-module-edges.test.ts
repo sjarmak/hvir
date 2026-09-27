@@ -48,11 +48,17 @@ it('resolves each module against its own side with the scanner resolver', async 
   expect(result.edges).toEqual([
     {
       side: 'p',
+      path: 'src/a.ts',
       object: before.object,
       edges: ['external: node:fs', 'src/b.ts', 'src/t.ts', 'src/x.ts'],
     },
-    { side: 'c', object: after.object, edges: ['src/b.ts', 'src/x/index.ts'] },
-    { side: 'c', object: other.object, edges: null },
+    {
+      side: 'c',
+      path: 'src/a.ts',
+      object: after.object,
+      edges: ['src/b.ts', 'src/x/index.ts'],
+    },
+    { side: 'c', path: 'src/other.py', object: other.object, edges: null },
   ])
 })
 
@@ -84,7 +90,43 @@ it('resolves tsconfig aliases and package exports from the side configs', async 
     TYPESCRIPT_ONLY_SCANNERS,
   )
   expect(result.edges).toEqual([
-    { side: 'c', object: module.object, edges: ['src/core/thing.ts', 'src/util.ts'] },
+    {
+      side: 'c',
+      path: 'src/a.ts',
+      object: module.object,
+      edges: ['src/core/thing.ts', 'src/util.ts'],
+    },
+  ])
+})
+
+it('resolves two modules with identical bytes from their own directories', async () => {
+  const content = "import { x } from './x/index'\n"
+  const a = source('c', 'src/a/main.ts', content)
+  const z = source('c', 'src/z/main.ts', content)
+  const result = await readModuleEdges(
+    {
+      sides: [
+        {
+          revision: 'c',
+          modules: [
+            'src/a/main.ts',
+            'src/a/x.ts',
+            'src/a/x/index.ts',
+            'src/z/main.ts',
+            'src/z/x/index.ts',
+          ],
+          configs: [],
+        },
+      ],
+      sources: [a, z, a],
+    },
+    localPath('/repo'),
+    undefined,
+    TYPESCRIPT_ONLY_SCANNERS,
+  )
+  expect(result.edges).toEqual([
+    { side: 'c', path: 'src/a/main.ts', object: a.object, edges: ['src/a/x/index.ts'] },
+    { side: 'c', path: 'src/z/main.ts', object: z.object, edges: ['src/z/x/index.ts'] },
   ])
 })
 
@@ -111,6 +153,6 @@ it('reports a module whose language resolves from every module facts as needing 
     scanners,
   )
   expect(result.edges).toEqual([
-    { side: 'c', object: module.object, edges: null, needsFacts: true },
+    { side: 'c', path: 'src/a.ts', object: module.object, edges: null, needsFacts: true },
   ])
 })

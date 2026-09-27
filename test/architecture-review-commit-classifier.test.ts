@@ -230,6 +230,7 @@ it('scans a commit whose language resolves from every module facts, within the s
       scanners: 'facts',
       edges: request.sources.map((source) => ({
         side: source.side,
+        path: source.path,
         object: source.object!,
         edges: null,
         needsFacts: true,
@@ -281,6 +282,111 @@ it('lists each side once per request and passes its configs to the resolver', as
     expect(side.modules).toEqual(['src/a.ts', 'src/b.ts'])
     expect(side.configs.map((config) => config.path)).toEqual(['tsconfig.json'])
   }
+})
+
+it('keeps the importing module identity when two modified modules share a blob', async () => {
+  const main = "import { x } from './x'\nexport const m = x\n"
+  const respelled = "import { x } from './x/index'\nexport const m = x\n"
+  const scanAt = (root: string, revision: string) => {
+    const paths = git(root, 'ls-tree', '-r', '--name-only', revision).split('\n')
+    const files = paths.filter(isSource).map((path) => ({
+      path,
+      content: git(root, 'show', `${revision}:${path}`),
+    }))
+    return scanArchitecture(
+      { files, scope: '.', exclusions: [] },
+      TYPESCRIPT_ONLY_SCANNERS,
+    )
+  }
+  const classify = async (seed: Record<string, string>) => {
+    const r = await repository()
+    const parent = await r.commit('seed', {
+      'src/a/main.ts': main,
+      'src/z/main.ts': main,
+      ...seed,
+    })
+    const edited = await r.commit('respell', {
+      'src/a/main.ts': respelled,
+      'src/z/main.ts': respelled,
+    })
+    const { classifier: subject } = classifier()
+    const { classifications } = await subject.classify(
+      r.host,
+      { root: localPath(r.root), revisions: [edited] },
+      signal(),
+    )
+    const scanned = changeFromAnalysis(
+      compareArchitecture(scanAt(r.root, parent), scanAt(r.root, edited)),
+      2,
+    )
+    return [classifications[0]?.change, scanned]
+  }
+  expect(
+    await classify({
+      'src/a/x.ts': 'export const x = 1\n',
+      'src/a/x/index.ts': 'export const x = 2\n',
+      'src/z/x/index.ts': 'export const x = 3\n',
+    }),
+  ).toEqual(['architecture', 'architecture'])
+  expect(
+    await classify({
+      'src/a/x/index.ts': 'export const x = 2\n',
+      'src/z/x/index.ts': 'export const x = 3\n',
+    }),
+  ).toEqual(['code', 'code'])
+})
+
+it('leaves a commit whose side listing overflows unclassified and uncached, and answers the rest', async () => {
+  const r = await repository()
+  await r.commit('seed', { 'src/a.ts': "import './b'\n", 'src/b.ts': 'export {}\n' })
+  const first = await r.commit('first', { 'src/a.ts': "import './b'\nexport {}\n" })
+  const second = await r.commit('second', { 'src/b.ts': 'export const b = 1\n' })
+  const { classifier: subject } = classifier()
+  const exec = r.host.exec.bind(r.host)
+  const overflowing = vi
+    .spyOn(r.host, 'exec')
+    .mockImplementation((command, args, options) =>
+      args.includes('ls-tree') && args.includes(second)
+        ? Promise.reject(new Error('exec output exceeded maxBuffer (16777216 bytes)'))
+        : exec(command, args, options),
+    )
+  const request = { root: localPath(r.root), revisions: [second, first] }
+  const { classifications } = await subject.classify(r.host, request, signal())
+  expect(classifications.map((entry) => entry.change)).toEqual(['unclassified', 'code'])
+  overflowing.mockRestore()
+  const lookup = vi.spyOn(CommitChangeCache.prototype, 'lookup')
+  const { classifications: again } = await subject.classify(r.host, request, signal())
+  expect(again.map((entry) => entry.change)).toEqual(['code', 'code'])
+  const found = (revision: string) =>
+    lookup.mock.calls.flatMap(([key], index) =>
+      key.revision === revision ? [lookup.mock.results[index]!.value as unknown] : [],
+    )
+  expect(found(second)).toEqual(found(second).map(() => undefined))
+  expect(found(first)).toContain('code')
+  lookup.mockRestore()
+})
+
+it('propagates an abort raised while listing a side', async () => {
+  const r = await repository()
+  await r.commit('seed', { 'src/a.ts': 'export {}\n' })
+  const edited = await r.commit('edit', { 'src/a.ts': 'export const a = 1\n' })
+  const { classifier: subject } = classifier()
+  const controller = new AbortController()
+  const exec = r.host.exec.bind(r.host)
+  vi.spyOn(r.host, 'exec').mockImplementation((command, args, options) => {
+    if (args.includes('ls-tree') && args.includes('-r')) {
+      controller.abort(new Error('cancelled'))
+      return Promise.reject(new Error('cancelled'))
+    }
+    return exec(command, args, options)
+  })
+  await expect(
+    subject.classify(
+      r.host,
+      { root: localPath(r.root), revisions: [edited] },
+      controller.signal,
+    ),
+  ).rejects.toThrow('cancelled')
 })
 
 it('scans a config or layout change against its parent and caches the answer', async () => {

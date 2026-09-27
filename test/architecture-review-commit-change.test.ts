@@ -36,8 +36,8 @@ const edges = (
   after: readonly string[] | null,
 ): EdgeTable =>
   new Map([
-    [edgeKey(PARENT, blob('b')), before],
-    [edgeKey(COMMIT, blob('a')), after],
+    [edgeKey(PARENT, 'src/a.ts', blob('b')), before],
+    [edgeKey(COMMIT, 'src/a.ts', blob('a')), after],
   ])
 const none: EdgeTable = new Map()
 const layout = ARCHITECTURE_DEFAULT_LAYOUT
@@ -150,14 +150,14 @@ describe('classifyCommitChange', () => {
       classifyCommitChange(
         modified,
         layout,
-        new Map([[edgeKey(PARENT, blob('b')), ['src/x.ts']]]),
+        new Map([[edgeKey(PARENT, 'src/a.ts', blob('b')), ['src/x.ts']]]),
       ),
     ).toBe('unclassified')
     expect(
       classifyCommitChange(
         modified,
         layout,
-        new Map([[edgeKey(COMMIT, blob('a')), ['src/x.ts']]]),
+        new Map([[edgeKey(COMMIT, 'src/a.ts', blob('a')), ['src/x.ts']]]),
       ),
     ).toBe('unclassified')
     expect(
@@ -168,13 +168,29 @@ describe('classifyCommitChange', () => {
       ),
     ).toBe('unclassified')
   })
-  it('keys edges by side so the same blob on both sides is read at each tree', () => {
+  it('keys edges by side and path so one blob resolves per tree and per importing module', () => {
     const modified = diff([entry('src/a.ts', 'M', blob('s'), blob('s'))])
     const table = new Map([
-      [edgeKey(PARENT, blob('s')), ['src/x.ts']],
-      [edgeKey(COMMIT, blob('s')), ['src/x/index.ts']],
+      [edgeKey(PARENT, 'src/a.ts', blob('s')), ['src/x.ts']],
+      [edgeKey(COMMIT, 'src/a.ts', blob('s')), ['src/x/index.ts']],
     ])
     expect(classifyCommitChange(modified, layout, table)).toBe('architecture')
+    const twins = diff([
+      entry('src/a/main.ts', 'M', blob('s'), blob('t')),
+      entry('src/z/main.ts', 'M', blob('s'), blob('t')),
+    ])
+    const perPath = new Map([
+      [edgeKey(PARENT, 'src/a/main.ts', blob('s')), ['src/a/x.ts']],
+      [edgeKey(COMMIT, 'src/a/main.ts', blob('t')), ['src/a/x/index.ts']],
+      [edgeKey(PARENT, 'src/z/main.ts', blob('s')), ['src/z/x/index.ts']],
+      [edgeKey(COMMIT, 'src/z/main.ts', blob('t')), ['src/z/x/index.ts']],
+    ])
+    expect(classifyCommitChange(twins, layout, perPath)).toBe('architecture')
+    const blobOnly = new Map([
+      [edgeKey(PARENT, 'src/z/main.ts', blob('s')), ['src/z/x/index.ts']],
+      [edgeKey(COMMIT, 'src/z/main.ts', blob('t')), ['src/z/x/index.ts']],
+    ])
+    expect(classifyCommitChange(twins, layout, blobOnly)).toBe('unclassified')
   })
   it('treats a file no scanner reads as code', () => {
     expect(
@@ -340,9 +356,10 @@ describe('classifyCommitChange properties', () => {
       const status = pick(next, statuses)
       const before = status === 'A' ? NONE : blob(`b${seed}-${index}`)
       const after = status === 'D' ? NONE : blob(`a${seed}-${index}`)
-      entries.push({ path: pick(next, paths), status, before, after })
-      if (next() < 0.85) table.set(edgeKey(PARENT, before), pick(next, edgeSets))
-      if (next() < 0.85) table.set(edgeKey(COMMIT, after), pick(next, edgeSets))
+      const path = pick(next, paths)
+      entries.push({ path, status, before, after })
+      if (next() < 0.85) table.set(edgeKey(PARENT, path, before), pick(next, edgeSets))
+      if (next() < 0.85) table.set(edgeKey(COMMIT, path, after), pick(next, edgeSets))
     }
     return { entries, table }
   }
@@ -377,8 +394,8 @@ describe('classifyCommitChange properties', () => {
       codeCases += 1
       for (const e of entries.filter((candidate) => touchesScope([candidate]))) {
         expect(['M', 'T']).toContain(e.status)
-        expect(table.get(edgeKey(PARENT, e.before))).toBeDefined()
-        expect(table.get(edgeKey(COMMIT, e.after))).toBeDefined()
+        expect(table.get(edgeKey(PARENT, e.path, e.before))).toBeDefined()
+        expect(table.get(edgeKey(COMMIT, e.path, e.after))).toBeDefined()
       }
     }
     expect(codeCases).toBeGreaterThan(0)

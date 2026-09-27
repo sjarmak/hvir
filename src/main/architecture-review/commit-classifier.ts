@@ -263,7 +263,7 @@ export class ArchitectureCommitClassifier {
     const answers = new Map<string, ArchitectureCommitChange>()
     const needsScan: Pending[] = []
     if (pending.length === 0) return { answers, needsScan }
-    const sides = await this.listSides(run, pending, layout)
+    const sides = await this.listSides(run, pending, layout, signal)
     const listed = pending.filter((entry) =>
       sidesOf(entry).every((revision) => sides.has(revision)),
     )
@@ -275,17 +275,20 @@ export class ArchitectureCommitClassifier {
     if (affordable.length === 0) return { answers, needsScan }
     const result = await this.edgesOf(affordable, sides, root, context, signal)
     const table: EdgeTable = new Map(
-      result.edges.map((entry) => [edgeKey(entry.side, entry.object), entry.edges]),
+      result.edges.map((entry) => [
+        edgeKey(entry.side, entry.path, entry.object),
+        entry.edges,
+      ]),
     )
     const facts = new Set(
       result.edges.flatMap((entry) =>
-        entry.needsFacts ? [edgeKey(entry.side, entry.object)] : [],
+        entry.needsFacts ? [edgeKey(entry.side, entry.path, entry.object)] : [],
       ),
     )
     for (const entry of affordable) {
       if (
         entry.modified.some((modified) =>
-          facts.has(edgeKey(entry.diff.revision, modified.after)),
+          facts.has(edgeKey(entry.diff.revision, modified.path, modified.after)),
         )
       ) {
         needsScan.push(entry)
@@ -302,15 +305,17 @@ export class ArchitectureCommitClassifier {
     run: Run,
     pending: readonly Pending[],
     layout: Layout,
+    signal: AbortSignal,
   ): Promise<ReadonlyMap<string, SideListing>> {
     const sides = new Map<string, SideListing>()
     for (const revision of new Set(pending.flatMap(sidesOf))) {
-      const listing = await run(['ls-tree', '-r', '-l', '-z', revision, '--', '.'])
       let selected: readonly CaptureEntry[]
       try {
+        const listing = await run(['ls-tree', '-r', '-l', '-z', revision, '--', '.'])
         selected = selectEntries(parseTree(listing), layout.layout)
         assertWithinScopeCap(selected, { end: revision, scope: layout.layout.scope })
-      } catch {
+      } catch (cause) {
+        if (signal.aborted) throw cause
         continue
       }
       sides.set(revision, {
