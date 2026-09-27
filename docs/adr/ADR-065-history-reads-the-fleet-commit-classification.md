@@ -40,12 +40,14 @@ backfilled.
 each batch of commits History or the strip asks about, main reads one `git log` over the
 batch with `--notes=refs/notes/classification`, taking the commit's own trailers and its note
 in the same call. No model is called, no network is used, and no second store is written. A
-commit is classified when its note or its message carries a Change-Type trailer; the other
-fields are optional. The note wins over the message: a note on a commit that already labelled
-itself can only have been written on purpose, so it is read as a correction, and corrections
-need no history rewrite. Trailer values are read as the fleet wrote them, trimmed, one line
-each, bounded in length; hvir does not validate them against the taxonomy, so a value the
-fleet spells differently is shown as written rather than dropped.
+commit is classified when its note carries a Change-Type trailer, or, when it has no note,
+when its message does; the other fields are optional. The note wins over the message: a note
+on a commit that already labelled itself can only have been written on purpose, so it is read
+as a correction, and corrections need no history rewrite. A note without a Change-Type is the
+fleet's word on that commit all the same, so it leaves the commit not classified rather than
+reviving the label in the message. Trailer values are read as the fleet wrote them, trimmed,
+one line each, bounded in length; hvir does not validate them against the taxonomy, so a
+value the fleet spells differently is shown as written rather than dropped.
 
 **Absence is ordinary.** A missing notes ref, a commit with no note and no trailers, and a
 note without a Change-Type are all the same "not classified" answer, never an error. Git

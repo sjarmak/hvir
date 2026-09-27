@@ -41,8 +41,7 @@ export async function readFleetClassifications(
   for (const record of output.split(RECORD)) {
     const [revision = '', message = '', note = ''] = record.split(FIELD)
     if (!HASH.test(revision)) continue
-    const classification =
-      parseFleetClassification(note) ?? parseFleetClassification(message)
+    const classification = parseFleetClassification(note.trim() === '' ? message : note)
     if (classification) found.set(revision, classification)
   }
   return found

@@ -127,6 +127,20 @@ it('reads trailers the commit carries itself and lets a note override them', asy
   })
 })
 
+it('leaves a commit unclassified when its note lacks a Change-Type, whatever its message says', async () => {
+  const r = await repository()
+  const labelled = await r.commit('label\n\nChange-Type: Feature\nRisk: low', {
+    'src/a.ts': 'export {}\n',
+  })
+  const overridden = await r.commit('relabel\n\nChange-Type: Bug fix\nRisk: low', {
+    'src/b.ts': 'export {}\n',
+  })
+  r.note(overridden, 'Reviewed by hand, not a classification.\n\nClassified-By: jev')
+  const found = await readFleetClassifications(r.run, [labelled, overridden])
+  expect(found.get(labelled)).toEqual({ type: 'Feature', risk: 'low', beads: [] })
+  expect(found.has(overridden)).toBe(false)
+})
+
 it('asks Git nothing for an empty request', async () => {
   const run = vi.fn<(args: readonly string[]) => Promise<string>>()
   expect((await readFleetClassifications(run, [])).size).toBe(0)
