@@ -275,19 +275,25 @@ function ModuleGroups({
   readonly mode: ArchitectureMapMode
   readonly onEvidence: Props['onEvidence']
 }): ReactElement {
-  const visibleModules = modules.slice(0, 100)
+  const changedModules = modules.filter((module) => module.change !== 'unchanged')
+  const unchangedModules = modules.filter((module) => module.change === 'unchanged')
+  const visibleChangedModules = changedModules.slice(0, 100)
+  const visibleUnchangedModules = unchangedModules.slice(
+    0,
+    100 - visibleChangedModules.length,
+  )
   const groups = [
     {
       key: 'changed',
       title: 'Changed files',
-      count: modules.filter((module) => module.change !== 'unchanged').length,
-      files: visibleModules.filter((module) => module.change !== 'unchanged'),
+      count: changedModules.length,
+      files: visibleChangedModules,
     },
     {
       key: 'unchanged',
       title: 'Unchanged files',
-      count: modules.filter((module) => module.change === 'unchanged').length,
-      files: visibleModules.filter((module) => module.change === 'unchanged'),
+      count: unchangedModules.length,
+      files: visibleUnchangedModules,
     },
   ] as const
   return (

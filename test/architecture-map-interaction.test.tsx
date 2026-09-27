@@ -137,6 +137,41 @@ it('offers an expanded map and makes file status scannable without color', () =>
   expect(map.classList.contains('architecture-map-expanded')).toBe(false)
 })
 
+it('keeps changed files visible when unchanged files exceed the explorer limit', () => {
+  const unchangedFiles = Array.from({ length: 100 }, (_, index) => ({
+    path: `a-${String(index).padStart(3, '0')}.ts`,
+    content: '',
+  }))
+  const crowdedAnalysis = analyzeArchitecture(
+    {
+      scope: '.',
+      exclusions: [],
+      files: [...unchangedFiles, { path: 'z-changed.ts', content: 'before' }],
+    },
+    {
+      scope: '.',
+      exclusions: [],
+      files: [...unchangedFiles, { path: 'z-changed.ts', content: 'after' }],
+    },
+  )
+
+  act(() =>
+    root.render(
+      <ArchitectureMap
+        analysis={crowdedAnalysis}
+        mode="overlay"
+        onMode={() => undefined}
+        onEvidence={() => undefined}
+      />,
+    ),
+  )
+
+  expect(
+    container.querySelector('.architecture-file-group.changed .architecture-module')
+      ?.textContent,
+  ).toContain('z-changed.ts')
+})
+
 it('expands subsystem modules in the canvas and preserves relationship evidence', () => {
   const evidence = vi.fn()
   act(() =>
