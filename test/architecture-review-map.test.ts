@@ -184,6 +184,50 @@ it('projects change styling and expands subsystem modules into the canvas', () =
   )
 })
 
+it('hides unrelated unchanged modules until the subsystem reveals them', () => {
+  const files = [
+    { path: 'src/data/a.ts', content: 'export const a = 1' },
+    {
+      path: 'src/data/b.ts',
+      content: 'import { a } from "./a"\nexport const b = a',
+    },
+    { path: 'src/data/c.ts', content: 'export const c = 1' },
+  ]
+  const result = analyzeArchitecture(
+    { scope: '.', exclusions: [], files },
+    {
+      scope: '.',
+      exclusions: [],
+      files: files.map((file) =>
+        file.path === 'src/data/b.ts'
+          ? { ...file, content: `${file.content}\nexport const changed = true` }
+          : file,
+      ),
+    },
+  )
+  const map = subsystemMap(result, false)
+  const collapsed = architectureCanvasElements(map, 'overlay', '(project)', 'src/data')
+  const revealed = architectureCanvasElements(
+    map,
+    'overlay',
+    '(project)',
+    'src/data',
+    true,
+  )
+
+  expect(
+    collapsed.nodes.filter((node) => node.kind === 'module').map((node) => node.id),
+  ).toEqual(['module:src/data/b.ts', 'module:src/data/a.ts'])
+  expect(collapsed.hiddenUnchangedModules).toBe(1)
+  expect(collapsed.layout.nodes.map((node) => node.id)).not.toContain(
+    'module:src/data/c.ts',
+  )
+  expect(
+    revealed.nodes.filter((node) => node.kind === 'module').map((node) => node.id),
+  ).toEqual(['module:src/data/b.ts', 'module:src/data/a.ts', 'module:src/data/c.ts'])
+  expect(revealed.hiddenUnchangedModules).toBe(1)
+})
+
 it('aggregates imports between systems before drilling into subsystems', () => {
   const layout = {
     origin: 'override' as const,
@@ -244,16 +288,8 @@ it('keeps modules inside their selected system when systems share a subsystem', 
       },
     ],
   }
-  const map = subsystemMap(
-    analyzeArchitecture({ ...capture, files: [] }, capture),
-    false,
-  )
-  const renderer = architectureCanvasElements(
-    map,
-    'overlay',
-    'renderer',
-    'src/renderer',
-  )
+  const map = subsystemMap(analyzeArchitecture({ ...capture, files: [] }, capture), false)
+  const renderer = architectureCanvasElements(map, 'overlay', 'renderer', 'src/renderer')
   const companion = architectureCanvasElements(
     map,
     'overlay',
@@ -261,8 +297,10 @@ it('keeps modules inside their selected system when systems share a subsystem', 
     'src/renderer',
   )
 
-  expect(renderer.nodes.filter((node) => node.kind === 'module').map((node) => node.id))
-    .toEqual(['module:src/renderer/index.ts'])
-  expect(companion.nodes.filter((node) => node.kind === 'module').map((node) => node.id))
-    .toEqual(['module:src/renderer/companion/index.ts'])
+  expect(
+    renderer.nodes.filter((node) => node.kind === 'module').map((node) => node.id),
+  ).toEqual(['module:src/renderer/index.ts'])
+  expect(
+    companion.nodes.filter((node) => node.kind === 'module').map((node) => node.id),
+  ).toEqual(['module:src/renderer/companion/index.ts'])
 })

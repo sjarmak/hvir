@@ -16,6 +16,7 @@ const before = {
     { path: 'ui/a.ts', content: 'import "../data/a";\nimport "../data/old"' },
     { path: 'data/a.ts', content: '' },
     { path: 'data/old.ts', content: '' },
+    { path: 'data/spare.ts', content: '' },
   ],
 }
 const analysis = analyzeArchitecture(before, {
@@ -24,6 +25,7 @@ const analysis = analyzeArchitecture(before, {
     { path: 'ui/a.ts', content: '\n\nimport "../data/a";\nimport "../data/new"' },
     { path: 'data/a.ts', content: '' },
     { path: 'data/new.ts', content: '' },
+    { path: 'data/spare.ts', content: '' },
   ],
 })
 let container: HTMLDivElement
@@ -111,8 +113,17 @@ it('offers an expanded map and makes file status scannable without color', () =>
   expect(expand.textContent).toContain('Collapse map')
 
   const files = container.querySelector('.architecture-file-explorer')!
-  expect(files.querySelector('.architecture-file-group.changed')).not.toBeNull()
-  expect(files.querySelector('.architecture-file-group.unchanged')).not.toBeNull()
+  const changedFiles = files.querySelector<HTMLDetailsElement>(
+    '.architecture-file-group.changed',
+  )!
+  const unchangedFiles = files.querySelector<HTMLDetailsElement>(
+    '.architecture-file-group.unchanged',
+  )!
+  expect(changedFiles.open).toBe(true)
+  expect(unchangedFiles.open).toBe(false)
+  expect(unchangedFiles.querySelector('summary')?.textContent).toContain(
+    'Unchanged files (2)',
+  )
   expect(
     files.querySelector('.architecture-module.change-added small')?.textContent,
   ).toBe('Added')
@@ -124,6 +135,41 @@ it('offers an expanded map and makes file status scannable without color', () =>
   explorer.open = true
   act(() => explorer.querySelector<HTMLButtonElement>('.architecture-module')!.click())
   expect(map.classList.contains('architecture-map-expanded')).toBe(false)
+})
+
+it('keeps changed files visible when unchanged files exceed the explorer limit', () => {
+  const unchangedFiles = Array.from({ length: 100 }, (_, index) => ({
+    path: `a-${String(index).padStart(3, '0')}.ts`,
+    content: '',
+  }))
+  const crowdedAnalysis = analyzeArchitecture(
+    {
+      scope: '.',
+      exclusions: [],
+      files: [...unchangedFiles, { path: 'z-changed.ts', content: 'before' }],
+    },
+    {
+      scope: '.',
+      exclusions: [],
+      files: [...unchangedFiles, { path: 'z-changed.ts', content: 'after' }],
+    },
+  )
+
+  act(() =>
+    root.render(
+      <ArchitectureMap
+        analysis={crowdedAnalysis}
+        mode="overlay"
+        onMode={() => undefined}
+        onEvidence={() => undefined}
+      />,
+    ),
+  )
+
+  expect(
+    container.querySelector('.architecture-file-group.changed .architecture-module')
+      ?.textContent,
+  ).toContain('z-changed.ts')
 })
 
 it('expands subsystem modules in the canvas and preserves relationship evidence', () => {
@@ -144,6 +190,21 @@ it('expands subsystem modules in the canvas and preserves relationship evidence'
     '[aria-label^="subsystem data"]',
   )!
   act(() => subsystem.click())
+  expect(container.querySelectorAll('.architecture-canvas-module')).toHaveLength(3)
+  const reveal = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Show 1 unchanged module in data"]',
+  )!
+  expect(reveal.getAttribute('aria-expanded')).toBe('false')
+  act(() => reveal.click())
+  expect(reveal.getAttribute('aria-expanded')).toBe('true')
+  expect(container.querySelectorAll('.architecture-canvas-module')).toHaveLength(4)
+  act(() => subsystem.click())
+  act(() => subsystem.click())
+  expect(
+    container
+      .querySelector<HTMLButtonElement>('[aria-label="Show 1 unchanged module in data"]')
+      ?.getAttribute('aria-expanded'),
+  ).toBe('false')
   expect(container.querySelectorAll('.architecture-canvas-module')).toHaveLength(3)
   act(() =>
     container.querySelector<HTMLElement>('[aria-label^="module data/old.ts"]')!.click(),

@@ -303,7 +303,7 @@
 .architecture-file-group {
   margin: 12px 0 16px;
 }
-.architecture-file-group h4 {
+.architecture-file-group summary {
   display: flex;
   align-items: baseline;
   gap: 6px;
@@ -313,16 +313,17 @@
   font-size: calc(11px * var(--hvir-interface-scale));
   letter-spacing: 0.02em;
   text-transform: uppercase;
+  cursor: pointer;
 }
-.architecture-file-group h4 small {
+.architecture-file-group summary small {
   color: var(--text-muted);
   font-size: inherit;
   font-weight: normal;
 }
-.architecture-file-group.changed h4 {
+.architecture-file-group.changed summary {
   color: var(--accent);
 }
-.architecture-file-group.unchanged h4 {
+.architecture-file-group.unchanged summary {
   color: var(--text-muted);
 }
 .architecture-module small {

@@ -31,6 +31,7 @@ export function ArchitectureMap({
   const [all, setAll] = useState(false)
   const [selectedSystem, setSelectedSystem] = useState<string>()
   const [selectedSubsystem, setSelectedSubsystem] = useState<string>()
+  const [showUnchangedModules, setShowUnchangedModules] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const mapElement = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
@@ -42,14 +43,26 @@ export function ArchitectureMap({
   }
   const map = useMemo(() => subsystemMap(analysis, all), [analysis, all])
   const elements = useMemo(
-    () => architectureCanvasElements(map, mode, selectedSystem, selectedSubsystem),
-    [map, mode, selectedSystem, selectedSubsystem],
+    () =>
+      architectureCanvasElements(
+        map,
+        mode,
+        selectedSystem,
+        selectedSubsystem,
+        showUnchangedModules,
+      ),
+    [map, mode, selectedSystem, selectedSubsystem, showUnchangedModules],
   )
   const layoutInput = useMemo(
     () =>
-      architectureCanvasElements(map, 'overlay', selectedSystem, selectedSubsystem)
-        .layout,
-    [map, selectedSystem, selectedSubsystem],
+      architectureCanvasElements(
+        map,
+        'overlay',
+        selectedSystem,
+        selectedSubsystem,
+        showUnchangedModules,
+      ).layout,
+    [map, selectedSystem, selectedSubsystem, showUnchangedModules],
   )
   const layout = useArchitectureLayout(layoutInput)
   const nodes = useMemo<readonly Node[]>(
@@ -147,6 +160,18 @@ export function ArchitectureMap({
           />
           All systems
         </label>
+        {selectedSubsystem && elements.hiddenUnchangedModules ? (
+          <button
+            type="button"
+            className="architecture-map-unchanged-control"
+            aria-label={`${showUnchangedModules ? 'Hide' : 'Show'} ${elements.hiddenUnchangedModules} unchanged module${elements.hiddenUnchangedModules === 1 ? '' : 's'} in ${selectedSubsystem}`}
+            aria-expanded={showUnchangedModules}
+            onClick={() => setShowUnchangedModules(!showUnchangedModules)}
+          >
+            {showUnchangedModules ? 'Hide' : 'Show'} {elements.hiddenUnchangedModules}{' '}
+            unchanged
+          </button>
+        ) : null}
       </div>
       <p className="architecture-map-note">
         Each top-level node is a system. Select a system to expand its subsystems, then a
@@ -180,10 +205,12 @@ export function ArchitectureMap({
                 selectedSystem === canvasNode.label ? undefined : canvasNode.label
               setSelectedSystem(next)
               setSelectedSubsystem(undefined)
+              setShowUnchangedModules(false)
             } else if (canvasNode?.kind === 'subsystem') {
               setSelectedSubsystem(
                 selectedSubsystem === clicked.id ? undefined : clicked.id,
               )
+              setShowUnchangedModules(false)
             }
           }}
           onEdgeClick={(_, clicked) => {
@@ -231,7 +258,7 @@ function ArchitectureFiles({
         Filter files{' '}
         <input value={query} onChange={(event) => setQuery(event.target.value)} />
       </label>
-      <ModuleGroups modules={files.slice(0, 100)} mode={mode} onEvidence={onEvidence} />
+      <ModuleGroups modules={files} mode={mode} onEvidence={onEvidence} />
       {files.length > 100 ? (
         <p>Showing 100 of {files.length}; narrow the filter.</p>
       ) : null}
@@ -248,30 +275,40 @@ function ModuleGroups({
   readonly mode: ArchitectureMapMode
   readonly onEvidence: Props['onEvidence']
 }): ReactElement {
+  const changedModules = modules.filter((module) => module.change !== 'unchanged')
+  const unchangedModules = modules.filter((module) => module.change === 'unchanged')
+  const visibleChangedModules = changedModules.slice(0, 100)
+  const visibleUnchangedModules = unchangedModules.slice(
+    0,
+    100 - visibleChangedModules.length,
+  )
   const groups = [
     {
       key: 'changed',
       title: 'Changed files',
-      files: modules.filter((module) => module.change !== 'unchanged'),
+      count: changedModules.length,
+      files: visibleChangedModules,
     },
     {
       key: 'unchanged',
       title: 'Unchanged files',
-      files: modules.filter((module) => module.change === 'unchanged'),
+      count: unchangedModules.length,
+      files: visibleUnchangedModules,
     },
   ] as const
   return (
     <>
       {groups.map((group) =>
-        group.files.length ? (
-          <section
+        group.count ? (
+          <details
             key={group.key}
             className={`architecture-file-group ${group.key}`}
-            aria-label={`${group.title} (${group.files.length})`}
+            aria-label={`${group.title} (${group.count})`}
+            open={group.key === 'changed'}
           >
-            <h4>
-              {group.title} <small>({group.files.length})</small>
-            </h4>
+            <summary>
+              {group.title} <small>({group.count})</small>
+            </summary>
             {group.files.map((module) => (
               <button
                 type="button"
@@ -289,7 +326,7 @@ function ModuleGroups({
                 <small>{moduleChangeLabel(module.change)}</small>
               </button>
             ))}
-          </section>
+          </details>
         ) : null,
       )}
     </>
