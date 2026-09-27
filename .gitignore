@@ -29,3 +29,5 @@ ux-walkthrough-artifacts/
 # Gas City
 .beads/*
 !.beads/identity.toml
+.hegel/
+.hypothesis/
