@@ -54,9 +54,13 @@ note without a Change-Type are all the same "not classified" answer, never an er
 exits cleanly for a notes ref that does not exist, so the read costs one command per batch
 whether or not the fleet has reached the repository. Whether a note exists is read from the
 note field itself, which the log format terminates so that a note of any content, blank
-included, is told apart from no note at all. Two notes `%N` prints as nothing, an empty note
-and one holding a single line ending, read as no note; `git notes add` refuses to write
-either without `--allow-empty`, so neither is a shape the fleet's tooling produces.
+included, is told apart from no note at all. Two notes `%N` prints as nothing read as no
+note: an empty note, which only `--allow-empty` attaches, and a note whose whole content is
+one line ending, which `git notes add -m` strips to nothing but a raw blob attaches without
+`--allow-empty`. That second shape is an accepted limit of reading note presence through
+`%N`. Telling it from no note would take a second git command per commit, against the one
+command per batch this decision pays for, and no classification the fleet's hook or backfill
+writes is a bare line ending; only a raw blob attached by hand has that shape.
 
 **The heuristic is the permanent fallback, not a shim.** A commit the fleet has not classified
 is marked exactly as ADR-063 marks it: from its diff and the import edges of its modified
