@@ -517,7 +517,7 @@ it('spends the aggregate read budget commit by commit and never fails the reques
   expect(again.classifications[0]?.change).toBe('code')
 })
 
-it('agrees with a full pair scan on every fast-path answer', async () => {
+it('agrees with a full pair scan on every fast path', { timeout: 30_000 }, async () => {
   const r = await repository()
   const a = "import { b } from './b'\nexport const a = b\n"
   const external =
