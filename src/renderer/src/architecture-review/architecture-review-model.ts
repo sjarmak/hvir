@@ -75,11 +75,24 @@ export function subsystemMap(analysis: ArchitectureAnalysis, all: boolean) {
   const layoutModules = [...analysis.modules].sort((left, right) =>
     left.path.localeCompare(right.path),
   )
+  const changedModules = new Set(
+    layoutModules
+      .filter((module) => module.change !== 'unchanged')
+      .map((module) => module.path),
+  )
+  const relatedModules = new Set<string>()
+  for (const entry of analysis.imports) {
+    if (!changedModules.has(entry.source) && !changedModules.has(entry.target ?? ''))
+      continue
+    relatedModules.add(entry.source)
+    if (entry.target) relatedModules.add(entry.target)
+  }
   return {
     nodes,
     relationships: relationships.slice(0, 120),
     layoutRelationships,
     layoutModules,
+    relatedModules: [...relatedModules].sort(),
     omittedNodes: Math.max(0, ids.length - nodes.length),
     omittedRelationships: Math.max(0, relationships.length - 120),
   }
@@ -123,10 +136,12 @@ export function architectureCanvasElements(
   mode: ArchitectureMapMode,
   expandedSystem?: string,
   expandedSubsystem?: string,
+  showUnchangedModules = false,
 ): {
   readonly nodes: readonly ArchitectureCanvasNode[]
   readonly edges: readonly ArchitectureCanvasEdge[]
   readonly layout: ArchitectureCanvasLayoutInput
+  readonly hiddenUnchangedModules: number
 } {
   const systems = systemGroups(map.nodes)
   const systemNodes = systems.map((system) => ({
@@ -155,20 +170,29 @@ export function architectureCanvasElements(
   }))
   const systemSubsystems =
     systems.find((system) => system.name === expandedSystem)?.subsystems ?? []
-  const subsystemNodes = systemSubsystems
-    .map((node) => ({
-      id: node.id,
-      label: node.id,
-      detail: node.modules.length
-        ? `${node.changed} changed · ${node.modules.length} files`
-        : 'External or unresolved import',
-      kind: 'subsystem' as const,
-      change: node.change,
-      ghost: absentInMode(node.change, mode),
-      nearby: node.nearby,
-    }))
+  const subsystemNodes = systemSubsystems.map((node) => ({
+    id: node.id,
+    label: node.id,
+    detail: node.modules.length
+      ? `${node.changed} changed · ${node.modules.length} files`
+      : 'External or unresolved import',
+    kind: 'subsystem' as const,
+    change: node.change,
+    ghost: absentInMode(node.change, mode),
+    nearby: node.nearby,
+  }))
   const expanded = systemSubsystems.find((node) => node.id === expandedSubsystem)
-  const moduleNodes = (expanded?.modules ?? []).slice(0, 200).map((module) => ({
+  const relatedModules = new Set(map.relatedModules)
+  const hiddenUnchangedModules = (expanded?.modules ?? []).filter(
+    (module) => module.change === 'unchanged' && !relatedModules.has(module.path),
+  ).length
+  const visibleModules = (expanded?.modules ?? []).filter(
+    (module) =>
+      showUnchangedModules ||
+      module.change !== 'unchanged' ||
+      relatedModules.has(module.path),
+  )
+  const moduleNodes = visibleModules.slice(0, 200).map((module) => ({
     id: `module:${module.path}`,
     label: module.path,
     detail: moduleChangeLabel(module.change),
@@ -214,11 +238,14 @@ export function architectureCanvasElements(
         .map((module) => module.subsystem),
     ),
   ].sort()
-  const layoutModuleNodes = map.layoutModules
-    .filter(
-      (module) =>
-        module.system === expandedSystem && module.subsystem === expandedSubsystem,
-    )
+  const layoutModuleNodes = (
+    expanded
+      ? visibleModules
+      : map.layoutModules.filter(
+          (module) =>
+            module.system === expandedSystem && module.subsystem === expandedSubsystem,
+        )
+  )
     .slice(0, 200)
     .map((module) => ({ id: `module:${module.path}`, width: 220, height: 52 }))
   const layoutMembershipEdges = layoutModuleNodes.map((node) => ({
@@ -239,6 +266,7 @@ export function architectureCanvasElements(
   return {
     nodes,
     edges,
+    hiddenUnchangedModules,
     layout: {
       nodes: [
         ...layoutSystems.map((id) => ({ id: `system:${id}`, width: 244, height: 64 })),
