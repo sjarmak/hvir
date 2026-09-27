@@ -96,18 +96,19 @@ export function GitHistoryView(props: GitHistoryViewProps): ReactElement {
     () => commits.filter((commit) => classifications.pending.has(commit.hash)).length,
     [classifications, commits],
   )
+  const anchor = shown.some((commit) => commit.hash === selection.anchor)
+    ? selection.anchor
+    : undefined
   const range = useMemo(
     () =>
-      selection.anchor !== undefined && selection.target !== undefined
-        ? historyRange(selection.anchor, selection.target, shown)
+      anchor !== undefined && selection.target !== undefined
+        ? historyRange(anchor, selection.target, shown)
         : undefined,
-    [selection, shown],
+    [anchor, selection.target, shown],
   )
   const selectCommit = (hash: string, extend: boolean): void =>
-    setSelection((current) =>
-      extend && current.anchor !== undefined
-        ? { anchor: current.anchor, target: hash }
-        : { anchor: hash },
+    setSelection(
+      extend && anchor !== undefined ? { anchor, target: hash } : { anchor: hash },
     )
   return (
     <div className="git-history">

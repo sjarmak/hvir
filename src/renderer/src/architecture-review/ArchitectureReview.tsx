@@ -252,11 +252,7 @@ export function ArchitectureReview({
   useEffect(() => {
     if (!request || servedRequest.current === request.serial) return
     servedRequest.current = request.serial
-    if (request.stepping) {
-      setLocked(
-        request.stepping.kind === 'locked' ? request.stepping.baseline : undefined,
-      )
-    }
+    setLocked(request.stepping?.kind === 'locked' ? request.stepping.baseline : undefined)
     chooseRequested.current(request.ends, request.described)
   }, [request])
   const openEvidence = async (path: string, line: number, side: 'before' | 'after') => {

@@ -206,3 +206,18 @@ it('refuses a range whose oldest commit has no parent and says why', () => {
   act(() => showRange().click())
   expect(onShowRangeInArchitecture).not.toHaveBeenCalled()
 })
+
+it('starts a fresh range after the filter hides the anchor instead of going inert', () => {
+  render(false)
+  clickRow(2)
+  render(true)
+  expect(rowText()).toEqual(['Rewire modules', 'Add modules'])
+  expect(rangeBar()).toBeNull()
+  clickRow(3, true)
+  clickRow(1, true)
+  expect(rangeBar()?.textContent).toContain('2 commits selected')
+  expect(selectedRows()).toEqual(['Rewire modules', 'Add modules'])
+  render(false)
+  clickRow(4, true)
+  expect(selectedRows()).toEqual(['Merge side', 'Rewire modules'])
+})
