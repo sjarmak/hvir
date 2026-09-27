@@ -16,7 +16,7 @@ import type {
 import type { ArchitectureCommitChange } from '../../../shared/architecture-review'
 import { commitShownUnderFilter } from '../architecture-review/architecture-history-filter'
 import { commitDate } from './commit-date'
-import type { CommitClassifications } from '../architecture-review/use-commit-classifications'
+import type { CommitClassificationState } from '../architecture-review/use-commit-classifications'
 import {
   commitTreeEntryHeight,
   flattenCommitFiles,
@@ -44,7 +44,7 @@ interface GitHistoryViewProps {
   readonly expanded: ReadonlySet<string>
   readonly detailStates: ReadonlyMap<string, RailCommitDetailState>
   readonly collapsedDirectories: ReadonlyMap<string, ReadonlySet<string>>
-  readonly classifications: CommitClassifications
+  readonly classifications: CommitClassificationState
   readonly architectureOnly: boolean
   readonly onArchitectureOnly: (on: boolean) => void
   readonly onShowInArchitecture: (commit: GitCommitSummary) => void
@@ -73,10 +73,14 @@ export function GitHistoryView(props: GitHistoryViewProps): ReactElement {
         commitShownUnderFilter(
           architectureOnly,
           commit.parents.length > 1,
-          classifications.get(commit.hash),
+          classifications.known.get(commit.hash),
         ),
       ),
     [architectureOnly, classifications, commits],
+  )
+  const classifying = useMemo(
+    () => commits.filter((commit) => classifications.pending.has(commit.hash)).length,
+    [classifications, commits],
   )
   return (
     <div className="git-history">
@@ -91,9 +95,17 @@ export function GitHistoryView(props: GitHistoryViewProps): ReactElement {
             checked={architectureOnly}
             onChange={(event) => onArchitectureOnly(event.target.checked)}
           />
-          Architecture changes only
+          Architecture only
         </label>
       </div>
+      {architectureOnly && classifying > 0 ? (
+        <div className="git-history-classifying" role="status">
+          Classifying {classifying} {classifying === 1 ? 'commit' : 'commits'}…
+        </div>
+      ) : null}
+      {classifications.error !== undefined ? (
+        <div className="tree-error">Classification failed: {classifications.error}</div>
+      ) : null}
       {error ? <div className="tree-error">History unavailable: {error}</div> : null}
       {initialLoading ? (
         <div className="git-empty">Loading history…</div>
@@ -103,7 +115,7 @@ export function GitHistoryView(props: GitHistoryViewProps): ReactElement {
         <div className="git-empty">
           {repositoryState === 'unborn' ? 'No commits yet' : 'No history'}
         </div>
-      ) : !error && commits.length > 0 && shown.length === 0 ? (
+      ) : !error && commits.length > 0 && shown.length === 0 && classifying === 0 ? (
         <div className="git-empty">No architecture changes among loaded commits</div>
       ) : null}
       {commits.length > 0 ? <HistoryCommitList {...props} shown={shown} /> : null}
@@ -374,14 +386,14 @@ function HistoryCommitList({
                     <small>
                       <CommitChangeMarker
                         merge={commit.parents.length > 1}
-                        change={classifications.get(commit.hash)}
+                        change={classifications.known.get(commit.hash)}
                       />
                       {commitDate(commit.authoredAt)} · {commit.author} ·{' '}
                       {commit.shortHash}
                     </small>
                   </span>
                 </button>
-                {commit.parents.length === 1 ? (
+                {commit.parents.length > 0 ? (
                   <button
                     type="button"
                     className="git-rail-show-architecture"

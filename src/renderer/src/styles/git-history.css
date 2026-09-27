@@ -299,7 +299,13 @@
   gap: 4px;
   color: #8a95a3;
   font-size: calc(9px * var(--hvir-interface-scale));
-  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.git-history-classifying {
+  margin: 0 10px 6px;
+  color: #8a95a3;
+  font-size: calc(9px * var(--hvir-interface-scale));
 }
 
 .git-rail-commit-change {

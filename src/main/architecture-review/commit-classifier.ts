@@ -2,8 +2,8 @@ import {
   ARCHITECTURE_CLASSIFY_LIMIT,
   ARCHITECTURE_SCOPE,
   type ArchitectureCaptureRequest,
-  type ArchitectureCommitClassification,
   type ArchitectureCommitClassifyRequest,
+  type ArchitectureCommitClassifyResult,
   type ArchitectureCommitChange,
 } from '../../shared/architecture-review'
 import type {
@@ -99,13 +99,15 @@ export class ArchitectureCommitClassifier {
     host: ProjectHost,
     request: ArchitectureCommitClassifyRequest,
     signal: AbortSignal,
-  ): Promise<readonly ArchitectureCommitClassification[]> {
+  ): Promise<ArchitectureCommitClassifyResult> {
     validateArchitectureRoot(host, request.root)
     validateRevisions(request.revisions)
-    if (request.revisions.length === 0) return []
     const root = request.root
     const context = architectureGitContext(host, root, signal)
     const run = (args: readonly string[]) => context.run(root, args, MAX_OUTPUT)
+    const head = (await run(['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
+    if (!HASH.test(head)) throw new Error('Git did not name HEAD')
+    if (request.revisions.length === 0) return { head, classifications: [] }
     const layout = await readHeadLayout(run, (objects) =>
       readArchitectureBlobs(context, root, objects),
     )
@@ -137,7 +139,7 @@ export class ArchitectureCommitClassifier {
       answers.set(revision, change)
     for (const [revision, change] of await this.readAll(root, context, reads, layout, signal))
       answers.set(revision, change)
-    return request.revisions.map((revision) => {
+    const classifications = request.revisions.map((revision) => {
       const diff = byRevision.get(revision)!
       return {
         revision,
@@ -146,6 +148,7 @@ export class ArchitectureCommitClassifier {
         change: answers.get(revision)!,
       }
     })
+    return { head, classifications }
   }
 
   private keyOf(root: HostPath, diff: CommitDiff, layout: string): CommitChangeKey {

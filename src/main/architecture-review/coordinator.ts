@@ -15,7 +15,7 @@ import type {
   ArchitectureCapture,
   ArchitectureCommitRange,
   ArchitectureCommitRangeRequest,
-  ArchitectureCommitClassification,
+  ArchitectureCommitClassifyResult,
   ArchitectureCommitClassifyRequest,
   ArchitectureEvidence,
   ArchitecturePreparedReview,
@@ -287,7 +287,7 @@ export class ArchitectureReviewCoordinator {
     owner: RendererOwner,
     host: ProjectHost,
     request: ArchitectureCommitClassifyRequest,
-  ): Promise<readonly ArchitectureCommitClassification[]> {
+  ): Promise<ArchitectureCommitClassifyResult> {
     this.ports.resources.assertCurrent(owner)
     if (!this.classifier) throw new Error('Commit classification is unavailable')
     const result = await this.classifier.classify(

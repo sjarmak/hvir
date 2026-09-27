@@ -15,7 +15,7 @@ import {
 import { commitDate } from '../git/commit-date'
 import {
   useCommitClassifications,
-  type CommitClassifications,
+  type CommitClassificationState,
 } from './use-commit-classifications'
 import {
   lockedBaseline,
@@ -36,7 +36,6 @@ interface ArchitectureCommitStripProps {
   readonly onChoose: (ends: ArchitectureEnds) => void
 }
 
-/** First-parent commits to step Current through, pairwise or against a locked Baseline. */
 export function ArchitectureCommitStrip(props: ArchitectureCommitStripProps) {
   const { root, ends, current, disabled, onChoose } = props
   const strip = useCommitRange(root)
@@ -58,7 +57,7 @@ export function ArchitectureCommitStrip(props: ArchitectureCommitStripProps) {
       commitShownUnderFilter(
         architectureOnly,
         commit.merge,
-        classifications.get(commit.revision),
+        classifications.known.get(commit.revision),
       )
     )
   }
@@ -115,6 +114,11 @@ export function ArchitectureCommitStrip(props: ArchitectureCommitStripProps) {
           {strip.error}
         </p>
       )}
+      {classifications.error !== undefined && (
+        <p className="architecture-review-state error">
+          Classification failed: {classifications.error}
+        </p>
+      )}
       {range && (
         <StripCommits
           range={range}
@@ -144,17 +148,21 @@ function StripCommits({
   readonly disabled: boolean
   readonly stepping: StripStepping
   readonly shown: (index: number) => boolean
-  readonly classifications: CommitClassifications
+  readonly classifications: CommitClassificationState
   readonly onChoose: (index: number) => void
 }) {
   const listed = range.commits.map((commit, index) => ({ commit, index }))
   const visible = listed.filter(({ index }) => shown(index))
+  const classifying = listed.filter(({ commit }) =>
+    classifications.pending.has(commit.revision),
+  ).length
   return (
     <>
       <p className="architecture-strip-note">
         {range.truncated ? 'Newest ' : ''}
         {range.commits.length} commits after {shortRef(range.base.revision)}, newest first
-        {visible.length < listed.length ? `, ${visible.length} shown` : ''} ·{' '}
+        {visible.length < listed.length ? `, ${visible.length} shown` : ''}
+        {classifying > 0 ? `, ${classifying} classifying` : ''} ·{' '}
         {stepping.kind === 'pairwise'
           ? 'each against its parent'
           : 'each against the held baseline'}
@@ -171,7 +179,7 @@ function StripCommits({
             >
               <StripChange
                 commit={commit}
-                change={classifications.get(commit.revision)}
+                change={classifications.known.get(commit.revision)}
               />
               <span>{commit.subject}</span>
               <small>

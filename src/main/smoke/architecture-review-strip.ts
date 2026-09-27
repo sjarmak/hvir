@@ -40,7 +40,7 @@ export async function verifyArchitectureCommitStrip(
       await scanned(${JSON.stringify(before)}, ${JSON.stringify(label)}, 'pairwise step');
       commit(${JSON.stringify(before)}).click();
       await scanned(${JSON.stringify(parent)}, ${JSON.stringify(before)}, 'return to first fixture commit');
-      strip().querySelector('input[type="checkbox"]').click();
+      [...strip().querySelectorAll('label')].find(node => node.textContent?.includes('Lock baseline')).querySelector('input').click();
       await wait(() => strip().textContent.includes('Baseline held at ' + ${JSON.stringify(parent.slice(0, 8))}), 'locked baseline');
       button('Newer commit').click();
       await scanned(${JSON.stringify(parent)}, ${JSON.stringify(label)}, 'step against the locked baseline');
@@ -54,7 +54,7 @@ export async function verifyArchitectureCommitStrip(
         return !checking && contents.some(text => text.includes('../old-data/item')) && !contents.some(text => text.includes('refreshed = true'));
       }, 'committed evidence');
       if (surface().querySelector('.architecture-review-stale')) throw new Error('A commit-pair snapshot turned stale after a live edit');
-      strip().querySelector('input[type="checkbox"]').click();
+      [...strip().querySelectorAll('label')].find(node => node.textContent?.includes('Lock baseline')).querySelector('input').click();
       return 'pairwise, locked, commit-pair evidence';
     })()
   `)) as string

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { localPath, type GitCommitSummary } from '../src/shared'
 import type { ArchitectureCommitChange } from '../src/shared/architecture-review'
 import { GitHistoryView } from '../src/renderer/src/git/GitHistoryView'
+import type { CommitClassificationState } from '../src/renderer/src/architecture-review/use-commit-classifications'
 
 const root = localPath('/repo')
 const hash = (n: number) => n.toString(16).repeat(40)
@@ -27,18 +28,23 @@ const commits = [
   commit(2, [hash(1)], 'Fix a body'),
   commit(1, [], 'Add modules'),
 ]
-const classifications = new Map<string, ArchitectureCommitChange>([
+const known = new Map<string, ArchitectureCommitChange>([
   [hash(3), 'architecture'],
   [hash(2), 'code'],
   [hash(1), 'architecture'],
 ])
+const classifications: CommitClassificationState = {
+  known,
+  pending: new Set(),
+  generation: 0,
+}
 let host: HTMLDivElement
 let app: ReturnType<typeof createRoot>
 const onShowInArchitecture = vi.fn()
 const onArchitectureOnly = vi.fn()
 const onVisibleCommits = vi.fn()
 
-function render(architectureOnly: boolean): void {
+function render(architectureOnly: boolean, state = classifications): void {
   return act(() =>
     app.render(
       <GitHistoryView
@@ -50,7 +56,7 @@ function render(architectureOnly: boolean): void {
         expanded={new Set()}
         detailStates={new Map()}
         collapsedDirectories={new Map()}
-        classifications={classifications}
+        classifications={state}
         architectureOnly={architectureOnly}
         onArchitectureOnly={onArchitectureOnly}
         onShowInArchitecture={onShowInArchitecture}
@@ -94,21 +100,17 @@ it('marks each row with its architecture change, its date and a secondary hash',
   expect(onVisibleCommits).toHaveBeenLastCalledWith(commits.map((c) => c.hash))
 })
 
-it('opens the Architecture tab for a commit against its first parent', () => {
+it('opens the Architecture tab for any commit with a parent, merges included', () => {
   render(false)
-  act(() =>
-    host
-      .querySelector<HTMLButtonElement>(
-        `button[aria-label="Show ${hash(3).slice(0, 7)} in architecture"]`,
-      )!
-      .click(),
-  )
+  const show = (n: number) =>
+    host.querySelector<HTMLButtonElement>(
+      `button[aria-label="Show ${hash(n).slice(0, 7)} in architecture"]`,
+    )
+  act(() => show(3)!.click())
   expect(onShowInArchitecture).toHaveBeenCalledWith(commits[1])
-  expect(
-    host.querySelector(
-      `button[aria-label="Show ${hash(1).slice(0, 7)} in architecture"]`,
-    ),
-  ).toBeNull()
+  act(() => show(4)!.click())
+  expect(onShowInArchitecture).toHaveBeenLastCalledWith(commits[0])
+  expect(show(1)).toBeNull()
 })
 
 it('filters to architecture changes and hides merges, remembering the choice', () => {
@@ -122,4 +124,18 @@ it('filters to architecture changes and hides merges, remembering the choice', (
   render(true)
   expect(rowText()).toEqual(['Rewire modules', 'Add modules'])
   expect(onVisibleCommits).toHaveBeenLastCalledWith(commits.map((c) => c.hash))
+})
+
+it('hides rows still classifying under the filter and says so, keeping unclassified rows', () => {
+  render(true, {
+    known: new Map([[hash(1), 'unclassified']]),
+    pending: new Set([hash(3), hash(2)]),
+    generation: 0,
+  })
+  expect(rowText()).toEqual(['Add modules'])
+  expect(host.querySelector('[role="status"]')?.textContent).toBe('Classifying 2 commits…')
+  expect(host.querySelector('.git-rail-commit-change')?.textContent).toBe('Unclassified')
+  expect(host.querySelector('.git-empty')).toBeNull()
+  render(true, { known: new Map(), pending: new Set(), generation: 1, error: 'boom' })
+  expect(host.querySelector('.tree-error')?.textContent).toContain('boom')
 })

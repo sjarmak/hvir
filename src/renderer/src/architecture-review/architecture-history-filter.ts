@@ -38,7 +38,7 @@ export function commitShownUnderFilter(
 ): boolean {
   if (!filterOn) return true
   if (merge) return false
-  return change === undefined || change === 'architecture' || change === 'unclassified'
+  return change === 'architecture' || change === 'unclassified'
 }
 
 function readStored(): boolean {

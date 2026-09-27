@@ -167,6 +167,10 @@ export interface ArchitectureCommitClassification {
   readonly merge: boolean
   readonly change: ArchitectureCommitChange
 }
+export interface ArchitectureCommitClassifyResult {
+  readonly head: string
+  readonly classifications: readonly ArchitectureCommitClassification[]
+}
 export interface ArchitectureCommitClassifyRequest {
   readonly root: HostPath
   readonly revisions: readonly string[]

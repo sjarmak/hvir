@@ -38,7 +38,7 @@ export async function listArchitectureCommits(
     await run([
       'log',
       '-z',
-      '--first-parent',
+      '--topo-order',
       `--max-count=${limit + 1}`,
       FORMAT,
       `${base}..HEAD`,

@@ -81,6 +81,7 @@ export function GitPanel({
   const classifications = useCommitClassifications(
     root,
     model.view === 'history' && !hidden ? visibleCommits : [],
+    model.commits[0]?.hash,
   )
 
   return (

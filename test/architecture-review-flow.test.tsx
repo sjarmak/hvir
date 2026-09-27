@@ -787,14 +787,17 @@ it('lists the strip newest first with dates, filters it and steps over hidden co
   invoke.mockImplementation(async (channel: string, request?: ScanRequest) => {
     if (channel === 'architecture-review:commits') return commits
     if (channel === 'architecture-review:classify-commits')
-      return (request as unknown as { revisions: readonly string[] }).revisions.map(
-        (rev) => ({
+      return {
+        head: revision('3'),
+        classifications: (
+          request as unknown as { revisions: readonly string[] }
+        ).revisions.map((rev) => ({
           revision: rev,
           parent: null,
           merge: false,
           change: rev === revision('2') ? 'code' : 'architecture',
-        }),
-      )
+        })),
+      }
     if (channel === 'architecture-review:scan')
       return {
         ...snapshot,
@@ -824,6 +827,25 @@ it('lists the strip newest first with dates, filters it and steps over hidden co
     { baseline: revision('0'), current: revision('1') },
     { baseline: revision('2'), current: revision('3') },
   ])
+  await act(async () => checkbox('Architecture changes only').click())
+})
+
+it('hides strip rows still classifying under the filter and counts them in the note', async () => {
+  invoke.mockImplementation(async (channel: string) => {
+    if (channel === 'architecture-review:commits') return commits
+    if (channel === 'architecture-review:classify-commits') return new Promise(() => undefined)
+    return undefined
+  })
+  const cold = localPath('/repo-classifying')
+  await act(async () =>
+    app.render(<ArchitectureReview root={cold} active onHandoff={vi.fn()} />),
+  )
+  await act(async () => checkbox('Architecture changes only').click())
+  expect(host.querySelectorAll('.architecture-strip-commits button')).toHaveLength(0)
+  expect(host.querySelector('.architecture-strip-note')?.textContent).toContain(
+    '3 classifying',
+  )
+  expect(host.textContent).not.toContain('No architecture changes')
   await act(async () => checkbox('Architecture changes only').click())
 })
 

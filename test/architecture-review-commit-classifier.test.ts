@@ -102,7 +102,12 @@ it('classifies each commit against its first parent and caches the answers', asy
     root: localPath(r.root),
     revisions: [merge, mainOnly, side, empty, docs, rewired, bodyOnly, added],
   }
-  const result = await subject.classify(r.host, request, signal())
+  const { head, classifications: result } = await subject.classify(
+    r.host,
+    request,
+    signal(),
+  )
+  expect(head).toBe(merge)
   expect(result.map((entry) => [entry.revision, entry.merge, entry.change])).toEqual([
     [merge, true, 'architecture'],
     [mainOnly, false, 'code'],
@@ -117,7 +122,7 @@ it('classifies each commit against its first parent and caches the answers', asy
   expect(result[7]?.parent).toBeNull()
   expect(imports).toHaveBeenCalledTimes(1)
   const again = await subject.classify(r.host, request, signal())
-  expect(again).toEqual(result)
+  expect(again.classifications).toEqual(result)
   expect(imports).toHaveBeenCalledTimes(1)
 })
 
@@ -129,7 +134,7 @@ it('reads modules only inside the layout scope at HEAD', async () => {
   const outside = await r.commit('outside', { 'src/lib/x.ts': 'export const x = 1\n' })
   const inside = await r.commit('inside', { 'src/app/y.ts': 'export const y = 1\n' })
   const { imports, classifier: subject } = classifier()
-  const result = await subject.classify(
+  const { classifications: result } = await subject.classify(
     r.host,
     { root: localPath(r.root), revisions: [outside, inside] },
     signal(),
@@ -162,7 +167,7 @@ it('refuses malformed revisions, oversize requests and unknown commits', async (
   ).rejects.toThrow()
   await expect(
     subject.classify(r.host, { root, revisions: [] }, signal()),
-  ).resolves.toEqual([])
+  ).resolves.toEqual({ head, classifications: [] })
 })
 
 it('leaves a commit whose modules exceed the read budget unclassified', async () => {
@@ -172,7 +177,7 @@ it('leaves a commit whose modules exceed the read budget unclassified', async ()
     'src/big.ts': `export const big = "${'x'.repeat(600 * 1024)}"\n`,
   })
   const { imports, classifier: subject } = classifier()
-  const result = await subject.classify(
+  const { classifications: result } = await subject.classify(
     r.host,
     { root: localPath(r.root), revisions: [big] },
     signal(),
@@ -198,7 +203,7 @@ it('scans a config or layout change against its parent and caches the answer', a
   )
   const scanning = new ArchitectureCommitClassifier({ imports, scan })
   const request = { root: localPath(r.root), revisions: [layoutCommit, tsconfig] }
-  const result = await scanning.classify(r.host, request, signal())
+  const { classifications: result } = await scanning.classify(r.host, request, signal())
   expect(result.map((entry) => entry.change)).toEqual(['architecture', 'none'])
   expect(scan.mock.calls.map(([, sent]) => [sent.baseline, sent.current])).toEqual([
     [tsconfig, layoutCommit],
@@ -215,17 +220,13 @@ it('leaves a config change unclassified when the scan refuses or is unavailable'
   const tsconfig = await r.commit('tsconfig', { 'tsconfig.json': '{}\n' })
   const { imports, classifier: subject } = classifier()
   const request = { root: localPath(r.root), revisions: [tsconfig] }
-  expect((await subject.classify(r.host, request, signal()))[0]?.change).toBe(
-    'unclassified',
-  )
+  const change = async (classifier: ArchitectureCommitClassifier) =>
+    (await classifier.classify(r.host, request, signal())).classifications[0]?.change
+  expect(await change(subject)).toBe('unclassified')
   const scan = vi.fn<PairScanPort>(() => Promise.resolve(undefined))
   const refusing = new ArchitectureCommitClassifier({ imports, scan })
-  expect((await refusing.classify(r.host, request, signal()))[0]?.change).toBe(
-    'unclassified',
-  )
-  expect((await refusing.classify(r.host, request, signal()))[0]?.change).toBe(
-    'unclassified',
-  )
+  expect(await change(refusing)).toBe('unclassified')
+  expect(await change(refusing)).toBe('unclassified')
   expect(scan).toHaveBeenCalledTimes(2)
 })
 
@@ -241,7 +242,7 @@ it('spends the aggregate read budget commit by commit and never fails the reques
     imports,
     budget: { maxFileBytes: 4 * 1024, maxTotalBytes: 3 * 1024 },
   })
-  const result = await subject.classify(
+  const { classifications: result } = await subject.classify(
     r.host,
     { root: localPath(r.root), revisions: [third, second, first] },
     signal(),
@@ -257,5 +258,5 @@ it('spends the aggregate read budget commit by commit and never fails the reques
     { root: localPath(r.root), revisions: [second] },
     signal(),
   )
-  expect(again[0]?.change).toBe('code')
+  expect(again.classifications[0]?.change).toBe('code')
 })

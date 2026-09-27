@@ -13,7 +13,7 @@ import type {
   ArchitectureCommitRangeRequest,
   ArchitectureCommitRange,
   ArchitectureCommitClassifyRequest,
-  ArchitectureCommitClassification,
+  ArchitectureCommitClassifyResult,
   ArchitectureReviewLaunch,
   ArchitectureReviewChanged,
   ArchitectureExplanationRequest,
@@ -71,7 +71,7 @@ export const architectureReviewIpc = {
     >(),
     'architecture-review:classify-commits': invoke<
       ArchitectureCommitClassifyRequest,
-      readonly ArchitectureCommitClassification[]
+      ArchitectureCommitClassifyResult
     >(),
     'architecture-review:close': invoke<ArchitectureReviewKey, void>(),
     'architecture-review:follow': invoke<ArchitectureReviewKey, void>(),

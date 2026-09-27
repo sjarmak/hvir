@@ -24,11 +24,11 @@ it('shows every commit when the filter is off', () => {
   expect(commitShownUnderFilter(false, false, undefined)).toBe(true)
 })
 
-it('hides merges and non-architecture commits when the filter is on', () => {
+it('hides merges, non-architecture commits and rows still classifying when the filter is on', () => {
   expect(commitShownUnderFilter(true, true, 'architecture')).toBe(false)
   expect(commitShownUnderFilter(true, false, 'architecture')).toBe(true)
   expect(commitShownUnderFilter(true, false, 'code')).toBe(false)
   expect(commitShownUnderFilter(true, false, 'none')).toBe(false)
   expect(commitShownUnderFilter(true, false, 'unclassified')).toBe(true)
-  expect(commitShownUnderFilter(true, false, undefined)).toBe(true)
+  expect(commitShownUnderFilter(true, false, undefined)).toBe(false)
 })
