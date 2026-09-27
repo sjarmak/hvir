@@ -95,6 +95,22 @@ export const codexProvider: HarnessProvider = {
     args: [...spec.args, '--', body],
   }),
 
+  architectureExplanation: (spec) => ({
+    ...spec,
+    args: [
+      'exec',
+      '--ephemeral',
+      '--ignore-user-config',
+      '--ignore-rules',
+      '--sandbox',
+      'read-only',
+      '--color',
+      'never',
+      '--skip-git-repo-check',
+      '-',
+    ],
+  }),
+
   launch(ctx): HarnessLaunchSpec {
     return {
       file: 'codex',

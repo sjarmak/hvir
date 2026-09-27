@@ -17,9 +17,7 @@ import type {
   ArchitectureReviewLaunch,
   ArchitectureReviewChanged,
   ArchitectureExplanationRequest,
-  ArchitectureExplanationLaunch,
-  ArchitecturePreparedExplanation,
-  ArchitectureExplanationChanged,
+  ArchitectureExplainRequest,
 } from '../architecture-review'
 import type { ArchitectureExplanationState } from '../architecture-explanation'
 import type {
@@ -49,13 +47,9 @@ export const architectureReviewIpc = {
       ArchitectureReviewLaunch,
       ArchitectureHandoff
     >(),
-    'architecture-review:prepare-explanation': invoke<
-      ArchitectureExplanationRequest,
-      ArchitecturePreparedExplanation
-    >(),
-    'architecture-review:handoff-explanation': invoke<
-      ArchitectureExplanationLaunch,
-      ArchitectureHandoff
+    'architecture-review:explain': invoke<
+      ArchitectureExplainRequest,
+      ArchitectureExplanationState
     >(),
     'architecture-review:explanation': invoke<
       ArchitectureExplanationRequest,
@@ -80,6 +74,5 @@ export const architectureReviewIpc = {
   send: {},
   event: {
     'architecture-review:changed': payload<ArchitectureReviewChanged>(),
-    'architecture-review:explanation-changed': payload<ArchitectureExplanationChanged>(),
   },
 } satisfies IpcFeatureContract

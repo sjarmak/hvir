@@ -51,6 +51,7 @@ export interface HarnessProviderDescriptor {
   readonly exactForkLaunch?: true
   /** Provider/profile can receive a native architecture-review launch payload. */
   readonly architectureReviewLaunch?: true
+  readonly architectureExplanation?: true
   readonly capabilities: HarnessProviderCapabilities
   readonly terminalInput: HarnessTerminalInputCapabilities
   /** Data-only suggestion; catalog membership never materializes a launch profile. */

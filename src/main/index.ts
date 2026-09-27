@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, shell } from 'electron'
-import { ownArchitectureReview } from './architecture-review/runtime'
+import { ownArchitectureReview as ownArch } from './architecture-review/runtime'
 import { registerIpcHandlers } from './ipc'
 import { createProjectCommands } from './ipc/project-commands'
 import { GitMutationCoordinator } from './git/mutation-coordinator'
@@ -96,7 +96,7 @@ function createWorkbenchEntry(): void {
   let sshPrompter: RendererSshPrompter | null = null
   let ptySupervisor: PtySupervisor | null = null
   let terminalSessionRegistry: TerminalSessionRegistry | null = null
-  let harnessProfileStore: HarnessProfileStore | null = null
+  let profileStore: HarnessProfileStore | null = null
   let documentReview: DocumentReviewRuntime | null = null
   let attention: ReturnType<typeof installApplicationAttention> | null = null
   let workspaceCoordinator: WorkspaceCoordinator | null = null
@@ -194,7 +194,7 @@ function createWorkbenchEntry(): void {
       ),
       (sessions) => sessions.flush(),
     )
-    harnessProfileStore = runtime.own(
+    profileStore = runtime.own(
       'harness profile store',
       await HarnessProfileStore.load(
         hostCatalog.local,
@@ -202,7 +202,7 @@ function createWorkbenchEntry(): void {
       ),
       (profiles) => profiles.flush(),
     )
-    await harnessProfileStore
+    await profileStore
       .importLegacyDefaults(terminalSessionRegistry.profileReferences())
       .catch((error) =>
         console.warn('[harness] legacy recovery profile import failed', error),
@@ -279,7 +279,7 @@ function createWorkbenchEntry(): void {
       ptySupervisor,
       terminalSessionRegistry,
       harnessProviders,
-      harnessProfileStore,
+      profileStore,
     )
     const remoteImagePaste = runtime.own(
       'remote image paste coordinator',
@@ -355,7 +355,7 @@ function createWorkbenchEntry(): void {
     runtime.own(
       'IPC authority router',
       registerIpcHandlers({
-        architectureReview: ownArchitectureReview(rendererScopes, runtime, gitMutations),
+        architectureReview: ownArch(rendererScopes, runtime, gitMutations, profileStore),
         echoWorker,
         gitWorker,
         filenameSearch,
@@ -391,7 +391,7 @@ function createWorkbenchEntry(): void {
         sessionsTranscripts: sessionsPorts.transcripts,
         sessionsAttachTickets: sessionsPorts.attachTickets,
         terminalMoves,
-        harnessProfiles: harnessProfileStore,
+        harnessProfiles: profileStore,
         harnessProbes: harnessProbeManager,
         remoteImagePaste,
         beads: new BeadsService({ getProject }),
@@ -505,7 +505,7 @@ function createWorkbenchEntry(): void {
       .catch((error) => console.error('[web-pane] suspend cleanup failed', error))
     sshPrompter?.cancelAll()
     await terminalSessionRegistry?.flush()
-    await harnessProfileStore?.flush()
+    await profileStore?.flush()
     await documentReview?.flush()
     await hostCatalog?.disconnectSshHosts()
   }

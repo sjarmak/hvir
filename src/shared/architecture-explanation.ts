@@ -1,4 +1,3 @@
-export const ARCHITECTURE_EXPLANATION_FILE = '.hvir-architecture-explanation.json'
 export const ARCHITECTURE_EXPLANATION_MAX_BYTES = 64 * 1024
 
 export interface ArchitectureExplanationClaim {

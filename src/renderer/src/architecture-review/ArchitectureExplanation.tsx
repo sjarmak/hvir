@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  hostPathEquals,
   type ArchitectureExplanationName,
   type ArchitectureExplanationState,
   type HarnessProfile,
@@ -8,11 +7,7 @@ import {
   type HarnessProviderDescriptor,
   type HostPath,
 } from '../../../shared'
-import type {
-  ArchitecturePreparedExplanation,
-  ArchitectureReviewSnapshot,
-} from '../../../shared/architecture-review'
-import { queueArchitectureAgentLaunch } from './architecture-review-launch'
+import type { ArchitectureReviewSnapshot } from '../../../shared/architecture-review'
 import {
   selectArchitectureReviewProfiles,
   selectArchitectureReviewTemplateProvider,
@@ -24,22 +19,19 @@ export function ArchitectureExplanation({
   snapshot,
   collapsed,
   onCollapsedChange,
-  onHandoff,
 }: {
   readonly root: HostPath
   readonly reviewId: string
   readonly snapshot: ArchitectureReviewSnapshot
   readonly collapsed: boolean
   readonly onCollapsedChange: (collapsed: boolean) => void
-  readonly onHandoff: (projectId: string, workspaceId: string) => void
 }) {
   const epoch = useRef(0)
   const [profiles, setProfiles] = useState<readonly HarnessProfile[]>([])
   const [creationProvider, setCreationProvider] = useState<HarnessProviderDescriptor>()
   const [profileId, setProfileId] = useState<HarnessProfileId>()
-  const [prepared, setPrepared] = useState<ArchitecturePreparedExplanation>()
   const [state, setState] = useState<ArchitectureExplanationState>()
-  const [busy, setBusy] = useState<'preparing' | 'launching' | 'creating-profile'>()
+  const [busy, setBusy] = useState<'explaining' | 'creating-profile'>()
   const [error, setError] = useState<string>()
 
   useEffect(() => {
@@ -53,7 +45,9 @@ export function ArchitectureExplanation({
       .then(([providers, catalog, explanation]) => {
         if (disposed) return
         setCreationProvider(selectArchitectureReviewTemplateProvider(providers ?? []))
-        setProfiles(selectArchitectureReviewProfiles(providers ?? [], catalog ?? []))
+        const eligible = selectArchitectureReviewProfiles(providers ?? [], catalog ?? [])
+        setProfiles(eligible)
+        setProfileId((current) => current ?? eligible[0]?.id)
         setState(explanation ?? undefined)
       })
       .catch((cause: unknown) => {
@@ -64,44 +58,34 @@ export function ArchitectureExplanation({
               : 'Architecture explanation could not be loaded.',
           )
       })
-    const disposeEvent = window.hvir.on(
-      'architecture-review:explanation-changed',
-      (event) => {
-        if (
-          event.reviewId === reviewId &&
-          event.snapshotId === snapshot.id &&
-          hostPathEquals(event.root, root)
-        )
-          setState(event.state)
-      },
-    )
     return () => {
       disposed = true
       epoch.current += 1
-      void Promise.resolve(disposeEvent()).catch((cause: unknown) =>
-        console.error('Architecture explanation event cleanup failed', cause),
-      )
     }
   }, [reviewId, root, snapshot.id])
 
-  const prepare = async () => {
+  const explain = async () => {
+    const profile = profiles.find((candidate) => candidate.id === profileId)
+    if (!profile || busy) return
     const request = ++epoch.current
-    setBusy('preparing')
-    setPrepared(undefined)
+    setBusy('explaining')
     setError(undefined)
+    setState({ status: 'waiting', snapshotId: snapshot.id })
     try {
-      const result = await window.hvir.invoke('architecture-review:prepare-explanation', {
+      const result = await window.hvir.invoke('architecture-review:explain', {
         root,
         reviewId,
         snapshotId: snapshot.id,
+        profileId: profile.id,
+        launchRevision: profile.launchRevision,
       })
-      if (request === epoch.current) setPrepared(result)
+      if (request === epoch.current) setState(result)
     } catch (cause) {
       if (request === epoch.current)
         setError(
           cause instanceof Error
             ? cause.message
-            : 'Explanation handoff could not be prepared.',
+            : 'Architecture explanation could not be generated.',
         )
     } finally {
       if (request === epoch.current) setBusy(undefined)
@@ -138,42 +122,6 @@ export function ArchitectureExplanation({
     }
   }
 
-  const launch = async () => {
-    const profile = profiles.find((candidate) => candidate.id === profileId)
-    if (!prepared || !profile || busy) return
-    const request = ++epoch.current
-    setBusy('launching')
-    setError(undefined)
-    try {
-      const handoff = await window.hvir.invoke(
-        'architecture-review:handoff-explanation',
-        {
-          root: prepared.root,
-          reviewId: prepared.reviewId,
-          snapshotId: prepared.snapshotId,
-          digest: prepared.digest,
-        },
-      )
-      queueArchitectureAgentLaunch({
-        launch: handoff.launch,
-        profileId: profile.id,
-        launchRevision: profile.launchRevision,
-      })
-      setState({ status: 'waiting', snapshotId: snapshot.id })
-      onHandoff(handoff.projectId, handoff.workspaceId)
-    } catch (cause) {
-      if (request !== epoch.current) return
-      setPrepared(undefined)
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : 'Explanation worktree could not be created.',
-      )
-    } finally {
-      if (request === epoch.current) setBusy(undefined)
-    }
-  }
-
   return (
     <section className="architecture-explanation" aria-label="Agent explanation claim">
       <header>
@@ -193,16 +141,16 @@ export function ArchitectureExplanation({
         <>
           <div className="architecture-explanation-intro">
             <p>Agent claim, checked against snapshot names</p>
-            <button type="button" onClick={() => void prepare()} disabled={!!busy}>
-              {busy === 'preparing' ? 'Preparing…' : 'Explain this change'}
+            <button
+              type="button"
+              onClick={() => void explain()}
+              disabled={!profileId || !!busy}
+            >
+              {busy === 'explaining' ? 'Explaining…' : 'Explain this change'}
             </button>
           </div>
-          {prepared && (
-            <div className="architecture-explanation-launch">
-              <p>
-                New worktree <code>{prepared.handoff.worktree.path}</code> on{' '}
-                <code>{prepared.handoff.branch}</code>
-              </p>
+          {profiles.length > 0 && (
+            <div className="architecture-explanation-profile">
               <label>
                 Explanation profile{' '}
                 <select
@@ -219,13 +167,6 @@ export function ArchitectureExplanation({
                   ))}
                 </select>
               </label>
-              <button
-                type="button"
-                onClick={() => void launch()}
-                disabled={!profileId || !!busy}
-              >
-                {busy === 'launching' ? 'Launching…' : 'Create worktree and launch agent'}
-              </button>
             </div>
           )}
           {state?.status === 'waiting' && (
@@ -250,9 +191,9 @@ export function ArchitectureExplanation({
               <NameList label="Modules" names={state.explanation.names.modules} />
             </div>
           )}
-          {prepared && profiles.length === 0 && (
+          {profiles.length === 0 && (
             <div>
-              <p role="status">
+              <p>
                 Architecture review requires a supported provider, its default executable,
                 and no custom arguments. None of the current profiles qualify.
               </p>

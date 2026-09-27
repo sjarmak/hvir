@@ -22,6 +22,7 @@ import { ARCHITECTURE_PARSE_CACHE_BYTES } from '../src/main/architecture-review/
 import { ArchitectureAnalysisWorker } from '../src/main/architecture-review/worker'
 import { ArchitectureReviewCoordinator } from '../src/main/architecture-review/coordinator'
 import type { RendererResourceScopes } from '../src/main/renderer-resource-scopes'
+import type { HarnessProfileStoreContract } from '../src/main/harness/harness-profile-store'
 
 it('keeps the parse cache under userData and owns the warm worker for disposal', async () => {
   const owned: {
@@ -35,13 +36,18 @@ it('keeps the parse cache under userData and owns the warm worker for disposal',
       return resource
     },
   }
-  const review = ownArchitectureReview({} as RendererResourceScopes, runtime, {
-    worktreeTarget: () => {
-      throw new Error("unused")
+  const review = ownArchitectureReview(
+    {} as RendererResourceScopes,
+    runtime,
+    {
+      worktreeTarget: () => {
+        throw new Error('unused')
+      },
+      addWorktree: () => Promise.reject(new Error('unused')),
+      holdWorktree: () => Promise.reject(new Error('unused')),
     },
-    addWorktree: () => Promise.reject(new Error("unused")),
-    holdWorktree: () => Promise.reject(new Error("unused")),
-  })
+    { get: () => undefined } as unknown as HarnessProfileStoreContract,
+  )
   expect(review).toBeInstanceOf(ArchitectureReviewCoordinator)
   const worker = owned.find(
     (entry) => entry.resource instanceof ArchitectureAnalysisWorker,

@@ -5,6 +5,8 @@ import { ArchitectureReviewCoordinator } from './coordinator'
 import type { ArchitectureWorktreePort } from './handoff'
 import { ArchitectureAnalysisWorker } from './worker'
 import { ARCHITECTURE_PARSE_CACHE_BYTES } from './parse-cache-budget'
+import { HarnessArchitectureExplanationModel } from '../harness/architecture-explanation-model'
+import type { HarnessProfileStoreContract } from '../harness/harness-profile-store'
 
 /** Application state under Electron userData, shared by every repository reviewed. */
 export function architectureParseCacheDirectory(): string {
@@ -15,6 +17,7 @@ export function ownArchitectureReview(
   resources: RendererResourceScopes,
   runtime: Pick<WorkbenchRuntime, 'own'>,
   worktrees: ArchitectureWorktreePort,
+  profiles: HarnessProfileStoreContract,
 ): ArchitectureReviewCoordinator {
   const worker = runtime.own(
     'architecture analysis worker',
@@ -33,6 +36,7 @@ export function ownArchitectureReview(
       analyze: worker.analyze,
       imports: worker.imports,
       handoff: { worktrees },
+      explanationModel: new HarnessArchitectureExplanationModel(profiles),
     }),
     (review) => review.dispose(),
   )

@@ -695,7 +695,7 @@ upstream GitHub provenance and blocking source/dependency checks retain their au
 > Supersedes: [ADR-061](adr/ADR-061-pinned-native-architecture-review.md) | partial | The fixed comparison modes, the full recapture on revalidation, and the read-only single-file handoff consumed once per snapshot; pinned evidence, worker isolation, and launch authority remain.
 > Supersedes: [ADR-005](adr/ADR-005-system-git-engine.md) | partial | Creating no branch at all; the architecture review creates one hvir/architecture/ branch per agent launch.
 > Supersedes: [ADR-008](adr/ADR-008-project-worktree-workspaces.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
-> Superseded by: [ADR-064](adr/ADR-064-architecture-review-as-a-live-zoomable-canvas.md) | partial | The map opening on subsystem relationships in a fixed grid; it now opens on systems on a laid-out canvas that drills to subsystems and modules.
+> Superseded by: [ADR-064](adr/ADR-064-architecture-review-as-a-live-zoomable-canvas.md) | partial | The map now opens on systems on a laid-out canvas that drills to subsystems and modules; explanation-only requests no longer create an agent branch, worktree, brief or terminal session, while architecture-improvement launches retain the worktree handoff.
 > Superseded by: [ADR-065](adr/ADR-065-history-reads-the-fleet-commit-classification.md) | partial | Marking every History row and strip commit from its diff and import edges alone; a commit the fleet has classified is marked from its Architectural trailer instead.
 
 A snapshot compares any two refs or a ref and the live tree from Git objects through a blob-keyed
@@ -707,11 +707,12 @@ and opens the review on any commit; the commit strip lists the same commits newe
 ### [ADR-064 — Architecture review as a live, zoomable canvas](adr/ADR-064-architecture-review-as-a-live-zoomable-canvas.md)
 
 > Lifecycle: Active
-> Supersedes: [ADR-063](adr/ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | The map opening on subsystem relationships in a fixed grid; it now opens on systems on a laid-out canvas that drills to subsystems and modules.
+> Supersedes: [ADR-063](adr/ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | The map now opens on systems on a laid-out canvas that drills to subsystems and modules; explanation-only requests no longer create an agent branch, worktree, brief or terminal session, while architecture-improvement launches retain the worktree handoff.
 
 The map becomes a pan and zoom canvas of Systems, Subsystems and Modules laid out off the render
-thread, a live review follows the working tree as a series of snapshots, and an agent's
-Explanation of a snapshot is shown as a claim beside what the scan observed.
+thread, a live review follows the working tree as a series of snapshots, and one direct model
+call produces an Explanation shown as a claim beside what the scan observed without a worktree
+or terminal handoff.
 
 ### [ADR-065 — History reads the fleet's commit classification](adr/ADR-065-history-reads-the-fleet-commit-classification.md)
 
