@@ -127,6 +127,18 @@ async function captureVisibleState(win: BrowserWindow): Promise<unknown> {
       };
       const surface = document.querySelector('[aria-label="Architecture review"]:not([hidden])');
       const canvas = surface?.querySelector('.architecture-map-canvas');
+      const explanation = surface?.querySelector('.architecture-explanation');
+      const explanationButtons = [...(explanation?.querySelectorAll('button') || [])];
+      const explanationCollapsed = explanation?.querySelector('[aria-label="Expand explanation panel"]')?.getAttribute('aria-expanded') === 'false';
+      const explanationStatus = explanationCollapsed
+        ? 'collapsed'
+        : explanation?.querySelector('[role="alert"]')
+          ? 'failed'
+          : explanationButtons.some(node => node.textContent?.trim() === 'Preparing…')
+            ? 'preparing'
+            : explanation?.querySelector('.architecture-explanation-launch')
+              ? 'prepared'
+              : 'idle';
       const surfaceBounds = surface?.getBoundingClientRect();
       const canvasBounds = canvas?.getBoundingClientRect();
       const timings = [...document.querySelectorAll('table[aria-label="Scan timings"] tbody tr')].map((row) =>
@@ -167,6 +179,12 @@ async function captureVisibleState(win: BrowserWindow): Promise<unknown> {
           nodeCount: surface.querySelectorAll('.architecture-canvas-node').length,
           systemCount: surface.querySelectorAll('.architecture-canvas-system').length,
           subsystemCount: surface.querySelectorAll('.architecture-canvas-subsystem').length,
+          explanation: explanation ? {
+            collapsed: explanationCollapsed,
+            explainButtonPresent: explanationButtons.some(node => node.textContent?.trim() === 'Explain this change'),
+            headerOnly: explanation.children.length === 1 && explanation.firstElementChild?.tagName === 'HEADER',
+            status: explanationStatus,
+          } : null,
         } : null,
         timings,
       };
