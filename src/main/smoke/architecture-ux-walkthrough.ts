@@ -321,7 +321,7 @@ async function setArchitectureFilter(win: BrowserWindow, on: boolean): Promise<v
       await wait(() => {
         const panel = document.querySelector('[aria-label="Git"]:not([hidden])');
         if (!panel) return true;
-        const hidden = [...panel.querySelectorAll('.git-rail-commit-change')].filter(node => !node.classList.contains('architecture'));
+        const hidden = [...panel.querySelectorAll('.git-rail-commit-change')].filter(node => !node.classList.contains('architecture') && !node.classList.contains('unclassified'));
         return ${on} ? hidden.length === 0 : true;
       }, 'filtered History rows');
     })()

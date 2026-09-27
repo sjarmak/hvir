@@ -40,7 +40,8 @@ nothing when no source, config or layout in scope changed. A commit that changes
 is never marked as an architecture change. A commit that changes a config or layout file
 in scope is decided by scanning it against its parent and comparing module placement and
 imports; a request scans at most four such commits, and the rest stay unclassified until
-a later request reaches them. Modified sources are read within a per-request budget of
+a later request reaches them. A root commit has no parent to scan against, so a root
+commit that adds config or layout with no source stays unclassified. Modified sources are read within a per-request budget of
 16 MiB in total and 512 KiB per file; a commit the remaining budget cannot cover is
 reported unclassified rather than failing the request, and nothing unclassified is cached.
 Every revision sent for classification is a full 40- or 64-character lowercase hash,
