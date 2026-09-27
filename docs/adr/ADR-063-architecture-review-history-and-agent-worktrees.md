@@ -34,20 +34,30 @@ baseline. Once History or the strip has named an end, Baseline and Current show 
 commit's subject and date with the hash secondary; a ref typed by hand shows as typed.
 
 **History reaches the review.** Each History row is classified against its first parent,
-merges included: an architecture change when a module, subsystem or relationship in scope
-was added, removed or changed; a code change when sources changed with no such change;
-nothing when no source, config or layout in scope changed. A commit that changes no source
-is never marked as an architecture change. A commit that changes a config or layout file
-in scope is decided by scanning it against its parent and comparing module placement and
-imports; a request scans at most four such commits, and the rest stay unclassified until
-a later request reaches them. A root commit has no parent to scan against, so a root
-commit that adds config or layout with no source stays unclassified. Modified sources are read within a per-request budget of
-16 MiB in total and 512 KiB per file; a commit the remaining budget cannot cover is
-reported unclassified rather than failing the request, and nothing unclassified is cached.
+merges included: an architecture change when a module or subsystem in scope was added,
+removed or moved, or a module-to-module relationship in scope was added or removed; a code
+change when sources changed with no such change; nothing when no source, config or layout
+in scope changed. A relationship is identified the way the architecture analysis identifies
+its evidence: the importing module and the resolved target module, or the resolution and
+specifier when nothing in scope resolves. The set of distinct relationships is compared,
+not the occurrences, so a second import of a module already imported, an import that
+becomes type-only or dynamic, a respelled specifier for the same target, or a reordering
+is a code change. The map includes external and unresolved targets, type-only imports and
+every scanned file, test files included, and the classifier counts exactly those edges and
+no others. A commit with no source change is never marked from its diff alone; a config
+or layout change is marked architecture only when its pair scan shows a module or
+relationship delta. A request scans at most four such commits, and the rest stay
+unclassified until a later request reaches them. A root commit has no parent to scan
+against, so a root commit that adds config or layout with no source stays unclassified.
+Modified sources are read within a per-request budget of 16 MiB in total and 512 KiB per
+file; a commit the remaining budget cannot cover, or one modifying more than two hundred
+modules, is reported unclassified rather than failing the request, and nothing
+unclassified is cached: every unclassified commit is decided again on the next request.
 Every revision sent for classification is a full 40- or 64-character lowercase hash,
 checked at the IPC boundary. Classification runs lazily for the rows on screen, off the
 render thread in the architecture worker, and is cached by commit pair, scanner versions
-and layout. One request is in flight per workspace, shared by History and the strip, in
+and layout. One classification store lives per open workspace and is released when the
+workspace closes. One request is in flight per workspace, shared by History and the strip, in
 batches of fifty; a failed batch is shown, does not strand the batches behind it, and is
 retried on the next drain. Every answer names the HEAD it was computed against; when HEAD
 or the branch moves within a workspace, held classifications are dropped and late answers
@@ -145,7 +155,7 @@ it in Git.
   hvir owns anyway once it created the worktree.
 - Silent truncation over the size cap: makes the map lie.
 - Marking History from a full snapshot scan per commit: correct but costs a whole analysis
-  per row; comparing import signatures of the modified modules answers the same question
-  from the changed blobs alone.
+  per row; comparing the sets of relationships of the modified modules answers the same
+  question from the changed blobs alone.
 - Classifying commits in the renderer from the History diff summary: file counts cannot tell
   a rewired import from an edited body.
