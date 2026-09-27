@@ -119,6 +119,7 @@ it('filters to architecture changes and hides merges, remembering the choice', (
     'input[type="checkbox"][aria-label="Architecture changes only"]',
   )!
   expect(toggle.checked).toBe(false)
+  expect(toggle.closest('label')?.textContent?.trim()).toBe('Architecture only')
   act(() => toggle.click())
   expect(onArchitectureOnly).toHaveBeenCalledWith(true)
   render(true)
