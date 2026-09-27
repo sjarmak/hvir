@@ -24,22 +24,39 @@ verification loop.
 **Two ends, any refs.** A snapshot compares a Baseline to a Current end. Either end may be any
 commit reachable in the repository; only the Current end may be the live working tree. Both
 tree ends are read from Git objects by one listing and one batched blob read per side; no
-checkout or worktree is needed to compare history. A commit strip lists the first-parent
-range from the merge-base with the default branch to HEAD by default, widenable by ref,
-newest first in the order the History tab uses, each commit labelled by subject and author
-date with its hash secondary. Stepping moves to the newer or the older commit, either
-pairwise against each commit's first parent or against a locked baseline.
+checkout or worktree is needed to compare history. A commit strip lists the same commits
+the History tab lists from the merge-base with the default branch to HEAD, in topological
+order newest first with merges included, widenable by ref, capped at the newest 200 and
+saying so when older commits were left off. Each commit is labelled by subject and author
+calendar date as recorded, with its hash secondary. Stepping moves to the newer or the
+older commit, either pairwise against each commit's first parent or against a locked
+baseline. Once History or the strip has named an end, Baseline and Current show that
+commit's subject and date with the hash secondary; a ref typed by hand shows as typed.
 
-**History reaches the review.** Each History row is classified against its first parent:
-an architecture change when a module, subsystem or relationship in scope was added, removed
-or changed; a code change when sources changed with no such change; nothing when no source,
-config or layout in scope changed. Classification runs lazily for the rows on screen, off the
-render thread in the architecture worker, and is cached by commit pair, scanner versions and
-layout. A commit that changes no source is never marked as an architecture change. Every row
-offers "Show in architecture", which opens the review on that commit against its parent. One
-"Architecture changes only" filter, remembered across sessions, hides merges and commits
-without an architecture change from both History and the strip, so the two always agree on
-order and on which commits show.
+**History reaches the review.** Each History row is classified against its first parent,
+merges included: an architecture change when a module, subsystem or relationship in scope
+was added, removed or changed; a code change when sources changed with no such change;
+nothing when no source, config or layout in scope changed. A commit that changes no source
+is never marked as an architecture change. A commit that changes a config or layout file
+in scope is decided by scanning it against its parent and comparing module placement and
+imports; a request scans at most four such commits, and the rest stay unclassified until
+a later request reaches them. Modified sources are read within a per-request budget of
+16 MiB in total and 512 KiB per file; a commit the remaining budget cannot cover is
+reported unclassified rather than failing the request, and nothing unclassified is cached.
+Every revision sent for classification is a full 40- or 64-character lowercase hash,
+checked at the IPC boundary. Classification runs lazily for the rows on screen, off the
+render thread in the architecture worker, and is cached by commit pair, scanner versions
+and layout. One request is in flight per workspace, shared by History and the strip, in
+batches of fifty; a failed batch is shown, does not strand the batches behind it, and is
+retried on the next drain. Every answer names the HEAD it was computed against; when HEAD
+or the branch moves within a workspace, held classifications are dropped and late answers
+are discarded. Every row with a parent offers "Show in architecture", which opens the
+review on that commit against its first parent. One "Architecture changes only" filter,
+remembered across sessions, hides merges and commits without an architecture change from
+both History and the strip, so the two always agree on order and on which commits show.
+Under the filter a row still classifying is hidden behind a visible "Classifying"
+status, never shown as if it were an architecture change, and an unclassified row stays
+visible with its own marker.
 
 **Nothing is read twice.** The live side is read by one batched host command per scan. Parsed
 module facts are cached on disk per host and repository, keyed by blob identity and scanner
@@ -99,10 +116,12 @@ is the only removal authority the review holds.
 ## Consequences
 
 History comparison becomes a git-object read plus a cache lookup, so stepping the strip is
-cheap after the first parse. Marking History costs one batched raw log per fifty commits and
-a blob read for each modified module in scope; commits that only add, delete, rename or
-touch non-source files are decided from the diff alone. Under the filter every loaded commit
-is classified rather than only the visible rows, so the filter is bounded by the loaded page. The disk cache is new state to bound and to invalidate on
+cheap after the first parse. Marking History costs one batched raw log per fifty commits, a
+size check and a blob read for each modified module in scope, and up to four pair scans for
+config and layout commits; commits that only add, delete, rename or touch non-source files
+are decided from the diff alone. Under the filter every loaded commit is classified rather
+than only the visible rows, so the filter is bounded by the loaded page, and the strip is
+bounded by its 200-commit cap. The disk cache is new state to bound and to invalidate on
 scanner upgrades. web-tree-sitter adds a WebAssembly dependency and per-language grammars to
 package. Worktree creation is a new write authority for the review; ADR-061's read-only
 promise no longer holds for the review as a whole, though it still holds for the person's own
