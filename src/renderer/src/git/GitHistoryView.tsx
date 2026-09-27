@@ -22,7 +22,7 @@ import {
   type HistoryCommitRange,
 } from '../architecture-review/architecture-ends-model'
 import { commitShownUnderFilter } from '../architecture-review/architecture-history-filter'
-import { fleetChangeTitle } from '../architecture-review/fleet-classification-label'
+import { changeMarker } from '../architecture-review/change-marker'
 import { commitDate } from './commit-date'
 import type { CommitClassificationState } from '../architecture-review/use-commit-classifications'
 import {
@@ -501,13 +501,6 @@ function HistoryCommitList({
   )
 }
 
-const CHANGE_LABELS: Record<ArchitectureCommitChange, string | undefined> = {
-  architecture: 'Architecture',
-  code: 'Code',
-  unclassified: 'Unclassified',
-  none: undefined,
-}
-
 function CommitChangeMarker({
   merge,
   change,
@@ -517,16 +510,11 @@ function CommitChangeMarker({
   readonly change: ArchitectureCommitChange | undefined
   readonly fleet: FleetCommitClassification | undefined
 }): ReactElement | null {
-  const kind = merge ? 'merge' : change
-  if (kind === undefined) return null
-  const label = kind === 'merge' ? 'Merge' : (fleet?.type ?? CHANGE_LABELS[kind])
-  if (label === undefined) return null
+  const marker = changeMarker(merge, change, fleet)
+  if (marker === undefined) return null
   return (
-    <b
-      className={`git-rail-commit-change ${kind}`}
-      title={fleet === undefined ? undefined : fleetChangeTitle(fleet)}
-    >
-      {label}
+    <b className={`git-rail-commit-change ${marker.kind}`} title={marker.title}>
+      {marker.label}
     </b>
   )
 }

@@ -127,7 +127,7 @@ it('labels a fleet-classified row by its change type and describes the dimension
   })
   const markers = rows().map((row) => row.querySelector('.git-rail-commit-change'))
   expect(markers.map((marker) => marker?.textContent)).toEqual([
-    'Merge',
+    'Feature',
     'Performance',
     'Documentation',
     'Architecture',

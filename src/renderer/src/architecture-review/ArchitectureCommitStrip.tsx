@@ -14,7 +14,7 @@ import {
   useArchitectureFilter,
 } from './architecture-history-filter'
 import { commitDate } from '../git/commit-date'
-import { fleetChangeTitle } from './fleet-classification-label'
+import { changeMarker } from './change-marker'
 import {
   useCommitClassifications,
   type CommitClassificationState,
@@ -202,13 +202,6 @@ function StripCommits({
   )
 }
 
-const STRIP_CHANGE_LABELS: Record<ArchitectureCommitChange, string | undefined> = {
-  architecture: 'Architecture',
-  code: 'Code',
-  unclassified: 'Unclassified',
-  none: undefined,
-}
-
 function StripChange({
   commit,
   change,
@@ -218,16 +211,11 @@ function StripChange({
   readonly change: ArchitectureCommitChange | undefined
   readonly fleet: FleetCommitClassification | undefined
 }) {
-  const kind = commit.merge ? 'merge' : change
-  if (kind === undefined) return null
-  const label = kind === 'merge' ? 'Merge' : (fleet?.type ?? STRIP_CHANGE_LABELS[kind])
-  if (label === undefined) return null
+  const marker = changeMarker(commit.merge, change, fleet)
+  if (marker === undefined) return null
   return (
-    <b
-      className={`architecture-strip-change ${kind}`}
-      title={fleet === undefined ? undefined : fleetChangeTitle(fleet)}
-    >
-      {label}
+    <b className={`architecture-strip-change ${marker.kind}`} title={marker.title}>
+      {marker.label}
     </b>
   )
 }
