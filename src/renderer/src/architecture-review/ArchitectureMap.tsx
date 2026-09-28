@@ -56,6 +56,10 @@ export function ArchitectureMap({
   const [all, setAll] = useState(false)
   const [selectedSystem, setSelectedSystem] = useState<string>()
   const [selectedSubsystem, setSelectedSubsystem] = useState<string>()
+  const [focusedRelationship, setFocusedRelationship] = useState<{
+    readonly source: string
+    readonly target: string
+  }>()
   const [showUnchangedModules, setShowUnchangedModules] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const mapElement = useRef<HTMLDivElement>(null)
@@ -238,11 +242,13 @@ export function ArchitectureMap({
                 selectedSystem === canvasNode.label ? undefined : canvasNode.label
               setSelectedSystem(next)
               setSelectedSubsystem(undefined)
+              setFocusedRelationship(undefined)
               setShowUnchangedModules(false)
             } else if (canvasNode?.kind === 'subsystem') {
               setSelectedSubsystem(
                 selectedSubsystem === clicked.id ? undefined : clicked.id,
               )
+              setFocusedRelationship(undefined)
               setShowUnchangedModules(false)
             }
           }}
@@ -250,7 +256,13 @@ export function ArchitectureMap({
             const relationship = elements.edges.find(
               (item) => item.id === clicked.id,
             )?.relationship
-            if (relationship) setSelectedSubsystem(relationship.source)
+            if (relationship) {
+              setSelectedSubsystem(relationship.source)
+              setFocusedRelationship({
+                source: relationship.source,
+                target: relationship.target,
+              })
+            }
           }}
         >
           <Background />
@@ -269,6 +281,7 @@ export function ArchitectureMap({
         relationships={links}
         mode={mode}
         subsystem={node?.id}
+        focused={focusedRelationship}
         onEvidence={openEvidence}
       />
       <ArchitectureFiles analysis={analysis} mode={mode} onEvidence={openEvidence} />

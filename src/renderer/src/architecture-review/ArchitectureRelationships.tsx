@@ -7,11 +7,17 @@ import { evidenceByModule, type ArchitectureMapMode } from './architecture-revie
 
 const EVIDENCE_LIMIT = 100
 
+interface FocusedRelationship {
+  readonly source: string
+  readonly target: string
+}
+
 interface Props {
   readonly relationships: readonly ArchitectureRelationshipDelta[]
   readonly mode: ArchitectureMapMode
   /** The subsystem the list is narrowed to, if any. */
   readonly subsystem?: string
+  readonly focused?: FocusedRelationship
   readonly onEvidence: (path: string, line: number, side: 'before' | 'after') => void
 }
 
@@ -20,6 +26,7 @@ export function ArchitectureRelationships({
   relationships,
   mode,
   subsystem,
+  focused,
   onEvidence,
 }: Props): ReactElement {
   return (
@@ -28,20 +35,27 @@ export function ArchitectureRelationships({
       aria-label="Subsystem relationships"
     >
       <h3>Subsystem relationships{subsystem ? ` involving ${subsystem}` : ''}</h3>
-      {relationships.map((r) => (
-        <details
-          key={JSON.stringify([r.source, r.target])}
-          className={`architecture-relationship change-${r.change}`}
-        >
-          <summary>
-            {r.source} → {r.target}
-            <small>
-              {relationshipLabel(r.change)} · {r.before} before / {r.after} after
-            </small>
-          </summary>
-          <RelationshipEvidence relationship={r} mode={mode} onEvidence={onEvidence} />
-        </details>
-      ))}
+      {relationships.map((r) => {
+        const isFocused = focused?.source === r.source && focused.target === r.target
+        return (
+          <details
+            key={JSON.stringify([r.source, r.target])}
+            ref={(element) => {
+              if (isFocused) element?.scrollIntoView?.({ block: 'nearest' })
+            }}
+            open={isFocused ? true : undefined}
+            className={`architecture-relationship change-${r.change}${isFocused ? ' architecture-relationship-focused' : ''}`}
+          >
+            <summary>
+              {r.source} → {r.target}
+              <small>
+                {relationshipLabel(r.change)} · {r.before} before / {r.after} after
+              </small>
+            </summary>
+            <RelationshipEvidence relationship={r} mode={mode} onEvidence={onEvidence} />
+          </details>
+        )
+      })}
     </section>
   )
 }
