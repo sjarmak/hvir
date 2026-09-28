@@ -27,9 +27,10 @@ async function fixture(files: Readonly<Record<string, string>>) {
   git(root, 'init', '-b', 'main')
   git(root, 'config', 'user.email', 'test@example.test')
   git(root, 'config', 'user.name', 'Test')
+  git(root, 'config', 'gc.auto', '0')
   await write(root, files)
   git(root, 'add', '.')
-  git(root, 'commit', '-m', 'baseline')
+  git(root, 'commit', '--quiet', '-m', 'baseline')
   return root
 }
 async function write(root: string, files: Readonly<Record<string, string>>) {
@@ -78,9 +79,9 @@ it('refuses one file over the cap before reading any source, naming the counts',
   const root = await fixture(sources(ARCHITECTURE_SCOPE.maxFiles + 1))
   const recorder = new ArchitectureScanRecorder()
   const refusal = await refusalOf(capture(root, { baseline: 'HEAD' }, recorder))
-  expect(refusal.files).toBe(4_001)
+  expect(refusal.files).toBe(ARCHITECTURE_SCOPE.maxFiles + 1)
   expect(refusal.end).toBe('working tree')
-  expect(refusal.message).toContain('working tree has 4,001 files')
+  expect(refusal.message).toContain('working tree has 32,001 files')
   expect(refusal.message).toContain('Choose a narrower scope')
   expect(refusal.candidates.map((candidate) => candidate.path)).toEqual(['src'])
   const stages = recorder.metrics().spans.map((span) => span.stage)
@@ -102,7 +103,8 @@ it('scans an over-cap repository once the layout file narrows its scope', async 
   expect(result.layout.scope).toEqual(['src/kept'])
 }, 60_000)
 
-const large = (index: number) => `// ${index}\n${'x'.repeat(480 * 1024)}\n`
+const large = (index: number) =>
+  `export const value = '${index}${'x'.repeat(7.5 * 1024 * 1024)}'\n`
 const largeSources = Object.fromEntries(
   Array.from({ length: 36 }, (_, index) => [`src/big/l${index}.ts`, large(index)]),
 )
@@ -118,13 +120,13 @@ it('refuses a live side above the byte cap with the size the host measured', asy
   const refusal = await refusalOf(capture(root, { baseline: 'HEAD' }, recorder))
   expect(largeBytes).toBeGreaterThan(ARCHITECTURE_SCOPE.maxTotalBytes)
   expect(refusal).toMatchObject({ files: 37, bytes: largeBytes + 19 })
-  expect(refusal.message).toMatch(/working tree has 37 files \(16\.\d MiB\)/)
+  expect(refusal.message).toMatch(/working tree has 37 files \(270\.\d MiB\)/)
   const liveBytes = recorder
     .metrics()
     .spans.filter((span) => span.stage === 'live-read')
     .reduce((total, span) => total + span.bytes, 0)
   expect(liveBytes).toBeLessThan(1024)
-})
+}, 60_000)
 
 it('refuses a commit end above the byte cap from its listing, before reading blobs', async () => {
   const root = await fixture(largeSources)
@@ -135,7 +137,7 @@ it('refuses a commit end above the byte cap from its listing, before reading blo
   expect(refusal).toMatchObject({ end: 'HEAD', files: 36, bytes: largeBytes })
   expect(refusal.candidates).toEqual([{ path: 'src', files: 36, bytes: largeBytes }])
   expect(recorder.metrics().spans.map((span) => span.stage)).not.toContain('blob-read')
-})
+}, 60_000)
 
 it('applies the working tree scope to a commit pair and keeps the commit mapping', async () => {
   const root = await fixture({

@@ -118,6 +118,116 @@ describe('captured compiler configuration', () => {
     expect(resolved(result)).toEqual([['src/a.ts', '#lib/x', 'internal', 'src/lib/x.ts']])
   })
 
+  it('resolves first-party workspace packages from captured package manifests', () => {
+    const result = scan(
+      {
+        'apps/web/src/a.ts':
+          "import { value } from '@exploreomni/types'; import { Card } from '@exploreomni/ui/specs/card'",
+        'packages/types/src/index.ts': 'export const value = 1',
+        'packages/ui/specs/card.tsx': 'export const Card = 1',
+      },
+      {
+        'packages/types/package.json': {
+          name: '@exploreomni/types',
+          exports: { '.': './src/index.ts' },
+        },
+        'packages/ui/package.json': {
+          name: '@exploreomni/ui',
+          exports: { '.': './src/index.ts', './specs/*': './specs/*.tsx' },
+        },
+        'tsconfig.json': { compilerOptions: { moduleResolution: 'bundler' } },
+      },
+    )
+    expect(resolved(result)).toEqual([
+      [
+        'apps/web/src/a.ts',
+        '@exploreomni/types',
+        'internal',
+        'packages/types/src/index.ts',
+      ],
+      [
+        'apps/web/src/a.ts',
+        '@exploreomni/ui/specs/card',
+        'internal',
+        'packages/ui/specs/card.tsx',
+      ],
+    ])
+  })
+
+  it('keeps unrepresented bare packages external', () => {
+    const result = scan(
+      { 'src/a.ts': "import React from 'react'" },
+      { 'package.json': { name: 'fixture', dependencies: { react: '^19' } } },
+    )
+    expect(resolved(result)).toEqual([['src/a.ts', 'react', 'external', undefined]])
+  })
+
+  it('keeps exports blocked subpaths unresolved', () => {
+    const result = scan(
+      {
+        'src/a.ts': "import '@exploreomni/types/private'",
+        'packages/types/src/index.ts': '',
+        'packages/types/private.ts': '',
+      },
+      {
+        'packages/types/package.json': {
+          name: '@exploreomni/types',
+          exports: { '.': './src/index.ts' },
+        },
+      },
+    )
+    expect(resolved(result)).toEqual([
+      ['src/a.ts', '@exploreomni/types/private', 'unresolved', undefined],
+    ])
+  })
+
+  it('follows TypeScript package main resolution without a leading dot slash', () => {
+    const result = scan(
+      {
+        'src/a.ts': "import value from '@exploreomni/types'",
+        'packages/types/src/index.ts': 'export default 1',
+      },
+      {
+        'packages/types/package.json': {
+          name: '@exploreomni/types',
+          main: 'src/index.ts',
+        },
+      },
+    )
+    expect(resolved(result)).toEqual([
+      ['src/a.ts', '@exploreomni/types', 'internal', 'packages/types/src/index.ts'],
+    ])
+  })
+
+  it('resolves a root workspace package from its captured manifest', () => {
+    const result = scan(
+      { 'src/a.ts': "import value from 'fixture'", 'src/index.ts': 'export default 1' },
+      { 'package.json': { name: 'fixture', exports: { '.': './src/index.ts' } } },
+    )
+    expect(resolved(result)).toEqual([
+      ['src/a.ts', 'fixture', 'internal', 'src/index.ts'],
+    ])
+  })
+
+  it('leaves duplicate workspace package names unresolved', () => {
+    const result = scan(
+      { 'src/a.ts': "import 'fixture'", 'one/index.ts': '', 'two/index.ts': '' },
+      {
+        'one/package.json': { name: 'fixture', main: 'index.ts' },
+        'two/package.json': { name: 'fixture', main: 'index.ts' },
+      },
+    )
+    expect(resolved(result)).toEqual([['src/a.ts', 'fixture', 'unresolved', undefined]])
+  })
+
+  it('does not virtualize malformed workspace package names', () => {
+    const result = scan(
+      { 'src/a.ts': "import 'foo/../bar'", 'bar/index.ts': '' },
+      { 'packages/bar/package.json': { name: 'foo/../bar', main: 'index.ts' } },
+    )
+    expect(resolved(result)).toEqual([['src/a.ts', 'foo/../bar', 'external', undefined]])
+  })
+
   it('reports a config it cannot follow and still scans with what it read', () => {
     const result = scan(
       { 'src/a.ts': "import './b'", 'src/b.ts': '' },

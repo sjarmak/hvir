@@ -10,19 +10,22 @@ const require = createRequire(import.meta.url)
 const installed = (module: string) => readFileSync(require.resolve(module))
 
 describe('architecture scanner set', () => {
-  it('loads the TypeScript scanner and the Python, Go and Rust grammars from the packaged assets', async () => {
+  it('loads the TypeScript scanner and the Python, Go, Rust and Kotlin grammars from the packaged assets', async () => {
     const scanners = await loadInstalledScanners()
     expect(scanners.scanners.map((scanner) => scanner.language)).toEqual([
       'typescript',
       'python',
       'go',
       'rust',
+      'kotlin',
     ])
     expect(scanners.scannerFor('src/a.tsx')).toMatchObject({ kind: '.tsx' })
     expect(scanners.scannerFor('src/a.d.ts')).toMatchObject({ kind: '.d.ts' })
     expect(scanners.scannerFor('pkg/a.py')).toMatchObject({ kind: '.py' })
     expect(scanners.scannerFor('pkg/a.go')).toMatchObject({ kind: '.go' })
     expect(scanners.scannerFor('src/lib.rs')).toMatchObject({ kind: '.rs' })
+    expect(scanners.scannerFor('src/App.kt')).toMatchObject({ kind: '.kt' })
+    expect(scanners.scannerFor('src/build.gradle.kts')).toMatchObject({ kind: '.kts' })
     expect(scanners.scannerFor('README.md')).toBeUndefined()
   })
 
@@ -48,6 +51,14 @@ describe('architecture scanner set', () => {
       .digest('hex')
       .slice(0, 16)
     expect(scanners.scannerFor('a.rs')!.scanner.version).toBe(`rust-facts-7+wasm-${rust}`)
+    const kotlin = createHash('sha256')
+      .update(installed(TREE_SITTER_ASSETS.runtime.module))
+      .update(installed(TREE_SITTER_ASSETS.kotlin.module))
+      .digest('hex')
+      .slice(0, 16)
+    expect(scanners.scannerFor('a.kt')!.scanner.version).toBe(
+      `kotlin-facts-1+wasm-${kotlin}`,
+    )
     expect(scanners.scannerFor('a.ts')!.scanner.version).toMatch(
       /^typescript-facts-1\+typescript-\d+\.\d+\.\d+/,
     )

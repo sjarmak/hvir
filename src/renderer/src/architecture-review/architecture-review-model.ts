@@ -45,7 +45,7 @@ export function subsystemMap(analysis: ArchitectureAnalysis, all: boolean) {
   const ids = [...visible].sort(
     (a, b) => Number(relevant.has(b)) - Number(relevant.has(a)) || a.localeCompare(b),
   )
-  const nodes: ArchitectureSubsystem[] = ids.slice(0, 40).map((id) => {
+  const nodes: ArchitectureSubsystem[] = ids.map((id) => {
     const modules = [...(members.get(id) ?? [])].sort(
       (a, b) =>
         Number(b.change !== 'unchanged') - Number(a.change !== 'unchanged') ||
@@ -104,12 +104,10 @@ export function subsystemMap(analysis: ArchitectureAnalysis, all: boolean) {
   }
   return {
     nodes,
-    relationships: relationships.slice(0, 120),
+    relationships,
     layoutRelationships,
     layoutModules,
     relatedModules: [...relatedModules].sort(),
-    omittedNodes: Math.max(0, ids.length - nodes.length),
-    omittedRelationships: Math.max(0, relationships.length - 120),
   }
 }
 
@@ -508,7 +506,7 @@ export function layoutSummary(layout: ArchitectureLayout): {
   readonly subsystems: string
   readonly scope: string
 } {
-  const roots = layout.sourceRoots.join(', ')
+  const roots = `${layout.sourceRoots.join(', ')}${layout.systems.length ? '' : ' and inferred project roots'}`
   const rules = layout.subsystems.length
   return {
     systems: layout.systems.length

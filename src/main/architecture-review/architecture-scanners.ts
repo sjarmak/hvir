@@ -8,6 +8,8 @@ import { parsePythonFacts, PYTHON_FACTS_REVISION } from './python-facts'
 import { pythonResolver } from './python-resolution'
 import { parseRustFacts, RUST_FACTS_REVISION } from './rust-facts'
 import { rustResolver } from './rust-resolution'
+import { KOTLIN_FACTS_REVISION, parseKotlinFacts } from './kotlin-facts'
+import { kotlinResolver } from './kotlin-resolution'
 import { TREE_SITTER_ASSETS, type TreeSitterAsset } from './tree-sitter-assets'
 import { TYPESCRIPT_SCANNER } from './typescript-scanner'
 
@@ -21,7 +23,7 @@ interface GrammarLanguage {
   readonly language: string
   readonly asset: TreeSitterAsset
   readonly revision: string
-  readonly extension: string
+  readonly extensions: readonly string[]
   readonly parse: (parser: Parser, content: string) => ModuleFacts
   readonly resolver: LanguageScanner['resolver']
   readonly resolvesFromFacts?: true
@@ -32,7 +34,7 @@ const GRAMMAR_LANGUAGES: readonly GrammarLanguage[] = [
     language: 'python',
     asset: TREE_SITTER_ASSETS.python,
     revision: PYTHON_FACTS_REVISION,
-    extension: '.py',
+    extensions: ['.py'],
     parse: parsePythonFacts,
     resolver: pythonResolver,
   },
@@ -40,7 +42,7 @@ const GRAMMAR_LANGUAGES: readonly GrammarLanguage[] = [
     language: 'go',
     asset: TREE_SITTER_ASSETS.go,
     revision: GO_FACTS_REVISION,
-    extension: '.go',
+    extensions: ['.go'],
     parse: parseGoFacts,
     resolver: goResolver,
   },
@@ -48,9 +50,18 @@ const GRAMMAR_LANGUAGES: readonly GrammarLanguage[] = [
     language: 'rust',
     asset: TREE_SITTER_ASSETS.rust,
     revision: RUST_FACTS_REVISION,
-    extension: '.rs',
+    extensions: ['.rs'],
     parse: parseRustFacts,
     resolver: rustResolver,
+    resolvesFromFacts: true,
+  },
+  {
+    language: 'kotlin',
+    asset: TREE_SITTER_ASSETS.kotlin,
+    revision: KOTLIN_FACTS_REVISION,
+    extensions: ['.kt', '.kts'],
+    parse: parseKotlinFacts,
+    resolver: kotlinResolver,
     resolvesFromFacts: true,
   },
 ]
@@ -92,7 +103,7 @@ async function grammarScanner(
   return {
     language: entry.language,
     version: `${entry.revision}+wasm-${digest}`,
-    kindOf: (path) => (path.endsWith(entry.extension) ? entry.extension : undefined),
+    kindOf: (path) => entry.extensions.find((extension) => path.endsWith(extension)),
     parse: (_path, content) => entry.parse(parser, content),
     resolver: entry.resolver,
     ...(entry.resolvesFromFacts ? { resolvesFromFacts: true } : {}),

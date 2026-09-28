@@ -110,6 +110,6 @@ export interface ArchitectureAnalysis {
 }
 
 export const ARCHITECTURE_ANALYSIS_LIMITS = {
-  maxImports: 20_000,
+  maxImports: 500_000,
   maxSymbolsPerModule: 500,
 } as const

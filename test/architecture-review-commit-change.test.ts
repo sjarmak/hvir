@@ -70,6 +70,23 @@ describe('parseCommitDiffs', () => {
       /Malformed/,
     )
   })
+  it('excludes link and gitlink entries and normalizes regular type transitions', () => {
+    const output = [
+      `\x1e${blob('c')}\x1f${blob('p')}\0\n`,
+      `:000000 120000 ${NONE} ${blob('link-add')} A\0src/link.ts\0`,
+      `:120000 120000 ${blob('link-before')} ${blob('link-after')} M\0src/link.ts\0`,
+      `:120000 000000 ${blob('link-delete')} ${NONE} D\0src/link.ts\0`,
+      `:100644 120000 ${blob('file-before')} ${blob('link-after')} M\0src/to-link.ts\0`,
+      `:120000 100644 ${blob('link-before')} ${blob('file-after')} M\0src/from-link.ts\0`,
+      `:000000 160000 ${NONE} ${blob('gitlink-add')} A\0vendor/lib.ts\0`,
+      `:100644 100644 ${blob('before')} ${blob('after')} M\0README.md\0`,
+    ].join('')
+    expect(parseCommitDiffs(output)[0]!.entries).toEqual([
+      entry('src/to-link.ts', 'D', blob('file-before'), blob('link-after')),
+      entry('src/from-link.ts', 'A', blob('link-before'), blob('file-after')),
+      entry('README.md', 'M', blob('before'), blob('after')),
+    ])
+  })
 })
 
 describe('classifyCommitChange', () => {

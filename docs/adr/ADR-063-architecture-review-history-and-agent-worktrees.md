@@ -6,6 +6,7 @@
 > Supersedes: [ADR-008](ADR-008-project-worktree-workspaces.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
 > Superseded by: [ADR-064](ADR-064-architecture-review-as-a-live-zoomable-canvas.md) | partial | The map now opens on systems on a laid-out canvas that drills to subsystems and modules; explanation-only requests no longer create an agent branch, worktree, brief or terminal session, while architecture-improvement launches retain the worktree handoff.
 > Superseded by: [ADR-065](ADR-065-history-reads-the-fleet-commit-classification.md) | partial | Marking every History row and strip commit from its diff and import edges alone; a commit the fleet has classified is marked from its Architectural trailer instead.
+> Superseded by: [ADR-067](ADR-067-whole-monorepo-architecture-capture.md) | partial | The small-repository read budgets and default subsystem mapping across workspace packages; capture and classification use the expanded shared budgets and package boundaries refine default subsystems.
 
 ## Context
 

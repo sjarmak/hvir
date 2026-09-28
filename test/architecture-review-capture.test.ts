@@ -179,7 +179,47 @@ it('fingerprints config and rejects path escapes, cancellation and invalid basel
     ),
   ).rejects.toThrow('cancelled')
   await symlink('/etc/passwd', join(f.root, 'src/escape.ts'))
-  await expect(f.capture()).rejects.toThrow(/symbolic|symlink/)
+  expect((await f.capture()).after.map((file) => file.path)).toEqual(['src/a.ts'])
+})
+
+it('excludes source links in live and committed trees while capturing their real targets', async () => {
+  const f = await fixture()
+  await symlink('a.ts', join(f.root, 'src/alias.ts'))
+  await symlink('missing.ts', join(f.root, 'src/broken.ts'))
+  await symlink('/etc/passwd', join(f.root, 'src/outside.ts'))
+  git(f.root, 'add', '.')
+  git(f.root, 'commit', '-m', 'source links')
+  for (const current of [undefined, 'HEAD']) {
+    const result = await f.capture({ baseline: 'HEAD', current })
+    expect(result.before.map((file) => file.path)).toEqual(['src/a.ts'])
+    expect(result.after).toEqual(result.before)
+    expect(result.exclusions).toContain('symbolic links and submodules')
+  }
+  await rm(join(f.root, 'src/alias.ts'))
+  await writeFile(join(f.root, 'src/alias.ts'), 'export const live = true\n')
+  expect((await f.capture()).after.map((file) => file.path)).toEqual([
+    'src/a.ts',
+    'src/alias.ts',
+  ])
+})
+
+it('excludes a submodule whose directory has a source extension', async () => {
+  const f = await fixture()
+  await mkdir(join(f.root, 'src/dependency.ts'))
+  await writeFile(join(f.root, 'src/dependency.ts', 'private.ts'), 'not a source\n')
+  git(
+    f.root,
+    'update-index',
+    '--add',
+    '--cacheinfo',
+    `160000,${f.baseline},src/dependency.ts`,
+  )
+  git(f.root, 'commit', '-m', 'gitlink')
+  for (const current of [undefined, 'HEAD']) {
+    const result = await f.capture({ baseline: 'HEAD', current })
+    expect(result.after.map((file) => file.path)).toEqual(['src/a.ts'])
+    expect(result.before).toEqual(result.after)
+  }
 })
 
 it('captures identical bytes and revisions through a host-qualified remote transport', async () => {
@@ -272,9 +312,11 @@ it('carries Git blob ids and fingerprints ids rather than whole contents', async
   const f = await fixture()
   await writeFile(
     join(f.root, 'src/big.ts'),
-    `export const big = '${'x'.repeat(300_000)}'\n`,
+    `export const big = '${'x'.repeat(700_000)}'\n`,
   )
   await writeFile(join(f.root, 'tsconfig.json'), '{"compilerOptions":{}}')
+  git(f.root, 'add', '.')
+  git(f.root, 'commit', '-m', 'large source')
   const recorder = new ArchitectureScanRecorder()
   const capture = await captureArchitecture(
     f.host,

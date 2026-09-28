@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -26,7 +26,10 @@ import {
 import { TYPESCRIPT_ONLY_SCANNERS } from '../src/main/architecture-review/typescript-scanner'
 import { LocalHost } from '../src/main/project-host/local-host'
 import { localPath } from '../src/shared/host-path'
+import { ARCHITECTURE_SCOPE } from '../src/shared/architecture-review'
 import { architectureBlobCache } from '../src/main/architecture-review/scan-caches'
+import { captureArchitecture } from '../src/main/architecture-review/capture'
+import { analyzeCaptureTimed } from '../src/main/architecture-review/timed-analysis'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -86,6 +89,28 @@ function classifier() {
   )
   return { imports, classifier: new ArchitectureCommitClassifier({ imports }) }
 }
+
+it('classifies source and configuration edits in repositories with source links', async () => {
+  const r = await repository()
+  await r.commit('source', { 'src/a.ts': 'export const a = 1\n' })
+  await symlink('a.ts', join(r.root, 'src/alias.ts'))
+  await r.commit('link', {})
+  const body = await r.commit('body', { 'src/a.ts': 'export const a = 2\n' })
+  const config = await r.commit('config', { 'tsconfig.json': '{"compilerOptions":{}}' })
+  const subject = new ArchitectureCommitClassifier({
+    imports: classifier().imports,
+    scan: async (host, request, signal) => {
+      const capture = await captureArchitecture(host, request, signal)
+      return (await analyzeCaptureTimed(capture)).analysis
+    },
+  })
+  const result = await subject.classify(
+    r.host,
+    { root: localPath(r.root), revisions: [config, body] },
+    signal(),
+  )
+  expect(result.classifications.map((entry) => entry.change)).toEqual(['none', 'code'])
+})
 
 it('classifies each commit against its first parent and caches the answers', async () => {
   const r = await repository()
@@ -227,7 +252,7 @@ it('leaves a commit whose modules exceed the read budget unclassified', async ()
   const r = await repository()
   await r.commit('big', { 'src/big.ts': 'export const big = 1\n' })
   const big = await r.commit('grow', {
-    'src/big.ts': `export const big = "${'x'.repeat(600 * 1024)}"\n`,
+    'src/big.ts': `export const big = "${'x'.repeat(ARCHITECTURE_SCOPE.maxFileBytes + 1)}"\n`,
   })
   const { imports, classifier: subject } = classifier()
   const { classifications: result } = await subject.classify(

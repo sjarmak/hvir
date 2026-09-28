@@ -93,8 +93,15 @@ export async function verifyArchitectureReviewWorkflow(
         return current;
       }, 'architecture worker layout');
       const stages = [...document.querySelectorAll('table[aria-label="Scan timings"] tbody th')].map(node => node.textContent);
-      for (const stage of ['listing', 'live-read', 'worker-transfer', 'parse', 'worker-return', 'renderer-payload'])
+      const workerStages = ['worker-transfer', 'parse', 'worker-return'];
+      const cached = workerStages.every(stage => !stages.includes(stage));
+      const expected = cached
+        ? ['listing', 'blob-read', 'live-read', 'hashing', 'renderer-payload']
+        : ['listing', 'blob-read', 'live-read', 'hashing', ...workerStages, 'renderer-payload'];
+      for (const stage of expected)
         if (!stages.includes(stage)) throw new Error('Snapshot details miss scan stage ' + stage + ': ' + stages.join(','));
+      if (expected.some((stage, index) => index > 0 && stages.indexOf(stage) <= stages.indexOf(expected[index - 1])))
+        throw new Error('Snapshot details scan stages out of order: ' + stages.join(','));
       for (const mode of ['before', 'after', 'overlay']) {
         const control = button(mode);
         if (!control) throw new Error('Missing map mode ' + mode);
@@ -116,10 +123,10 @@ export async function verifyArchitectureReviewWorkflow(
       subsystem.focus();
       if (document.activeElement !== subsystem) throw new Error('Subsystem cannot receive keyboard focus');
       subsystem.click();
-      const module = await wait(() => [...document.querySelectorAll('.architecture-canvas-module')].find(node => node.querySelector('strong')?.textContent === ${JSON.stringify(fixture.selectedPath)}), 'selected subsystem files');
-      if (![...document.querySelectorAll('.architecture-canvas-module strong')].some(node => node.textContent === 'architecture-smoke/ui/app.py')) throw new Error('Python module missing: the worker did not scan the live Python files');
-      if (![...document.querySelectorAll('.architecture-canvas-module strong')].some(node => node.textContent === 'architecture-smoke/ui/server.go')) throw new Error('Go module missing: the worker did not scan the live Go files');
-      if (![...document.querySelectorAll('.architecture-canvas-module strong')].some(node => node.textContent === 'architecture-smoke/ui/lib.rs')) throw new Error('Rust module missing: the worker did not scan the live Rust files');
+      const module = await wait(() => [...document.querySelectorAll('.architecture-canvas-module')].find(node => node.getAttribute('title') === ${JSON.stringify(fixture.selectedPath)}), 'selected subsystem files');
+      if (![...document.querySelectorAll('.architecture-canvas-module')].some(node => node.getAttribute('title') === 'architecture-smoke/ui/app.py')) throw new Error('Python module missing: the worker did not scan the live Python files');
+      if (![...document.querySelectorAll('.architecture-canvas-module')].some(node => node.getAttribute('title') === 'architecture-smoke/ui/server.go')) throw new Error('Go module missing: the worker did not scan the live Go files');
+      if (![...document.querySelectorAll('.architecture-canvas-module')].some(node => node.getAttribute('title') === 'architecture-smoke/ui/lib.rs')) throw new Error('Rust module missing: the worker did not scan the live Rust files');
       module.click();
       await wait(() => document.querySelector('.architecture-evidence .diff-host .cm-content'), 'native DiffView');
       const contents = [...document.querySelectorAll('.architecture-evidence .cm-content')].map(node => node.textContent);
@@ -170,10 +177,17 @@ export async function runArchitectureReviewSmoke(
       setTimeout(() => reject(new Error('Timed out waiting for unsupported architecture scan')), 30000);
       const scan = [...document.querySelectorAll('button')].find((node) => node.textContent?.trim() === 'Scan snapshot');
       if (!scan) return reject(new Error('Architecture unsupported-state scan control missing'));
-      scan.click();
+      let observedBusy = false;
+      const ready = () => {
+        if (!(scan instanceof HTMLButtonElement)) return reject(new Error('Architecture unsupported-state scan control changed'));
+        if (!scan.disabled) return scan.click();
+        requestAnimationFrame(ready);
+      };
+      ready();
       const wait = () => {
+        if (scan instanceof HTMLButtonElement && scan.disabled) observedBusy = true;
         const error = document.querySelector('[role="alert"]');
-        if (error?.textContent?.includes('Unsupported')) return resolve(error.textContent);
+        if (observedBusy && !scan.disabled && error?.textContent?.includes('Unsupported')) return resolve(error.textContent);
         setTimeout(wait, 50);
       };
       wait();
@@ -190,11 +204,21 @@ export async function runArchitectureReviewSmoke(
       setTimeout(() => reject(new Error('Timed out waiting for architecture refresh')), 30000);
       const scan = [...document.querySelectorAll('button')].find((node) => node.textContent?.trim() === 'Scan snapshot');
       if (!scan) return reject(new Error('Architecture refresh control missing'));
-      scan.click();
+      const previousAlert = document.querySelector('[role="alert"]')?.textContent;
+      let observedBusy = false;
+      const ready = () => {
+        if (!(scan instanceof HTMLButtonElement)) return reject(new Error('Architecture refresh scan control changed'));
+        if (!scan.disabled) return scan.click();
+        requestAnimationFrame(ready);
+      };
+      ready();
       const wait = () => {
-        if (document.querySelector('.architecture-review-body .architecture-review-map')) return resolve('refreshed');
+        if (scan instanceof HTMLButtonElement && scan.disabled) observedBusy = true;
+        if (observedBusy && document.querySelector('.architecture-review-body .architecture-module') && scan instanceof HTMLButtonElement && !scan.disabled)
+          return resolve('refreshed');
         const error = document.querySelector('[role="alert"]');
-        if (error) return reject(new Error(error.textContent || 'Architecture refresh failed'));
+        if (error && error.textContent !== previousAlert)
+          return reject(new Error(error.textContent || 'Architecture refresh failed'));
         setTimeout(wait, 50);
       };
       requestAnimationFrame(wait);
@@ -204,11 +228,8 @@ export async function runArchitectureReviewSmoke(
   await win.webContents.executeJavaScript(`
     new Promise((resolve, reject) => {
       setTimeout(() => reject(new Error('Timed out checking refreshed source evidence')), 30000);
-      const subsystem = [...document.querySelectorAll('.architecture-subsystem')].find(node => node.querySelector('strong')?.textContent === 'architecture-smoke/ui');
-      if (!subsystem) return reject(new Error('Refreshed subsystem is missing'));
-      subsystem.click();
       const open = () => {
-        const module = [...document.querySelectorAll('.architecture-module-list .architecture-module')].find(node => node.querySelector('span')?.textContent === ${JSON.stringify(path)});
+        const module = [...document.querySelectorAll('.architecture-file-group .architecture-module')].find(node => node.querySelector('span')?.textContent === ${JSON.stringify(path)});
         if (!module) return setTimeout(open, 40);
         module.click();
         const verify = () => {

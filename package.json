@@ -113,6 +113,7 @@
     "@hegeldev/hegel": "0.4.7",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
+    "@tree-sitter-grammars/tree-sitter-kotlin": "^1.1.0",
     "@types/node": "^24.13.3",
     "@types/plist": "^3.0.5",
     "@types/react": "^19.2.18",

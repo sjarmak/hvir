@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import * as hegel from '@hegeldev/hegel'
+import * as gs from '@hegeldev/hegel/generators'
 import {
   inArchitectureScope,
   isSource,
@@ -7,6 +9,26 @@ import {
 } from '../src/main/architecture-review/capture-entries'
 
 describe('architecture capture scope', () => {
+  it('retains exactly regular files regardless of source link and submodule positions', () =>
+    hegel.test((tc) => {
+      const modes = ['100644', '100755', '120000', '160000'] as const
+      const choices = tc.draw(gs.arrays(gs.integers({ minValue: 0, maxValue: 3 })))
+      const entries = choices.map((choice, index) => ({
+        path: `src/file-${index}.ts`,
+        mode: modes[choice]!,
+      }))
+      expect(
+        selectEntries(entries)
+          .map((entry) => entry.path)
+          .sort(),
+      ).toEqual(
+        entries
+          .filter((_, index) => choices[index]! < 2)
+          .map((entry) => entry.path)
+          .sort(),
+      )
+    }))
+
   it('captures Python modules as sources alongside TypeScript and JavaScript', () => {
     expect(isSource('app/core/engine.py')).toBe(true)
     expect(isSource('app/__init__.py')).toBe(true)

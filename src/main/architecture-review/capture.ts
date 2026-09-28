@@ -27,6 +27,7 @@ import {
 } from './capture-entries'
 import { resolveArchitectureEnds, validateArchitectureEnds, type EndsGit } from './ends'
 import { LiveTreeOverCapError, readLiveTree } from './live-tree'
+import { selectLiveEntries } from './live-entry-selection'
 import { readCaptureLayout, scopedLayout } from './capture-layout'
 import { assertWithinScopeCap, liveBytesRefusal } from './scope-cap'
 import { ArchitectureScanRecorder } from './scan-recorder'
@@ -91,7 +92,20 @@ export async function captureArchitecture(
     : parseLivePaths(await list(liveListing('.')))
   const captured = await captureLayouts()
   const { layout } = captured
-  const current = selectEntries(currentEntries, layout)
+  const selected = selectEntries(currentEntries, layout)
+  const current = ends.currentCommit
+    ? selected
+    : await recorder.measure(
+        'listing',
+        () =>
+          selectLiveEntries(
+            (command, args, options) => counted(() => host.exec(command, args, options)),
+            request.root,
+            selected,
+            signal,
+          ),
+        (entries) => ({ bytes: 0, items: entries.length }),
+      )
   const baseline = selectEntries(
     parseTree(await list(treeListing(ends.baselineRevision))),
     layout,
@@ -207,9 +221,10 @@ export async function captureArchitecture(
 
 const CAPTURE_EXCLUSIONS: readonly string[] = [
   ...SCOPE.excludedDirectories,
+  'symbolic links and submodules',
   'target beside a Cargo.toml (Cargo build output)',
   '*.d.ts',
-  'sources other than JavaScript, TypeScript, Python, Go and Rust',
+  'sources other than JavaScript, TypeScript, Python, Go, Rust and Kotlin',
   '*.pyi',
   'ignored untracked files',
 ]

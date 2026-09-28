@@ -304,8 +304,8 @@ export function ArchitectureReview({
         <div className="architecture-review-body">
           {snapshot.analysis.modules.length === 0 ? (
             <p className="architecture-review-state">
-              No supported TypeScript, JavaScript, Python, Go or Rust modules were
-              captured.
+              No supported TypeScript, JavaScript, Python, Go, Rust or Kotlin modules
+              were captured.
             </p>
           ) : (
             <ArchitectureMap

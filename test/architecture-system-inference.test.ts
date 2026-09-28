@@ -34,6 +34,22 @@ describe('architecture system inference', () => {
     ])
   })
 
+  it('keeps nested Gradle projects distinct from sibling services', () => {
+    const systems = infer([
+      'services/common/build.gradle.kts',
+      'services/api/build.gradle.kts',
+      'services/jdbc/build.gradle.kts',
+      'services/jdbc/mysql/build.gradle.kts',
+    ])
+    expect(systemOf(systems, 'services/common/src/main/kotlin/Thing.kt')).toBe(
+      'services/common',
+    )
+    expect(systemOf(systems, 'services/api/src/main/kotlin/Api.kt')).toBe('services/api')
+    expect(systemOf(systems, 'services/jdbc/mysql/src/main/kotlin/Driver.kt')).toBe(
+      'services/jdbc/mysql',
+    )
+  })
+
   it('infers Electron process and companion systems', () => {
     const systems = infer(
       [

@@ -26,7 +26,7 @@ it('keeps unchanged adjacent subsystems as context without unchanged external im
   expect(map.relationships.map((r) => r.target)).toEqual(['data'])
 })
 
-it('bounds a large graph and discloses omitted subsystems', () => {
+it('keeps every subsystem accessible in a large graph', () => {
   const files = Array.from({ length: 50 }, (_, i) => ({
     path: `group${i}/a.ts`,
     content: 'export const a=1',
@@ -36,9 +36,22 @@ it('bounds a large graph and discloses omitted subsystems', () => {
     { files, scope: '.', exclusions: [] },
   )
   const map = subsystemMap(analysis, false)
-  expect(map.nodes).toHaveLength(40)
-  expect(map.omittedNodes).toBe(10)
+  expect(map.nodes).toHaveLength(50)
   expect(analysis.modules).toHaveLength(50)
+})
+
+it('keeps every relationship accessible beyond 120 edges', () => {
+  const files = Array.from({ length: 16 }, (_, index) => ({
+    path: `group${index}/a.ts`,
+    content: Array.from({ length: 16 }, (_, target) =>
+      target === index ? '' : `import '../group${target}/a'`,
+    ).join('\n'),
+  }))
+  const analysis = analyzeArchitecture(
+    { files: [], scope: '.', exclusions: [] },
+    { files, scope: '.', exclusions: [] },
+  )
+  expect(subsystemMap(analysis, true).relationships).toHaveLength(240)
 })
 
 it('drills a relationship into its modules, each with its own import evidence', () => {
@@ -66,7 +79,8 @@ it('drills a relationship into its modules, each with its own import evidence', 
 it('summarises where subsystems and scope came from', () => {
   expect(layoutSummary(ARCHITECTURE_DEFAULT_LAYOUT)).toEqual({
     systems: 'Inferred from project layout',
-    subsystems: 'First directory under src (no .hvir/architecture.json)',
+    subsystems:
+      'First directory under src and inferred project roots (no .hvir/architecture.json)',
     scope: 'Whole repository',
   })
   expect(
@@ -83,7 +97,7 @@ it('summarises where subsystems and scope came from', () => {
   ).toEqual({
     systems: 'Inferred from project layout',
     subsystems:
-      '.hvir/architecture.json: 2 rules, then the first directory under lib, app',
+      '.hvir/architecture.json: 2 rules, then the first directory under lib, app and inferred project roots',
     scope: 'lib',
   })
   expect(

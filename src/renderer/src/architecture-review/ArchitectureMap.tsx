@@ -424,13 +424,6 @@ export function ArchitectureMap({
         </ReactFlow>
       </div>
       {layout.error ? <p role="alert">Layout unavailable: {layout.error}</p> : null}
-      {map.omittedNodes || map.omittedRelationships ? (
-        <p role="status">
-          Map limit: {map.omittedNodes} additional subsystems and{' '}
-          {map.omittedRelationships} relationships omitted. All captured files remain
-          available below.
-        </p>
-      ) : null}
       <ArchitectureRelationships
         relationships={links}
         mode={mode}

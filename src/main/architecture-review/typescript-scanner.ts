@@ -2,6 +2,7 @@ import { posix } from 'node:path'
 import ts from 'typescript'
 import type { ArchitectureImportFact, ArchitectureSourceFile } from '../../shared'
 import { loadCompilerSettings, VIRTUAL_ROOT } from './compiler-config'
+import { virtualizeWorkspacePackages } from './workspace-package-resolution'
 import {
   scannerSet,
   type LanguageScanner,
@@ -29,14 +30,27 @@ export const TYPESCRIPT_ONLY_SCANNERS = scannerSet([TYPESCRIPT_SCANNER])
 
 function typeScriptResolver({ modules, configs }: ResolutionContext): ScanResolver {
   const settings = loadCompilerSettings(configs, [...modules.keys()])
-  const resolver = moduleResolver(modules, configs)
+  const workspacePackages = virtualizeWorkspacePackages(modules, configs)
+  const resolver = moduleResolver(
+    new Map([...modules, ...workspacePackages.files]),
+    configs,
+  )
   return {
     diagnostics: settings.diagnostics,
     resolve: (source, occurrence) => {
       const project = settings.projectFor(source)
       const cache = resolver.cacheFor(project.config, project.options)
       return [
-        resolveImport(source, occurrence, project.options, modules, resolver, cache),
+        resolveImport(
+          source,
+          occurrence,
+          project.options,
+          modules,
+          resolver,
+          cache,
+          workspacePackages.capturedPath,
+          workspacePackages.owns,
+        ),
       ]
     },
   }
@@ -50,6 +64,8 @@ function resolveImport(
   files: ReadonlyMap<string, string>,
   resolver: ModuleResolver,
   cache: ts.ModuleResolutionCache,
+  capturedPath: (resolvedPath: string) => string | undefined,
+  ownsWorkspacePackage: (specifier: string) => boolean,
 ): ArchitectureImportFact {
   const literal = occurrence.specifier
   const resolved = !literal
@@ -62,14 +78,17 @@ function resolveImport(
         cache,
       ).resolvedModule
   const target = resolved
-    ? posix.relative(VIRTUAL_ROOT, resolved.resolvedFileName)
+    ? (capturedPath(resolved.resolvedFileName) ??
+      posix.relative(VIRTUAL_ROOT, resolved.resolvedFileName))
     : undefined
   const resolution: ArchitectureImportFact['resolution'] =
     target && files.has(target)
       ? 'internal'
-      : literal && (literal.startsWith('node:') || !isLocal(literal, options))
-        ? 'external'
-        : 'unresolved'
+      : literal && ownsWorkspacePackage(literal)
+        ? 'unresolved'
+        : literal && (literal.startsWith('node:') || !isLocal(literal, options))
+          ? 'external'
+          : 'unresolved'
   return {
     source,
     ...(resolution === 'internal' ? { target } : {}),

@@ -3,6 +3,9 @@ import {
   analyzeArchitecture,
   scanArchitecture,
 } from '../src/main/architecture-review/analysis'
+import { scannerSet } from '../src/main/architecture-review/language-scanner'
+import { TYPESCRIPT_SCANNER } from '../src/main/architecture-review/typescript-scanner'
+import { ARCHITECTURE_ANALYSIS_LIMITS } from '../src/shared/architecture-analysis'
 import { parseArchitectureLayout } from '../src/shared/architecture-layout'
 
 const input = (files: Record<string, string>) => ({
@@ -12,6 +15,59 @@ const input = (files: Record<string, string>) => ({
 })
 
 describe('architecture review analysis', () => {
+  it('keeps dependencies between workspace packages in distinct subsystems', () => {
+    const after = {
+      ...input({
+        'packages/web/src/main.ts': "import '../../data/src/store'",
+        'packages/data/src/store.ts': 'export const store = 1',
+      }),
+      configs: [{ path: 'package.json', content: '{"workspaces":["packages/*"]}' }],
+    }
+    const result = analyzeArchitecture({ ...after, files: [] }, after)
+    expect(result.relationships).toEqual([
+      expect.objectContaining({
+        source: 'packages/web/src',
+        target: 'packages/data/src',
+        change: 'added',
+      }),
+    ])
+  })
+
+  it('retains all import evidence beyond the former small-repository limit', () => {
+    const imports = 20_001
+    const result = scanArchitecture(
+      input({ 'src/main.ts': "import 'dependency';\n".repeat(imports) }),
+    )
+    expect(result.imports).toHaveLength(imports)
+    expect(result.diagnostics.some((entry) => entry.message.includes('truncated'))).toBe(
+      false,
+    )
+  })
+
+  it('refuses excess imports instead of returning an incomplete graph', () => {
+    const scanners = scannerSet([
+      {
+        ...TYPESCRIPT_SCANNER,
+        resolver: () => ({
+          diagnostics: [],
+          resolve: () =>
+            Array.from({ length: ARCHITECTURE_ANALYSIS_LIMITS.maxImports + 1 }, () => ({
+              source: 'src/main.ts',
+              specifier: 'dependency',
+              form: 'import' as const,
+              kind: 'runtime' as const,
+              resolution: 'external' as const,
+              line: 1,
+              column: 1,
+            })),
+        }),
+      },
+    ])
+    expect(() =>
+      scanArchitecture(input({ 'src/main.ts': "import 'dependency'" }), scanners),
+    ).toThrow('no partial graph was returned')
+  })
+
   it('extracts AST imports, type/runtime facts, source subsystems and unresolved imports', () => {
     const result = scanArchitecture(
       input({

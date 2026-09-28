@@ -64,9 +64,9 @@ export interface ArchitectureCapture {
   readonly capturedAt: string
 }
 export const ARCHITECTURE_SCOPE = {
-  maxFiles: 4_000,
-  maxFileBytes: 512 * 1024,
-  maxTotalBytes: 16 * 1024 * 1024,
+  maxFiles: 32_000,
+  maxFileBytes: 8 * 1024 * 1024,
+  maxTotalBytes: 256 * 1024 * 1024,
   maxListingBytes: 16 * 1024 * 1024,
   excludedDirectories: [
     'node_modules',
@@ -85,7 +85,21 @@ export const ARCHITECTURE_SCOPE = {
     '.mypy_cache',
     '.pytest_cache',
   ],
-  extensions: ['ts', 'tsx', 'mts', 'cts', 'js', 'jsx', 'mjs', 'cjs', 'py', 'go', 'rs'],
+  extensions: [
+    'ts',
+    'tsx',
+    'mts',
+    'cts',
+    'js',
+    'jsx',
+    'mjs',
+    'cjs',
+    'py',
+    'go',
+    'rs',
+    'kt',
+    'kts',
+  ],
 } as const
 
 export interface ArchitectureReviewKey {

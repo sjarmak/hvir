@@ -1,6 +1,7 @@
 # ADR-066: Scans reuse blobs by object id and analyses by fingerprint
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
+> Superseded by: [ADR-067](ADR-067-whole-monorepo-architecture-capture.md) | partial | The 32 MiB blob-cache budget; the cache remains twice the expanded capture byte budget.
 
 ## Context
 

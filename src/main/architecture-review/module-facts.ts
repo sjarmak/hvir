@@ -40,6 +40,8 @@ export interface ModuleFacts {
   readonly symbols: ArchitectureModule['symbols']
   readonly imports: readonly ModuleImportOccurrence[]
   readonly diagnostics: readonly { readonly line: number; readonly message: string }[]
+  readonly packageName?: string
+  readonly resolutionSymbols?: readonly string[]
   /** Rust items declared inside inline modules (`mod a { ... }`), which `symbols` omits. */
   readonly inlineItems?: readonly InlineItem[]
 }
@@ -90,7 +92,8 @@ function isOccurrence(entry: unknown): boolean {
 /** Structural check for facts read back from disk; anything else is discarded. */
 export function isModuleFacts(value: unknown): value is ModuleFacts {
   if (!isRecord(value)) return false
-  const { symbols, imports, diagnostics, inlineItems } = value
+  const { symbols, imports, diagnostics, inlineItems, packageName, resolutionSymbols } =
+    value
   return (
     Array.isArray(symbols) &&
     symbols.every(
@@ -108,7 +111,11 @@ export function isModuleFacts(value: unknown): value is ModuleFacts {
         isRecord(entry) && typeof entry.message === 'string' && isPosition(entry.line),
     ) &&
     (inlineItems === undefined ||
-      (Array.isArray(inlineItems) && inlineItems.every(isInlineItem)))
+      (Array.isArray(inlineItems) && inlineItems.every(isInlineItem))) &&
+    (packageName === undefined || typeof packageName === 'string') &&
+    (resolutionSymbols === undefined ||
+      (Array.isArray(resolutionSymbols) &&
+        resolutionSymbols.every((name) => typeof name === 'string')))
   )
 }
 

@@ -29,4 +29,8 @@ export const TREE_SITTER_ASSETS = {
     file: 'tree-sitter-rust.wasm',
     module: 'tree-sitter-rust/tree-sitter-rust.wasm',
   },
+  kotlin: {
+    file: 'tree-sitter-kotlin.wasm',
+    module: '@tree-sitter-grammars/tree-sitter-kotlin/tree-sitter-kotlin.wasm',
+  },
 } as const satisfies Readonly<Record<string, TreeSitterAsset>>

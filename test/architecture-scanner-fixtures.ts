@@ -19,6 +19,9 @@ export const goFixture = (): readonly ArchitectureSourceFile[] =>
 export const rustFixture = (): readonly ArchitectureSourceFile[] =>
   fixtureTree('architecture-rust')
 
+export const kotlinFixture = (): readonly ArchitectureSourceFile[] =>
+  fixtureTree('architecture-kotlin')
+
 function fixtureTree(name: string): readonly ArchitectureSourceFile[] {
   const root = join(__dirname, 'fixtures', name)
   return readdirSync(root, { recursive: true, withFileTypes: true })

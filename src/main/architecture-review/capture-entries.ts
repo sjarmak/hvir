@@ -55,11 +55,6 @@ export function parseLivePaths(output: string): readonly CaptureEntry[] {
     .map(({ path }) => ({ path }))
 }
 
-/**
- * Unique in-scope entries in path order, each checked before any byte is read. The layout's
- * scope narrows sources only: a config outside it may still configure resolution inside it.
- * The size cap is the caller's to enforce on the whole selection; nothing here drops files.
- */
 export function selectEntries(
   entries: readonly CaptureEntry[],
   layout: ArchitectureLayout = ARCHITECTURE_DEFAULT_LAYOUT,
@@ -72,10 +67,10 @@ export function selectEntries(
     .sort((a, b) => a.path.localeCompare(b.path))
   for (const entry of unique) {
     assertRelative(entry.path)
-    if (entry.mode && entry.mode !== '100644' && entry.mode !== '100755')
+    if (entry.mode && !['100644', '100755', '120000', '160000'].includes(entry.mode))
       throw new Error(`Unsupported symbolic link or submodule in scan: ${entry.path}`)
   }
-  return unique
+  return unique.filter((entry) => entry.mode !== '120000' && entry.mode !== '160000')
 }
 
 const extensions: ReadonlySet<string> = new Set(SCOPE.extensions)

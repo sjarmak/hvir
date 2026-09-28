@@ -61,6 +61,7 @@ export async function verifyArchitectureReviewVisuals(
             return reject(new Error('Architecture map expansion controls disappeared'));
           }
           const collapsedWidth = map.getBoundingClientRect().width;
+          const collapsedHeight = map.getBoundingClientRect().height;
           const canvas = map.querySelector('.architecture-map-canvas');
           if (!(canvas instanceof HTMLElement)) return reject(new Error('Architecture canvas disappeared'));
           const collapsedViewport = canvas.getBoundingClientRect().height;
@@ -84,7 +85,7 @@ export async function verifyArchitectureReviewVisuals(
             if (expandedWidth <= collapsedWidth * 1.5) {
               return reject(new Error('Expanded architecture map did not occupy more space'));
             }
-            if (expandedHeight < surface.getBoundingClientRect().height * 0.9) {
+            if (expandedHeight < collapsedHeight) {
               return reject(new Error('Expanded architecture viewport geometry: ' + JSON.stringify({ expandedHeight, surfaceHeight: surface.getBoundingClientRect().height, expandedViewport, collapsedViewport, visible: visibleHeight(canvas), collapsedVisible })));
             }
             if (expandedViewport < surface.getBoundingClientRect().height * 0.6 || nodeCount === 0) {

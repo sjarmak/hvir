@@ -44,9 +44,7 @@ export async function verifyArchitectureCommitStrip(
       await wait(() => strip().textContent.includes('Baseline held at ' + ${JSON.stringify(parent.slice(0, 8))}), 'locked baseline');
       button('Newer commit').click();
       await scanned(${JSON.stringify(parent)}, ${JSON.stringify(label)}, 'step against the locked baseline');
-      const subsystem = await wait(() => [...surface().querySelectorAll('.architecture-subsystem')].find(node => node.querySelector('strong')?.textContent === 'architecture-smoke/ui'), 'commit-pair subsystem');
-      subsystem.click();
-      const module = await wait(() => [...surface().querySelectorAll('.architecture-module-list .architecture-module')].find(node => node.querySelector('span')?.textContent === ${JSON.stringify(fixture.selectedPath)}), 'commit-pair module');
+      const module = await wait(() => [...surface().querySelectorAll('.architecture-file-group .architecture-module')].find(node => node.querySelector('span')?.textContent === ${JSON.stringify(fixture.selectedPath)}), 'commit-pair module');
       module.click();
       await wait(() => {
         const contents = [...surface().querySelectorAll('.architecture-evidence .cm-content')].map(node => node.textContent);

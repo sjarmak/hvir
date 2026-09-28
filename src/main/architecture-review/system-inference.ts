@@ -18,6 +18,7 @@ export function inferArchitectureSystems(
     ...electronRules(configs, paths),
     ...cargoRules(configs, paths),
     ...goRules(configs, paths),
+    ...gradleRules(paths),
   ])
   return rules.length ? rules : [{ name: ARCHITECTURE_PROJECT_SYSTEM, paths: [] }]
 }
@@ -114,6 +115,13 @@ function goRules(
       .filter((path) => paths.some((candidate) => covers(path, candidate)))
       .map((path) => ({ name: goName(configs, path), paths: [path] }))
   })
+}
+
+function gradleRules(paths: readonly string[]): readonly ArchitectureSystemRule[] {
+  return paths
+    .filter((path) => path.endsWith('/build.gradle.kts'))
+    .map((path) => directory(path))
+    .map((root) => ({ name: root, paths: [root] }))
 }
 
 function matchingRoots(pattern: string, paths: readonly string[]): readonly string[] {

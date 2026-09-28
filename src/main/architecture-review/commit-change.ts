@@ -10,7 +10,7 @@ import type {
 import type { ArchitectureCommitChange } from '../../shared/architecture-review'
 import { inArchitectureScope, isSource } from './capture-entries'
 
-export const COMMIT_CHANGE_CLASSIFIER_VERSION = 'commit-change-3'
+export const COMMIT_CHANGE_CLASSIFIER_VERSION = 'commit-change-4'
 
 export interface CommitDiffEntry {
   readonly path: string
@@ -47,10 +47,25 @@ export function parseCommitDiffs(output: string): readonly CommitDiff[] {
         const match = RAW_ENTRY.exec(fields[index] ?? '')
         const path = fields[index + 1]
         if (!match || path === undefined) throw new Error('Malformed Git raw diff entry')
-        entries.push({ path, status: match[5]!, before: match[3]!, after: match[4]! })
+        const beforeMode = match[1]!
+        const afterMode = match[2]!
+        const beforeRegular = isRegularMode(beforeMode)
+        const afterRegular = isRegularMode(afterMode)
+        if (!beforeRegular && !afterRegular) continue
+        const status =
+          beforeRegular && !afterRegular
+            ? 'D'
+            : !beforeRegular && afterRegular
+              ? 'A'
+              : match[5]!
+        entries.push({ path, status, before: match[3]!, after: match[4]! })
       }
       return { revision, parents: parents.split(' ').filter(Boolean), entries }
     })
+}
+
+function isRegularMode(mode: string): boolean {
+  return mode === '100644' || mode === '100755'
 }
 
 function inScope(layout: ArchitectureLayout, entry: CommitDiffEntry): boolean {

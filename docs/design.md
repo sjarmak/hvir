@@ -697,6 +697,7 @@ upstream GitHub provenance and blocking source/dependency checks retain their au
 > Supersedes: [ADR-008](adr/ADR-008-project-worktree-workspaces.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
 > Superseded by: [ADR-064](adr/ADR-064-architecture-review-as-a-live-zoomable-canvas.md) | partial | The map now opens on systems on a laid-out canvas that drills to subsystems and modules; explanation-only requests no longer create an agent branch, worktree, brief or terminal session, while architecture-improvement launches retain the worktree handoff.
 > Superseded by: [ADR-065](adr/ADR-065-history-reads-the-fleet-commit-classification.md) | partial | Marking every History row and strip commit from its diff and import edges alone; a commit the fleet has classified is marked from its Architectural trailer instead.
+> Superseded by: [ADR-067](adr/ADR-067-whole-monorepo-architecture-capture.md) | partial | The small-repository read budgets and default subsystem mapping across workspace packages; capture and classification use the expanded shared budgets and package boundaries refine default subsystems.
 
 A snapshot compares any two refs or a ref and the live tree from Git objects through a blob-keyed
 parse cache, opens on subsystem relationships across TypeScript, Python, Go and Rust, and hands
@@ -726,13 +727,24 @@ permanent fallback for every commit the fleet has not classified.
 
 ### [ADR-066 — Scans reuse blobs by object id and analyses by fingerprint](adr/ADR-066-scans-reuse-blobs-by-object-id-and-analyses-by-fingerprint.md)
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
+> Superseded by: [ADR-067](adr/ADR-067-whole-monorepo-architecture-capture.md) | partial | The 32 MiB blob-cache budget; the cache remains twice the expanded capture byte budget.
 
 The architecture review coordinator keeps two in-memory, byte-bounded, least-recently-used
 caches for the life of the process: blob text by verified Git object id, shared by review scans
 and the History classifier and filled by live reads too, and analyses by capture fingerprint, so
 a repeat scan of an unchanged pair transfers no blobs and runs no worker. The blob-read span
 reports transferred bytes and host calls only.
+
+### [ADR-067 — Whole-monorepo architecture capture](adr/ADR-067-whole-monorepo-architecture-capture.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-063](adr/ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | The small-repository read budgets and default subsystem mapping across workspace packages; capture and classification use the expanded shared budgets and package boundaries refine default subsystems.
+> Supersedes: [ADR-066](adr/ADR-066-scans-reuse-blobs-by-object-id-and-analyses-by-fingerprint.md) | partial | The 32 MiB blob-cache budget; the cache remains twice the expanded capture byte budget.
+
+Whole-repository budgets preserve package and service relationships without sampling.
+Kotlin joins the grammar scanners, workspace imports resolve through captured manifests,
+and symbolic links and submodules remain disclosed exclusions.
 
 ## 5. Architecture
 

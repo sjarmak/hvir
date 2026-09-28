@@ -70,6 +70,17 @@ export function scanArchitecture(
   const configs = input.configs ?? []
   const layout = input.layout ?? ARCHITECTURE_DEFAULT_LAYOUT
   const systems = inferArchitectureSystems(sorted, configs, layout)
+  const subsystemLayout = layout.systems.length
+    ? layout
+    : {
+        ...layout,
+        sourceRoots: [
+          ...layout.sourceRoots,
+          ...systems
+            .flatMap((system) => system.paths)
+            .filter((root) => subsystemOf(layout, `${root}/file`) !== root),
+        ],
+      }
   const claimed = claimModules(sorted, scanners).map((entry) =>
     parseModule(entry, factsOf),
   )
@@ -81,22 +92,20 @@ export function scanArchitecture(
     ...unscannedDiagnostics(sorted.length - claimed.length),
   ]
   for (const entry of claimed) {
-    const scanned = scanModule(entry, resolvers.get(entry.scanner)!, layout, systems)
+    const scanned = scanModule(
+      entry,
+      resolvers.get(entry.scanner)!,
+      subsystemLayout,
+      systems,
+    )
     diagnostics.push(...scanned.diagnostics)
     modules.push(scanned.module)
-    imports.push(
-      ...scanned.imports.slice(
-        0,
-        Math.max(0, ARCHITECTURE_ANALYSIS_LIMITS.maxImports - imports.length),
-      ),
-    )
+    if (imports.length + scanned.imports.length > ARCHITECTURE_ANALYSIS_LIMITS.maxImports)
+      throw new Error(
+        `Architecture scan exceeds ${ARCHITECTURE_ANALYSIS_LIMITS.maxImports.toLocaleString('en-US')} imports; no partial graph was returned.`,
+      )
+    for (const fact of scanned.imports) imports.push(fact)
   }
-  if (imports.length === ARCHITECTURE_ANALYSIS_LIMITS.maxImports)
-    diagnostics.push({
-      file: '(capture)',
-      line: 1,
-      message: 'Import evidence was truncated at the analysis limit.',
-    })
   return {
     fingerprint: scanFingerprint(input, sorted, configs),
     scope: input.scope,

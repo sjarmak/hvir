@@ -710,7 +710,7 @@ it('names the layout file and scope the snapshot grouped subsystems by', async (
       (node) => node.textContent === term,
     )?.nextElementSibling?.textContent
   expect(detail('Subsystems')).toBe(
-    '.hvir/architecture.json: 1 rule, then the first directory under src',
+    '.hvir/architecture.json: 1 rule, then the first directory under src and inferred project roots',
   )
   expect(detail('Scope')).toBe('src, test')
 })

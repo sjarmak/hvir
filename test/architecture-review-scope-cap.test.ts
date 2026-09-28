@@ -22,6 +22,18 @@ function refusalOf(run: () => void) {
 }
 
 describe('architecture scope cap', () => {
+  it('accepts a complete monorepo with 16000 sources and 125 MiB of content', () => {
+    expect(() =>
+      assertWithinScopeCap(
+        Array.from({ length: 16_000 }, (_, index) => ({
+          path: `packages/app/file-${index}.ts`,
+          size: 8 * 1024,
+        })),
+        { end: 'HEAD', scope: [] },
+      ),
+    ).not.toThrow()
+  })
+
   it('accepts a scope at the cap exactly', () => {
     expect(() =>
       assertWithinScopeCap(
@@ -94,12 +106,12 @@ describe('architecture scope cap', () => {
   })
 
   it('names live bytes the host measured before any content was transferred', () => {
-    const refusal = liveBytesRefusal(files(['a.ts', 'b.ts']), 17.5 * 1024 * 1024, {
+    const refusal = liveBytesRefusal(files(['a.ts', 'b.ts']), 257.5 * 1024 * 1024, {
       end: 'working tree',
       scope: ['a.ts', 'b.ts'],
     }).refusal
     expect(refusal.message).toBe(
-      'Architecture scan refused: working tree has 2 files (17.5 MiB) in scope a.ts, b.ts, above the cap of 4,000 files and 16 MiB. Choose a narrower scope and scan again; the review never reads part of a scope.',
+      'Architecture scan refused: working tree has 2 files (257.5 MiB) in scope a.ts, b.ts, above the cap of 32,000 files and 256 MiB. Choose a narrower scope and scan again; the review never reads part of a scope.',
     )
     expect(refusal.maxBytes).toBe(ARCHITECTURE_SCOPE.maxTotalBytes)
   })
