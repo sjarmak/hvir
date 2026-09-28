@@ -254,15 +254,17 @@
   border-color: var(--warning-text);
   animation: architecture-change-pulse 240ms ease-out;
 }
-.architecture-canvas-node.change-removed,
-.architecture-canvas-node.ghost {
+.architecture-canvas-node.change-removed {
   border-color: var(--danger-text);
-  border-style: dashed;
-  opacity: 0.62;
   animation: architecture-change-exit 220ms ease-out;
 }
+.architecture-canvas-node.ghost {
+  border-style: dashed;
+  opacity: 0.62;
+}
 .architecture-review .architecture-canvas-node.selected {
-  border-color: var(--accent);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
   background: var(--surface-active);
 }
 .architecture-canvas-edge .react-flow__edge-path {
@@ -280,12 +282,14 @@
 .architecture-canvas-edge.change-changed .react-flow__edge-path {
   stroke: var(--warning-text);
 }
-.architecture-canvas-edge.change-removed .react-flow__edge-path,
-.architecture-canvas-edge.ghost .react-flow__edge-path {
+.architecture-canvas-edge.change-removed .react-flow__edge-path {
   stroke: var(--danger-text);
   stroke-dasharray: 5 5;
-  opacity: 0.62;
   animation: architecture-edge-exit 220ms ease-out;
+}
+.architecture-canvas-edge.ghost .react-flow__edge-path {
+  stroke-dasharray: 5 5;
+  opacity: 0.62;
 }
 @keyframes architecture-change-enter {
   from {
