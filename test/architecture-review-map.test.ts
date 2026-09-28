@@ -228,6 +228,33 @@ it('hides unrelated unchanged modules until the subsystem reveals them', () => {
   expect(revealed.hiddenUnchangedModules).toBe(1)
 })
 
+it('does not treat a cross-subsystem import target as related when expanding the other subsystem', () => {
+  const files = [
+    { path: 'src/ui/a.ts', content: 'import { x } from "../other/x"\nconst a = x' },
+    { path: 'src/other/x.ts', content: 'export const x = 1' },
+    { path: 'src/other/y.ts', content: 'export const y = 1' },
+  ]
+  const result = analyzeArchitecture(
+    { scope: '.', exclusions: [], files },
+    {
+      scope: '.',
+      exclusions: [],
+      files: files.map((file) =>
+        file.path === 'src/ui/a.ts'
+          ? { ...file, content: `${file.content}\nconst changed = true` }
+          : file,
+      ),
+    },
+  )
+  const map = subsystemMap(result, false)
+  const collapsed = architectureCanvasElements(map, 'overlay', '(project)', 'src/other')
+
+  expect(
+    collapsed.nodes.filter((node) => node.kind === 'module').map((node) => node.id),
+  ).toEqual([])
+  expect(collapsed.hiddenUnchangedModules).toBe(2)
+})
+
 it('aggregates imports between systems before drilling into subsystems', () => {
   const layout = {
     origin: 'override' as const,

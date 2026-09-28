@@ -80,12 +80,27 @@ export function subsystemMap(analysis: ArchitectureAnalysis, all: boolean) {
       .filter((module) => module.change !== 'unchanged')
       .map((module) => module.path),
   )
+  const moduleSubsystem = new Map(
+    layoutModules.map((module) => [module.path, module.subsystem]),
+  )
+  const changedRelationshipPairs = new Set(
+    changedRelations.map((r) => `${r.source}::${r.target}`),
+  )
   const relatedModules = new Set<string>()
   for (const entry of analysis.imports) {
-    if (!changedModules.has(entry.source) && !changedModules.has(entry.target ?? ''))
+    if (!entry.target) continue
+    if (!changedModules.has(entry.source) && !changedModules.has(entry.target)) continue
+    const sourceSubsystem = moduleSubsystem.get(entry.source)
+    const targetSubsystem = moduleSubsystem.get(entry.target)
+    const sameSubsystem =
+      sourceSubsystem !== undefined && sourceSubsystem === targetSubsystem
+    if (
+      !sameSubsystem &&
+      !changedRelationshipPairs.has(`${sourceSubsystem}::${targetSubsystem}`)
+    )
       continue
     relatedModules.add(entry.source)
-    if (entry.target) relatedModules.add(entry.target)
+    relatedModules.add(entry.target)
   }
   return {
     nodes,
