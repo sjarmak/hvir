@@ -430,3 +430,20 @@ it('architectureZoomLabelMode: buckets React Flow zoom into overview vs detail l
   expect(architectureZoomLabelMode(0.59)).toBe('overview')
   expect(architectureZoomLabelMode(0.2)).toBe('overview')
 })
+
+it('architectureLayoutGraph: defaults to horizontal/comfortable, and exposes orientation and spacing as ELK options', () => {
+  const input = { nodes: [{ id: 'a', width: 244, height: 64 }], edges: [] }
+  const defaultGraph = architectureLayoutGraph(input)
+  expect(defaultGraph.layoutOptions?.['elk.direction']).toBe('RIGHT')
+  expect(defaultGraph.layoutOptions?.['elk.spacing.nodeNode']).toBe('44')
+  expect(defaultGraph.layoutOptions?.['elk.layered.spacing.nodeNodeBetweenLayers']).toBe(
+    '88',
+  )
+
+  const vertical = architectureLayoutGraph(input, { orientation: 'vertical' })
+  expect(vertical.layoutOptions?.['elk.direction']).toBe('DOWN')
+
+  const compact = architectureLayoutGraph(input, { spacing: 'compact' })
+  expect(compact.layoutOptions?.['elk.spacing.nodeNode']).toBe('28')
+  expect(compact.layoutOptions?.['elk.layered.spacing.nodeNodeBetweenLayers']).toBe('56')
+})

@@ -7,16 +7,31 @@ export interface ArchitectureNodePosition {
   readonly y: number
 }
 
+export type ArchitectureLayoutOrientation = 'horizontal' | 'vertical'
+export type ArchitectureLayoutSpacing = 'compact' | 'comfortable'
+
+export interface ArchitectureLayoutOptions {
+  readonly orientation?: ArchitectureLayoutOrientation
+  readonly spacing?: ArchitectureLayoutSpacing
+}
+
+const ARCHITECTURE_LAYOUT_SPACING = {
+  compact: { nodeNode: 28, betweenLayers: 56 },
+  comfortable: { nodeNode: 44, betweenLayers: 88 },
+} as const satisfies Record<ArchitectureLayoutSpacing, { nodeNode: number; betweenLayers: number }>
+
 export function architectureLayoutGraph(
   input: ArchitectureCanvasLayoutInput,
+  options: ArchitectureLayoutOptions = {},
 ): ElkNode {
+  const spacing = ARCHITECTURE_LAYOUT_SPACING[options.spacing ?? 'comfortable']
   return {
     id: 'architecture',
     layoutOptions: {
       'elk.algorithm': 'layered',
-      'elk.direction': 'RIGHT',
-      'elk.spacing.nodeNode': '44',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '88',
+      'elk.direction': options.orientation === 'vertical' ? 'DOWN' : 'RIGHT',
+      'elk.spacing.nodeNode': String(spacing.nodeNode),
+      'elk.layered.spacing.nodeNodeBetweenLayers': String(spacing.betweenLayers),
       'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
     },
     children: input.nodes.map((node) => ({ ...node })),

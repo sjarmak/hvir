@@ -177,6 +177,18 @@
   color: var(--text-strong);
   border-color: var(--accent);
 }
+.architecture-map-layout-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: calc(12px * var(--hvir-interface-scale));
+}
+.architecture-map-layout-controls button.active {
+  background: var(--surface-active);
+  color: var(--text-strong);
+  border-color: var(--accent);
+}
 .architecture-canvas-node-focused {
   outline: 2px solid var(--accent);
   outline-offset: 2px;

@@ -4,6 +4,7 @@ import {
   architectureLayoutGraph,
   architectureNodePositions,
   type ArchitectureEdgeRoute,
+  type ArchitectureLayoutOptions,
   type ArchitectureNodePosition,
 } from './architecture-layout'
 import type {
@@ -28,13 +29,14 @@ const pending = new Map<number, PendingLayout>()
 
 export function requestArchitectureLayout(
   input: ArchitectureCanvasLayoutInput,
+  graphOptions: ArchitectureLayoutOptions = {},
 ): Promise<ArchitectureLayoutResult> {
   worker ??= createWorker()
   requestId += 1
   const request: ArchitectureLayoutRequest = {
     cmd: 'layout',
     id: requestId,
-    graph: architectureLayoutGraph(input),
+    graph: architectureLayoutGraph(input, graphOptions),
     layoutOptions: {},
     options: {},
   }

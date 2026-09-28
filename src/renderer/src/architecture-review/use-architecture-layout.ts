@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react'
 import { requestArchitectureLayout } from './architecture-layout-client'
 import type { ArchitectureCanvasLayoutInput } from './architecture-review-model'
-import type { ArchitectureEdgeRoute, ArchitectureNodePosition } from './architecture-layout'
+import type {
+  ArchitectureEdgeRoute,
+  ArchitectureLayoutOptions,
+  ArchitectureNodePosition,
+} from './architecture-layout'
 
-export function useArchitectureLayout(input: ArchitectureCanvasLayoutInput): {
+export function useArchitectureLayout(
+  input: ArchitectureCanvasLayoutInput,
+  options: ArchitectureLayoutOptions = {},
+): {
   readonly positions: ReadonlyMap<string, ArchitectureNodePosition>
   readonly edges: ReadonlyMap<string, ArchitectureEdgeRoute>
   readonly error?: string
@@ -15,7 +22,7 @@ export function useArchitectureLayout(input: ArchitectureCanvasLayoutInput): {
   }>({ positions: new Map(), edges: new Map() })
   useEffect(() => {
     let active = true
-    void requestArchitectureLayout(input).then(
+    void requestArchitectureLayout(input, options).then(
       ({ positions, edges }) => {
         if (active)
           setState({
@@ -35,6 +42,6 @@ export function useArchitectureLayout(input: ArchitectureCanvasLayoutInput): {
     return () => {
       active = false
     }
-  }, [input])
+  }, [input, options])
   return state
 }

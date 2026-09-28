@@ -23,6 +23,10 @@ import {
   type ArchitectureMapMode,
 } from './architecture-review-model'
 import { ArchitectureRelationships } from './ArchitectureRelationships'
+import type {
+  ArchitectureLayoutOrientation,
+  ArchitectureLayoutSpacing,
+} from './architecture-layout'
 import { useArchitectureLayout } from './use-architecture-layout'
 interface Props {
   readonly analysis: ArchitectureAnalysis
@@ -70,6 +74,13 @@ export function ArchitectureMap({
   const [focusDirection, setFocusDirection] = useState<ArchitectureFocusDirection>('both')
   const [zoom, setZoom] = useState(1)
   const zoomLabelMode = architectureZoomLabelMode(zoom)
+  const [layoutOrientation, setLayoutOrientation] =
+    useState<ArchitectureLayoutOrientation>('horizontal')
+  const [layoutSpacing, setLayoutSpacing] = useState<ArchitectureLayoutSpacing>('comfortable')
+  const layoutOptions = useMemo(
+    () => ({ orientation: layoutOrientation, spacing: layoutSpacing }),
+    [layoutOrientation, layoutSpacing],
+  )
   const mapElement = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     if (expanded && mapElement.current) mapElement.current.scrollTop = 0
@@ -119,7 +130,7 @@ export function ArchitectureMap({
     ? { ...focusElements, hiddenUnchangedModules: 0 }
     : ownershipElements
   const layoutInput = focusLayoutInput ?? ownershipLayoutInput
-  const layout = useArchitectureLayout(layoutInput)
+  const layout = useArchitectureLayout(layoutInput, layoutOptions)
   const nodes = useMemo<readonly Node[]>(
     () =>
       elements.nodes.map((node, index) => {
@@ -292,6 +303,38 @@ export function ArchitectureMap({
             </button>
           </div>
         ) : null}
+      </div>
+      <div
+        className="architecture-map-layout-controls"
+        role="group"
+        aria-label="Layout"
+      >
+        <div role="group" aria-label="Layout orientation">
+          {(['horizontal', 'vertical'] as const).map((orientation) => (
+            <button
+              key={orientation}
+              type="button"
+              aria-pressed={layoutOrientation === orientation}
+              className={layoutOrientation === orientation ? 'active' : ''}
+              onClick={() => setLayoutOrientation(orientation)}
+            >
+              {orientation}
+            </button>
+          ))}
+        </div>
+        <div role="group" aria-label="Layout spacing">
+          {(['compact', 'comfortable'] as const).map((spacing) => (
+            <button
+              key={spacing}
+              type="button"
+              aria-pressed={layoutSpacing === spacing}
+              className={layoutSpacing === spacing ? 'active' : ''}
+              onClick={() => setLayoutSpacing(spacing)}
+            >
+              {spacing}
+            </button>
+          ))}
+        </div>
       </div>
       <ul className="architecture-map-legend" aria-label="Edge legend">
         <li className="architecture-map-legend-dependency">Imports (observed)</li>

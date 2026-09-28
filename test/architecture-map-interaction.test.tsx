@@ -4,9 +4,10 @@ import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ArchitectureMap } from '../src/renderer/src/architecture-review/ArchitectureMap'
 import { analyzeArchitecture } from '../src/main/architecture-review/analysis'
+import { requestArchitectureLayout } from '../src/renderer/src/architecture-review/architecture-layout-client'
 
 vi.mock('../src/renderer/src/architecture-review/architecture-layout-client', () => ({
-  requestArchitectureLayout: () => new Promise(() => undefined),
+  requestArchitectureLayout: vi.fn(() => new Promise(() => undefined)),
 }))
 
 const before = {
@@ -40,6 +41,7 @@ afterEach(() => {
   act(() => root.unmount())
   container.remove()
   vi.unstubAllGlobals()
+  vi.mocked(requestArchitectureLayout).mockClear()
 })
 it('keeps subsystem positions and opens exact side-specific import evidence', () => {
   const evidence = vi.fn()
@@ -248,6 +250,44 @@ it('gives module nodes a filename-first label with the full path on hover', () =
     'data',
   )
   expect(module.getAttribute('title')).toBe('data/a.ts')
+})
+
+it('lets the user choose layout orientation and spacing, and keeps the choice across Before/After/Overlay', () => {
+  const render = (mode: 'before' | 'after' | 'overlay') =>
+    act(() =>
+      root.render(
+        <ArchitectureMap
+          analysis={analysis}
+          mode={mode}
+          onMode={() => undefined}
+          onEvidence={() => undefined}
+        />,
+      ),
+    )
+  render('overlay')
+  const orientationGroup = container.querySelector<HTMLElement>(
+    '[aria-label="Layout orientation"]',
+  )!
+  const spacingGroup = container.querySelector<HTMLElement>('[aria-label="Layout spacing"]')!
+  const vertical = Array.from(orientationGroup.querySelectorAll('button')).find(
+    (button) => button.textContent === 'vertical',
+  )!
+  const compact = Array.from(spacingGroup.querySelectorAll('button')).find(
+    (button) => button.textContent === 'compact',
+  )!
+  act(() => vertical.click())
+  act(() => compact.click())
+  expect(vertical.getAttribute('aria-pressed')).toBe('true')
+  expect(compact.getAttribute('aria-pressed')).toBe('true')
+  expect(vi.mocked(requestArchitectureLayout).mock.calls.at(-1)?.[1]).toEqual({
+    orientation: 'vertical',
+    spacing: 'compact',
+  })
+
+  render('before')
+  render('after')
+  expect(vertical.getAttribute('aria-pressed')).toBe('true')
+  expect(compact.getAttribute('aria-pressed')).toBe('true')
 })
 
 it('focuses a subsystem without disturbing ownership expansion, and restores it on clear', () => {
