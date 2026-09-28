@@ -299,7 +299,6 @@ it('places the architecture map first while keeping every review control reachab
     '.architecture-strip',
     '.architecture-review-timeline',
     '.architecture-review-metadata',
-    '.architecture-review-scope',
     '.architecture-explanation',
   ]) {
     const secondary = host.querySelector(selector)!

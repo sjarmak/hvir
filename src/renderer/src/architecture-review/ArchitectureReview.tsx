@@ -477,12 +477,6 @@ export function ArchitectureReview({
                 ),
             )}
           </details>
-          <p className="architecture-review-scope">
-            TypeScript, JavaScript, Python, Go and Rust imports only. Subsystems are
-            structural groupings, not responsibility claims; compiler aliases, package
-            exports and Python import paths set at run time may be unresolved. See
-            snapshot details for analysis notices.
-          </p>
           <ArchitectureExplanation
             key={snapshot.id}
             root={root}

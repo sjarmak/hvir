@@ -464,8 +464,7 @@
     .architecture-review-header,
     .architecture-review-controls,
     .architecture-strip,
-    .architecture-review-metadata,
-    .architecture-review-scope
+    .architecture-review-metadata
   ) {
   display: none;
 }
@@ -552,12 +551,6 @@
   resize: vertical;
 }
 
-.architecture-review-scope {
-  margin: 0;
-  padding: 6px 14px;
-  color: var(--text-muted);
-  font-size: calc(11px * var(--hvir-interface-scale));
-}
 .architecture-review-scope-controls {
   display: flex;
   flex-direction: column;
