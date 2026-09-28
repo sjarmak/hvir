@@ -152,6 +152,8 @@ export function architectureZoomLabelMode(zoom: number): ArchitectureZoomLabelMo
   return zoom < ARCHITECTURE_ZOOM_OVERVIEW_THRESHOLD ? 'overview' : 'detail'
 }
 
+export const ARCHITECTURE_MODULE_CAP = 200
+
 export interface ArchitectureCanvasLayoutInput {
   readonly nodes: readonly {
     readonly id: string
@@ -171,11 +173,13 @@ export function architectureCanvasElements(
   expandedSystem?: string,
   expandedSubsystem?: string,
   showUnchangedModules = false,
+  moduleQuery = '',
 ): {
   readonly nodes: readonly ArchitectureCanvasNode[]
   readonly edges: readonly ArchitectureCanvasEdge[]
   readonly layout: ArchitectureCanvasLayoutInput
   readonly hiddenUnchangedModules: number
+  readonly hiddenModuleCap: number
 } {
   const systems = systemGroups(map.nodes)
   const systemNodes = systems.map((system) => ({
@@ -221,13 +225,16 @@ export function architectureCanvasElements(
   const hiddenUnchangedModules = (expanded?.modules ?? []).filter(
     (module) => module.change === 'unchanged' && !relatedModules.has(module.path),
   ).length
-  const visibleModules = (expanded?.modules ?? []).filter(
-    (module) =>
-      showUnchangedModules ||
-      module.change !== 'unchanged' ||
-      relatedModules.has(module.path),
-  )
-  const moduleNodes = visibleModules.slice(0, 200).map((module) => ({
+  const visibleModules = (expanded?.modules ?? [])
+    .filter(
+      (module) =>
+        showUnchangedModules ||
+        module.change !== 'unchanged' ||
+        relatedModules.has(module.path),
+    )
+    .filter((module) => module.path.toLowerCase().includes(moduleQuery.toLowerCase()))
+  const hiddenModuleCap = Math.max(0, visibleModules.length - ARCHITECTURE_MODULE_CAP)
+  const moduleNodes = visibleModules.slice(0, ARCHITECTURE_MODULE_CAP).map((module) => ({
     id: `module:${module.path}`,
     label: module.path,
     detail: moduleChangeLabel(module.change),
@@ -284,7 +291,7 @@ export function architectureCanvasElements(
             module.system === expandedSystem && module.subsystem === expandedSubsystem,
         )
   )
-    .slice(0, 200)
+    .slice(0, ARCHITECTURE_MODULE_CAP)
     .map((module) => ({ id: `module:${module.path}`, width: 220, height: 52 }))
   const layoutMembershipEdges = layoutModuleNodes.map((node) => ({
     id: `membership:${expandedSubsystem}:${node.id}`,
@@ -305,6 +312,7 @@ export function architectureCanvasElements(
     nodes,
     edges,
     hiddenUnchangedModules,
+    hiddenModuleCap,
     layout: {
       nodes: [
         ...layoutSystems.map((id) => ({ id: `system:${id}`, width: 244, height: 64 })),

@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 import ELK from 'elkjs/lib/elk.bundled.js'
 import { analyzeArchitecture } from '../src/main/architecture-review/analysis'
 import {
+  ARCHITECTURE_MODULE_CAP,
   architectureCanvasElements,
   architectureFocusElements,
   architectureZoomLabelMode,
@@ -446,4 +447,27 @@ it('architectureLayoutGraph: defaults to horizontal/comfortable, and exposes ori
   const compact = architectureLayoutGraph(input, { spacing: 'compact' })
   expect(compact.layoutOptions?.['elk.spacing.nodeNode']).toBe('28')
   expect(compact.layoutOptions?.['elk.layered.spacing.nodeNodeBetweenLayers']).toBe('56')
+})
+
+it('reports the 200-module cap explicitly and lets a canvas search reach an omitted module', () => {
+  const bigBefore = { files: [], scope: '.', exclusions: [] }
+  const bigAfter = {
+    scope: '.',
+    exclusions: [],
+    files: Array.from({ length: ARCHITECTURE_MODULE_CAP + 5 }, (_, index) => ({
+      path: `big/f${index}.ts`,
+      content: `const x = ${index}`,
+    })),
+  }
+  const map = subsystemMap(analyzeArchitecture(bigBefore, bigAfter), false)
+
+  const capped = architectureCanvasElements(map, 'overlay', '(project)', 'big')
+  expect(capped.nodes.filter((node) => node.kind === 'module')).toHaveLength(
+    ARCHITECTURE_MODULE_CAP,
+  )
+  expect(capped.hiddenModuleCap).toBe(5)
+
+  const searched = architectureCanvasElements(map, 'overlay', '(project)', 'big', false, 'f104')
+  expect(searched.hiddenModuleCap).toBe(0)
+  expect(searched.nodes.map((node) => node.id)).toContain('module:big/f104.ts')
 })

@@ -165,6 +165,17 @@
   max-width: 65ch;
   line-height: 1.5;
 }
+.architecture-map-module-cap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: calc(12px * var(--hvir-interface-scale));
+}
+.architecture-map-module-cap p {
+  margin: 0;
+  color: var(--warning-text);
+}
 .architecture-map-focus-controls {
   display: flex;
   align-items: center;

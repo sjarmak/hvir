@@ -90,6 +90,7 @@ export function ArchitectureMap({
     onEvidence(path, line, side)
   }
   const map = useMemo(() => subsystemMap(analysis, all), [analysis, all])
+  const [moduleQuery, setModuleQuery] = useState('')
   const ownershipElements = useMemo(
     () =>
       architectureCanvasElements(
@@ -98,8 +99,9 @@ export function ArchitectureMap({
         selectedSystem,
         selectedSubsystem,
         showUnchangedModules,
+        moduleQuery,
       ),
-    [map, mode, selectedSystem, selectedSubsystem, showUnchangedModules],
+    [map, mode, selectedSystem, selectedSubsystem, showUnchangedModules, moduleQuery],
   )
   const ownershipLayoutInput = useMemo(
     () =>
@@ -109,8 +111,9 @@ export function ArchitectureMap({
         selectedSystem,
         selectedSubsystem,
         showUnchangedModules,
+        moduleQuery,
       ).layout,
-    [map, selectedSystem, selectedSubsystem, showUnchangedModules],
+    [map, selectedSystem, selectedSubsystem, showUnchangedModules, moduleQuery],
   )
   const focusElements = useMemo(
     () =>
@@ -127,7 +130,7 @@ export function ArchitectureMap({
     [map, focusSubsystem, focusDirection],
   )
   const elements = focusElements
-    ? { ...focusElements, hiddenUnchangedModules: 0 }
+    ? { ...focusElements, hiddenUnchangedModules: 0, hiddenModuleCap: 0 }
     : ownershipElements
   const layoutInput = focusLayoutInput ?? ownershipLayoutInput
   const layout = useArchitectureLayout(layoutInput, layoutOptions)
@@ -270,6 +273,23 @@ export function ArchitectureMap({
         Each top-level node is a system. Select a system to expand its subsystems, then a
         subsystem to expand its modules.
       </p>
+      {selectedSubsystem && elements.hiddenModuleCap ? (
+        <div className="architecture-map-module-cap" role="group" aria-label="Module cap">
+          <p role="status">
+            Module limit: {elements.hiddenModuleCap} module
+            {elements.hiddenModuleCap === 1 ? '' : 's'} in {selectedSubsystem} not shown.
+            Search to reach them.
+          </p>
+          <label>
+            Search modules in canvas
+            <input
+              value={moduleQuery}
+              onChange={(event) => setModuleQuery(event.target.value)}
+              placeholder="Filter by filename"
+            />
+          </label>
+        </div>
+      ) : null}
       <div className="architecture-map-focus-controls" role="group" aria-label="Focus subsystem">
         <label>
           Focus
@@ -376,12 +396,14 @@ export function ArchitectureMap({
               setSelectedSubsystem(undefined)
               setFocusedRelationship(undefined)
               setShowUnchangedModules(false)
+              setModuleQuery('')
             } else if (canvasNode?.kind === 'subsystem') {
               setSelectedSubsystem(
                 selectedSubsystem === clicked.id ? undefined : clicked.id,
               )
               setFocusedRelationship(undefined)
               setShowUnchangedModules(false)
+              setModuleQuery('')
             }
           }}
           onEdgeClick={(_, clicked) => {

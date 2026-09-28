@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { ArchitectureMap } from '../src/renderer/src/architecture-review/ArchitectureMap'
 import { analyzeArchitecture } from '../src/main/architecture-review/analysis'
 import { requestArchitectureLayout } from '../src/renderer/src/architecture-review/architecture-layout-client'
+import { ARCHITECTURE_MODULE_CAP } from '../src/renderer/src/architecture-review/architecture-review-model'
 
 vi.mock('../src/renderer/src/architecture-review/architecture-layout-client', () => ({
   requestArchitectureLayout: vi.fn(() => new Promise(() => undefined)),
@@ -288,6 +289,51 @@ it('lets the user choose layout orientation and spacing, and keeps the choice ac
   render('after')
   expect(vertical.getAttribute('aria-pressed')).toBe('true')
   expect(compact.getAttribute('aria-pressed')).toBe('true')
+})
+
+it('reports the module cap explicitly and lets a search reach an omitted module', () => {
+  const bigAnalysis = analyzeArchitecture(
+    { scope: '.', exclusions: [], files: [] },
+    {
+      scope: '.',
+      exclusions: [],
+      files: Array.from({ length: ARCHITECTURE_MODULE_CAP + 5 }, (_, index) => ({
+        path: `big/f${index}.ts`,
+        content: `const x = ${index}`,
+      })),
+    },
+  )
+  act(() =>
+    root.render(
+      <ArchitectureMap
+        analysis={bigAnalysis}
+        mode="overlay"
+        onMode={() => undefined}
+        onEvidence={() => undefined}
+      />,
+    ),
+  )
+  act(() =>
+    container.querySelector<HTMLElement>('[aria-label^="system (project)"]')!.click(),
+  )
+  act(() => container.querySelector<HTMLElement>('[aria-label^="subsystem big"]')!.click())
+
+  expect(container.querySelectorAll('.architecture-canvas-module')).toHaveLength(
+    ARCHITECTURE_MODULE_CAP,
+  )
+  const capGroup = container.querySelector<HTMLElement>('[aria-label="Module cap"]')!
+  expect(capGroup.querySelector('[role="status"]')?.textContent).toContain('5 modules')
+  expect(container.querySelector('[aria-label^="module big/f99.ts"]')).toBeFalsy()
+
+  const search = capGroup.querySelector<HTMLInputElement>('input')!
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
+      search,
+      'f99',
+    )
+    search.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(container.querySelector('[aria-label^="module big/f99.ts"]')).toBeTruthy()
 })
 
 it('focuses a subsystem without disturbing ownership expansion, and restores it on clear', () => {
