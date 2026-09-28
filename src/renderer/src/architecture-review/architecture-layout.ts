@@ -62,7 +62,7 @@ export interface ArchitectureEdgeRoute {
 
 export function architectureEdgeRoutes(result: ElkNode): readonly ArchitectureEdgeRoute[] {
   return (result.edges ?? [])
-    .map((edge) => {
+    .map((edge): ArchitectureEdgeRoute | undefined => {
       const section = edge.sections?.[0]
       if (!section) return undefined
       return {
