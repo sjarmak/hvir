@@ -60,6 +60,11 @@ export async function verifyArchitectureReviewVisuals(
           if (!(body instanceof HTMLElement) || !(map instanceof HTMLElement) || !(button instanceof HTMLButtonElement)) {
             return reject(new Error('Architecture map expansion controls disappeared'));
           }
+          const toggleRect = button.getBoundingClientRect();
+          const mapRect = map.getBoundingClientRect();
+          if (button.textContent.trim() !== '+' || mapRect.right - toggleRect.right > 20 || toggleRect.top - mapRect.top > 24) {
+            return reject(new Error('Map expand control is not a top-right plus'));
+          }
           const collapsedWidth = map.getBoundingClientRect().width;
           const collapsedHeight = map.getBoundingClientRect().height;
           const canvas = map.querySelector('.architecture-map-canvas');
@@ -78,6 +83,15 @@ export async function verifyArchitectureReviewVisuals(
             const expandedWidth = map.getBoundingClientRect().width;
             const expandedHeight = map.getBoundingClientRect().height;
             const expandedViewport = canvas.getBoundingClientRect().height;
+            const surfaceRect = surface.getBoundingClientRect();
+            const mapRect = map.getBoundingClientRect();
+            if (Math.abs(mapRect.top - surfaceRect.top) > 2 || Math.abs(mapRect.bottom - surfaceRect.bottom) > 2) {
+              return reject(new Error('Expanded map does not fill the file view height'));
+            }
+            if (Array.from(surface.children).some(child => child !== body && getComputedStyle(child).display !== 'none')) {
+              return reject(new Error('Surrounding review panels remain visible in expanded map'));
+            }
+            if (button.textContent.trim() !== '−') return reject(new Error('Expanded map needs a minus control'));
             const nodeCount = canvas.querySelectorAll('.architecture-canvas-node').length;
             if (button.getAttribute('aria-expanded') !== 'true' || !map.classList.contains('architecture-map-expanded')) {
               return reject(new Error('Architecture map did not enter expanded state'));
@@ -111,8 +125,26 @@ export async function verifyArchitectureReviewVisuals(
     if (expansionError) throw expansionError
     await win.webContents.executeJavaScript(`
       new Promise((resolve, reject) => {
+        document.querySelector('[aria-label="Collapse architecture map"]')?.click();
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          const button = document.querySelector('[aria-label="Expand architecture map"]');
+          const header = document.querySelector('.architecture-review-header');
+          const map = document.querySelector('.architecture-review-map');
+          const body = document.querySelector('.architecture-review-body');
+          if (!button || button.textContent.trim() !== '+' || !header || getComputedStyle(header).display === 'none') {
+            return reject(new Error('Minus did not restore the review controls'));
+          }
+          if (!map || !body || map.getBoundingClientRect().width >= body.getBoundingClientRect().width * 0.9) {
+            return reject(new Error('Minus did not restore the split review layout'));
+          }
+          resolve(true);
+        }));
+      })
+    `)
+    await win.webContents.executeJavaScript(`
+      new Promise((resolve, reject) => {
         const map = document.querySelector('.architecture-review-map');
-        const button = document.querySelector('[aria-label="Collapse architecture map"]');
+        const button = document.querySelector('[aria-label="Expand architecture map"]');
         const explorer = document.querySelector('.architecture-file-explorer');
         if (!(map instanceof HTMLElement) || !(button instanceof HTMLButtonElement) || !(explorer instanceof HTMLDetailsElement)) {
           return reject(new Error('Architecture expanded review controls disappeared'));

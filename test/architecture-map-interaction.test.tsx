@@ -108,12 +108,19 @@ it('offers an expanded map and makes file status scannable without color', () =>
     '[aria-label="Expand architecture map"]',
   )!
   expect(expand.getAttribute('aria-expanded')).toBe('false')
+  expect(expand.textContent).toBe('+')
   expect(map.classList.contains('architecture-map-expanded')).toBe(false)
 
   act(() => expand.click())
   expect(expand.getAttribute('aria-expanded')).toBe('true')
   expect(map.classList.contains('architecture-map-expanded')).toBe(true)
-  expect(expand.textContent).toContain('Collapse map')
+  expect(expand.textContent).toBe('−')
+  const canvas = container.querySelector('.react-flow')
+  act(() => expand.click())
+  expect(expand.textContent).toBe('+')
+  expect(map.classList.contains('architecture-map-expanded')).toBe(false)
+  expect(container.querySelector('.react-flow')).toBe(canvas)
+  act(() => expand.click())
 
   const files = container.querySelector('.architecture-file-explorer')!
   const changedFiles = files.querySelector<HTMLDetailsElement>(
@@ -269,7 +276,9 @@ it('lets the user choose layout orientation and spacing, and keeps the choice ac
   const orientationGroup = container.querySelector<HTMLElement>(
     '[aria-label="Layout orientation"]',
   )!
-  const spacingGroup = container.querySelector<HTMLElement>('[aria-label="Layout spacing"]')!
+  const spacingGroup = container.querySelector<HTMLElement>(
+    '[aria-label="Layout spacing"]',
+  )!
   const vertical = Array.from(orientationGroup.querySelectorAll('button')).find(
     (button) => button.textContent === 'vertical',
   )!
@@ -316,7 +325,9 @@ it('reports the module cap explicitly and lets a search reach an omitted module'
   act(() =>
     container.querySelector<HTMLElement>('[aria-label^="system (project)"]')!.click(),
   )
-  act(() => container.querySelector<HTMLElement>('[aria-label^="subsystem big"]')!.click())
+  act(() =>
+    container.querySelector<HTMLElement>('[aria-label^="subsystem big"]')!.click(),
+  )
 
   expect(container.querySelectorAll('.architecture-canvas-module')).toHaveLength(
     ARCHITECTURE_MODULE_CAP,

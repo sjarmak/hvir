@@ -118,7 +118,7 @@ export async function verifyArchitectureReviewWorkflow(
       const subsystem = await wait(() => {
         const alert = document.querySelector('.architecture-review-body [role="alert"]');
         if (alert) throw new Error(alert.textContent || 'Expanded architecture layout failed');
-        return [...document.querySelectorAll('.architecture-canvas-subsystem')].find(node => node.querySelector('strong')?.textContent === 'architecture-smoke/ui');
+        return [...document.querySelectorAll('.architecture-canvas-subsystem')].find(node => node.querySelector('strong')?.textContent === 'architecture-smoke/ui' && getComputedStyle(node).visibility !== 'hidden');
       }, 'expanded architecture system');
       subsystem.focus();
       if (document.activeElement !== subsystem) throw new Error('Subsystem cannot receive keyboard focus');

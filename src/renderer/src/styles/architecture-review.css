@@ -146,7 +146,7 @@
   position: sticky;
   top: -12px;
   z-index: 2;
-  padding: 6px 0;
+  padding: 6px 40px 6px 0;
   background: var(--surface-2);
 }
 .architecture-review-map-tabs button {
@@ -157,8 +157,15 @@
   color: var(--text-strong);
   border-color: var(--accent);
 }
-.architecture-map-size-control {
-  margin-right: auto;
+.architecture-review .architecture-map-size-control {
+  position: absolute;
+  top: 6px;
+  right: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: calc(20px * var(--hvir-interface-scale));
+  line-height: 1;
 }
 .architecture-map-note {
   color: var(--text-muted);
@@ -238,7 +245,8 @@
   background: var(--surface-1);
 }
 .architecture-map-expanded .architecture-map-canvas {
-  flex: 0 0 100%;
+  flex: 1 1 0;
+  min-height: 160px;
   height: auto;
 }
 .architecture-review .react-flow__controls button {
@@ -544,16 +552,15 @@
     height: 320px;
   }
 }
-.architecture-review-body:has(.architecture-map-expanded) {
-  grid-template-columns: minmax(0, 1fr);
+.architecture-review:has(.architecture-map-expanded) {
+  overflow: hidden;
 }
-.architecture-review:has(.architecture-map-expanded)
-  :is(
-    .architecture-review-header,
-    .architecture-review-controls,
-    .architecture-strip,
-    .architecture-review-metadata
-  ) {
+.architecture-review-body:has(.architecture-map-expanded) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+}
+.architecture-review:has(.architecture-map-expanded) > :not(.architecture-review-body) {
   display: none;
 }
 .architecture-review-map.architecture-map-expanded {
@@ -561,6 +568,17 @@
   flex-direction: column;
   height: 100%;
   overflow: auto;
+}
+.architecture-map-expanded
+  > :is(
+    .architecture-map-note,
+    .architecture-review-relationships,
+    .architecture-file-explorer
+  ) {
+  display: none;
+}
+.architecture-map-expanded > :not(.architecture-map-canvas) {
+  flex-shrink: 0;
 }
 .architecture-review-body:has(.architecture-map-expanded) .architecture-evidence {
   display: none;

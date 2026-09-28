@@ -76,7 +76,8 @@ export function ArchitectureMap({
   const zoomLabelMode = architectureZoomLabelMode(zoom)
   const [layoutOrientation, setLayoutOrientation] =
     useState<ArchitectureLayoutOrientation>('horizontal')
-  const [layoutSpacing, setLayoutSpacing] = useState<ArchitectureLayoutSpacing>('comfortable')
+  const [layoutSpacing, setLayoutSpacing] =
+    useState<ArchitectureLayoutSpacing>('comfortable')
   const layoutOptions = useMemo(
     () => ({ orientation: layoutOrientation, spacing: layoutSpacing }),
     [layoutOrientation, layoutSpacing],
@@ -138,7 +139,8 @@ export function ArchitectureMap({
     () =>
       elements.nodes.map((node, index) => {
         const { filename, directory } = moduleLabelParts(node.label)
-        const showDirectory = node.kind === 'module' && directory && zoomLabelMode === 'detail'
+        const showDirectory =
+          node.kind === 'module' && directory && zoomLabelMode === 'detail'
         return {
           id: node.id,
           position: layout.positions.get(node.id) ?? {
@@ -196,7 +198,8 @@ export function ArchitectureMap({
         type: 'architecture',
         data: { points: layout.edges.get(edge.id)?.points },
         className: `architecture-canvas-edge architecture-canvas-edge-${edge.kind} change-${edge.change}${edge.ghost ? ' ghost' : ''}`,
-        markerEnd: edge.kind === 'dependency' ? { type: MarkerType.ArrowClosed } : undefined,
+        markerEnd:
+          edge.kind === 'dependency' ? { type: MarkerType.ArrowClosed } : undefined,
         selectable: Boolean(edge.relationship),
         ariaLabel: edge.relationship
           ? `${edge.relationship.source} to ${edge.relationship.target}, ${edge.change}`
@@ -232,10 +235,11 @@ export function ArchitectureMap({
           type="button"
           className="architecture-map-size-control"
           aria-label={expanded ? 'Collapse architecture map' : 'Expand architecture map'}
+          title={expanded ? 'Restore map view' : 'Fill file view with map'}
           aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
         >
-          {expanded ? 'Collapse map' : 'Expand map'}
+          {expanded ? '−' : '+'}
         </button>
         {(['overlay', 'before', 'after'] as const).map((value) => (
           <button
@@ -290,7 +294,11 @@ export function ArchitectureMap({
           </label>
         </div>
       ) : null}
-      <div className="architecture-map-focus-controls" role="group" aria-label="Focus subsystem">
+      <div
+        className="architecture-map-focus-controls"
+        role="group"
+        aria-label="Focus subsystem"
+      >
         <label>
           Focus
           <select
@@ -324,11 +332,7 @@ export function ArchitectureMap({
           </div>
         ) : null}
       </div>
-      <div
-        className="architecture-map-layout-controls"
-        role="group"
-        aria-label="Layout"
-      >
+      <div className="architecture-map-layout-controls" role="group" aria-label="Layout">
         <div role="group" aria-label="Layout orientation">
           {(['horizontal', 'vertical'] as const).map((orientation) => (
             <button
@@ -411,6 +415,7 @@ export function ArchitectureMap({
               (item) => item.id === clicked.id,
             )?.relationship
             if (relationship) {
+              setExpanded(false)
               setSelectedSubsystem(relationship.source)
               setFocusedRelationship({
                 source: relationship.source,
