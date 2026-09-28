@@ -29,6 +29,11 @@ export interface ArchitectureBriefInput {
   readonly relationships: readonly ArchitectureRelationshipDelta[]
 }
 
+export interface ArchitectureExplanationCommitInput {
+  readonly revision: string
+  readonly subject: string
+}
+
 export interface ArchitectureExplanationPromptInput {
   readonly snapshotId: string
   readonly root: HostPath
@@ -39,6 +44,12 @@ export interface ArchitectureExplanationPromptInput {
   readonly scope: string
   readonly modules: readonly ArchitectureModuleDelta[]
   readonly relationships: readonly ArchitectureRelationshipDelta[]
+  readonly commits: readonly ArchitectureExplanationCommitInput[]
+  /** True when the git log for this range was cut short before reaching this prompt. */
+  readonly commitsTruncated: boolean
+  readonly diff: string
+  /** True when the diff for this range was cut short before reaching this prompt. */
+  readonly diffTruncated: boolean
 }
 
 const MARKER = 'hvir-architecture-handoff'
@@ -115,6 +126,10 @@ export function architectureExplanationPrompt(
     ...relationshipSection(input.relationships),
     '',
     ...moduleSection(input.modules),
+    '',
+    ...commitSection(input.commits, input.commitsTruncated),
+    '',
+    ...diffSection(input.diff, input.diffTruncated),
     '',
     `Return exactly one JSON object using this shape: ${example}`,
     'Use exact system, subsystem and module names from the snapshot facts. The sequenceDiagram value must contain one Mermaid sequence diagram. Do not add keys or wrap the JSON in Markdown.',
@@ -213,6 +228,44 @@ function moduleSection(modules: readonly ArchitectureModuleDelta[]): readonly st
     )
   lines.push(...omitted(changed.length - MAX_MODULES, 'module'))
   return lines
+}
+
+function commitSection(
+  commits: readonly ArchitectureExplanationCommitInput[],
+  truncated: boolean,
+): readonly string[] {
+  const lines = ['## Commits in this range', '']
+  if (commits.length === 0) lines.push('None in scope.')
+  for (const commit of commits)
+    lines.push(`- ${code(commit.revision.slice(0, 12))} ${code(commit.subject)}`)
+  if (truncated) lines.push('', 'Git truncated the commit log before it reached this prompt.')
+  return lines
+}
+
+function diffSection(diff: string, truncated: boolean): readonly string[] {
+  const lines = ['## Diff for this range', '']
+  if (diff.length === 0) lines.push('None in scope.')
+  else lines.push(diffBlock(diff))
+  if (truncated) lines.push('', 'Git truncated the diff before it reached this prompt.')
+  return lines
+}
+
+/**
+ * Repository text as a fenced code block: control characters other than newline become
+ * \u escapes, and the fence is longer than any backtick run inside so the value cannot
+ * close the block or inject further Markdown structure.
+ */
+function diffBlock(diff: string): string {
+  const normalized = diff.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const escaped = normalized.replace(/[\p{Cc}\u2028\u2029]/gu, (char) =>
+    char === '\n' ? '\n' : `\\u${char.codePointAt(0)!.toString(16).padStart(4, '0')}`,
+  )
+  const longest = Math.max(
+    0,
+    ...Array.from(escaped.matchAll(/`+/g), (run) => run[0].length),
+  )
+  const fence = '`'.repeat(Math.max(longest + 1, 3))
+  return `${fence}diff\n${escaped}\n${fence}`
 }
 
 function omitted(count: number, noun: string): readonly string[] {

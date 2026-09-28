@@ -71,6 +71,7 @@ import { ArchitectureScopeRefusalError } from './scope-cap'
 import { recordArchitectureScope } from './scope-record'
 import { architectureExplanationPrompt } from './handoff-brief'
 import type { ArchitectureExplanationModelPort } from './explanation-model'
+import { readArchitectureExplanationContext } from './explanation-context'
 
 const MAX_REVIEWS = 4
 const STRIP_TIMEOUT = 60_000
@@ -82,6 +83,7 @@ export interface ArchitectureReviewPorts {
   readonly commits?: typeof listArchitectureCommits
   readonly imports?: ModuleImportsPort
   readonly explanationModel?: ArchitectureExplanationModelPort
+  readonly explanationContext?: typeof readArchitectureExplanationContext
   /** Worktree creation and brief writing for the agent handoff (ADR-063). */
   readonly handoff?: {
     readonly worktrees: ArchitectureWorktreePort
@@ -432,6 +434,18 @@ export class ArchitectureReviewCoordinator {
     const { key, review } = this.currentSnapshot(owner, host, request)
     const capture = review.capture!
     const snapshot = review.snapshot!
+    const explanationContext = await (
+      this.ports.explanationContext ?? readArchitectureExplanationContext
+    )(
+      host,
+      {
+        root: capture.root,
+        baselineRevision: capture.baselineRevision,
+        currentRevision: capture.currentRevision,
+        scope: capture.layout.scope,
+      },
+      review.controller.signal,
+    )
     const prompt = architectureExplanationPrompt({
       snapshotId: snapshot.id,
       root: capture.root,
@@ -443,6 +457,10 @@ export class ArchitectureReviewCoordinator {
         capture.layout.scope.length > 0 ? capture.layout.scope.join(', ') : 'repository',
       modules: snapshot.analysis.modules,
       relationships: snapshot.analysis.relationships,
+      commits: explanationContext.commits,
+      commitsTruncated: explanationContext.commitsTruncated,
+      diff: explanationContext.diff,
+      diffTruncated: explanationContext.diffTruncated,
     })
     const stateKey = explanationKey(key, request.snapshotId)
     const previous = this.explanations.get(stateKey)

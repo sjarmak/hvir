@@ -20,6 +20,7 @@ import { gitBlobId } from '../src/main/architecture-review/blob-id'
 import { ByteBoundedCache } from '../src/main/architecture-review/byte-bounded-cache'
 import { asHarnessProfileId } from '../src/shared'
 import type { ArchitectureExplanationModelPort } from '../src/main/architecture-review/explanation-model'
+import type { readArchitectureExplanationContext } from '../src/main/architecture-review/explanation-context'
 
 const source = (path: string, content: string) => ({
   path,
@@ -123,6 +124,14 @@ function setup(
       Promise.resolve('{}'),
     ),
   }
+  const explanationContext = vi.fn<typeof readArchitectureExplanationContext>(() =>
+    Promise.resolve({
+      commits: [],
+      commitsTruncated: false,
+      diff: '',
+      diffTruncated: false,
+    }),
+  )
   const coordinator = new ArchitectureReviewCoordinator({
     resources,
     capture,
@@ -134,6 +143,7 @@ function setup(
       writeBrief,
     },
     explanationModel,
+    explanationContext,
   })
   return {
     held,
@@ -142,6 +152,7 @@ function setup(
     addWorktree,
     writeBrief,
     explanationModel,
+    explanationContext,
     liveState,
     resources,
     owner,
@@ -399,6 +410,40 @@ it('generates and validates an explanation without creating a worktree', async (
   expect(f.addWorktree).not.toHaveBeenCalled()
   expect(f.writeBrief).not.toHaveBeenCalled()
   expect(f.watch).not.toHaveBeenCalled()
+})
+it('includes commit messages and a diff from the explanation-context port in the prompt', async () => {
+  const f = setup()
+  const result = await f.coordinator.scan(f.owner, f.host, f.request)
+  f.explanationContext.mockResolvedValue({
+    commits: [{ revision: HEAD, subject: 'add the missing case' }],
+    commitsTruncated: false,
+    diff: 'diff --git a/x.ts b/x.ts\n+export const x = 1\n',
+    diffTruncated: false,
+  })
+  f.explanationModel.generate.mockResolvedValue(
+    JSON.stringify({
+      version: 1,
+      snapshotId: result.id,
+      whatChanged: 'Changed.',
+      why: 'Reason.',
+      sequenceDiagram: 'sequenceDiagram\n  User->>hvir: Explain',
+      touched: { systems: [], subsystems: [], modules: [] },
+    }),
+  )
+  await f.coordinator.explain(f.owner, f.host, root, {
+    ...f.request,
+    snapshotId: result.id,
+    profileId: asHarnessProfileId('codex'),
+    launchRevision: 2,
+  })
+  expect(f.explanationContext).toHaveBeenCalledWith(
+    f.host,
+    { root, baselineRevision: BASE, currentRevision: 'working-tree', scope: [] },
+    expect.any(AbortSignal),
+  )
+  const modelRequest = f.explanationModel.generate.mock.calls[0]?.[1]
+  expect(modelRequest?.prompt).toContain('add the missing case')
+  expect(modelRequest?.prompt).toContain('+export const x = 1')
 })
 it('keeps a generated explanation across rescans and clears it on close', async () => {
   const f = setup()
