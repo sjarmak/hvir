@@ -130,6 +130,7 @@ export interface ArchitectureCanvasEdge {
   readonly target: string
   readonly change: ArchitectureModuleDelta['change']
   readonly ghost: boolean
+  readonly kind: 'dependency' | 'membership'
   readonly relationship?: ArchitectureRelationshipDelta
 }
 
@@ -182,6 +183,7 @@ export function architectureCanvasElements(
     target: `system:${relationship.target}`,
     change: relationship.change,
     ghost: absentInMode(relationship.change, mode),
+    kind: 'dependency' as const,
   }))
   const systemSubsystems =
     systems.find((system) => system.name === expandedSystem)?.subsystems ?? []
@@ -230,6 +232,7 @@ export function architectureCanvasElements(
       target: relationship.target,
       change: relationship.change,
       ghost: absentInMode(relationship.change, mode),
+      kind: 'dependency' as const,
       relationship,
     }))
   const systemMembershipEdges = subsystemNodes.map((node) => ({
@@ -238,6 +241,7 @@ export function architectureCanvasElements(
     target: node.id,
     change: node.change,
     ghost: node.ghost,
+    kind: 'membership' as const,
   }))
   const membershipEdges = moduleNodes.map((node) => ({
     id: `membership:${expandedSubsystem}:${node.id}`,
@@ -245,6 +249,7 @@ export function architectureCanvasElements(
     target: node.id,
     change: node.change,
     ghost: node.ghost,
+    kind: 'membership' as const,
   }))
   const layoutSubsystems = [
     ...new Set(

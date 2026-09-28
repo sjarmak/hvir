@@ -331,3 +331,19 @@ it('keeps modules inside their selected system when systems share a subsystem', 
     companion.nodes.filter((node) => node.kind === 'module').map((node) => node.id),
   ).toEqual(['module:src/renderer/companion/index.ts'])
 })
+
+it('marks membership edges separately from import-relationship edges', () => {
+  const map = subsystemMap(analyzeArchitecture(before, after), false)
+  const elements = architectureCanvasElements(map, 'overlay', '(project)', 'src/ui')
+
+  const dependencyEdges = elements.edges.filter((edge) => edge.kind === 'dependency')
+  const membershipEdges = elements.edges.filter((edge) => edge.kind === 'membership')
+
+  expect(dependencyEdges.length).toBeGreaterThan(0)
+  expect(dependencyEdges.every((edge) => edge.relationship)).toBe(true)
+  expect(membershipEdges.length).toBeGreaterThan(0)
+  expect(membershipEdges.every((edge) => !edge.relationship)).toBe(true)
+  expect(elements.edges.every((edge) => edge.kind === 'dependency' || edge.kind === 'membership')).toBe(
+    true,
+  )
+})

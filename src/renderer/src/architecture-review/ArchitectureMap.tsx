@@ -105,12 +105,12 @@ export function ArchitectureMap({
         id: edge.id,
         source: edge.source,
         target: edge.target,
-        className: `architecture-canvas-edge change-${edge.change}${edge.ghost ? ' ghost' : ''}`,
-        markerEnd: { type: MarkerType.ArrowClosed },
+        className: `architecture-canvas-edge architecture-canvas-edge-${edge.kind} change-${edge.change}${edge.ghost ? ' ghost' : ''}`,
+        markerEnd: edge.kind === 'dependency' ? { type: MarkerType.ArrowClosed } : undefined,
         selectable: Boolean(edge.relationship),
         ariaLabel: edge.relationship
           ? `${edge.relationship.source} to ${edge.relationship.target}, ${edge.change}`
-          : undefined,
+          : `${edge.source} contains ${edge.target}`,
       })),
     [elements.edges],
   )
@@ -175,9 +175,12 @@ export function ArchitectureMap({
       </div>
       <p className="architecture-map-note">
         Each top-level node is a system. Select a system to expand its subsystems, then a
-        subsystem to expand its modules. Lines are observed imports, not responsibility
-        claims.
+        subsystem to expand its modules.
       </p>
+      <ul className="architecture-map-legend" aria-label="Edge legend">
+        <li className="architecture-map-legend-dependency">Imports (observed)</li>
+        <li className="architecture-map-legend-membership">Contains</li>
+      </ul>
       {map.nodes.length === 0 ? (
         <p>
           No source changes in this comparison. Enable All systems to explore the captured
