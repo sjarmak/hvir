@@ -16,6 +16,8 @@ import type { ArchitectureAnalysis } from '../../../shared'
 import {
   architectureCanvasElements,
   architectureFocusElements,
+  architectureZoomLabelMode,
+  moduleLabelParts,
   subsystemMap,
   type ArchitectureFocusDirection,
   type ArchitectureMapMode,
@@ -66,6 +68,8 @@ export function ArchitectureMap({
   const [expanded, setExpanded] = useState(false)
   const [focusSubsystem, setFocusSubsystem] = useState<string>()
   const [focusDirection, setFocusDirection] = useState<ArchitectureFocusDirection>('both')
+  const [zoom, setZoom] = useState(1)
+  const zoomLabelMode = architectureZoomLabelMode(zoom)
   const mapElement = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     if (expanded && mapElement.current) mapElement.current.scrollTop = 0
@@ -118,40 +122,56 @@ export function ArchitectureMap({
   const layout = useArchitectureLayout(layoutInput)
   const nodes = useMemo<readonly Node[]>(
     () =>
-      elements.nodes.map((node, index) => ({
-        id: node.id,
-        position: layout.positions.get(node.id) ?? {
-          x: (index % 2) * 288,
-          y: Math.floor(index / 2) * 96,
-        },
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        data: {
-          label: (
-            <>
-              <strong>{node.label}</strong>
-              <span>{node.detail}</span>
-            </>
-          ),
-        },
-        className: [
-          'architecture-canvas-node',
-          `architecture-canvas-${node.kind}`,
-          `change-${node.change}`,
-          node.ghost ? 'ghost' : '',
-          node.nearby ? 'nearby' : '',
-          selectedSystem === node.label || selectedSubsystem === node.id
-            ? 'selected'
-            : '',
-          focusSubsystem === node.id ? 'architecture-canvas-node-focused' : '',
-        ]
-          .filter(Boolean)
-          .join(' '),
-        draggable: false,
-        selectable: true,
-        ariaLabel: `${node.kind} ${node.label}, ${node.detail}`,
-      })),
-    [elements.nodes, layout.positions, selectedSubsystem, selectedSystem, focusSubsystem],
+      elements.nodes.map((node, index) => {
+        const { filename, directory } = moduleLabelParts(node.label)
+        const showDirectory = node.kind === 'module' && directory && zoomLabelMode === 'detail'
+        return {
+          id: node.id,
+          position: layout.positions.get(node.id) ?? {
+            x: (index % 2) * 288,
+            y: Math.floor(index / 2) * 96,
+          },
+          sourcePosition: Position.Right,
+          targetPosition: Position.Left,
+          data: {
+            label: (
+              <>
+                <strong>{node.kind === 'module' ? filename : node.label}</strong>
+                {showDirectory ? (
+                  <span className="architecture-canvas-node-directory">{directory}</span>
+                ) : (
+                  <span>{node.detail}</span>
+                )}
+              </>
+            ),
+          },
+          className: [
+            'architecture-canvas-node',
+            `architecture-canvas-${node.kind}`,
+            `change-${node.change}`,
+            node.ghost ? 'ghost' : '',
+            node.nearby ? 'nearby' : '',
+            selectedSystem === node.label || selectedSubsystem === node.id
+              ? 'selected'
+              : '',
+            focusSubsystem === node.id ? 'architecture-canvas-node-focused' : '',
+          ]
+            .filter(Boolean)
+            .join(' '),
+          draggable: false,
+          selectable: true,
+          ariaLabel: `${node.kind} ${node.label}, ${node.detail}`,
+          domAttributes: { title: node.path ?? node.label },
+        }
+      }),
+    [
+      elements.nodes,
+      layout.positions,
+      selectedSubsystem,
+      selectedSystem,
+      focusSubsystem,
+      zoomLabelMode,
+    ],
   )
   const edges = useMemo<readonly Edge[]>(
     () =>
@@ -283,7 +303,10 @@ export function ArchitectureMap({
           files.
         </p>
       ) : null}
-      <div className="architecture-map-canvas" aria-label="Architecture canvas">
+      <div
+        className={`architecture-map-canvas architecture-map-zoom-${zoomLabelMode}`}
+        aria-label="Architecture canvas"
+      >
         <ReactFlow
           nodes={[...nodes]}
           edges={[...edges]}
@@ -292,6 +315,7 @@ export function ArchitectureMap({
           minZoom={0.2}
           maxZoom={2}
           nodesDraggable={false}
+          onMove={(_, viewport) => setZoom(viewport.zoom)}
           onNodeClick={(_, clicked) => {
             const canvasNode = elements.nodes.find((item) => item.id === clicked.id)
             if (canvasNode?.path) {

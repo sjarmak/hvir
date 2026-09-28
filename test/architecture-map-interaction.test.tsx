@@ -225,6 +225,31 @@ it('expands subsystem modules in the canvas and preserves relationship evidence'
   expect(later & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 })
 
+it('gives module nodes a filename-first label with the full path on hover', () => {
+  act(() =>
+    root.render(
+      <ArchitectureMap
+        analysis={analysis}
+        mode="overlay"
+        onMode={() => undefined}
+        onEvidence={() => undefined}
+      />,
+    ),
+  )
+  act(() =>
+    container.querySelector<HTMLElement>('[aria-label^="system (project)"]')!.click(),
+  )
+  act(() =>
+    container.querySelector<HTMLElement>('[aria-label^="subsystem data"]')!.click(),
+  )
+  const module = container.querySelector<HTMLElement>('[aria-label^="module data/a.ts"]')!
+  expect(module.querySelector('strong')?.textContent).toBe('a.ts')
+  expect(module.querySelector('.architecture-canvas-node-directory')?.textContent).toBe(
+    'data',
+  )
+  expect(module.getAttribute('title')).toBe('data/a.ts')
+})
+
 it('focuses a subsystem without disturbing ownership expansion, and restores it on clear', () => {
   act(() =>
     root.render(

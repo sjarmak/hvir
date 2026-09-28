@@ -4,6 +4,8 @@ import { analyzeArchitecture } from '../src/main/architecture-review/analysis'
 import {
   architectureCanvasElements,
   architectureFocusElements,
+  architectureZoomLabelMode,
+  moduleLabelParts,
   subsystemMap,
 } from '../src/renderer/src/architecture-review/architecture-review-model'
 import {
@@ -412,4 +414,19 @@ it('marks membership edges separately from import-relationship edges', () => {
   expect(elements.edges.every((edge) => edge.kind === 'dependency' || edge.kind === 'membership')).toBe(
     true,
   )
+})
+
+it('moduleLabelParts: splits a path into a prominent filename and a secondary directory', () => {
+  expect(moduleLabelParts('src/renderer/src/architecture-review/architecture-review-model.ts')).toEqual({
+    filename: 'architecture-review-model.ts',
+    directory: 'src/renderer/src/architecture-review',
+  })
+  expect(moduleLabelParts('a.ts')).toEqual({ filename: 'a.ts', directory: '' })
+})
+
+it('architectureZoomLabelMode: buckets React Flow zoom into overview vs detail label modes', () => {
+  expect(architectureZoomLabelMode(1)).toBe('detail')
+  expect(architectureZoomLabelMode(0.6)).toBe('detail')
+  expect(architectureZoomLabelMode(0.59)).toBe('overview')
+  expect(architectureZoomLabelMode(0.2)).toBe('overview')
 })

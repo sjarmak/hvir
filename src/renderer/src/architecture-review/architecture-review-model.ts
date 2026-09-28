@@ -134,6 +134,24 @@ export interface ArchitectureCanvasEdge {
   readonly relationship?: ArchitectureRelationshipDelta
 }
 
+export function moduleLabelParts(path: string): {
+  readonly filename: string
+  readonly directory: string
+} {
+  const slash = path.lastIndexOf('/')
+  return slash === -1
+    ? { filename: path, directory: '' }
+    : { filename: path.slice(slash + 1), directory: path.slice(0, slash) }
+}
+
+const ARCHITECTURE_ZOOM_OVERVIEW_THRESHOLD = 0.6
+
+export type ArchitectureZoomLabelMode = 'overview' | 'detail'
+
+export function architectureZoomLabelMode(zoom: number): ArchitectureZoomLabelMode {
+  return zoom < ARCHITECTURE_ZOOM_OVERVIEW_THRESHOLD ? 'overview' : 'detail'
+}
+
 export interface ArchitectureCanvasLayoutInput {
   readonly nodes: readonly {
     readonly id: string

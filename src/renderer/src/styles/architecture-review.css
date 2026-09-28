@@ -259,6 +259,15 @@
   font-size: calc(11px * var(--hvir-interface-scale));
   color: var(--text-muted);
 }
+.architecture-canvas-node-directory {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  opacity: 0.8;
+}
+.architecture-map-zoom-overview .architecture-canvas-node strong {
+  font-size: calc(14px * var(--hvir-interface-scale));
+}
 .architecture-canvas-node.nearby {
   background: var(--surface-1);
 }
