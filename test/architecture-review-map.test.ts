@@ -6,6 +6,7 @@ import {
   subsystemMap,
 } from '../src/renderer/src/architecture-review/architecture-review-model'
 import {
+  architectureEdgeRoutes,
   architectureLayoutGraph,
   architectureNodePositions,
 } from '../src/renderer/src/architecture-review/architecture-layout'
@@ -330,6 +331,26 @@ it('keeps modules inside their selected system when systems share a subsystem', 
   expect(
     companion.nodes.filter((node) => node.kind === 'module').map((node) => node.id),
   ).toEqual(['module:src/renderer/companion/index.ts'])
+})
+
+it('exposes the ELK-computed route for each edge, not just node positions', async () => {
+  const input = {
+    nodes: [
+      { id: 'a', width: 244, height: 64 },
+      { id: 'b', width: 244, height: 64 },
+    ],
+    edges: [{ id: 'a-b', source: 'a', target: 'b' }],
+  }
+  const result = await elk.layout(architectureLayoutGraph(input))
+  const routes = architectureEdgeRoutes(result)
+
+  expect(routes).toHaveLength(1)
+  expect(routes[0]!.id).toBe('a-b')
+  expect(routes[0]!.points.length).toBeGreaterThanOrEqual(2)
+  for (const point of routes[0]!.points) {
+    expect(typeof point.x).toBe('number')
+    expect(typeof point.y).toBe('number')
+  }
 })
 
 it('marks membership edges separately from import-relationship edges', () => {

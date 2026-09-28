@@ -39,3 +39,26 @@ export function architectureNodePositions(
     }))
     .sort((left, right) => left.id.localeCompare(right.id))
 }
+
+export interface ArchitectureEdgeRoute {
+  readonly id: string
+  readonly points: readonly { readonly x: number; readonly y: number }[]
+}
+
+export function architectureEdgeRoutes(result: ElkNode): readonly ArchitectureEdgeRoute[] {
+  return (result.edges ?? [])
+    .map((edge) => {
+      const section = edge.sections?.[0]
+      if (!section) return undefined
+      return {
+        id: edge.id,
+        points: [
+          section.startPoint,
+          ...(section.bendPoints ?? []),
+          section.endPoint,
+        ].map((point) => ({ x: Math.round(point.x), y: Math.round(point.y) })),
+      }
+    })
+    .filter((route): route is ArchitectureEdgeRoute => route !== undefined)
+    .sort((left, right) => left.id.localeCompare(right.id))
+}

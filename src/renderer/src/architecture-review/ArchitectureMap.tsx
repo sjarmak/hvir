@@ -1,10 +1,14 @@
 import { useLayoutEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import {
+  BaseEdge,
   Background,
   Controls,
   MarkerType,
+  Position,
   ReactFlow,
+  getStraightPath,
   type Edge,
+  type EdgeProps,
   type Node,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
@@ -22,6 +26,27 @@ interface Props {
   readonly onMode: (mode: ArchitectureMapMode) => void
   readonly onEvidence: (path: string, line: number, side: 'before' | 'after') => void
 }
+interface ArchitectureEdgeData extends Record<string, unknown> {
+  readonly points?: readonly { readonly x: number; readonly y: number }[]
+}
+function ArchitectureEdgeLine({
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  markerEnd,
+  style,
+  data,
+}: EdgeProps<Edge<ArchitectureEdgeData>>): ReactElement {
+  const points = data?.points
+  const path =
+    points && points.length >= 2
+      ? `M ${points.map((point) => `${point.x},${point.y}`).join(' L ')}`
+      : getStraightPath({ sourceX, sourceY, targetX, targetY })[0]
+  return <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} />
+}
+const edgeTypes = { architecture: ArchitectureEdgeLine }
 export function ArchitectureMap({
   analysis,
   mode,
@@ -73,6 +98,8 @@ export function ArchitectureMap({
           x: (index % 2) * 288,
           y: Math.floor(index / 2) * 96,
         },
+        sourcePosition: Position.Right,
+        targetPosition: Position.Left,
         data: {
           label: (
             <>
@@ -105,6 +132,8 @@ export function ArchitectureMap({
         id: edge.id,
         source: edge.source,
         target: edge.target,
+        type: 'architecture',
+        data: { points: layout.edges.get(edge.id)?.points },
         className: `architecture-canvas-edge architecture-canvas-edge-${edge.kind} change-${edge.change}${edge.ghost ? ' ghost' : ''}`,
         markerEnd: edge.kind === 'dependency' ? { type: MarkerType.ArrowClosed } : undefined,
         selectable: Boolean(edge.relationship),
@@ -112,7 +141,7 @@ export function ArchitectureMap({
           ? `${edge.relationship.source} to ${edge.relationship.target}, ${edge.change}`
           : `${edge.source} contains ${edge.target}`,
       })),
-    [elements.edges],
+    [elements.edges, layout.edges],
   )
   const node = map.nodes.find((n) => n.id === selectedSubsystem)
   const links = map.relationships.filter(
@@ -191,6 +220,7 @@ export function ArchitectureMap({
         <ReactFlow
           nodes={[...nodes]}
           edges={[...edges]}
+          edgeTypes={edgeTypes}
           fitView
           minZoom={0.2}
           maxZoom={2}

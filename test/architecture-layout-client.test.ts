@@ -45,11 +45,44 @@ it('uses the ELK worker protocol and maps the returned graph', async () => {
   ])
   LayoutWorker.instance.onmessage?.(
     new MessageEvent('message', {
-      data: { id: 1, data: { id: 'architecture', children: [{ id: 'node', x: 7, y: 9 }] } },
+      data: {
+        id: 1,
+        data: {
+          id: 'architecture',
+          children: [{ id: 'node', x: 7, y: 9 }],
+          edges: [
+            {
+              id: 'edge',
+              sources: ['a'],
+              targets: ['b'],
+              sections: [
+                {
+                  id: 'edge_s0',
+                  startPoint: { x: 1, y: 2 },
+                  bendPoints: [{ x: 3, y: 4 }],
+                  endPoint: { x: 5, y: 6 },
+                },
+              ],
+            },
+          ],
+        },
+      },
     }),
   )
 
-  await expect(result).resolves.toEqual([{ id: 'node', x: 7, y: 9 }])
+  await expect(result).resolves.toEqual({
+    positions: [{ id: 'node', x: 7, y: 9 }],
+    edges: [
+      {
+        id: 'edge',
+        points: [
+          { x: 1, y: 2 },
+          { x: 3, y: 4 },
+          { x: 5, y: 6 },
+        ],
+      },
+    ],
+  })
 })
 
 it('surfaces the underlying worker failure', async () => {

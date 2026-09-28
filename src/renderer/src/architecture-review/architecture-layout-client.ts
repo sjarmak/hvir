@@ -1,7 +1,9 @@
 import type { ArchitectureCanvasLayoutInput } from './architecture-review-model'
 import {
+  architectureEdgeRoutes,
   architectureLayoutGraph,
   architectureNodePositions,
+  type ArchitectureEdgeRoute,
   type ArchitectureNodePosition,
 } from './architecture-layout'
 import type {
@@ -10,8 +12,13 @@ import type {
   ArchitectureLayoutResponse,
 } from './architecture-layout-protocol'
 
+export interface ArchitectureLayoutResult {
+  readonly positions: readonly ArchitectureNodePosition[]
+  readonly edges: readonly ArchitectureEdgeRoute[]
+}
+
 interface PendingLayout {
-  readonly resolve: (positions: readonly ArchitectureNodePosition[]) => void
+  readonly resolve: (result: ArchitectureLayoutResult) => void
   readonly reject: (error: Error) => void
 }
 
@@ -21,7 +28,7 @@ const pending = new Map<number, PendingLayout>()
 
 export function requestArchitectureLayout(
   input: ArchitectureCanvasLayoutInput,
-): Promise<readonly ArchitectureNodePosition[]> {
+): Promise<ArchitectureLayoutResult> {
   worker ??= createWorker()
   requestId += 1
   const request: ArchitectureLayoutRequest = {
@@ -64,7 +71,11 @@ function createWorker(): Worker {
     if (!request) return
     pending.delete(response.id)
     if (response.error) request.reject(new Error(errorMessage(response.error)))
-    else if (response.data) request.resolve(architectureNodePositions(response.data))
+    else if (response.data)
+      request.resolve({
+        positions: architectureNodePositions(response.data),
+        edges: architectureEdgeRoutes(response.data),
+      })
     else request.reject(new Error('Architecture layout worker returned no graph'))
   }
   const fail = (event: Event) => {
