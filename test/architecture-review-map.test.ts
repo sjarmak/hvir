@@ -3,6 +3,7 @@ import ELK from 'elkjs/lib/elk.bundled.js'
 import { analyzeArchitecture } from '../src/main/architecture-review/analysis'
 import {
   architectureCanvasElements,
+  architectureFocusElements,
   subsystemMap,
 } from '../src/renderer/src/architecture-review/architecture-review-model'
 import {
@@ -331,6 +332,50 @@ it('keeps modules inside their selected system when systems share a subsystem', 
   expect(
     companion.nodes.filter((node) => node.kind === 'module').map((node) => node.id),
   ).toEqual(['module:src/renderer/companion/index.ts'])
+})
+
+it('focus: shows a subsystem plus only its direct neighbors, across system boundaries', () => {
+  const layout = {
+    origin: 'override' as const,
+    scope: [],
+    sourceRoots: ['src'],
+    systems: [
+      { name: 'desktop', paths: ['src/main'] },
+      { name: 'companion', paths: ['src/companion'] },
+      { name: 'extra', paths: ['src/extra'] },
+      { name: 'other', paths: ['src/other'] },
+    ],
+    subsystems: [],
+  }
+  const capture = {
+    scope: '.',
+    exclusions: [],
+    layout,
+    files: [
+      { path: 'src/main/index.ts', content: "import '../companion/page'" },
+      { path: 'src/companion/page.ts', content: '' },
+      { path: 'src/extra/thing.ts', content: "import '../main/index'" },
+      { path: 'src/other/x.ts', content: '' },
+    ],
+  }
+  const map = subsystemMap(analyzeArchitecture({ ...capture, files: [] }, capture), true)
+
+  const both = architectureFocusElements(map, 'overlay', 'src/main', 'both')
+  expect(
+    both.nodes.filter((node) => node.kind === 'subsystem').map((node) => node.id).sort(),
+  ).toEqual(['src/companion', 'src/extra', 'src/main'])
+  expect(
+    both.edges.map((edge) => [edge.source, edge.target]).sort(),
+  ).toEqual([
+    ['src/extra', 'src/main'],
+    ['src/main', 'src/companion'],
+  ])
+
+  const imports = architectureFocusElements(map, 'overlay', 'src/main', 'imports')
+  expect(imports.nodes.map((node) => node.id).sort()).toEqual(['src/companion', 'src/main'])
+
+  const importedBy = architectureFocusElements(map, 'overlay', 'src/main', 'imported-by')
+  expect(importedBy.nodes.map((node) => node.id).sort()).toEqual(['src/extra', 'src/main'])
 })
 
 it('exposes the ELK-computed route for each edge, not just node positions', async () => {

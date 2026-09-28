@@ -224,3 +224,40 @@ it('expands subsystem modules in the canvas and preserves relationship evidence'
   )
   expect(later & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 })
+
+it('focuses a subsystem without disturbing ownership expansion, and restores it on clear', () => {
+  act(() =>
+    root.render(
+      <ArchitectureMap
+        analysis={analysis}
+        mode="overlay"
+        onMode={() => undefined}
+        onEvidence={() => undefined}
+      />,
+    ),
+  )
+  act(() =>
+    container.querySelector<HTMLElement>('[aria-label^="system (project)"]')!.click(),
+  )
+  act(() =>
+    container.querySelector<HTMLElement>('[aria-label^="subsystem data"]')!.click(),
+  )
+  expect(container.querySelectorAll('.architecture-canvas-module')).toHaveLength(3)
+
+  const focusGroup = container.querySelector<HTMLElement>(
+    '[aria-label="Focus subsystem"]',
+  )!
+  const select = focusGroup.querySelector('select')!
+  act(() => {
+    select.value = 'ui'
+    select.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  expect(container.querySelectorAll('.architecture-canvas-subsystem')).toHaveLength(2)
+  expect(container.querySelectorAll('.architecture-canvas-module')).toHaveLength(0)
+
+  const clear = Array.from(focusGroup.querySelectorAll('button')).find(
+    (button) => button.textContent === 'Clear focus',
+  )!
+  act(() => clear.click())
+  expect(container.querySelectorAll('.architecture-canvas-module')).toHaveLength(3)
+})

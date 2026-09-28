@@ -15,7 +15,9 @@ import '@xyflow/react/dist/style.css'
 import type { ArchitectureAnalysis } from '../../../shared'
 import {
   architectureCanvasElements,
+  architectureFocusElements,
   subsystemMap,
+  type ArchitectureFocusDirection,
   type ArchitectureMapMode,
 } from './architecture-review-model'
 import { ArchitectureRelationships } from './ArchitectureRelationships'
@@ -62,6 +64,8 @@ export function ArchitectureMap({
   }>()
   const [showUnchangedModules, setShowUnchangedModules] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const [focusSubsystem, setFocusSubsystem] = useState<string>()
+  const [focusDirection, setFocusDirection] = useState<ArchitectureFocusDirection>('both')
   const mapElement = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     if (expanded && mapElement.current) mapElement.current.scrollTop = 0
@@ -71,7 +75,7 @@ export function ArchitectureMap({
     onEvidence(path, line, side)
   }
   const map = useMemo(() => subsystemMap(analysis, all), [analysis, all])
-  const elements = useMemo(
+  const ownershipElements = useMemo(
     () =>
       architectureCanvasElements(
         map,
@@ -82,7 +86,7 @@ export function ArchitectureMap({
       ),
     [map, mode, selectedSystem, selectedSubsystem, showUnchangedModules],
   )
-  const layoutInput = useMemo(
+  const ownershipLayoutInput = useMemo(
     () =>
       architectureCanvasElements(
         map,
@@ -93,6 +97,24 @@ export function ArchitectureMap({
       ).layout,
     [map, selectedSystem, selectedSubsystem, showUnchangedModules],
   )
+  const focusElements = useMemo(
+    () =>
+      focusSubsystem
+        ? architectureFocusElements(map, mode, focusSubsystem, focusDirection)
+        : undefined,
+    [map, mode, focusSubsystem, focusDirection],
+  )
+  const focusLayoutInput = useMemo(
+    () =>
+      focusSubsystem
+        ? architectureFocusElements(map, 'overlay', focusSubsystem, focusDirection).layout
+        : undefined,
+    [map, focusSubsystem, focusDirection],
+  )
+  const elements = focusElements
+    ? { ...focusElements, hiddenUnchangedModules: 0 }
+    : ownershipElements
+  const layoutInput = focusLayoutInput ?? ownershipLayoutInput
   const layout = useArchitectureLayout(layoutInput)
   const nodes = useMemo<readonly Node[]>(
     () =>
@@ -121,6 +143,7 @@ export function ArchitectureMap({
           selectedSystem === node.label || selectedSubsystem === node.id
             ? 'selected'
             : '',
+          focusSubsystem === node.id ? 'architecture-canvas-node-focused' : '',
         ]
           .filter(Boolean)
           .join(' '),
@@ -128,7 +151,7 @@ export function ArchitectureMap({
         selectable: true,
         ariaLabel: `${node.kind} ${node.label}, ${node.detail}`,
       })),
-    [elements.nodes, layout.positions, selectedSubsystem, selectedSystem],
+    [elements.nodes, layout.positions, selectedSubsystem, selectedSystem, focusSubsystem],
   )
   const edges = useMemo<readonly Edge[]>(
     () =>
@@ -147,13 +170,19 @@ export function ArchitectureMap({
       })),
     [elements.edges, layout.edges],
   )
-  const node = map.nodes.find((n) => n.id === selectedSubsystem)
-  const links = map.relationships.filter(
-    (r) =>
+  const node = map.nodes.find((n) => n.id === (focusSubsystem ?? selectedSubsystem))
+  const links = map.relationships.filter((r) => {
+    if (focusSubsystem)
+      return (
+        (focusDirection !== 'imported-by' && r.source === focusSubsystem) ||
+        (focusDirection !== 'imports' && r.target === focusSubsystem)
+      )
+    return (
       !selectedSubsystem ||
       r.source === selectedSubsystem ||
-      r.target === selectedSubsystem,
-  )
+      r.target === selectedSubsystem
+    )
+  })
   return (
     <div
       ref={mapElement}
@@ -210,6 +239,40 @@ export function ArchitectureMap({
         Each top-level node is a system. Select a system to expand its subsystems, then a
         subsystem to expand its modules.
       </p>
+      <div className="architecture-map-focus-controls" role="group" aria-label="Focus subsystem">
+        <label>
+          Focus
+          <select
+            value={focusSubsystem ?? ''}
+            onChange={(event) => setFocusSubsystem(event.target.value || undefined)}
+          >
+            <option value="">None</option>
+            {map.nodes.map((subsystem) => (
+              <option key={subsystem.id} value={subsystem.id}>
+                {subsystem.id}
+              </option>
+            ))}
+          </select>
+        </label>
+        {focusSubsystem ? (
+          <div role="group" aria-label="Focus direction">
+            {(['imports', 'imported-by', 'both'] as const).map((direction) => (
+              <button
+                key={direction}
+                type="button"
+                aria-pressed={focusDirection === direction}
+                className={focusDirection === direction ? 'active' : ''}
+                onClick={() => setFocusDirection(direction)}
+              >
+                {direction}
+              </button>
+            ))}
+            <button type="button" onClick={() => setFocusSubsystem(undefined)}>
+              Clear focus
+            </button>
+          </div>
+        ) : null}
+      </div>
       <ul className="architecture-map-legend" aria-label="Edge legend">
         <li className="architecture-map-legend-dependency">Imports (observed)</li>
         <li className="architecture-map-legend-membership">Contains</li>
@@ -237,6 +300,8 @@ export function ArchitectureMap({
                 1,
                 mode === 'before' || canvasNode.change === 'removed' ? 'before' : 'after',
               )
+            } else if (focusSubsystem && canvasNode?.kind === 'subsystem') {
+              setFocusSubsystem(canvasNode.id)
             } else if (canvasNode?.kind === 'system') {
               const next =
                 selectedSystem === canvasNode.label ? undefined : canvasNode.label

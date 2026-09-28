@@ -322,6 +322,62 @@ export function architectureCanvasElements(
   }
 }
 
+export type ArchitectureFocusDirection = 'imports' | 'imported-by' | 'both'
+
+/** A subsystem plus its direct dependency neighbors, regardless of system membership. */
+export function architectureFocusElements(
+  map: ReturnType<typeof subsystemMap>,
+  mode: ArchitectureMapMode,
+  subsystem: string,
+  direction: ArchitectureFocusDirection,
+): {
+  readonly nodes: readonly ArchitectureCanvasNode[]
+  readonly edges: readonly ArchitectureCanvasEdge[]
+  readonly layout: ArchitectureCanvasLayoutInput
+} {
+  const byId = new Map(map.nodes.map((node) => [node.id, node]))
+  const relationships = map.relationships.filter(
+    (relationship) =>
+      (direction !== 'imported-by' && relationship.source === subsystem) ||
+      (direction !== 'imports' && relationship.target === subsystem),
+  )
+  const neighborIds = new Set(
+    relationships.flatMap((relationship) => [relationship.source, relationship.target]),
+  )
+  neighborIds.add(subsystem)
+  const nodes = [...neighborIds]
+    .map((id) => byId.get(id))
+    .filter((node): node is ArchitectureSubsystem => node !== undefined)
+    .map((node) => ({
+      id: node.id,
+      label: node.id,
+      detail: node.modules.length
+        ? `${node.changed} changed · ${node.modules.length} files`
+        : 'External or unresolved import',
+      kind: 'subsystem' as const,
+      change: node.change,
+      ghost: absentInMode(node.change, mode),
+      nearby: node.id !== subsystem,
+    }))
+  const edges = relationships.map((relationship) => ({
+    id: `focus-relationship:${relationship.source}:${relationship.target}`,
+    source: relationship.source,
+    target: relationship.target,
+    change: relationship.change,
+    ghost: absentInMode(relationship.change, mode),
+    kind: 'dependency' as const,
+    relationship,
+  }))
+  return {
+    nodes,
+    edges,
+    layout: {
+      nodes: nodes.map((node) => ({ id: node.id, width: 244, height: 64 })),
+      edges: edges.map(({ id, source, target }) => ({ id, source, target })),
+    },
+  }
+}
+
 function aggregateSystemRelationships(
   relationships: readonly ArchitectureRelationshipDelta[],
   modules: readonly ArchitectureModuleDelta[],
