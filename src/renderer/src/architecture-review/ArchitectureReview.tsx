@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { hostPathEquals, joinHostPath, type HostPath } from '../../../shared'
+import { hostPath, hostPathEquals, joinHostPath, type HostPath } from '../../../shared'
 import {
   ARCHITECTURE_LIVE_REVISION,
   type ArchitectureEvidence,
@@ -62,6 +62,7 @@ export function ArchitectureReview({
     setExplanationCollapsedState(collapsed)
   }
   const requestEpoch = useRef(0)
+  const servedRequest = useRef<number>(undefined)
   const liveScanActive = useRef(false)
   const pendingLiveScan = useRef(false)
   const pausedRef = useRef(false)
@@ -91,16 +92,21 @@ export function ArchitectureReview({
     line: number
     side: 'before' | 'after'
   }>()
+  const { hostId, path: rootPath } = root
   useEffect(
     () => () => {
       requestEpoch.current += 1
+      servedRequest.current = undefined
       void window.hvir
-        .invoke('architecture-review:close', { root, reviewId })
+        .invoke('architecture-review:close', {
+          root: hostPath(hostId, rootPath),
+          reviewId,
+        })
         .catch((cause: unknown) =>
           console.error('Architecture review cleanup failed', cause),
         )
     },
-    [root, reviewId],
+    [hostId, rootPath, reviewId],
   )
 
   const scan = async (ends: ArchitectureEnds, append = false) => {
@@ -248,7 +254,6 @@ export function ArchitectureReview({
   }
   const chooseRequested = useRef(chooseFromStrip)
   chooseRequested.current = chooseFromStrip
-  const servedRequest = useRef<number>(undefined)
   useEffect(() => {
     if (!request || servedRequest.current === request.serial) return
     servedRequest.current = request.serial
@@ -304,8 +309,8 @@ export function ArchitectureReview({
         <div className="architecture-review-body">
           {snapshot.analysis.modules.length === 0 ? (
             <p className="architecture-review-state">
-              No supported TypeScript, JavaScript, Python, Go, Rust or Kotlin modules
-              were captured.
+              No supported TypeScript, JavaScript, Python, Go, Rust or Kotlin modules were
+              captured.
             </p>
           ) : (
             <ArchitectureMap

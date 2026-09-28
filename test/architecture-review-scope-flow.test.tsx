@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 /* Async act flushes React effects and IPC promise continuations. */
 /* eslint-disable @typescript-eslint/require-await */
-import { act } from 'react'
+import { act, StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { localPath } from '../src/shared'
@@ -207,4 +207,56 @@ it('does not rescan over a newer scan when a superseded scope save lands', async
   expect(
     invoke.mock.calls.filter(([channel]) => channel === 'architecture-review:scan'),
   ).toHaveLength(scans)
+})
+
+it('keeps a pending scan when its host-qualified root is recreated', async () => {
+  let complete!: (value: ReturnType<typeof snapshot>) => void
+  const pending = new Promise<ReturnType<typeof snapshot>>((resolve) => {
+    complete = resolve
+  })
+  const original = invoke.getMockImplementation()!
+  invoke.mockImplementation(
+    async (channel: string, request?: { scope?: readonly string[] }) =>
+      channel === 'architecture-review:scan'
+        ? pending
+        : (original(channel, request) as unknown),
+  )
+  await act(async () =>
+    app.render(<ArchitectureReview root={root} active onHandoff={vi.fn()} />),
+  )
+  await click(button('Scan snapshot'))
+  expect(button('Scanning…').disabled).toBe(true)
+  await act(async () =>
+    app.render(<ArchitectureReview root={{ ...root }} active onHandoff={vi.fn()} />),
+  )
+  await act(async () => complete(snapshot([])))
+  expect(button('Scan snapshot')?.disabled).toBe(false)
+  expect(host.querySelector('.architecture-review-map')).not.toBeNull()
+  expect(
+    invoke.mock.calls.filter(([channel]) => channel === 'architecture-review:close'),
+  ).toHaveLength(0)
+})
+
+it('completes a requested commit scan after Strict Mode replays its effects', async () => {
+  saved = []
+  await act(async () =>
+    app.render(
+      <StrictMode>
+        <ArchitectureReview
+          root={root}
+          active
+          request={{ serial: 1, ends: { baseline: 'HEAD~1', current: 'HEAD' } }}
+          onHandoff={vi.fn()}
+        />
+      </StrictMode>,
+    ),
+  )
+  expect(button('Scan snapshot')?.disabled).toBe(false)
+  expect(host.querySelector('.architecture-review-map')).not.toBeNull()
+  expect(
+    invoke.mock.calls.filter(([channel]) => channel === 'architecture-review:scan'),
+  ).toHaveLength(2)
+  expect(
+    invoke.mock.calls.filter(([channel]) => channel === 'architecture-review:close'),
+  ).toHaveLength(1)
 })
