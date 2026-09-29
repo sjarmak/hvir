@@ -180,6 +180,12 @@ it('keeps changed files visible when unchanged files exceed the explorer limit',
     container.querySelector('.architecture-file-group.changed .architecture-module')
       ?.textContent,
   ).toContain('z-changed.ts')
+  expect(
+    container.querySelectorAll('.architecture-file-explorer .architecture-module'),
+  ).toHaveLength(20)
+  expect(container.querySelector('.architecture-file-explorer')?.textContent).toContain(
+    'Showing 20 of 101; narrow the filter.',
+  )
 })
 
 it('expands subsystem modules in the canvas and preserves relationship evidence', () => {
@@ -307,7 +313,7 @@ it('reports the module cap explicitly and lets a search reach an omitted module'
       scope: '.',
       exclusions: [],
       files: Array.from({ length: ARCHITECTURE_MODULE_CAP + 5 }, (_, index) => ({
-        path: `big/f${index}.ts`,
+        path: `big/f${String(index).padStart(3, '0')}.ts`,
         content: `const x = ${index}`,
       })),
     },
@@ -334,17 +340,22 @@ it('reports the module cap explicitly and lets a search reach an omitted module'
   )
   const capGroup = container.querySelector<HTMLElement>('[aria-label="Module cap"]')!
   expect(capGroup.querySelector('[role="status"]')?.textContent).toContain('5 modules')
-  expect(container.querySelector('[aria-label^="module big/f99.ts"]')).toBeFalsy()
+  const omittedModule = `f${String(ARCHITECTURE_MODULE_CAP + 4).padStart(3, '0')}`
+  expect(
+    container.querySelector(`[aria-label^="module big/${omittedModule}.ts"]`),
+  ).toBeFalsy()
 
   const search = capGroup.querySelector<HTMLInputElement>('input')!
   act(() => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
       search,
-      'f99',
+      omittedModule,
     )
     search.dispatchEvent(new Event('input', { bubbles: true }))
   })
-  expect(container.querySelector('[aria-label^="module big/f99.ts"]')).toBeTruthy()
+  expect(
+    container.querySelector(`[aria-label^="module big/${omittedModule}.ts"]`),
+  ).toBeTruthy()
 })
 
 it('focuses a subsystem without disturbing ownership expansion, and restores it on clear', () => {

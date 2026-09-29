@@ -150,7 +150,7 @@ export function architectureZoomLabelMode(zoom: number): ArchitectureZoomLabelMo
   return zoom < ARCHITECTURE_ZOOM_OVERVIEW_THRESHOLD ? 'overview' : 'detail'
 }
 
-export const ARCHITECTURE_MODULE_CAP = 200
+export const ARCHITECTURE_MODULE_CAP = 20
 
 export interface ArchitectureCanvasLayoutInput {
   readonly nodes: readonly {

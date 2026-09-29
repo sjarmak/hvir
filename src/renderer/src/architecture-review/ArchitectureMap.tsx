@@ -14,6 +14,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import type { ArchitectureAnalysis } from '../../../shared'
 import {
+  ARCHITECTURE_MODULE_CAP,
   architectureCanvasElements,
   architectureFocusElements,
   architectureZoomLabelMode,
@@ -457,8 +458,10 @@ function ArchitectureFiles({
         <input value={query} onChange={(event) => setQuery(event.target.value)} />
       </label>
       <ModuleGroups modules={files} mode={mode} onEvidence={onEvidence} />
-      {files.length > 100 ? (
-        <p>Showing 100 of {files.length}; narrow the filter.</p>
+      {files.length > ARCHITECTURE_MODULE_CAP ? (
+        <p>
+          Showing {ARCHITECTURE_MODULE_CAP} of {files.length}; narrow the filter.
+        </p>
       ) : null}
     </details>
   )
@@ -475,10 +478,10 @@ function ModuleGroups({
 }): ReactElement {
   const changedModules = modules.filter((module) => module.change !== 'unchanged')
   const unchangedModules = modules.filter((module) => module.change === 'unchanged')
-  const visibleChangedModules = changedModules.slice(0, 100)
+  const visibleChangedModules = changedModules.slice(0, ARCHITECTURE_MODULE_CAP)
   const visibleUnchangedModules = unchangedModules.slice(
     0,
-    100 - visibleChangedModules.length,
+    ARCHITECTURE_MODULE_CAP - visibleChangedModules.length,
   )
   const groups = [
     {

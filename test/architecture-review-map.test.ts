@@ -365,20 +365,27 @@ it('focus: shows a subsystem plus only its direct neighbors, across system bound
 
   const both = architectureFocusElements(map, 'overlay', 'src/main', 'both')
   expect(
-    both.nodes.filter((node) => node.kind === 'subsystem').map((node) => node.id).sort(),
+    both.nodes
+      .filter((node) => node.kind === 'subsystem')
+      .map((node) => node.id)
+      .sort(),
   ).toEqual(['src/companion', 'src/extra', 'src/main'])
-  expect(
-    both.edges.map((edge) => [edge.source, edge.target]).sort(),
-  ).toEqual([
+  expect(both.edges.map((edge) => [edge.source, edge.target]).sort()).toEqual([
     ['src/extra', 'src/main'],
     ['src/main', 'src/companion'],
   ])
 
   const imports = architectureFocusElements(map, 'overlay', 'src/main', 'imports')
-  expect(imports.nodes.map((node) => node.id).sort()).toEqual(['src/companion', 'src/main'])
+  expect(imports.nodes.map((node) => node.id).sort()).toEqual([
+    'src/companion',
+    'src/main',
+  ])
 
   const importedBy = architectureFocusElements(map, 'overlay', 'src/main', 'imported-by')
-  expect(importedBy.nodes.map((node) => node.id).sort()).toEqual(['src/extra', 'src/main'])
+  expect(importedBy.nodes.map((node) => node.id).sort()).toEqual([
+    'src/extra',
+    'src/main',
+  ])
 })
 
 it('exposes the ELK-computed route for each edge, not just node positions', async () => {
@@ -412,13 +419,17 @@ it('marks membership edges separately from import-relationship edges', () => {
   expect(dependencyEdges.every((edge) => edge.relationship)).toBe(true)
   expect(membershipEdges.length).toBeGreaterThan(0)
   expect(membershipEdges.every((edge) => !edge.relationship)).toBe(true)
-  expect(elements.edges.every((edge) => edge.kind === 'dependency' || edge.kind === 'membership')).toBe(
-    true,
-  )
+  expect(
+    elements.edges.every(
+      (edge) => edge.kind === 'dependency' || edge.kind === 'membership',
+    ),
+  ).toBe(true)
 })
 
 it('moduleLabelParts: splits a path into a prominent filename and a secondary directory', () => {
-  expect(moduleLabelParts('src/renderer/src/architecture-review/architecture-review-model.ts')).toEqual({
+  expect(
+    moduleLabelParts('src/renderer/src/architecture-review/architecture-review-model.ts'),
+  ).toEqual({
     filename: 'architecture-review-model.ts',
     directory: 'src/renderer/src/architecture-review',
   })
@@ -449,13 +460,13 @@ it('architectureLayoutGraph: defaults to horizontal/comfortable, and exposes ori
   expect(compact.layoutOptions?.['elk.layered.spacing.nodeNodeBetweenLayers']).toBe('56')
 })
 
-it('reports the 200-module cap explicitly and lets a canvas search reach an omitted module', () => {
+it('reports the module cap explicitly and lets a canvas search reach an omitted module', () => {
   const bigBefore = { files: [], scope: '.', exclusions: [] }
   const bigAfter = {
     scope: '.',
     exclusions: [],
     files: Array.from({ length: ARCHITECTURE_MODULE_CAP + 5 }, (_, index) => ({
-      path: `big/f${index}.ts`,
+      path: `big/f${String(index).padStart(3, '0')}.ts`,
       content: `const x = ${index}`,
     })),
   }
@@ -467,7 +478,17 @@ it('reports the 200-module cap explicitly and lets a canvas search reach an omit
   )
   expect(capped.hiddenModuleCap).toBe(5)
 
-  const searched = architectureCanvasElements(map, 'overlay', '(project)', 'big', false, 'f104')
+  const omittedModule = `f${String(ARCHITECTURE_MODULE_CAP + 4).padStart(3, '0')}`
+  const searched = architectureCanvasElements(
+    map,
+    'overlay',
+    '(project)',
+    'big',
+    false,
+    omittedModule,
+  )
   expect(searched.hiddenModuleCap).toBe(0)
-  expect(searched.nodes.map((node) => node.id)).toContain('module:big/f104.ts')
+  expect(searched.nodes.map((node) => node.id)).toContain(
+    `module:big/${omittedModule}.ts`,
+  )
 })
