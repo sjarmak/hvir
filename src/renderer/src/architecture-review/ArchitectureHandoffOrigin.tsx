@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { HostPath } from '../../../shared'
 import type { ArchitectureHandoffOrigin as Origin } from '../../../shared/architecture-handoff'
 import { handoffEnds, type ArchitectureEnds } from './architecture-ends-model'
+import { ArchitectureSection } from './ArchitectureSection'
 
 /**
  * In a worktree an agent was handed, offers the two re-snapshots its brief records: the
@@ -52,24 +53,31 @@ export function ArchitectureHandoffOrigin({
     )
   if (!origin) return null
   return (
-    <div className="architecture-handoff-origin" role="group" aria-label="Agent handoff">
-      <p>
-        An agent was handed this worktree from {origin.baselineRef} → {origin.currentRef}.
-      </p>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => onScan(handoffEnds(origin, 'change'))}
+    <ArchitectureSection title="Agent handoff">
+      <div
+        className="architecture-handoff-origin"
+        role="group"
+        aria-label="Agent handoff"
       >
-        Scan the agent&apos;s change
-      </button>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => onScan(handoffEnds(origin, 'cumulative'))}
-      >
-        Scan the cumulative change
-      </button>
-    </div>
+        <p>
+          An agent was handed this worktree from {origin.baselineRef} →{' '}
+          {origin.currentRef}.
+        </p>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onScan(handoffEnds(origin, 'change'))}
+        >
+          Scan the agent&apos;s change
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onScan(handoffEnds(origin, 'cumulative'))}
+        >
+          Scan the cumulative change
+        </button>
+      </div>
+    </ArchitectureSection>
   )
 }

@@ -60,6 +60,33 @@
   margin: 4px 0 0;
   color: var(--text-muted);
 }
+.architecture-review-section {
+  min-width: 0;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.architecture-review-section > summary {
+  padding: 8px 14px;
+  color: var(--text-strong);
+  font-weight: 600;
+  cursor: pointer;
+}
+.architecture-review-section-content {
+  min-width: 0;
+  min-height: 0;
+}
+.architecture-review-body > .architecture-review-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.architecture-review-body > .architecture-review-section:not([open]) {
+  align-self: start;
+}
+.architecture-review-body .architecture-review-section-content {
+  flex: 1;
+  overflow: auto;
+}
 .architecture-review-controls label {
   display: flex;
   align-items: center;
@@ -560,6 +587,19 @@
   grid-template-columns: minmax(0, 1fr);
   min-height: 0;
 }
+.architecture-review-body:has(.architecture-map-expanded)
+  > .architecture-review-section-map {
+  height: 100%;
+}
+.architecture-review-body:has(.architecture-map-expanded)
+  > .architecture-review-section-map
+  > summary {
+  display: none;
+}
+.architecture-review-body:has(.architecture-map-expanded)
+  > .architecture-review-section-evidence {
+  display: none;
+}
 .architecture-review:has(.architecture-map-expanded) > :not(.architecture-review-body) {
   display: none;
 }
@@ -729,6 +769,19 @@
   padding: 10px;
   border-radius: 4px;
   background: var(--surface-raised);
+}
+.architecture-explanation-diagram {
+  min-height: 120px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 4px;
+  background: var(--surface-raised);
+}
+.architecture-explanation-diagram svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
 }
 .architecture-explanation-names {
   display: grid;

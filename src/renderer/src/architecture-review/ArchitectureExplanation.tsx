@@ -13,6 +13,7 @@ import {
   selectArchitectureReviewProfiles,
   selectArchitectureReviewTemplateProvider,
 } from './architecture-review-profiles'
+import { MermaidDiagram } from '../viewer/MermaidDiagram'
 
 export function ArchitectureExplanation({
   root,
@@ -211,7 +212,10 @@ export function ArchitectureExplanation({
               <h4>Why</h4>
               <p>{state.explanation.claim.why}</p>
               <h4>Sequence</h4>
-              <pre>{state.explanation.claim.sequenceDiagram}</pre>
+              <MermaidDiagram
+                source={state.explanation.claim.sequenceDiagram}
+                className="architecture-explanation-diagram"
+              />
               <h4>Touched names</h4>
               <NameList label="Systems" names={state.explanation.names.systems} />
               <NameList label="Subsystems" names={state.explanation.names.subsystems} />

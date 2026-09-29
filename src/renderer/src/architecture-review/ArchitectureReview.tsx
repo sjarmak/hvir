@@ -17,6 +17,7 @@ import { ArchitectureExplanation } from './ArchitectureExplanation'
 import { ArchitectureHandoffOrigin } from './ArchitectureHandoffOrigin'
 import { ArchitectureScanTimings } from './ArchitectureScanTimings'
 import { ArchitectureScopeControls } from './ArchitectureScopeControls'
+import { ArchitectureSection } from './ArchitectureSection'
 import { ArchitectureExplanationStateSession } from './architecture-explanation-state'
 import { scopeFromText, scopeText as textOfScope } from './architecture-scope-model'
 import {
@@ -307,48 +308,60 @@ export function ArchitectureReview({
       </header>
       {state === 'ready' && snapshot && (
         <div className="architecture-review-body">
-          {snapshot.analysis.modules.length === 0 ? (
-            <p className="architecture-review-state">
-              No supported TypeScript, JavaScript, Python, Go, Rust or Kotlin modules were
-              captured.
-            </p>
-          ) : (
-            <ArchitectureMap
-              analysis={snapshot.analysis}
-              mode={mapMode}
-              onMode={setMapMode}
-              onEvidence={(path, line, side) => void openEvidence(path, line, side)}
-            />
-          )}
-          {evidence && selection ? (
-            <ArchitectureEvidencePanel
-              key={`${snapshot.id}:${selection.path}`}
-              root={root}
-              reviewId={reviewId}
-              snapshot={snapshot}
-              path={selection.path}
-              evidence={evidence}
-              freshnessError={error}
-              location={selection}
-              onHandoff={onHandoff}
-            />
-          ) : (
-            <p className="architecture-review-state">
-              {selection
-                ? 'Loading captured evidence…'
-                : 'Select a module or relationship to inspect its captured diff.'}
-            </p>
-          )}
+          <ArchitectureSection
+            title="Architecture map"
+            className="architecture-review-section-map"
+          >
+            {snapshot.analysis.modules.length === 0 ? (
+              <p className="architecture-review-state">
+                No supported TypeScript, JavaScript, Python, Go, Rust or Kotlin modules
+                were captured.
+              </p>
+            ) : (
+              <ArchitectureMap
+                analysis={snapshot.analysis}
+                mode={mapMode}
+                onMode={setMapMode}
+                onEvidence={(path, line, side) => void openEvidence(path, line, side)}
+              />
+            )}
+          </ArchitectureSection>
+          <ArchitectureSection
+            title="Captured evidence"
+            className="architecture-review-section-evidence"
+          >
+            {evidence && selection ? (
+              <ArchitectureEvidencePanel
+                key={`${snapshot.id}:${selection.path}`}
+                root={root}
+                reviewId={reviewId}
+                snapshot={snapshot}
+                path={selection.path}
+                evidence={evidence}
+                freshnessError={error}
+                location={selection}
+                onHandoff={onHandoff}
+              />
+            ) : (
+              <p className="architecture-review-state">
+                {selection
+                  ? 'Loading captured evidence…'
+                  : 'Select a module or relationship to inspect its captured diff.'}
+              </p>
+            )}
+          </ArchitectureSection>
         </div>
       )}
-      <ArchitectureEndsControls
-        baseline={baselineText}
-        current={currentText}
-        problems={parsed.problems}
-        described={described}
-        onBaseline={setBaselineText}
-        onCurrent={setCurrentText}
-      />
+      <ArchitectureSection title="Snapshot ends">
+        <ArchitectureEndsControls
+          baseline={baselineText}
+          current={currentText}
+          problems={parsed.problems}
+          described={described}
+          onBaseline={setBaselineText}
+          onCurrent={setCurrentText}
+        />
+      </ArchitectureSection>
       <ArchitectureHandoffOrigin
         root={root}
         disabled={state === 'loading'}
@@ -362,36 +375,40 @@ export function ArchitectureReview({
         onText={setScopeText}
         onSave={() => void saveScope()}
       />
-      <ArchitectureCommitStrip
-        root={root}
-        ends={endsInvalid ? {} : parsed.ends}
-        current={
-          snapshot && snapshot.currentRevision !== ARCHITECTURE_LIVE_REVISION
-            ? snapshot.currentRevision
-            : undefined
-        }
-        disabled={state === 'loading'}
-        locked={locked}
-        onLock={setLocked}
-        onChoose={chooseFromStrip}
-      />
+      <ArchitectureSection title="Commit history">
+        <ArchitectureCommitStrip
+          root={root}
+          ends={endsInvalid ? {} : parsed.ends}
+          current={
+            snapshot && snapshot.currentRevision !== ARCHITECTURE_LIVE_REVISION
+              ? snapshot.currentRevision
+              : undefined
+          }
+          disabled={state === 'loading'}
+          locked={locked}
+          onLock={setLocked}
+          onChoose={chooseFromStrip}
+        />
+      </ArchitectureSection>
       {snapshot?.currentRevision === ARCHITECTURE_LIVE_REVISION ? (
-        <div className="architecture-review-timeline">
-          <button type="button" onClick={() => void togglePaused()}>
-            {paused ? 'Resume live review' : 'Pause live review'}
-          </button>
-          <label>
-            Snapshot {timelineIndex + 1} of {timeline.length}
-            <input
-              aria-label="Review timeline"
-              type="range"
-              min="0"
-              max={Math.max(0, timeline.length - 1)}
-              value={timelineIndex}
-              onChange={(event) => scrubTimeline(Number(event.currentTarget.value))}
-            />
-          </label>
-        </div>
+        <ArchitectureSection title="Live timeline">
+          <div className="architecture-review-timeline">
+            <button type="button" onClick={() => void togglePaused()}>
+              {paused ? 'Resume live review' : 'Pause live review'}
+            </button>
+            <label>
+              Snapshot {timelineIndex + 1} of {timeline.length}
+              <input
+                aria-label="Review timeline"
+                type="range"
+                min="0"
+                max={Math.max(0, timeline.length - 1)}
+                value={timelineIndex}
+                onChange={(event) => scrubTimeline(Number(event.currentTarget.value))}
+              />
+            </label>
+          </div>
+        </ArchitectureSection>
       ) : null}
       {error ? (
         <p className="architecture-review-state error" role="alert">

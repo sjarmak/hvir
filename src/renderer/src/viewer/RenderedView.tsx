@@ -34,12 +34,11 @@ import { MarkdownRepositoryImages } from './markdown-repository-images'
 import { bindRenderedDocumentReview } from '../document-review/document-review-rendered'
 import { useDocumentReviewInlineHostRegistration } from '../document-review/document-review-inline'
 import type { DocumentReviewDocumentProjection } from '../document-review/use-document-review-interaction'
+import { renderMermaid, resetMermaidRenderer } from './mermaid-renderer'
 
 let jsonWorker: Worker | undefined
 let jsonRequestId = 0
 let jsonDocumentId = 0
-let mermaidRequestId = 0
-let mermaidPromise: Promise<typeof import('mermaid').default> | undefined
 let csvWorker: Worker | undefined
 let csvRequestId = 0
 
@@ -431,7 +430,7 @@ function StandaloneMermaid({
     if (!root) return
     let cancelled = false
     root.textContent = 'Rendering diagram…'
-    void renderMermaid(content, `mermaid-${++mermaidRequestId}`, theme).then(
+    void renderMermaid(content, theme).then(
       (svg) => {
         if (!cancelled) root.innerHTML = svg
       },
@@ -463,30 +462,13 @@ async function renderMermaidNodes(
     const source = node.querySelector('pre')?.textContent
     if (source === undefined) continue
     try {
-      node.innerHTML = await renderMermaid(source, `mermaid-${++mermaidRequestId}`, theme)
+      node.innerHTML = await renderMermaid(source, theme)
     } catch (error) {
       node.textContent = error instanceof Error ? error.message : String(error)
       node.classList.add('render-error')
     }
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
   }
-}
-
-async function renderMermaid(
-  source: string,
-  id: string,
-  theme: 'dark' | 'light',
-): Promise<string> {
-  mermaidPromise ??= import('mermaid').then(({ default: mermaid }) => mermaid)
-  const mermaid = await mermaidPromise
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: 'strict',
-    theme: theme === 'light' ? 'default' : 'dark',
-    suppressErrorRendering: true,
-  })
-  const { svg } = await mermaid.render(id, source)
-  return svg
 }
 
 function StructuredDataView({
@@ -609,7 +591,7 @@ function useDevRendererGeneration(): number {
       resetMarkdownRenderer()
       jsonWorker?.terminate()
       jsonWorker = undefined
-      mermaidPromise = undefined
+      resetMermaidRenderer()
       setGeneration((current) => current + 1)
     }
     hot.on('vite:afterUpdate', refresh)

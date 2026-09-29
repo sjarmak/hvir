@@ -31,9 +31,10 @@ export function ArchitectureScopeControls({
   const problemId = useId()
   if (text === undefined)
     return (
-      <p className="architecture-review-scope-controls">
-        Scope: shown after the first scan.
-      </p>
+      <details className="architecture-review-scope-controls">
+        <summary>Scope</summary>
+        <p>Scope: shown after the first scan.</p>
+      </details>
     )
   const parsed = scopeFromText(text)
   const chosen = new Set(parsed.scope)

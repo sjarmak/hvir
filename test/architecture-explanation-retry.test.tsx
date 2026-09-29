@@ -6,6 +6,15 @@ import { localPath } from '../src/shared'
 import type { ArchitectureReviewSnapshot } from '../src/shared/architecture-review'
 import { ArchitectureExplanation } from '../src/renderer/src/architecture-review/ArchitectureExplanation'
 
+const mermaid = vi.hoisted(() => ({
+  initialize: vi.fn(),
+  render: vi.fn(() =>
+    Promise.resolve({ svg: '<svg aria-label="Rendered sequence"></svg>' }),
+  ),
+}))
+
+vi.mock('mermaid', () => ({ default: mermaid }))
+
 const root = localPath('/repo')
 const snapshot = { id: 'snapshot' } as ArchitectureReviewSnapshot
 const invoke = vi.fn<(channel: string) => Promise<unknown>>()
@@ -142,4 +151,27 @@ it('restores the prior claim when regeneration fails', async () => {
   expect(host.textContent).toContain('The previous claim remains visible.')
   expect(host.textContent).toContain('Model unavailable')
   expect(host.textContent).not.toContain('Waiting for the agent claim')
+})
+
+it('renders the sequence claim as a Mermaid diagram', async () => {
+  await act(async () => {
+    app.render(
+      <ArchitectureExplanation
+        root={root}
+        reviewId="review"
+        snapshot={snapshot}
+        collapsed={false}
+        onCollapsedChange={vi.fn()}
+      />,
+    )
+    await Promise.resolve()
+  })
+  await vi.waitFor(() => {
+    expect(host.querySelector('.architecture-explanation-diagram svg')).not.toBeNull()
+  })
+  expect(host.querySelector('.architecture-explanation-claim pre')).toBeNull()
+  expect(mermaid.render).toHaveBeenCalledWith(
+    expect.stringMatching(/^mermaid-/),
+    'sequenceDiagram\n  User->>hvir: Explain',
+  )
 })
