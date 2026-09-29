@@ -92,18 +92,21 @@ export async function verifyArchitectureReviewWorkflow(
         if (!node.style.transform || node.style.transform === 'translate(0px, 0px)') return false;
         return current;
       }, 'architecture worker layout');
-      const section = (label) => [...body.querySelectorAll(':scope > details')].find(node => node.querySelector(':scope > summary')?.textContent?.trim() === label);
+      const section = (label) => [...body.querySelectorAll(':scope > .architecture-review-section')].find(node => node.querySelector(':scope > .architecture-review-section-toggle')?.textContent?.trim().endsWith(label));
       const mapSection = section('Architecture map');
       const evidenceSection = section('Captured evidence');
       const mapBeforeCollapse = mapSection?.querySelector('.architecture-review-map');
-      if (!(mapSection instanceof HTMLDetailsElement) || !(evidenceSection instanceof HTMLDetailsElement) || !mapBeforeCollapse)
+      const mapToggle = mapSection?.querySelector(':scope > .architecture-review-section-toggle');
+      const evidenceToggle = evidenceSection?.querySelector(':scope > .architecture-review-section-toggle');
+      const mapContent = mapSection?.querySelector(':scope > .architecture-review-section-content');
+      if (!(mapToggle instanceof HTMLButtonElement) || !(evidenceToggle instanceof HTMLButtonElement) || !(mapContent instanceof HTMLElement) || !mapBeforeCollapse)
         throw new Error('Architecture map and evidence disclosures are missing');
-      mapSection.querySelector('summary').click();
-      await wait(() => !mapSection.open, 'collapsed architecture map');
-      if (!evidenceSection.open || mapSection.querySelector('.architecture-review-map') !== mapBeforeCollapse)
+      mapToggle.click();
+      await wait(() => mapToggle.getAttribute('aria-expanded') === 'false' && mapContent.hidden, 'collapsed architecture map');
+      if (evidenceToggle.getAttribute('aria-expanded') !== 'true' || mapSection.querySelector('.architecture-review-map') !== mapBeforeCollapse)
         throw new Error('Architecture sections do not collapse independently');
-      mapSection.querySelector('summary').click();
-      await wait(() => mapSection.open, 'expanded architecture map');
+      mapToggle.click();
+      await wait(() => mapToggle.getAttribute('aria-expanded') === 'true' && !mapContent.hidden, 'expanded architecture map');
       const stages = [...document.querySelectorAll('table[aria-label="Scan timings"] tbody th')].map(node => node.textContent);
       const workerStages = ['worker-transfer', 'parse', 'worker-return'];
       const cached = workerStages.every(stage => !stages.includes(stage));

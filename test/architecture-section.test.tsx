@@ -33,14 +33,22 @@ it('collapses sections independently without unmounting their contents', () => {
       </>,
     ),
   )
-  const sections = host.querySelectorAll<HTMLDetailsElement>('details')
+  const sections = host.querySelectorAll<HTMLElement>('.architecture-review-section')
   const map = sections[0]!
   const evidence = sections[1]!
   const mapContent = map.querySelector('[data-section="map"]')
-  expect(map.open).toBe(true)
-  expect(evidence.open).toBe(true)
-  act(() => map.querySelector('summary')?.click())
-  expect(map.open).toBe(false)
-  expect(evidence.open).toBe(true)
+  const mapToggle = map.querySelector<HTMLButtonElement>('button')!
+  const evidenceToggle = evidence.querySelector<HTMLButtonElement>('button')!
+  expect(mapToggle.getAttribute('aria-expanded')).toBe('true')
+  expect(evidenceToggle.getAttribute('aria-expanded')).toBe('true')
+  expect(
+    map.querySelector<HTMLElement>('.architecture-review-section-content')?.hidden,
+  ).toBe(false)
+  act(() => mapToggle.click())
+  expect(mapToggle.getAttribute('aria-expanded')).toBe('false')
+  expect(evidenceToggle.getAttribute('aria-expanded')).toBe('true')
+  expect(
+    map.querySelector<HTMLElement>('.architecture-review-section-content')?.hidden,
+  ).toBe(true)
   expect(map.querySelector('[data-section="map"]')).toBe(mapContent)
 })

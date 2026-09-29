@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 
 export function ArchitectureSection({
   title,
@@ -10,14 +10,22 @@ export function ArchitectureSection({
   readonly children: ReactNode
 }) {
   const [open, setOpen] = useState(true)
+  const contentId = useId()
   return (
-    <details
-      className={`architecture-review-section${className ? ` ${className}` : ''}`}
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-    >
-      <summary>{title}</summary>
-      <div className="architecture-review-section-content">{children}</div>
-    </details>
+    <section className={`architecture-review-section${className ? ` ${className}` : ''}`}>
+      <button
+        type="button"
+        className="architecture-review-section-toggle"
+        aria-expanded={open}
+        aria-controls={contentId}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+        {title}
+      </button>
+      <div id={contentId} className="architecture-review-section-content" hidden={!open}>
+        {children}
+      </div>
+    </section>
   )
 }
