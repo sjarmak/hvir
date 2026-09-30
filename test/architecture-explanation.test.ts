@@ -75,6 +75,17 @@ it('strictly parses an explanation and preserves the agent claim', () => {
   expect(parseArchitectureExplanation(JSON.stringify(value))).toEqual(value)
 })
 
+it('escapes semicolons inside diagram text so Mermaid keeps each statement on its line', () => {
+  const diagram =
+    'sequenceDiagram\n  participant Coord as Coordinator\n  Coord->>Conv: stop; when reason is other\n  Note over Coord: a;b'
+  expect(
+    parseArchitectureExplanation(JSON.stringify({ ...value, sequenceDiagram: diagram }))
+      .sequenceDiagram,
+  ).toBe(
+    'sequenceDiagram\n  participant Coord as Coordinator\n  Coord->>Conv: stop#59; when reason is other\n  Note over Coord: a#59;b',
+  )
+})
+
 it('flags every exact name absent from the snapshot without judging the prose', () => {
   expect(checkArchitectureExplanation(value, snapshot)).toEqual({
     snapshotId: 'snapshot-1',

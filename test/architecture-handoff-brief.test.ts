@@ -134,6 +134,7 @@ it('asks for one strict in-memory explanation from the supplied snapshot facts',
   expect(prompt).toContain('avoid raw identifiers')
   expect(prompt).toContain('Do not use alt, else, or opt blocks')
   expect(prompt).toContain('one linear sequence')
+  expect(prompt).toContain('Never put a semicolon in a message or note')
   expect(prompt).toContain('state the condition in the relevant message label')
 })
 

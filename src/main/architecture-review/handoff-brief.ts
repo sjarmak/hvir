@@ -133,7 +133,7 @@ export function architectureExplanationPrompt(
     '',
     `Return exactly one JSON object using this shape: ${example}`,
     'Use exact system, subsystem and module names from the snapshot facts. The sequenceDiagram value must contain one Mermaid sequence diagram. Do not add keys or wrap the JSON in Markdown.',
-    'Make the sequence diagram explain only the critical change path as one linear sequence. Use at most five participants and at most twelve messages. Give participants short human-readable labels of one to three words, using Mermaid aliases when needed to avoid raw identifiers; keep exact snapshot names in touched. Do not use alt, else, or opt blocks. When a condition is essential to understanding the change, state the condition in the relevant message label instead of drawing a branch frame.',
+    'Make the sequence diagram explain only the critical change path as one linear sequence. Use at most five participants and at most twelve messages. Give participants short human-readable labels of one to three words, using Mermaid aliases when needed to avoid raw identifiers; keep exact snapshot names in touched. Do not use alt, else, or opt blocks. When a condition is essential to understanding the change, state the condition in the relevant message label instead of drawing a branch frame. Never put a semicolon in a message or note, because Mermaid reads it as a line break; use a comma instead.',
     'Your explanation is a claim that hvir will display separately from observed scan facts.',
   ].join('\n\n')
   if (Buffer.byteLength(body, 'utf8') > MAX_BRIEF_BYTES)

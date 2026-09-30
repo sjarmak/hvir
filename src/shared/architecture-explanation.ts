@@ -107,7 +107,13 @@ function diagramValue(value: unknown): string {
     throw new ArchitectureExplanationError(
       'sequenceDiagram must contain exactly one diagram',
     )
-  return diagram
+  return diagram.split('\n').map(escapeStatementText).join('\n')
+}
+
+function escapeStatementText(line: string): string {
+  const colon = line.indexOf(':')
+  if (colon < 0) return line
+  return line.slice(0, colon + 1) + line.slice(colon + 1).replaceAll(';', '#59;')
 }
 
 export function checkArchitectureExplanation(
