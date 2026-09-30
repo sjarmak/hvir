@@ -132,6 +132,9 @@ it('asks for one strict in-memory explanation from the supplied snapshot facts',
   expect(prompt).toContain('at most twelve messages')
   expect(prompt).toContain('short human-readable labels of one to three words')
   expect(prompt).toContain('avoid raw identifiers')
+  expect(prompt).toContain('Do not use alt, else, or opt blocks')
+  expect(prompt).toContain('one linear sequence')
+  expect(prompt).toContain('state the condition in the relevant message label')
 })
 
 it('includes commit messages and a diff for the reviewed range', () => {
