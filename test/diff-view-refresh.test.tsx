@@ -43,6 +43,57 @@ afterEach(() => {
 })
 
 describe('DiffView refresh lifecycle', () => {
+  it('moves directly between changed hunks and disables navigation for an empty diff', async () => {
+    const path = localPath('/repo/changed.ts')
+    const baseLines = Array.from({ length: 24 }, (_, index) => `line ${index + 1}`)
+    const currentLines = [...baseLines]
+    currentLines[4] = 'changed line 5'
+    currentLines[18] = 'changed line 19'
+    const capturedInputs: GitDiffResponse = {
+      ...diffResponse(path, 'unused'),
+      baseInput: textInput(baseLines.join('\n')),
+      currentInput: textInput(currentLines.join('\n')),
+    }
+    await renderDiff({ path, gitRefreshVersion: 0, capturedInputs })
+
+    expect(container.textContent).toContain('2 changes')
+    const next = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Go to next change"]',
+    )!
+    const previous = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Go to previous change"]',
+    )!
+    expect(next.disabled).toBe(false)
+    expect(previous.disabled).toBe(false)
+
+    act(() => next.click())
+    expect(
+      currentView().state.doc.lineAt(currentView().state.selection.main.head).number,
+    ).toBe(5)
+    act(() => next.click())
+    expect(
+      currentView().state.doc.lineAt(currentView().state.selection.main.head).number,
+    ).toBe(19)
+    act(() => previous.click())
+    expect(
+      currentView().state.doc.lineAt(currentView().state.selection.main.head).number,
+    ).toBe(5)
+
+    await renderDiff({
+      path,
+      gitRefreshVersion: 0,
+      capturedInputs: {
+        ...capturedInputs,
+        currentInput: capturedInputs.baseInput,
+      },
+    })
+    expect(container.textContent).toContain('No changes')
+    expect(
+      container.querySelector<HTMLButtonElement>('[aria-label="Go to next change"]')!
+        .disabled,
+    ).toBe(true)
+  })
+
   it('uses captured evidence without live Git reads and selects the cited baseline line', async () => {
     const path = localPath('/repo/deleted.ts')
     const capturedInputs = diffResponse(path, 'captured')
@@ -248,10 +299,14 @@ function mergeElement(): HTMLElement {
 }
 
 function currentDocument(): string {
+  return currentView().state.doc.toString()
+}
+
+function currentView(): EditorView {
   const editor = container.querySelector<HTMLElement>('.cm-editor.cm-merge-b')
   const view = editor ? EditorView.findFromDOM(editor) : undefined
   if (!view) throw new Error('Expected current-side CodeMirror view')
-  return view.state.doc.toString()
+  return view
 }
 
 function diffResponse(
@@ -276,6 +331,15 @@ function diffResponse(
       lineCount: 2,
       complete: true,
     },
+  }
+}
+
+function textInput(content: string): GitDiffResponse['currentInput'] {
+  return {
+    content,
+    byteLength: Buffer.byteLength(content),
+    lineCount: content.split('\n').length,
+    complete: true,
   }
 }
 

@@ -1,8 +1,8 @@
 import { EditorState } from '@codemirror/state'
 import { EditorView, lineNumbers } from '@codemirror/view'
-import { MergeView } from '@codemirror/merge'
+import { goToNextChunk, goToPreviousChunk, MergeView } from '@codemirror/merge'
 import { formatViewerBytes } from './viewer-byte-format'
-import { useEffect, useMemo, useRef, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 
 import {
   textLineCount,
@@ -173,6 +173,7 @@ function InteractiveDiff({
   const contentRef = useRef({ base: baseContent, current: currentContent })
   const positionRef = useRef(position)
   const onPositionRef = useRef(onPosition)
+  const [chunkCount, setChunkCount] = useState(0)
   contentRef.current = { base: baseContent, current: currentContent }
   positionRef.current = position
   onPositionRef.current = onPosition
@@ -199,6 +200,7 @@ function InteractiveDiff({
       gutter: true,
     })
     mergeRef.current = merge
+    setChunkCount(merge.chunks.length)
     const findTarget = new CodeMirrorFindTarget(
       [
         { view: merge.a, side: 'base' },
@@ -257,6 +259,7 @@ function InteractiveDiff({
     if (!merge) return
     replaceDocument(merge.a, baseContent)
     replaceDocument(merge.b, currentContent)
+    setChunkCount(merge.chunks.length)
   }, [baseContent, currentContent])
 
   useEffect(() => {
@@ -273,16 +276,49 @@ function InteractiveDiff({
     })
   }, [evidenceLocation, baseContent, currentContent])
 
+  const moveToChange = (direction: 'previous' | 'next') => {
+    const merge = mergeRef.current
+    if (!merge) return
+    const command = direction === 'previous' ? goToPreviousChunk : goToNextChunk
+    command(merge.b)
+  }
+
   return (
     <div className="diff-shell">
       <DiffRefreshError error={error} />
       <div className="diff-labels">
         <span>{baseLabel}</span>
+        <div className="diff-change-navigation" aria-label="Changed lines">
+          <button
+            type="button"
+            aria-label="Go to previous change"
+            title="Previous change"
+            disabled={chunkCount === 0}
+            onClick={() => moveToChange('previous')}
+          >
+            ↑
+          </button>
+          <span>{changeCountLabel(chunkCount)}</span>
+          <button
+            type="button"
+            aria-label="Go to next change"
+            title="Next change"
+            disabled={chunkCount === 0}
+            onClick={() => moveToChange('next')}
+          >
+            ↓
+          </button>
+        </div>
         <span>{currentLabel}</span>
       </div>
       <div className="diff-host" ref={host} />
     </div>
   )
+}
+
+function changeCountLabel(count: number): string {
+  if (count === 0) return 'No changes'
+  return `${count} ${count === 1 ? 'change' : 'changes'}`
 }
 
 function replaceDocument(view: EditorView, content: string): void {

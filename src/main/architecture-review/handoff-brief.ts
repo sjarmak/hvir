@@ -133,6 +133,7 @@ export function architectureExplanationPrompt(
     '',
     `Return exactly one JSON object using this shape: ${example}`,
     'Use exact system, subsystem and module names from the snapshot facts. The sequenceDiagram value must contain one Mermaid sequence diagram. Do not add keys or wrap the JSON in Markdown.',
+    'Make the sequence diagram explain only the critical change path. Use at most five participants and at most twelve messages. Give participants short human-readable labels of one to three words, using Mermaid aliases when needed to avoid raw identifiers; keep exact snapshot names in touched. Prefer one direct happy path plus only the branch that materially explains the change.',
     'Your explanation is a claim that hvir will display separately from observed scan facts.',
   ].join('\n\n')
   if (Buffer.byteLength(body, 'utf8') > MAX_BRIEF_BYTES)
@@ -238,7 +239,8 @@ function commitSection(
   if (commits.length === 0) lines.push('None in scope.')
   for (const commit of commits)
     lines.push(`- ${code(commit.revision.slice(0, 12))} ${code(commit.subject)}`)
-  if (truncated) lines.push('', 'Git truncated the commit log before it reached this prompt.')
+  if (truncated)
+    lines.push('', 'Git truncated the commit log before it reached this prompt.')
   return lines
 }
 

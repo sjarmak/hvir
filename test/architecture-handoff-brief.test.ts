@@ -116,7 +116,9 @@ it('points the prompt at the brief inside the worktree without inlining evidence
 })
 
 it('asks for one strict in-memory explanation from the supplied snapshot facts', () => {
-  const prompt = architectureExplanationPrompt(explanationInput([relationship('main', 'shared')]))
+  const prompt = architectureExplanationPrompt(
+    explanationInput([relationship('main', 'shared')]),
+  )
   expect(prompt).toContain('Return exactly one JSON object')
   expect(prompt).toContain('whatChanged')
   expect(prompt).toContain('sequenceDiagram')
@@ -125,10 +127,17 @@ it('asks for one strict in-memory explanation from the supplied snapshot facts',
   expect(prompt).toContain('modules')
   expect(prompt).toContain('Do not call tools or read the repository')
   expect(prompt).toContain('../shared/y')
+  expect(prompt).toContain('critical change path')
+  expect(prompt).toContain('at most five participants')
+  expect(prompt).toContain('at most twelve messages')
+  expect(prompt).toContain('short human-readable labels of one to three words')
+  expect(prompt).toContain('avoid raw identifiers')
 })
 
 it('includes commit messages and a diff for the reviewed range', () => {
-  const prompt = architectureExplanationPrompt(explanationInput([relationship('main', 'shared')]))
+  const prompt = architectureExplanationPrompt(
+    explanationInput([relationship('main', 'shared')]),
+  )
   expect(prompt).toContain('add x')
   expect(prompt).toContain(current.slice(0, 12))
   expect(prompt).toContain('```diff')

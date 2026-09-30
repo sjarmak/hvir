@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { localPath } from '../src/shared'
 import type { ArchitectureReviewSnapshot } from '../src/shared/architecture-review'
 import { ArchitectureExplanation } from '../src/renderer/src/architecture-review/ArchitectureExplanation'
+import { MermaidDiagram } from '../src/renderer/src/viewer/MermaidDiagram'
 
 const mermaid = vi.hoisted(() => ({
   initialize: vi.fn(),
@@ -174,4 +175,42 @@ it('renders the sequence claim as a Mermaid diagram', async () => {
     expect.stringMatching(/^mermaid-/),
     'sequenceDiagram\n  User->>hvir: Explain',
   )
+  const diagram = host.querySelector<HTMLElement>('.architecture-explanation-diagram')!
+  const svg = diagram.querySelector<SVGElement>('svg')!
+  expect(diagram.querySelector('[aria-label="Diagram zoom"]')).not.toBeNull()
+  expect(diagram.textContent).toContain('100%')
+  act(() =>
+    diagram.querySelector<HTMLButtonElement>('[aria-label="Zoom in diagram"]')!.click(),
+  )
+  expect(svg.style.width).toBe('125%')
+  expect(diagram.textContent).toContain('125%')
+  act(() =>
+    diagram
+      .querySelector<HTMLButtonElement>('[aria-label="Reset diagram zoom"]')!
+      .click(),
+  )
+  expect(svg.style.width).toBe('100%')
+})
+
+it('keeps the selected zoom when the diagram source changes', async () => {
+  await act(async () => {
+    app.render(
+      <MermaidDiagram source="sequenceDiagram\n  A->>B: First" className="diagram" />,
+    )
+    await Promise.resolve()
+  })
+  await vi.waitFor(() => expect(host.querySelector('.diagram svg')).not.toBeNull())
+  act(() =>
+    host.querySelector<HTMLButtonElement>('[aria-label="Zoom in diagram"]')!.click(),
+  )
+
+  await act(async () => {
+    app.render(
+      <MermaidDiagram source="sequenceDiagram\n  A->>B: Second" className="diagram" />,
+    )
+    await Promise.resolve()
+  })
+  await vi.waitFor(() => {
+    expect(host.querySelector<SVGElement>('.diagram svg')?.style.width).toBe('125%')
+  })
 })

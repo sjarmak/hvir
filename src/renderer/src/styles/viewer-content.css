@@ -54,6 +54,29 @@
   font-size: calc(10px * var(--hvir-interface-scale));
 }
 
+.diff-labels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.diff-labels > span:last-child {
+  text-align: right;
+}
+
+.diff-change-navigation {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.diff-change-navigation button {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  place-items: center;
+}
+
 .source-shell .codemirror-host,
 .diff-host {
   flex: 1;
