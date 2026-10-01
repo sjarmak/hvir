@@ -10,6 +10,10 @@ import {
   type PullSection,
 } from './pulls-model'
 
+import type { PullCheckoutsResponse } from '../../../shared/github'
+import { PullWorkspaceAction } from './PullWorkspaceAction'
+import type { PullWorkspaceNavigation } from './pull-workspaces'
+
 import './pulls.css'
 
 const VISIBLE_POLL_INTERVAL_MS = 60_000
@@ -19,14 +23,17 @@ export interface PullsPanelProps {
   readonly root: HostPath
   readonly connected: boolean
   readonly hidden?: boolean
+  readonly navigation?: PullWorkspaceNavigation
 }
 
 export function PullsPanel({
   root,
   connected,
   hidden = false,
+  navigation,
 }: PullsPanelProps): ReactElement {
   const [response, setResponse] = useState<PullsResponse>()
+  const [checkouts, setCheckouts] = useState<PullCheckoutsResponse>()
   const [error, setError] = useState<string>()
   const [loading, setLoading] = useState(false)
   const requestSerial = useRef(0)
@@ -36,9 +43,16 @@ export function PullsPanel({
     const serial = ++requestSerial.current
     setLoading(true)
     try {
-      const result = await window.hvir.invoke('github:pulls', { root })
+      const [result, checkoutResult] = await Promise.all([
+        window.hvir.invoke('github:pulls', { root }),
+        window.hvir.invoke('github:checkouts', { root }).catch((reason: unknown) => ({
+          available: false as const,
+          message: reason instanceof Error ? reason.message : String(reason),
+        })),
+      ])
       if (serial !== requestSerial.current) return
       setResponse(result)
+      setCheckouts(checkoutResult)
       setError(undefined)
     } catch (reason) {
       if (serial !== requestSerial.current) return
@@ -171,39 +185,51 @@ export function PullsPanel({
     const checks = checksLabel(pull.checks)
     const review = reviewLabel(pull.review)
     return (
-      <a
-        className="pulls-row"
-        href={pull.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        title={`${pull.headRef} · open on GitHub`}
-        data-pull-number={pull.number}
-      >
-        <span className="pulls-line">
-          <span className="pulls-number">#{pull.number}</span>
-          <span className="pulls-row-title">{pull.title}</span>
-        </span>
-        <span className="pulls-badges">
-          {pull.state !== 'open' ? (
-            <span className={`pulls-badge pulls-state-${pull.state}`}>{pull.state}</span>
-          ) : null}
-          {pull.draft ? <span className="pulls-badge">draft</span> : null}
-          {checks !== '' ? (
-            <span className={`pulls-badge pulls-checks-${pull.checks}`}>{checks}</span>
-          ) : null}
-          {review !== '' ? (
-            <span className={`pulls-badge pulls-review-${pull.review}`}>{review}</span>
-          ) : null}
-          {pull.openFeedback > 0 ? (
-            <span className="pulls-badge pulls-feedback">
-              {pull.openFeedback} open {pull.openFeedback === 1 ? 'comment' : 'comments'}
-            </span>
-          ) : null}
-          {showAuthor && pull.author !== '' ? (
-            <span className="pulls-author">@{pull.author}</span>
-          ) : null}
-        </span>
-      </a>
+      <div className="pulls-row" data-pull-number={pull.number}>
+        <a
+          className="pulls-link"
+          href={pull.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={`${pull.headRef} · open on GitHub`}
+        >
+          <span className="pulls-line">
+            <span className="pulls-number">#{pull.number}</span>
+            <span className="pulls-row-title">{pull.title}</span>
+          </span>
+          <span className="pulls-badges">
+            {pull.state !== 'open' ? (
+              <span className={`pulls-badge pulls-state-${pull.state}`}>
+                {pull.state}
+              </span>
+            ) : null}
+            {pull.draft ? <span className="pulls-badge">draft</span> : null}
+            {checks !== '' ? (
+              <span className={`pulls-badge pulls-checks-${pull.checks}`}>{checks}</span>
+            ) : null}
+            {review !== '' ? (
+              <span className={`pulls-badge pulls-review-${pull.review}`}>{review}</span>
+            ) : null}
+            {pull.openFeedback > 0 ? (
+              <span className="pulls-badge pulls-feedback">
+                {pull.openFeedback} open{' '}
+                {pull.openFeedback === 1 ? 'comment' : 'comments'}
+              </span>
+            ) : null}
+            {showAuthor && pull.author !== '' ? (
+              <span className="pulls-author">@{pull.author}</span>
+            ) : null}
+          </span>
+        </a>
+        <PullWorkspaceAction
+          root={root}
+          pull={pull}
+          checkouts={checkouts}
+          navigation={navigation}
+          disabled={!connected || hidden}
+          onCheckouts={setCheckouts}
+        />
+      </div>
     )
   }
 }

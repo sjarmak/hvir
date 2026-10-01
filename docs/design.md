@@ -159,6 +159,7 @@ sandboxed HTML rendering.
 > Superseded by: [ADR-027](adr/ADR-027-demand-driven-workspace-activity.md) | partial | Periodic Git work refreshing activity for every open workspace.
 > Superseded by: [ADR-033](adr/ADR-033-successful-discovery-dismisses-missing-workspaces.md) | partial | Missing worktrees remaining visible until explicit dismissal.
 > Superseded by: [ADR-963](adr/ADR-963-architecture-review-history-and-agent-worktrees.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
+> Superseded by: [ADR-968](adr/ADR-968-pull-request-workspace-navigation.md) | partial | Workspace selection existing only in the top tier, for explicit PR-row shortcuts into the existing workspace navigation owner.
 
 Host-qualified registered projects own discovered worktree workspaces without making hvir a
 worktree orchestrator.
@@ -755,6 +756,15 @@ reports transferred bytes and host calls only.
 Whole-repository budgets preserve package and service relationships without sampling.
 Kotlin joins the grammar scanners, workspace imports resolve through captured manifests,
 and symbolic links and submodules remain disclosed exclusions.
+
+### [ADR-968 — Pull request shortcuts to existing workspaces](adr/ADR-968-pull-request-workspace-navigation.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-008](adr/ADR-008-project-worktree-workspaces.md) | partial | Workspace selection existing only in the top tier, for explicit PR-row shortcuts into the existing workspace navigation owner.
+
+PR rows open or reopen an existing workspace through the current navigation owner after matching
+its host-qualified checkout and configured upstream to the PR source repository and branch.
+
 
 ## 5. Architecture
 

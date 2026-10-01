@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest'
 import {
   classifyGhFailure,
   githubRemoteRepos,
+  githubRemoteRepositoryMap,
+  parseBranchUpstreams,
   parsePullsOutput,
   parseRepoView,
 } from '../src/main/github/github-parse'
@@ -208,6 +210,7 @@ describe('parsePullsOutput', () => {
         state: 'open',
         draft: false,
         headRef: 'feat/panel',
+        headRepo: 'acme/widgets',
         author: 'stephanie',
         updatedAt: AFTER,
         checks: 'passing',
@@ -353,6 +356,56 @@ describe('parsePullsOutput', () => {
       )
       expect(parsed.authored).toEqual([])
     })
+  })
+})
+
+describe('checkout tracking parsers', () => {
+  it('resolves only an exact named GitHub remote and upstream ref', () => {
+    const remotes = githubRemoteRepositoryMap(
+      'origin\thttps://github.com/acme/widgets (fetch)\n' +
+        'origin\tgit@github.com:acme/widgets.git (push)\n' +
+        'fork\thttps://github.com/other/widgets (fetch)\n',
+    )
+    expect(
+      parseBranchUpstreams(
+        'feat/panel\0origin\0refs/heads/feat/panel\0\n' +
+          'feat/other\0fork\0refs/heads/feat/other\0\n' +
+          'local\0.\0refs/heads/local\0',
+        remotes,
+      ),
+    ).toEqual(
+      new Map([
+        [
+          'feat/panel',
+          { branch: 'feat/panel', headRepo: 'acme/widgets', headRef: 'feat/panel' },
+        ],
+        [
+          'feat/other',
+          { branch: 'feat/other', headRepo: 'other/widgets', headRef: 'feat/other' },
+        ],
+        ['local', { branch: 'local' }],
+      ]),
+    )
+  })
+
+  it('omits repository identity for ambiguous and unknown remotes', () => {
+    const remotes = githubRemoteRepositoryMap(
+      'origin\thttps://github.com/acme/widgets (fetch)\n' +
+        'origin\thttps://github.com/other/widgets (fetch)\n' +
+        'origin\thttps://github.com/other/widgets (push)\n' +
+        'upstream\thttps://gitlab.com/acme/widgets (fetch)\n',
+    )
+    expect(
+      parseBranchUpstreams(
+        'a\0origin\0refs/heads/a\0\nb\0upstream\0refs/heads/b\0\n',
+        remotes,
+      ),
+    ).toEqual(
+      new Map([
+        ['a', { branch: 'a' }],
+        ['b', { branch: 'b' }],
+      ]),
+    )
   })
 })
 

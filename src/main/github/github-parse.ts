@@ -120,6 +120,7 @@ function parsePull(node: JsonRecord, viewer: string): PullSummary | undefined {
   const rollup = asString(asRecord(headCommit?.['statusCheckRollup'])?.['state'])
   const headCommittedAt = asString(headCommit?.['committedDate'])
   const author = actor(node['author']).login ?? ''
+  const headRepo = headRepositoryOf(node)
   return {
     number,
     title,
@@ -127,6 +128,7 @@ function parsePull(node: JsonRecord, viewer: string): PullSummary | undefined {
     state: STATES[asString(node['state']) ?? ''] ?? 'open',
     draft: node['isDraft'] === true,
     headRef: asString(node['headRefName']) ?? '',
+    ...(headRepo === undefined ? {} : { headRepo }),
     author,
     updatedAt: asString(node['updatedAt']) ?? '',
     checks: CHECKS[rollup ?? ''] ?? 'none',
@@ -199,6 +201,61 @@ export function githubRemoteRepos(remoteOutput: string): ReadonlySet<string> {
       `${owner}/${name}`.toLowerCase(),
     ),
   )
+}
+
+export function githubRemoteRepositoryMap(
+  remoteOutput: string,
+): ReadonlyMap<string, string | undefined> {
+  const remotes = new Map<string, Set<string>>()
+  for (const line of remoteOutput.split(/\r?\n/)) {
+    const match = /^(\S+)\s+(\S+)\s+\(fetch\)\s*$/.exec(line)
+    if (!match) continue
+    const remote = match[1]
+    const url = match[2]
+    if (remote === undefined || url === undefined) continue
+    const repo = [...url.matchAll(GITHUB_REMOTE_PATTERN)][0]
+    const value = repo === undefined ? undefined : `${repo[1]}/${repo[2]}`.toLowerCase()
+    const values = remotes.get(remote) ?? new Set<string>()
+    if (value !== undefined) values.add(value)
+    else values.add('')
+    remotes.set(remote, values)
+  }
+  return new Map(
+    [...remotes].map(([remote, values]) => [
+      remote,
+      values.size === 1 && !values.has('') ? [...values][0] : undefined,
+    ]),
+  )
+}
+
+export interface BranchUpstream {
+  readonly branch: string
+  readonly headRepo?: string
+  readonly headRef?: string
+}
+
+export function parseBranchUpstreams(
+  output: string,
+  remoteRepositories: ReadonlyMap<string, string | undefined>,
+): ReadonlyMap<string, BranchUpstream> {
+  const result = new Map<string, BranchUpstream>()
+  const fields = output.replace(/\r?\n/g, '').split('\0')
+  for (let index = 0; index + 2 < fields.length; index += 3) {
+    const branch = (fields[index] ?? '').replace(/\r?\n$/, '')
+    const remote = (fields[index + 1] ?? '').replace(/\r?\n$/, '')
+    const remoteRef = (fields[index + 2] ?? '').replace(/\r?\n$/, '')
+    if (!branch) continue
+    const headRef =
+      remote !== '.' && remote !== '' && remoteRef.startsWith('refs/heads/')
+        ? remoteRef.slice('refs/heads/'.length)
+        : undefined
+    const headRepo = headRef === undefined ? undefined : remoteRepositories.get(remote)
+    result.set(branch, {
+      branch,
+      ...(headRepo === undefined || headRef === undefined ? {} : { headRepo, headRef }),
+    })
+  }
+  return result
 }
 
 export function classifyGhFailure(stderr: string): PullsUnavailable {

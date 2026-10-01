@@ -6,6 +6,7 @@
 > Superseded by: [ADR-027](ADR-027-demand-driven-workspace-activity.md) | partial | Periodic Git work refreshing activity for every open workspace.
 > Superseded by: [ADR-033](ADR-033-successful-discovery-dismisses-missing-workspaces.md) | partial | Missing worktrees remaining visible until explicit dismissal.
 > Superseded by: [ADR-963](ADR-963-architecture-review-history-and-agent-worktrees.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
+> Superseded by: [ADR-968](ADR-968-pull-request-workspace-navigation.md) | partial | Workspace selection existing only in the top tier, for explicit PR-row shortcuts into the existing workspace navigation owner.
 
 ## Context
 

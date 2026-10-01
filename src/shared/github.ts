@@ -13,6 +13,7 @@ export interface PullSummary {
   readonly state: PullState
   readonly draft: boolean
   readonly headRef: string
+  readonly headRepo?: string
   readonly author: string
   readonly updatedAt: string
   readonly checks: PullChecks
@@ -40,6 +41,21 @@ export interface PullsUnavailable {
 }
 
 export type PullsResponse = PullsSnapshot | PullsUnavailable
+
+export interface PullCheckout {
+  readonly root: HostPath
+  readonly branch?: string
+  readonly headRepo?: string
+  readonly headRef?: string
+}
+
+export type PullCheckoutsResponse =
+  | { readonly available: true; readonly checkouts: readonly PullCheckout[] }
+  | { readonly available: false; readonly message: string }
+
+export interface PullCheckoutsRequest {
+  readonly root: HostPath
+}
 
 export interface PullsRequest {
   readonly root: HostPath

@@ -17,6 +17,7 @@ function pull(number: number, overrides: Partial<PullSummary> = {}): PullSummary
     state: 'open',
     draft: false,
     headRef: `branch-${number}`,
+    headRepo: 'acme/widgets',
     author: 'ben',
     updatedAt: '2026-09-30T00:00:00Z',
     checks: 'none',
@@ -54,6 +55,8 @@ beforeEach(() => {
       pullsCalls += 1
       return Promise.resolve(response)
     }
+    if (channel === 'github:checkouts')
+      return Promise.resolve({ available: true, checkouts: [] })
     return Promise.resolve(undefined)
   })
   ;(globalThis as unknown as { window: Record<string, unknown> }).window.hvir = {
@@ -102,7 +105,12 @@ describe('PullsPanel', () => {
     const branchRow = host.querySelector('[data-pull-number="1"]')
     expect(branchRow?.textContent).toContain('CI failing')
     expect(branchRow?.textContent).toContain('2 open comments')
-    expect(branchRow?.getAttribute('href')).toBe('https://github.com/acme/widgets/pull/1')
+    expect(branchRow?.querySelector('a')?.getAttribute('href')).toBe(
+      'https://github.com/acme/widgets/pull/1',
+    )
+    expect(branchRow?.textContent).toContain('branch-1')
+    expect(branchRow?.textContent).toContain('No checkout')
+    expect(branchRow?.querySelector('a button')).toBeNull()
     expect(host.querySelector('[data-pull-number="2"]')?.textContent).toContain('@ben')
   })
 

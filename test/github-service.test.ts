@@ -228,6 +228,112 @@ describe('GitHubService.probe', () => {
   })
 })
 
+describe('GitHubService.checkouts', () => {
+  it('returns live nonbare worktrees with verified upstream identity', async () => {
+    const { host } = fakeHost((command, args) => {
+      if (command !== 'git') return defaultResponder(command, args)
+      if (args[0] === 'worktree') {
+        return execResult(
+          0,
+          `worktree ${ROOT.path}\0HEAD ${'a'.repeat(40)}\0branch refs/heads/main\0\0` +
+            `worktree /projects/panel\0HEAD ${'b'.repeat(40)}\0branch refs/heads/feat/panel\0\0` +
+            'worktree /projects/stale\0prunable stale\0branch refs/heads/stale\0\0' +
+            'worktree /projects/bare\0bare\0\0',
+        )
+      }
+      if (args[0] === 'for-each-ref') {
+        return execResult(
+          0,
+          'main\0origin\0refs/heads/main\0\n' +
+            'feat/panel\0origin\0refs/heads/feat/panel\0\n' +
+            'stale\0origin\0refs/heads/stale\0\n',
+        )
+      }
+      if (args[0] === 'remote') {
+        return execResult(0, 'origin\thttps://github.com/acme/widgets (fetch)\n')
+      }
+      return defaultResponder(command, args)
+    })
+    expect(await service(host).checkouts({ root: ROOT })).toEqual({
+      available: true,
+      checkouts: [
+        { root: ROOT, branch: 'main', headRepo: 'acme/widgets', headRef: 'main' },
+        {
+          root: hostPath(asHostId('local'), '/projects/panel'),
+          branch: 'feat/panel',
+          headRepo: 'acme/widgets',
+          headRef: 'feat/panel',
+        },
+      ],
+    })
+  })
+
+  it('fails closed when git checkout reads fail and rejects inactive roots', async () => {
+    const failing = fakeHost((command) =>
+      command === 'git'
+        ? execResult(128, '', 'not a repository')
+        : defaultResponder(command, []),
+    )
+    expect(await service(failing.host).checkouts({ root: ROOT })).toMatchObject({
+      available: false,
+      message: 'not a repository',
+    })
+    await expect(
+      service(failing.host).checkouts({
+        root: hostPath(asHostId('local'), '/elsewhere'),
+      }),
+    ).rejects.toThrow(/active workspace/)
+  })
+
+  it('returns spawned host errors and preserves host-qualified checkout roots', async () => {
+    const remoteRoot = hostPath(asHostId('ssh-1'), '/srv/widgets')
+    const exec = vi.fn((command: string, args: readonly string[]) => {
+      if (command !== 'git') throw new Error('host disconnected')
+      if (args[0] === 'worktree') {
+        return execResult(0, 'worktree /srv/widgets\0branch refs/heads/main\0\0')
+      }
+      if (args[0] === 'for-each-ref') {
+        return execResult(0, 'main\0origin\0refs/heads/main\0\n')
+      }
+      return execResult(0, 'origin\thttps://github.com/acme/widgets (fetch)\n')
+    })
+    const host = { hostId: remoteRoot.hostId, exec } as unknown as ProjectHost
+    const response = await new GitHubService({
+      getProject: () => ({ host, root: remoteRoot }),
+    }).checkouts({ root: remoteRoot })
+    expect(response).toMatchObject({ available: true })
+    expect(response.available && response.checkouts[0]?.root).toEqual(remoteRoot)
+
+    const failing = fakeHost(() => {
+      throw new Error('spawn failed')
+    })
+    expect(await service(failing.host).checkouts({ root: ROOT })).toEqual({
+      available: false,
+      message: 'spawn failed',
+    })
+  })
+
+  it('bounds every checkout read and rejects a root that changes while reading', async () => {
+    const { host, exec } = fakeHost()
+    const github = new GitHubService({
+      getProject: () => ({ host, root: ROOT }),
+    })
+    await github.checkouts({ root: ROOT })
+    expect(exec.mock.calls.every((call) => call[2]?.maxBuffer !== undefined)).toBe(true)
+
+    let current = ROOT
+    const changing = fakeHost()
+    const guarded = new GitHubService({
+      getProject: () => ({ host: changing.host, root: current }),
+    })
+    changing.exec.mockImplementation((...args) => {
+      current = hostPath(asHostId('local'), '/elsewhere')
+      return Promise.resolve(defaultResponder(args[0], args[1]))
+    })
+    await expect(guarded.checkouts({ root: ROOT })).rejects.toThrow(/active workspace/)
+  })
+})
+
 describe('pullsQueryArgs', () => {
   it('passes every value as a raw string field except the boolean', () => {
     const args = pullsQueryArgs('acme/widgets', '@feat')

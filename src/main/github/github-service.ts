@@ -6,6 +6,10 @@ import {
   type PullsRequest,
   type PullsResponse,
   type PullsUnavailable,
+  type PullCheckoutsRequest,
+  type PullCheckoutsResponse,
+  type PullCheckout,
+  type ExecResult,
 } from '../../shared'
 import type { ExecOptions, ProjectHost } from '../project-host'
 import {
@@ -13,7 +17,10 @@ import {
   githubRemoteRepos,
   parsePullsOutput,
   parseRepoView,
+  parseBranchUpstreams,
+  githubRemoteRepositoryMap,
 } from './github-parse'
+import { parseWorktreeList } from '../git/git-parsers'
 import { pullsQueryArgs } from './github-query'
 
 const GH_TIMEOUT_MS = 20_000
@@ -85,6 +92,67 @@ export class GitHubService {
       }
     } catch (reason) {
       return { available: false, reason: 'error', message: errorMessage(reason) }
+    }
+  }
+
+  async checkouts(req: PullCheckoutsRequest): Promise<PullCheckoutsResponse> {
+    const { host, root } = this.activeProject(req.root)
+    const options = this.gitOptions(root)
+    let worktrees: ExecResult
+    let refs: ExecResult
+    let remotes: ExecResult
+    try {
+      ;[worktrees, refs, remotes] = await Promise.all([
+        host.exec('git', ['worktree', 'list', '--porcelain', '-z'], options),
+        host.exec(
+          'git',
+          [
+            'for-each-ref',
+            '--format=%(refname:short)%00%(upstream:remotename)%00%(upstream:remoteref)%00',
+            'refs/heads',
+          ],
+          options,
+        ),
+        host.exec('git', ['remote', '-v'], options),
+      ])
+    } catch (reason) {
+      this.activeProject(req.root)
+      return this.checkoutsError(errorMessage(reason))
+    }
+    this.activeProject(req.root)
+    if (worktrees.code !== 0) return this.checkoutsError(worktrees.stderr)
+    if (refs.code !== 0) return this.checkoutsError(refs.stderr)
+    if (remotes.code !== 0) return this.checkoutsError(remotes.stderr)
+    try {
+      const upstreams = parseBranchUpstreams(
+        refs.stdout,
+        githubRemoteRepositoryMap(remotes.stdout),
+      )
+      const discovered = parseWorktreeList(worktrees.stdout, root.hostId)
+      const checkouts: PullCheckout[] = discovered.flatMap((worktree) => {
+        if (worktree.bare || worktree.prunable) return []
+        const tracking =
+          worktree.branch === undefined ? undefined : upstreams.get(worktree.branch)
+        return [
+          {
+            root: worktree.root,
+            ...(worktree.branch === undefined ? {} : { branch: worktree.branch }),
+            ...(tracking?.headRepo === undefined || tracking.headRef === undefined
+              ? {}
+              : { headRepo: tracking.headRepo, headRef: tracking.headRef }),
+          },
+        ]
+      })
+      return { available: true, checkouts }
+    } catch (reason) {
+      return this.checkoutsError(errorMessage(reason))
+    }
+  }
+
+  private checkoutsError(message: string): PullCheckoutsResponse {
+    return {
+      available: false,
+      message: message.trim() || 'Git checkout discovery failed',
     }
   }
 
@@ -191,6 +259,12 @@ export class GitHubService {
   }
 
   private gitOptions(root: HostPath): ExecOptions {
-    return { cwd: root, lane: 'background', timeout: GIT_TIMEOUT_MS }
+    return {
+      cwd: root,
+      lane: 'background',
+      timeout: GIT_TIMEOUT_MS,
+      maxBuffer: MAX_OUTPUT_BYTES,
+      maxStdoutNulRecords: 32_768,
+    }
   }
 }

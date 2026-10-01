@@ -209,7 +209,7 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly systemClipboard?: SystemClipboardPort
   readonly beads: Pick<BeadsService, 'list' | 'probe'>
   readonly gascity: Pick<GasCityService, 'crew' | 'probe' | 'analyticsConfig'>
-  readonly github: Pick<GitHubService, 'pulls' | 'probe'>
+  readonly github: Pick<GitHubService, 'pulls' | 'probe' | 'checkouts'>
   /** Companion settings (ADR-949); the view it answers with carries no secret. */
   readonly companion: Pick<
     CompanionSettingsPort,
