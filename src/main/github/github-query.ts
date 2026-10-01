@@ -1,0 +1,50 @@
+const PULL_FIELDS = `
+fragment pull on PullRequest {
+  number title url state isDraft headRefName updatedAt reviewDecision
+  headRepository { nameWithOwner }
+  author { login }
+  commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }
+  reviewThreads(last: 100) { nodes { isResolved isOutdated } }
+  reviews(last: 50) { nodes { state body submittedAt author { __typename login } } }
+  comments(last: 50) { nodes { createdAt author { __typename login } } }
+}`
+
+export const PULLS_QUERY = `query(
+  $owner: String!, $name: String!, $branch: String!, $hasBranch: Boolean!,
+  $mine: String!, $review: String!
+) {
+  viewer { login }
+  repository(owner: $owner, name: $name) @include(if: $hasBranch) {
+    branch: pullRequests(
+      headRefName: $branch, first: 5, orderBy: { field: UPDATED_AT, direction: DESC }
+    ) { nodes { ...pull } }
+  }
+  mine: search(query: $mine, type: ISSUE, first: 30) { nodes { ...pull } }
+  review: search(query: $review, type: ISSUE, first: 30) { nodes { ...pull } }
+}
+${PULL_FIELDS}`
+
+export function pullsQueryArgs(
+  repo: string,
+  branch: string | undefined,
+): readonly string[] {
+  const [owner = '', name = ''] = repo.split('/')
+  return [
+    'api',
+    'graphql',
+    '-f',
+    `query=${PULLS_QUERY}`,
+    '-f',
+    `owner=${owner}`,
+    '-f',
+    `name=${name}`,
+    '-f',
+    `branch=${branch ?? ''}`,
+    '-F',
+    `hasBranch=${branch === undefined ? 'false' : 'true'}`,
+    '-f',
+    `mine=repo:${repo} is:pr is:open author:@me`,
+    '-f',
+    `review=repo:${repo} is:pr is:open review-requested:@me`,
+  ]
+}

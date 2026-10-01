@@ -16,10 +16,10 @@ import { ProjectRegistry } from './project-registry'
 import { ProjectCoordinator } from './project-coordinator'
 import { PtySupervisor } from './pty/pty-supervisor'
 import { installApplicationAttention } from './attention/attention-owner'
-import { BeadsService } from './beads/beads-service'
 import { createCompanionAssetReader } from './companion/companion-assets'
 import { installApplicationCompanion } from './companion/companion-owner'
-import { ownGasCityRuntime, ownGasCityService } from './gascity/gascity-owner'
+import { ownGasCityRuntime } from './gascity/gascity-owner'
+import { ownRailServices } from './rail-services'
 import { HarnessProfileStore } from './harness/harness-profile-store'
 import { HarnessProbeManager } from './harness/harness-probe'
 import { harnessProviders } from './harness/harness-provider'
@@ -394,8 +394,7 @@ function createWorkbenchEntry(): void {
         harnessProfiles: harnessProfileStore,
         harnessProbes: harnessProbeManager,
         remoteImagePaste,
-        beads: new BeadsService({ getProject }),
-        gascity: ownGasCityService(getProject, gasCity.reader),
+        ...ownRailServices(getProject, gasCity.reader),
         companion: companion.settings,
         updateAttention: (owner, set) => attention?.updateAttention(owner, set),
         updateWebPaneBindings: (owner, bindings) =>

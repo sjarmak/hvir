@@ -26,6 +26,7 @@ import { ProjectFolderPickerCoordinator } from '../project-folder-picker'
 import { createDocumentReviewRuntime } from '../document-review'
 import { BeadsService } from '../beads/beads-service'
 import { GasCityService } from '../gascity/gascity-service'
+import { GitHubService } from '../github/github-service'
 import { HarnessProfileStore } from '../harness/harness-profile-store'
 import {
   HarnessProviderRegistry,
@@ -294,6 +295,9 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     const smokeGasCity = new GasCityService({
       getProject: () => ({ host, root: smokeRoot }),
     })
+    const smokeGitHub = new GitHubService({
+      getProject: () => ({ host, root: smokeRoot }),
+    })
     const smokeCompanion = await installSmokeCompanion({
       host,
       rendererRoot,
@@ -404,6 +408,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       systemClipboard: { writeText: () => undefined },
       beads: smokeBeads,
       gascity: smokeGasCity,
+      github: smokeGitHub,
       updateAttention: smokeAttention.updateAttention,
       companion: smokeCompanion.settings,
       updateWebPaneBindings: (owner, bindings) =>

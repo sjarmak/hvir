@@ -20,6 +20,7 @@ import type { ArchitectureReviewCoordinator } from '../architecture-review/coord
 import type { BeadsService } from '../beads/beads-service'
 import type { CompanionSettingsPort } from '../companion/companion-settings'
 import type { GasCityService } from '../gascity/gascity-service'
+import type { GitHubService } from '../github/github-service'
 import type { HarnessProfileStoreContract } from '../harness/harness-profile-store'
 import type { HarnessProbeManager } from '../harness/harness-probe'
 import type { RemoteImagePasteCoordinator } from '../harness/remote-image-paste'
@@ -208,6 +209,7 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly systemClipboard?: SystemClipboardPort
   readonly beads: Pick<BeadsService, 'list' | 'probe'>
   readonly gascity: Pick<GasCityService, 'crew' | 'probe' | 'analyticsConfig'>
+  readonly github: Pick<GitHubService, 'pulls' | 'probe'>
   /** Companion settings (ADR-049); the view it answers with carries no secret. */
   readonly companion: Pick<
     CompanionSettingsPort,

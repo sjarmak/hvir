@@ -23,7 +23,7 @@ import { SessionDialog } from './workspaces/SessionDialog'
 import { SshPromptDialog } from './workspaces/SshPromptDialog'
 import { FileTree } from './tree/FileTree'
 import { isGitIgnoreRulePath } from './tree/git-ignore-refresh'
-import { BeadsRailPanel, BeadsRailTab, useBeadsWorkspace } from './beads/BeadsRail'
+import { RailPanels, RailTabs, useRailExtensions } from './rail/RailExtensions'
 import { useTerminalCommands } from './terminal/use-terminal-commands'
 import { GitPanel } from './git/GitPanel'
 import { workspaceGitEnabled } from './git/git-capability'
@@ -206,7 +206,7 @@ export function App(): ReactElement {
   deactivateGitGraphRef.current = deactivateGitGraph
   deactivateWebPaneRef.current = () => web.setActive(false)
   const terminalCommands = useTerminalCommands(session.activeWorkspace?.id)
-  const beads = useBeadsWorkspace(session, layout, terminalCommands)
+  const rail = useRailExtensions(session, layout, terminalCommands)
   useEffect(() => {
     if (overlays.projectPickerOpen) void refreshHosts()
   }, [overlays.projectPickerOpen, refreshHosts])
@@ -445,7 +445,7 @@ export function App(): ReactElement {
                 Git{changedCount > 0 ? ` ${changedCountLabel}` : ''}
               </button>
             ) : null}
-            <BeadsRailTab beads={beads} layout={layout} />
+            <RailTabs rail={rail} layout={layout} />
           </nav>
           <div className="rail-content">
             <FileTree
@@ -496,7 +496,7 @@ export function App(): ReactElement {
                 autoFetchIntervalMs={settings.gitAutoFetchIntervalMs}
               />
             ) : null}
-            <BeadsRailPanel beads={beads} session={session} layout={layout} />
+            <RailPanels rail={rail} session={session} layout={layout} />
           </div>
         </aside>
         <PaneResizer

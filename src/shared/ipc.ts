@@ -24,6 +24,7 @@ import { webPaneIpc } from './ipc/web-pane'
 import { documentReviewIpc } from './ipc/document-review'
 import { beadsIpc } from './ipc/beads'
 import { gascityIpc } from './ipc/gascity'
+import { githubIpc } from './ipc/github'
 import { companionIpc } from './ipc/companion'
 
 // Compatibility only: domain contracts import their named owners directly.
@@ -125,6 +126,7 @@ const contract = composeIpcContracts(
   documentReviewIpc,
   beadsIpc,
   gascityIpc,
+  githubIpc,
   companionIpc,
 )
 
