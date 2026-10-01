@@ -1,18 +1,34 @@
-import { useState, type KeyboardEvent, type ReactElement } from 'react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type KeyboardEvent,
+  type ReactElement,
+} from 'react'
 
-import type {
-  HarnessProfile,
-  HarnessProfileProbe,
-  HarnessProviderDescriptor,
-  HarnessProviderId,
-  WorkspaceState,
+import {
+  sessionsCompactionFact,
+  type HostConnectionState,
+  type HarnessProfile,
+  type HarnessProviderDescriptor,
+  type HarnessProviderId,
+  type WorkspaceState,
 } from '../../../shared'
+import { CompactionMarkers } from '../harness/CompactionMarkers'
+import { SessionDetailsPopover } from '../harness/SessionDetailsPopover'
+import { sessionDetailsModel } from '../harness/session-details-model'
+import { useSessionDetailsPopover } from '../harness/use-session-details-popover'
+import { useSessionsDetailsUsage } from '../harness/use-session-details-usage'
+import type { SessionsProjectionCoordinator } from '../sessions/sessions-projection-coordinator'
+import { useSessionsForeground } from '../sessions/use-sessions-foreground'
 import {
   terminalAttentionBadgeText,
   terminalAttentionDescription,
 } from './terminal-attention'
 import {
   compactHarnessCapabilityLabel,
+  launchAvailabilityLabel,
   type HarnessLaunchMenuState,
 } from './harness-launch-menu'
 import { TerminalContextMeter } from './TerminalContextMeter'
@@ -35,6 +51,8 @@ export function TerminalRail({
   recoveryReady,
   available,
   menuOpen,
+  sessionsProjection,
+  connectionState = 'connected',
   moveMenuOpen,
   moveTargets,
   launchMenuEntries,
@@ -66,6 +84,8 @@ export function TerminalRail({
   readonly recoveryReady: boolean
   readonly available: boolean
   readonly menuOpen: boolean
+  readonly sessionsProjection: SessionsProjectionCoordinator
+  readonly connectionState?: HostConnectionState
   readonly moveMenuOpen: boolean
   readonly moveTargets: readonly WorkspaceState[]
   readonly launchMenuEntries: readonly TerminalLaunchMenuEntry[]
@@ -89,6 +109,61 @@ export function TerminalRail({
   readonly onCloseSession: (id: string) => void
   readonly onRenameSession: (id: string, title: string) => void
 }): ReactElement {
+  const rail = useRef<HTMLElement>(null)
+  const details = useSessionDetailsPopover(label, () => {
+    rail.current?.querySelector<HTMLButtonElement>('.terminal-list-main')?.focus()
+  })
+  const detailsRequest = details.request
+  const dismissDetails = details.dismiss
+  const foreground = useSessionsForeground()
+  const projection = useSyncExternalStore(
+    sessionsProjection.subscribe,
+    sessionsProjection.snapshot,
+    sessionsProjection.snapshot,
+  )
+  const surfaceActive = visible && !compact && foreground
+  const detailsActive = surfaceActive && detailsRequest !== undefined
+  useEffect(() => {
+    if (!surfaceActive) dismissDetails(false)
+  }, [dismissDetails, surfaceActive])
+  const detailsRow =
+    projection.status === 'available' && detailsRequest
+      ? projection.rows.find(
+          (candidate) => String(candidate.handle) === detailsRequest.target,
+        )
+      : undefined
+  const detailsUsage = useSessionsDetailsUsage(detailsRow, projection, detailsActive)
+  useEffect(() => {
+    if (detailsActive) return sessionsProjection.acquire()
+  }, [detailsActive, sessionsProjection])
+  useEffect(() => {
+    if (!detailsRequest) return
+    if (projection.status === 'available' && !detailsRow) {
+      dismissDetails(false)
+      return
+    }
+    if (projection.status !== 'unavailable') return
+    let cancelled = false
+    queueMicrotask(() => {
+      if (!cancelled && sessionsProjection.snapshot().status === 'unavailable') {
+        dismissDetails(false)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [
+    detailsRequest,
+    detailsRow,
+    dismissDetails,
+    projection.status,
+    sessionsProjection,
+  ])
+  const detailsModel = detailsRow
+    ? sessionDetailsModel(detailsRow, detailsUsage)
+    : detailsRequest && projection.status === 'available'
+      ? null
+      : undefined
   const { menuRef: launchMenuRef, menuStyle: launchMenuStyle } =
     useTerminalLaunchMenuLayout(menuOpen)
   const [renaming, setRenaming] = useState<{ readonly id: string; readonly value: string }>()
@@ -114,6 +189,7 @@ export function TerminalRail({
 
   return (
     <aside
+      ref={rail}
       className="terminal-rail"
       aria-label={`Open terminals in ${label}`}
       data-terminal-theme={terminalTheme}
@@ -276,18 +352,29 @@ export function TerminalRail({
         {sessions.map((session) => {
           const provider = providerDescriptor(providers, session.providerId)
           const contextPresentation = provider?.capabilities.contextPresentation
+          const showsContext =
+            contextPresentation === 'count' || contextPresentation === 'pressure'
+          const compactionFact = sessionsCompactionFact(
+            session.capabilities.compactionObservation === true,
+            session.dormant !== true,
+            session.telemetry,
+            session.providerId,
+            connectionState,
+          )
           return (
             <div
               key={session.id}
               className={`terminal-list-row${session.id === activeId ? ' active' : ''}${session.dormant ? ' dormant' : ''}`}
               data-terminal-dormant={session.dormant ? 'true' : undefined}
               role="listitem"
+              onContextMenu={(event) => details.openFromPointer(event, session.id)}
             >
               <button
                 type="button"
                 className="terminal-list-main"
                 data-terminal-session={session.id}
                 onClick={() => onFocusSession(session.id)}
+                onKeyDown={(event) => details.openFromKeyboard(event, session.id)}
               >
                 <span className="terminal-list-copy">
                   {renaming?.id === session.id ? (
@@ -313,13 +400,17 @@ export function TerminalRail({
                     · {session.status}
                     {identityLabel(session.identityStatus)}
                   </span>
-                  {contextPresentation === 'count' ||
-                  contextPresentation === 'pressure' ? (
-                    <TerminalContextMeter
-                      telemetry={session.telemetry}
-                      countOnly={contextPresentation === 'count'}
-                      pressurePolicy={provider?.capabilities.contextPressure}
-                    />
+                  {showsContext ? (
+                    <>
+                      <TerminalContextMeter
+                        telemetry={session.telemetry}
+                        countOnly={contextPresentation === 'count'}
+                        pressurePolicy={provider?.capabilities.contextPressure}
+                      />
+                      {session.capabilities.compactionObservation ? (
+                        <CompactionMarkers fact={compactionFact} />
+                      ) : null}
+                    </>
                   ) : null}
                 </span>
                 {session.attention ? (
@@ -378,6 +469,7 @@ export function TerminalRail({
         onFocusSession={onFocusSession}
         onRestore={() => applyCompact(false)}
       />
+      <SessionDetailsPopover controller={details} details={detailsModel} />
     </aside>
   )
 }
@@ -404,32 +496,6 @@ function identityLabel(status: TerminalSession['identityStatus']): string {
   return ''
 }
 
-function probeLabel(probe: HarnessProfileProbe | undefined): string {
-  if (!probe) return 'Unchecked'
-  switch (probe.status) {
-    case 'available':
-      return probe.version ?? 'Available'
-    case 'executable-missing':
-      return 'Executable missing'
-    case 'version-unsupported':
-      return 'Version incompatible'
-    case 'capability-absent':
-      return 'Capability unavailable'
-    case 'authentication-required':
-      return 'Authentication needed'
-    case 'disconnected':
-      return 'Host disconnected'
-    case 'timeout':
-      return 'Probe timed out'
-    case 'malformed-output':
-      return 'Version unknown'
-    case 'probe-failed':
-      return 'Probe failed'
-    case 'unchecked':
-      return 'Unchecked'
-  }
-}
-
 function launchMenuDescription(
   profile: HarnessProfile,
   provider: HarnessProviderDescriptor | undefined,
@@ -448,19 +514,4 @@ function launchMenuDescription(
   ]
     .filter((value): value is string => Boolean(value))
     .join(' · ')
-}
-
-function launchAvailabilityLabel(state: HarnessLaunchMenuState): string {
-  switch (state.availability) {
-    case 'unchecked':
-      return 'Unchecked'
-    case 'checking':
-      return 'Checking…'
-    case 'available':
-      return state.probe?.version ? `Available · ${state.probe.version}` : 'Available'
-    case 'stale':
-      return `Stale · ${probeLabel(state.probe)}`
-    case 'failed':
-      return `Failed · ${probeLabel(state.probe)}`
-  }
 }

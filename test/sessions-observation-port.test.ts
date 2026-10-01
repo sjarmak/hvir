@@ -69,6 +69,7 @@ describe('SessionsObservationPort', () => {
     ).toEqual({
       model: { status: 'unsupported' },
       context: { status: 'unsupported' },
+      compactions: { status: 'unsupported' },
       turn: { status: 'unsupported' },
       freshness: { status: 'unsupported' },
     })

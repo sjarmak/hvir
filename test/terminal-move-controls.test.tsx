@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TerminalMoveDialog } from '../src/renderer/src/terminal/TerminalMoveDialog'
 import { TerminalRail } from '../src/renderer/src/terminal/TerminalRail'
 import type { TerminalSession } from '../src/renderer/src/terminal/terminal-workspace-model'
+import { sessionsProjectionFixture } from './sessions-projection-fixture'
 import {
   asHarnessProfileId,
   asHarnessProviderId,
@@ -46,6 +47,7 @@ describe('terminal workspace move controls', () => {
           recoveryReady
           available
           menuOpen={false}
+          sessionsProjection={sessionsProjectionFixture()}
           moveMenuOpen
           moveTargets={[target]}
           launchMenuEntries={[]}
@@ -102,6 +104,7 @@ describe('terminal workspace move controls', () => {
           recoveryReady
           available
           menuOpen={false}
+          sessionsProjection={sessionsProjectionFixture()}
           moveMenuOpen
           moveTargets={[{ ...target, newlyDiscovered: false }]}
           launchMenuEntries={[]}
@@ -148,6 +151,7 @@ describe('terminal workspace move controls', () => {
           recoveryReady
           available
           menuOpen={false}
+          sessionsProjection={sessionsProjectionFixture()}
           moveMenuOpen={false}
           moveTargets={[]}
           launchMenuEntries={[]}

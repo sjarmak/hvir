@@ -1,4 +1,4 @@
-import { EditorState } from '@codemirror/state'
+import { Compartment, EditorState } from '@codemirror/state'
 import { EditorView, lineNumbers } from '@codemirror/view'
 import { goToNextChunk, goToPreviousChunk, MergeView } from '@codemirror/merge'
 import { formatViewerBytes } from './viewer-byte-format'
@@ -10,6 +10,13 @@ import {
   type HostPath,
   type TextWorkload,
 } from '../../../shared'
+import { useAppTheme } from '../theme'
+import {
+  diffGroupBoundaries,
+  diffTheme,
+  registerDiffContextControls,
+} from './diff-presentation'
+import { highlightSource, resetTokens, tokenDecorations } from './source-highlighting'
 import { captureTopLine, restoreCodePosition } from './code-scroll-anchor'
 import { CodeMirrorFindTarget, viewerFindDecorations } from './codemirror-find-target'
 import { diffInputContextKey, useDiffInputs } from './use-diff-inputs'
@@ -131,6 +138,9 @@ function ResolvedDiffView({
   return (
     <InteractiveDiff
       key={contextKey}
+      path={path}
+      baseSize={resolvedInputs.baseInput.byteLength}
+      currentSize={currentInput.byteLength}
       baseLabel={resolvedInputs.baseLabel}
       currentLabel={`${resolvedInputs.currentLabel}${showUnsaved ? ' (unsaved)' : ''}`}
       baseContent={resolvedInputs.baseInput.content}
@@ -146,6 +156,9 @@ function ResolvedDiffView({
 }
 
 function InteractiveDiff({
+  path,
+  baseSize,
+  currentSize,
   baseLabel,
   currentLabel,
   baseContent,
@@ -158,6 +171,9 @@ function InteractiveDiff({
   evidenceLocation,
 }: {
   readonly evidenceLocation?: DiffViewProps['evidenceLocation']
+  readonly path: HostPath
+  readonly baseSize: number
+  readonly currentSize: number
   readonly baseLabel: string
   readonly currentLabel: string
   readonly baseContent: string
@@ -168,8 +184,17 @@ function InteractiveDiff({
   readonly positionCapture: ViewerPositionCapture
   readonly registerFindTarget: RegisterViewerFindTarget
 }): ReactElement {
+  const theme = useAppTheme()
+  const pathKey = `${path.hostId}:${path.path}`
+  const [wrapLines, setWrapLines] = useState(true)
+  const themeCompartment = useRef(new Compartment())
+  const wrapCompartment = useRef(new Compartment())
+  const [baseStatus, setBaseStatus] = useState('')
+  const [currentStatus, setCurrentStatus] = useState('')
+  const presentationRef = useRef({ theme, wrapLines })
+  presentationRef.current = { theme, wrapLines }
   const host = useRef<HTMLDivElement>(null)
-  const mergeRef = useRef<MergeView | undefined>(undefined)
+  const [editors, setEditors] = useState<{ readonly merge: MergeView; active: boolean }>()
   const contentRef = useRef({ base: baseContent, current: currentContent })
   const positionRef = useRef(position)
   const onPositionRef = useRef(onPosition)
@@ -185,8 +210,13 @@ function InteractiveDiff({
       EditorState.readOnly.of(true),
       EditorView.editable.of(false),
       lineNumbers(),
+      tokenDecorations,
       viewerFindDecorations,
-      diffTheme,
+      diffGroupBoundaries,
+      themeCompartment.current.of(diffTheme(presentationRef.current.theme)),
+      wrapCompartment.current.of(
+        presentationRef.current.wrapLines ? EditorView.lineWrapping : [],
+      ),
     ]
     const merge = new MergeView({
       parent,
@@ -199,7 +229,9 @@ function InteractiveDiff({
       highlightChanges: true,
       gutter: true,
     })
-    mergeRef.current = merge
+    const editors = { merge, active: true }
+    setEditors(editors)
+    const unregisterContextControls = registerDiffContextControls(merge.dom)
     setChunkCount(merge.chunks.length)
     const findTarget = new CodeMirrorFindTarget(
       [
@@ -239,6 +271,8 @@ function InteractiveDiff({
     merge.dom.addEventListener('keydown', markKeyboardNavigation)
     restoreCodePosition(merge.b, merge.dom, restorePosition, 'diff')
     return () => {
+      // Effects may receive changed inputs in the same commit that replaces these editors.
+      editors.active = false
       merge.dom.removeEventListener('scroll', captureScroll)
       merge.dom.removeEventListener('pointerdown', markNavigation)
       merge.dom.removeEventListener('touchstart', markNavigation)
@@ -247,24 +281,74 @@ function InteractiveDiff({
       if (positionCapture.current === capturePosition) {
         positionCapture.current = undefined
       }
+      unregisterContextControls()
       unregisterFind()
       findTarget.clear()
-      mergeRef.current = undefined
       merge.destroy()
     }
   }, [positionCapture, registerFindTarget])
 
   useEffect(() => {
-    const merge = mergeRef.current
-    if (!merge) return
+    if (!editors?.active) return
+    const { merge } = editors
     replaceDocument(merge.a, baseContent)
     replaceDocument(merge.b, currentContent)
     setChunkCount(merge.chunks.length)
-  }, [baseContent, currentContent])
+  }, [editors, baseContent, currentContent])
 
   useEffect(() => {
-    const merge = mergeRef.current
-    if (!merge || !evidenceLocation) return
+    if (!editors?.active) return
+    const { merge } = editors
+    for (const view of [merge.a, merge.b]) {
+      view.dispatch({
+        effects: themeCompartment.current.reconfigure(diffTheme(theme)),
+      })
+    }
+  }, [editors, theme])
+
+  useEffect(() => {
+    if (!editors?.active) return
+    const { merge } = editors
+    for (const view of [merge.a, merge.b]) {
+      view.dispatch({
+        effects: wrapCompartment.current.reconfigure(wrapLines ? EditorView.lineWrapping : []),
+      })
+    }
+  }, [editors, wrapLines])
+
+  useEffect(() => {
+    if (!editors?.active) return
+    const view = editors.merge.a
+    return highlightSource(
+      view,
+      path,
+      baseContent,
+      baseSize,
+      theme,
+      setBaseStatus,
+    )
+    // Equivalent host-qualified path objects do not restart the request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editors, pathKey, baseContent, baseSize, theme])
+
+  useEffect(() => {
+    if (!editors?.active) return
+    const view = editors.merge.b
+    return highlightSource(
+      view,
+      path,
+      currentContent,
+      currentSize,
+      theme,
+      setCurrentStatus,
+    )
+    // Equivalent host-qualified path objects do not restart the request.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editors, pathKey, currentContent, currentSize, theme])
+
+  useEffect(() => {
+    if (!editors?.active || !evidenceLocation) return
+    const { merge } = editors
     merge.reconfigure({ collapseUnchanged: undefined })
     const view = evidenceLocation.side === 'before' ? merge.a : merge.b
     const line = view.state.doc.line(
@@ -274,20 +358,34 @@ function InteractiveDiff({
       selection: { anchor: line.from },
       effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
     })
-  }, [evidenceLocation, baseContent, currentContent])
+  }, [editors, evidenceLocation, baseContent, currentContent])
 
   const moveToChange = (direction: 'previous' | 'next') => {
-    const merge = mergeRef.current
-    if (!merge) return
+    if (!editors?.active) return
     const command = direction === 'previous' ? goToPreviousChunk : goToNextChunk
-    command(merge.b)
+    command(editors.merge.b)
   }
 
   return (
     <div className="diff-shell">
       <DiffRefreshError error={error} />
+      <div className="diff-controls">
+        <button
+          type="button"
+          aria-pressed={wrapLines}
+          onClick={() => setWrapLines(!wrapLines)}
+        >
+          Wrap lines
+        </button>
+      </div>
       <div className="diff-labels">
-        <span>{baseLabel}</span>
+        <span title={baseLabel} aria-label={`Before: ${baseLabel}`}>
+          <span className="diff-side-marker" aria-hidden="true">
+            −
+          </span>
+          <span>{baseLabel}</span>
+          <small title={baseStatus}>{baseStatus}</small>
+        </span>
         <div className="diff-change-navigation" aria-label="Changed lines">
           <button
             type="button"
@@ -309,7 +407,13 @@ function InteractiveDiff({
             ↓
           </button>
         </div>
-        <span>{currentLabel}</span>
+        <span title={currentLabel} aria-label={`After: ${currentLabel}`}>
+          <span className="diff-side-marker" aria-hidden="true">
+            +
+          </span>
+          <span>{currentLabel}</span>
+          <small title={currentStatus}>{currentStatus}</small>
+        </span>
       </div>
       <div className="diff-host" ref={host} />
     </div>
@@ -323,7 +427,10 @@ function changeCountLabel(count: number): string {
 
 function replaceDocument(view: EditorView, content: string): void {
   if (view.state.doc.toString() === content) return
-  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: content } })
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: content },
+    effects: resetTokens.of(null),
+  })
 }
 
 function DiffRefreshError({ error }: { readonly error?: string }): ReactElement | null {
@@ -422,20 +529,6 @@ function requestedComparison(base: DiffBase, revision?: string): string {
   if (base === 'branch-point') return 'Branch point → HEAD'
   return 'HEAD → Working tree'
 }
-
-const diffTheme = EditorView.theme({
-  '&': { height: '100%', backgroundColor: 'var(--viewer-bg)', color: 'var(--text)' },
-  '.cm-scroller': {
-    fontFamily: 'var(--hvir-monospace-font)',
-    fontSize: 'calc(12px * var(--hvir-interface-scale))',
-    lineHeight: '1.5',
-  },
-  '.cm-gutters': {
-    backgroundColor: 'var(--viewer-gutter)',
-    borderRight: '1px solid var(--code-border)',
-    color: 'var(--viewer-gutter-text)',
-  },
-})
 
 const DIFF_NAVIGATION_KEYS = new Set([
   'ArrowDown',

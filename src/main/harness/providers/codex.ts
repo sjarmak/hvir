@@ -85,6 +85,7 @@ export const codexProvider: HarnessProvider = {
     reviewSendNow: codexReviewSendNow,
     supportsReviewSendNowVersion: supportsCodexReviewSendNowVersion,
     supportsExactForkVersion: supportsCodexExactForkVersion,
+    supportsCompactionObservationVersion,
   }),
   remoteImagePaste: pathImagePasteContract(),
   documentReviewInsert: codexReviewInsert,
@@ -184,6 +185,13 @@ function supportsCodexExactForkVersion(version: string | undefined): boolean {
   const parts = codexVersion(version)
   return Boolean(
     parts && (parts[0] > 0 || parts[1] > 151 || (parts[1] === 151 && parts[2] >= 0)),
+  )
+}
+
+function supportsCompactionObservationVersion(version: string | undefined): boolean {
+  const parts = codexVersion(version)
+  return Boolean(
+    parts && (parts[0] > 0 || parts[1] > 76 || (parts[1] === 76 && parts[2] >= 0)),
   )
 }
 

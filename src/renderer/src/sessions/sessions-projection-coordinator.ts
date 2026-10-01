@@ -34,6 +34,7 @@ const INACTIVE_SNAPSHOT: SessionsProjectionSnapshot = {
   sourceRevision: 0,
   status: 'inactive',
   rows: [],
+  workspaces: [],
 }
 
 /** Renderer-owned, immutable derived projection with one explicit demand lifetime. */
@@ -206,6 +207,7 @@ export class SessionsProjectionCoordinator {
     const fingerprint = JSON.stringify([
       this.mainSnapshot.revision,
       this.mainSnapshot.activeProject,
+      this.mainSnapshot.workspaces,
       rows,
     ])
     if (
@@ -226,6 +228,7 @@ export class SessionsProjectionCoordinator {
         : {}),
       status: 'available',
       rows,
+      workspaces: this.mainSnapshot.workspaces,
     }
     this.publish()
   }
@@ -240,6 +243,7 @@ export class SessionsProjectionCoordinator {
       sourceRevision: 0,
       status: 'pending',
       rows: [],
+      workspaces: [],
     }
     this.publish()
   }
@@ -255,6 +259,7 @@ export class SessionsProjectionCoordinator {
       status: 'unavailable',
       unavailableReason: 'source-unavailable',
       rows: [],
+      workspaces: [],
     }
     this.publish()
   }
@@ -401,7 +406,15 @@ function projectRow(
       contextPressure: provider?.contextPressure,
     },
     profile: identity
-      ? { status: 'available', value: { id: identity.profileId } }
+      ? {
+          status: 'available',
+          value: {
+            id: identity.profileId,
+            ...(identity.profileDisplayName
+              ? { displayName: identity.profileDisplayName }
+              : {}),
+          },
+        }
       : main!.profile,
     title: sessionsProjectionDisplayTitle(
       identity?.title ?? main?.title,
@@ -413,6 +426,7 @@ function projectRow(
     ...attention,
     model: telemetry.model,
     context: telemetry.context,
+    compactions: telemetry.compactions ?? { status: 'unsupported' },
     turn: telemetry.turn,
     telemetryFreshness: telemetry.freshness,
     usage:
@@ -502,6 +516,7 @@ function rendererOnlyTelemetry(supported: boolean): SessionsTelemetryFacts {
   return {
     model: fact,
     context: fact,
+    compactions: fact,
     turn: fact,
     freshness: fact,
   }

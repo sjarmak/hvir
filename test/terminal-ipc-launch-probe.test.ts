@@ -1,7 +1,11 @@
+import { EventEmitter } from 'node:events'
+
+import type { Client, SFTPWrapper } from 'ssh2'
 import { describe, expect, it, vi } from 'vitest'
 
 import { HarnessProbeManager } from '../src/main/harness/harness-probe'
 import {
+  builtInProfiles,
   providerTemplateProfiles,
   type HarnessProfileStoreContract,
 } from '../src/main/harness/harness-profile-store'
@@ -19,10 +23,12 @@ import {
   hostPath,
   hostPathEquals,
   type HostConnectionState,
+  type HostId,
   type ProjectState,
   type StartPtyRequest,
   type StartPtyResponse,
 } from '../src/shared'
+import { createTestSshHost } from './ssh-host-test-fixture'
 
 const HARNESS_SESSION_ID = '05ea41ff-026f-4ab6-b930-64eb3b497806'
 
@@ -89,12 +95,72 @@ describe('terminal IPC launch probe binding', () => {
       fixture.probes.dispose()
     }
   })
+
+  it('starts a remote terminal when SFTP validation crosses a control reconnect', async () => {
+    let finishOpening!: (value: {
+      complete(error: undefined, session: SFTPWrapper): void
+      session: SFTPWrapper
+    }) => void
+    const opening = new Promise<Parameters<typeof finishOpening>[0]>((resolve) => {
+      finishOpening = resolve
+    })
+    const clients: ReturnType<typeof launchClient>[] = []
+    const host = createTestSshHost({
+      config: {
+        alias: 'launch-reconnect',
+        hostname: 'example.test',
+        user: 'test',
+        port: 22,
+        identityFiles: [],
+      },
+      prompter: { prompt: () => Promise.resolve(undefined) },
+      clientFactory: () => {
+        const client = launchClient()
+        if (clients.length === 0) {
+          client.sftp.mockImplementationOnce((complete) => {
+            finishOpening({ complete, session: client.session as unknown as SFTPWrapper })
+          })
+        }
+        clients.push(client)
+        return client as unknown as Client
+      },
+    })
+    const fixture = launchProbeFixture('', { host, providerId: 'plain-shell' })
+    try {
+      await host.connect()
+      const starting = fixture.start(fixture.request, fixture.context)
+      const pending = await opening
+      clients[0]!.emit('close')
+      expect(host.connectionState).toBe('reconnecting')
+      // The next SFTP acquisition must wait for the replacement transport itself.
+      pending.complete(undefined, pending.session)
+
+      await expect(starting).resolves.toMatchObject({
+        outcome: 'started',
+        resumed: false,
+      })
+      expect(host.connectionState).toBe('connected')
+      expect(clients).toHaveLength(2)
+      expect(clients[0]!.session.end).toHaveBeenCalledOnce()
+      expect(clients[0]!.session.realpath).not.toHaveBeenCalled()
+      expect(clients[1]!.sftp).toHaveBeenCalledOnce()
+      expect(fixture.spawn).toHaveBeenCalledOnce()
+      expect(fixture.spawn.mock.calls[0]?.[0]).toMatchObject({
+        host,
+        cwd: fixture.request.cwd,
+        launchSpec: { file: '/bin/sh' },
+      })
+    } finally {
+      fixture.probes.dispose()
+      await host.dispose()
+    }
+  })
 })
 
 it.each([LOCAL_HOST_ID, asHostId('ssh:test')])(
   'starts a handed-off review on %s through the selected native provider and PTY supervisor',
   async (hostId) => {
-    const f = launchProbeFixture('codex-cli 0.153.1', true, hostId)
+    const f = launchProbeFixture('codex-cli 0.153.1', { review: true, hostId })
     const architectureReview = {
       root: f.request.workspaceRoot,
       handoffId: 'handoff-1',
@@ -130,7 +196,7 @@ it.each([LOCAL_HOST_ID, asHostId('ssh:test')])(
   },
 )
 it.each(['stale', 'cancelled'])('does not spawn a %s review launch', async (reason) => {
-  const f = launchProbeFixture('codex-cli 0.153.1', true)
+  const f = launchProbeFixture('codex-cli 0.153.1', { review: true })
   const architectureReview = {
     root: f.request.workspaceRoot,
     handoffId: 'handoff-1',
@@ -154,7 +220,7 @@ it.each(['stale', 'cancelled'])('does not spawn a %s review launch', async (reas
   }
 })
 it('refuses an architecture launch outside its handoff worktree before spending it', async () => {
-  const f = launchProbeFixture('codex-cli 0.153.1', true)
+  const f = launchProbeFixture('codex-cli 0.153.1', { review: true })
   const architectureReview = {
     root: hostPath(LOCAL_HOST_ID, '/other'),
     handoffId: 'handoff-1',
@@ -171,17 +237,33 @@ it('refuses an architecture launch outside its handoff worktree before spending 
   }
 })
 
+interface LaunchProbeFixtureOptions {
+  readonly review?: boolean
+  readonly hostId?: HostId
+  readonly host?: ProjectHost
+  readonly providerId?: string
+}
+
 function launchProbeFixture(
   initialVersion: string,
-  review = false,
-  hostId = LOCAL_HOST_ID,
+  {
+    review = false,
+    hostId = LOCAL_HOST_ID,
+    host: suppliedHost,
+    providerId = 'codex',
+  }: LaunchProbeFixtureOptions = {},
 ) {
-  const root = hostPath(hostId, '/repo')
+  const root = hostPath(suppliedHost?.hostId ?? hostId, '/repo')
   const profile = {
-    ...providerTemplateProfiles().find(({ providerId }) => providerId === 'codex')!,
+    ...[...builtInProfiles(), ...providerTemplateProfiles()].find(
+      (profile) => profile.providerId === providerId,
+    )!,
     builtIn: false,
     launchRevision: 4,
-    args: review ? [] : [{ parts: [{ kind: 'literal' as const, value: '--yolo' }] }],
+    args:
+      !review && providerId === 'codex'
+        ? [{ parts: [{ kind: 'literal' as const, value: '--yolo' }] }]
+        : [],
   }
   let version = initialVersion
   const exec = vi.fn<ProjectHost['exec']>((_command, args) => {
@@ -196,18 +278,20 @@ function launchProbeFixture(
     })
   })
   const listeners = new Set<(state: HostConnectionState) => void>()
-  const host = {
-    hostId,
-    connectionState: 'connected',
-    watchTier: 'native',
-    defaultShell: () => Promise.resolve('/bin/zsh'),
-    realpath: (path: typeof root) => Promise.resolve(path),
-    exec,
-    onConnectionState: (listener: (state: HostConnectionState) => void) => {
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-  } as unknown as ProjectHost
+  const host =
+    suppliedHost ??
+    ({
+      hostId,
+      connectionState: 'connected',
+      watchTier: 'native',
+      defaultShell: () => Promise.resolve('/bin/zsh'),
+      realpath: (path: typeof root) => Promise.resolve(path),
+      exec,
+      onConnectionState: (listener: (state: HostConnectionState) => void) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+    } as unknown as ProjectHost)
   const store = {
     list: () => [profile],
     get: () => profile,
@@ -345,6 +429,50 @@ function launchProbeFixture(
       version = next
     },
   }
+}
+
+/** Only the immediate ssh2 boundary is simulated; host reconnect and SFTP stay real. */
+function launchClient() {
+  const session = Object.assign(new EventEmitter(), {
+    end: vi.fn(() => {
+      session.emit('close')
+    }),
+    realpath: vi.fn((path: string, done: (error: undefined, path: string) => void) => {
+      done(undefined, path)
+    }),
+  })
+  const client = Object.assign(new EventEmitter(), {
+    session,
+    connect: vi.fn(() => queueMicrotask(() => client.emit('ready'))),
+    end: vi.fn(() => {
+      client.emit('close')
+    }),
+    destroy: vi.fn(() => {
+      client.emit('close')
+    }),
+    sftp: vi.fn((done: (error: undefined, session: SFTPWrapper) => void) => {
+      done(undefined, session as unknown as SFTPWrapper)
+    }),
+    exec: vi.fn(
+      (_command: string, done: (error: undefined, channel: unknown) => void) => {
+        const channel = Object.assign(new EventEmitter(), {
+          stderr: new EventEmitter(),
+          close: vi.fn(() => {
+            channel.emit('close')
+          }),
+          end: vi.fn(() => {
+            queueMicrotask(() => {
+              channel.emit('data', Buffer.from('/bin/sh\n'))
+              channel.emit('exit', 0)
+              channel.emit('close')
+            })
+          }),
+        })
+        done(undefined, channel)
+      },
+    ),
+  })
+  return client
 }
 
 function projectState(root: ReturnType<typeof hostPath>): ProjectState {

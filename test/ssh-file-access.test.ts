@@ -49,44 +49,28 @@ describe('SshFileAccess', () => {
     expect(cache.size).toBe(0)
   })
 
-  it('retries once after a single stale connection generation and returns the fresh session', async () => {
-    const owner: { files?: SshFileAccess } = {}
-    let calls = 0
-    const staleSession = Object.assign(new EventEmitter(), { end: vi.fn() })
-    const freshSession = Object.assign(new EventEmitter(), { end: vi.fn() })
-    const openSftp = vi.fn<() => Promise<SFTPWrapper>>().mockImplementation(() => {
-      calls += 1
-      if (calls === 1) {
-        owner.files!.advanceGeneration()
-        return Promise.resolve(staleSession as unknown as SFTPWrapper)
-      }
-      return Promise.resolve(freshSession as unknown as SFTPWrapper)
+  it('closes a stale SFTP session and returns a fresh acquisition', async () => {
+    let resolveSession!: (session: SFTPWrapper) => void
+    const opening = new Promise<SFTPWrapper>((resolve) => {
+      resolveSession = resolve
     })
-    owner.files = fileAccess(openSftp)
+    const session = Object.assign(new EventEmitter(), { end: vi.fn() })
+    const fresh = Object.assign(new EventEmitter(), { end: vi.fn() })
+    const openSftp = vi
+      .fn<() => Promise<SFTPWrapper>>()
+      .mockReturnValueOnce(opening)
+      .mockResolvedValueOnce(fresh as unknown as SFTPWrapper)
+    const files = fileAccess(openSftp)
 
-    await expect(owner.files.getSftp()).resolves.toBe(freshSession)
+    const pending = files.getSftp()
+    files.advanceGeneration()
+    resolveSession(session as unknown as SFTPWrapper)
 
+    await expect(pending).resolves.toBe(fresh)
     expect(openSftp).toHaveBeenCalledTimes(2)
-    expect(staleSession.end).toHaveBeenCalledOnce()
-    expect(freshSession.end).not.toHaveBeenCalled()
-  })
-
-  it('gives up after repeated stale generations, closing every discarded session', async () => {
-    const owner: { files?: SshFileAccess } = {}
-    let calls = 0
-    const sessions = [0, 1, 2].map(() => Object.assign(new EventEmitter(), { end: vi.fn() }))
-    const openSftp = vi.fn<() => Promise<SFTPWrapper>>().mockImplementation(() => {
-      const session = sessions[calls]
-      calls += 1
-      owner.files!.advanceGeneration()
-      return Promise.resolve(session as unknown as SFTPWrapper)
-    })
-    owner.files = fileAccess(openSftp)
-
-    await expect(owner.files.getSftp()).rejects.toThrow('stale connection generation')
-
-    expect(openSftp).toHaveBeenCalledTimes(3)
-    for (const session of sessions) expect(session.end).toHaveBeenCalledOnce()
+    expect(session.end).toHaveBeenCalledOnce()
+    files.dispose()
+    expect(session.end).toHaveBeenCalledOnce()
   })
 
   it('retains optimistic-save content authority across reconnect generations', async () => {

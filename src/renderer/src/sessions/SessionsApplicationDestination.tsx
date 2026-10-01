@@ -7,12 +7,14 @@ import type {
   SessionsTerminalHandle,
   SessionsWorkspaceQualifier,
 } from '../../../shared'
-import type { SessionsRendererObservationPort } from './sessions-renderer-observation'
+import type { SessionsCommandPort } from './sessions-command-port'
+import type { SessionsProjectionCoordinator } from './sessions-projection-coordinator'
 import type { SessionsTerminalSurfacePort } from './sessions-terminal-surface'
 import { SessionsOverview } from './SessionsOverview'
 
 interface SessionsDestinationRuntime {
-  readonly sessionsObservation: SessionsRendererObservationPort
+  readonly sessionsCommands: SessionsCommandPort
+  readonly sessionsProjection: SessionsProjectionCoordinator
   readonly sessionsSurface: SessionsTerminalSurfacePort
   readonly focusProjectedSession: (
     handle: SessionsTerminalHandle,
@@ -41,7 +43,8 @@ export function SessionsApplicationDestination({
   if (!active) return null
   return (
     <SessionsOverview
-      observation={runtime.sessionsObservation}
+      commands={runtime.sessionsCommands}
+      projection={runtime.sessionsProjection}
       surface={runtime.sessionsSurface}
       onOpened={onOpened}
       onFocusOpened={runtime.focusProjectedSession}

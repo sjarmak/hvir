@@ -1,8 +1,9 @@
+import { verifyDiffReadability } from './diff-readability'
 import { verifyLiveReloadScroll } from './viewer-live-reload'
 import type { SmokeFailureCheckpoint } from './failure-evidence.mts'
 import type { BrowserWindow } from 'electron'
 
-import { HTML_PREVIEW_SCHEME, type HostPath } from '../../shared'
+import { HTML_PREVIEW_SCHEME, dirnameHostPath, type HostPath } from '../../shared'
 import type { ProjectHost } from '../project-host'
 import {
   verifyExternalDocuments,
@@ -617,7 +618,14 @@ export async function verifyViewerContent(options: {
     console.log('[smoke] source edit + Ctrl+S save OK')
     await verifyExternalDocuments(win, host, options.supervisor, options.projectState)
 
+    const diffReadability = await verifyDiffReadability(
+      win,
+      host,
+      dirnameHostPath(liveReloadPath),
+      options.checkpoint,
+    )
     const result = [
+      diffReadability,
       viewerStatus,
       filenameSearchStatus,
       renderedFixture,
@@ -652,21 +660,16 @@ export async function verifyViewerContent(options: {
 function readViewerContentState(win: BrowserWindow): Promise<unknown> {
   return win.webContents.executeJavaScript(`
     (() => {
-      const text = (selector) =>
-        document.querySelector(selector)?.textContent?.trim().slice(0, 240);
       return {
-        activePath: document.querySelector('.viewer-tab.active .tab-main')
-          ?.getAttribute('title'),
-        activeMode: document.querySelector('.mode-control button.active')
-          ?.textContent?.trim(),
-        sourceStatus: text('.source-meta'),
+        activeTab: Boolean(document.querySelector('.viewer-tab.active')),
+        sourceStatus: Boolean(document.querySelector('.source-meta')),
         rendered: Boolean(document.querySelector('.markdown-body')),
         codeMirror: Boolean(document.querySelector('.cm-editor')),
         mergeView: Boolean(document.querySelector('.cm-mergeView')),
         htmlPreview: Boolean(document.querySelector('.html-preview')),
         jsonNodes: document.querySelectorAll('.json-tree details').length,
         largePreview: Boolean(document.querySelector('.large-file-preview')),
-        dirty: text('.viewer-tab.active .tab-status'),
+        tabStatus: Boolean(document.querySelector('.viewer-tab.active .tab-status')),
         treeRows: document.querySelectorAll('.file-row').length
       };
     })()

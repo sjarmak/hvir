@@ -313,12 +313,13 @@ session, PTY, presentation, and focus lifecycles remain independently owned.
 
 ### [ADR-025 — Remove the renderer-responsiveness diagnostic](adr/ADR-025-remove-renderer-responsiveness-diagnostic.md)
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-016](adr/ADR-016-bounded-local-runtime-diagnostics.md) | partial | Responsiveness episode candidate and its opt-in renderer diagnostic experiment.
+> Superseded by: [ADR-068](adr/ADR-068-react-owned-development-measure-containment.md) | partial | Requirement to preserve hvir's development Performance Timeline containment owner and budget fixture.
 
 The low-confidence Long Tasks experiment and its complete opt-in runtime/reporting surface are
-removed; independent capacity coverage, development measure containment, and Electron's
-high-confidence unresponsive lifecycle remain at their owning seams.
+removed; independent capacity coverage and Electron's high-confidence unresponsive lifecycle
+remain at their owning seams, while ADR-068 replaces hvir's development measure owner.
 
 ### [ADR-026 — Explicit SSH image paste through private remote materialization](adr/ADR-026-explicit-ssh-image-paste.md)
 
@@ -745,6 +746,15 @@ reports transferred bytes and host calls only.
 Whole-repository budgets preserve package and service relationships without sampling.
 Kotlin joins the grammar scanners, workspace imports resolve through captured manifests,
 and symbolic links and submodules remain disclosed exclusions.
+
+### [ADR-068 — React-owned development measure containment](adr/ADR-068-react-owned-development-measure-containment.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-025](adr/ADR-025-remove-renderer-responsiveness-diagnostic.md) | partial | Requirement to preserve hvir's development Performance Timeline containment owner and budget fixture.
+
+React owns cleanup of its development Performance measures; a development-only Electron fixture
+uses browser observation to prove fixture-specific React work and an empty retained measure set
+without adding product instrumentation.
 
 ## 5. Architecture
 

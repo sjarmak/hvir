@@ -26,9 +26,6 @@ import { SshExclusiveCreate } from './ssh-exclusive-create'
 import { SshProjectFileTransfer } from './ssh-project-file-transfer'
 import { abortError, withAbort, writeSftpFile } from './ssh-abort'
 
-/** Bounded retries when a connection-generation bump invalidates an in-flight SFTP open. */
-const SSH_SFTP_GENERATION_RETRY_LIMIT = 2
-
 export interface SshFileAccessOptions {
   readonly fingerprintObservationWindowMs?: number
 }
@@ -43,6 +40,7 @@ export class SshFileAccess {
   private readonly exclusiveCreate: SshExclusiveCreate
   private readonly projectTransfer: SshProjectFileTransfer
   private generation = 0
+  private disposalGeneration = 0
   private sftpSession?: Promise<SFTPWrapper>
   private readonly cache = new Map<
     string,
@@ -63,13 +61,13 @@ export class SshFileAccess {
   ) {
     this.exclusiveCreate = new SshExclusiveCreate({
       hostId: owner.hostId,
-      getSftp: () => this.getSftp(),
+      getSftp: (signal) => this.getSftp(signal),
       stat: (path) => this.stat(path),
       invalidate: (path) => this.invalidate(path),
     })
     this.projectTransfer = new SshProjectFileTransfer({
       hostId: owner.hostId,
-      getSftp: () => this.getSftp(),
+      getSftp: (signal) => this.getSftp(signal),
       stat: (path) => this.stat(path),
       invalidate: (path) => this.invalidate(path),
     })
@@ -88,6 +86,7 @@ export class SshFileAccess {
   }
 
   dispose(): void {
+    this.disposalGeneration++
     this.advanceGeneration()
     this.pollingFiles.clear()
     this.readDigests.clear()
@@ -129,7 +128,7 @@ export class SshFileAccess {
     opts.signal?.throwIfAborted()
     if (opts.pollingInterest) this.pollingFiles.add(path.path)
     const value = await readSshTextPrefix(
-      await this.getSftp(),
+      await this.getSftp(opts.signal),
       path.path,
       maxBytes,
       opts.signal,
@@ -349,9 +348,49 @@ export class SshFileAccess {
     return `${metadata}:${previous.digest}`
   }
 
-  async getSftp(): Promise<SFTPWrapper> {
+  /** Retry only acquisition; submitted operations and handles stay on their session. */
+  async getSftp(signal?: AbortSignal): Promise<SFTPWrapper> {
+    const disposalGeneration = this.disposalGeneration
+    for (let attempt = 0; ; attempt++) {
+      signal?.throwIfAborted()
+      const pending = this.openSftpSession()
+      // Acquisition itself may synchronously start a replacement connection.
+      const generation = this.generation
+      try {
+        const session = await withAbort(pending, signal)
+        if (disposalGeneration !== this.disposalGeneration) {
+          throw new Error('SSH file operation was disposed')
+        }
+        if (generation !== this.generation) {
+          throw new Error('SSH SFTP session belongs to a stale connection generation')
+        }
+        return session
+      } catch (reason) {
+        if (
+          attempt >= 1 ||
+          generation === this.generation ||
+          disposalGeneration !== this.disposalGeneration ||
+          signal?.aborted
+        ) {
+          throw reason
+        }
+      }
+    }
+  }
+
+  private async openSftpSession(): Promise<SFTPWrapper> {
     if (this.sftpSession) return this.sftpSession
-    const pending = this.openForCurrentGeneration(0)
+    // Opening may synchronously start the replacement connection. That generation
+    // owns this acquisition; only a later replacement makes its completion stale.
+    const opening = this.owner.openSftp()
+    const generation = this.generation
+    const pending = opening.then((session) => {
+      if (generation !== this.generation) {
+        session.end()
+        throw new Error('SSH SFTP session belongs to a stale connection generation')
+      }
+      return session
+    })
     this.sftpSession = pending
     void pending.then(
       (session) => {
@@ -364,22 +403,6 @@ export class SshFileAccess {
       },
     )
     return pending
-  }
-
-  /**
-   * A connection-generation bump (reconnect) mid-open is an expected, recoverable race, not a
-   * fatal one: retry against the new generation instead of failing a caller that happened to
-   * ask while the transport was replaced. Bounded so a flapping connection still fails visibly.
-   */
-  private async openForCurrentGeneration(attempt: number): Promise<SFTPWrapper> {
-    const generation = this.generation
-    const session = await this.owner.openSftp()
-    if (generation === this.generation) return session
-    session.end()
-    if (attempt >= SSH_SFTP_GENERATION_RETRY_LIMIT) {
-      throw new Error('SSH SFTP session belongs to a stale connection generation')
-    }
-    return this.openForCurrentGeneration(attempt + 1)
   }
 
   invalidate(path: string): void {
@@ -407,7 +430,8 @@ export class SshFileAccess {
     op: (s: SFTPWrapper, done: (e: Error | null | undefined, value: T) => void) => void,
     signal?: AbortSignal,
   ): Promise<T> {
-    return withAbort(this.getSftp(), signal).then(
+    const disposalGeneration = this.disposalGeneration
+    return this.getSftp(signal).then(
       (session) =>
         new Promise<T>((resolve, reject) => {
           let settled = false
@@ -421,6 +445,10 @@ export class SshFileAccess {
           }
           if (signal?.aborted) {
             finish(abortError())
+            return
+          }
+          if (disposalGeneration !== this.disposalGeneration) {
+            finish(new Error('SSH file operation was disposed'))
             return
           }
           signal?.addEventListener('abort', abort, { once: true })

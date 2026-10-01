@@ -382,8 +382,10 @@ export class ProjectRegistry {
         throw new Error('Git reported a worktree on another host')
       }
       const id = workspaceId(discovered.root)
-      seen.add(id)
       const existing = project.workspaces.find((candidate) => candidate.id === id)
+      const prunable = discovered.prunable === true
+      if (prunable && !existing) continue
+      seen.add(id)
       const record: WorkspaceRecord = {
         id,
         root: discovered.root,
@@ -392,11 +394,9 @@ export class ProjectRegistry {
         head: discovered.head,
         branch: discovered.branch,
         main: hostPathEquals(discovered.root, project.registeredRoot),
-        closed:
-          existing?.closed === true &&
-          !(existing.missing && discovered.prunable !== true),
-        missing: discovered.prunable === true,
-        ...(discovered.prunable === true
+        closed: existing?.closed === true && !(existing.missing && !prunable),
+        missing: prunable,
+        ...(prunable
           ? {
               prunableReason:
                 discovered.prunableReason ?? 'Git reported stale worktree metadata',
@@ -404,11 +404,8 @@ export class ProjectRegistry {
           : {}),
         repository: discovery.repository,
         changedFiles: discovery.repository ? (existing?.changedFiles ?? 0) : 0,
-        newlyDiscovered:
-          existing?.newlyDiscovered ??
-          (baselineEstablished && discovered.prunable !== true),
-        ...(existing?.closed === true &&
-        !(existing.missing && discovered.prunable !== true)
+        newlyDiscovered: existing?.newlyDiscovered ?? (baselineEstablished && !prunable),
+        ...(existing?.closed === true && !(existing.missing && !prunable)
           ? { activityBaseline: existing.activityBaseline }
           : {}),
         ...(!existing?.closed && discovery.repository && existing?.latestActivity

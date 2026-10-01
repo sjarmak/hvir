@@ -23,6 +23,8 @@ import {
   type SessionsObservationSnapshot,
   type SessionsTranscriptSnapshot,
 } from '../src/shared'
+import type { SessionsRendererObservationPort } from '../src/renderer/src/sessions/sessions-renderer-observation'
+import { sessionsProjectionFixture } from './sessions-projection-fixture'
 
 const EXTERNAL = asSessionsTerminalHandle('external-row')
 const workspaceQualifier = sessionsWorkspaceQualifier(11, 0, 0)
@@ -372,12 +374,18 @@ describe('Sessions transcript detail', () => {
 })
 
 async function render(
-  overrides: Partial<Parameters<typeof SessionsOverview>[0]> = {},
+  overrides: Omit<Partial<Parameters<typeof SessionsOverview>[0]>, 'projection'> & {
+    readonly observation?: SessionsRendererObservationPort
+  } = {},
 ): Promise<void> {
   await act(async () => {
+    const {
+      observation = { snapshot: () => [], subscribe: () => () => undefined },
+      ...props
+    } = overrides
     root.render(
       <SessionsOverview
-        observation={{ snapshot: () => [], subscribe: () => () => undefined }}
+        projection={sessionsProjectionFixture(observation, window.hvir)}
         surface={{
           acquire: () => ({ outcome: 'unavailable', reason: 'runtime-not-ready' }),
         }}
@@ -385,7 +393,7 @@ async function render(
         onFocusOpened={vi.fn(() => Promise.resolve(true))}
         onOpenFailed={vi.fn()}
         onAttachExternal={vi.fn(() => Promise.resolve(true))}
-        {...overrides}
+        {...props}
       />,
     )
     await settle()

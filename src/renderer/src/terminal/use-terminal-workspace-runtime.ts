@@ -5,7 +5,13 @@ import type {
   RegisteredProjectState,
   WorkspaceState,
 } from '../../../shared'
+import {
+  SessionsProjectionCoordinator,
+  createSessionsMainObservationPort,
+} from '../sessions/sessions-projection-coordinator'
 import { TerminalWorkspaceRuntimeOwner } from './terminal-workspace-runtime-owner'
+import { SessionsTerminalCommandCoordinator } from './sessions-terminal-command-coordinator'
+import { terminalMoveTargets } from './terminal-move-targets'
 import { useNewWorktreeMoveBadge } from './use-new-worktree-move-badge'
 import { useTerminalWorkspaceTransfer } from './use-terminal-workspace-transfer'
 
@@ -26,6 +32,14 @@ export function useTerminalWorkspaceRuntime({
   readonly onError: (message: string) => void
 }) {
   const owner = useRef(new TerminalWorkspaceRuntimeOwner()).current
+  const sessionsProjectionRef = useRef<SessionsProjectionCoordinator | undefined>(
+    undefined,
+  )
+  sessionsProjectionRef.current ??= new SessionsProjectionCoordinator(
+    createSessionsMainObservationPort(window.hvir),
+    owner.sessionsObservation,
+  )
+  const sessionsProjection = sessionsProjectionRef.current
   const materializedWorkspaceIds = useSyncExternalStore(
     owner.subscribe,
     owner.snapshot,
@@ -46,13 +60,34 @@ export function useTerminalWorkspaceRuntime({
     forgetWebViews,
     onError,
   })
+  const commandContext = useRef({ projectState, acceptProjectState })
+  commandContext.current = { projectState, acceptProjectState }
+  const sessionsCommands = useRef<SessionsTerminalCommandCoordinator | undefined>(
+    undefined,
+  )
+  sessionsCommands.current ??= new SessionsTerminalCommandCoordinator({
+    api: window.hvir,
+    state: () => commandContext.current.projectState,
+    snapshot: sessionsProjection.snapshot,
+    accept: (state) => {
+      commandContext.current.projectState = state
+      commandContext.current.acceptProjectState(state)
+    },
+    prepare: transfer.prepare,
+    release: transfer.release,
+    controller: (workspaceId) => owner.controller(workspaceId),
+    complete: transfer.complete,
+  })
   useNewWorktreeMoveBadge({ projectState, acknowledgeWorkspaces, onError })
 
   useEffect(() => {
-    const dispose = (): void => owner.disposeForRendererRollover()
+    const dispose = (): void => {
+      sessionsProjection.dispose()
+      owner.disposeForRendererRollover()
+    }
     window.addEventListener('pagehide', dispose, { once: true })
     return () => window.removeEventListener('pagehide', dispose)
-  }, [owner])
+  }, [owner, sessionsProjection])
   useEffect(() => {
     owner.pruneWorkspaces(eligibleWorkspaceIds.current)
     owner.runtimes.disposeMissingWorkspaces(
@@ -66,15 +101,16 @@ export function useTerminalWorkspaceRuntime({
 
   return {
     materializedWorkspaceIds,
+    sessionsProjection,
+    sessionsCommands: sessionsCommands.current,
     sessionsObservation: owner.sessionsObservation,
     sessionsSurface: owner.sessionsSurface,
     focusProjectedSession: owner.focusProjectedSession.bind(owner),
     openTerminalSearch: () => owner.runtimes.openSearch(),
     moveProps: (project: RegisteredProjectState, workspace: WorkspaceState) => ({
       runtimes: owner.runtimes,
-      moveTargets: project.workspaces.filter(
-        (target) => target.id !== workspace.id && !target.missing && !target.closed,
-      ),
+      sessionsProjection,
+      moveTargets: terminalMoveTargets(project.workspaces, workspace.id),
       onMaterializationChange: owner.retainWorkspace,
       onSessionsSource: owner.registerSessionsSource,
       onSessionsChanged: owner.sessionsChanged,

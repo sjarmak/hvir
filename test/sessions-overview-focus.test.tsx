@@ -29,6 +29,8 @@ import type { SessionsTerminalSurfacePort } from '../src/renderer/src/sessions/s
 let host: HTMLDivElement
 let root: Root
 let focused = true
+import type { SessionsRendererObservationPort } from '../src/renderer/src/sessions/sessions-renderer-observation'
+import { sessionsProjectionFixture } from './sessions-projection-fixture'
 
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
@@ -341,16 +343,19 @@ function openedResponse(): SessionsOpenResponse {
 }
 
 async function renderOverview(
-  overrides: Partial<Parameters<typeof SessionsOverview>[0]> = {},
+  overrides: Omit<Partial<Parameters<typeof SessionsOverview>[0]>, 'projection'> & {
+    readonly observation?: SessionsRendererObservationPort
+  } = {},
   strict = false,
 ): Promise<void> {
   await act(async () => {
+    const {
+      observation = { snapshot: rendererSessions, subscribe: () => () => undefined },
+      ...props
+    } = overrides
     const overview = (
       <SessionsOverview
-        observation={{
-          snapshot: rendererSessions,
-          subscribe: () => () => undefined,
-        }}
+        projection={sessionsProjectionFixture(observation, window.hvir)}
         surface={availableSurface(() => ({
           outcome: 'unavailable',
           reason: 'runtime-not-ready',
@@ -359,7 +364,7 @@ async function renderOverview(
         onFocusOpened={vi.fn(() => Promise.resolve(true))}
         onOpenFailed={vi.fn()}
         onAttachExternal={vi.fn(() => Promise.resolve(true))}
-        {...overrides}
+        {...props}
       />
     )
     root.render(strict ? <StrictMode>{overview}</StrictMode> : overview)

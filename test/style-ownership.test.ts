@@ -137,8 +137,8 @@ describe('renderer style ownership', () => {
       join(root, 'src/renderer/src/viewer/SourceView.tsx'),
       'utf8',
     )
-    const diffView = readFileSync(
-      join(root, 'src/renderer/src/viewer/DiffView.tsx'),
+    const diffPresentation = readFileSync(
+      join(root, 'src/renderer/src/viewer/diff-presentation.ts'),
       'utf8',
     )
 
@@ -150,8 +150,8 @@ describe('renderer style ownership', () => {
     expect(styles).not.toContain('Inter,')
     expect(sourceView).toContain("fontFamily: 'var(--hvir-monospace-font)'")
     expect(sourceView).toContain('var(--hvir-interface-scale)')
-    expect(diffView).toContain("fontFamily: 'var(--hvir-monospace-font)'")
-    expect(diffView).toContain('var(--hvir-interface-scale)')
+    expect(diffPresentation).toContain("fontFamily: 'var(--hvir-monospace-font)'")
+    expect(diffPresentation).toContain('var(--hvir-interface-scale)')
   })
 })
 

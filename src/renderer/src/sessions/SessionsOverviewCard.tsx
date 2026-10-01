@@ -2,6 +2,7 @@ import { useState, type ReactElement } from 'react'
 
 import type { SessionsProjectionRow } from '../../../shared'
 import { ProviderContextMeter } from '../harness/ProviderContextMeter'
+import { CompactionMarkers } from '../harness/CompactionMarkers'
 import {
   sessionsOverviewCardFacts,
   sessionsOverviewCardIdentity,
@@ -66,6 +67,17 @@ export function SessionsOverviewCard({
         <ProviderContextMeter
           contextFacet={row.context}
           pressurePolicy={row.provider.contextPressure}
+        />
+      ) : null}
+      {row.compactions?.status !== 'unsupported' ? (
+        <CompactionMarkers
+          fact={
+            row.compactions ?? {
+              status: 'unavailable',
+              reason: 'source-unavailable',
+            }
+          }
+          className="session-card-compactions"
         />
       ) : null}
       <footer className="session-card-footer">

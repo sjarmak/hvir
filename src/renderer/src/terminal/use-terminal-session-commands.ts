@@ -82,14 +82,23 @@ export function useTerminalSessionCommands({
     return session.id
   }
 
-  const add = (profileId: HarnessProfileId): void => {
+  const add = (
+    profileId: HarnessProfileId,
+    expectedLaunchRevision?: number,
+  ): string | undefined => {
     if (!available) return
     const profile = profiles.find((candidate) => candidate.id === profileId)
     const provider = profile
       ? providers.find((candidate) => candidate.id === profile.providerId)
       : undefined
-    if (!provider || !profile) return
-    launch(profile, provider)
+    if (
+      !provider ||
+      !profile ||
+      (expectedLaunchRevision !== undefined &&
+        profile.launchRevision !== expectedLaunchRevision)
+    )
+      return
+    return launch(profile, provider)
   }
 
   const launchBeadCommand = (command: string): boolean => {

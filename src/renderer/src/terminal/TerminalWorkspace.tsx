@@ -10,6 +10,7 @@ import {
   type WorkspaceState,
 } from '../../../shared'
 import type { SessionsRendererSession } from '../sessions/sessions-renderer-observation'
+import type { SessionsProjectionCoordinator } from '../sessions/sessions-projection-coordinator'
 import { fitSplitPrimaryWidth } from '../layout/split-layout-policy'
 import type { TerminalPreferences } from '../settings/settings'
 import {
@@ -78,6 +79,7 @@ interface TerminalWorkspaceProps {
   /** Told whether an attach request could currently launch a shell here. */
   readonly onAttachAvailability?: (canLaunch: boolean) => void
   readonly runtimes: TerminalRuntimeRegistry
+  readonly sessionsProjection: SessionsProjectionCoordinator
   readonly moveTargets: readonly WorkspaceState[]
   readonly onMaterializationChange: (workspaceId: string, retained: boolean) => void
   readonly onSessionsSource: (
@@ -125,6 +127,7 @@ export function TerminalWorkspace({
   attachRequest,
   onAttachAvailability,
   runtimes,
+  sessionsProjection,
   moveTargets,
   onMaterializationChange,
   onSessionsSource,
@@ -154,8 +157,7 @@ export function TerminalWorkspace({
     connectionState,
     menuOpen,
   })
-  const { providers, profiles, probes, acceptCatalog, acceptRecoveryProbes } =
-    profileState
+  const { providers, profiles, probes } = profileState
   const send = useCallback(
     (action: TerminalWorkspaceAction): void => {
       const current = modelRef.current
@@ -182,6 +184,8 @@ export function TerminalWorkspace({
           workspaceQualifier: sessionsWorkspaceQualifier,
           providerId: session.providerId,
           profileId: session.profileId,
+          profileDisplayName: profiles.find((profile) => profile.id === session.profileId)
+            ?.displayName,
           title: sessionsProjectionDisplayTitle(
             session.title,
             handle,
@@ -201,6 +205,7 @@ export function TerminalWorkspace({
   }, [
     label,
     onSessionsSource,
+    profiles,
     providers,
     runtimes,
     sessionsWorkspaceQualifier,
@@ -244,8 +249,8 @@ export function TerminalWorkspace({
     probes,
     splitLayout: restoredSplitLayout.current,
     ports: {
-      acceptCatalog,
-      acceptProbes: acceptRecoveryProbes,
+      acceptCatalog: profileState.acceptCatalog,
+      acceptProbes: profileState.acceptRecoveryProbes,
       resetAttention,
       send,
     },
@@ -270,6 +275,7 @@ export function TerminalWorkspace({
   })
   const moving = useTerminalWorkspaceMove({
     workspaceId,
+    launchSession: recoveryReady ? commands.add : undefined,
     modelRef,
     send,
     forgetAttention: forgetAttentionSession,
@@ -282,17 +288,6 @@ export function TerminalWorkspace({
     onError,
   })
 
-  useEffect(() => {
-    if (!menuOpen) return
-    const close = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return
-      setMenuOpen(false)
-    }
-    window.addEventListener('keydown', close)
-    return () => window.removeEventListener('keydown', close)
-  }, [menuOpen])
-
-  // Attach requests focus an existing session or launch its command in a bare shell.
   useTerminalAttachRequest(attachRequest, {
     currentModel: () => modelRef.current,
     focusSession: commands.focus,
@@ -306,10 +301,6 @@ export function TerminalWorkspace({
       ? {}
       : { reportAvailability: onAttachAvailability }),
   })
-
-  const terminalSplit = terminalWorkspaceSplit(model)
-  const primaryActiveId = terminalPaneActiveId(model, 'primary')
-  const secondaryActiveId = terminalPaneActiveId(model, 'secondary')
 
   const setTerminalPrimaryWidth = (width: number): void => {
     const deck = terminalDeckRef.current
@@ -345,9 +336,9 @@ export function TerminalWorkspace({
         sessions={sessions}
         providers={providers}
         activeId={activeId}
-        primaryActiveId={primaryActiveId}
-        secondaryActiveId={secondaryActiveId}
-        split={terminalSplit}
+        primaryActiveId={terminalPaneActiveId(model, 'primary')}
+        secondaryActiveId={terminalPaneActiveId(model, 'secondary')}
+        split={terminalWorkspaceSplit(model)}
         primaryWidth={model.primaryWidth}
         terminalTheme={preferences.terminalTheme}
         terminalLightThemeId={preferences.terminalLightThemeId}
@@ -388,10 +379,13 @@ export function TerminalWorkspace({
       {visible ? (
         <TerminalWorkspaceControls
           label={label}
+          visible={presentationVisible}
           available={available}
           railCompact={railCompact}
           onRailCompact={onRailCompact}
           menuOpen={menuOpen}
+          sessionsProjection={sessionsProjection}
+          connectionState={connectionState}
           setMenuOpen={setMenuOpen}
           model={model}
           profileState={profileState}

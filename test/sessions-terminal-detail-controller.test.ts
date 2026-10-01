@@ -495,6 +495,7 @@ function snapshot(
     sourceRevision,
     status: 'available',
     rows: [projected],
+    workspaces: [],
   }
 }
 

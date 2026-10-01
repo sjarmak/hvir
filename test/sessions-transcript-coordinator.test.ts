@@ -136,6 +136,7 @@ function projection(): SessionsProjectionSnapshot {
     sourceRevision: 7,
     status: 'available',
     rows: [],
+    workspaces: [],
   }
 }
 
