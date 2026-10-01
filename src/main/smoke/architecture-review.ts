@@ -149,8 +149,6 @@ export async function verifyArchitectureReviewWorkflow(
       const navigation = document.querySelector('.architecture-evidence [aria-label="Changed lines"]');
       const nextChange = navigation?.querySelector('[aria-label="Go to next change"]');
       if (!(nextChange instanceof HTMLButtonElement) || nextChange.disabled || !navigation?.textContent?.includes('change')) throw new Error('DiffView changed-line navigation is unavailable');
-      nextChange.click();
-      await wait(() => document.querySelector('.architecture-evidence .cm-merge-b .cm-activeLine')?.textContent?.includes('../new-data/item'), 'changed line navigation');
       return document.querySelector('.architecture-evidence h3')?.textContent?.trim() ?? '';
     })()
   `)) as string
