@@ -24,7 +24,7 @@ describe('external attention contract', () => {
   })
 
   it('rejects a stale entry with no reason, and a reason with no stale flag', () => {
-    // Both directions are the failure ADR-048 names: a badge that cannot say
+    // Both directions are the failure ADR-948 names: a badge that cannot say
     // why it is stale is asserting a pending state nobody is watching.
     expect(
       isExternalAttentionSnapshot({

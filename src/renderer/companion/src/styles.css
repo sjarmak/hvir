@@ -199,7 +199,7 @@ body {
   overflow-wrap: anywhere;
 }
 
-/* The prompt's message (ADR-051): one bounded line, under the title, read as
+/* The prompt's message (ADR-951): one bounded line, under the title, read as
  * "Prompt: message" so it stays separate from the title in flattened text. */
 .companion-row-prompt {
   color: var(--companion-prompt);
@@ -342,7 +342,7 @@ body {
   gap: 8px;
 }
 
-/* A mirrored terminal (ADR-050): the desktop's grid, scaled to the phone.
+/* A mirrored terminal (ADR-950): the desktop's grid, scaled to the phone.
  * With a mirror open the page is one fixed-height column that never scrolls:
  * a one-line header, the terminal in all the height that remains, and one
  * compact control bar at the bottom. Scrolling over the terminal moves its
@@ -387,14 +387,14 @@ body {
   text-overflow: ellipsis;
 }
 
-/* The two steps of the mirror's text size (ADR-059), kept together beside the title. */
+/* The two steps of the mirror's text size (ADR-959), kept together beside the title. */
 .companion-text-size {
   display: flex;
   flex: none;
   gap: 4px;
 }
 
-/* What the session is laid out at, and what this phone asked for (ADR-059). */
+/* What the session is laid out at, and what this phone asked for (ADR-959). */
 .companion-grid-readout {
   flex-basis: 100%;
   margin: 0;
@@ -407,7 +407,7 @@ body {
   opacity: 0.85;
 }
 
-/* The prompt's message (ADR-051): the header's second line while it lasts. */
+/* The prompt's message (ADR-951): the header's second line while it lasts. */
 .companion-mirror-prompt {
   flex-basis: 100%;
   margin: 0;
@@ -427,7 +427,7 @@ body {
   gap: 8px;
 }
 
-/* The way back to the newest output (ADR-053), over the area rather than in it:
+/* The way back to the newest output (ADR-953), over the area rather than in it:
  * it is outside the host's own scroller, which an absolutely positioned
  * descendant would travel with, carrying the one way back off the screen in
  * exactly the tall-grid case that needs it. */
@@ -447,7 +447,7 @@ body {
  * scrolls (the auto margin resolves to zero once the content overflows). That
  * scroll is the tail of the one read-back gesture, not a second one: the mount
  * owns a finger over the grid and moves this scroller and the emulator's
- * viewport as one strip (ADR-053), so a grid taller than the host is reachable
+ * viewport as one strip (ADR-953), so a grid taller than the host is reachable
  * through the gesture rather than through a pan of the browser's. `pan-y`
  * remains only for the horizontal strip beside a grid narrower than the host,
  * which the mount's own gesture never covers. */

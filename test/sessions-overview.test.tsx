@@ -50,7 +50,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 describe('SessionsOverview', () => {
-  it('renders a prompt fact with its message beside it (ADR-051)', async () => {
+  it('renders a prompt fact with its message beside it (ADR-951)', async () => {
     installApi()
     const [agent] = rendererSessions()
     await renderOverview({

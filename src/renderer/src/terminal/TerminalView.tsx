@@ -48,7 +48,7 @@ interface TerminalViewProps {
   /**
    * The gc session this terminal attaches to, when hvir is performing the
    * attach and the requesting surface named the session exactly. Recorded by
-   * main at spawn, so the row it joins survives a reload (ADR-046).
+   * main at spawn, so the row it joins survives a reload (ADR-946).
    */
   readonly externalAttach?: ExternalSessionAttachRequest
   readonly architectureReview?: ArchitectureAgentLaunch

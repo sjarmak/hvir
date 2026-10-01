@@ -89,7 +89,7 @@ export interface AddedWorktree {
 }
 
 /**
- * A handoff worktree main holds in flight (ADR-063): removal refuses it and the
+ * A handoff worktree main holds in flight (ADR-963): removal refuses it and the
  * unfinished-handoff listing skips it until `release`, which the handoff calls once its
  * brief write settles.
  */
@@ -126,7 +126,7 @@ export class GitMutationCoordinator {
 
   /**
    * Creates the review worktree hvir owns beside the registered root, on a new
-   * `hvir/architecture/<slug>` branch at `commit` (ADR-063). `root` must be the active
+   * `hvir/architecture/<slug>` branch at `commit` (ADR-963). `root` must be the active
    * workspace; the grant names the exact branch, path and commit. The worktree is held in
    * flight before Git creates it, so it is never removable before the caller releases it.
    */
@@ -191,7 +191,7 @@ export class GitMutationCoordinator {
   }
 
   /**
-   * The workspace ids of this project's unfinished handoffs (ADR-063), each judged from
+   * The workspace ids of this project's unfinished handoffs (ADR-963), each judged from
    * disk and Git as `inspectUnfinishedHandoff` documents. A worktree that cannot be
    * inspected is reported and left unmarked.
    */
@@ -226,7 +226,7 @@ export class GitMutationCoordinator {
   }
 
   /**
-   * Removes one unfinished handoff the person chose (ADR-063): re-reads Git and disk,
+   * Removes one unfinished handoff the person chose (ADR-963): re-reads Git and disk,
    * refuses unless the worktree still qualifies, runs `git worktree remove` without
    * `--force`, then deletes its branch only while it still points at its creation
    * commit. Each Git call runs under its own exact one-shot grant.

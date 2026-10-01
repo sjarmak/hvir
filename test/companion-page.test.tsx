@@ -147,7 +147,7 @@ describe('Companion page', () => {
     expect(rowHandles()).toEqual(['remote-1', 'feature-1', 'ready-1', 'quiet-1'])
   })
 
-  it('shows a prompt row with its badge and the message under the title (ADR-051)', async () => {
+  it('shows a prompt row with its badge and the message under the title (ADR-951)', async () => {
     await renderPaired()
     await emit('snapshot', snapshot(1, [PROMPT_ROW, READY_ROW]))
 
@@ -388,7 +388,7 @@ describe('Companion page terminal mirror', () => {
     expect(pane.writes).toEqual(['tail', 'more'])
   })
 
-  it("shows the selected row's prompt message above the terminal while it lasts (ADR-051)", async () => {
+  it("shows the selected row's prompt message above the terminal while it lasts (ADR-951)", async () => {
     await openMirror()
     expect(host.querySelector('.companion-mirror-prompt')).toBeNull()
 

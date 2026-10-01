@@ -1,7 +1,7 @@
-# ADR-064: Architecture review as a live, zoomable canvas
+# ADR-964: Architecture review as a live, zoomable canvas
 
 > Lifecycle: Active
-> Supersedes: [ADR-063](ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | The map now opens on systems on a laid-out canvas that drills to subsystems and modules; explanation-only requests no longer create an agent branch, worktree, brief or terminal session, while architecture-improvement launches retain the worktree handoff.
+> Supersedes: [ADR-963](ADR-963-architecture-review-history-and-agent-worktrees.md) | partial | The map now opens on systems on a laid-out canvas that drills to subsystems and modules; explanation-only requests no longer create an agent branch, worktree, brief or terminal session, while architecture-improvement launches retain the worktree handoff.
 
 ## Context
 
@@ -61,7 +61,7 @@ The review answers "what did the agent just do to the structure" while the agent
 working, and opens at a scale a person can take in at once. Two new renderer dependencies
 arrive (`@xyflow/react`, `elkjs`) and fall under the dependency policy of ADR-040. System
 inference is a new scanner concern with its own failure mode, a wrong grouping, which the
-tracked override answers. Live review multiplies scans; the blob-keyed parse cache of ADR-063
+tracked override answers. Live review multiplies scans; the blob-keyed parse cache of ADR-963
 keeps a settled rescan to the files that changed. An Explanation costs one model call plus the
 native CLI's one-shot startup, without Git, filesystem handoff, terminal or watch latency. It
 can be wrong; the unknown-name check catches invented structure but not a wrong account of

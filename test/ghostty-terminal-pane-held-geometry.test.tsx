@@ -16,7 +16,7 @@ const HELD = { cols: 61, rows: 23 }
 /** 780x400 at 13px cells (7.8x15.6) fits 100x25, distinct from the held grid. */
 const OWN = { cols: 100, rows: 25 }
 
-describe('GhosttyTerminalPane held geometry (ADR-058)', () => {
+describe('GhosttyTerminalPane held geometry (ADR-958)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     ghosttyState.instances.splice(0)

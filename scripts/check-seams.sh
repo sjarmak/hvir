@@ -45,7 +45,7 @@ hits=$(grep -rnE "['\"](plain-shell|claude-code|codex)['\"]" \
 report "bundled harness ids used only in src/main/harness/" "$hits"
 
 # 5. Raw loopback streams belong to the exact main-owned transport owners named
-# here, never a renderer, IPC, harness, or feature-level socket API. ADR-047 adds
+# here, never a renderer, IPC, harness, or feature-level socket API. ADR-947 adds
 # the second owner: one client for a foreign supervisor's loopback API. Widening
 # this list is a decision, so a new caller has to change this line deliberately.
 hits=$(grep -rnE '\.connectLoopback\(' "$SRC" --include='*.ts' --include='*.tsx' --include='*.mts' \

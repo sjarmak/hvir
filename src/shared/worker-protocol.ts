@@ -166,7 +166,7 @@ export interface GitWorkerProtocol {
   >
   /**
    * One exact, main-granted change to a worktree at the location hvir owns: add it,
-   * remove it, or delete its branch at the creation commit (ADR-063).
+   * remove it, or delete its branch at the creation commit (ADR-963).
    */
   readonly [GIT_HVIR_WORKTREE_TYPE]: WorkerOperation<
     {

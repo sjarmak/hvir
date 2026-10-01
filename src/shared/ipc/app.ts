@@ -26,7 +26,7 @@ export const appIpc = {
   },
   send: {
     'app:renderer-ready': payload<{ readonly ownerGeneration: number }>(),
-    /** What this window presents as waiting on the person (ADR-049). */
+    /** What this window presents as waiting on the person (ADR-949). */
     'app:attention': payload<RendererAttentionSet>(),
   },
   event: {},

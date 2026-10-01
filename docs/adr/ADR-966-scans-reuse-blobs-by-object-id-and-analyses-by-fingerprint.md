@@ -1,11 +1,11 @@
-# ADR-066: Scans reuse blobs by object id and analyses by fingerprint
+# ADR-966: Scans reuse blobs by object id and analyses by fingerprint
 
 > Lifecycle: Partially superseded
-> Superseded by: [ADR-067](ADR-067-whole-monorepo-architecture-capture.md) | partial | The 32 MiB blob-cache budget; the cache remains twice the expanded capture byte budget.
+> Superseded by: [ADR-967](ADR-967-whole-monorepo-architecture-capture.md) | partial | The 32 MiB blob-cache budget; the cache remains twice the expanded capture byte budget.
 
 ## Context
 
-ADR-063 made an architecture scan record its cost per stage and cached parsed module facts
+ADR-963 made an architecture scan record its cost per stage and cached parsed module facts
 on disk, so a repeat scan of the same files parses nothing. Measured on hvir's own history
 before this decision (baseline HEAD~40, current HEAD, 1574 and 1625 files, warm parse
 cache), the remaining cost of a repeat scan was dominated by reading the same bytes from Git
@@ -17,7 +17,7 @@ pair repeatedly: after an edit, after a commit, after returning to a tab, and th
 strip's classifier scans neighbouring commit pairs that share nearly every blob.
 
 Git blob ids are content addressed: two files with one id hold the same bytes, and every id
-the capture handles is verified by rehashing the bytes it received (ADR-063), for live files
+the capture handles is verified by rehashing the bytes it received (ADR-963), for live files
 as much as for objects read from Git. An id-keyed cache therefore needs no invalidation, only
 a bound. A capture's fingerprint likewise names the analysis it produces: it is the digest of
 the root, the two resolved revisions, the scope constants, the layout identity and every path
@@ -28,7 +28,7 @@ fingerprint have one analysis.
 ## Decision
 
 The coordinator owns two in-memory, byte-bounded, least-recently-used caches for the life of
-the process. Nothing is written to disk; the parse cache of ADR-063 remains the only
+the process. Nothing is written to disk; the parse cache of ADR-963 remains the only
 persistent one.
 
 The blob cache maps an object id to the decoded text of that object. Every Git blob read
@@ -91,7 +91,7 @@ reviews already hold.
 - Persisting blobs to disk beside the parse cache: the parse cache exists so that bytes need
   not be reparsed; bytes themselves are cheap to re-read from a local Git, and the parse
   facts are what usefully survives a restart. Disk copies of every source would also outgrow
-  the pinned, ephemeral snapshot model of ADR-061.
+  the pinned, ephemeral snapshot model of ADR-961.
 - Computing the fingerprint before reading blobs, to skip the reads on an analysis hit: the
   review must retain the capture's bytes for evidence and handoff, and with the blob cache a
   repeat read is a memory lookup, so reordering the capture would save little and put the

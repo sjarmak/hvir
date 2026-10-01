@@ -5,7 +5,7 @@ import type { IpcDeps } from '../deps'
 type CompanionIpcDeps = Pick<IpcDeps, 'companion'>
 
 /**
- * Companion settings over IPC (ADR-049). Every answer is the settings view,
+ * Companion settings over IPC (ADR-949). Every answer is the settings view,
  * which never carries the credential or the push token; the token travels
  * only inward, as a write-only field of a save.
  */

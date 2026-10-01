@@ -2,9 +2,9 @@
  * The supervisor's structured transcript, folded into what a pane can render.
  *
  * Pure: messages and stream frames in, ordinal-addressed turns out. Two rules
- * decide the shape. Nothing provider-shaped survives the fold, because ADR-047
+ * decide the shape. Nothing provider-shaped survives the fold, because ADR-947
  * keeps raw and thinking payloads out of hvir entirely, and no foreign
- * identifier survives it, because ADR-046 keeps them out of the projection the
+ * identifier survives it, because ADR-946 keeps them out of the projection the
  * renderer sees. What a turn carries is its role, its kind, its text, and the
  * supervisor's own timestamp.
  */
@@ -176,7 +176,7 @@ type BlockTurn = Omit<SessionsTranscriptTurnDraft, 'role' | 'at' | 'partial'>
 /**
  * One block, as a turn. A thinking block yields nothing: hvir does not ask for
  * reasoning payloads and does not display the ones a server volunteers
- * (ADR-047). Anything else with no text left is dropped, so an empty block does
+ * (ADR-947). Anything else with no text left is dropped, so an empty block does
  * not occupy a row.
  */
 function blockTurn(block: SessionStructuredBlock): BlockTurn | undefined {

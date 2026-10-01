@@ -15,7 +15,7 @@ const requireFromConfig = createRequire(import.meta.url)
 
 /**
  * Copies the architecture scanner's WebAssembly runtime and grammars beside the main
- * bundle, where the utility process reads them (ADR-063). They land in out/main, which
+ * bundle, where the utility process reads them (ADR-963). They land in out/main, which
  * electron-builder packs into app.asar; Electron's fs reads files inside the archive, so
  * the worker needs no asarUnpack entry to load them.
  */
@@ -136,7 +136,7 @@ const baseConfig: UserConfig = {
       rollupOptions: {
         input: {
           index: resolve('src/renderer/index.html'),
-          // The Companion phone page (ADR-049): a second entry the loopback
+          // The Companion phone page (ADR-949): a second entry the loopback
           // listener serves from out/renderer/companion, sharing the assets
           // directory with the desktop renderer.
           companion: resolve('src/renderer/companion/index.html'),

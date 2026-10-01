@@ -9,7 +9,7 @@ import { dirnameHostPath, type HostPath } from '../../shared/host-path'
 import { isProjectPathExistsError, type ProjectHost } from '../project-host/project-host'
 
 /**
- * Records the reviewer's scope in the working tree's layout file (ADR-063), keeping every
+ * Records the reviewer's scope in the working tree's layout file (ADR-963), keeping every
  * other key as written. `file` is the layout file's path, already authorized inside the
  * workspace. An empty scope means the whole repository and removes the key.
  */

@@ -1,5 +1,5 @@
 /**
- * Parsed module facts across every repository reviewed on this machine (ADR-063). It lives
+ * Parsed module facts across every repository reviewed on this machine (ADR-963). It lives
  * apart from the cache, which names the compiler's version, so the main process can size
  * the cache without loading the TypeScript compiler; parsing belongs to the worker.
  */

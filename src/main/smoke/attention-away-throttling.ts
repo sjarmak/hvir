@@ -1,5 +1,5 @@
 /**
- * Ready detection while Away (ADR-049 Consequences): a terminal that goes quiet
+ * Ready detection while Away (ADR-949 Consequences): a terminal that goes quiet
  * while no hvir window is focused, hidden, or minimized must reach main's set as
  * Ready within the renderer quiet period plus slack, throttled renderer or not.
  */

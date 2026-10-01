@@ -1,7 +1,7 @@
 /**
- * The declared notification sink a Push is posted to (ADR-049).
+ * The declared notification sink a Push is posted to (ADR-949).
  *
- * One bounded attempt per message in ADR-047's posture: a declared endpoint,
+ * One bounded attempt per message in ADR-947's posture: a declared endpoint,
  * a timeout, no discovery and no second attempt. The sink speaks ntfy's publish shape
  * (a text body, a Title header, an optional bearer) because that is what the
  * operator runbook declares; which server answers is operator infrastructure.

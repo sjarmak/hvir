@@ -32,7 +32,7 @@ export const SOURCES_CHANGED =
   'Sources changed during capture; refresh architecture review'
 
 /**
- * One host command reads the whole live side (ADR-063). Directories holding a source are
+ * One host command reads the whole live side (ADR-963). Directories holding a source are
  * refused when they are symbolic links, so no read leaves the workspace. Git hashes every
  * file, tar streams them, and Git hashes them again: bytes that match both hash passes were
  * on disk, unchanged, across the whole read. That is the consistency check the old second

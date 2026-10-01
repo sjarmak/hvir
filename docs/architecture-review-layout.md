@@ -1,6 +1,6 @@
 # Architecture review layout file
 
-The architecture review ([ADR-063](adr/ADR-063-architecture-review-history-and-agent-worktrees.md))
+The architecture review ([ADR-963](adr/ADR-963-architecture-review-history-and-agent-worktrees.md))
 compares Subsystems, the named groups of modules whose imports of one another count as one
 relationship. By default a module's Subsystem is the first directory under its source root
 (`src/main/ipc/a.ts` is in `src/main`; `test/a.test.ts` is in `test`; a file at the top of
@@ -41,7 +41,7 @@ Current. The `scope` always comes from the working-tree copy, tracked or not, fo
 Snapshot including a pair of commits: the scope is a choice about what to read today, not
 part of history, so narrowing it for a large repository applies to any two ends. On a live
 Current end both come from the working-tree copy, and an edit to it makes the Snapshot
-stale. A pair of commits is never stale (ADR-063): its Snapshot records the scope it was read
+stale. A pair of commits is never stale (ADR-963): its Snapshot records the scope it was read
 with, and a new scope takes effect on the next scan. The bytes of both copies are part of the
 fingerprint.
 

@@ -35,7 +35,7 @@ describe('actionable attention contract', () => {
   })
 
   it('accepts a stale entry only with its reason, and a reason only when stale', () => {
-    // Both directions are the failure ADR-048 names: an entry that cannot say
+    // Both directions are the failure ADR-948 names: an entry that cannot say
     // why it is stale is asserting a state nobody is watching.
     expect(
       isRendererAttentionSet(set([entry({ freshness: 'stale', reason: 'unreachable' })])),

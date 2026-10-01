@@ -106,7 +106,7 @@ describe('TerminalStickyModes', () => {
     expect(modes.preamble(100)).toBe(ENTER)
   })
 
-  it('carries the mouse tracking family whole, in emission order (ADR-056)', () => {
+  it('carries the mouse tracking family whole, in emission order (ADR-956)', () => {
     const modes = new TerminalStickyModes()
     modes.retain(`${ENTER}\u001b[?1h\u001b[?1000h\u001b[?1002h\u001b[?1003h`)
     modes.retain('\u001b[?1006h\u001b[?1015h\u001b[?2004h')

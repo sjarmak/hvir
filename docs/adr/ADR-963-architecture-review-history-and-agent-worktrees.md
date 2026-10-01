@@ -1,16 +1,16 @@
-# ADR-063: Architecture review over history, with agent worktrees
+# ADR-963: Architecture review over history, with agent worktrees
 
 > Lifecycle: Partially superseded
-> Supersedes: [ADR-061](ADR-061-pinned-native-architecture-review.md) | partial | The fixed comparison modes, the full recapture on revalidation, and the read-only single-file handoff consumed once per snapshot; pinned evidence, worker isolation, and launch authority remain.
+> Supersedes: [ADR-961](ADR-961-pinned-native-architecture-review.md) | partial | The fixed comparison modes, the full recapture on revalidation, and the read-only single-file handoff consumed once per snapshot; pinned evidence, worker isolation, and launch authority remain.
 > Supersedes: [ADR-005](ADR-005-system-git-engine.md) | partial | Creating no branch at all; the architecture review creates one hvir/architecture/ branch per agent launch.
 > Supersedes: [ADR-008](ADR-008-project-worktree-workspaces.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
-> Superseded by: [ADR-064](ADR-064-architecture-review-as-a-live-zoomable-canvas.md) | partial | The map now opens on systems on a laid-out canvas that drills to subsystems and modules; explanation-only requests no longer create an agent branch, worktree, brief or terminal session, while architecture-improvement launches retain the worktree handoff.
-> Superseded by: [ADR-065](ADR-065-history-reads-the-fleet-commit-classification.md) | partial | Marking every History row and strip commit from its diff and import edges alone; a commit the fleet has classified is marked from its Architectural trailer instead.
-> Superseded by: [ADR-067](ADR-067-whole-monorepo-architecture-capture.md) | partial | The small-repository read budgets and default subsystem mapping across workspace packages; capture and classification use the expanded shared budgets and package boundaries refine default subsystems.
+> Superseded by: [ADR-964](ADR-964-architecture-review-as-a-live-zoomable-canvas.md) | partial | The map now opens on systems on a laid-out canvas that drills to subsystems and modules; explanation-only requests no longer create an agent branch, worktree, brief or terminal session, while architecture-improvement launches retain the worktree handoff.
+> Superseded by: [ADR-965](ADR-965-history-reads-the-fleet-commit-classification.md) | partial | Marking every History row and strip commit from its diff and import edges alone; a commit the fleet has classified is marked from its Architectural trailer instead.
+> Superseded by: [ADR-967](ADR-967-whole-monorepo-architecture-capture.md) | partial | The small-repository read budgets and default subsystem mapping across workspace packages; capture and classification use the expanded shared budgets and package boundaries refine default subsystems.
 
 ## Context
 
-The first architecture review (ADR-061) compared the live tree against the index, HEAD, the
+The first architecture review (ADR-961) compared the live tree against the index, HEAD, the
 branch point or one commit, read every file through the host abstraction one call at a time,
 kept nothing between scans, and re-ran the whole capture whenever evidence was opened or a
 prompt prepared. Over SSH one scan of hvir itself cost tens of thousands of round trips. The
@@ -94,7 +94,7 @@ visible with its own marker.
 **Nothing is read twice.** The live side is read by one batched host command per scan. Parsed
 module facts are cached on disk per host and repository, keyed by blob identity and scanner
 version, bounded in size, and evicted least-recently-used. Snapshots themselves stay
-ephemeral and pinned to exact bytes as ADR-061 requires. Every scan records per-stage
+ephemeral and pinned to exact bytes as ADR-961 requires. Every scan records per-stage
 timings and transfer sizes and shows them in the snapshot details.
 
 **Freshness only where it can change.** A snapshot whose two ends are commits is never stale.
@@ -123,7 +123,7 @@ worktree tab. Because hvir created it, no report from the agent is needed: the r
 re-snapshot the worktree at any time, by default against the original Current end to show
 only the agent's change, and one click away against the original Baseline to show the
 cumulative result. Direct edits to the person's working tree remain excluded.
-The explanation-only action is governed by ADR-064 and does not use this handoff.
+The explanation-only action is governed by ADR-964 and does not use this handoff.
 
 **The person removes an unfinished handoff; hvir never does.** A handoff interrupted after
 its worktree was created but before its brief landed leaves a worktree no agent ever ran in.
@@ -157,7 +157,7 @@ are decided from the diff alone. Under the filter every loaded commit is classif
 than only the visible rows, so the filter is bounded by the loaded page, and the strip is
 bounded by its 200-commit cap. The disk cache is new state to bound and to invalidate on
 scanner upgrades. web-tree-sitter adds a WebAssembly dependency and per-language grammars to
-package. Worktree creation is a new write authority for the review; ADR-061's read-only
+package. Worktree creation is a new write authority for the review; ADR-961's read-only
 promise no longer holds for the review as a whole, though it still holds for the person's own
 working tree. The one-shot launch rule is replaced by one worktree per launch. The narrow,
 person-triggered removal of an unfinished handoff is the one delete authority added beside

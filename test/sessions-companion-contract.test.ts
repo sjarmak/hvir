@@ -131,7 +131,7 @@ describe('sessions companion contract', () => {
     expect(isCompanionRow(row({ handle: '' }))).toBe(false)
   })
 
-  it('admits a prompt row with a bounded promptBody (ADR-051)', () => {
+  it('admits a prompt row with a bounded promptBody (ADR-951)', () => {
     const prompt = (promptBody?: unknown) =>
       row({
         attention: { status: 'available', value: 'prompt' },
@@ -296,7 +296,7 @@ describe('sessions companion contract', () => {
     expect(isCompanionInputRequest('\r')).toBe(false)
   })
 
-  it('a navigation claim is admitted only for what a read-back gesture sends (ADR-055, ADR-056)', () => {
+  it('a navigation claim is admitted only for what a read-back gesture sends (ADR-955, ADR-956)', () => {
     // The page keys, and the wheel reports the policy synthesizes for a scroll.
     // One gesture's reports travel together, in order, as one write: a batch of
     // the set is inside the set, up to the one input bound.
@@ -335,7 +335,7 @@ describe('sessions companion contract', () => {
     expect(isCompanionInputRequest({ data: '\x1b[5~', navigation: 'true' })).toBe(false)
   })
 
-  it('a viewport is two integers within the PTY dimension bounds and nothing else (ADR-058)', () => {
+  it('a viewport is two integers within the PTY dimension bounds and nothing else (ADR-958)', () => {
     expect([MIN_COMPANION_VIEWPORT_DIMENSION, MAX_COMPANION_VIEWPORT_DIMENSION]).toEqual([
       2, 1000,
     ])

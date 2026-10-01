@@ -1,5 +1,5 @@
 /**
- * The Companion's /api rows (ADR-049, ADR-050), bound onto the server's
+ * The Companion's /api rows (ADR-949, ADR-950), bound onto the server's
  * router: one event stream per page, the page's rows on demand, the four
  * Sessions verbs, terminal input, and the grid a page draws. Bodies are validated with the shared
  * guards before any port is asked; a page the service does not hold is 404, a

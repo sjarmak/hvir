@@ -1,4 +1,4 @@
-# ADR-068: React-owned development measure containment
+# ADR-046: React-owned development measure containment
 
 > Lifecycle: Active
 > Supersedes: [ADR-025](ADR-025-remove-renderer-responsiveness-diagnostic.md) | partial | Requirement to preserve hvir's development Performance Timeline containment owner and budget fixture.

@@ -4,7 +4,7 @@ import type { RendererOwner } from '../renderer-resource-scopes'
  * Who holds a Sessions demand lease.
  *
  * A renderer owner is a live webContents generation, and its changes travel
- * over IPC. A companion owner is a served page (ADR-049) with its own
+ * over IPC. A companion owner is a served page (ADR-949) with its own
  * generation, and its changes travel to the registered companion sink. The
  * discriminant keeps the two apart at the type level, so a companion never
  * borrows a renderer id and every port dispatches by kind rather than by a

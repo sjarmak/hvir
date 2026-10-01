@@ -350,7 +350,7 @@ describe('PtySupervisor mirror lease', () => {
     expect(pty.write).toHaveBeenCalledTimes(2)
   })
 
-  it('read-back navigation reaches the PTY and never onMirrorInput (ADR-055)', async () => {
+  it('read-back navigation reaches the PTY and never onMirrorInput (ADR-955)', async () => {
     const { info, pty, supervisor } = await fixture()
     const seen = vi.fn()
     supervisor.onMirrorInput(seen)
@@ -412,7 +412,7 @@ describe('PtySupervisor mirror lease', () => {
   })
 })
 
-describe('the watching page owns the PTY size for as long as it watches (ADR-058)', () => {
+describe('the watching page owns the PTY size for as long as it watches (ADR-958)', () => {
   it('a viewport clamps, applies, publishes to every mirror and reports the hold', async () => {
     const { info, pty, supervisor, mirror, lease, events } = await watched()
     const other = handlers()

@@ -8,7 +8,7 @@
  * Only `opened` starts a buffer: output for a row the feed does not hold is
  * dropped, exactly as the listener drops output for a mirror it has ended.
  *
- * The feed holds a sticky-mode scanner beside the tail (ADR-054). The preamble
+ * The feed holds a sticky-mode scanner beside the tail (ADR-954). The preamble
  * the listener sent describes main's window, not this one: this buffer re-cuts
  * its own tail to the same bound from the front on every replay, so a transition
  * the listener left to the tail can slide out of it here. The scanner reads the

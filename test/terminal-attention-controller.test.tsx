@@ -63,7 +63,7 @@ describe('terminal attention controller', () => {
   })
 
   it('recordInput from a mirror Enter arms exactly like a desktop Enter', () => {
-    // The phone sends the line and its Enter as one write (ADR-050); the
+    // The phone sends the line and its Enter as one write (ADR-950); the
     // renderer records it through the same door a keyboard Enter uses.
     act(() => {
       controller?.recordInput(session.id, "printf 'mirror-done'\r")
@@ -229,7 +229,7 @@ describe('terminal attention controller', () => {
       entries: [{ handle: 'terminal-1', kind: 'bell', freshness: 'fresh' }],
     })
 
-    // The same prompt with a new message is a new entry (ADR-051).
+    // The same prompt with a new message is a new entry (ADR-951).
     render([{ ...terminalSession(), attention: 'prompt', promptBody: 'first' }])
     render([{ ...terminalSession(), attention: 'prompt', promptBody: 'second' }])
     expect(onRollup).toHaveBeenCalledTimes(4)

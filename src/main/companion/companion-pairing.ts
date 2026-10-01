@@ -24,13 +24,13 @@ export type CompanionPairingEvent = 'issued' | 'paired' | 'revoked'
 export interface CompanionPairingOptions {
   readonly credential: CompanionCredentialPort
   readonly now?: () => number
-  /** Closes what the credential was keeping open (ADR-049: revoke ends every Companion page). */
+  /** Closes what the credential was keeping open (ADR-949: revoke ends every Companion page). */
   readonly onRevoked?: () => void
   readonly onChange?: (event: CompanionPairingEvent) => void
 }
 
 /**
- * The one-time pairing and the long-lived credential it mints (ADR-049).
+ * The one-time pairing and the long-lived credential it mints (ADR-949).
  *
  * A code is exchanged exactly once for a token the phone keeps; hvir keeps
  * only the token's hash. Issuing again replaces the outstanding code, and a

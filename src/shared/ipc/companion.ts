@@ -2,7 +2,7 @@ import { invoke, payload, type IpcFeatureContract } from '../ipc-contract'
 import type { CompanionConfigSave, CompanionConfigView } from '../companion-settings'
 
 /**
- * Companion settings (ADR-049): read and save the configuration, issue and
+ * Companion settings (ADR-949): read and save the configuration, issue and
  * revoke the pairing, and follow the listener status. Every answer is the
  * same view, which carries no credential and no push token.
  */

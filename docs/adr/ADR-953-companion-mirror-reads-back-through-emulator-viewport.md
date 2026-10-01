@@ -1,14 +1,14 @@
-# ADR-053: The Companion mirror reads back through the emulator's viewport
+# ADR-953: The Companion mirror reads back through the emulator's viewport
 
 > Lifecycle: Partially superseded
-> Supersedes: [ADR-052](ADR-052-companion-mirror-holds-pty-size-while-away.md) | partial | The page's own scrollback layer drawing above the grid for a shell's mirror, for the emulator's viewport as the one read-back surface.
-> Superseded by: [ADR-055](ADR-055-read-back-navigation-is-not-typing.md) | partial | An alternate-screen session stating that it has no history to read back, for a program that keeps its own history and is paged through it.
+> Supersedes: [ADR-952](ADR-952-companion-mirror-holds-pty-size-while-away.md) | partial | The page's own scrollback layer drawing above the grid for a shell's mirror, for the emulator's viewport as the one read-back surface.
+> Superseded by: [ADR-955](ADR-955-read-back-navigation-is-not-typing.md) | partial | An alternate-screen session stating that it has no history to read back, for a program that keeps its own history and is paged through it.
 
 ## Context
 
-ADR-050 put a real emulator on the phone, the one the desktop already trusts, and fed it the
-PTY's bytes unchanged. ADR-052 then gave the phone its own grid while the desktop is Away, and
-kept one thing from ADR-050 deliberately: a shell session keeps its history column, the phone
+ADR-950 put a real emulator on the phone, the one the desktop already trusts, and fed it the
+PTY's bytes unchanged. ADR-952 then gave the phone its own grid while the desktop is Away, and
+kept one thing from ADR-950 deliberately: a shell session keeps its history column, the phone
 shows that column of scrollback above a grid pinned to the bottom, the history is a swipe away,
 and the scrollback layer draws above the grid exactly as it did before. That record narrowed
 size, not read-back.
@@ -56,7 +56,7 @@ whatever bytes a gesture produces pass the same arming gate as a keystroke.
 The page asks the emulator for the viewport's position, and that is the only question it asks
 about the screen. It reads no cell, no row, and no line of text to decide anything, including
 whether to offer a way back to the live edge. Position is not content, so ADR-019's rule that
-attention never comes from inspecting the screen, and ADR-051's restatement of it, are
+attention never comes from inspecting the screen, and ADR-951's restatement of it, are
 untouched: nothing in this decision raises, clears, or classifies attention, and a person
 reading back changes no attention state at all.
 

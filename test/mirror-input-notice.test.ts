@@ -48,7 +48,7 @@ function world() {
   return { notify: listener, unsubscribe, owned, toRenderer }
 }
 
-describe('installMirrorInputNotice (ADR-050)', () => {
+describe('installMirrorInputNotice (ADR-950)', () => {
   it('forwards to the current owner only with id and data', () => {
     const { notify, toRenderer } = world()
 

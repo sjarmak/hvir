@@ -1,6 +1,6 @@
 /**
  * Provider-neutral terminal activity shared by recovery and delivery presentation.
- * `prompt` is the terminal's own notification (ADR-051); its message travels
+ * `prompt` is the terminal's own notification (ADR-951); its message travels
  * beside the state where a surface can show it, never inside it.
  */
 export type TerminalAttentionState = 'working' | 'bell' | 'idle' | 'prompt'

@@ -5,7 +5,7 @@
  * on one, so it aggregates through workspace, project, and nav identically
  * (ADR-009). It is kept separate from the terminal rollups on purpose: the two
  * counts are described differently to a person, and a stale external count is
- * not eligible for the OS badge, which cannot say that it is stale (ADR-048).
+ * not eligible for the OS badge, which cannot say that it is stale (ADR-948).
  */
 import type { ExternalAttentionEntry, ExternalAttentionSnapshot } from '../../../shared'
 

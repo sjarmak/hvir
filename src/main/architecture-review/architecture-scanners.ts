@@ -67,7 +67,7 @@ const GRAMMAR_LANGUAGES: readonly GrammarLanguage[] = [
 ]
 
 /**
- * Every scanner this build ships (ADR-063): TypeScript through the compiler, then Python,
+ * Every scanner this build ships (ADR-963): TypeScript through the compiler, then Python,
  * Go and Rust through web-tree-sitter. The bytes are passed in, so emscripten never looks
  * for a file.
  */

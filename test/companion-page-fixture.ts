@@ -128,7 +128,7 @@ export class FakeCompanionServer {
       .map((call) => call.body)
   }
 
-  /** Every grid the page held the PTY at, in order (ADR-058). */
+  /** Every grid the page held the PTY at, in order (ADR-958). */
   viewports(): unknown[] {
     return this.calls
       .filter((call) => call.url.endsWith('/viewport'))
@@ -211,7 +211,7 @@ export class FakeCompanionServer {
 /**
  * The fake grid's cell size at the default text size: happy-dom lays nothing
  * out, so the pane reports its own. Like the real emulator it reports a box
- * proportional to its font, so a page that steps the size (ADR-059) derives a
+ * proportional to its font, so a page that steps the size (ADR-959) derives a
  * different grid here too.
  */
 export const FAKE_CELL_WIDTH = 8
@@ -238,7 +238,7 @@ export class FakeCompanionPane implements CompanionTerminalPane {
   reflowOffset?: number
   mounted?: HTMLElement
   disposed = false
-  /** Every text size the page gave this pane, in order (ADR-059). */
+  /** Every text size the page gave this pane, in order (ADR-959). */
   readonly fontSizes: number[] = []
   private fontSize = COMPANION_DEFAULT_TEXT_SIZE
   private readonly listeners = new Set<(data: string, source: 'user') => void>()
@@ -364,7 +364,7 @@ export class FakeCompanionPane implements CompanionTerminalPane {
     for (const listener of this.listeners) listener(data, 'user')
   }
 
-  /** A read-back gesture's page key, which the real pane emits past the arm (ADR-055). */
+  /** A read-back gesture's page key, which the real pane emits past the arm (ADR-955). */
   emitNavigation(data: string): void {
     for (const listener of this.navigationListeners) listener(data)
   }

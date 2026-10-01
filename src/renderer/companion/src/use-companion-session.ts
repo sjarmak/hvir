@@ -1,10 +1,10 @@
 /**
  * One page's lifecycle against the listener: pairing, one event stream at a
  * time, and the verbs the page may perform. The stream is reopened only when
- * a person asks (ADR-049 forbids a retry loop from a phone), and a 401 from
+ * a person asks (ADR-949 forbids a retry loop from a phone), and a 401 from
  * anywhere sends the page back to pairing.
  *
- * A mirror (ADR-050) is selected optimistically: the row is marked selected
+ * A mirror (ADR-950) is selected optimistically: the row is marked selected
  * before the listener answers, so the `opened` frame that can arrive on the
  * event stream ahead of the select reply is kept rather than dropped.
  */
@@ -41,7 +41,7 @@ import { useInputArming, type CompanionInputArmingControl } from './use-input-ar
 /**
  * Bytes for the mirrored row. The source defaults to the person typing; a
  * read-back gesture names itself, which is what frees it from the per-mirror
- * arm and keeps it out of the desktop's input record (ADR-055).
+ * arm and keeps it out of the desktop's input record (ADR-955).
  */
 export type CompanionInputVerb = (
   data: string,
@@ -67,7 +67,7 @@ export interface CompanionSession {
   /** Exact bytes for the mirrored row; typing is dropped here unless armed on a live mirror. */
   readonly input: CompanionInputVerb
   /**
-   * The grid the page is drawing for the live mirror (ADR-058). Rejects when there is no
+   * The grid the page is drawing for the live mirror (ADR-958). Rejects when there is no
    * live mirror or the verb failed, which is the fit's signal to ask again.
    */
   readonly viewport: (cols: number, rows: number) => Promise<void>
@@ -286,7 +286,7 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
 
   // Read-back navigation passes the arm on the way out and extends none of it:
   // a drag is not typing, so it neither waits for the person to arm the mirror
-  // nor keeps an arming alive that would otherwise lapse (ADR-055). Its reports
+  // nor keeps an arming alive that would otherwise lapse (ADR-955). Its reports
   // travel in order, one request in flight per mirror and the rest joining the
   // next, so a program paged up and then down never hears the down first.
   const input = useCallback<CompanionInputVerb>(

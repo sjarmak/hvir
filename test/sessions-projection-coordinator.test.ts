@@ -66,7 +66,7 @@ describe('SessionsProjectionCoordinator', () => {
     })
   })
 
-  it('projects a prompt with its body from the renderer session (ADR-051)', () => {
+  it('projects a prompt with its body from the renderer session (ADR-951)', () => {
     const rows = joinSessionsProjection(
       observation(1, [observed('asked', 'workspace-a', 'live'), observed('bare', 'workspace-a')]),
       [

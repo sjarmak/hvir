@@ -7,7 +7,7 @@ import type { SessionsExternalSourceId } from './sessions-projection'
  * hvir only ever claims this link for an attach it performed itself: the
  * surface that runs the attach command knows exactly which session it named, so
  * the target travels with the launch instead of being guessed afterwards from a
- * title, a path, or what happened to start at the same moment (ADR-046).
+ * title, a path, or what happened to start at the same moment (ADR-946).
  */
 
 /** What an attach names: a session in the foreign source's own namespace. */
@@ -25,7 +25,7 @@ export interface ExternalSessionAttachTarget {
  *
  * A surface that legitimately holds the foreign identifier sends it. A surface
  * that may not hold it — the Sessions projection, where no foreign identifier
- * crosses IPC at all (ADR-046) — sends a ticket main minted for that row, and
+ * crosses IPC at all (ADR-946) — sends a ticket main minted for that row, and
  * main redeems it against the identifier it kept.
  */
 export type ExternalSessionAttachRequest =

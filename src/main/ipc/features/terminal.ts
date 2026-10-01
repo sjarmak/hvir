@@ -542,7 +542,7 @@ function isUnknownRecord(value: unknown): value is Record<string, unknown> {
  * The foreign session a launch attaches to.
  *
  * A caller that holds the identifier sends it. A caller that does not — the
- * Sessions projection, which is never told one (ADR-046) — sends a ticket, and
+ * Sessions projection, which is never told one (ADR-946) — sends a ticket, and
  * the registry answers with the session it minted the ticket for, once.
  */
 function redeemExternalAttach(

@@ -2,7 +2,7 @@
  * The Companion phone page is a second renderer entry that must stay a
  * strict observer: it talks to the loopback listener over fetch and reads the
  * event stream with the bearer in a header. It never reaches the desktop
- * bridge, the desktop renderer tree, or EventSource (ADR-049).
+ * bridge, the desktop renderer tree, or EventSource (ADR-949).
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -13,7 +13,7 @@ const ROOT = resolve(__dirname, '..')
 const PAGE_ROOT = resolve(ROOT, 'src/renderer/companion')
 const SHARED_ROOT = resolve(ROOT, 'src/shared')
 const ALLOWED_BARE_IMPORTS = new Set(['react', 'react-dom/client'])
-/** The emulator and its module, admitted for the one adapter that owns them (ADR-050). */
+/** The emulator and its module, admitted for the one adapter that owns them (ADR-950). */
 const GHOSTTY_IMPORTS = new Set(['ghostty-web', 'ghostty-web/ghostty-vt.wasm?url'])
 const GHOSTTY_ADAPTER = 'src/ghostty-companion-pane.ts'
 const IMPORT_PATTERN =

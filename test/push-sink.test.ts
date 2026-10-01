@@ -114,7 +114,7 @@ describe('createNtfyPushSink', () => {
     )
   })
 
-  it('posts a prompt under its kind with the message as the line (ADR-051)', async () => {
+  it('posts a prompt under its kind with the message as the line (ADR-951)', async () => {
     const server = await answering(200)
     const sink = createNtfyPushSink({ url: server.url })
 

@@ -210,14 +210,14 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly beads: Pick<BeadsService, 'list' | 'probe'>
   readonly gascity: Pick<GasCityService, 'crew' | 'probe' | 'analyticsConfig'>
   readonly github: Pick<GitHubService, 'pulls' | 'probe'>
-  /** Companion settings (ADR-049); the view it answers with carries no secret. */
+  /** Companion settings (ADR-949); the view it answers with carries no secret. */
   readonly companion: Pick<
     CompanionSettingsPort,
     'view' | 'save' | 'issuePairing' | 'revokePairing'
   >
   /**
    * Attention external agent sessions are raising right now. Always available:
-   * the facts follow open projects, not the Sessions view (ADR-048).
+   * the facts follow open projects, not the Sessions view (ADR-948).
    */
   readonly getExternalAttention: () => ExternalAttentionSnapshot
   readonly updateAttention: (owner: RendererOwner, set: RendererAttentionSet) => void

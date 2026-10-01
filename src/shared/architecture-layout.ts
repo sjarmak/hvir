@@ -1,5 +1,5 @@
 /**
- * How an architecture review names subsystems and what it scans (ADR-063). A tracked file at
+ * How an architecture review names subsystems and what it scans (ADR-963). A tracked file at
  * the scan root may override the defaults, so an agent in a worktree can read and change it.
  */
 export const ARCHITECTURE_LAYOUT_FILE = '.hvir/architecture.json'

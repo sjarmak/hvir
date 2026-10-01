@@ -24,7 +24,7 @@ export interface PtyMirrorEntryView {
   readonly current: boolean
   readonly instanceId: string
   write(data: string): void
-  /** Holds the PTY at this grid for the holder's lifetime (ADR-058). */
+  /** Holds the PTY at this grid for the holder's lifetime (ADR-958). */
   hold(holder: object, cols: number, rows: number): void
   /** Gives the size back to the renderer owner, if this holder still has it. */
   releaseHold(holder: object): void
@@ -39,7 +39,7 @@ export interface PtyMirrorLeaseSources {
   /** The tail and its preamble read together, so the preamble matches this exact tail. */
   readonly retained: () => PtyRetainedOutput
   readonly geometry: () => PtyGeometry
-  /** Fan-out after a write landed on the PTY; read-back navigation skips it (ADR-055). */
+  /** Fan-out after a write landed on the PTY; read-back navigation skips it (ADR-955). */
   readonly onInput: (data: string) => void
 }
 

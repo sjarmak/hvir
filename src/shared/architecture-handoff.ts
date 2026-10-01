@@ -1,7 +1,7 @@
 import type { HostPath } from './host-path'
 
 /**
- * Agent handoff into a worktree hvir owns (ADR-063). Preparing a launch shows the exact
+ * Agent handoff into a worktree hvir owns (ADR-963). Preparing a launch shows the exact
  * branch, worktree, starting commit, brief and prompt; the handoff creates them once.
  */
 

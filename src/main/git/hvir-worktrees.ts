@@ -2,7 +2,7 @@ import { posix } from 'node:path'
 import type { HostPath } from '../../shared'
 
 /**
- * The one place hvir creates a worktree (ADR-063): a sibling directory named after the
+ * The one place hvir creates a worktree (ADR-963): a sibling directory named after the
  * registered root, one directory per handoff, on a fresh branch under
  * `hvir/architecture/`. Every name is derived here, so a grant, the broker and the
  * coordinator compare one exact spelling rather than re-deriving it.

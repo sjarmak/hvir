@@ -335,7 +335,7 @@ describe('Sessions transcript detail', () => {
       await settle()
     })
 
-    // ADR-048: reset, handoff, and lifecycle stay on the crew card.
+    // ADR-948: reset, handoff, and lifecycle stay on the crew card.
     expect(
       [...host.querySelectorAll<HTMLButtonElement>('.sessions-transcript-detail button')]
         .map(text)

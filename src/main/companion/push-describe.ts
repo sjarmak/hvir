@@ -1,5 +1,5 @@
 /**
- * Turns an actionable entry into the pointer a Push may carry (ADR-049): the
+ * Turns an actionable entry into the pointer a Push may carry (ADR-949): the
  * project, the session title, the kind of signal and at most one line of a
  * pending prompt. No options, no identifiers, no transcript, no credential.
  *
@@ -72,7 +72,7 @@ function describeTerminal(
     project: projectName(place),
     title: terminalTitle(session, handle, workspaceName, place),
     kind: entry.kind,
-    // A prompt's message is the line (ADR-051); it arrived bounded at the wire.
+    // A prompt's message is the line (ADR-951); it arrived bounded at the wire.
     ...(entry.body === undefined ? {} : { line: entry.body }),
   }
 }

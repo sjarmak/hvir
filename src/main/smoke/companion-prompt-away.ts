@@ -1,5 +1,5 @@
 /**
- * A terminal notification while Away (ADR-051): with the desktop window hidden
+ * A terminal notification while Away (ADR-951): with the desktop window hidden
  * and background-throttled, an OSC 9 the shell writes must reach main's set as
  * a prompt entry carrying its message at once, with no Enter arming and no
  * quiet wait; the Companion row must carry the same message, and the one Push

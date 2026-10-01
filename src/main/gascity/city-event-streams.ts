@@ -6,17 +6,17 @@
  * open; the last project on that host closing closes the stream and its channel.
  * Nothing in Sessions owns any of this: a global list that happens to be hidden
  * changes nothing here, which is the point, because a blocked agent has to be
- * able to raise attention with no view open at all (ADR-048).
+ * able to raise attention with no view open at all (ADR-948).
  *
  * The stream carries session lifecycle transitions and no message content, so a
  * host-wide subscription stays affordable. Pending interactions come from the
  * city's own declared list, read alongside the stream: the city event vocabulary
  * has no pending event, and inferring one from lifecycle traffic is exactly the
- * guess ADR-048 refuses. Every read is one loopback GET of a three-field list.
+ * guess ADR-948 refuses. Every read is one loopback GET of a three-field list.
  *
  * Transport loss never reconnects by itself. The host's facts are marked stale
  * with the reason they stopped being watched, and {@link resume} is the explicit
- * resumption ADR-047 requires.
+ * resumption ADR-947 requires.
  */
 import type { HostId, HostPath } from '../../shared'
 import type { Disposer } from '../project-host'
@@ -60,7 +60,7 @@ export interface GasCityEventStreamsOptions {
  * How often a live host's declared pending list is read. The attention signal is
  * exact but has no event to arrive on, so this cadence is the whole discovery
  * path for it; answering withdraws an interaction immediately rather than waiting
- * for the next read (ADR-048).
+ * for the next read (ADR-948).
  */
 export const CITY_PENDING_POLL_MS = 5_000
 
@@ -116,7 +116,7 @@ export class GasCityEventStreams {
 
   /**
    * Reopens one host's stream from the sequence it last received. The explicit
-   * resumption ADR-047 requires: a lost stream is never re-subscribed on its
+   * resumption ADR-947 requires: a lost stream is never re-subscribed on its
    * own, because a silent reconnect replaces one unverified state with another.
    */
   resume(hostId: HostId): void {

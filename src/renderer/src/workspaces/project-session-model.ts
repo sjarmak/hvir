@@ -22,7 +22,7 @@ export interface ProjectSessionModel {
 export interface WorkspaceAttentionRollup {
   readonly actionable: number
   readonly working: number
-  /** The terminals behind `actionable`, for the set main aggregates (ADR-049). */
+  /** The terminals behind `actionable`, for the set main aggregates (ADR-949). */
   readonly entries: readonly ActionableAttentionEntry[]
   /** The terminals behind `working`, for the same set. */
   readonly workingHandles: readonly SessionsTerminalHandle[]

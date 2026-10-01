@@ -4,9 +4,9 @@
  * The mirror fills the phone (hvir-3k2.3): one header line, the terminal in
  * the height that remains, one control bar that shows typing controls only
  * while armed. A watching page holds the PTY at the grid its own area measures
- * (ADR-058), whatever the desktop is doing, and draws the desktop's grid scaled
+ * (ADR-958), whatever the desktop is doing, and draws the desktop's grid scaled
  * to the phone's width until that hold lands. The emulator's own viewport is
- * the whole read-back (ADR-053), so the area holds the grid and the page's
+ * the whole read-back (ADR-953), so the area holds the grid and the page's
  * stated states beside it, never a second surface of text.
  */
 import { act, createElement } from 'react'
@@ -35,7 +35,7 @@ import {
   useCompanionPage,
 } from './companion-page-harness'
 
-/** What the shared wheel policy sends an alternate-screen program (ADR-053). */
+/** What the shared wheel policy sends an alternate-screen program (ADR-953). */
 const PAGE_UP = '\x1b[5~'
 const PAGE_DOWN = '\x1b[6~'
 
@@ -152,7 +152,7 @@ describe('Companion page mirror layout', () => {
     expect(server.inputs()).toEqual([])
   })
 
-  it('spends the whole area on the session, saying nothing about the alternate screen (ADR-060)', async () => {
+  it('spends the whole area on the session, saying nothing about the alternate screen (ADR-960)', async () => {
     await openMirror()
     layoutHost(352, 344)
     expect(host.querySelector('.companion-mirror-own-history')).toBeNull()
@@ -171,7 +171,7 @@ describe('Companion page mirror layout', () => {
     expect(area?.querySelectorAll('.companion-status').length).toBe(0)
   })
 
-  it('pages a program through its own history from a disarmed mirror (ADR-055)', async () => {
+  it('pages a program through its own history from a disarmed mirror (ADR-955)', async () => {
     await openMirror()
     layoutHost(352, 344)
     panes.panes[0]!.alternateScreen = true
@@ -288,7 +288,7 @@ describe('Companion page mirror layout', () => {
     panes.panes[0]!.alternateScreen = true
     await act(async () => {
       // A viewport the emulator has not yet re-anchored, which is the only way
-      // the two states meet: ADR-053 forbids an affordance that moves nothing,
+      // the two states meet: ADR-953 forbids an affordance that moves nothing,
       // so the page states that rather than leaving it to the emulator.
       panes.panes[0]!.moveViewport(24)
       await Promise.resolve()
@@ -322,7 +322,7 @@ describe('Companion page mirror layout', () => {
   })
 })
 
-describe('Companion page mirror holds the grid it draws (ADR-058)', () => {
+describe('Companion page mirror holds the grid it draws (ADR-958)', () => {
   it('asks once for the measured grid and renders unscaled when the matching geometry lands', async () => {
     await openMirror()
     layoutHost(376, 496)
@@ -479,7 +479,7 @@ describe('Companion page mirror holds the grid it draws (ADR-058)', () => {
   })
 })
 
-describe('Companion page mirror draws the text size the person chose (ADR-059)', () => {
+describe('Companion page mirror draws the text size the person chose (ADR-959)', () => {
   /** The header's one line of numbers: the session's grid, and the ask while it is out. */
   function readout(): string | undefined {
     return (

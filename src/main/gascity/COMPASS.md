@@ -307,7 +307,7 @@ pack-stamped lead that a rig override suspended drops out, leaving the hand-defi
 
 ## The supervisor API, alongside the CLI
 
-The bridge above shells out to `gc`. ADR-047 adds a second, narrower road to the same
+The bridge above shells out to `gc`. ADR-947 adds a second, narrower road to the same
 service: the supervisor's loopback HTTP API, used only for what the CLI cannot give
 cheaply (a session transcript, a live event stream, pending interactions, respond and
 submit).

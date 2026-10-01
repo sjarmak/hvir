@@ -83,12 +83,12 @@ export class TerminalSurfaceAttachment {
     return Boolean(this.current && this.pane && this.applied === 'visible')
   }
 
-  /** The pane's measured size is the PTY's: presented, and no Companion holds it (ADR-058). */
+  /** The pane's measured size is the PTY's: presented, and no Companion holds it (ADR-958). */
   ownsGeometry(): boolean {
     return this.canFocus() && this.held === undefined
   }
 
-  /** A Companion page watching this PTY holds its size, or that hold ended (ADR-058). */
+  /** A Companion page watching this PTY holds its size, or that hold ended (ADR-958). */
   holdGeometry(held: TerminalSize | undefined): void {
     this.held = held
     this.pane?.setHeldGeometry(held)

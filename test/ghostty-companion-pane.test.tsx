@@ -317,7 +317,7 @@ describe('ghostty companion pane', () => {
     expect(fake.disposed).toBe(true)
   })
 
-  it('draws the phone text size over the same scrollback the desktop pane keeps, and reports its cell (ADR-058, ADR-059)', async () => {
+  it('draws the phone text size over the same scrollback the desktop pane keeps, and reports its cell (ADR-958, ADR-959)', async () => {
     const pane = await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!
     expect(fake.options['fontSize']).toBe(COMPANION_DEFAULT_TEXT_SIZE)
@@ -327,7 +327,7 @@ describe('ghostty companion pane', () => {
     expect(pane.cellSize()).toEqual({ width: 8, height: 16 })
   })
 
-  it('takes the size the page chose, and only ever a step of the ladder (ADR-059)', async () => {
+  it('takes the size the page chose, and only ever a step of the ladder (ADR-959)', async () => {
     const pane = await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!
     pane.mount(document.createElement('div'))
@@ -486,7 +486,7 @@ describe('ghostty companion pane', () => {
     expect(fake.viewportY).toBe(0)
   })
 
-  it('a disarmed mirror still pages a program through its own history (ADR-055)', async () => {
+  it('a disarmed mirror still pages a program through its own history (ADR-955)', async () => {
     const pane = await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!
     pane.mount(document.createElement('div'))
@@ -503,7 +503,7 @@ describe('ghostty companion pane', () => {
     expect(fake.scrolls).toEqual([])
   })
 
-  it('a disarmed mirror under a mouse-tracking program sends its wheel reports (ADR-056)', async () => {
+  it('a disarmed mirror under a mouse-tracking program sends its wheel reports (ADR-956)', async () => {
     const pane = await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!
     pane.mount(document.createElement('div'))
@@ -539,7 +539,7 @@ describe('ghostty companion pane', () => {
     pane.dispose()
   })
 
-  it('one move worth several reports sends them as one string, in order (ADR-056)', async () => {
+  it('one move worth several reports sends them as one string, in order (ADR-956)', async () => {
     const pane = await createGhosttyCompanionPane(80, 24)
     const fake = fakes[0]!
     pane.mount(document.createElement('div'))
@@ -645,7 +645,7 @@ describe('ghostty companion pane', () => {
     pane.mount(document.createElement('div'))
     // Tracking without SGR: the policy has no report it will synthesize, so it
     // consumes the gesture and the viewport is what is left to move. This is the
-    // shape ADR-056 refuses to reach by carrying half the mouse family.
+    // shape ADR-956 refuses to reach by carrying half the mouse family.
     fake.mouseTracking = true
     fake.sgrMouse = false
     fake.scrollbackLength = 500

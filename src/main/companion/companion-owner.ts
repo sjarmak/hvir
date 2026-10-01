@@ -1,5 +1,5 @@
 /**
- * The Companion's composition root on the workbench runtime (ADR-049): the
+ * The Companion's composition root on the workbench runtime (ADR-949): the
  * settings owner, the loopback listener that follows it, the Sessions verbs
  * bound as /api rows, and the Away-time Push over the one actionable set.
  *
@@ -57,7 +57,7 @@ export interface CompanionDependencies {
   readonly assets: CompanionAssetReader
   readonly sessions: Pick<CompanionSessionsPorts, 'observation' | 'transcripts' | 'sinks'>
   readonly actionable: Pick<ActionableAttentionSet, 'snapshot' | 'observe'>
-  /** The PTY supervisor's mirror door (ADR-050); the Companion never spawns or owns. */
+  /** The PTY supervisor's mirror door (ADR-950); the Companion never spawns or owns. */
   readonly mirrors: Pick<PtySupervisor, 'attachMirror'>
   readonly describe: Omit<PushDescribePorts, 'onDiagnostic'>
   readonly publish: (view: CompanionConfigView) => void

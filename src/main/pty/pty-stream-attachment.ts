@@ -16,7 +16,7 @@ import { PtyOutputTail } from './pty-output-tail'
  * Both retained views are windows over the bytes, so a mode the program set once
  * at startup outlives them. The sticky-mode scanner runs beside them on the same
  * chunks and holds that state whole, and each reader takes as a preamble exactly
- * the modes its own window no longer proves (ADR-054). A window that still
+ * the modes its own window no longer proves (ADR-954). A window that still
  * carries the transition gets no preamble for it: asserting one twice would put
  * the emulator on the alternate screen before the replayed bytes that belong on
  * the normal one, and lose the scrollback they would have rebuilt.

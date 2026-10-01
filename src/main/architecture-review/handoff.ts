@@ -22,7 +22,7 @@ import { parseArchitectureBriefOrigin } from './handoff-brief'
 export interface ArchitectureWorktreePort {
   /** The exact target a handoff from the active `root` would create. */
   worktreeTarget(root: HostPath, slug: string, commit: string): HvirWorktreeTarget
-  /** Creates the worktree, held in flight until the handoff releases it (ADR-063). */
+  /** Creates the worktree, held in flight until the handoff releases it (ADR-963). */
   addWorktree(root: HostPath, slug: string, commit: string): Promise<HeldWorktree>
   /** Holds the worktree an interrupted handoff created while a retry finishes it. */
   holdWorktree(added: AddedWorktree): Promise<HeldWorktree>

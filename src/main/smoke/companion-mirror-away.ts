@@ -1,8 +1,8 @@
 /**
- * A prompt submitted from a Companion mirror while Away (ADR-050
+ * A prompt submitted from a Companion mirror while Away (ADR-950
  * Consequences): with the desktop window hidden and background-throttled, the
  * phone's Enter must still arm Ready detection in the renderer, so the next
- * quiet period reaches main's set as Ready within the ADR-049 budget and
+ * quiet period reaches main's set as Ready within the ADR-949 budget and
  * produces exactly one Push whose text carries none of the typed bytes.
  */
 

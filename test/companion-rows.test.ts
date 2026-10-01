@@ -85,7 +85,7 @@ describe('companion rows', () => {
     ).toBe(true)
   })
 
-  it('carries a prompt entry as prompt attention with its body (ADR-051)', () => {
+  it('carries a prompt entry as prompt attention with its body (ADR-951)', () => {
     const rows = companionRows({
       observation: observation([terminal(TERMINAL, 'Codex')]),
       working: [],

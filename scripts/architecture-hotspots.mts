@@ -101,7 +101,7 @@ async function collectMaintainedArchitecture(root: string, context: Architecture
     ...collected,
     mode: 'maintained-branch-enforce',
     evidence:
-      'Beads-governed local verification against the pinned ADR-062 baseline; no upstream PR or release authorization.',
+      'Beads-governed local verification against the pinned ADR-962 baseline; no upstream PR or release authorization.',
   }
 }
 

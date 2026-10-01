@@ -362,7 +362,7 @@ describe('Sessions IPC', () => {
       handle,
       pendingRevision: 3,
       // A position, not an option word and not gc's request identifier: the
-      // renderer never received either (ADR-046).
+      // renderer never received either (ADR-946).
       optionOrdinal: 1,
     }
     const message = { demandGeneration: 2, handle, message: 'hold the release' }
@@ -390,7 +390,7 @@ describe('Sessions IPC', () => {
   })
 
   it('carries no mutation of a session other than an answer and a message', () => {
-    // ADR-048: reset, handoff, and everything else in a foreign session's
+    // ADR-948: reset, handoff, and everything else in a foreign session's
     // lifecycle stay with the view that owns the city. This is the whole
     // surface. `forget` and `rename` are not exceptions to it: they mutate
     // hvir's own retained terminal record, and resolve only a row hvir owns.
@@ -469,7 +469,7 @@ describe('Sessions IPC', () => {
       },
     })
     // The command carries the source's published alias; the session identifier
-    // stays behind the ticket (ADR-046).
+    // stays behind the ticket (ADR-946).
     expect(JSON.stringify(attached)).not.toContain('gc-mem-worker-1')
     expect(sessionsAttachTickets.mint).toHaveBeenCalledExactlyOnceWith(owner, {
       sourceId: 'gas-city',

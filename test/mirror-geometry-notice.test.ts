@@ -32,7 +32,7 @@ function world() {
   return { notify: listener, unsubscribe, owned, toRenderer }
 }
 
-describe('installMirrorGeometryNotice (ADR-058)', () => {
+describe('installMirrorGeometryNotice (ADR-958)', () => {
   it('forwards a hold as the held size and a reclaim as such, to the exact owner', () => {
     const { notify, toRenderer } = world()
 

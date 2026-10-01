@@ -1,5 +1,5 @@
 /**
- * One Companion page's mirror of a live terminal (ADR-050): at most one lease
+ * One Companion page's mirror of a live terminal (ADR-950): at most one lease
  * at a time, bound to the exact PTY instance the page selected.
  *
  * The mirror translates the lease's stream into terminal events for the page
@@ -8,7 +8,7 @@
  * releases the lease and tells the page why. Bytes pass through untouched in
  * both directions; nothing here logs, trims, or composes them. The one thing an
  * `opened` carries beyond the lease's own bytes is the sticky-mode preamble
- * (ADR-054), a distinct field the page writes before the tail, omitted entirely
+ * (ADR-954), a distinct field the page writes before the tail, omitted entirely
  * when the stream set no mode the scanner carries.
  */
 import type { CompanionMirrorEndReason, CompanionTerminalEvent } from '../../shared'
@@ -92,7 +92,7 @@ export class CompanionPageMirror {
   }
 
   /**
-   * Pages a program through its own history (ADR-055). The same write and the
+   * Pages a program through its own history (ADR-955). The same write and the
    * same refusals; it is left out of the input record the owning renderer keeps,
    * so reading back on a phone raises no attention.
    */
@@ -101,7 +101,7 @@ export class CompanionPageMirror {
   }
 
   /**
-   * The grid this page is drawing (ADR-058). The PTY takes that size for as long as this
+   * The grid this page is drawing (ADR-958). The PTY takes that size for as long as this
    * mirror lasts, so the phone sees its own screen full whatever the desktop is doing.
    */
   viewport(cols: number, rows: number): void {

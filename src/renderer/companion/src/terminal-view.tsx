@@ -36,10 +36,10 @@ interface TerminalViewProps {
 }
 
 /**
- * One mirrored terminal (ADR-050) filling the phone's screen: a one-line
+ * One mirrored terminal (ADR-950) filling the phone's screen: a one-line
  * header, the terminal in all the height that remains (the phone's own grid,
  * which it holds the PTY at while it watches), and one compact control bar at
- * the bottom. Reading back is the emulator's own viewport under a finger or a wheel (ADR-053), so the area
+ * the bottom. Reading back is the emulator's own viewport under a finger or a wheel (ADR-953), so the area
  * holds the grid and the page's stated states beside it and never a second
  * surface of text. A viewport left behind the newest output puts the way back
  * over that area, outside the host's own scroller so it keeps its place over a
@@ -48,8 +48,8 @@ interface TerminalViewProps {
  * the record's promise of no affordance that moves nothing holds here rather
  * than in the emulator. That screen is otherwise unannounced: nothing stands
  * over the grid for the life of a program, because a row of the phone is a row
- * of the session (ADR-060). While the row carries a prompt, its message is
- * the header's second line (ADR-051). A row that also takes answers offers its
+ * of the session (ADR-960). While the row carries a prompt, its message is
+ * the header's second line (ADR-951). A row that also takes answers offers its
  * transcript beside the mirror.
  */
 export function TerminalView(props: TerminalViewProps) {
@@ -147,9 +147,9 @@ function TerminalSurface({
   readonly feed: CompanionMirrorFeed
   readonly createPane: CompanionTerminalPaneFactory
   readonly inputEnabled: boolean
-  /** The person's mirror text size (ADR-059), which every pane this surface builds draws at. */
+  /** The person's mirror text size (ADR-959), which every pane this surface builds draws at. */
   readonly textSize: number
-  /** The session's grid and the one this page asked for, for the header to say (ADR-059). */
+  /** The session's grid and the one this page asked for, for the header to say (ADR-959). */
   readonly onGrids: (grids: CompanionGrids) => void
   /** The mount the view holds, so the way back reaches the pane this surface owns. */
   readonly mirror: RefObject<CompanionTerminalMount | undefined>

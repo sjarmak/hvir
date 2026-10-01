@@ -33,7 +33,7 @@ export interface SupervisorStreamFrame {
 
 /**
  * The events this epic declares. `raw` transcript frames are deliberately absent:
- * ADR-047 keeps provider-shaped payloads out of hvir, so the client never asks for
+ * ADR-947 keeps provider-shaped payloads out of hvir, so the client never asks for
  * them, and an arriving one is reported as unrecognized rather than parsed.
  */
 export type SupervisorStreamEvent =
@@ -200,7 +200,7 @@ export type SupervisorCityLifecycleEvent =
 /**
  * One named city frame. Transcript content cannot appear here at all: the city
  * stream carries no message payloads, which is why a host-wide subscription is
- * affordable in the first place (ADR-046).
+ * affordable in the first place (ADR-946).
  */
 export type SupervisorCityStreamEvent =
   | { readonly kind: 'lifecycle'; readonly data: SupervisorCityLifecycleEvent }

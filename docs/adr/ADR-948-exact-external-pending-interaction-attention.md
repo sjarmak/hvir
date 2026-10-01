@@ -1,4 +1,4 @@
-# ADR-048: A declared external pending interaction is actionable attention
+# ADR-948: A declared external pending interaction is actionable attention
 
 > Lifecycle: Active
 > Supersedes: [ADR-009](ADR-009-hierarchical-attention.md) | partial | Terminal focus as the only rule that clears attention.
@@ -13,16 +13,16 @@ post-submission output to a low-salience Working state that never reaches a pare
 records deliberately avoid provider telemetry and screen contents, and ADR-019 states plainly
 that Working is heuristic: a chatty command looks active, a quiet one looks Ready.
 
-That model has no vocabulary for the case ADR-046 makes visible. An external agent session
+That model has no vocabulary for the case ADR-946 makes visible. An external agent session
 blocked on a question is not producing output, is not idle after a turn the user submitted, and
 has no terminal to focus. Under the existing rules it is silent, and silence reads as calm. The
 worker waits until someone happens to open the one sidebar that lists it — which is the failure
-ADR-046 exists to fix, and the one part of it that surfacing rows alone does not fix, because a
+ADR-946 exists to fix, and the one part of it that surfacing rows alone does not fix, because a
 row the user is not looking at raises nothing.
 
 What is new is not another guess. The supervisor states the blocked condition as data: a
 pending interaction with its own request identity, a kind, the prompt, and its options
-(ADR-047). This is the session authority declaring that it is waiting for a person. ADR-019's
+(ADR-947). This is the session authority declaring that it is waiting for a person. ADR-019's
 reason for refusing provider turn knowledge was that it would make *generic terminal* attention
 inconsistent between harnesses or require parsing the screen. Neither applies here: no terminal
 is involved, nothing is parsed, and the declaration arrives uniformly for every session the
@@ -77,8 +77,8 @@ still the whole of the response.
 
 The detail pane renders the prompt with its options and answers through the supervisor's
 respond operation; a compose box sends a message through its submit operation. These are the
-only mutations that cross the Sessions IPC surface for an external session, per ADR-046. No
-destructive or lifecycle verb appears in Sessions. Per ADR-047 neither mutation is retried
+only mutations that cross the Sessions IPC surface for an external session, per ADR-946. No
+destructive or lifecycle verb appears in Sessions. Per ADR-947 neither mutation is retried
 automatically, because the supervisor deduplicates nothing and a duplicate answer is a real
 effect on someone else's agent.
 
@@ -93,14 +93,14 @@ know.
 
 Neither failure direction may be silently preferred: dropping a real pending interaction hides
 a blocked agent, and asserting one nobody is watching sends the user to answer a question that
-has already been answered. Recovery is an explicit resumption (ADR-047), never an invisible
+has already been answered. Recovery is an explicit resumption (ADR-947), never an invisible
 re-subscribe that quietly replaces one guess with another.
 
 ## Consequences
 
 The case the crew sidebar could not surface at all now reaches the user where attention already
 lives: a blocked agent raises the same badges as a terminal waiting on a reply, with Sessions
-closed, and answering it clears them without a poll. That closes the loop ADR-046 opened, since
+closed, and answering it clears them without a poll. That closes the loop ADR-946 opened, since
 a projected inventory nobody is looking at cannot raise anything by itself.
 
 Attention now has two clearing rules where it had one, which is a real cost in explainability.
@@ -148,4 +148,4 @@ appears that reports a blocked condition only by inference, which this record do
   to answer a question that may already be answered, and the model claims knowledge it lost.
 - Exposing lifecycle or destructive verbs beside the answer control, since the user is already
   there. Enumerating an inventory and controlling its members are different authorities
-  (ADR-046), and a misfire here stops someone else's agent.
+  (ADR-946), and a misfire here stops someone else's agent.

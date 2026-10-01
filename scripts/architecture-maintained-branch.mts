@@ -2,7 +2,7 @@ import process from 'node:process'
 import { fullCommit, git, requireAncestor } from './architecture-inventory.mts'
 import type { ArchitectureContext } from './architecture-authorization.mts'
 
-// ADR-062: a maintainer-approved local policy baseline, never GitHub PR authority.
+// ADR-962: a maintainer-approved local policy baseline, never GitHub PR authority.
 const MAINTAINED_BASE = '912cc42e1c41f431bc0d4c8a78cfaf0ca7c6c138'
 const MAINTAINED_BRANCH = 'feat/beads-panel'
 

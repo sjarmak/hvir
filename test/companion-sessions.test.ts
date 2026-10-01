@@ -291,7 +291,7 @@ describe('CompanionSessionsService', () => {
     service.dispose()
   })
 
-  it('carries whether the desktop is Away and republishes when focus changes (ADR-049)', () => {
+  it('carries whether the desktop is Away and republishes when focus changes (ADR-949)', () => {
     const world = companionWorld()
     const service = new CompanionSessionsService({
       ...world.ports,
@@ -783,7 +783,7 @@ describe('CompanionSessionsService mirrors', () => {
     }
   })
 
-  it('every refusal a viewport meets ends the mirror the same way (ADR-058)', () => {
+  it('every refusal a viewport meets ends the mirror the same way (ADR-958)', () => {
     for (const refusal of [
       'ended',
       'instance-changed',
@@ -825,7 +825,7 @@ describe('CompanionSessionsService mirrors', () => {
   it('read-back navigation passes the owner permission, which is the gate it keeps', () => {
     const { world, service, page } = mirrorWorld()
     service.select(page.pageId, LOCAL)
-    // The per-mirror arm is the page's own gate (ADR-055); this one is the
+    // The per-mirror arm is the page's own gate (ADR-955); this one is the
     // desktop's setting, and navigation is refused by it exactly as typing is.
     expect(() => service.input(page.pageId, LOCAL, '\x1b[5~', 'navigation')).toThrow(
       CompanionTypingDisallowedError,

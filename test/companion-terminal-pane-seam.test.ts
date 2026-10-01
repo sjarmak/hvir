@@ -2,7 +2,7 @@
 
 /**
  * The phone page renders its mirror through a port shaped like the desktop's
- * engine-neutral `TerminalPane` seam (ADR-003, ADR-050). The page tree may not
+ * engine-neutral `TerminalPane` seam (ADR-003, ADR-950). The page tree may not
  * import the desktop renderer, so the conformance is pinned here, outside the
  * page tree, and enforced by `npm run typecheck`: the companion pane is
  * assignable to the members of `TerminalPane` it mirrors.
@@ -20,7 +20,7 @@ import type { TerminalPane } from '../src/renderer/src/terminal/terminal-pane'
  * viewport subscription stay out of the mirrored subset on purpose: the desktop pane owns its gesture
  * inside its own engine adapter, and it has a scrollbar where the phone has a
  * control that returns to the live edge, so there is no counterpart to narrow
- * against (ADR-053). They are stubbed inert here rather than recorded, since
+ * against (ADR-953). They are stubbed inert here rather than recorded, since
  * this test's subject is the narrowed subset and never the verbs beside it.
  */
 type MirroredPane = Pick<TerminalPane, 'mount' | 'write' | 'resize' | 'dispose'>

@@ -10,7 +10,7 @@ import {
 import type { HostPath } from '../../shared/host-path'
 
 /**
- * Deterministic packaging of a snapshot for the agent (ADR-063): the brief lists what the
+ * Deterministic packaging of a snapshot for the agent (ADR-963): the brief lists what the
  * snapshot measured, the prompt points at the brief. Judgments belong to the agent.
  */
 export interface ArchitectureBriefInput {

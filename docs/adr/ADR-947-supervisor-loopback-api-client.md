@@ -1,10 +1,10 @@
-# ADR-047: Foreign supervisor loopback API as a bounded read-and-answer client
+# ADR-947: Foreign supervisor loopback API as a bounded read-and-answer client
 
 > Lifecycle: Active
 
 ## Context
 
-Projecting external agent sessions (ADR-046) needs a transport. The obvious one is the CLI
+Projecting external agent sessions (ADR-946) needs a transport. The obvious one is the CLI
 hvir already runs on these hosts, and it is the wrong one: its session log output is
 human-formatted text, and it reads one provider's on-disk conversation directory, so sessions
 from other providers produce nothing and nothing it does produce is structured. A view built
@@ -42,7 +42,7 @@ validation — stays in main behind a narrow typed port, per ADR-001 and ADR-014
 
 ### A deliberately narrow verb surface
 
-The client exposes only the operations ADR-046 admits: health, city enumeration, session
+The client exposes only the operations ADR-946 admits: health, city enumeration, session
 enumeration, session transcript read, session output stream, host event stream, the pending
 interaction a session is blocked on, answering that interaction, and sending a message. It
 exposes no method for any other supervisor verb.
@@ -87,7 +87,7 @@ reason: no supervisor listening, host disconnected, no city at this path, sessio
 schema rejected, transport lost. The client does not throw into a view, does not retry a
 connection in a loop, and does not hold a channel open for a host that is not answering. A
 disconnected host yields unavailable and releases its resources; it never triggers a connect.
-The reason code is part of the contract because ADR-046 requires the UI to distinguish a
+The reason code is part of the contract because ADR-946 requires the UI to distinguish a
 stopped daemon from stopped agents, which is impossible if the failure arrives as a bare
 absence.
 
@@ -97,7 +97,7 @@ Every stream is created by a named owner with an abort signal and is released wi
 Aborting closes the underlying channel; a released stream holds no transport capacity. The
 SSH tunnel role's pooled capacity is bounded and shared, and the demands this feature creates —
 a small fixed number of long-lived streams per host — fit within it with room to spare, which
-is what makes the per-selection demand model in ADR-046 affordable rather than merely correct.
+is what makes the per-selection demand model in ADR-946 affordable rather than merely correct.
 Streams support resumption from a server-provided cursor, so a transport loss is reported and
 explicitly resumed rather than silently restarted from the head.
 
@@ -142,7 +142,7 @@ provider-neutral structured data, and the raw provider-native branch is simply n
 
 Revocation differs in kind. A launch-scoped hook stays active for the life of the session, so
 hiding a view could not stop the work it caused. Here every stream is an owned channel through
-`ProjectHost`; closing it ends the observation, which is what lets ADR-046 promise that hidden
+`ProjectHost`; closing it ends the observation, which is what lets ADR-946 promise that hidden
 Sessions owns nothing.
 
 Host parity differs in kind. Both rejected sources needed a remote executable or event sink
@@ -204,13 +204,13 @@ cost; or if it offers per-request idempotency, which would make bounded retry sa
 - Hand-written types tracking the API by inspection. Drift becomes a runtime surprise in a
   view rather than a typecheck failure, on a pre-1.0 contract where drift is expected.
 - Throwing on unreachability. A view cannot distinguish a dead daemon from dead agents from an
-  exception, which is the exact confusion ADR-046 requires the UI to avoid.
+  exception, which is the exact confusion ADR-946 requires the UI to avoid.
 - Retrying a failed answer or message automatically. The server checks its anti-forgery header
   for presence only and deduplicates nothing, so a retry risks a duplicate external effect on
   someone else's agent.
 - One persistent connection per projected session, or a connection opened to render the list.
   Cost scales with inventory rather than attention, and it contradicts the demand lease
-  ADR-046 depends on.
+  ADR-946 depends on.
 - A hvir-owned daemon, or a remote helper on SSH hosts, to normalize supervisor access. ADR-010
   rejects a remote server, ADR-006 rejects a session daemon, and the existing loopback
   forwarding makes both unnecessary.

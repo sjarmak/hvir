@@ -1,16 +1,16 @@
-# ADR-050: The Companion mirrors a live hvir terminal and carries its user's keystrokes
+# ADR-950: The Companion mirrors a live hvir terminal and carries its user's keystrokes
 
 > Lifecycle: Partially superseded
-> Supersedes: [ADR-049](ADR-049-companion-observer-and-away-push.md) | partial | The exclusion of a terminal screen and terminal input from the Companion, for live hvir-owned terminals under a mirror lease.
-> Superseded by: [ADR-051](ADR-051-terminal-notification-prompt-attention.md) | partial | No phone action clearing attention, for a prompt entry on the mirrored terminal.
-> Superseded by: [ADR-052](ADR-052-companion-mirror-holds-pty-size-while-away.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
-> Superseded by: [ADR-054](ADR-054-sticky-terminal-modes-precede-the-replayed-tail.md) | partial | Main not interpreting the bytes it forwards, for a bounded scan of sticky DEC private modes emitted ahead of the replayed tail.
-> Superseded by: [ADR-055](ADR-055-read-back-navigation-is-not-typing.md) | partial | The per-mirror arm gating every byte and mirror input being recorded as terminal input, for the page keys a read-back gesture emits to a program that owns its history.
-> Superseded by: [ADR-058](ADR-058-the-watching-phone-owns-the-grid.md) | partial | A mirror never resizing the PTY, for as long as a Companion page is watching that PTY.
+> Supersedes: [ADR-949](ADR-949-companion-observer-and-away-push.md) | partial | The exclusion of a terminal screen and terminal input from the Companion, for live hvir-owned terminals under a mirror lease.
+> Superseded by: [ADR-951](ADR-951-terminal-notification-prompt-attention.md) | partial | No phone action clearing attention, for a prompt entry on the mirrored terminal.
+> Superseded by: [ADR-952](ADR-952-companion-mirror-holds-pty-size-while-away.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
+> Superseded by: [ADR-954](ADR-954-sticky-terminal-modes-precede-the-replayed-tail.md) | partial | Main not interpreting the bytes it forwards, for a bounded scan of sticky DEC private modes emitted ahead of the replayed tail.
+> Superseded by: [ADR-955](ADR-955-read-back-navigation-is-not-typing.md) | partial | The per-mirror arm gating every byte and mirror input being recorded as terminal input, for the page keys a read-back gesture emits to a program that owns its history.
+> Superseded by: [ADR-958](ADR-958-the-watching-phone-owns-the-grid.md) | partial | A mirror never resizing the PTY, for as long as a Companion page is watching that PTY.
 
 ## Context
 
-ADR-049 made the Companion an observer. It lists every session, and for an external session it
+ADR-949 made the Companion an observer. It lists every session, and for an external session it
 reads the transcript, answers the pending interaction, and sends a message through the
 supervisor API that owns that session. For a terminal hvir launched itself it shows the row and
 nothing more, and it names carrying terminal input from a phone as a separate decision.
@@ -30,8 +30,8 @@ today, admitted through a door gated on the exact renderer owner and generation.
 through the same supervisor under the same gate. The Sessions projection already identifies a
 live row by its immutable PTY instance. ADR-017, ADR-026, and ADR-032 forbid hvir composing text
 into a PTY on ambient inference and bind every admitted write to an exact PTY instance and
-revision. ADR-009 keeps terminal focus as the only clearing rule; ADR-049 keeps Ready and bell
-classification in the renderer; ADR-046 keeps every handle that crosses a projection opaque.
+revision. ADR-009 keeps terminal focus as the only clearing rule; ADR-949 keeps Ready and bell
+classification in the renderer; ADR-946 keeps every handle that crosses a projection opaque.
 
 ## Decision
 
@@ -84,7 +84,7 @@ the desktop when its terminal is unfocused: Working output follows the submissio
 Exactly the rows the desktop offers Interact for: live lifecycle, connected host, and a live
 PTY. That covers a shell running Claude Code or Codex, a `gc session attach` terminal, and a
 terminal on an SSH host alike, because the supervisor sees their bytes the same way. An external
-row without an hvir terminal keeps the ADR-049 transcript path. A row that has both offers both.
+row without an hvir terminal keeps the ADR-949 transcript path. A row that has both offers both.
 
 ### Bounds and ownership
 
@@ -110,7 +110,7 @@ scales it. Input over request bodies adds latency a socket would not; that is an
 choice the decision does not fix, and a socket may replace it later.
 
 Away-time correctness for a prompt submitted from the phone depends on the input notice reaching
-a hidden renderer on time, exactly as ADR-049's Ready detection does. That must be verified under
+a hidden renderer on time, exactly as ADR-949's Ready detection does. That must be verified under
 background throttling rather than assumed.
 
 Revisit this record if hvir should mirror a PTY that has no renderer document at all, serve one

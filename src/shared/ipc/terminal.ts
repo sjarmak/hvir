@@ -257,14 +257,14 @@ export const terminalIpc = {
       readonly identityDiverged?: true
     }>(),
     /**
-     * Bytes a Companion mirror wrote to this renderer's PTY (ADR-050). The
+     * Bytes a Companion mirror wrote to this renderer's PTY (ADR-950). The
      * renderer records them as terminal input so ADR-019 arming stays there;
      * it writes nothing back, the bytes already reached the PTY.
      */
     'pty:mirror-input': payload<{ readonly id: string; readonly data: string }>(),
     /**
      * A Companion page watching this renderer's PTY holds it at the phone's
-     * grid, or let it go (ADR-058). The renderer presents a held size without
+     * grid, or let it go (ADR-958). The renderer presents a held size without
      * fitting, whatever its own window is doing; on reclaim its fit resumes and
      * re-asserts the pane's own size through pty:resize.
      */

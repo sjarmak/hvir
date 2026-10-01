@@ -153,7 +153,7 @@ describe('createPtyMirrorLease', () => {
     expect(onInput).not.toHaveBeenCalled()
   })
 
-  it('read-back navigation writes through the entry and fans no input out (ADR-055)', () => {
+  it('read-back navigation writes through the entry and fans no input out (ADR-955)', () => {
     const write = vi.fn<(data: string) => void>()
     const { lease, onInput } = world(() => view({ write }))
     lease.navigate('\x1b[5~')
@@ -175,7 +175,7 @@ describe('createPtyMirrorLease', () => {
     expect(write).not.toHaveBeenCalled()
   })
 
-  it('a lease carries no resize verb: a mirror reads the PTY at the size the owner set (ADR-050)', () => {
+  it('a lease carries no resize verb: a mirror reads the PTY at the size the owner set (ADR-950)', () => {
     const { lease } = world(() => view())
     expect('resize' in lease).toBe(false)
   })

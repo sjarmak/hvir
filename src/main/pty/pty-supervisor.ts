@@ -58,7 +58,7 @@ interface Entry {
   }
   /** The last size applied to the PTY; replaced, never mutated. */
   geometry: PtyGeometry
-  /** Who holds that size (ADR-058); `mirror` for exactly as long as a page's hold lasts. */
+  /** Who holds that size (ADR-958); `mirror` for exactly as long as a page's hold lasts. */
   geometrySource: PtyGeometrySource
   /** The lease holding the size, so only that holder's release gives it back. */
   geometryHolder?: object
@@ -380,7 +380,7 @@ export class PtySupervisor {
     return detach
   }
 
-  /** A second reader bound to one exact PTY instance, never a renderer owner (ADR-050). */
+  /** A second reader bound to one exact PTY instance, never a renderer owner (ADR-950). */
   attachMirror(
     id: string,
     instanceId: string,
@@ -408,7 +408,7 @@ export class PtySupervisor {
     )
   }
 
-  /** Subscribe to a phone holding a PTY's size, or giving it back (ADR-058). */
+  /** Subscribe to a phone holding a PTY's size, or giving it back (ADR-958). */
   onMirrorGeometry(cb: (event: PtyMirrorGeometryEvent) => void): Disposer {
     this.mirrorGeometryListeners.add(cb)
     return () => {
@@ -534,7 +534,7 @@ export class PtySupervisor {
   ): void {
     const entry = this.requireOwned(id, ownerId, ownerGeneration)
     entry.rendererGeometry = { cols, rows }
-    // A phone is watching and holds the size (ADR-058); its grid is what the PTY keeps
+    // A phone is watching and holds the size (ADR-958); its grid is what the PTY keeps
     // until that mirror ends, and this fit is what it goes back to then.
     if (entry.geometrySource === 'mirror') return
     this.applyGeometry(entry, entry.rendererGeometry, 'renderer')
@@ -766,7 +766,7 @@ export class PtySupervisor {
 
   /**
    * The phone's door beside the renderer's `resize`, open for as long as its mirror lives
-   * (ADR-058). No focus state is consulted: the page that is watching decides the grid.
+   * (ADR-958). No focus state is consulted: the page that is watching decides the grid.
    */
   private holdGeometryForMirror(
     id: string,

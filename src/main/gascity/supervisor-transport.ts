@@ -1,7 +1,7 @@
 /**
  * One HTTP exchange over a channel the host opened.
  *
- * ADR-047: hvir never dials a supervisor itself. It asks `ProjectHost` for a bounded
+ * ADR-947: hvir never dials a supervisor itself. It asks `ProjectHost` for a bounded
  * stream to a declared loopback endpoint and speaks HTTP over it, so a local
  * supervisor and one behind an SSH tunnel reach the same code with the same policy.
  * Every path here ends by destroying the channel it was given; a supervisor that

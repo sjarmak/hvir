@@ -90,7 +90,7 @@ export function ownGasCitySessionsSource(
  * reading it.
  *
  * Only a host hvir is already connected to: a session hvir did not launch must
- * never be the reason it dials out (ADR-046).
+ * never be the reason it dials out (ADR-946).
  */
 export function ownGasCitySupervisorAccess(hosts: {
   connectedHosts(): readonly ProjectHost[]
@@ -109,7 +109,7 @@ export function ownGasCitySupervisorAccess(hosts: {
  * The host set is every host with a registered project open, paired with the
  * city root already known for one of its roots when a read has resolved one.
  * The streams are not scoped to any view: a hidden or closed Sessions list
- * changes nothing about them (ADR-048).
+ * changes nothing about them (ADR-948).
  */
 export function ownGasCityEventStreams(
   access: SupervisorAccess,
@@ -155,7 +155,7 @@ export function ownGasCityEventStreams(
  * which is what makes a pending interaction land in the same workspace the
  * projected row does. Like the streams, it follows open projects rather than a
  * view: with Sessions closed a blocked worker still raises the project tab and
- * the nav badge (ADR-048).
+ * the nav badge (ADR-948).
  */
 export function ownGasCityAttention(
   access: SupervisorAccess,
@@ -205,7 +205,7 @@ export interface GasCityRuntime {
  * supervisor access, the per-host event streams and the attention rollup
  * over them, disposed in reverse. The streams and the rollup follow open
  * projects, not any view: a blocked worker raises attention with the
- * Sessions list closed (ADR-048).
+ * Sessions list closed (ADR-948).
  */
 export function ownGasCityRuntime(
   runtime: Pick<WorkbenchRuntime, 'own'>,

@@ -5,7 +5,7 @@
  * transcript: ordered, capped, control bytes already stripped, and addressed by
  * an ordinal this projection minted. No foreign session, message, or
  * conversation identifier appears here, because none of them may cross the
- * Sessions boundary (ADR-046); main holds them behind the row's handle.
+ * Sessions boundary (ADR-946); main holds them behind the row's handle.
  */
 import type { ProjectState } from './workspace-types'
 import type {
@@ -79,7 +79,7 @@ export interface SessionsTranscriptTurn {
 
 /**
  * Why there is no transcript, or no live stream. Every value renders on its
- * own: ADR-046 requires a stopped supervisor to be distinguishable from stopped
+ * own: ADR-946 requires a stopped supervisor to be distinguishable from stopped
  * agents, which a bare absence cannot do.
  */
 export const SESSIONS_TRANSCRIPT_UNAVAILABLE_REASONS = [
@@ -168,7 +168,7 @@ export interface SessionsTranscriptChange {
  *
  * The ordinal is the whole of the address. gc names its options with its own
  * words and its interactions with its own request identifier; neither crosses
- * this boundary (ADR-046), so main holds the mapping and the renderer answers
+ * this boundary (ADR-946), so main holds the mapping and the renderer answers
  * with the position it rendered.
  */
 export interface SessionsTranscriptPendingOption {
@@ -209,7 +209,7 @@ export interface SessionsTranscriptSubmitRequest extends SessionsDemandRequest {
 /**
  * Why a mutation did not happen. The transcript vocabulary plus what only a
  * mutation can fail on. A refused mutation is never retried behind the caller
- * (ADR-047): the reason is reported and the pane decides.
+ * (ADR-947): the reason is reported and the pane decides.
  */
 export const SESSIONS_MUTATION_UNAVAILABLE_REASONS = [
   ...SESSIONS_TRANSCRIPT_UNAVAILABLE_REASONS,

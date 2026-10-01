@@ -1,9 +1,9 @@
 /**
  * Tickets that stand in for a foreign session identifier.
  *
- * Sessions may hand the renderer no foreign identifier (ADR-046), and a launch
+ * Sessions may hand the renderer no foreign identifier (ADR-946), and a launch
  * still has to record exactly which session it attached to (the join in
- * ADR-046 is recorded by the surface that performs the attach). A ticket closes
+ * ADR-946 is recorded by the surface that performs the attach). A ticket closes
  * that gap: main mints an opaque value for the row the renderer asked to
  * attach, the renderer carries it into `pty:start`, and main redeems it against
  * the identifier it never sent.

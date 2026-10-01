@@ -1,5 +1,5 @@
 /**
- * ghostty-web behind the Companion's terminal port (ADR-050). This is the one
+ * ghostty-web behind the Companion's terminal port (ADR-950). This is the one
  * file in the page tree that knows the emulator: it loads the WebAssembly
  * module from the Companion's own asset bundle once per document, builds a
  * terminal at the desktop's geometry with no fit controller, and never
@@ -10,12 +10,12 @@
  * renderer's to send, so they are dropped here rather than sent twice.
  *
  * One gesture over the grid follows the desktop pane's wheel policy, a wheel
- * notch and a finger drag alike (ADR-053): a full-screen program receives page
+ * notch and a finger drag alike (ADR-953): a full-screen program receives page
  * keys, a program tracking the mouse receives SGR reports, and anything the
  * policy leaves alone moves the emulator's own viewport, which is the mirror's
  * whole read-back. The viewport keeps its place while output arrives. The page
  * keys are read-back navigation and leave a disarmed mirror on their own event
- * (ADR-055), and a gesture event's reports leave it as one string in the order
+ * (ADR-955), and a gesture event's reports leave it as one string in the order
  * the policy produced them, so a finger's travel reaches the program as one
  * ordered write rather than a race of requests; every other byte a gesture
  * produces is user input and passes the same gate as a key, so a disarmed
@@ -187,7 +187,7 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
   }
 
   /**
-   * The person's size (ADR-059), read live by the emulator, which remeasures
+   * The person's size (ADR-959), read live by the emulator, which remeasures
    * its cell and redraws the grid it already has at the new box. The page asks
    * for the grid that new box earns; nothing here picks one.
    */
@@ -308,7 +308,7 @@ class GhosttyCompanionPane implements CompanionTerminalPane {
   }
 
   /**
-   * Read-back navigation (ADR-055, widened by ADR-056): the page keys a program
+   * Read-back navigation (ADR-955, widened by ADR-956): the page keys a program
    * that owns its history receives and the wheel reports a program tracking the
    * mouse receives both leave a disarmed mirror, because the arm exists to stop
    * an unattended phone typing and a finger on the grid is neither. The

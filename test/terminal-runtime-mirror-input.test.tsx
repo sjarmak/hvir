@@ -138,7 +138,7 @@ function stubHvir(): {
   return { send, invoke, emit: (channel, payload) => handlers.get(channel)?.(payload) }
 }
 
-describe('TerminalRuntime mirror input (ADR-050)', () => {
+describe('TerminalRuntime mirror input (ADR-950)', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     paneFactory.mockReset()
@@ -168,7 +168,7 @@ describe('TerminalRuntime mirror input (ADR-050)', () => {
   })
 })
 
-describe('TerminalRuntime notification (ADR-051)', () => {
+describe('TerminalRuntime notification (ADR-951)', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     paneFactory.mockReset()

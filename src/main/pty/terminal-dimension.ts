@@ -1,7 +1,7 @@
 /**
  * One terminal dimension as the PTY accepts it: a finite measurement floored into 2..1000,
  * anything else the 80-cell default. Both doors that size a PTY, the renderer's IPC handler
- * and a watching page's viewport (ADR-058), clamp with this before the size reaches the
+ * and a watching page's viewport (ADR-958), clamp with this before the size reaches the
  * process.
  */
 export function terminalDimension(value: number): number {

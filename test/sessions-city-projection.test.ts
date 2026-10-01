@@ -315,7 +315,7 @@ describe('A Gas City session waiting on a person', () => {
     const quiet = row(source, 'mem-worker-2')
 
     // Not "no attention": gc declared nothing about this session, and an
-    // absent declaration is not a declaration of absence (ADR-048).
+    // absent declaration is not a declaration of absence (ADR-948).
     expect(quiet.attention).toBeUndefined()
     expect(quiet.telemetry.turn).toEqual({ status: 'unsupported' })
   })

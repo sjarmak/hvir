@@ -3,7 +3,7 @@
  *
  * Always subscribed: the facts behind it follow open projects rather than a
  * view, so the nav can show a blocked agent without the Sessions list ever
- * having been opened (ADR-048). A snapshot that fails to validate is ignored
+ * having been opened (ADR-948). A snapshot that fails to validate is ignored
  * rather than rendered, and a failed read leaves the last snapshot in place.
  */
 import { useEffect, useRef, useState } from 'react'

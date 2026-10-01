@@ -1,5 +1,5 @@
 /**
- * What the Companion sees (ADR-049, ADR-050).
+ * What the Companion sees (ADR-949, ADR-950).
  *
  * A Companion page is an away-time observer of the Sessions projection: it
  * reads rows, answers the interaction a row is waiting on, sends a row a
@@ -59,14 +59,14 @@ export const MAX_COMPANION_TERMINAL_TAIL_CHARS = 256 * 1024
  * The sticky-mode preamble a mirror opens with: the width of the scanner's full
  * emission, stated here as the wire's own bound and pinned against
  * `STICKY_MODE_PREAMBLE_MAX_CHARS` by contract test, the way the tail bound is
- * pinned against the supervisor's (ADR-054). It grew with the mouse tracking
- * family (ADR-056), and a page built against the old bound refuses an opened
+ * pinned against the supervisor's (ADR-954). It grew with the mouse tracking
+ * family (ADR-956), and a page built against the old bound refuses an opened
  * event that carries the new one rather than opening the mirror imperfectly.
  */
 export const MAX_COMPANION_TERMINAL_PREAMBLE_CHARS = 54
 /** One input request carries at most this many characters of the user's bytes. */
 export const MAX_COMPANION_INPUT_CHARS = 4096
-/** A viewport names a grid within the PTY's own dimension bounds (ADR-058). */
+/** A viewport names a grid within the PTY's own dimension bounds (ADR-958). */
 export const MIN_COMPANION_VIEWPORT_DIMENSION = 2
 export const MAX_COMPANION_VIEWPORT_DIMENSION = 1000
 
@@ -92,7 +92,7 @@ export interface CompanionRow {
    * Companion, and the Companion does not infer.
    */
   readonly attention: SessionsFact<SessionsAttentionValue>
-  /** The prompt's message, bounded; present only when the set carried one (ADR-051). */
+  /** The prompt's message, bounded; present only when the set carried one (ADR-951). */
   readonly promptBody?: string
   /** Whether the attention above is current or the last thing hvir saw. */
   readonly freshness: ActionableFreshness
@@ -113,7 +113,7 @@ export interface CompanionSnapshot {
   readonly revision: number
   /** The observation lease this page holds. */
   readonly demandGeneration: number
-  /** No hvir window is focused (ADR-049): the Push signal, as the page sees it. */
+  /** No hvir window is focused (ADR-949): the Push signal, as the page sees it. */
   readonly away: boolean
   /** Ordered by {@link compareCompanionRows}. */
   readonly rows: readonly CompanionRow[]
@@ -126,7 +126,7 @@ export type CompanionClosedReason = 'revoked' | 'shutdown' | 'lease-lost'
 export type CompanionMirrorEndReason =
   'exited' | 'released' | 'reselected' | 'page-closed' | CompanionClosedReason | 'overrun'
 
-/** One page's mirror of a live terminal (ADR-050); every variant names its row. */
+/** One page's mirror of a live terminal (ADR-950); every variant names its row. */
 export type CompanionTerminalEvent =
   | {
       readonly type: 'opened'
@@ -135,7 +135,7 @@ export type CompanionTerminalEvent =
       readonly rows: number
       /**
        * The sticky terminal modes this tail no longer carries, as the sets that
-       * reach them (ADR-054). A page writes it before the tail and never inside
+       * reach them (ADR-954). A page writes it before the tail and never inside
        * it: the tail saturates at its own bound and a prefix would push it past.
        * Absent when the tail still carries the transitions itself, which is every
        * ordinary shell, and which is how a page built before this field existed
@@ -172,18 +172,18 @@ export type CompanionEvent =
 export interface CompanionInputRequest {
   readonly data: string
   /**
-   * The bytes are read-back navigation rather than typing (ADR-055): the
+   * The bytes are read-back navigation rather than typing (ADR-955): the
    * owner's permission still gates them, the per-mirror arm does not, and they
    * are not recorded as terminal input. The claim is bounded here rather than
    * trusted: it is admitted only for the closed set the shared wheel policy
-   * emits for a read-back gesture, the page keys of ADR-055 and the wheel
-   * reports of ADR-056.
+   * emits for a read-back gesture, the page keys of ADR-955 and the wheel
+   * reports of ADR-956.
    */
   readonly navigation?: true
 }
 
 /**
- * The phone's own grid for the terminal it is watching (ADR-058). The page
+ * The phone's own grid for the terminal it is watching (ADR-958). The page
  * sends it while its mirror is open, whatever the desktop is doing; the PTY
  * takes it for as long as that mirror lasts.
  */
@@ -490,7 +490,7 @@ function isTurn(value: unknown): value is SessionsTurnFact {
   )
 }
 
-/** Only a row whose attention is an available prompt carries the message (ADR-051). */
+/** Only a row whose attention is an available prompt carries the message (ADR-951). */
 function isPromptBodyFor(
   promptBody: unknown,
   attention: SessionsFact<SessionsAttentionValue>,

@@ -1,14 +1,14 @@
-# ADR-055: Read-back navigation reaches a mirrored program without being typing
+# ADR-955: Read-back navigation reaches a mirrored program without being typing
 
 > Lifecycle: Partially superseded
-> Supersedes: [ADR-050](ADR-050-companion-live-terminal-mirror.md) | partial | The per-mirror arm gating every byte and mirror input being recorded as terminal input, for the page keys a read-back gesture emits to a program that owns its history.
-> Supersedes: [ADR-053](ADR-053-companion-mirror-reads-back-through-emulator-viewport.md) | partial | An alternate-screen session stating that it has no history to read back, for a program that keeps its own history and is paged through it.
-> Superseded by: [ADR-056](ADR-056-read-back-reaches-a-mouse-tracking-program.md) | partial | The exempt set closed at the two page keys, for the wheel reports the same policy sends a program that tracks the mouse.
-> Superseded by: [ADR-060](ADR-060-the-mirror-spends-its-height-on-the-session.md) | partial | The standing line the mirror showed for a program that keeps its own history, for the rows of the session that line stood on.
+> Supersedes: [ADR-950](ADR-950-companion-live-terminal-mirror.md) | partial | The per-mirror arm gating every byte and mirror input being recorded as terminal input, for the page keys a read-back gesture emits to a program that owns its history.
+> Supersedes: [ADR-953](ADR-953-companion-mirror-reads-back-through-emulator-viewport.md) | partial | An alternate-screen session stating that it has no history to read back, for a program that keeps its own history and is paged through it.
+> Superseded by: [ADR-956](ADR-956-read-back-reaches-a-mouse-tracking-program.md) | partial | The exempt set closed at the two page keys, for the wheel reports the same policy sends a program that tracks the mouse.
+> Superseded by: [ADR-960](ADR-960-the-mirror-spends-its-height-on-the-session.md) | partial | The standing line the mirror showed for a program that keeps its own history, for the rows of the session that line stood on.
 
 ## Context
 
-ADR-053 made the emulator's viewport the one read-back surface and drew a boundary at the
+ADR-953 made the emulator's viewport the one read-back surface and drew a boundary at the
 alternate screen: a full-screen program keeps no scrollback, so there is nothing for a viewport
 to move over, and the mirror says so rather than offering an affordance that moves nothing. The
 sentence it wrote for that case claims the session has no history.
@@ -21,7 +21,7 @@ scrollback, and the program may still have history. Read back on a phone against
 under tmux, the mirror states there is none, and a drag moves nothing.
 
 The mechanism for reading that history already exists and is already shared. The one wheel
-policy of ADR-053 routes a gesture over an alternate-screen program to `PageUp` and `PageDown`,
+policy of ADR-953 routes a gesture over an alternate-screen program to `PageUp` and `PageDown`,
 and that is how the desktop pane scrolls exactly this session: tmux receives the key, redraws
 with older content, and the mirror shows the redraw. It is why the phone's view moves when the
 desktop scrolls and never on its own. The policy already decides the phone's gesture the same
@@ -29,8 +29,8 @@ way. What stops the phone is what happens to the bytes after the policy decides.
 
 Two things stop them, and they are separate. The first is the arming gate: page keys from a
 gesture are input bytes, so a mirror whose per-mirror arm has lapsed drops them, which is
-ADR-050's rule that nothing is sent from a disarmed mirror. The second is quieter and worse.
-ADR-050 has main tell the owning renderer that mirror input reached its PTY and the renderer
+ADR-950's rule that nothing is sent from a disarmed mirror. The second is quieter and worse.
+ADR-950 has main tell the owning renderer that mirror input reached its PTY and the renderer
 record it as terminal input, which is what keeps ADR-019's arming in the renderer so a prompt
 submitted from the phone still produces the next Ready and the next Push. Send page keys through
 that path and reading back on a phone raises attention and pushes a notification about the
@@ -40,7 +40,7 @@ person's own scrolling.
 
 ### The owner's permission is the boundary for read-back navigation, and the per-mirror arm is not
 
-ADR-050 made typing from the phone an explicit act three times over: the setting must allow it,
+ADR-950 made typing from the phone an explicit act three times over: the setting must allow it,
 the default is off, and a mirror opens disabled and is armed per mirror. Read-back navigation
 keeps the first two and drops the third. It is sent when the owner's mirror input permission is
 on, including after the per-mirror arm has lapsed, and it is never sent when that permission is
@@ -74,19 +74,19 @@ admitting another one is a change to this record.
 The bytes are written to the PTY through the same lease and the same supervisor as any mirror
 write, and they are excluded from the input record that main sends the owning renderer. The
 renderer never sees them, so ADR-019's arming does not fire, no Ready follows, and no Push is
-sent. This is the distinction the mirror already draws for the phone's resize under ADR-052:
+sent. This is the distinction the mirror already draws for the phone's resize under ADR-952:
 resizing reaches the PTY and is not input, so the typing permission does not gate it. Read-back
 navigation reaches the PTY and is not input either, so it does not arm attention.
 
 The exclusion is a property of the write, decided where the gesture is known, and it travels
 with the write rather than being inferred later from the bytes. Main does not classify the
-content of what it forwards, which is the boundary ADR-054 narrowed once and this record does not
+content of what it forwards, which is the boundary ADR-954 narrowed once and this record does not
 narrow again: the phone says which kind of write this is, and the closed set above bounds what
 that claim can admit.
 
 ### A program that owns its history is read back by paging it, and the mirror says that
 
-ADR-053's decision that an alternate-screen session states it has no history is replaced. The
+ADR-953's decision that an alternate-screen session states it has no history is replaced. The
 emulator's viewport stays the read-back for a normal-screen session, unchanged. For a program on
 the alternate screen the mirror offers the same drag, sends the page keys, and says what is true:
 the program keeps its own history and a drag pages through it. It no longer claims there is none,
@@ -124,10 +124,10 @@ extension of this one.
   permission built to stop unattended typing, so the act a phone exists for carries the ceremony
   designed for the act it rarely performs, and the notice would have to teach arming before a
   person can read what already happened.
-- Giving the page its own scrollback for alternate-screen sessions: this is the surface ADR-053
+- Giving the page its own scrollback for alternate-screen sessions: this is the surface ADR-953
   removed, it cannot hold what the program never wrote to the emulator, and it would manufacture
   a history the session does not have rather than reach the one it does.
-- Keeping ADR-053's notice and telling the person to ask the program: the desktop does not ask,
+- Keeping ADR-953's notice and telling the person to ask the program: the desktop does not ask,
   it pages, and the mirror's own wheel policy already knows how.
 - Recording the page keys as terminal input and suppressing the resulting attention downstream:
   it puts a special case inside ADR-019's arming, where every other attention source would have

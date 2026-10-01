@@ -8,7 +8,7 @@ import type { ResolutionContext, ScanResolver } from './language-scanner'
 import type { ModuleImportOccurrence } from './module-facts'
 
 /**
- * Go resolution by module path (ADR-063): a Go module is a package directory. An import
+ * Go resolution by module path (ADR-963): a Go module is a package directory. An import
  * whose path falls under the module path of a captured go.mod names the directory at the
  * same relative path under that go.mod, and is internal when that directory holds Go files
  * of the same module. Every other import (the standard library, third-party modules, cgo's

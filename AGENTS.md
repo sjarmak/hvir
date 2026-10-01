@@ -97,7 +97,7 @@ report an environment blocker instead of spending CI minutes on a known-bad bran
 - **Session recovery:** exact provider-owned harness resume, no daemon (ADR-006/012)
 - **Workspaces:** project (registered) → worktrees (discovered) (ADR-008)
 - **Remote projects:** SSH via `ssh2` behind `ProjectHost`; no remote server (ADR-010), except
-  the loopback-only Companion listener inside the running app (ADR-049)
+  the loopback-only Companion listener inside the running app (ADR-949)
 - **Targets:** Linux (primary), modern macOS (primary). Windows only if incidental.
 
 ## Conventions

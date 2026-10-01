@@ -13,7 +13,7 @@ interface MirrorControlsProps {
 const RETURN_TO_LIVE = 'The session has moved on. Back to live.'
 
 /**
- * The mirror's controls. `MirrorControls` is the bar under it (ADR-050): the
+ * The mirror's controls. `MirrorControls` is the bar under it (ADR-950): the
  * arm control alone while disarmed; while armed, the keys a phone keyboard
  * lacks in one strip that scrolls sideways, and free text with Send on a second
  * row. An arming is bound to the live mirror, so `armed` already implies
@@ -56,7 +56,7 @@ export function MirrorControls({ live, arming, onInput }: MirrorControlsProps) {
 }
 
 /**
- * The way back to the newest output (ADR-053), rendered over the terminal area
+ * The way back to the newest output (ADR-953), rendered over the terminal area
  * only while the emulator's viewport sits behind it on a screen that keeps
  * scrollback for it to sit behind. A phone has no scrollbar
  * to read a position off and a scrollback bounded by bytes rather than rows, so

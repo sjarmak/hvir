@@ -1,5 +1,5 @@
 /**
- * Per-stage cost of one architecture scan (ADR-063: every scan records per-stage timings and
+ * Per-stage cost of one architecture scan (ADR-963: every scan records per-stage timings and
  * transfer sizes). Spans are ordered by start on one timeline whose origin is the scan start;
  * spans reported by the analysis worker are placed on it by wall-clock conversion.
  */

@@ -84,7 +84,7 @@ export interface ArchitectureReviewPorts {
   readonly imports?: ModuleImportsPort
   readonly explanationModel?: ArchitectureExplanationModelPort
   readonly explanationContext?: typeof readArchitectureExplanationContext
-  /** Worktree creation and brief writing for the agent handoff (ADR-063). */
+  /** Worktree creation and brief writing for the agent handoff (ADR-963). */
   readonly handoff?: {
     readonly worktrees: ArchitectureWorktreePort
     readonly liveBase?: typeof readArchitectureLiveBase

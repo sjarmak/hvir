@@ -1,5 +1,5 @@
 /**
- * The phone's fit (ADR-058): how many whole cells of the pane's fixed font the terminal
+ * The phone's fit (ADR-958): how many whole cells of the pane's fixed font the terminal
  * area holds, and when to tell the desktop that grid. A watching page owns the size of
  * what it watches, so the only condition is a live mirror over a mounted pane: one grid
  * once the mirror opens, and one more after the area settles following a change

@@ -61,7 +61,7 @@ continues to meet ADR-016's cost budgets.
 
 ## Ready detection while Away (2026-09-17)
 
-ADR-049 (Companion as away-time observer) makes away-time correctness depend on a hidden or
+ADR-949 (Companion as away-time observer) makes away-time correctness depend on a hidden or
 unfocused renderer still classifying Ready on time, and its Consequences require that this be
 verified under Chromium background throttling rather than assumed. The `attention-away-throttling`
 Electron smoke group (`src/main/smoke/attention-away-throttling.ts`) measures it: it launches one
@@ -104,7 +104,7 @@ timers) did not apply even after five minutes hidden.
 
 Decision: keep Electron's default `backgroundThrottling` (true) in
 `src/main/window/window-policy.ts`. Every measured state reached main within the 6000 ms budget,
-including the five-minute hidden case, so the hidden renderer classifies Ready on time and ADR-049's
+including the five-minute hidden case, so the hidden renderer classifies Ready on time and ADR-949's
 away-time channel can rely on it without spending the CPU that an unthrottled hidden renderer
 would cost. Revisit if `idleThresholdMs` is lowered below the 1 Hz alignment headroom, if the Ready
 timer becomes a chained or nested timer, or if a desktop measurement with an honored minimize

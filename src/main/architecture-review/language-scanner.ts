@@ -6,7 +6,7 @@ import type {
 import type { ModuleFacts, ModuleImportOccurrence } from './module-facts'
 
 /**
- * The language-agnostic scan contract (ADR-063): a scanner claims module files by path,
+ * The language-agnostic scan contract (ADR-963): a scanner claims module files by path,
  * turns one module's bytes into facts, and resolves those facts against one scan's files.
  * Parsing sees only the bytes, so its result is cacheable by blob; resolution sees the
  * whole file set of its language and runs on every scan.

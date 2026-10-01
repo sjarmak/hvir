@@ -28,7 +28,7 @@ export const COMPANION_TOKEN_NOT_STORED =
   'The push token was not stored: this system offers no encrypted secret storage. The sink URL was saved.'
 
 /**
- * The Settings-facing owner of the Companion configuration (ADR-049).
+ * The Settings-facing owner of the Companion configuration (ADR-949).
  *
  * It composes the store and the pairing into one view, tells every observer
  * when that view changes, and carries the listener status a later owner sets.
@@ -109,7 +109,7 @@ export class CompanionSettings implements CompanionSettingsPort {
     }
   }
 
-  /** The mirror input gate (ADR-050): the stored permission, read at every keystroke. */
+  /** The mirror input gate (ADR-950): the stored permission, read at every keystroke. */
   typingAllowed(): boolean {
     return this.store.config().mirrorInputAllowed
   }

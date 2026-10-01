@@ -1,6 +1,6 @@
 /**
  * The ports the Companion server consumes and the pairing admission policy
- * it applies before touching them (ADR-049). Credentials live behind
+ * it applies before touching them (ADR-949). Credentials live behind
  * CompanionAuthPort; the server never sees a hash or a stored code.
  */
 

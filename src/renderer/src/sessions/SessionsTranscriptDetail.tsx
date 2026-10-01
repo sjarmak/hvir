@@ -22,7 +22,7 @@ import type { SessionsTerminalDetailContext } from './sessions-terminal-detail-c
  * Two things can be written from here, and only two — the answer to an
  * interaction the session declared it is waiting on, and a message sent to it.
  * Everything else a person might do to a session, from a reset to a handoff,
- * stays with the view that owns the city (ADR-048). Attach is still the escape
+ * stays with the view that owns the city (ADR-948). Attach is still the escape
  * hatch for someone who wants a terminal of their own.
  */
 export function SessionsTranscriptDetail({

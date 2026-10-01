@@ -2,7 +2,7 @@
 
 /**
  * The Companion page mounted against the fake listener, for page tests: one
- * root per test, the desktop bridge trapped (ADR-049 module boundary), and
+ * root per test, the desktop bridge trapped (ADR-949 module boundary), and
  * the verbs a test drives by hand. `useCompanionPage()` registers the hooks;
  * the bindings below are live for the current test.
  */
@@ -40,7 +40,7 @@ export function useCompanionPage(): void {
     root = createRoot(host)
     server = new FakeCompanionServer()
     panes = fakePaneFactory()
-    // The page must never reach for the desktop bridge (ADR-049 module boundary).
+    // The page must never reach for the desktop bridge (ADR-949 module boundary).
     Object.defineProperty(window, 'hvir', {
       configurable: true,
       get: () => {

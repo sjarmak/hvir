@@ -1,5 +1,5 @@
 /**
- * What the Companion Away scenarios share (ADR-049, ADR-050, ADR-051): the
+ * What the Companion Away scenarios share (ADR-949, ADR-950, ADR-951): the
  * options the smoke runtime hands them, enabling and pairing the listener with
  * a recording Push sink, and the retained record that gives the measured
  * terminal its row and its Push title.

@@ -3,7 +3,7 @@
  *
  * Pure. gc addresses an interaction by its own request identifier and names its
  * answers with its own words; neither may cross the Sessions boundary
- * (ADR-046). So the record holds both, the projection publishes positions, and
+ * (ADR-946). So the record holds both, the projection publishes positions, and
  * an answer arrives as the position a person clicked. A prompt and its options
  * are server text for a person to read, and go through the same stripping every
  * other supervisor string does.

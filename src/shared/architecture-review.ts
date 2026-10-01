@@ -2,7 +2,7 @@ import type { HostPath } from './host-path'
 import type { ArchitectureLayout } from './architecture-layout'
 
 /**
- * The two ends of a snapshot (ADR-063). Either end may be any commit a ref names (branch,
+ * The two ends of a snapshot (ADR-963). Either end may be any commit a ref names (branch,
  * tag, HEAD~n, hash); only Current may be the live working tree.
  */
 export interface ArchitectureCaptureRequest {

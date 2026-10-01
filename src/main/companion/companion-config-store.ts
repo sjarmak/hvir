@@ -60,7 +60,7 @@ const DEFAULTS: CompanionStoredConfig = {
 }
 
 /**
- * `companion.json` under the application user data root (ADR-049).
+ * `companion.json` under the application user data root (ADR-949).
  *
  * Settings, the credential hash and the push sink live in one file; the push
  * token is stored only through the OS cipher and only when that cipher is

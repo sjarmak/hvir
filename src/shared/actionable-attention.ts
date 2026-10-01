@@ -1,7 +1,7 @@
 /**
  * What a window says is waiting on the person, on its way to main.
  *
- * ADR-049 puts one actionable set behind the OS badge, the Companion and Push.
+ * ADR-949 puts one actionable set behind the OS badge, the Companion and Push.
  * The renderer keeps its classification (a terminal is Ready or rang the bell)
  * and hands main the entries, not a count: main has to know which sessions are
  * waiting to dedupe them across windows and to let an away-time observer name
@@ -22,14 +22,14 @@ export const ACTIONABLE_ATTENTION_VERSION = 1
 export const MAX_ACTIONABLE_ENTRIES = MAX_SESSIONS_PROJECTION_ROWS
 
 /**
- * The one short line a prompt's message is bounded to (ADR-051), at every
+ * The one short line a prompt's message is bounded to (ADR-951), at every
  * boundary it crosses and in the Push line that carries it.
  */
 export const MAX_ACTIONABLE_BODY_CHARS = 120
 
 /**
  * Why a session wants a person: it finished a turn, it rang the bell, or it
- * notified with a message of its own (ADR-051).
+ * notified with a message of its own (ADR-951).
  */
 export type ActionableKind = 'ready' | 'bell' | 'prompt'
 
@@ -47,7 +47,7 @@ export function isActionableAttentionBody(value: unknown): value is string {
 /**
  * Whether the entry is a current claim or the last thing seen. A renderer's
  * own terminals are always fresh; staleness enters from an external authority
- * hvir has stopped watching (ADR-048).
+ * hvir has stopped watching (ADR-948).
  */
 export type ActionableFreshness = 'fresh' | 'stale'
 
@@ -57,7 +57,7 @@ export interface ActionableAttentionEntry {
   readonly freshness: ActionableFreshness
   /** Present exactly when the entry is stale. */
   readonly reason?: ExternalAttentionStaleReason
-  /** The notification's message; only a prompt carries one (ADR-051). */
+  /** The notification's message; only a prompt carries one (ADR-951). */
   readonly body?: string
 }
 
@@ -109,7 +109,7 @@ function isActionableAttentionEntry(value: unknown): value is ActionableAttentio
   if (value['body'] !== undefined) {
     if (value['kind'] !== 'prompt' || !isActionableAttentionBody(value['body'])) return false
   }
-  // Fresh entries carry no reason; a stale entry must say why (ADR-048).
+  // Fresh entries carry no reason; a stale entry must say why (ADR-948).
   if (value['freshness'] === 'fresh') return value['reason'] === undefined
   return value['freshness'] === 'stale' && isExternalAttentionStaleReason(value['reason'])
 }

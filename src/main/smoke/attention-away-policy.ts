@@ -1,6 +1,6 @@
 /**
  * What the Away Ready-detection smoke measures and how it judges the result
- * (ADR-049 Consequences: away-time correctness depends on a hidden renderer
+ * (ADR-949 Consequences: away-time correctness depends on a hidden renderer
  * still classifying Ready on time, verified under background throttling).
  */
 
@@ -16,7 +16,7 @@ export const AWAY_READY_SLACK_MS = 2_000
 /** The terminal stays silent this long after the window changes state, then bursts. */
 export const AWAY_DEFAULT_HOLD_MS = 1_000
 /**
- * A prompt has no quiet period (ADR-051): the notification is the signal, so
+ * A prompt has no quiet period (ADR-951): the notification is the signal, so
  * the whole allowance is for a throttled renderer and IPC to carry it to main.
  */
 export const AWAY_PROMPT_BUDGET_MS = 5_000
@@ -62,7 +62,7 @@ export function judgeAwayReadyMeasurement(
 /**
  * Revisions at which `key` entered the set while some window was focused.
  * Such an appearance would be push-worthy by timing but not by predicate, so
- * the scenario requires none (ADR-049: Push fires only while Away).
+ * the scenario requires none (ADR-949: Push fires only while Away).
  */
 export function awayAppearanceViolations(
   snapshots: readonly ActionableSnapshot[],

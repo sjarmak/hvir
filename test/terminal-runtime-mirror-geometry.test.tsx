@@ -177,7 +177,7 @@ async function startedRuntime() {
   return { heldGeometry, fireResize, runtime, ...hvir }
 }
 
-describe('TerminalRuntime mirror geometry (ADR-058)', () => {
+describe('TerminalRuntime mirror geometry (ADR-958)', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     paneFactory.mockReset()

@@ -4,10 +4,10 @@
  * Demand scoped like every other Sessions observation: one subscription per
  * renderer, for the single selected row, released on hide, navigation, renderer
  * rollover, or a change of selection. Sessions owns no stream at list altitude
- * (ADR-046), so nothing here opens until a row is selected and nothing survives
+ * (ADR-946), so nothing here opens until a row is selected and nothing survives
  * its release.
  *
- * A dropped socket is reported, not retried. ADR-047 makes resumption the
+ * A dropped socket is reported, not retried. ADR-947 makes resumption the
  * caller's decision, so a lost stream becomes a visible state the renderer
  * resumes from the server's own cursor; this port never reconnects behind the
  * pane's back.
@@ -71,7 +71,7 @@ export interface SessionsTranscriptPortOptions {
   readonly emit: (owner: SessionsDemandOwner, change: SessionsTranscriptChange) => void
   /**
    * Called once an interaction has been answered, so whoever raised attention
-   * for it can withdraw it immediately rather than at the next read (ADR-048).
+   * for it can withdraw it immediately rather than at the next read (ADR-948).
    */
   readonly onPendingAnswered?: (hostId: HostId, requestId: string) => void
 }
@@ -207,7 +207,7 @@ export class SessionsTranscriptPort {
    * Answers the interaction the session declared, with one of the options it
    * declared. Exact on both sides: the answer names the interaction it is
    * answering, and the option is the word gc itself published for that
-   * position. Never retried (ADR-047) — a failure is reported and the pane
+   * position. Never retried (ADR-947) — a failure is reported and the pane
    * decides what to do about it.
    */
   async respond(

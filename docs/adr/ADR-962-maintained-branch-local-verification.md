@@ -1,4 +1,4 @@
-# ADR-062: Maintained branch local verification
+# ADR-962: Maintained branch local verification
 
 > Lifecycle: Active
 > Supersedes: [ADR-040](ADR-040-complete-source-budgets-and-dependency-policy.md) | partial | Local architecture provenance on the Beads-governed feat/beads-panel branch; upstream delivery and all structural checks remain unchanged.

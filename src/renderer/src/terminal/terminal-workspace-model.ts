@@ -31,7 +31,7 @@ export interface TerminalAttachRequest {
   /**
    * The session this request attaches to, named in the source's own namespace,
    * or a ticket main will redeem for it when the requesting surface was never
-   * told the identifier (ADR-046). Present only when the surface could name the
+   * told the identifier (ADR-946). Present only when the surface could name the
    * session at all, which is what lets a terminal already showing it be
    * recognized after a reload; the key above is the same-lifetime fallback for
    * identities hvir cannot name.
@@ -61,7 +61,7 @@ export interface TerminalSession {
   readonly titlePinned?: true
   readonly status: string
   readonly attention?: TerminalAttention
-  /** The notification's message; present only while `attention` is `prompt` (ADR-051). */
+  /** The notification's message; present only while `attention` is `prompt` (ADR-951). */
   readonly promptBody?: string
   readonly telemetry?: HarnessTelemetry
   readonly harnessSessionId?: string
@@ -79,7 +79,7 @@ export interface TerminalSession {
    * The gc session this terminal attaches to, when hvir is performing the
    * attach and the requesting surface could name the session. Declared to main
    * once, at the launch that performs the attach, and recorded there so the row
-   * it joins survives a reload (ADR-046).
+   * it joins survives a reload (ADR-946).
    */
   readonly externalAttach?: ExternalSessionAttachRequest
   readonly architectureReview?: ArchitectureAgentLaunch

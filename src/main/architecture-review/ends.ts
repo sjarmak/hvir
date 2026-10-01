@@ -21,7 +21,7 @@ export interface EndsGit {
   defaultBranch(): Promise<string>
 }
 
-/** Only a Current end read from the working tree can change after capture (ADR-063). */
+/** Only a Current end read from the working tree can change after capture (ADR-963). */
 export function hasLiveCurrent(ends: Ends): boolean {
   return ends.current === undefined
 }

@@ -1,6 +1,6 @@
 /**
  * Puts the smoke window into and out of the away states the Away scenarios
- * measure (ADR-049, ADR-050), and clears a terminal's attention the way a
+ * measure (ADR-949, ADR-950), and clears a terminal's attention the way a
  * person does: by focusing it.
  */
 

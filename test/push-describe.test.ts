@@ -214,7 +214,7 @@ describe('push-describe', () => {
     expect(message?.kind).toBe('bell')
   })
 
-  it('carries a prompt entry body as the line (ADR-051)', async () => {
+  it('carries a prompt entry body as the line (ADR-951)', async () => {
     const { describe: describeEntry } = harness()
 
     const message = await describeEntry({
@@ -306,7 +306,7 @@ describe('push-describe', () => {
 
     const message = await describeEntry(externalEntry())
 
-    // The push line and a prompt body share one bound (ADR-051).
+    // The push line and a prompt body share one bound (ADR-951).
     expect(message?.line).toHaveLength(MAX_ACTIONABLE_BODY_CHARS)
     expect(message?.line).toBe('x'.repeat(MAX_ACTIONABLE_BODY_CHARS))
   })

@@ -1,11 +1,11 @@
-# ADR-059: The phone's text size is the person's
+# ADR-959: The phone's text size is the person's
 
 > Lifecycle: Active
-> Supersedes: [ADR-058](ADR-058-the-watching-phone-owns-the-grid.md) | partial | One fixed readable mirror font, for a size the person sets on the device.
+> Supersedes: [ADR-958](ADR-958-the-watching-phone-owns-the-grid.md) | partial | One fixed readable mirror font, for a size the person sets on the device.
 
 ## Context
 
-ADR-058 made the watching phone's own grid the PTY's size, derived from its area and one cell
+ADR-958 made the watching phone's own grid the PTY's size, derived from its area and one cell
 of a font fixed at fifteen pixels. On a real device that grid is about forty columns by thirty
 rows. The black band is gone and the view no longer changes under a desktop focus, but the
 session is still shown through a small window: forty columns wraps ordinary terminal output,
@@ -23,7 +23,7 @@ font at twenty-seven real pixels.
 
 The mirror draws at a size the person steps up and down from the phone itself, in whole pixels
 along a fixed ladder, and the choice is stored on that device. Nothing about the size travels to
-the desktop or to main: main learns only the grid, through the same `viewport` verb ADR-058
+the desktop or to main: main learns only the grid, through the same `viewport` verb ADR-958
 gave it, and cannot tell a phone that stepped its text from a phone that was rotated.
 
 The default is ten pixels rather than fifteen. A phone's width holds about sixty columns there,
@@ -35,7 +35,7 @@ away for eyes that want otherwise.
 The size changes the cell, and the cell is what the page divides its area by, so a step re-derives
 the grid and declares it exactly as a settled layout change does: the pane remeasures, the view
 rescales against the grid the PTY still has, and the fit asks once. The page draws the new grid
-only when a geometry frame says the PTY took it (ADR-058), so a hold the desktop refuses leaves
+only when a geometry frame says the PTY took it (ADR-958), so a hold the desktop refuses leaves
 smaller text over the scaled column and nothing else changes.
 
 ### The control sits on the mirror
@@ -49,7 +49,7 @@ reading is what it serves.
 
 A phone shows about sixty columns of a session by default and as much as its owner's eyes allow,
 and the session is held at that grid for as long as the page watches it. A desktop showing the
-same session is narrower while that lasts, which is ADR-058's trade and is unchanged here.
+same session is narrower while that lasts, which is ADR-958's trade and is unchanged here.
 
 The stored size is per device and per browser, so a second phone starts at the default, and a
 device that refuses storage keeps its choice only for the visit.
@@ -66,7 +66,7 @@ the two screens are read at different distances by different eyes.
   someone else's eyes, and unfixable from the device where it is wrong.
 - Put the size in Settings beside typing: a density is judged against the text it renders, and a
   screen away from that text is a screen that has to be walked back and forth.
-- Scale the drawn grid down instead of shrinking the font: that is what ADR-057 did, and it draws
+- Scale the drawn grid down instead of shrinking the font: that is what ADR-957 did, and it draws
   the desktop's shape rather than more of the session.
 - Pick a size from the device's pixel density: density does not say how far away a phone is held
   or how well its owner sees, and a wrong automatic choice is harder to overrule than a default.

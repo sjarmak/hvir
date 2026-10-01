@@ -3,7 +3,7 @@
  *
  * Three ports lease observation to a renderer or a companion page, and each
  * used to keep its own copy of the same rules: one lease per owner, keyed so a
- * companion never collides with a renderer (ADR-049); a second acquire at a
+ * companion never collides with a renderer (ADR-949); a second acquire at a
  * different generation refused rather than silently retargeted; a release that
  * names the generation it is releasing, so a stale release cannot take a live
  * lease; and a lease that stops being current the moment the map moves on or
@@ -104,7 +104,7 @@ export class SessionsDemandLeases<TLease extends SessionsDemandLease> {
 
 /**
  * One subscription to the source, opened with the first lease and closed with
- * the last. Lazy because a port with no lease observes nothing (ADR-046), and
+ * the last. Lazy because a port with no lease observes nothing (ADR-946), and
  * idempotent because every lease calls `start`.
  */
 export class SessionsSourceObservation {

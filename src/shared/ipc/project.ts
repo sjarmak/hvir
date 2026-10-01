@@ -51,7 +51,7 @@ export type DismissWorkspaceRequest = SwitchWorkspaceRequest
 
 export type UnfinishedHandoffsRequest = PruneProjectWorktreesRequest
 
-/** Removes one worktree an interrupted architecture handoff left behind (ADR-063). */
+/** Removes one worktree an interrupted architecture handoff left behind (ADR-963). */
 export type RemoveUnfinishedHandoffRequest = SwitchWorkspaceRequest
 
 export type AcknowledgeWorkspaceRequest = SwitchWorkspaceRequest

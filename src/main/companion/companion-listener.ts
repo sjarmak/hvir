@@ -1,5 +1,5 @@
 /**
- * Keeps the loopback listener where Settings says it should be (ADR-049):
+ * Keeps the loopback listener where Settings says it should be (ADR-949):
  * open while enabled on the saved port, closed otherwise, reopened when the
  * port changes. Every outcome lands in `settings.setStatus`, so the Settings
  * view shows the bound state and never a wish. A port that cannot be bound is

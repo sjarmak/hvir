@@ -43,7 +43,7 @@ export function nextTerminalAttention(
 /**
  * The snapshot after a signal. A prompt carries its latest message: a later
  * notification replaces the body, a lower signal leaves it, and nothing else
- * carries one (ADR-051).
+ * carries one (ADR-951).
  */
 export function terminalAttentionAfterSignal(
   current: TerminalAttentionSnapshot,
@@ -98,7 +98,7 @@ export function terminalAttentionBadgeText(attention: TerminalAttention): string
   return ATTENTION_LABELS[attention].toLowerCase()
 }
 
-/** What a surface reads out: a prompt is named with its message (ADR-051). */
+/** What a surface reads out: a prompt is named with its message (ADR-951). */
 export function terminalAttentionDescription(
   attention: TerminalAttention,
   promptBody: string | undefined,
@@ -117,7 +117,7 @@ export function terminalActionableAttentionCount(
 
 /**
  * The terminals waiting on the person, as the entries main aggregates across
- * windows (ADR-049). Order follows the sessions; a terminal this window shows
+ * windows (ADR-949). Order follows the sessions; a terminal this window shows
  * is always a fresh claim, so no entry here is stale.
  */
 export function terminalActionableEntries(

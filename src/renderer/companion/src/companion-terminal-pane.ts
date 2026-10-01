@@ -1,5 +1,5 @@
 /**
- * The phone page's terminal port (ADR-050): the members of the desktop's
+ * The phone page's terminal port (ADR-950): the members of the desktop's
  * engine-neutral `TerminalPane` seam a mirror needs, with the same names, so
  * the page owns its emulator through the same shape without importing the
  * desktop renderer. A conformance test outside the page tree pins the match.
@@ -7,12 +7,12 @@
  * A mirror pane follows the geometry main publishes and never resizes itself.
  * It draws the font size the page gives it and reports one cell's size, so the page can
  * derive the grid its area holds and hold the PTY there for as long as it is
- * watching (ADR-058); the emulator itself changes size only through `resize`.
+ * watching (ADR-958); the emulator itself changes size only through `resize`.
  * Input is off until the page enables it, and the bytes it emits are the
  * user's exact key bytes, uncomposed.
  *
  * Reading back is the emulator's own viewport and the page keeps no text of
- * its own (ADR-053), so the members this record adds past the ones the
+ * its own (ADR-953), so the members this record adds past the ones the
  * desktop's own seam has are a gesture the emulator decides, the screen it is
  * on, where that viewport moves to, and the way back to the live edge. Moving
  * the viewport never touches the desktop, and every question here is about
@@ -27,7 +27,7 @@ export interface CompanionTerminalPaneEvents {
   onData(cb: (data: string, source: 'user') => void): () => void
   /**
    * The page keys a read-back gesture sends a program that owns its history
-   * (ADR-055). Its own event rather than a source on `onData`: these bytes pass
+   * (ADR-955). Its own event rather than a source on `onData`: these bytes pass
    * different gates on the page and on the desktop alike, and `onData` is the
    * member narrowed against the desktop's own seam, where no such channel
    * exists. The pane emits a gesture's bytes on exactly one of the two.
@@ -66,7 +66,7 @@ export interface CompanionTerminalPane {
   scroll(event: TerminalWheelEvent): number
   /**
    * The alternate screen keeps no scrollback of its own, so the viewport has
-   * nothing to move over and a gesture pages the program instead (ADR-055).
+   * nothing to move over and a gesture pages the program instead (ADR-955).
    */
   isAlternateScreen(): boolean
   /**
@@ -78,7 +78,7 @@ export interface CompanionTerminalPane {
   /** Puts the viewport back on the newest output, which is the page's one tap. */
   returnToLive(): void
   /**
-   * The mirror's font in CSS pixels, which is the person's choice (ADR-059)
+   * The mirror's font in CSS pixels, which is the person's choice (ADR-959)
    * and the only thing that changes the cell. The page re-derives its grid
    * after every change, so the pane reports the new cell and leaves the grid
    * where `resize` last put it.

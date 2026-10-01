@@ -50,7 +50,7 @@ export type SessionsWorkspaceRuntimeId = string & {
 
 /**
  * Foreign authorities Sessions may project a session from. Declared here, not
- * discovered: ADR-046 enumerates the sources rather than letting a transport
+ * discovered: ADR-946 enumerates the sources rather than letting a transport
  * that happens to answer widen the view.
  */
 export type SessionsExternalSourceId = 'gas-city'
@@ -61,7 +61,7 @@ export type SessionsExternalSourceId = 'gas-city'
  * Structured on purpose. A consumer must be able to tell an external agent
  * session from an hvir terminal without reading a title, and projection code
  * branches on this and on declared capability rather than on a provider name
- * (ADR-046).
+ * (ADR-946).
  */
 export type SessionsOrigin =
   | { readonly kind: 'hvir-terminal' }
@@ -145,7 +145,7 @@ export interface SessionsContextFact {
 /**
  * Whether a row is asking for a person. `ready` is work that finished and has
  * not been looked at; `bell` is a terminal that rang; `prompt` is a terminal
- * whose program notified, with a message the row carries beside it (ADR-051).
+ * whose program notified, with a message the row carries beside it (ADR-951).
  */
 export type SessionsAttentionValue = 'none' | 'ready' | 'bell' | 'prompt'
 
@@ -293,7 +293,7 @@ export interface SessionsObservedSession {
    * Attention the source itself declared, for a row hvir runs no terminal for.
    * Absent for hvir's own sessions, whose attention is the renderer's to state:
    * a terminal's unseen output is known where it is rendered (ADR-009). Present
-   * only where the signal is exact, never inferred (ADR-048).
+   * only where the signal is exact, never inferred (ADR-948).
    */
   readonly attention?: SessionsFact<SessionsAttentionValue>
 }

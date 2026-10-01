@@ -13,7 +13,7 @@ export interface CompactAttentionRollup {
   readonly summary: string
 }
 
-/** Prompt outranks Ready and Bell (ADR-051), so it is read first. */
+/** Prompt outranks Ready and Bell (ADR-951), so it is read first. */
 const ROLLUP_STATES: readonly CompactRollupState[] = ['prompt', 'idle', 'bell']
 
 const ROLLUP_LETTERS: Record<CompactRollupState, string> = {

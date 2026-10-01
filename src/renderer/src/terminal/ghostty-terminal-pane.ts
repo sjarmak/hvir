@@ -646,7 +646,7 @@ class GhosttyTerminalPane implements TerminalPane {
     if (this.disposed || this.presentation !== 'visible' || !this.mounted) return
     const retainedCanvas = this.terminal.renderer?.getCanvas()
     if (this.hasPresentedFrame && retainedCanvas) retainedCanvas.style.visibility = ''
-    // A held grid (ADR-058) is presented as it is; only the pane's own size settles by fit.
+    // A held grid (ADR-958) is presented as it is; only the pane's own size settles by fit.
     if (this.held) {
       this.presentFrame()
       return

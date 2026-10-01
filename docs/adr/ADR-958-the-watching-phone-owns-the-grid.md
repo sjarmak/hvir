@@ -1,16 +1,16 @@
-# ADR-058: The watching phone owns the grid
+# ADR-958: The watching phone owns the grid
 
 > Lifecycle: Partially superseded
-> Superseded by: [ADR-059](ADR-059-the-phone-text-size-is-the-persons.md) | partial | One fixed readable mirror font, for a size the person sets on the device.
-> Supersedes: [ADR-050](ADR-050-companion-live-terminal-mirror.md) | partial | A mirror never resizing the PTY, for as long as a Companion page is watching that PTY.
-> Supersedes: [ADR-057](ADR-057-companion-mirror-shows-the-desktop-grid-at-every-focus.md) | partial | One fit at every focus state, with the phone drawing the desktop's grid scaled, for the grid a watching page declares.
+> Superseded by: [ADR-959](ADR-959-the-phone-text-size-is-the-persons.md) | partial | One fixed readable mirror font, for a size the person sets on the device.
+> Supersedes: [ADR-950](ADR-950-companion-live-terminal-mirror.md) | partial | A mirror never resizing the PTY, for as long as a Companion page is watching that PTY.
+> Supersedes: [ADR-957](ADR-957-companion-mirror-shows-the-desktop-grid-at-every-focus.md) | partial | One fit at every focus state, with the phone drawing the desktop's grid scaled, for the grid a watching page declares.
 
 ## Context
 
-ADR-052 gave the phone its own grid while every hvir window was unfocused, and ADR-057 took it
+ADR-952 gave the phone its own grid while every hvir window was unfocused, and ADR-957 took it
 away again after a real device showed the cost: a person saw two fits in one sitting, because
 the size changed on every desktop focus transition, and the phone-sized one read back laggily.
-ADR-057 kept the fit that was stable, which was the desktop's grid scaled to the phone's width.
+ADR-957 kept the fit that was stable, which was the desktop's grid scaled to the phone's width.
 
 A day on the scaled view found what that costs. The desktop's grid is wide and short, so on a
 phone it is a small strip of small text with a black band above it, and the band is the part
@@ -36,7 +36,7 @@ For as long as a Companion page holds a live mirror, that page's grid is the PTY
 measures its own terminal area in whole cells of its own fixed font and declares that grid over a
 `viewport` verb; main applies it to the PTY, publishes it to every mirror and to the desktop, and
 holds it there. Desktop focus is not an input to this anywhere: not in the phone's fit, not in the
-lease, not in the supervisor. Away remains what ADR-049 made it, the predicate that admits Push.
+lease, not in the supervisor. Away remains what ADR-949 made it, the predicate that admits Push.
 
 Declaring a grid is not typing. A page whose typing is off in Settings still sizes what it reads,
 because watching is what earns the size.
@@ -52,11 +52,11 @@ the size over keeps it when the page before it lets go. The most recent declarat
 ### The page keeps drawing whatever size the PTY actually has
 
 The phone never draws a grid it only asked for. Until a geometry frame says the PTY took the grid,
-the page draws the size the PTY has, scaled to its width exactly as ADR-057 has it. A declaration
+the page draws the size the PTY has, scaled to its width exactly as ADR-957 has it. A declaration
 that the desktop could not take is forgotten rather than retried on a timer, and the next settled
 layout asks again.
 
-ADR-057's other decisions stand as written: a drag carries every report its distance earned, a
+ADR-957's other decisions stand as written: a drag carries every report its distance earned, a
 lift with speed flings on, and the mirror keeps the desktop pane's scrollback.
 
 ## Consequences

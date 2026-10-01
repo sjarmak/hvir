@@ -5,7 +5,7 @@ import { rustLibraries, rustPackages, type RustLibraries } from './rust-crates'
 import { RustModuleTree, type RustModule } from './rust-module-tree'
 
 /**
- * Rust resolution within the crate tree (ADR-063): a Rust module is a file within its crate.
+ * Rust resolution within the crate tree (ADR-963): a Rust module is a file within its crate.
  * Each captured Cargo package's crate roots are followed through their `mod` declarations,
  * so `crate::`, `self::` and `super::` paths walk the real module tree, `#[path]` included.
  * A path that starts with a repository crate's library name, or an `extern crate` alias of

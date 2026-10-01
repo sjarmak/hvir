@@ -55,14 +55,14 @@ export const sessionsIpc = {
      * Answering a declared interaction, and sending a message. The only two
      * mutations of a foreign session this surface carries: reset, handoff, and
      * everything else in a session's lifecycle stays with the view that owns
-     * the city (ADR-048).
+     * the city (ADR-948).
      */
     'sessions:respond': invoke<SessionsTranscriptRespondRequest, SessionsMutationResponse>(),
     'sessions:submit': invoke<SessionsTranscriptSubmitRequest, SessionsMutationResponse>(),
     /**
      * The escape hatch for a row hvir owns no terminal for. The answer carries
      * the command to run and a ticket that stands for the session, never the
-     * session's own identifier (ADR-046).
+     * session's own identifier (ADR-946).
      */
     'sessions:attach-external': invoke<
       SessionsAttachExternalRequest,

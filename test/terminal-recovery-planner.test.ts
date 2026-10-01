@@ -462,7 +462,7 @@ describe('terminal recovery planner', () => {
     ])
   })
 
-  it('restores a stored prompt as a prompt without its message (ADR-051)', () => {
+  it('restores a stored prompt as a prompt without its message (ADR-951)', () => {
     const stored: TerminalRecoverySession = {
       ...record,
       id: 'terminal-prompt',

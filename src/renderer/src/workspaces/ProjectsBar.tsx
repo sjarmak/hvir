@@ -631,7 +631,7 @@ function CloseProjectDialog({
  * One badge for both kinds of waiting, because a person reading it wants to
  * know that something needs them, not which subsystem noticed. The label names
  * both contributions, and a stale external count says so rather than being
- * dropped or asserted (ADR-048).
+ * dropped or asserted (ADR-948).
  */
 function AttentionCount({
   count,

@@ -101,7 +101,7 @@ describe('installApplicationCompanion terminal mirror', () => {
       { page, data: 'x'.repeat(4097) },
       { page, data: 'y', handle: LOCAL },
       { page, data: 7 },
-      // A navigation claim on anything but a read-back page key (ADR-055).
+      // A navigation claim on anything but a read-back page key (ADR-955).
       { page, data: 'y', navigation: true },
       { page, data: '\u001b[5~', navigation: 'true' },
     ]) {
@@ -128,7 +128,7 @@ describe('installApplicationCompanion terminal mirror', () => {
     expect(JSON.parse(accepted.body)).toEqual({ outcome: 'accepted' })
     expect(lease.writes).toEqual(['y\r'])
 
-    // A read-back page key takes the other verb on the same lease (ADR-055),
+    // A read-back page key takes the other verb on the same lease (ADR-955),
     // which is the one the renderer's input record never hears about.
     const paged = await send(port, 'POST', input(LOCAL), {
       headers,
@@ -137,7 +137,7 @@ describe('installApplicationCompanion terminal mirror', () => {
     expect(paged.status).toBe(200)
 
     // And the wheel report the same policy sends a program tracking the mouse
-    // (ADR-056), which is the route a tmux session with `mouse on` takes.
+    // (ADR-956), which is the route a tmux session with `mouse on` takes.
     const reported = await send(port, 'POST', input(LOCAL), {
       headers,
       body: { page, data: '\u001b[<64;12;7M', navigation: true },

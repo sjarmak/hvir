@@ -532,11 +532,11 @@ export class TerminalRuntime {
             identityStatus,
             identityDiverged,
           ),
-        // Already written to the PTY by a Companion mirror (ADR-050): hand it
+        // Already written to the PTY by a Companion mirror (ADR-950): hand it
         // to the owner as this terminal's mirror input; write nothing.
         onMirrorInput: (data) => this.options.onMirrorInput(data),
         // A Companion page watching this PTY holds its size, or gave it back
-        // (ADR-058): the surface presents that grid and stops the pane's own fit
+        // (ADR-958): the surface presents that grid and stops the pane's own fit
         // from resizing the PTY until the phone is done with it.
         onMirrorGeometry: (held) => this.surface.holdGeometry(held),
       },

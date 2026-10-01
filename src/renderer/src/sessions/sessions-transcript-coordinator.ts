@@ -2,7 +2,7 @@
  * The renderer half of one transcript detail.
  *
  * Demand scoping is the whole point of this class. Sessions holds no stream at
- * list altitude (ADR-046): a transcript exists only while one row is selected
+ * list altitude (ADR-946): a transcript exists only while one row is selected
  * and the pane is showing, and the lease is released when the selection
  * changes, the list's own demand rolls over, hvir leaves the foreground, or the
  * pane closes. Main owns the socket; this owns the demand and the state a pane
@@ -118,7 +118,7 @@ export class SessionsTranscriptCoordinator {
   /**
    * Reopens a dropped stream. Explicit by design: a lost transport is reported
    * and waits for a person, because a pane that silently reconnects cannot be
-   * told apart from one that never lost anything (ADR-047).
+   * told apart from one that never lost anything (ADR-947).
    */
   resume(): void {
     if (this.disposed || !this.active) return
@@ -279,7 +279,7 @@ export class SessionsTranscriptCoordinator {
   /**
    * One mutation, under the demand that is current when it starts. A failed
    * call is reported, never repeated: the request may well have reached the
-   * session, and sending it again would be a second answer (ADR-047).
+   * session, and sending it again would be a second answer (ADR-947).
    */
   private async mutate(
     send: (generation: number) => Promise<SessionsMutationResponse>,

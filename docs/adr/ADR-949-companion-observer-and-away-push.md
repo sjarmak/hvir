@@ -1,15 +1,15 @@
-# ADR-049: The Companion is an away-time observer served by the running app
+# ADR-949: The Companion is an away-time observer served by the running app
 
 > Lifecycle: Partially superseded
 > Supersedes: [ADR-009](ADR-009-hierarchical-attention.md) | partial | The OS badge as the only attention surface while all hvir windows are unfocused.
 > Supersedes: [ADR-010](ADR-010-project-host-remote-boundary.md) | partial | The prohibition on any hvir-owned network listener, for one loopback-bound Companion listener.
-> Superseded by: [ADR-050](ADR-050-companion-live-terminal-mirror.md) | partial | The exclusion of a terminal screen and terminal input from the Companion, for live hvir-owned terminals under a mirror lease.
+> Superseded by: [ADR-950](ADR-950-companion-live-terminal-mirror.md) | partial | The exclusion of a terminal screen and terminal input from the Companion, for live hvir-owned terminals under a mirror lease.
 
 ## Context
 
 hvir exists for the person who hands work to agents and stays in the loop. ADR-009 and ADR-019
 made "a session needs me" a precise, provider-independent set: a terminal that went Ready or
-rang a bell after a submission. ADR-048 widened that set to an external session whose authority
+rang a bell after a submission. ADR-948 widened that set to an external session whose authority
 declares a pending interaction, so a blocked gas city worker raises the same badge as a waiting
 terminal. Every one of those signals stops at the desk. The OS badge is the only surface admitted
 while all hvir windows are unfocused, and ADR-009 forbids sound, toast, or any urgency fallback.
@@ -19,7 +19,7 @@ The facts a remote surface needs already exist and already have owners. The Sess
 destination projects every session, hvir-launched or external, as one row with opaque handles;
 the renderer owns terminal attention and publishes an aggregate toward main for the badge; main
 owns external attention, the observation port, and the only client that may answer or message an
-external session (ADR-046, ADR-047). No network listener exists anywhere in hvir. ADR-010 rejects
+external session (ADR-946, ADR-947). No network listener exists anywhere in hvir. ADR-010 rejects
 an installed remote server or daemon; ADR-013 rejects persisted dashboards, server registries,
 and port discovery; ADR-014 rejects a new process boundary. The sessions ownership gate forbids a
 second session authority and requires Sessions to own nothing while hidden.
@@ -34,7 +34,7 @@ desktop already publishes local ports to the tailnet through the operator's own 
 The Companion is a phone-sized web client of the running hvir application. It presents the same
 Sessions inventory the desktop presents, sorted for triage: sessions with actionable attention
 first, then every other session grouped by project and workspace. Its rows are the existing
-projection rows addressed by the existing opaque handles. It carries exactly the verbs ADR-046
+projection rows addressed by the existing opaque handles. It carries exactly the verbs ADR-946
 admits for an external session: read, answer the pending interaction the session is waiting on,
 and send a message. No destructive or lifecycle verb, no terminal input, and no terminal screen
 crosses the Companion. An hvir-launched terminal session appears with its row facts only; its
@@ -42,7 +42,7 @@ live surface remains a renderer-owned lease that the projection may not copy.
 
 The Companion is an observer. Viewing a session in it never clears attention. A terminal's
 attention still clears only on terminal focus (ADR-009); a pending interaction still clears only
-on resolution (ADR-048), which the Companion may perform by answering.
+on resolution (ADR-948), which the Companion may perform by answering.
 
 ### hvir listens on loopback; the operator publishes it
 
@@ -81,12 +81,12 @@ current truth. A terminal that goes Ready again after a new submission produces 
 A Push carries a pointer and one line: the project, the session title, the kind of signal, and
 the first line of a pending prompt, truncated. It carries no options, no identifiers, no
 transcript, and no credential. hvir posts it to a declared notification sink configured in
-Settings, with no discovery and no retry loop, in the posture ADR-047 sets for the supervisor
+Settings, with no discovery and no retry loop, in the posture ADR-947 sets for the supervisor
 client. Which sink, and where it runs, is operator infrastructure outside this repository.
 
 ### Staleness travels
 
-Per ADR-048, a surface that cannot express staleness may not display actionable attention. Every
+Per ADR-948, a surface that cannot express staleness may not display actionable attention. Every
 Companion row and every Push derive from facts that carry freshness and reason. A fact marked
 stale because an observing stream was lost is shown as unconfirmed with its reason in the
 Companion and is never pushed as an alarm.
@@ -134,7 +134,7 @@ extension of this one.
   terminal with no structured pending question to answer, and a copy of a surface the projection
   may not own.
 - Answering from the notification itself: embeds a credential in every notification and answers
-  blind to the revision check ADR-048 requires at answer time.
+  blind to the revision check ADR-948 requires at answer time.
 - Pushing on resolution or as a digest: retraction is impossible and batching delays the one
   signal that matters; the Companion carries current truth instead.
 - Trusting tailnet identity headers instead of pairing: reachability is not authentication when

@@ -119,7 +119,7 @@ export interface PtyStreamHandlers {
 
 /**
  * The PTY's last applied terminal size. The renderer owner sets it, except while a Companion
- * page watching this PTY holds it at the phone's grid (ADR-058).
+ * page watching this PTY holds it at the phone's grid (ADR-958).
  */
 export interface PtyGeometry {
   readonly cols: number
@@ -127,7 +127,7 @@ export interface PtyGeometry {
 }
 
 /**
- * Who holds a PTY's size (ADR-058): the renderer, or the phone watching it. A phone's hold
+ * Who holds a PTY's size (ADR-958): the renderer, or the phone watching it. A phone's hold
  * lasts exactly as long as its mirror; the renderer's own fit is kept meanwhile and applied
  * again the moment the hold ends.
  */
@@ -158,7 +158,7 @@ export type PtyMirrorEnd =
   /** The supervisor released the session: revocation, workspace close, or shutdown. */
   | { readonly kind: 'released' }
 
-/** A second reader of one PTY instance (ADR-050). `onEnd` fires exactly once, then nothing. */
+/** A second reader of one PTY instance (ADR-950). `onEnd` fires exactly once, then nothing. */
 export interface PtyMirrorHandlers {
   readonly onData: (data: string) => void
   readonly onGeometry: (geometry: PtyGeometry) => void
@@ -167,7 +167,7 @@ export interface PtyMirrorHandlers {
 
 /**
  * Retained output and the sticky terminal modes that exact window no longer carries
- * (ADR-054). The two travel together because the preamble is only right for the tail
+ * (ADR-954). The two travel together because the preamble is only right for the tail
  * it was measured against: a transition the tail still carries is left out of it, so a
  * reader never applies the same mode twice and never paints normal-screen bytes onto
  * the alternate one.
@@ -178,8 +178,8 @@ export interface PtyRetainedOutput {
 }
 
 /**
- * A mirror lease on one exact PTY instance (ADR-050): a second reader, never an owner. It sets
- * the PTY's size to its own viewport for as long as it lasts (ADR-058); every other lifecycle
+ * A mirror lease on one exact PTY instance (ADR-950): a second reader, never an owner. It sets
+ * the PTY's size to its own viewport for as long as it lasts (ADR-958); every other lifecycle
  * verb stays with the renderer owner.
  */
 export interface PtyMirrorLease {
@@ -189,7 +189,7 @@ export interface PtyMirrorLease {
   readonly tail: string
   /**
    * The sticky terminal modes this tail no longer carries, as the sets that reach
-   * them (ADR-054). Written before the tail, never inside it: the tail saturates at
+   * them (ADR-954). Written before the tail, never inside it: the tail saturates at
    * its own bound and a prefix would push it past. Empty whenever the tail still
    * carries the transitions itself.
    */
@@ -200,13 +200,13 @@ export interface PtyMirrorLease {
   /** Writes the user's exact bytes to this instance or throws `PtyMirrorRefusedError`. */
   write(data: string): void
   /**
-   * Read-back navigation (ADR-055): the same write, and never reported to the
+   * Read-back navigation (ADR-955): the same write, and never reported to the
    * owning renderer as terminal input, so paging a program's own history from a
    * phone arms no attention and sends no Push.
    */
   navigate(data: string): void
   /**
-   * Sizes this instance to the watching page's grid (ADR-058) and keeps it there until this
+   * Sizes this instance to the watching page's grid (ADR-958) and keeps it there until this
    * lease releases. Dimensions are clamped as the renderer's are; the most recent viewport
    * wins, and a renderer refit meanwhile is remembered rather than applied.
    */

@@ -1,6 +1,6 @@
 /**
- * The phone's mirror text size (ADR-059). The size decides the cell, the cell
- * decides the grid the page holds the PTY at (ADR-058), so what this module
+ * The phone's mirror text size (ADR-959). The size decides the cell, the cell
+ * decides the grid the page holds the PTY at (ADR-958), so what this module
  * has to get right is that every number it hands on is one of the ladder's
  * steps, whatever a device's storage answers with.
  */

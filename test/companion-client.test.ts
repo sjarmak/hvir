@@ -248,7 +248,7 @@ describe('companion client', () => {
     expect(calls[0]?.init.headers['authorization']).toBe('Bearer tok-1')
   })
 
-  it('a read-back gesture names itself and typing carries no such field (ADR-055)', () => {
+  it('a read-back gesture names itself and typing carries no such field (ADR-955)', () => {
     const { client, calls } = harness(
       () => jsonResponse(200, { outcome: 'accepted' }),
       'tok-1',

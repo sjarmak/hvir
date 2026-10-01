@@ -111,7 +111,7 @@ export interface CompanionClient {
   submit(page: string, request: CompanionSubmitRequest): Promise<SessionsMutationResponse>
   /**
    * The user's exact bytes for the mirrored row; nothing is appended. A read-back
-   * gesture names itself with `navigation` (ADR-055), which the desktop admits
+   * gesture names itself with `navigation` (ADR-955), which the desktop admits
    * only for the page keys it sends a program that owns its history.
    */
   input(
@@ -121,7 +121,7 @@ export interface CompanionClient {
     navigation?: boolean,
   ): Promise<SessionsMutationResponse>
   /**
-   * The grid this page is drawing for the mirrored row (ADR-058). The PTY takes that size
+   * The grid this page is drawing for the mirrored row (ADR-958). The PTY takes that size
    * and keeps it for as long as this page's mirror lasts, whatever the desktop is doing.
    */
   viewport(

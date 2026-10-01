@@ -1,16 +1,16 @@
-# ADR-057: The Companion mirror shows the desktop's grid whether or not the desktop is Away
+# ADR-957: The Companion mirror shows the desktop's grid whether or not the desktop is Away
 
 > Lifecycle: Partially superseded
-> Supersedes: [ADR-052](ADR-052-companion-mirror-holds-pty-size-while-away.md) | full | Entire decision.
-> Superseded by: [ADR-058](ADR-058-the-watching-phone-owns-the-grid.md) | partial | One fit at every focus state, with the phone drawing the desktop's grid scaled, for the grid a watching page declares.
+> Supersedes: [ADR-952](ADR-952-companion-mirror-holds-pty-size-while-away.md) | full | Entire decision.
+> Superseded by: [ADR-958](ADR-958-the-watching-phone-owns-the-grid.md) | partial | One fit at every focus state, with the phone drawing the desktop's grid scaled, for the grid a watching page declares.
 
 ## Context
 
-ADR-052 let a live mirror resize its PTY to the phone's own grid while every hvir window was
+ADR-952 let a live mirror resize its PTY to the phone's own grid while every hvir window was
 unfocused, on the reasoning that a full-screen program keeps its history inside itself, so a
 scaled desktop grid was a short strip with nothing above it and text too small to read. Two
-later records answered the first half of that. ADR-055 pages a program that owns its history
-from a drag, and ADR-056 routes the drag as the wheel reports a mouse-tracking program asks
+later records answered the first half of that. ADR-955 pages a program that owns its history
+from a drag, and ADR-956 routes the drag as the wheel reports a mouse-tracking program asks
 for, so the phone reads a Claude Code session under tmux back the way the desktop does, at
 whatever size the grid is drawn.
 
@@ -37,11 +37,11 @@ moved a few rows and stopped, which reads as a hard limit that is not there.
 ### One fit
 
 The phone shows the desktop's grid scaled to its width, and only that, whether or not a
-desktop window is focused. A mirror never resizes the PTY: ADR-050's rule stands whole again,
-and the desktop's fit controller is the one author of a PTY's size. Away stays what ADR-049
+desktop window is focused. A mirror never resizes the PTY: ADR-950's rule stands whole again,
+and the desktop's fit controller is the one author of a PTY's size. Away stays what ADR-949
 made it, the predicate that admits Push, and decides nothing about layout.
 
-Everything ADR-052 added for the other fit goes with it: the mirror lease's resize verb and
+Everything ADR-952 added for the other fit goes with it: the mirror lease's resize verb and
 the supervisor's Away door, geometry provenance and the reclaim on focus, the
 `pty:mirror-geometry` event and the held-size presentation on the desktop pane, the resize
 route and its wire types, and the phone's fit controller. The snapshot's `away` field
@@ -52,7 +52,7 @@ remains, for Push.
 On the SGR route a drag carries every report its distance earned in one event, bounded at a
 screen of them rather than at five. A wheel notch is still held to five, because a wheel
 makes many events for one gesture and a program scrolling by report keeps up with a few per
-event. The reports of one event already travel as one ordered write (ADR-056).
+event. The reports of one event already travel as one ordered write (ADR-956).
 
 A lift with speed behind it becomes a fling: the adapter that owns the touch keeps moving the
 content frame by frame as the same drag, slowing at the rate a scroll view slows, until it
@@ -86,7 +86,7 @@ gives back, rather than as a side effect of where the desktop's focus is.
 
 ## Rejected alternatives
 
-- Keep ADR-052's rule and fix the lag: the lag is the program laying out for a grid nobody at
+- Keep ADR-952's rule and fix the lag: the lag is the program laying out for a grid nobody at
   the desktop wanted, twice per glance. The scaled view the person asked to keep never had it.
 - The Away grid as an opt-in on the phone: a control on a page that was reduced to one view,
   for a fit that lost to the scaled one on a real device. If it is ever wanted it is a new

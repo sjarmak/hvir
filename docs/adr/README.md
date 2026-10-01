@@ -10,7 +10,9 @@ delivery status. That work belongs in GitHub issues, commits, and pull requests.
 
 Use [`TEMPLATE.md`](TEMPLATE.md) for a new record. Name accepted records
 `ADR-NNN-short-kebab-title.md`. If a decision changes, add a new ADR and link the two;
-do not rewrite an accepted record to imply a different history.
+do not rewrite an accepted record to imply a different history. Records owned by the
+maintained `feat/beads-panel` branch take the next free number in the reserved ADR-9NN range,
+so upstream's sequence merges in without renumbering.
 
 Start with the index's [read-first constraints](../design.md#read-first-constraints), then read
 the relevant feature decisions. Reading priority does not determine a record's lifecycle.

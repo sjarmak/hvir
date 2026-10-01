@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 
 /**
- * The read-back gesture's adapter (ADR-053): a finger over the grid becomes
+ * The read-back gesture's adapter (ADR-953): a finger over the grid becomes
  * the event shape a wheel notch already has, in the emulator's own pixels
  * rather than the on-screen pixels the surface's transform scales them to. No
  * touch over the grid reaches ghostty-web's own canvas `touchend`, which

@@ -1,7 +1,7 @@
 import type { ActionableAttentionSet } from './attention/actionable-attention-set'
 
 /**
- * The OS badge, one consumer of the actionable set (ADR-049). It counts fresh
+ * The OS badge, one consumer of the actionable set (ADR-949). It counts fresh
  * entries while hvir is away and shows nothing while a window is focused; a
  * stale entry is the last thing seen, not a claim, so it never counts.
  */

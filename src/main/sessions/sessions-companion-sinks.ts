@@ -14,7 +14,7 @@ export type SessionsCompanionChannel = Extract<
 >
 
 /**
- * Where a companion-kind lease's changes go (ADR-049).
+ * Where a companion-kind lease's changes go (ADR-949).
  *
  * One sink per application: the Companion server registers it when it starts
  * and releases it when it stops. Each method receives the exact owner the

@@ -130,7 +130,7 @@ highlighting without turning hvir into an IDE.
 
 > Lifecycle: Partially superseded
 > Superseded by: [ADR-021](adr/ADR-021-system-git-dirty-navigation-safety.md) | partial | Clean-worktree navigation prerequisite and handing every dirty branch switch or pull to the terminal.
-> Superseded by: [ADR-063](adr/ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | Creating no branch at all; the architecture review creates one hvir/architecture/ branch per agent launch.
+> Superseded by: [ADR-963](adr/ADR-963-architecture-review-history-and-agent-worktrees.md) | partial | Creating no branch at all; the architecture review creates one hvir/architecture/ branch per agent launch.
 
 System Git runs behind an off-thread engine and a main-owned `ProjectHost` broker; the few
 mutations hvir exposes are exact, bounded navigation operations.
@@ -158,7 +158,7 @@ sandboxed HTML rendering.
 > Superseded by: [ADR-024](adr/ADR-024-demand-driven-terminal-workspace-lifecycle.md) | partial | Registration or discovery implying renderer terminal runtime materialization.
 > Superseded by: [ADR-027](adr/ADR-027-demand-driven-workspace-activity.md) | partial | Periodic Git work refreshing activity for every open workspace.
 > Superseded by: [ADR-033](adr/ADR-033-successful-discovery-dismisses-missing-workspaces.md) | partial | Missing worktrees remaining visible until explicit dismissal.
-> Superseded by: [ADR-063](adr/ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
+> Superseded by: [ADR-963](adr/ADR-963-architecture-review-history-and-agent-worktrees.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
 
 Host-qualified registered projects own discovered worktree workspaces without making hvir a
 worktree orchestrator.
@@ -167,9 +167,9 @@ worktree orchestrator.
 
 > Lifecycle: Partially superseded
 > Superseded by: [ADR-019](adr/ADR-019-working-output-is-not-actionable-attention.md) | partial | Classifying ongoing post-submission output as actionable new-output attention.
-> Superseded by: [ADR-048](adr/ADR-048-exact-external-pending-interaction-attention.md) | partial | Terminal focus as the only rule that clears attention.
-> Superseded by: [ADR-049](adr/ADR-049-companion-observer-and-away-push.md) | partial | The OS badge as the only attention surface while all hvir windows are unfocused.
-> Superseded by: [ADR-051](adr/ADR-051-terminal-notification-prompt-attention.md) | partial | Terminal focus as the only rule that clears a terminal's own attention, for a prompt entry answered through the Companion mirror.
+> Superseded by: [ADR-948](adr/ADR-948-exact-external-pending-interaction-attention.md) | partial | Terminal focus as the only rule that clears attention.
+> Superseded by: [ADR-949](adr/ADR-949-companion-observer-and-away-push.md) | partial | The OS badge as the only attention surface while all hvir windows are unfocused.
+> Superseded by: [ADR-951](adr/ADR-951-terminal-notification-prompt-attention.md) | partial | Terminal focus as the only rule that clears a terminal's own attention, for a prompt entry answered through the Companion mirror.
 
 Terminal focus is the single clearing rule; workspace/project and OS surfaces only aggregate
 the appropriate unseen child attention.
@@ -178,7 +178,7 @@ the appropriate unseen child attention.
 
 > Lifecycle: Partially superseded
 > Superseded by: [ADR-045](adr/ADR-045-explicit-outside-project-viewing.md) | partial | Temporary document viewing addendum: location, document-type, and automatic image-read scope.
-> Superseded by: [ADR-049](adr/ADR-049-companion-observer-and-away-push.md) | partial | The prohibition on any hvir-owned network listener, for one loopback-bound Companion listener.
+> Superseded by: [ADR-949](adr/ADR-949-companion-observer-and-away-push.md) | partial | The prohibition on any hvir-owned network listener, for one loopback-bound Companion listener.
 
 All project operations and paths are host-qualified behind `ProjectHost`; SSH remains a
 bounded transport owned by one logical host, not an installed remote service.
@@ -260,7 +260,7 @@ platform selection, integrity, and provenance authority.
 > Lifecycle: Partially superseded
 > Supersedes: [ADR-009](adr/ADR-009-hierarchical-attention.md) | partial | Classifying ongoing post-submission output as actionable new-output attention.
 > Superseded by: [ADR-034](adr/ADR-034-project-name-working-presentation.md) | partial | Working presentation being confined to the terminal row.
-> Superseded by: [ADR-048](adr/ADR-048-exact-external-pending-interaction-attention.md) | partial | Actionable workspace, project, and OS attention counts including only distinct terminals.
+> Superseded by: [ADR-948](adr/ADR-948-exact-external-pending-interaction-attention.md) | partial | Actionable workspace, project, and OS attention counts including only distinct terminals.
 
 Ongoing output after a submitted turn remains visible as low-salience Working state while
 workspace and project rollups count only actionable Ready and bell signals.
@@ -315,11 +315,11 @@ session, PTY, presentation, and focus lifecycles remain independently owned.
 
 > Lifecycle: Partially superseded
 > Supersedes: [ADR-016](adr/ADR-016-bounded-local-runtime-diagnostics.md) | partial | Responsiveness episode candidate and its opt-in renderer diagnostic experiment.
-> Superseded by: [ADR-068](adr/ADR-068-react-owned-development-measure-containment.md) | partial | Requirement to preserve hvir's development Performance Timeline containment owner and budget fixture.
+> Superseded by: [ADR-046](adr/ADR-046-react-owned-development-measure-containment.md) | partial | Requirement to preserve hvir's development Performance Timeline containment owner and budget fixture.
 
 The low-confidence Long Tasks experiment and its complete opt-in runtime/reporting surface are
 removed; independent capacity coverage and Electron's high-confidence unresponsive lifecycle
-remain at their owning seams, while ADR-068 replaces hvir's development measure owner.
+remain at their owning seams, while ADR-046 replaces hvir's development measure owner.
 
 ### [ADR-026 — Explicit SSH image paste through private remote materialization](adr/ADR-026-explicit-ssh-image-paste.md)
 
@@ -444,7 +444,7 @@ provider-derived branches of registered identities; ambient transitions are neve
 ### [ADR-040 — Complete source budgets and dependency policy](adr/ADR-040-complete-source-budgets-and-dependency-policy.md)
 
 > Lifecycle: Partially superseded
-> Superseded by: [ADR-062](adr/ADR-062-maintained-branch-local-verification.md) | partial | Local architecture provenance on the Beads-governed feat/beads-panel branch; upstream delivery and all structural checks remain unchanged.
+> Superseded by: [ADR-962](adr/ADR-962-maintained-branch-local-verification.md) | partial | Local architecture provenance on the Beads-governed feat/beads-panel branch; upstream delivery and all structural checks remain unchanged.
 > Supersedes: [ADR-014](adr/ADR-014-modular-monolith-ownership.md) | partial | Architecture hotspot budgets paragraph: complete source budgets and extended dependency enforcement; authority/seam checks stay blocking.
 
 Every maintained source file has a blocking budget, with a 500-line comfort signal, a 1,000-line
@@ -494,21 +494,30 @@ including native updates and package-owned removal; legacy npm migration remains
 Explicit same-host file activation opens ephemeral read-only outside-project tabs; automatic
 Markdown images remain within the canonical document directory and descendants.
 
-### [ADR-046 — Sessions projects external agent sessions without owning them](adr/ADR-046-projected-external-agent-sessions.md)
+### [ADR-046 — React-owned development measure containment](adr/ADR-046-react-owned-development-measure-containment.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-025](adr/ADR-025-remove-renderer-responsiveness-diagnostic.md) | partial | Requirement to preserve hvir's development Performance Timeline containment owner and budget fixture.
+
+React owns cleanup of its development Performance measures; a development-only Electron fixture
+uses browser observation to prove fixture-specific React work and an empty retained measure set
+without adding product instrumentation.
+
+### [ADR-946 — Sessions projects external agent sessions without owning them](adr/ADR-946-projected-external-agent-sessions.md)
 
 > Lifecycle: Active
 
 Sessions admits sessions hvir never launched as one row each with a recorded origin and an
 opaque handle, bounded to read, answer, and attach, with demand held per selection.
 
-### [ADR-047 — Foreign supervisor loopback API as a bounded read-and-answer client](adr/ADR-047-supervisor-loopback-api-client.md)
+### [ADR-947 — Foreign supervisor loopback API as a bounded read-and-answer client](adr/ADR-947-supervisor-loopback-api-client.md)
 
 > Lifecycle: Active
 
 One main-owned client reaches a foreign supervisor through `ProjectHost` loopback on a declared
 endpoint, exposing a narrow verb surface with pinned generated types and typed unavailability.
 
-### [ADR-048 — A declared external pending interaction is actionable attention](adr/ADR-048-exact-external-pending-interaction-attention.md)
+### [ADR-948 — A declared external pending interaction is actionable attention](adr/ADR-948-exact-external-pending-interaction-attention.md)
 
 > Lifecycle: Active
 > Supersedes: [ADR-009](adr/ADR-009-hierarchical-attention.md) | partial | Terminal focus as the only rule that clears attention.
@@ -517,72 +526,72 @@ endpoint, exposing a narrow verb surface with pinned generated types and typed u
 An authority-declared pending interaction rolls up as actionable attention cleared by
 resolution rather than focus, carrying its freshness to every surface that counts it.
 
-### [ADR-049 — The Companion is an away-time observer served by the running app](adr/ADR-049-companion-observer-and-away-push.md)
+### [ADR-949 — The Companion is an away-time observer served by the running app](adr/ADR-949-companion-observer-and-away-push.md)
 
 > Lifecycle: Partially superseded
 > Supersedes: [ADR-009](adr/ADR-009-hierarchical-attention.md) | partial | The OS badge as the only attention surface while all hvir windows are unfocused.
 > Supersedes: [ADR-010](adr/ADR-010-project-host-remote-boundary.md) | partial | The prohibition on any hvir-owned network listener, for one loopback-bound Companion listener.
-> Superseded by: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | The exclusion of a terminal screen and terminal input from the Companion, for live hvir-owned terminals under a mirror lease.
+> Superseded by: [ADR-950](adr/ADR-950-companion-live-terminal-mirror.md) | partial | The exclusion of a terminal screen and terminal input from the Companion, for live hvir-owned terminals under a mirror lease.
 
 A paired phone client of the running app reads the Sessions inventory and answers external
 sessions over a loopback listener the operator publishes, fed by the one actionable set that also
 drives the badge and away-time Push.
 
-### [ADR-050 — The Companion mirrors a live hvir terminal and carries its user's keystrokes](adr/ADR-050-companion-live-terminal-mirror.md)
+### [ADR-950 — The Companion mirrors a live hvir terminal and carries its user's keystrokes](adr/ADR-950-companion-live-terminal-mirror.md)
 
 > Lifecycle: Partially superseded
-> Supersedes: [ADR-049](adr/ADR-049-companion-observer-and-away-push.md) | partial | The exclusion of a terminal screen and terminal input from the Companion, for live hvir-owned terminals under a mirror lease.
-> Superseded by: [ADR-051](adr/ADR-051-terminal-notification-prompt-attention.md) | partial | No phone action clearing attention, for a prompt entry on the mirrored terminal.
-> Superseded by: [ADR-052](adr/ADR-052-companion-mirror-holds-pty-size-while-away.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
-> Superseded by: [ADR-054](adr/ADR-054-sticky-terminal-modes-precede-the-replayed-tail.md) | partial | Main not interpreting the bytes it forwards, for a bounded scan of sticky DEC private modes emitted ahead of the replayed tail.
-> Superseded by: [ADR-055](adr/ADR-055-read-back-navigation-is-not-typing.md) | partial | The per-mirror arm gating every byte and mirror input being recorded as terminal input, for the page keys a read-back gesture emits to a program that owns its history.
-> Superseded by: [ADR-058](adr/ADR-058-the-watching-phone-owns-the-grid.md) | partial | A mirror never resizing the PTY, for as long as a Companion page is watching that PTY.
+> Supersedes: [ADR-949](adr/ADR-949-companion-observer-and-away-push.md) | partial | The exclusion of a terminal screen and terminal input from the Companion, for live hvir-owned terminals under a mirror lease.
+> Superseded by: [ADR-951](adr/ADR-951-terminal-notification-prompt-attention.md) | partial | No phone action clearing attention, for a prompt entry on the mirrored terminal.
+> Superseded by: [ADR-952](adr/ADR-952-companion-mirror-holds-pty-size-while-away.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
+> Superseded by: [ADR-954](adr/ADR-954-sticky-terminal-modes-precede-the-replayed-tail.md) | partial | Main not interpreting the bytes it forwards, for a bounded scan of sticky DEC private modes emitted ahead of the replayed tail.
+> Superseded by: [ADR-955](adr/ADR-955-read-back-navigation-is-not-typing.md) | partial | The per-mirror arm gating every byte and mirror input being recorded as terminal input, for the page keys a read-back gesture emits to a program that owns its history.
+> Superseded by: [ADR-958](adr/ADR-958-the-watching-phone-owns-the-grid.md) | partial | A mirror never resizing the PTY, for as long as a Companion page is watching that PTY.
 
 A Companion page holds a mirror lease on one live hvir-owned PTY: main forwards the retained
 output tail, live bytes, and desktop geometry, the phone emulates them with ghostty-web, and
 armed user keystrokes return to that exact instance without the mirror ever owning, resizing,
 or composing anything.
 
-### [ADR-051 — A terminal's in-band notification is actionable attention that carries its message](adr/ADR-051-terminal-notification-prompt-attention.md)
+### [ADR-951 — A terminal's in-band notification is actionable attention that carries its message](adr/ADR-951-terminal-notification-prompt-attention.md)
 
 > Lifecycle: Active
 > Supersedes: [ADR-009](adr/ADR-009-hierarchical-attention.md) | partial | Terminal focus as the only rule that clears a terminal's own attention, for a prompt entry answered through the Companion mirror.
-> Supersedes: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | No phone action clearing attention, for a prompt entry on the mirrored terminal.
+> Supersedes: [ADR-950](adr/ADR-950-companion-live-terminal-mirror.md) | partial | No phone action clearing attention, for a prompt entry on the mirrored terminal.
 
 A terminal's OSC 9 or OSC 777 notification raises a prompt attention at once, carrying the
 harness's own bounded message through every attention surface and the Push line; it outranks
 Ready and Bell, is cleared by desktop focus or by an answer sent from the Companion mirror, and
 never comes from reading the screen.
 
-### [ADR-052 — The Companion mirror holds the PTY's size while the desktop is Away](adr/ADR-052-companion-mirror-holds-pty-size-while-away.md)
+### [ADR-952 — The Companion mirror holds the PTY's size while the desktop is Away](adr/ADR-952-companion-mirror-holds-pty-size-while-away.md)
 
 > Lifecycle: Superseded
-> Supersedes: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
-> Superseded by: [ADR-053](adr/ADR-053-companion-mirror-reads-back-through-emulator-viewport.md) | partial | The page's own scrollback layer drawing above the grid for a shell's mirror, for the emulator's viewport as the one read-back surface.
-> Superseded by: [ADR-057](adr/ADR-057-companion-mirror-shows-the-desktop-grid-at-every-focus.md) | full | Entire decision.
+> Supersedes: [ADR-950](adr/ADR-950-companion-live-terminal-mirror.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
+> Superseded by: [ADR-953](adr/ADR-953-companion-mirror-reads-back-through-emulator-viewport.md) | partial | The page's own scrollback layer drawing above the grid for a shell's mirror, for the emulator's viewport as the one read-back surface.
+> Superseded by: [ADR-957](adr/ADR-957-companion-mirror-shows-the-desktop-grid-at-every-focus.md) | full | Entire decision.
 
 While every hvir window is unfocused, a live mirror lease may resize its PTY to the phone's own
 grid so a full-screen program lays out for the phone; the desktop draws the held grid top-left
 with a notice and reclaims the size within one fit cycle when any of its windows gains focus, and
 the most recent phone resize wins when two phones hold one PTY.
 
-### [ADR-053 — The Companion mirror reads back through the emulator's viewport](adr/ADR-053-companion-mirror-reads-back-through-emulator-viewport.md)
+### [ADR-953 — The Companion mirror reads back through the emulator's viewport](adr/ADR-953-companion-mirror-reads-back-through-emulator-viewport.md)
 
 > Lifecycle: Partially superseded
-> Supersedes: [ADR-052](adr/ADR-052-companion-mirror-holds-pty-size-while-away.md) | partial | The page's own scrollback layer drawing above the grid for a shell's mirror, for the emulator's viewport as the one read-back surface.
-> Superseded by: [ADR-055](adr/ADR-055-read-back-navigation-is-not-typing.md) | partial | An alternate-screen session stating that it has no history to read back, for a program that keeps its own history and is paged through it.
+> Supersedes: [ADR-952](adr/ADR-952-companion-mirror-holds-pty-size-while-away.md) | partial | The page's own scrollback layer drawing above the grid for a shell's mirror, for the emulator's viewport as the one read-back surface.
+> Superseded by: [ADR-955](adr/ADR-955-read-back-navigation-is-not-typing.md) | partial | An alternate-screen session stating that it has no history to read back, for a program that keeps its own history and is paged through it.
 
 The phone reads back by moving the emulator's own viewport, so history is drawn by the renderer
 that draws the live screen and the page keeps no second text surface. A finger drag decides
 under the one shared wheel policy, the page reads where the viewport is and never what it says
-so ADR-019 and ADR-051 are untouched, and an alternate-screen session states that it has no
+so ADR-019 and ADR-951 are untouched, and an alternate-screen session states that it has no
 history instead of showing an empty column.
 
-### [ADR-054 — Sticky terminal modes precede the replayed tail](adr/ADR-054-sticky-terminal-modes-precede-the-replayed-tail.md)
+### [ADR-954 — Sticky terminal modes precede the replayed tail](adr/ADR-954-sticky-terminal-modes-precede-the-replayed-tail.md)
 
 > Lifecycle: Partially superseded
-> Supersedes: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | Main not interpreting the bytes it forwards, for a bounded scan of sticky DEC private modes emitted ahead of the replayed tail.
-> Superseded by: [ADR-056](adr/ADR-056-read-back-reaches-a-mouse-tracking-program.md) | partial | The mouse tracking family left to the window, for a mirror whose gesture the program's own wheel reports answer.
+> Supersedes: [ADR-950](adr/ADR-950-companion-live-terminal-mirror.md) | partial | Main not interpreting the bytes it forwards, for a bounded scan of sticky DEC private modes emitted ahead of the replayed tail.
+> Superseded by: [ADR-956](adr/ADR-956-read-back-reaches-a-mouse-tracking-program.md) | partial | The mouse tracking family left to the window, for a mirror whose gesture the program's own wheel reports answer.
 
 Main scans passing PTY output for a closed set of sticky DEC private modes, the alternate screen
 `?1049` and `?47` and nothing else, keeping per mode the last state it saw and where it saw it,
@@ -591,13 +600,13 @@ window it is about to replay can no longer prove, carried as a distinct wire fie
 prefix, so a full-screen program's first frame is one grid instead of a stack of them. The page
 repeats the same scan over its own buffer, whose window is cut independently and keeps moving.
 
-### [ADR-055 — Read-back navigation reaches a mirrored program without being typing](adr/ADR-055-read-back-navigation-is-not-typing.md)
+### [ADR-955 — Read-back navigation reaches a mirrored program without being typing](adr/ADR-955-read-back-navigation-is-not-typing.md)
 
 > Lifecycle: Partially superseded
-> Supersedes: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | The per-mirror arm gating every byte and mirror input being recorded as terminal input, for the page keys a read-back gesture emits to a program that owns its history.
-> Supersedes: [ADR-053](adr/ADR-053-companion-mirror-reads-back-through-emulator-viewport.md) | partial | An alternate-screen session stating that it has no history to read back, for a program that keeps its own history and is paged through it.
-> Superseded by: [ADR-056](adr/ADR-056-read-back-reaches-a-mouse-tracking-program.md) | partial | The exempt set closed at the two page keys, for the wheel reports the same policy sends a program that tracks the mouse.
-> Superseded by: [ADR-060](adr/ADR-060-the-mirror-spends-its-height-on-the-session.md) | partial | The standing line the mirror showed for a program that keeps its own history, for the rows of the session that line stood on.
+> Supersedes: [ADR-950](adr/ADR-950-companion-live-terminal-mirror.md) | partial | The per-mirror arm gating every byte and mirror input being recorded as terminal input, for the page keys a read-back gesture emits to a program that owns its history.
+> Supersedes: [ADR-953](adr/ADR-953-companion-mirror-reads-back-through-emulator-viewport.md) | partial | An alternate-screen session stating that it has no history to read back, for a program that keeps its own history and is paged through it.
+> Superseded by: [ADR-956](adr/ADR-956-read-back-reaches-a-mouse-tracking-program.md) | partial | The exempt set closed at the two page keys, for the wheel reports the same policy sends a program that tracks the mouse.
+> Superseded by: [ADR-960](adr/ADR-960-the-mirror-spends-its-height-on-the-session.md) | partial | The standing line the mirror showed for a program that keeps its own history, for the rows of the session that line stood on.
 
 A program that owns its history, such as Claude Code under tmux, is read back from the phone by
 paging it with the two keys the shared wheel policy already sends on the desktop. Those keys are
@@ -606,11 +615,11 @@ PTY without being recorded as terminal input, so reading back raises no attentio
 Push. The exempt set is closed at those keys, typing still requires the arm, and the mirror stops
 claiming an alternate-screen session has no history.
 
-### [ADR-056 — A read-back gesture reaches a program that tracks the mouse](adr/ADR-056-read-back-reaches-a-mouse-tracking-program.md)
+### [ADR-956 — A read-back gesture reaches a program that tracks the mouse](adr/ADR-956-read-back-reaches-a-mouse-tracking-program.md)
 
 > Lifecycle: Active
-> Supersedes: [ADR-054](adr/ADR-054-sticky-terminal-modes-precede-the-replayed-tail.md) | partial | The mouse tracking family left to the window, for a mirror whose gesture the program's own wheel reports answer.
-> Supersedes: [ADR-055](adr/ADR-055-read-back-navigation-is-not-typing.md) | partial | The exempt set closed at the two page keys, for the wheel reports the same policy sends a program that tracks the mouse.
+> Supersedes: [ADR-954](adr/ADR-954-sticky-terminal-modes-precede-the-replayed-tail.md) | partial | The mouse tracking family left to the window, for a mirror whose gesture the program's own wheel reports answer.
+> Supersedes: [ADR-955](adr/ADR-955-read-back-navigation-is-not-typing.md) | partial | The exempt set closed at the two page keys, for the wheel reports the same policy sends a program that tracks the mouse.
 
 The sticky-mode scan carries the mouse tracking family whole, `?1000` `?1002` `?1003` `?1006`
 `?1015`, so a mirror of a session under `tmux -g mouse on` routes a gesture the way its desktop
@@ -618,29 +627,29 @@ does instead of sending page keys the program barely honours. Read-back navigati
 whatever the one policy emits for a read-back gesture on any route, so the wheel reports it
 synthesizes, buttons 64 and 65 alone, join the page keys outside the per-mirror arm and outside
 the terminal input record. Carrying the trackers without the encoding is the silent failure
-ADR-054 predicted, so the family moves together or not at all.
+ADR-954 predicted, so the family moves together or not at all.
 
-### [ADR-057 — The Companion mirror shows the desktop's grid whether or not the desktop is Away](adr/ADR-057-companion-mirror-shows-the-desktop-grid-at-every-focus.md)
+### [ADR-957 — The Companion mirror shows the desktop's grid whether or not the desktop is Away](adr/ADR-957-companion-mirror-shows-the-desktop-grid-at-every-focus.md)
 
 > Lifecycle: Partially superseded
-> Supersedes: [ADR-052](adr/ADR-052-companion-mirror-holds-pty-size-while-away.md) | full | Entire decision.
-> Superseded by: [ADR-058](adr/ADR-058-the-watching-phone-owns-the-grid.md) | partial | One fit at every focus state, with the phone drawing the desktop's grid scaled, for the grid a watching page declares.
+> Supersedes: [ADR-952](adr/ADR-952-companion-mirror-holds-pty-size-while-away.md) | full | Entire decision.
+> Superseded by: [ADR-958](adr/ADR-958-the-watching-phone-owns-the-grid.md) | partial | One fit at every focus state, with the phone drawing the desktop's grid scaled, for the grid a watching page declares.
 
 The phone shows the desktop's grid scaled to its width, and only that. A mirror never resizes
 the PTY again, whether or not a desktop window is focused, so the desktop's fit controller is
-the one author of a PTY's size and a focus transition resizes nothing. ADR-055 and ADR-056 had
-already answered the history ADR-052 was for, and a real device found the phone-sized grid
+the one author of a PTY's size and a focus transition resizes nothing. ADR-955 and ADR-956 had
+already answered the history ADR-952 was for, and a real device found the phone-sized grid
 laggy and the scaled one the view to keep. What the phone lacked was travel: a drag on the
 mouse-tracking route now carries every report its distance earned, up to a screen of them per
 event, a lift with speed behind it flings on until it rests, and the mirror keeps the desktop
 pane's scrollback.
 
-### [ADR-058 — The watching phone owns the grid](adr/ADR-058-the-watching-phone-owns-the-grid.md)
+### [ADR-958 — The watching phone owns the grid](adr/ADR-958-the-watching-phone-owns-the-grid.md)
 
 > Lifecycle: Partially superseded
-> Supersedes: [ADR-050](adr/ADR-050-companion-live-terminal-mirror.md) | partial | A mirror never resizing the PTY, for as long as a Companion page is watching that PTY.
-> Supersedes: [ADR-057](adr/ADR-057-companion-mirror-shows-the-desktop-grid-at-every-focus.md) | partial | One fit at every focus state, with the phone drawing the desktop's grid scaled, for the grid a watching page declares.
-> Superseded by: [ADR-059](adr/ADR-059-the-phone-text-size-is-the-persons.md) | partial | One fixed readable mirror font, for a size the person sets on the device.
+> Supersedes: [ADR-950](adr/ADR-950-companion-live-terminal-mirror.md) | partial | A mirror never resizing the PTY, for as long as a Companion page is watching that PTY.
+> Supersedes: [ADR-957](adr/ADR-957-companion-mirror-shows-the-desktop-grid-at-every-focus.md) | partial | One fit at every focus state, with the phone drawing the desktop's grid scaled, for the grid a watching page declares.
+> Superseded by: [ADR-959](adr/ADR-959-the-phone-text-size-is-the-persons.md) | partial | One fixed readable mirror font, for a size the person sets on the device.
 
 For as long as a Companion page holds a live mirror, that page's measured grid is the PTY's size:
 the page declares it over a `viewport` verb, main applies and publishes it, and desktop focus is
@@ -649,40 +658,40 @@ held grid with a notice, and takes its fit back when the mirror ends; the hold b
 lease that took it, so a stale release gives nothing back. Until a geometry frame says the PTY
 took the grid, the phone keeps drawing the size the PTY has, scaled to its width.
 
-### [ADR-059 — The phone's text size is the person's](adr/ADR-059-the-phone-text-size-is-the-persons.md)
+### [ADR-959 — The phone's text size is the person's](adr/ADR-959-the-phone-text-size-is-the-persons.md)
 
 > Lifecycle: Active
-> Supersedes: [ADR-058](adr/ADR-058-the-watching-phone-owns-the-grid.md) | partial | One fixed readable mirror font, for a size the person sets on the device.
+> Supersedes: [ADR-958](adr/ADR-958-the-watching-phone-owns-the-grid.md) | partial | One fixed readable mirror font, for a size the person sets on the device.
 
 The mirror's font is the one number that decides how much of a session a phone shows, since the
 grid it holds the PTY at is its area divided by one cell. Fifteen pixels held about forty columns,
 so the size becomes the person's: two steps beside the mirror's title walk a ladder of whole
 pixels, the choice is stored on that device, and the default drops to ten, which is about sixty
-columns on a phone's width. A step re-derives the grid and declares it through ADR-058's
+columns on a phone's width. A step re-derives the grid and declares it through ADR-958's
 `viewport` verb like any other layout change; nothing about the size itself leaves the phone.
 
-### [ADR-060 — The mirror spends its height on the session](adr/ADR-060-the-mirror-spends-its-height-on-the-session.md)
+### [ADR-960 — The mirror spends its height on the session](adr/ADR-960-the-mirror-spends-its-height-on-the-session.md)
 
 > Lifecycle: Active
-> Supersedes: [ADR-055](adr/ADR-055-read-back-navigation-is-not-typing.md) | partial | The standing line the mirror showed for a program that keeps its own history, for the rows of the session that line stood on.
+> Supersedes: [ADR-955](adr/ADR-955-read-back-navigation-is-not-typing.md) | partial | The standing line the mirror showed for a program that keeps its own history, for the rows of the session that line stood on.
 
-The line ADR-055 showed over a full-screen program's grid, saying the program keeps its own
+The line ADR-955 showed over a full-screen program's grid, saying the program keeps its own
 history, cost a row of the phone's screen for as long as that program ran, which on a phone is
 most of the session. The mirror now shows the alternate screen with nothing standing over it: the
 drag still pages the program through its history, the way back is still offered where a viewport
 can move, and what the mirror says is what has just happened rather than what is continuously
 true.
 
-### [ADR-061 — Pinned native architecture review](adr/ADR-061-pinned-native-architecture-review.md)
+### [ADR-961 — Pinned native architecture review](adr/ADR-961-pinned-native-architecture-review.md)
 
 > Lifecycle: Partially superseded
-> Superseded by: [ADR-063](adr/ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | The fixed comparison modes, the full recapture on revalidation, and the read-only single-file handoff consumed once per snapshot; pinned evidence, worker isolation, and launch authority remain.
+> Superseded by: [ADR-963](adr/ADR-963-architecture-review-history-and-agent-worktrees.md) | partial | The fixed comparison modes, the full recapture on revalidation, and the read-only single-file handoff consumed once per snapshot; pinned evidence, worker isolation, and launch authority remain.
 
 Bounded host-qualified source snapshots drive a native subsystem review and exact source
 viewer; request-owned workers extract facts while existing providers and Beads own explicit
 handoffs.
 
-### [ADR-062 — Maintained branch local verification](adr/ADR-062-maintained-branch-local-verification.md)
+### [ADR-962 — Maintained branch local verification](adr/ADR-962-maintained-branch-local-verification.md)
 
 > Lifecycle: Active
 > Supersedes: [ADR-040](adr/ADR-040-complete-source-budgets-and-dependency-policy.md) | partial | Local architecture provenance on the Beads-governed feat/beads-panel branch; upstream delivery and all structural checks remain unchanged.
@@ -690,15 +699,15 @@ handoffs.
 The Beads-governed maintained branch verifies locally against a pinned policy baseline;
 upstream GitHub provenance and blocking source/dependency checks retain their authority.
 
-### [ADR-063 — Architecture review over history, with agent worktrees](adr/ADR-063-architecture-review-history-and-agent-worktrees.md)
+### [ADR-963 — Architecture review over history, with agent worktrees](adr/ADR-963-architecture-review-history-and-agent-worktrees.md)
 
 > Lifecycle: Partially superseded
-> Supersedes: [ADR-061](adr/ADR-061-pinned-native-architecture-review.md) | partial | The fixed comparison modes, the full recapture on revalidation, and the read-only single-file handoff consumed once per snapshot; pinned evidence, worker isolation, and launch authority remain.
+> Supersedes: [ADR-961](adr/ADR-961-pinned-native-architecture-review.md) | partial | The fixed comparison modes, the full recapture on revalidation, and the read-only single-file handoff consumed once per snapshot; pinned evidence, worker isolation, and launch authority remain.
 > Supersedes: [ADR-005](adr/ADR-005-system-git-engine.md) | partial | Creating no branch at all; the architecture review creates one hvir/architecture/ branch per agent launch.
 > Supersedes: [ADR-008](adr/ADR-008-project-worktree-workspaces.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
-> Superseded by: [ADR-064](adr/ADR-064-architecture-review-as-a-live-zoomable-canvas.md) | partial | The map now opens on systems on a laid-out canvas that drills to subsystems and modules; explanation-only requests no longer create an agent branch, worktree, brief or terminal session, while architecture-improvement launches retain the worktree handoff.
-> Superseded by: [ADR-065](adr/ADR-065-history-reads-the-fleet-commit-classification.md) | partial | Marking every History row and strip commit from its diff and import edges alone; a commit the fleet has classified is marked from its Architectural trailer instead.
-> Superseded by: [ADR-067](adr/ADR-067-whole-monorepo-architecture-capture.md) | partial | The small-repository read budgets and default subsystem mapping across workspace packages; capture and classification use the expanded shared budgets and package boundaries refine default subsystems.
+> Superseded by: [ADR-964](adr/ADR-964-architecture-review-as-a-live-zoomable-canvas.md) | partial | The map now opens on systems on a laid-out canvas that drills to subsystems and modules; explanation-only requests no longer create an agent branch, worktree, brief or terminal session, while architecture-improvement launches retain the worktree handoff.
+> Superseded by: [ADR-965](adr/ADR-965-history-reads-the-fleet-commit-classification.md) | partial | Marking every History row and strip commit from its diff and import edges alone; a commit the fleet has classified is marked from its Architectural trailer instead.
+> Superseded by: [ADR-967](adr/ADR-967-whole-monorepo-architecture-capture.md) | partial | The small-repository read budgets and default subsystem mapping across workspace packages; capture and classification use the expanded shared budgets and package boundaries refine default subsystems.
 
 A snapshot compares any two refs or a ref and the live tree from Git objects through a blob-keyed
 parse cache, opens on subsystem relationships across TypeScript, Python, Go and Rust, and hands
@@ -706,30 +715,30 @@ an agent a worktree hvir owns so the review can re-snapshot the agent's change. 
 marks each commit's architecture change against its parent, filters to architecture changes,
 and opens the review on any commit; the commit strip lists the same commits newest first.
 
-### [ADR-064 — Architecture review as a live, zoomable canvas](adr/ADR-064-architecture-review-as-a-live-zoomable-canvas.md)
+### [ADR-964 — Architecture review as a live, zoomable canvas](adr/ADR-964-architecture-review-as-a-live-zoomable-canvas.md)
 
 > Lifecycle: Active
-> Supersedes: [ADR-063](adr/ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | The map now opens on systems on a laid-out canvas that drills to subsystems and modules; explanation-only requests no longer create an agent branch, worktree, brief or terminal session, while architecture-improvement launches retain the worktree handoff.
+> Supersedes: [ADR-963](adr/ADR-963-architecture-review-history-and-agent-worktrees.md) | partial | The map now opens on systems on a laid-out canvas that drills to subsystems and modules; explanation-only requests no longer create an agent branch, worktree, brief or terminal session, while architecture-improvement launches retain the worktree handoff.
 
 The map becomes a pan and zoom canvas of Systems, Subsystems and Modules laid out off the render
 thread, a live review follows the working tree as a series of snapshots, and one direct model
 call produces an Explanation shown as a claim beside what the scan observed without a worktree
 or terminal handoff.
 
-### [ADR-065 — History reads the fleet's commit classification](adr/ADR-065-history-reads-the-fleet-commit-classification.md)
+### [ADR-965 — History reads the fleet's commit classification](adr/ADR-965-history-reads-the-fleet-commit-classification.md)
 
 > Lifecycle: Active
-> Supersedes: [ADR-063](adr/ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | Marking every History row and strip commit from its diff and import edges alone; a commit the fleet has classified is marked from its Architectural trailer instead.
+> Supersedes: [ADR-963](adr/ADR-963-architecture-review-history-and-agent-worktrees.md) | partial | Marking every History row and strip commit from its diff and import edges alone; a commit the fleet has classified is marked from its Architectural trailer instead.
 
 History and the strip read the fleet's commit classification, one primary change type and its
 orthogonal dimensions, from each commit's trailers and its note under refs/notes/classification,
-mark a classified commit from its Architectural trailer, and keep the ADR-063 heuristic as the
+mark a classified commit from its Architectural trailer, and keep the ADR-963 heuristic as the
 permanent fallback for every commit the fleet has not classified.
 
-### [ADR-066 — Scans reuse blobs by object id and analyses by fingerprint](adr/ADR-066-scans-reuse-blobs-by-object-id-and-analyses-by-fingerprint.md)
+### [ADR-966 — Scans reuse blobs by object id and analyses by fingerprint](adr/ADR-966-scans-reuse-blobs-by-object-id-and-analyses-by-fingerprint.md)
 
 > Lifecycle: Partially superseded
-> Superseded by: [ADR-067](adr/ADR-067-whole-monorepo-architecture-capture.md) | partial | The 32 MiB blob-cache budget; the cache remains twice the expanded capture byte budget.
+> Superseded by: [ADR-967](adr/ADR-967-whole-monorepo-architecture-capture.md) | partial | The 32 MiB blob-cache budget; the cache remains twice the expanded capture byte budget.
 
 The architecture review coordinator keeps two in-memory, byte-bounded, least-recently-used
 caches for the life of the process: blob text by verified Git object id, shared by review scans
@@ -737,24 +746,15 @@ and the History classifier and filled by live reads too, and analyses by capture
 a repeat scan of an unchanged pair transfers no blobs and runs no worker. The blob-read span
 reports transferred bytes and host calls only.
 
-### [ADR-067 — Whole-monorepo architecture capture](adr/ADR-067-whole-monorepo-architecture-capture.md)
+### [ADR-967 — Whole-monorepo architecture capture](adr/ADR-967-whole-monorepo-architecture-capture.md)
 
 > Lifecycle: Active
-> Supersedes: [ADR-063](adr/ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | The small-repository read budgets and default subsystem mapping across workspace packages; capture and classification use the expanded shared budgets and package boundaries refine default subsystems.
-> Supersedes: [ADR-066](adr/ADR-066-scans-reuse-blobs-by-object-id-and-analyses-by-fingerprint.md) | partial | The 32 MiB blob-cache budget; the cache remains twice the expanded capture byte budget.
+> Supersedes: [ADR-963](adr/ADR-963-architecture-review-history-and-agent-worktrees.md) | partial | The small-repository read budgets and default subsystem mapping across workspace packages; capture and classification use the expanded shared budgets and package boundaries refine default subsystems.
+> Supersedes: [ADR-966](adr/ADR-966-scans-reuse-blobs-by-object-id-and-analyses-by-fingerprint.md) | partial | The 32 MiB blob-cache budget; the cache remains twice the expanded capture byte budget.
 
 Whole-repository budgets preserve package and service relationships without sampling.
 Kotlin joins the grammar scanners, workspace imports resolve through captured manifests,
 and symbolic links and submodules remain disclosed exclusions.
-
-### [ADR-068 — React-owned development measure containment](adr/ADR-068-react-owned-development-measure-containment.md)
-
-> Lifecycle: Active
-> Supersedes: [ADR-025](adr/ADR-025-remove-renderer-responsiveness-diagnostic.md) | partial | Requirement to preserve hvir's development Performance Timeline containment owner and budget fixture.
-
-React owns cleanup of its development Performance measures; a development-only Electron fixture
-uses browser observation to prove fixture-specific React work and an empty retained measure set
-without adding product instrumentation.
 
 ## 5. Architecture
 

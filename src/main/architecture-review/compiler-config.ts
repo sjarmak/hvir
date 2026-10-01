@@ -52,7 +52,7 @@ type MatchFiles = (
 
 /**
  * Applies the captured tsconfig and jsconfig files the way the TypeScript language service
- * does (ADR-063): a source takes the nearest config above it, or the referenced project of
+ * does (ADR-963): a source takes the nearest config above it, or the referenced project of
  * that config which includes it. `extends` and `references` are followed within the capture;
  * one that leaves it is reported as a diagnostic rather than guessed at.
  */

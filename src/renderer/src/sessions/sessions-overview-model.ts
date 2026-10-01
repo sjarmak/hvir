@@ -41,7 +41,7 @@ export type SessionsOverviewCardFactTone =
 export interface SessionsOverviewCardFact {
   readonly label: string
   readonly value: string
-  /** Free text shown beside the value: a prompt's message (ADR-051). */
+  /** Free text shown beside the value: a prompt's message (ADR-951). */
   readonly detail?: string
   readonly tone: SessionsOverviewCardFactTone
 }
@@ -137,7 +137,7 @@ export function sessionsOverviewCardFacts(
   return { facts: candidates }
 }
 
-/** A prompt shows its message beside the word; nothing else carries a detail (ADR-051). */
+/** A prompt shows its message beside the word; nothing else carries a detail (ADR-951). */
 function attentionFact(row: SessionsProjectionRow): SessionsOverviewCardFact | undefined {
   const attention = fact(
     'Attention',

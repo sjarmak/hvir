@@ -1,6 +1,6 @@
 /**
- * The phone's mirror text size (ADR-059). The grid the page holds the PTY at
- * is its area divided by one cell (ADR-058), so the font is the one number
+ * The phone's mirror text size (ADR-959). The grid the page holds the PTY at
+ * is its area divided by one cell (ADR-958), so the font is the one number
  * that decides how much of a session a phone shows: at a desktop-readable
  * size a phone holds a session at forty columns, which is neither the density
  * the desktop has nor the history the height could carry.

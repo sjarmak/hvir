@@ -88,7 +88,7 @@ export interface SessionsObservationPortOptions {
    * The per-host city event facts, for the interactions a city declared it is
    * waiting on. Observation only: these facts are main's and follow open
    * projects, so a row reports an interaction that was already known rather
-   * than being the reason anything was read (ADR-048).
+   * than being the reason anything was read (ADR-948).
    */
   readonly events?: CityEventsObservationSource
 }
@@ -208,7 +208,7 @@ export class SessionsObservationPort {
   /**
    * What foreign session a row stands for, as the renderer's own projection had
    * it. The identifier stays inside this answer: it is returned to main-side
-   * callers, never to the renderer that asked (ADR-046).
+   * callers, never to the renderer that asked (ADR-946).
    */
   resolveExternalSession(
     owner: SessionsDemandOwner,

@@ -12,7 +12,7 @@ import {
 } from '../git/hvir-worktrees'
 
 /**
- * An unfinished handoff (ADR-063): a worktree an architecture-review handoff created whose
+ * An unfinished handoff (ADR-963): a worktree an architecture-review handoff created whose
  * brief never landed, so no agent was launched there, and where nothing has happened
  * since. Every fact is read from disk and Git, never from the review that created it, so
  * the verdict survives a closed review, a rescan or an application restart:

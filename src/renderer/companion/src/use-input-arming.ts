@@ -1,5 +1,5 @@
 /**
- * The page's arming state as a hook (ADR-050): armed by the person for one
+ * The page's arming state as a hook (ADR-950): armed by the person for one
  * mirror, disarmed when the page is hidden or unloaded, when that mirror is
  * left or ends, or when the idle bound lapses. An arming is bound to the
  * mirror it was made for, so the next mirror always opens disarmed. A page

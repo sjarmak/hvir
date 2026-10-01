@@ -3,12 +3,12 @@
  *
  * One client per host, built from a host hvir is already connected to. A client
  * is never built for a host hvir would have to dial: a row someone else's agent
- * produced must not be the reason hvir opens a connection (ADR-046).
+ * produced must not be the reason hvir opens a connection (ADR-946).
  *
  * The city name is the supervisor's own, resolved from the city root the
  * projection recorded and cached briefly, because every verb needs it and a
  * city list is a round trip of its own. The endpoint is still declared, not
- * discovered (ADR-047): this resolves a name inside a declared endpoint.
+ * discovered (ADR-947): this resolves a name inside a declared endpoint.
  */
 import type { HostId, HostPath } from '../../shared'
 import {

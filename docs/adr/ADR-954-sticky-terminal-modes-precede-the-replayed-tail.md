@@ -1,12 +1,12 @@
-# ADR-054: Sticky terminal modes precede the replayed tail
+# ADR-954: Sticky terminal modes precede the replayed tail
 
 > Lifecycle: Partially superseded
-> Supersedes: [ADR-050](ADR-050-companion-live-terminal-mirror.md) | partial | Main not interpreting the bytes it forwards, for a bounded scan of sticky DEC private modes emitted ahead of the replayed tail.
-> Superseded by: [ADR-056](ADR-056-read-back-reaches-a-mouse-tracking-program.md) | partial | The mouse tracking family left to the window, for a mirror whose gesture the program's own wheel reports answer.
+> Supersedes: [ADR-950](ADR-950-companion-live-terminal-mirror.md) | partial | Main not interpreting the bytes it forwards, for a bounded scan of sticky DEC private modes emitted ahead of the replayed tail.
+> Superseded by: [ADR-956](ADR-956-read-back-reaches-a-mouse-tracking-program.md) | partial | The mouse tracking family left to the window, for a mirror whose gesture the program's own wheel reports answer.
 
 ## Context
 
-ADR-050 has the PTY stream attachment retain a bounded tail of raw output for every live PTY,
+ADR-950 has the PTY stream attachment retain a bounded tail of raw output for every live PTY,
 and it states the boundary in one sentence: bytes cross from main to the phone as they are, and
 main does not interpret them. The retained tail is a window cut at whichever byte the budget
 lands on. Everything the session said before that byte is gone, including the short sequences
@@ -17,7 +17,7 @@ single sequence, and then writes for hours. By the time a phone opens a mirror t
 outside the window, so the tail replays into an emulator sitting on the normal screen. The
 program's redraws stack as scrollback instead of repainting one grid, the first frame is a pile
 of overlapping screens, and the divergence lasts until the program happens to repaint
-everything. ADR-052 made exactly that session the one the Companion exists to reach, and ADR-053
+everything. ADR-952 made exactly that session the one the Companion exists to reach, and ADR-953
 made the emulator's viewport the read-back, so a mirror wrongly on the normal screen now also
 manufactures history the session never had.
 
@@ -35,7 +35,7 @@ stream where that transition sits. It builds no screen model, no cursor, and no 
 reads no content; and it retains no text of its own. A sequence split across two reads is
 carried as the parse state of that sequence rather than as characters, so nothing of the stream
 is held and where the read boundary falls changes no outcome. Everything outside the set is
-data the scan passes over untouched. This is the one narrowing of ADR-050's rule that main does
+data the scan passes over untouched. This is the one narrowing of ADR-950's rule that main does
 not interpret the bytes it forwards.
 
 That state replays as a preamble. When a reader attaches, a new mirror lease or a reattaching
@@ -82,7 +82,7 @@ the program that wrote it ran it.
   record exists to fix.
 - The mouse tracking family, `?1000`, `?1002`, `?1003`, `?1006`, and `?1015`, is not carried.
   Carrying it makes the phone's emulator report that the program tracks the mouse, the one wheel
-  policy of ADR-053 then routes every gesture to SGR mouse reports instead of the viewport, and
+  policy of ADR-953 then routes every gesture to SGR mouse reports instead of the viewport, and
   a disarmed mirror drops those bytes while the policy still counts the gesture handled. The
   phone's read-back would stop working silently, with nothing on the screen to say why.
 - `?25` cursor visibility, `?7` autowrap, `?1` application cursor keys, `?2004` bracketed paste,
@@ -104,7 +104,7 @@ A distinct field is not a convenience here; it is the only shape that holds.
 ## Consequences
 
 A mirror and a reattaching renderer both start on the screen the session is on, so a full-screen
-program's first frame is one grid instead of a stack of them. ADR-050's consequence that a raw
+program's first frame is one grid instead of a stack of them. ADR-950's consequence that a raw
 tail replays an imperfect first frame until the program redraws is narrowed to the modes this
 record leaves out, and the alternate screen is no longer among them.
 
@@ -116,7 +116,7 @@ detail: a change to the carried set has to move both.
 Main now knows something about the bytes it forwards, and that is a boundary that only gets
 harder to hold once it has been crossed. The line is drawn at a closed set of flags and the
 positions they were seen at, with no screen behind them, so the next mode anyone wants carried
-is a change to this record rather than an implementation detail of it. ADR-050's rejected
+is a change to this record rather than an implementation detail of it. ADR-950's rejected
 alternative of a headless emulator in main stays rejected, and nothing here moves main toward
 one.
 
@@ -136,7 +136,7 @@ decision, not an extension of this one.
 ## Rejected alternatives
 
 - A headless emulator in main holding the screen and handing each reader its current state: this
-  is ADR-050's rejected alternative and it stays rejected. It puts a copy of a renderer-owned
+  is ADR-950's rejected alternative and it stays rejected. It puts a copy of a renderer-owned
   surface in main, adds an emulator dependency to main, and interprets every byte rather than
   the handful this record names.
 - Prefixing the preamble onto the retained tail: the page's contract rejects an opened event
@@ -148,7 +148,7 @@ decision, not an extension of this one.
   property the tail budget exists to deny.
 - Asking the desktop renderer's emulator for its mode state when a mirror attaches: a mirror is
   bound to a PTY instance and has to work while the renderer is hidden, throttled, or swapping
-  documents, and ADR-050 keeps a mirror independent of a renderer document on purpose.
+  documents, and ADR-950 keeps a mirror independent of a renderer document on purpose.
 - Carrying every sticky mode the emulator understands: the mouse tracking family alone disables
-  ADR-053's read-back on a disarmed mirror, and a set with no stated boundary is the headless
+  ADR-953's read-back on a disarmed mirror, and a set with no stated boundary is the headless
   emulator arriving one mode at a time.

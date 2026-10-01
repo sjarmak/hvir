@@ -1,11 +1,11 @@
-# ADR-065: History reads the fleet's commit classification
+# ADR-965: History reads the fleet's commit classification
 
 > Lifecycle: Active
-> Supersedes: [ADR-063](ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | Marking every History row and strip commit from its diff and import edges alone; a commit the fleet has classified is marked from its Architectural trailer instead.
+> Supersedes: [ADR-963](ADR-963-architecture-review-history-and-agent-worktrees.md) | partial | Marking every History row and strip commit from its diff and import edges alone; a commit the fleet has classified is marked from its Architectural trailer instead.
 
 ## Context
 
-ADR-063 marks each History row and strip commit with one flat value, architecture, code, none
+ADR-963 marks each History row and strip commit with one flat value, architecture, code, none
 or unclassified, decided by a heuristic in main from the commit's diff and the import edges of
 its modified modules. That marker counts every import relationship, test files and outside
 libraries included, and on hvir's own history it called 26 of the newest 50 commits
@@ -63,7 +63,7 @@ command per batch this decision pays for, and no classification the fleet's hook
 writes is a bare line ending; only a raw blob attached by hand has that shape.
 
 **The heuristic is the permanent fallback, not a shim.** A commit the fleet has not classified
-is marked exactly as ADR-063 marks it: from its diff and the import edges of its modified
+is marked exactly as ADR-963 marks it: from its diff and the import edges of its modified
 modules, cached by commit pair, scanner versions and layout. Nothing in that path is weakened
 or removed. Most of hvir's history may never be backfilled, and every repository the fleet
 does not own is in the same position, so the heuristic stays as long as the marker does.
@@ -98,7 +98,7 @@ A classified commit costs no module reads and no scans, so a backfilled history 
 mark than an unlabelled one, and the marker is always the fleet's where the fleet has one.
 Every classification batch gains one git command, whether or not the notes ref exists; Git
 prints a warning for the absent ref on stderr, which main ignores as it does for every
-successful command. Two sources now feed one marker; the ADR-063 heuristic and the fleet can
+successful command. Two sources now feed one marker; the ADR-963 heuristic and the fleet can
 disagree on the same commit, and the fleet wins by design, so a disagreement is a signal about
 the fleet's label, not a bug in the marker. hvir's own trailer parsing is the one piece of
 reading logic it owns: a `Key: value` line grammar with folded continuations, shared by

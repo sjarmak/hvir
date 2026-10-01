@@ -2,7 +2,7 @@
  * Pins TypeScript types for the exact Gas City supervisor operations hvir calls.
  *
  * The supervisor's OpenAPI document describes its whole verb set, including every
- * session mutation ADR-047 refuses. This generator reads that document and emits
+ * session mutation ADR-947 refuses. This generator reads that document and emits
  * only the transitive schema closure of the declared operations below, so the
  * generated type surface cannot express a call hvir has decided not to make.
  *
@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 
 const SCRIPT_DIRECTORY = dirname(fileURLToPath(import.meta.url))
 
-/** gc's documented loopback default. ADR-047 declares the endpoint; it never scans. */
+/** gc's documented loopback default. ADR-947 declares the endpoint; it never scans. */
 export const SUPERVISOR_DEFAULT_ENDPOINT = '127.0.0.1:8372'
 
 /** One entry per operation hvir is allowed to call. Adding one is a decision. */
@@ -99,7 +99,7 @@ const EVENT_ROOTS = [
 
 /**
  * Excluded on purpose, with the decision each exclusion carries:
- * the raw branch is provider-native transcript content ADR-046 keeps out of hvir,
+ * the raw branch is provider-native transcript content ADR-946 keeps out of hvir,
  * and it is reachable only by asking for `format=raw`, which the client never sends.
  * Excluding the types means a later caller cannot quietly start asking for it.
  */

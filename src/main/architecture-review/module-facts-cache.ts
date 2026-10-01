@@ -11,7 +11,7 @@ import { isModuleFacts, type ModuleFacts } from './module-facts'
  */
 export const ARCHITECTURE_FACTS_CACHE_FORMAT = 'module-facts-2'
 
-/** What one cached parse is keyed by (ADR-063): where the blob lives, which blob, and what parsed it. */
+/** What one cached parse is keyed by (ADR-963): where the blob lives, which blob, and what parsed it. */
 export interface ModuleFactsKey {
   readonly hostId: string
   readonly repository: string

@@ -1,4 +1,4 @@
-# ADR-046: Sessions projects external agent sessions without owning them
+# ADR-946: Sessions projects external agent sessions without owning them
 
 > Lifecycle: Active
 

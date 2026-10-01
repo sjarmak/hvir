@@ -4,14 +4,14 @@
  * later frame, replaced when a new `opened` arrives, and shown in the host
  * scaled to its width. The preamble puts the fresh emulator on the screen the
  * session is already on before a byte of the tail lands, and is skipped when the
- * frame carries none (ADR-054). The pane is built asynchronously (the emulator
+ * frame carries none (ADR-954). The pane is built asynchronously (the emulator
  * loads its module first), so frames that land before it is ready are queued in
  * order and written once it mounts.
  *
  * The grid is whatever main publishes: geometry frames resize the pane, and
  * the emulator never picks a size of its own. For as long as the mirror is
  * live the mount holds the PTY at the grid the host's area holds at the pane's
- * cell size (ADR-058), so the phone's screen fills with the phone's own grid
+ * cell size (ADR-958), so the phone's screen fills with the phone's own grid
  * whatever the desktop is doing. The view is a CSS transform on the pane's
  * surface that sets the grid's columns to the host's width and never enlarges,
  * so the emulator keeps its exact cell grid: a wider grid the PTY still has
@@ -21,7 +21,7 @@
  * the grid, so the host scrolls over exactly the screen the emulator draws.
  *
  * Read-back is the emulator's viewport and the page holds no text of its own
- * (ADR-053). There is one read-back gesture: a wheel notch reaches the pane
+ * (ADR-953). There is one read-back gesture: a wheel notch reaches the pane
  * directly, and a finger over the grid is adapted into the same event shape,
  * divided by this mount's current scale so the content tracks the finger
  * rather than the emulator's unscaled pixels. Two scrollers sit end to end
@@ -35,7 +35,7 @@
  * reachable. The way back is that same strip travelled at once rather than a
  * second route through it, so both scrollers land on the newest output
  * together. The mount also reports which screen the emulator is on, so a
- * viewport that cannot move is offered no way back (ADR-060), and whether the viewport sits behind the newest
+ * viewport that cannot move is offered no way back (ADR-960), and whether the viewport sits behind the newest
  * output, so the view can offer the one tap back to it. That second report is a
  * subscription and never a sample:
  * a wheel notch the policy leaves alone is scrolled by the emulator itself and
@@ -60,7 +60,7 @@ interface PendingPane {
 
 /**
  * Why the mirror is sending bytes: the person typing, or a read-back gesture
- * paging a program through its own history (ADR-055). They pass different gates
+ * paging a program through its own history (ADR-955). They pass different gates
  * on the page and on the desktop, so the word travels with the bytes.
  */
 export type CompanionInputSource = 'user' | 'navigation'
@@ -68,20 +68,20 @@ export type CompanionInputSource = 'user' | 'navigation'
 export interface CompanionTerminalMountOptions {
   readonly host: HTMLElement
   readonly createPane: CompanionTerminalPaneFactory
-  /** The pane's bytes with what produced them, since the two are gated apart (ADR-055). */
+  /** The pane's bytes with what produced them, since the two are gated apart (ADR-955). */
   readonly onInput: (data: string, source: CompanionInputSource) => void
-  /** Holds the PTY at the grid this page draws, for as long as the mirror lives (ADR-058). */
+  /** Holds the PTY at the grid this page draws, for as long as the mirror lives (ADR-958). */
   readonly onViewport: (cols: number, rows: number) => Promise<void>
-  /** Which screen the emulator is on; an alternate screen is paged rather than scrolled (ADR-055). */
+  /** Which screen the emulator is on; an alternate screen is paged rather than scrolled (ADR-955). */
   readonly onAlternateScreen: (alternate: boolean) => void
   /** Whether the viewport sits behind the newest output, which is when the way back is offered. */
   readonly onReadingBack: (readingBack: boolean) => void
   readonly onFailure: (error: unknown) => void
-  /** The person's mirror text size (ADR-059); the default when the page states none. */
+  /** The person's mirror text size (ADR-959); the default when the page states none. */
   readonly textSize?: number
   /**
    * The two grids, whenever either moves: the one the session actually has and
-   * the one this page last asked to hold it at (ADR-059). The view says both,
+   * the one this page last asked to hold it at (ADR-959). The view says both,
    * because a phone showing a session laid out for a desktop looks exactly like
    * a phone whose own grid landed, only smaller in every dimension that matters.
    */
@@ -198,7 +198,7 @@ export class CompanionTerminalMount {
   }
 
   /**
-   * The person's text size (ADR-059). The cell is what the grid is derived
+   * The person's text size (ADR-959). The cell is what the grid is derived
    * from, so a new size is a new grid: the pane remeasures, the view rescales
    * against the grid it still has, and the fit asks for the grid the new cell
    * earns. Nothing here declares a grid of its own; the PTY moves when main

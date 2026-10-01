@@ -1,5 +1,5 @@
 /**
- * The Companion's asset allowlist (ADR-049): the page itself and the flat
+ * The Companion's asset allowlist (ADR-949): the page itself and the flat
  * bundle files beside it, read through the project host so main never opens
  * a file by path on its own. Anything the allowlist does not name resolves to
  * nothing before the host is asked, so a traversal never reaches the disk.

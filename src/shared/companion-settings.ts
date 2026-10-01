@@ -1,5 +1,5 @@
 /**
- * Companion settings as the Settings dialog sees and edits them (ADR-049).
+ * Companion settings as the Settings dialog sees and edits them (ADR-949).
  *
  * The stored credential and the push token never appear here. The view says
  * only whether each is configured, and a save carries the push token as a
@@ -34,7 +34,7 @@ export interface CompanionListenerStatus {
 export interface CompanionConfigView {
   readonly enabled: boolean
   readonly port: number
-  /** Whether an armed Companion page may type into a mirrored terminal (ADR-050). */
+  /** Whether an armed Companion page may type into a mirrored terminal (ADR-950). */
   readonly mirrorInputAllowed: boolean
   readonly paired: boolean
   /** Present only while a pairing code is outstanding. */

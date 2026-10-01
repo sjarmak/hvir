@@ -1,7 +1,7 @@
 import type { HostPath } from '../../shared/host-path'
 
 /**
- * Handoffs main is carrying out right now (ADR-063). An entry spans from before the
+ * Handoffs main is carrying out right now (ADR-963). An entry spans from before the
  * handoff creates its worktree, or before a retry resumes it, until its brief write
  * settles. While an entry is held the worktree is never an unfinished handoff, whatever
  * disk and Git say, so no removal can land in the middle of a handoff.

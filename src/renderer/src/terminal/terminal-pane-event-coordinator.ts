@@ -15,7 +15,7 @@ export interface TerminalPaneEventSnapshot {
 export type TerminalPaneEventEffect =
   | { readonly title: string }
   | { readonly bell: true }
-  /** The program's own notification (OSC 9 / OSC 777), its body already bounded (ADR-051). */
+  /** The program's own notification (OSC 9 / OSC 777), its body already bounded (ADR-951). */
   | { readonly notification: { readonly body?: string } }
   | { readonly clipboardWrite: { readonly selection: string; readonly data: string } }
 

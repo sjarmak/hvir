@@ -1,7 +1,7 @@
 /**
- * The Companion listener: hvir's one inbound network socket (ADR-049).
+ * The Companion listener: hvir's one inbound network socket (ADR-949).
  *
- * ADR-010 forbids any hvir-owned remote server; ADR-049 narrows that to this
+ * ADR-010 forbids any hvir-owned remote server; ADR-949 narrows that to this
  * single loopback-bound listener that lives inside the running app, is off
  * until Settings opens it, and dies with the process. Reaching it from another
  * device is the operator's act through the operator's tooling. Inside that

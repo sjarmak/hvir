@@ -1,5 +1,5 @@
 /**
- * The one set of sessions waiting on the person, owned by main (ADR-049).
+ * The one set of sessions waiting on the person, owned by main (ADR-949).
  *
  * Windows report what they present; the external authority reports what it
  * is waiting on; this aggregate dedupes them by source key and says whether
@@ -25,7 +25,7 @@ export interface MainActionableEntry {
   readonly kind: ActionableKind
   readonly freshness: ActionableFreshness
   readonly reason?: ExternalAttentionStaleReason
-  /** The prompt's message, already bounded; only a prompt entry carries one (ADR-051). */
+  /** The prompt's message, already bounded; only a prompt entry carries one (ADR-951). */
   readonly body?: string
   readonly terminalHandle?: SessionsTerminalHandle
   /** Main only: the foreign identifier this entry stands for. */

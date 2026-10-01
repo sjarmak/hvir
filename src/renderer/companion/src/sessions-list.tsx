@@ -68,7 +68,7 @@ function WorkspaceGroup({
 /**
  * Attention as the actionable set reports it. A stale row says so, with the
  * reason the desktop gave; a row nobody watches says nothing at all. A prompt's
- * message sits under the title, not in the badge (ADR-051). A row is working
+ * message sits under the title, not in the badge (ADR-951). A row is working
  * when a window sees its terminal working or its source says the turn is,
  * and either way the word appears once.
  */

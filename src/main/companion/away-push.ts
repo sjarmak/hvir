@@ -1,12 +1,12 @@
 /**
- * Away-time Push over the actionable set (ADR-049).
+ * Away-time Push over the actionable set (ADR-949).
  *
  * While every hvir window is unfocused, a session entering the actionable set
  * produces exactly one Push. The set at construction is the baseline: what was
  * already waiting when hvir started, or when Push was switched on, is not an
  * appearance. A snapshot observed while not away is also only a baseline, so
  * a session that went Ready at the desk never fires on a later blur. A stale
- * entry is never pushed (ADR-048), leaving the set produces nothing, and a
+ * entry is never pushed (ADR-948), leaving the set produces nothing, and a
  * failed delivery is reported once and never retried.
  */
 import type { ActionableKind } from '../../shared'
@@ -29,7 +29,7 @@ export type AwayPushResult =
 
 /**
  * One appearance's fate. It names the source's kind, never its key: an
- * external key is a foreign identifier (ADR-046) and outcomes reach logs.
+ * external key is a foreign identifier (ADR-946) and outcomes reach logs.
  */
 export interface AwayPushOutcome {
   readonly source: 'terminal' | 'external'

@@ -1,5 +1,5 @@
 /**
- * The terminal keys a phone keyboard lacks, as on-screen controls (ADR-050).
+ * The terminal keys a phone keyboard lacks, as on-screen controls (ADR-950).
  * Each sends exactly the bytes named here and nothing else: no newline is
  * appended, nothing is composed. Arrows use the CSI form; a program that has
  * switched the terminal to application cursor mode reads the same keys

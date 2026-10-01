@@ -27,7 +27,7 @@ import type { SupervisorAccess } from '../gascity/supervisor-access'
  *
  * Read for the interactions a city declared, and told when hvir answers one so
  * the attention it raised clears on the answer rather than on the next read
- * (ADR-048). Sessions never starts, stops, or resumes a stream: the lifetime
+ * (ADR-948). Sessions never starts, stops, or resumes a stream: the lifetime
  * belongs to open projects, which is what lets a closed view raise attention.
  */
 export interface SessionsCityEventsPort extends CityEventsObservationSource {
@@ -39,7 +39,7 @@ export interface ApplicationSessionsObservation {
   readonly usage: SessionsUsageObservationPort
   readonly transcripts: SessionsTranscriptPort
   readonly attachTickets: SessionsAttachTicketRegistry
-  /** Where companion-kind leases are told about changes (ADR-049). */
+  /** Where companion-kind leases are told about changes (ADR-949). */
   readonly companionSinks: SessionsCompanionSinkRegistry
 }
 

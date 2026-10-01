@@ -38,7 +38,7 @@ describe('sessions pending projection', () => {
       ],
     })
     // The identifier gc addresses the interaction by does not appear in what
-    // the renderer receives (ADR-046).
+    // the renderer receives (ADR-946).
     expect(JSON.stringify(projected)).not.toContain('req-1')
   })
 

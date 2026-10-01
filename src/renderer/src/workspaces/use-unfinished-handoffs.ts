@@ -6,7 +6,7 @@ const HANDOFF_BRANCH_PREFIX = 'hvir/architecture/'
 const NONE: ReadonlySet<string> = new Set()
 
 /**
- * The workspaces main judges to be unfinished architecture handoffs (ADR-063). The
+ * The workspaces main judges to be unfinished architecture handoffs (ADR-963). The
  * renderer only asks when a workspace sits on a handoff branch; main reads every fact
  * from disk and Git and re-checks them all before any removal.
  */

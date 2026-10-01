@@ -4,7 +4,7 @@ import type { WorkbenchRuntime } from '../workbench-runtime'
 
 /**
  * Tells the owning renderer that a Companion mirror wrote to its PTY
- * (ADR-050): id and bytes, to the exact current owner and generation, so
+ * (ADR-950): id and bytes, to the exact current owner and generation, so
  * ADR-019 arming stays in the renderer. The bytes are never logged here.
  */
 export function installMirrorInputNotice(

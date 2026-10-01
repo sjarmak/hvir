@@ -1,5 +1,5 @@
 /**
- * Which row a Companion page may mirror, and what to attach to (ADR-050).
+ * Which row a Companion page may mirror, and what to attach to (ADR-950).
  *
  * Pure. Eligibility is exactly the desktop's Interact gate: a live lifecycle,
  * a connected host, and a live PTY. The target is the identity the projection

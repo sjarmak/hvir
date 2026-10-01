@@ -11,7 +11,7 @@ export interface ArchitectureScopeCandidate {
 
 /**
  * Why a scan was refused instead of read: the end it measured was above the size cap. The
- * review never reads part of a scope, so the person narrows it and scans again (ADR-063).
+ * review never reads part of a scope, so the person narrows it and scans again (ADR-963).
  */
 export interface ArchitectureScopeRefusal {
   readonly message: string

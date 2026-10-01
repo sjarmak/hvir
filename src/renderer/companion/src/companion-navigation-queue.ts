@@ -1,6 +1,6 @@
 /**
  * The read-back reports of one mirror, on their way to the desktop in order
- * (ADR-055, ADR-056). A finger over a program that owns its history produces a
+ * (ADR-955, ADR-956). A finger over a program that owns its history produces a
  * report on every move, and the page used to post each as its own request: the
  * browser opens them in parallel, the listener answers them in whatever order
  * they land, and a program paged up and then down could receive the down first.

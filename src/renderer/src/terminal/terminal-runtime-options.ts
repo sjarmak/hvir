@@ -44,7 +44,7 @@ export interface TerminalRuntimeOptions {
    * The gc session this terminal attaches to, when hvir is performing the
    * attach and the requesting surface could name the session. Declared once, at
    * the launch that performs the attach; main keeps the record afterwards, so a
-   * restart names nothing and keeps the join (ADR-046).
+   * restart names nothing and keeps the join (ADR-946).
    */
   readonly externalAttach?: ExternalSessionAttachRequest
   readonly architectureReview?: ArchitectureAgentLaunch
@@ -75,11 +75,11 @@ export interface TerminalRuntimeOptions {
   readonly onFreshStarted: (started: FreshTerminalStart) => void
   readonly onCapabilities: (capabilities: HarnessProviderCapabilities) => void
   readonly onInput: (data: string) => void
-  /** Input a Companion mirror already wrote to this terminal's PTY (ADR-050). */
+  /** Input a Companion mirror already wrote to this terminal's PTY (ADR-950). */
   readonly onMirrorInput: (data: string) => void
   readonly onOutput: () => void
   readonly onBell: () => void
-  /** The program's notification, with its bounded body when it had one (ADR-051). */
+  /** The program's notification, with its bounded body when it had one (ADR-951). */
   readonly onNotification: (body: string | undefined) => void
   readonly onFocus: () => void
   readonly onLink: (activation: TerminalLinkActivation) => void

@@ -54,7 +54,7 @@ describe('terminal workspace model', () => {
     expect(model.activeId).toBe('b')
   })
 
-  it('clears a prompt and its body on focus (ADR-051)', () => {
+  it('clears a prompt and its body on focus (ADR-951)', () => {
     let model = reduce(initialTerminalWorkspaceModel, {
       type: 'sessions-replaced',
       sessions: [

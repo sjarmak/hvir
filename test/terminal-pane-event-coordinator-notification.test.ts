@@ -10,7 +10,7 @@ const notification = (
   title = '',
 ): TerminalEvent => ({ type: 'notification', source, title, body })
 
-describe('TerminalPaneEventCoordinator bell and notification effects (ADR-051)', () => {
+describe('TerminalPaneEventCoordinator bell and notification effects (ADR-951)', () => {
   it('keeps the BEL byte as the bell and never turns a notification into one', () => {
     const coordinator = new TerminalPaneEventCoordinator('fallback title')
 

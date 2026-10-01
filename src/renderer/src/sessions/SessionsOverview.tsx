@@ -73,7 +73,7 @@ interface SessionsOverviewProps {
   /**
    * Runs the attach command main composed for a projected row, in the workspace
    * the attach switched to. The renderer never learns which foreign session the
-   * command names: it carries main's ticket and nothing else (ADR-046).
+   * command names: it carries main's ticket and nothing else (ADR-946).
    */
   readonly onAttachExternal: (
     workspaceId: string,

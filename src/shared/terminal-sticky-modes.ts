@@ -1,6 +1,6 @@
 /**
  * The terminal modes a replayed window of output can no longer prove, held
- * beside it (ADR-054).
+ * beside it (ADR-954).
  *
  * Every reader of a live PTY starts from a window: the desktop renderer takes
  * the retained replay when it attaches, a mirror takes the retained tail, and
@@ -21,7 +21,7 @@
  *
  * The scan is mechanical and bounded. It builds no screen, no cursor and no cell
  * grid, and it reads no content: every character outside a private mode sequence
- * crosses unexamined, as ADR-050 requires. A sequence split across two reads is
+ * crosses unexamined, as ADR-950 requires. A sequence split across two reads is
  * carried as parse state rather than as text, so no window of the stream is held
  * and the split changes no outcome.
  */
@@ -42,9 +42,9 @@ interface CarriedMode {
  * save happens against the normal screen, the way the program that wrote it ran
  * it. `?1047` names the same alternate buffer as `?47`, so it is observed as
  * `?47`: the two differ in what their resets clear, and this scanner emits no
- * reset. Every other mode is left to the window, for reasons ADR-054 states.
+ * reset. Every other mode is left to the window, for reasons ADR-954 states.
  *
- * The mouse tracking family follows the screens (ADR-056). A program that asked
+ * The mouse tracking family follows the screens (ADR-956). A program that asked
  * for mouse reports asks for them once, at startup, so the request is outside
  * every window long before a phone opens a mirror, and a mirror that never
  * learns of it routes a read-back gesture somewhere its own desktop does not.

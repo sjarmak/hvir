@@ -384,7 +384,7 @@ describe('terminal resume unavailable state', () => {
       title: '',
       body: 'Legacy attention',
     })
-    // A notification is a prompt with its message (ADR-051), never a bell.
+    // A notification is a prompt with its message (ADR-951), never a bell.
     expect(runtimeOptions.onBell).not.toHaveBeenCalled()
     expect(runtimeOptions.onNotification).toHaveBeenLastCalledWith('Legacy attention')
     paneState.instances[0]?.emitEvent({ type: 'bell' })

@@ -5,7 +5,7 @@
  * asks what session the selected row stands for, so main can read it. An attach
  * asks the same question and also where the terminal would land, so the command
  * runs in the row's own workspace. Both answers are checked against the
- * projection the renderer was looking at (ADR-046: exact knowledge, never
+ * projection the renderer was looking at (ADR-946: exact knowledge, never
  * inference), and both are refused once it has moved on.
  */
 import type {

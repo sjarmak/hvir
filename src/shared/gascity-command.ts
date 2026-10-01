@@ -3,7 +3,7 @@
  *
  * Both halves of hvir need it: the crew view builds it from a member it is
  * already showing, and main builds it for a projected Sessions row, whose
- * session identifier the renderer is not allowed to hold (ADR-046). The text
+ * session identifier the renderer is not allowed to hold (ADR-946). The text
  * itself is gc's public alias, the same string a person would type.
  */
 

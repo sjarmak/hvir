@@ -603,7 +603,7 @@ describe('CompanionTerminalMount', () => {
   })
 })
 
-describe('CompanionTerminalMount holds the grid it draws (ADR-058)', () => {
+describe('CompanionTerminalMount holds the grid it draws (ADR-958)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
   })
@@ -708,7 +708,7 @@ describe('CompanionTerminalMount holds the grid it draws (ADR-058)', () => {
   })
 })
 
-describe('CompanionTerminalMount draws the text size the person chose (ADR-059)', () => {
+describe('CompanionTerminalMount draws the text size the person chose (ADR-959)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
   })

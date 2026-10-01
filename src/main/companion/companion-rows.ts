@@ -1,5 +1,5 @@
 /**
- * The Companion's view of the Sessions projection (ADR-049): the observed
+ * The Companion's view of the Sessions projection (ADR-949): the observed
  * sessions joined with the actionable set, as rows a phone can show.
  *
  * Pure. The join takes what the observation port projected, what the
@@ -134,7 +134,7 @@ function attentionOf(
   return { status: 'stale', value: entry.kind, observedAt, reason: 'source-stale' }
 }
 
-/** The message travels only with an available prompt, as the wire admits it (ADR-051). */
+/** The message travels only with an available prompt, as the wire admits it (ADR-951). */
 function promptBodyOf(
   entry: MainActionableEntry | undefined,
   attention: SessionsFact<SessionsAttentionValue>,

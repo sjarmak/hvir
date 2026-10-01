@@ -1,7 +1,7 @@
 /**
  * Where a host's gc supervisor is, and which city a project root belongs to.
  *
- * ADR-047 declares the endpoint rather than discovering it: gc's documented
+ * ADR-947 declares the endpoint rather than discovering it: gc's documented
  * loopback default, one optional override per host, and no scanning. Everything
  * here is pure, so the policy is testable without a host or a socket.
  */

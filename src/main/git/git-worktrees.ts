@@ -52,7 +52,7 @@ export class GitWorktreeCapability {
   /**
    * Adds the worktree a review handoff owns, removes it without `--force`, or deletes its
    * branch only while the branch still points at its creation commit. Main grants exactly
-   * the argv each operation builds (ADR-063).
+   * the argv each operation builds (ADR-963).
    */
   async change(
     projectRoot: HostPath,

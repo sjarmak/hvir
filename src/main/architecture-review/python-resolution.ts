@@ -4,7 +4,7 @@ import type { ResolutionContext, ScanResolver } from './language-scanner'
 import type { ModuleImportOccurrence } from './module-facts'
 
 /**
- * Python resolution by path alone (ADR-063): a module is a `.py` file, a package is a
+ * Python resolution by path alone (ADR-963): a module is a `.py` file, a package is a
  * directory with `__init__.py`, and any directory holding modules is a namespace package.
  * An absolute import is looked up from the importing file's top-level package, then the
  * repository root, then `src`; a name found in none of them is external.

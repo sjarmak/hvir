@@ -5,7 +5,7 @@ interface ArchitectureScanTimingsProps {
   readonly metrics: ArchitectureScanMetrics
 }
 
-/** Per-stage cost of the scan that produced this snapshot (ADR-063). */
+/** Per-stage cost of the scan that produced this snapshot (ADR-963). */
 export function ArchitectureScanTimings({ metrics }: ArchitectureScanTimingsProps) {
   return (
     <>

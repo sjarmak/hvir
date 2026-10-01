@@ -1,5 +1,5 @@
 /**
- * Whether the phone may type into the mirrored terminal right now (ADR-050).
+ * Whether the phone may type into the mirrored terminal right now (ADR-950).
  * A mirror opens disarmed; the person arms it, each key they send extends the
  * arming, and it lapses on its own after an idle bound. Hiding the page and
  * the mirror ending disarm it from outside, through `disarmInput`.

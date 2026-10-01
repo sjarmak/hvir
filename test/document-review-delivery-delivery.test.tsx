@@ -67,7 +67,7 @@ afterEach(() => {
 })
 
 describe('document review delivery interaction', () => {
-  it('surfaces a harness prompt as the same actionable warning (ADR-051)', () => {
+  it('surfaces a harness prompt as the same actionable warning (ADR-951)', () => {
     const destination = { ...prepared.destination, attention: 'prompt' as const }
     render(<DocumentReviewDeliveryPanel delivery={panelInteraction(destination)} />)
 

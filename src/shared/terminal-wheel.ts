@@ -41,9 +41,9 @@ export const TERMINAL_READ_BACK_TOKEN_START = '\x1b'
 /**
  * The complete output of this policy's routes for a read-back gesture: the page
  * keys an alternate-screen program receives, and the wheel reports a program
- * tracking the mouse receives. It is the closed set ADR-055 exempts from the
+ * tracking the mouse receives. It is the closed set ADR-955 exempts from the
  * per-mirror arm and from the terminal input record, widened to the mouse route
- * by ADR-056, and it is defined by the routes rather than by a list beside them.
+ * by ADR-956, and it is defined by the routes rather than by a list beside them.
  */
 export function isTerminalReadBackNavigation(data: string): boolean {
   return READ_BACK_ONE.test(data)

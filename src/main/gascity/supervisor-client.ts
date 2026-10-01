@@ -2,7 +2,7 @@
  * The only way hvir talks to a gc supervisor over HTTP.
  *
  * The verb surface is exactly what this epic uses, declared once here and generated
- * from the supervisor's own document (ADR-047). Nothing throws at a caller: a
+ * from the supervisor's own document (ADR-947). Nothing throws at a caller: a
  * supervisor that is off, absent, slow, or refusing produces a named reason a view
  * can render. Provider names never reach a branch in this file; the supervisor's
  * structured format is the one shape hvir reads.
@@ -131,7 +131,7 @@ const MAX_DETAIL_LENGTH = 400
 
 /**
  * Presence is the whole check the supervisor performs on this header; it is not an
- * idempotency key, so a mutation that fails is never retried here (ADR-047).
+ * idempotency key, so a mutation that fails is never retried here (ADR-947).
  */
 const ANTI_CSRF_HEADER = 'X-GC-Request'
 const ANTI_CSRF_VALUE = 'hvir'
@@ -205,7 +205,7 @@ export class GascitySupervisorClient {
 
   /**
    * Always the structured format, and never with thinking text: a raw transcript
-   * would put provider-shaped content inside hvir, which ADR-047 refuses.
+   * would put provider-shaped content inside hvir, which ADR-947 refuses.
    */
   async transcript(
     cityName: string,
@@ -230,7 +230,7 @@ export class GascitySupervisorClient {
     return result
   }
 
-  /** Answers a declared pending interaction. Never retried (ADR-047). */
+  /** Answers a declared pending interaction. Never retried (ADR-947). */
   async respond(
     cityName: string,
     sessionId: string,
@@ -243,7 +243,7 @@ export class GascitySupervisorClient {
     )
   }
 
-  /** Sends a user message to a session. Never retried (ADR-047). */
+  /** Sends a user message to a session. Never retried (ADR-947). */
   async submit(
     cityName: string,
     sessionId: string,
@@ -280,7 +280,7 @@ export class GascitySupervisorClient {
    * carrying lifecycle transitions and no message content. `afterSeq` resumes
    * from a sequence the caller already saw, and omitting it starts at the current
    * head, so a resume is explicit and a fresh subscription replays nothing
-   * (ADR-047).
+   * (ADR-947).
    */
   async streamCity(
     cityName: string,

@@ -17,7 +17,7 @@ import { actionableEntriesFingerprint } from './terminal-attention'
 /**
  * Terminal attention rollups, and what this window tells main is waiting.
  *
- * The window sends the entries, not a count (ADR-049): main dedupes them
+ * The window sends the entries, not a count (ADR-949): main dedupes them
  * across windows, decides whether hvir is away, and drives the OS badge, the
  * Companion and Push from one set. External attention is not sent from here;
  * main already holds it at the authority that raised it.

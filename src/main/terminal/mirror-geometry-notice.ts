@@ -4,7 +4,7 @@ import type { WorkbenchRuntime } from '../workbench-runtime'
 
 /**
  * Tells the owning renderer that a Companion page watching its PTY holds the size, or that
- * the hold ended (ADR-058): the id and the held grid, to the exact current owner and
+ * the hold ended (ADR-958): the id and the held grid, to the exact current owner and
  * generation, so the pane can present a size it did not choose and refit once it is its
  * own again.
  */

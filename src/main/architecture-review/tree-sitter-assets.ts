@@ -1,5 +1,5 @@
 /**
- * The WebAssembly files the grammar scanners load (ADR-063). The build copies each `module`
+ * The WebAssembly files the grammar scanners load (ADR-963). The build copies each `module`
  * into `TREE_SITTER_ASSET_DIRECTORY` next to the main bundle; they ship inside app.asar,
  * which the utility process reads like any other file, so no asarUnpack entry is needed.
  */

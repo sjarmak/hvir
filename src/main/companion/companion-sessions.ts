@@ -1,5 +1,5 @@
 /**
- * The Companion's Sessions verbs (ADR-049, ADR-050): open a page, read its
+ * The Companion's Sessions verbs (ADR-949, ADR-950): open a page, read its
  * rows, select a row's transcript and mirror, answer, message, type, close.
  *
  * Every open page holds one observation lease under a companion owner the
@@ -42,7 +42,7 @@ import { companionMirrorTarget } from './companion-mirror-target'
 import { CompanionPageMirror, type CompanionMirrorAttach } from './companion-page-mirror'
 import { companionRows } from './companion-rows'
 
-/** What a phone's bytes are: the person typing, or a read-back gesture paging (ADR-055). */
+/** What a phone's bytes are: the person typing, or a read-back gesture paging (ADR-955). */
 export type CompanionInputKind = 'typing' | 'navigation'
 
 /** The PTY supervisor's mirror door and the Settings permission, as ports. */
@@ -195,7 +195,7 @@ export class CompanionSessionsService {
   /**
    * The user's exact bytes to the mirrored row; refused before the lease is
    * asked. `navigation` is a read-back gesture paging a program through its own
-   * history (ADR-055): the owner's permission gates it the same way, and it
+   * history (ADR-955): the owner's permission gates it the same way, and it
    * reaches the PTY without being recorded as terminal input. The page's
    * per-mirror arm, which typing also passes, is the page's own gate and was
    * never this one.
@@ -214,7 +214,7 @@ export class CompanionSessionsService {
   }
 
   /**
-   * The grid the page is drawing (ADR-058). Watching is not typing, so the Settings gate
+   * The grid the page is drawing (ADR-958). Watching is not typing, so the Settings gate
    * that guards input never applies here; a page may size what it reads without being
    * allowed to write to it.
    */
@@ -290,7 +290,7 @@ export class CompanionSessionsService {
 
   private readonly sink: SessionsCompanionSink = {
     onProjectionChange: (owner, change) => this.projectionChanged(owner, change),
-    // The Companion never leases usage (ADR-049), so nothing can arrive here.
+    // The Companion never leases usage (ADR-949), so nothing can arrive here.
     onUsageChange: () => undefined,
     onTranscriptChange: (owner, change) => this.transcriptChanged(owner, change),
   }

@@ -1,5 +1,5 @@
 /**
- * The Companion scenario (ADR-049, ADR-050) in the real Electron smoke app:
+ * The Companion scenario (ADR-949, ADR-950) in the real Electron smoke app:
  * enable the loopback listener, pair over HTTP, prove the served page resolves
  * every asset it names and that the emulator's WebAssembly module is served as
  * one, read the first Sessions snapshot over SSE, then prove that closing the

@@ -53,13 +53,13 @@ describe('feature-owned IPC composition', () => {
       readonly data: string
     }>()
     expectTypeOf<IpcEventMap['project:state']>().toEqualTypeOf<WorkspaceProjectState>()
-    // The mirror input notice (ADR-050) is a renderer-admitted event channel.
+    // The mirror input notice (ADR-950) is a renderer-admitted event channel.
     expect(EVENT_CHANNELS).toContain('pty:mirror-input')
     expectTypeOf<IpcEventMap['pty:mirror-input']>().toEqualTypeOf<{
       readonly id: string
       readonly data: string
     }>()
-    // A page holding or releasing a PTY's size (ADR-058) is one as well.
+    // A page holding or releasing a PTY's size (ADR-958) is one as well.
     expect(EVENT_CHANNELS).toContain('pty:mirror-geometry')
     expectTypeOf<IpcEventMap['pty:mirror-geometry']>().toEqualTypeOf<
       | {

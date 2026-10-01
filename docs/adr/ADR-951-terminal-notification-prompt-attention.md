@@ -1,8 +1,8 @@
-# ADR-051: A terminal's in-band notification is actionable attention that carries its message
+# ADR-951: A terminal's in-band notification is actionable attention that carries its message
 
 > Lifecycle: Active
 > Supersedes: [ADR-009](ADR-009-hierarchical-attention.md) | partial | Terminal focus as the only rule that clears a terminal's own attention, for a prompt entry answered through the Companion mirror.
-> Supersedes: [ADR-050](ADR-050-companion-live-terminal-mirror.md) | partial | No phone action clearing attention, for a prompt entry on the mirrored terminal.
+> Supersedes: [ADR-950](ADR-950-companion-live-terminal-mirror.md) | partial | No phone action clearing attention, for a prompt entry on the mirrored terminal.
 
 ## Context
 
@@ -21,10 +21,10 @@ PTY the same way on a local and an SSH host. hvir's terminal pane already transl
 OSC 777 into a notification event with a title and a body (ADR-003 keeps that translation
 behind the pane seam), and then collapses it into a bell, dropping the message.
 
-Two things make the current rules insufficient once a mirror exists (ADR-050). A row that went
+Two things make the current rules insufficient once a mirror exists (ADR-950). A row that went
 Ready stays Ready until its terminal is focused on the desktop, so a second prompt in the same
 session is invisible in the actionable set. And a prompt answered from the phone leaves the row
-flagged as waiting, because ADR-050 forbids any phone action from clearing attention.
+flagged as waiting, because ADR-950 forbids any phone action from clearing attention.
 
 ## Decision
 
@@ -47,7 +47,7 @@ remains the bell.
 ADR-009's focus rule still clears a prompt entry. In addition, input to that terminal from the
 Companion mirror clears the prompt entry, and only the prompt entry: a keystroke into a
 mirrored terminal is the person answering what the notification asked. Desktop input already
-implies focus. Ready and Bell keep ADR-050's rule that no phone action clears them. Output
+implies focus. Ready and Bell keep ADR-950's rule that no phone action clears them. Output
 resuming does not clear a prompt entry, because a repaint and an answer produce the same bytes.
 
 ### Every surface shows the message
@@ -92,7 +92,7 @@ harness's command line, or if the phone should answer a prompt by choice rather 
 - Claude Code's Notification hook calling back into hvir: a process on the harness's host would
   need a route into the running app, which on an SSH host is not reachable, and every harness
   would need its own hook shape. The in-band sequence needs nothing outside the PTY.
-- Reading the harness's transcript files: a permission prompt never appears in them (ADR-050).
+- Reading the harness's transcript files: a permission prompt never appears in them (ADR-950).
 - Clearing a prompt entry when output resumes: an answered prompt and a repainted one produce
   the same bytes, so the entry would clear on a resize or a spinner.
 - hvir setting the harness's notification channel at launch or in its configuration: hvir does

@@ -1,6 +1,6 @@
 /**
  * A finger over the mirror's grid, adapted into the event shape the shared
- * wheel policy already decides (ADR-053). The page grows no second policy for
+ * wheel policy already decides (ADR-953). The page grows no second policy for
  * touch: one gesture is described once here, and what it means is settled
  * where a wheel notch's meaning is settled. What it carries that a notch does
  * not is that it is a drag, which the policy reads to decide how much travel
@@ -241,7 +241,7 @@ export class CompanionTouchScroll {
     const bounds = this.options.element.getBoundingClientRect()
     this.options.sink({
       // A finger is continuous distance, not a notch of intent, which is what
-      // decides the travel one page key costs (ADR-053's one policy, ADR-055's
+      // decides the travel one page key costs (ADR-953's one policy, ADR-955's
       // page keys).
       gesture: 'drag',
       deltaY: screenDelta / scale,

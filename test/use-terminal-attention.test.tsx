@@ -115,7 +115,7 @@ describe('terminal attention rollup bridge', () => {
     })
   })
 
-  it('sends a prompt again when only its body changed (ADR-051)', () => {
+  it('sends a prompt again when only its body changed (ADR-951)', () => {
     const prompt = (body: string): ActionableAttentionEntry => ({
       ...entry('t1', 'prompt'),
       body,

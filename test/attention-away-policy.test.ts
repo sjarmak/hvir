@@ -38,7 +38,7 @@ function snapshot(
 }
 
 describe('away Ready budget', () => {
-  it('allows the renderer quiet period plus the ADR-049 verification slack', () => {
+  it('allows the renderer quiet period plus the ADR-949 verification slack', () => {
     expect(AWAY_IDLE_THRESHOLD_MS).toBe(4_000)
     expect(AWAY_READY_SLACK_MS).toBe(2_000)
     expect(awayReadyBudgetMs()).toBe(6_000)

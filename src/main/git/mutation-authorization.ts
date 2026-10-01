@@ -18,7 +18,7 @@ export type GitMutationKind =
   | 'fetch'
   | 'pull'
 
-/** Kinds whose grant names one hvir-owned handoff worktree (ADR-063). */
+/** Kinds whose grant names one hvir-owned handoff worktree (ADR-963). */
 type HvirWorktreeKind = 'worktree-add' | 'worktree-remove' | 'branch-delete'
 
 export type GitMutationGrantRequest =
@@ -32,7 +32,7 @@ export type GitMutationGrantRequest =
       /**
        * Creates the one worktree a review handoff owns, or removes it and then deletes
        * its branch at its creation commit when the person removes an unfinished handoff
-       * (ADR-063).
+       * (ADR-963).
        */
       readonly kind: HvirWorktreeKind
       readonly projectId: string

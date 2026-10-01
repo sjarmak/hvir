@@ -357,7 +357,7 @@ function selectRendererFact(
  * A renderer fact describes a terminal hvir launched, which is the whole of the
  * row when hvir launched the session too. For a session another authority
  * started, main's row is the identity and the terminal is a capability that row
- * gained (ADR-046): the viewing terminal's own provider, profile and title
+ * gained (ADR-946): the viewing terminal's own provider, profile and title
  * would otherwise present an agent session as a bare shell.
  */
 function rendererIdentity(
@@ -471,7 +471,7 @@ function lifecycleProjection(
  * A terminal hvir rendered is the authority on its own unseen output, so the
  * renderer's state wins wherever there is one. A source that declares the
  * signal itself is the authority where hvir renders nothing: main's fact is the
- * exact one ADR-048 admits, and it is the only way a row with no terminal can
+ * exact one ADR-948 admits, and it is the only way a row with no terminal can
  * ask for attention at all. Working stays the renderer's either way; a session
  * hvir is not running is not something hvir can watch working.
  */

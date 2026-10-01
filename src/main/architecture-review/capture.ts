@@ -52,7 +52,7 @@ const LIVE_LISTING = [
 
 /**
  * Captures actual text pairs, never a deferred instruction to re-resolve Git revisions.
- * Every host round trip and read is recorded on the scan's recorder (ADR-063).
+ * Every host round trip and read is recorded on the scan's recorder (ADR-963).
  */
 export async function captureArchitecture(
   host: ProjectHost,

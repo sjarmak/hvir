@@ -244,7 +244,7 @@ describe('Sessions overview policy', () => {
     },
   )
 
-  it('shows a prompt with its message beside it and sorts it with the actionable rows (ADR-051)', () => {
+  it('shows a prompt with its message beside it and sorts it with the actionable rows (ADR-951)', () => {
     const prompt = row('prompt', {
       lifecycle: 'live',
       attention: 'prompt',

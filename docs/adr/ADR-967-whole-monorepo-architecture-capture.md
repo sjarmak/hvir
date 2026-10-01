@@ -1,8 +1,8 @@
-# ADR-067: Whole-monorepo architecture capture
+# ADR-967: Whole-monorepo architecture capture
 
 > Lifecycle: Active
-> Supersedes: [ADR-063](ADR-063-architecture-review-history-and-agent-worktrees.md) | partial | The small-repository read budgets and default subsystem mapping across workspace packages; capture and classification use the expanded shared budgets and package boundaries refine default subsystems.
-> Supersedes: [ADR-066](ADR-066-scans-reuse-blobs-by-object-id-and-analyses-by-fingerprint.md) | partial | The 32 MiB blob-cache budget; the cache remains twice the expanded capture byte budget.
+> Supersedes: [ADR-963](ADR-963-architecture-review-history-and-agent-worktrees.md) | partial | The small-repository read budgets and default subsystem mapping across workspace packages; capture and classification use the expanded shared budgets and package boundaries refine default subsystems.
+> Supersedes: [ADR-966](ADR-966-scans-reuse-blobs-by-object-id-and-analyses-by-fingerprint.md) | partial | The 32 MiB blob-cache budget; the cache remains twice the expanded capture byte budget.
 
 ## Context
 

@@ -3,14 +3,14 @@
  *
  * A declared pending interaction is a person being waited on, so it counts in
  * hvir's own attention rollup exactly as a terminal waiting on you does
- * (ADR-009, ADR-048). The count is placed against the workspace hvir put the
+ * (ADR-009, ADR-948). The count is placed against the workspace hvir put the
  * session in, so the project tab and the nav aggregate it with no knowledge of
  * where it came from.
  *
  * Nothing here is demand scoped. The facts follow open projects, not the
  * Sessions view, because a blocked worker has to be able to raise attention
  * with that view closed. Nothing here carries a foreign identifier either: a
- * count and, when hvir has stopped watching, the reason why (ADR-046).
+ * count and, when hvir has stopped watching, the reason why (ADR-946).
  */
 
 export const EXTERNAL_ATTENTION_VERSION = 1
@@ -24,7 +24,7 @@ export const MAX_EXTERNAL_ATTENTION_WAITING = 99
 /**
  * Why hvir is no longer watching a host's external attention. The supervisor's
  * own vocabulary, plus the clean end of a stream. A stale badge must be able to
- * say why it is stale (ADR-048), so these are codes rather than server text.
+ * say why it is stale (ADR-948), so these are codes rather than server text.
  */
 export type ExternalAttentionStaleReason =
   | 'disabled'
@@ -47,7 +47,7 @@ export type ExternalAttentionStaleReason =
 
 /**
  * What one workspace is waiting on. A stale entry is the last thing hvir saw,
- * not a claim about now: ADR-048 forbids dropping the signal and forbids
+ * not a claim about now: ADR-948 forbids dropping the signal and forbids
  * asserting it, so both the count and the reason travel together.
  */
 export interface ExternalAttentionEntry {
@@ -97,7 +97,7 @@ function isExternalAttentionEntry(value: unknown): value is ExternalAttentionEnt
   if (!isSafeCount(value['waiting']) || value['waiting'] > MAX_EXTERNAL_ATTENTION_WAITING)
     return false
   // An entry either claims to be current or says why it is not; a stale entry
-  // with no reason would be the silent drop ADR-048 rules out.
+  // with no reason would be the silent drop ADR-948 rules out.
   if (value['stale'] === undefined) return value['reason'] === undefined
   return value['stale'] === true && isExternalAttentionStaleReason(value['reason'])
 }

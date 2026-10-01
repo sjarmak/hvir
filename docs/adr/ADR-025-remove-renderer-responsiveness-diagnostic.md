@@ -2,7 +2,7 @@
 
 > Lifecycle: Partially superseded
 > Supersedes: [ADR-016](ADR-016-bounded-local-runtime-diagnostics.md) | partial | Responsiveness episode candidate and its opt-in renderer diagnostic experiment.
-> Superseded by: [ADR-068](ADR-068-react-owned-development-measure-containment.md) | partial | Requirement to preserve hvir's development Performance Timeline containment owner and budget fixture.
+> Superseded by: [ADR-046](ADR-046-react-owned-development-measure-containment.md) | partial | Requirement to preserve hvir's development Performance Timeline containment owner and budget fixture.
 
 ## Context
 

@@ -37,7 +37,7 @@ describe('gas city attention rollup', () => {
     await world.settle()
 
     // Nothing observed Sessions here: the facts came from the host stream and
-    // the open projects, which is the whole point (ADR-048).
+    // the open projects, which is the whole point (ADR-948).
     expect(world.published).toHaveLength(1)
     expect(world.attention.snapshot().entries).toEqual([
       { workspaceId: 'ws-feature', waiting: 1 },
@@ -164,7 +164,7 @@ describe('gas city attention rollup', () => {
     world.notify()
     await world.settle()
 
-    // Kept, and not asserted: ADR-048 forbids both directions.
+    // Kept, and not asserted: ADR-948 forbids both directions.
     expect(world.attention.snapshot().entries).toEqual([
       { workspaceId: 'ws-feature', waiting: 1, stale: true, reason: 'unreachable' },
     ])

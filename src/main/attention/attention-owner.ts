@@ -1,5 +1,5 @@
 /**
- * Composition seam for application attention (ADR-049).
+ * Composition seam for application attention (ADR-949).
  *
  * Owns the actionable set and its first consumer, the OS badge, and feeds the
  * set from the two sources: windows, through the IPC deps this returns, and

@@ -1,16 +1,16 @@
 # Companion operator runbook
 
 The Companion is a phone-sized page served by the running hvir app on a loopback port
-([ADR-049](../adr/ADR-049-companion-observer-and-away-push.md)). It lists every session the
+([ADR-949](../adr/ADR-949-companion-observer-and-away-push.md)). It lists every session the
 desktop lists, actionable ones first, and lets you answer a pending interaction or send a
 message from the phone. While every hvir window is unfocused (Away), hvir also posts one Push
 per session that enters the actionable set to a notification sink you declare. For a terminal
 hvir launched itself, the page mirrors the desktop's screen and, once you allow it in Settings
 and arm it on the page, carries your keystrokes back to that terminal
-([ADR-050](../adr/ADR-050-companion-live-terminal-mirror.md)). While the phone is watching a
+([ADR-950](../adr/ADR-950-companion-live-terminal-mirror.md)). While the phone is watching a
 terminal it sets that terminal's size to the grid its own screen holds, and the desktop pane
 draws the smaller grid and says so until the phone stops watching
-([ADR-058](../adr/ADR-058-the-watching-phone-owns-the-grid.md)).
+([ADR-958](../adr/ADR-958-the-watching-phone-owns-the-grid.md)).
 
 hvir owns the listener, the pairing credential, and the outbound post. Everything that makes
 the port reachable from a phone, and everything that turns a post into a notification on the
@@ -186,7 +186,7 @@ at once. Pair again by issuing a new code.
   the prompt, but the set already held that session.
 - A row whose fact went stale (for example, the observing stream to its supervisor was lost)
   is shown as unconfirmed with the reason and is never pushed
-  ([ADR-048](../adr/ADR-048-exact-external-pending-interaction-attention.md)).
+  ([ADR-948](../adr/ADR-948-exact-external-pending-interaction-attention.md)).
 - The list is grouped by workspace: one heading per workspace, `project / workspace`, with
   `on <host>` for a workspace on an SSH host. Groups are in name order, so they hold still
   while attention moves; inside a group the rows keep the desktop's order, what is waiting
@@ -198,7 +198,7 @@ at once. Pair again by issuing a new code.
   turn as working shows the same badge.
 - Each running hvir serves its own Companion and pairs on its own. Two desktops mean two
   pairings and two Push URLs, or one shared topic.
-- Selecting a row without a live hvir terminal keeps the path ADR-049 gave it. An external
+- Selecting a row without a live hvir terminal keeps the path ADR-949 gave it. An external
   session shows its transcript with the answer and message controls; a row hvir launched whose
   terminal has since exited, or whose host is disconnected, shows one plain sentence in place
   of the transcript, for example `This session is no longer in the current Sessions view.`,
@@ -227,7 +227,7 @@ What the phone shows:
 - The grid hvir publishes, at the phone's own text size. The mirror starts at 10 px and the
   two steps beside the session's title, `A-` and `A+`, walk it down to 7 px or up to 15 px;
   the phone remembers the choice for the next visit, and nothing about it reaches the desktop
-  (ADR-059). Smaller text is more session on screen, because the phone asks for the grid its
+  (ADR-959). Smaller text is more session on screen, because the phone asks for the grid its
   screen holds at that size. As soon as the mirror opens, and again after every step, the phone
   measures how many whole cells of that font its screen holds and asks hvir for that grid, so
   the session lays itself out for the phone and fills its height with session history. The
@@ -260,7 +260,7 @@ What the phone shows:
   desktop does. A program that asked for mouse reports, which is every tmux session with
   `mouse on`, receives the wheel reports its own desktop sends, so read-back on the phone is
   whatever that program does for a wheel. A full-screen program that did not ask for them
-  receives Page Up and Page Down. Everything else moves the phone's own view. Before ADR-056
+  receives Page Up and Page Down. Everything else moves the phone's own view. Before ADR-956
   the phone did not know about mouse tracking and sent page keys to sessions whose desktop was
   sending reports, which is why a tmux mirror used to scroll a few lines and stop while the
   desktop moved freely. In a full-screen program (Claude Code, vim, less) the emulator keeps no scrollback
@@ -288,14 +288,14 @@ What the phone shows:
   whether you tapped it or dragged there. A full-screen program never shows it: there is no
   scrollback to be behind. A session that ended keeps it until you return, since its last
   output is still there to read.
-- **Nothing is shown for a full-screen program** (ADR-060). Drag over the grid and the program
+- **Nothing is shown for a full-screen program** (ADR-960). Drag over the grid and the program
   pages through its own history: its earlier turns live inside the program rather than in the
   terminal's scrollback, which is why the drag pages it instead of moving the view. The mirror
   used to say so in a line above the grid and no longer does, because that line stood on a row of
   the session for as long as the program ran. A program that binds Page Up and Page Down to
   something other than scrolling does that instead, on the phone and on the desktop alike.
 - A **Transcript** button in the header on rows that also take answers (an external session
-  attached inside an hvir terminal), switching between the mirror and the ADR-049 transcript
+  attached inside an hvir terminal), switching between the mirror and the ADR-949 transcript
   view.
 
 A drag over the grid scrolls as far as the finger travelled, and a flick keeps the content
@@ -363,7 +363,7 @@ that terminal (section 9). Ready and Bell are not touched by phone input.
 A harness that is blocked on a permission prompt and one that has finished its turn both go
 quiet, so both show as Ready. A harness can say which it is by writing a terminal notification
 (OSC 9 or OSC 777) into the PTY, and hvir shows that as a **prompt** with the message the
-notification carried ([ADR-051](../adr/ADR-051-terminal-notification-prompt-attention.md)).
+notification carried ([ADR-951](../adr/ADR-951-terminal-notification-prompt-attention.md)).
 The message is the harness's own words, cut to its first line and at most 120 characters. hvir
 never reads the screen for this; the notification sequence is the only source of a prompt.
 
@@ -450,7 +450,7 @@ shows as a prompt without its message until the harness notifies again.
 | A prompt badge shows but no Push arrived for it | The terminal was already in the actionable set as Ready when the prompt arrived; Push fires only when a session enters the set. Or a desktop window was focused. |
 | The mirror shows old output and never catches up | The view is read back, which the terminal holds on purpose so output does not move the rows you are reading. Tap `The session has moved on. Back to live.` in the bottom corner, or drag toward the top of the screen. |
 | A drag or wheel over a full-screen program (vim, less, Claude Code) moves nothing | Both gestures reach the same policy, which sends the program either wheel reports (if it asked for mouse tracking, as a tmux session with `mouse on` does) or Page Up and Page Down, so what happens next is the program's answer to those. They need the Settings permission (**Allow typing from the Companion**) but not **Arm typing**; if the page says `Input from the Companion is off in Settings, so this program cannot be paged`, turn the setting on at the desktop. A program that binds those keys elsewhere, or a shell with no pager running, moves nothing by design. A program that asked for mouse reports receives reports instead, and those do need the arm. If the grid is taller than the area, the drag still scrolls it either way. |
-| The mirror is a thin strip at the bottom with black above it | The phone is still drawing the desktop's grid scaled into its width, which is what it shows until hvir confirms the size it asked for (ADR-058). It settles within a second of the mirror opening; a strip that stays means the hold never landed, which is a mirror that has ended, so select the row again. A full-screen program leaves the space above empty for a different reason: it draws on the alternate screen, where the terminal keeps no scrollback. Drag over the grid to read that program's own history back. |
+| The mirror is a thin strip at the bottom with black above it | The phone is still drawing the desktop's grid scaled into its width, which is what it shows until hvir confirms the size it asked for (ADR-958). It settles within a second of the mirror opening; a strip that stays means the hold never landed, which is a mirror that has ended, so select the row again. A full-screen program leaves the space above empty for a different reason: it draws on the alternate screen, where the terminal keeps no scrollback. Drag over the grid to read that program's own history back. |
 | Reading back shows a frame of a full-screen program twice, or a stale line | What you read is the terminal's scrollback as it stands; a program that redraws by moving the cursor leaves its earlier frames there, as on the desktop. The live screen is the screen as drawn. |
 | Reading back jumps further back, to the oldest line, after the terminal resizes | A resize on the desktop reflows the scrollback, and a position further back than the reflowed scrollback reaches is moved to its oldest row. Drag toward the top of the screen to return to the live screen. |
 

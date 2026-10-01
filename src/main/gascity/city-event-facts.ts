@@ -5,10 +5,10 @@
  * lifecycle transitions, as the supervisor reported them, so a session that
  * crashed or was quarantined is a fact hvir holds rather than something a view
  * has to be open to notice. And the city's declared pending interactions, which
- * are the exact attention signal ADR-048 admits.
+ * are the exact attention signal ADR-948 admits.
  *
  * Nothing folded here is inferred. A state hvir has stopped observing is marked
- * with the reason it stopped, because ADR-048 forbids both silently dropping a
+ * with the reason it stopped, because ADR-948 forbids both silently dropping a
  * pending interaction and asserting one nobody is watching.
  */
 import type { HostId, HostPath } from '../../shared'
@@ -24,7 +24,7 @@ export interface CitySessionLifecycleFact {
   /**
    * gc's own session identifier, the same value the projection source carries.
    * Main-internal: it is the join between a city event and a projected row, and
-   * it never crosses an IPC boundary (ADR-046).
+   * it never crosses an IPC boundary (ADR-946).
    */
   readonly sessionKey: string
   readonly event: SupervisorCityLifecycleType
@@ -54,7 +54,7 @@ export type CityEventStreamState = 'opening' | 'live' | 'lost' | 'unavailable'
 /**
  * Why a stream is not live. The supervisor's own vocabulary plus the clean end,
  * so the reason stays a code every consumer can render: a stale attention badge
- * has to say why it is stale (ADR-048), and free server text is not a reason a
+ * has to say why it is stale (ADR-948), and free server text is not a reason a
  * surface can be built on.
  */
 export type CityEventStreamReason = SupervisorAddressReason | 'closed'
@@ -109,7 +109,7 @@ export function liveHostCityEvents(facts: HostCityEvents, at: number): HostCityE
 /**
  * A stream that stopped. The facts stay exactly as they were and carry the
  * reason: dropping them would hide a blocked agent, and keeping them without
- * the reason would assert a pending state nobody is watching (ADR-048).
+ * the reason would assert a pending state nobody is watching (ADR-948).
  */
 export function lostHostCityEvents(
   facts: HostCityEvents,
@@ -187,7 +187,7 @@ export function foldCityPending(
 /**
  * One resolved interaction, withdrawn as soon as it is answered. Answering is
  * the response the signal asked for, so the badge clears on the answer rather
- * than on the next read of the city's list (ADR-048).
+ * than on the next read of the city's list (ADR-948).
  */
 export function withdrawCityPending(
   facts: HostCityEvents,

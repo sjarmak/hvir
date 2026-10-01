@@ -69,7 +69,7 @@ export const SESSIONS_GAS_CITY_PROVIDER: SessionsProviderProjection = {
 /**
  * A terminal hvir launched to attach to one of these sessions, with the
  * attachment it recorded at spawn. The digest is the whole of the join: no
- * title, path, or timing is consulted (ADR-046).
+ * title, path, or timing is consulted (ADR-946).
  */
 export interface SessionsCityAttachedTerminal {
   readonly attachment: ExternalSessionAttachment
@@ -81,7 +81,7 @@ export interface SessionsCityAttachedTerminal {
  * One interaction a city declared it is waiting on, as the host event streams
  * hold it. The projection never reads this from gc itself: the facts follow
  * open projects so that a blocked agent raises attention with no view open at
- * all (ADR-048), and the row simply reports what is already known.
+ * all (ADR-948), and the row simply reports what is already known.
  */
 export interface SessionsCityPendingSignal {
   readonly hostId: HostId
@@ -143,7 +143,7 @@ export interface SessionsCityProjection {
    * The rows of attached terminals, re-presented as the sessions they attach
    * to, keyed by the terminal handle they keep. The caller replaces its own row
    * with this one: an attach is a capability the session's row gains, never a
-   * second row (ADR-046).
+   * second row (ADR-946).
    */
   readonly merged: ReadonlyMap<string, SessionsObservedSession>
   /** Present when at least one row needed the source's own provider identity. */
@@ -375,7 +375,7 @@ function pendingKey(hostId: HostId, sessionKey: string): string {
  * Nothing is reported when nothing was declared: a source that is not waiting
  * on a person has said nothing about unseen output, and hvir renders no
  * terminal here to know it for itself. A declaration hvir has stopped watching
- * is marked stale with its reason rather than dropped or asserted (ADR-048).
+ * is marked stale with its reason rather than dropped or asserted (ADR-948).
  */
 function attentionFor(
   waiting: SessionsCityPendingSignal | undefined,

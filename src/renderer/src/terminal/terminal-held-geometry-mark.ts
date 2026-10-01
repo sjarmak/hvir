@@ -1,7 +1,7 @@
 import type { TerminalSize } from './terminal-pane'
 
 /**
- * What a pane wears while another client holds its size (ADR-058): the blank
+ * What a pane wears while another client holds its size (ADR-958): the blank
  * remainder outside the held grid takes the terminal's background, and one
  * status line names the holder and the grid, as tmux marks a smaller client.
  * Engine-neutral DOM only; the pane decides when it is held.

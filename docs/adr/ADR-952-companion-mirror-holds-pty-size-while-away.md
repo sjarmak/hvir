@@ -1,13 +1,13 @@
-# ADR-052: The Companion mirror holds the PTY's size while the desktop is Away
+# ADR-952: The Companion mirror holds the PTY's size while the desktop is Away
 
 > Lifecycle: Superseded
-> Supersedes: [ADR-050](ADR-050-companion-live-terminal-mirror.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
-> Superseded by: [ADR-053](ADR-053-companion-mirror-reads-back-through-emulator-viewport.md) | partial | The page's own scrollback layer drawing above the grid for a shell's mirror, for the emulator's viewport as the one read-back surface.
-> Superseded by: [ADR-057](ADR-057-companion-mirror-shows-the-desktop-grid-at-every-focus.md) | full | Entire decision.
+> Supersedes: [ADR-950](ADR-950-companion-live-terminal-mirror.md) | partial | A mirror never resizing the PTY, for a live mirror lease while the desktop is Away.
+> Superseded by: [ADR-953](ADR-953-companion-mirror-reads-back-through-emulator-viewport.md) | partial | The page's own scrollback layer drawing above the grid for a shell's mirror, for the emulator's viewport as the one read-back surface.
+> Superseded by: [ADR-957](ADR-957-companion-mirror-shows-the-desktop-grid-at-every-focus.md) | full | Entire decision.
 
 ## Context
 
-ADR-050 made the phone a second reader of a live PTY. It receives the desktop's columns and
+ADR-950 made the phone a second reader of a live PTY. It receives the desktop's columns and
 rows, renders at that geometry scaled to fit its width, and never resizes the PTY. For a shell
 that rule works: the phone shows a column of scrollback above a grid pinned to the bottom, and the
 history is a swipe away. It fails for the session the Companion exists to reach. Claude Code
@@ -24,7 +24,7 @@ meets the same two-client question, one window shown at two sizes, and answers i
 `window-size`, choosing the smallest, the largest, the latest, or a manual size. Both point at
 the same fact. A full-screen program lays out for exactly one size, so one client has to own it.
 
-hvir already has the signal that names that client. ADR-049 defined Away as every hvir window
+hvir already has the signal that names that client. ADR-949 defined Away as every hvir window
 unfocused, computed by `ActionableAttentionSet.away()` from the focus the window manager reports
 per renderer owner, and made it the one predicate that admits Push. The PTY supervisor records
 geometry per PTY and changes it only through its renderer-owned resize, gated on the exact owner
@@ -38,20 +38,20 @@ mirrors read geometry once at attach and receive every later change. A mirror le
 While `ActionableAttentionSet.away()` is true, a live mirror lease may resize its PTY to the
 phone's own grid, and the supervisor records that geometry as the PTY's current size with the
 mirror as its provenance. A full-screen program then lays out for the phone and fills it edge to
-edge, and the phone renders its own grid unscaled. This is the one narrowing of ADR-050's rule.
+edge, and the phone renders its own grid unscaled. This is the one narrowing of ADR-950's rule.
 A mirror still never spawns, kills, or transfers a PTY; it never resizes while any desktop window
 is focused; and it never resizes after its lease ended or for a changed instance. Those requests
 fail closed exactly as the mirror's writes do.
 
 Away is the whole rule. The user learns nothing new: Away already means the phone is where the
-badge goes (ADR-049), and now it means the phone is the terminal.
+badge goes (ADR-949), and now it means the phone is the terminal.
 
 ### The desktop reclaims on focus
 
 When any hvir window gains focus the desktop is no longer Away and takes the size back. Its fit
 controller resizes the PTY to the pane's measured grid within one fit cycle, main publishes the
 new geometry to every mirror as it does today, and the phone returns to the scaled-mirror view of
-ADR-050 for as long as the desktop stays focused. Nothing is negotiated between the two: a
+ADR-950 for as long as the desktop stays focused. Nothing is negotiated between the two: a
 desktop resize is accepted whenever the desktop is focused, and a mirror's is refused. The
 renderer learns the PTY's current geometry and its provenance from main, as mirrors already do,
 so the pane can present a size it did not choose.
@@ -72,9 +72,9 @@ that just changed shape is the one being looked at.
 ### What does not change
 
 A shell session keeps its history column. The phone emulates at its own size and the scrollback
-layer draws above the grid exactly as it does under ADR-050, so nothing about a shell's mirror
+layer draws above the grid exactly as it does under ADR-950, so nothing about a shell's mirror
 moves. Geometry provenance is a supervisor fact and never an attention fact: the actionable set
-and its classification (ADR-019, ADR-051) are untouched, and holding the size clears nothing.
+and its classification (ADR-019, ADR-951) are untouched, and holding the size clears nothing.
 The desktop remains the PTY's only owner. A mirror that holds the size is a second reader with
 one more admitted verb, and the door for that verb sits beside the renderer's in the supervisor,
 under the same instance and lease checks as the mirror's write.

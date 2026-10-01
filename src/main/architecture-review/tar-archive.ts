@@ -1,5 +1,5 @@
 /**
- * A reader for the tar stream the live-tree read produces (ADR-063: one batched host command
+ * A reader for the tar stream the live-tree read produces (ADR-963: one batched host command
  * per scan). It accepts what GNU tar, bsdtar and busybox tar emit for regular files, links and
  * long names, and refuses anything it cannot frame exactly rather than guessing.
  */

@@ -2,7 +2,7 @@
  * Pending interactions, placed and counted for hvir's own attention rollup.
  *
  * A declared pending interaction is a person being waited on, so it belongs in
- * the same rollup a terminal waiting on you does (ADR-009, ADR-048). This owner
+ * the same rollup a terminal waiting on you does (ADR-009, ADR-948). This owner
  * turns the per-host city facts into per-workspace counts: the project tab and
  * the nav then aggregate them without knowing where they came from.
  *
@@ -18,12 +18,12 @@
  * its attention cannot land in different workspaces.
  *
  * Staleness travels with the count. When a host's stream is down the entries
- * from it are marked with the reason it went down: ADR-048 forbids dropping a
+ * from it are marked with the reason it went down: ADR-948 forbids dropping a
  * pending interaction and forbids asserting one nobody is watching.
  *
  * The same pass also keeps the per-session list the actionable set consumes
- * (ADR-049): what the nav gets as a count, the Companion gets as sessions.
- * That list carries foreign identifiers and stays in main (ADR-046).
+ * (ADR-949): what the nav gets as a count, the Companion gets as sessions.
+ * That list carries foreign identifiers and stays in main (ADR-946).
  */
 import {
   EMPTY_EXTERNAL_ATTENTION,
@@ -213,7 +213,7 @@ export class GasCityAttention {
 
   /**
    * One host's session list, for the sessions this owner could not place. The
-   * read is a description; it never starts or attaches anything (ADR-046), and
+   * read is a description; it never starts or attaches anything (ADR-946), and
    * a failure leaves the placements as they were rather than emptying them.
    */
   private async read(facts: HostCityEvents): Promise<void> {

@@ -1,5 +1,5 @@
 /**
- * A Companion page's event stream kept open for a whole scenario (ADR-050):
+ * A Companion page's event stream kept open for a whole scenario (ADR-950):
  * every SSE frame is parsed as it arrives and can be awaited by name and
  * shape. Mirror bytes are dropped at the parser: an `output` frame leaves
  * only its arrival time and an `opened` frame its geometry, so nothing this
