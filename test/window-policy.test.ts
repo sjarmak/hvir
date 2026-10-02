@@ -8,12 +8,16 @@ import {
 
 describe('workbench window policy', () => {
   it('keeps every BrowserWindow isolated behind the preload bridge', () => {
-    const options = workbenchWindowOptions('/application/preload.js')
+    const options = workbenchWindowOptions(
+      '/application/preload.js',
+      '/application/icon.png',
+    )
 
     expect(options).toMatchObject({
       width: 1280,
       height: 800,
       useContentSize: true,
+      icon: '/application/icon.png',
     })
     expect(options.show).toBe(false)
     expect(options.webPreferences).toEqual({
@@ -23,6 +27,12 @@ describe('workbench window policy', () => {
       nodeIntegration: false,
       webviewTag: true,
     })
+  })
+
+  it('omits a runtime icon when the native package owns application branding', () => {
+    expect(
+      workbenchWindowOptions('/application/preload.js', undefined),
+    ).not.toHaveProperty('icon')
   })
 
   it('keeps unresponsive recovery with the exact renderer generation', () => {

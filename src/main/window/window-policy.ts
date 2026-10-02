@@ -7,6 +7,7 @@ export interface WorkbenchWindowOptions {
   readonly show: boolean
   readonly backgroundColor: string
   readonly autoHideMenuBar: boolean
+  readonly icon?: string
   readonly webPreferences: {
     readonly preload: string
     readonly sandbox: boolean
@@ -35,7 +36,10 @@ export function ownsRendererReadiness(
 }
 
 /** The single security baseline used for every workbench BrowserWindow. */
-export function workbenchWindowOptions(preload: string): WorkbenchWindowOptions {
+export function workbenchWindowOptions(
+  preload: string,
+  icon: string | undefined,
+): WorkbenchWindowOptions {
   return {
     width: 1280,
     height: 800,
@@ -43,6 +47,7 @@ export function workbenchWindowOptions(preload: string): WorkbenchWindowOptions 
     show: false,
     backgroundColor: '#0f1115',
     autoHideMenuBar: true,
+    ...(icon ? { icon } : {}),
     webPreferences: {
       preload,
       sandbox: true,

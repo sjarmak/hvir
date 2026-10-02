@@ -16,6 +16,7 @@ import type { WindowHealthDiagnostic } from '../health/workbench-health-events'
 import { isSafeExternalUrl, isWorkbenchDocument } from '../navigation-policy'
 import { sendRendererEvent } from '../renderer-event-delivery'
 import type { RendererOwner } from '../renderer-resource-scopes'
+import { developmentApplicationIcon } from './application-icon'
 import { installRendererDocumentLifecycle } from './electron-renderer-document-lifecycle'
 import { ElectronRendererRecovery } from './electron-renderer-recovery'
 import { WindowHealthTracker } from './window-health-tracker'
@@ -71,6 +72,12 @@ export function createElectronWindowManager(
   const webPaneSessionPartitions = new WeakMap<Session, string>()
   const webPaneBindings = new Map<number, KeybindingMap>()
   const fullPageWebPanes = new Map<number, string>()
+  const rendererUrl = process.env['ELECTRON_RENDERER_URL']
+  const applicationIcon = developmentApplicationIcon(
+    app.getAppPath(),
+    process.platform,
+    rendererUrl,
+  )
   const rendererReadyHandlers = new Map<
     number,
     (owner: RendererOwner, reportedGeneration: number) => boolean
@@ -245,10 +252,13 @@ export function createElectronWindowManager(
     // Electron smoke injects an observer for resources outside the production scopes.
     discardExternalResources: (ownerId: number) => void = () => undefined,
   ): BrowserWindow {
+    if (applicationIcon && process.platform === 'darwin') {
+      if (!app.dock) throw new Error('Electron did not provide the macOS Dock API.')
+      app.dock.setIcon(applicationIcon)
+    }
     const win = new BrowserWindow(
-      workbenchWindowOptions(join(__dirname, '../preload/index.js')),
+      workbenchWindowOptions(join(__dirname, '../preload/index.js'), applicationIcon),
     )
-    const rendererUrl = process.env['ELECTRON_RENDERER_URL']
     const packagedEntry = join(__dirname, '../renderer/index.html')
     const entryUrl = rendererUrl ?? pathToFileURL(packagedEntry).href
     const ownerId = win.webContents.id
