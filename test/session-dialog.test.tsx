@@ -416,7 +416,6 @@ function renderDialog({
           save: () => Promise.resolve([]),
           pickIdentity: () => Promise.resolve(undefined),
         }}
-        hosts={[localHost, sshHost]}
         currentRoot={hostPath(asHostId(currentHost.hostId), '/current')}
         suspended={false}
         onCancel={vi.fn()}
@@ -433,6 +432,7 @@ function renderDialog({
 }
 
 async function chooseFolder(): Promise<void> {
+  await waitFor(() => buttonOrUndefined('Choose folder')?.disabled === false)
   await clickButton('Choose folder')
   flushFrames()
 }
