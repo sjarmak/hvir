@@ -18,6 +18,7 @@ import { useSessionsDetailsUsage } from '../src/renderer/src/harness/use-session
 import { SessionsOverviewCard } from '../src/renderer/src/sessions/SessionsOverviewCard'
 import type { SessionsProjectionCoordinator } from '../src/renderer/src/sessions/sessions-projection-coordinator'
 import { TerminalRail } from '../src/renderer/src/terminal/TerminalRail'
+import { terminalStartedStatus } from '../src/renderer/src/terminal/terminal-runtime-launch'
 import {
   asHarnessProfileId,
   asHarnessProviderId,
@@ -30,6 +31,7 @@ import {
   sessionsWorkspaceQualifier,
   type SessionsProjectionRow,
   type SessionsProjectionSnapshot,
+  type StartPtyResponse,
 } from '../src/shared'
 import type { TerminalSession } from '../src/renderer/src/terminal/terminal-workspace-model'
 
@@ -176,6 +178,97 @@ describe('compaction marker presentation', () => {
     expect(markers[1]?.dataset.state).toBe('circles')
     expect(markers[1]?.querySelectorAll('.compaction-marker')).toHaveLength(20)
   })
+
+  it.each(
+    [
+      { mode: 'fresh', result: {}, context: {}, label: '' },
+      {
+        mode: 'reattached',
+        result: { reattached: true },
+        context: {},
+        label: 'Reattached',
+      },
+      { mode: 'resumed', result: { resumed: true }, context: {}, label: 'Resumed' },
+      {
+        mode: 'replacement',
+        result: {},
+        context: { replacement: { sessionId: 'new', replacesSessionId: 'old' } },
+        label: 'New session',
+      },
+      { mode: 'fork', result: {}, context: { fork: true }, label: 'Forked' },
+      {
+        mode: 'resume fallback',
+        result: {},
+        context: { resume: true },
+        label: 'New session',
+      },
+      {
+        mode: 'manual restart',
+        result: {},
+        context: { manualRestart: true },
+        label: 'Restarted',
+      },
+      { mode: 'reconnect', result: {}, context: { reconnect: true }, label: 'New shell' },
+    ].flatMap((variant) => [4321, -1].map((pid) => ({ ...variant, pid }))),
+  )('hides the real $mode launch PID $pid while retaining its status', (variant) => {
+    const session = terminalSession(1)
+    const result: Extract<StartPtyResponse, { outcome: 'started' }> = {
+      outcome: 'started',
+      id: session.id,
+      instanceId: 'pty-one',
+      pid: variant.pid,
+      resumed: false,
+      reattached: false,
+      identityStatus: 'identified',
+      capabilities: session.capabilities,
+      ...variant.result,
+    }
+    const status = terminalStartedStatus(result, {
+      fork: false,
+      resume: false,
+      manualRestart: false,
+      reconnect: false,
+      ...variant.context,
+    })
+    act(() =>
+      root.render(
+        <TerminalRail
+          {...terminalRailProps(staticProjection(projectedRow(1)))}
+          sessions={[{ ...session, status, identityStatus: 'unavailable' }]}
+        />,
+      ),
+    )
+    const metadata = document.querySelector('.terminal-list-meta')?.textContent
+    expect(metadata).toContain('Missing (codex-default)')
+    expect(metadata).toContain('resume unavailable')
+    if (variant.label) expect(metadata).toContain(variant.label)
+    expect(metadata).not.toContain('pid')
+  })
+
+  it.each([
+    ['Starting…', 'Starting…'],
+    ['Resuming…', 'Resuming…'],
+    ['disconnected', 'disconnected'],
+    ['Exited (1)', 'Exited (1)'],
+    [
+      'Resume unavailable · session data is missing',
+      'Resume unavailable · session data is missing',
+    ],
+  ])('preserves meaningful status from %s', (status, expected) => {
+    act(() =>
+      root.render(
+        <TerminalRail
+          {...terminalRailProps(staticProjection(projectedRow(1)))}
+          sessions={[{ ...terminalSession(1), status, identityStatus: 'unavailable' }]}
+        />,
+      ),
+    )
+    const metadata = document.querySelector('.terminal-list-meta')?.textContent
+    expect(metadata).toContain('Missing (codex-default)')
+    expect(metadata).toContain(expected)
+    expect(metadata).toContain('resume unavailable')
+    expect(metadata).not.toContain('pid')
+  })
 })
 
 describe('session details popover interaction', () => {
@@ -244,16 +337,14 @@ describe('session details popover interaction', () => {
     act(() => root.render(<TerminalRail {...terminalRailProps(projection)} />))
 
     await act(async () => {
-      document
-        .querySelector<HTMLElement>('.terminal-list-row')
-        ?.dispatchEvent(
-          new MouseEvent('contextmenu', {
-            bubbles: true,
-            cancelable: true,
-            clientX: 30,
-            clientY: 40,
-          }),
-        )
+      document.querySelector<HTMLElement>('.terminal-list-row')?.dispatchEvent(
+        new MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 30,
+          clientY: 40,
+        }),
+      )
       await flushMicrotasks()
     })
 
@@ -276,16 +367,14 @@ describe('session details popover interaction', () => {
     act(() => root.render(<TerminalRail {...terminalRailProps(projection)} />))
 
     await act(async () => {
-      document
-        .querySelector<HTMLElement>('.terminal-list-row')
-        ?.dispatchEvent(
-          new MouseEvent('contextmenu', {
-            bubbles: true,
-            cancelable: true,
-            clientX: 30,
-            clientY: 40,
-          }),
-        )
+      document.querySelector<HTMLElement>('.terminal-list-row')?.dispatchEvent(
+        new MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          clientX: 30,
+          clientY: 40,
+        }),
+      )
       await flushMicrotasks()
     })
 
