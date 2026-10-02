@@ -505,6 +505,13 @@ React owns cleanup of its development Performance measures; a development-only E
 uses browser observation to prove fixture-specific React work and an empty retained measure set
 without adding product instrumentation.
 
+### [ADR-047 — Local SSH configuration authority](adr/ADR-047-local-ssh-configuration-authority.md)
+
+> Lifecycle: Active
+
+Main owns bounded, fixed-destination SSH host additions and catalog refresh; chooser requests
+own delivery and feedback, while existing logical hosts retain connection lifetimes.
+
 ### [ADR-946 — Sessions projects external agent sessions without owning them](adr/ADR-946-projected-external-agent-sessions.md)
 
 > Lifecycle: Active

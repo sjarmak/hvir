@@ -409,6 +409,13 @@ function renderDialog({
   act(() => {
     root.render(
       <SessionDialog
+        sshConfiguration={{
+          snapshot: () => Promise.resolve([localHost, sshHost]),
+          defaults: () => Promise.resolve({ username: 'picard', port: 22 }),
+          refresh: () => Promise.resolve([localHost, sshHost]),
+          save: () => Promise.resolve([]),
+          pickIdentity: () => Promise.resolve(undefined),
+        }}
         hosts={[localHost, sshHost]}
         currentRoot={hostPath(asHostId(currentHost.hostId), '/current')}
         suspended={false}
