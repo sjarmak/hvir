@@ -1,5 +1,6 @@
 import type {
   HostPath,
+  NeedsYouAskStoreSnapshot,
   NeedsYouSourceSnapshot,
   SessionsProjectionRow,
 } from '../../../shared'
@@ -22,11 +23,13 @@ export interface NeedsYouRow {
     | { readonly kind: 'session'; readonly row: SessionsProjectionRow }
     | { readonly kind: 'bead'; readonly bead: NeedsYouBeadTarget }
     | { readonly kind: 'pull'; readonly url: string }
+    | { readonly kind: 'ask' }
 }
 
 export function needsYouRows(
   sessions: readonly SessionsProjectionRow[],
   sources: readonly NeedsYouSourceSnapshot[],
+  askStores: readonly NeedsYouAskStoreSnapshot[] = [],
 ): readonly NeedsYouRow[] {
   const sessionRows: NeedsYouRow[] = sessions
     .filter(
@@ -95,5 +98,17 @@ export function needsYouRows(
     })
     return [...beads, ...pulls]
   })
-  return [...sessionRows, ...sourceRows]
+  const askRows = askStores.flatMap((store): NeedsYouRow[] =>
+    store.beads.response.available
+      ? store.beads.response.issues.map((bead) => ({
+          key: JSON.stringify(['ask', store.root.hostId, store.root.path, bead.id]),
+          title: `${bead.id} · ${bead.title}`,
+          source: 'Bead',
+          context: `${store.name} · ${store.root.hostId}:${store.root.path}`,
+          reason: 'Decision requested',
+          target: { kind: 'ask' },
+        }))
+      : [],
+  )
+  return [...sessionRows, ...askRows, ...sourceRows]
 }

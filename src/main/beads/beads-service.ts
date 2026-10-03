@@ -20,6 +20,7 @@ import {
   joinRoot,
   logBeadsFailure,
   parseBeadsListOutput,
+  parseBeadsWhereOutput,
   parseDigraphEdges,
   parseDispatchableOutput,
   parseGatesOutput,
@@ -108,6 +109,24 @@ export class BeadsService {
       gates,
       ...(closedIssues ? { closedIssues } : {}),
       ...(orchestrationIssues ? { orchestrationIssues } : {}),
+    }
+  }
+
+  async storeForProject(
+    project: { readonly host: ProjectHost; readonly root: HostPath },
+    lane: ExecLane = 'background',
+  ): Promise<string | undefined> {
+    const { host, root } = project
+    try {
+      const result = await host.exec('bd', ['-C', root.path, 'where', '--json'], {
+        maxBuffer: MAX_OUTPUT_BYTES,
+        loginShell: true,
+        lane,
+        timeout: 20_000,
+      })
+      return result.code === 0 ? parseBeadsWhereOutput(result.stdout) : undefined
+    } catch {
+      return undefined
     }
   }
 

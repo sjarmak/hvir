@@ -1,5 +1,7 @@
 import {
+  beadNeedsHuman,
   classifyIssueType,
+  isAnsweredAsk,
   type BeadDependencyEdge,
   type BeadGate,
   type BeadIssue,
@@ -225,9 +227,9 @@ export function classifyBeads(
     // Deterministic precedence — the same order the correction list specifies.
     // Each rule uses typed fields only; no title/description/notes keywords.
     const card = buildCard(issue)
-    if (needsHuman(issue, category)) {
+    if (beadNeedsHuman(issue)) {
       buckets.needsYou.push(card)
-    } else if (isAnsweredDecision(issue, category)) {
+    } else if (isAnsweredAsk(issue)) {
       buckets.answeredByYou.push(card)
     } else if (issue.status === 'in_progress') {
       buckets.inFlight.push(withLiveness(card, now, staleAfterMs))
@@ -345,38 +347,6 @@ function blockerOwner(
 ): { readonly owner?: string } {
   const owner = byId.get(blockerId)?.assignee
   return owner ? { owner } : {}
-}
-
-function isDecision(issueType: string): boolean {
-  const lower = issueType.trim().toLowerCase()
-  return lower === 'decision' || lower === 'dec' || lower === 'adr'
-}
-
-/**
- * Does this bead await a human? Typed signals only: an open decision, or a
- * `needs-human` label. Never inferred from a "Decide:" title or prose.
- */
-function needsHuman(issue: BeadIssue, category: string): boolean {
-  const labelled = issue.labels.some((label) => label.toLowerCase() === 'needs-human')
-  if (labelled) return true
-  if (
-    category === 'outcome' &&
-    isDecision(issue.issueType) &&
-    issue.status !== 'closed' &&
-    !isAnsweredDecision(issue, category)
-  ) {
-    return true
-  }
-  return false
-}
-
-function isAnsweredDecision(issue: BeadIssue, category: string): boolean {
-  return (
-    category === 'outcome' &&
-    isDecision(issue.issueType) &&
-    issue.status !== 'closed' &&
-    (issue.metadata?.['gc.answered']?.length ?? 0) > 0
-  )
 }
 
 /** Human-readable gate labels for the typed `gc.outcome` values. */

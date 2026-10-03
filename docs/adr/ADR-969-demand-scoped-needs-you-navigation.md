@@ -24,7 +24,18 @@ no periodic scan while the view is closed, no automatic host connection, and no 
 persisted attention state. Sources report availability and read time independently;
 partial failures and bounded GitHub search coverage remain visible.
 
-The renderer uses existing typed human-work classification for Beads and existing
+Main reads each Beads store once per read, however many worktrees resolve to it, and
+reports its items under the workspace that holds the store. On a host with a
+registered Gas City workspace, main also reads the store of the city's `decisions`
+rig, located through `gc rig list`, even when it is not an open workspace. That store
+uses the city's open-asks rule: an open bead labelled `needs/stephanie` with no
+`gc.answered` stamp. Its rows are listed without navigation, since no workspace owns
+them. Main applies the human-work rule before the per-source item limit, so the limit
+bounds items needing a person rather than the head of the issue list. The view lists
+only sources that failed or were truncated; a workspace with no Beads project or no
+GitHub remote is not a problem.
+
+The shared typed human-work classification serves both main and the renderer, alongside existing
 session attention. Requested PR reviews, failing authored checks, and current authored
 feedback are distinct reasons. Prose is not classified and no semantic priority score
 is introduced. GitHub identities include the repository and PR number; project data

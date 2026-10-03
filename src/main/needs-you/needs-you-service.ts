@@ -1,8 +1,13 @@
 import {
   NEEDS_YOU_PROJECTION_VERSION,
+  beadNeedsHuman,
+  hostPath,
+  isOpenLabelledAsk,
+  type BeadIssue,
   type BeadsListResponse,
   type Disposer,
   type HostPath,
+  type NeedsYouAskStoreSnapshot,
   type NeedsYouDemandRequest,
   type NeedsYouSnapshot,
   type NeedsYouSource,
@@ -23,11 +28,44 @@ const MAX_SOURCES = 128
 const MAX_ITEMS_PER_SOURCE = 50
 const MAX_READ_ATTEMPTS = 3
 const READ_FAILURE_MESSAGE = 'Needs you source read failed'
+const ASK_RIG_NAME = 'decisions'
+const NO_ASKS: BeadsListResponse = {
+  available: true,
+  issues: [],
+  readyIds: [],
+  dispatchableIds: [],
+  dispatchabilitySource: 'structural',
+  dependencies: [],
+  gates: [],
+}
+
+interface HostProject {
+  readonly host: ProjectHost
+  readonly root: HostPath
+}
+
+interface CityRig {
+  readonly name: string
+  readonly path: string
+}
+
+type StoreReads = Map<string, Promise<BeadsListResponse>>
+
+interface SourceRead {
+  readonly storeKey: string
+  readonly snapshot: NeedsYouSourceSnapshot
+}
+
+interface AskStoreRead {
+  readonly storeKey?: string
+  readonly snapshot: NeedsYouAskStoreSnapshot
+}
 
 export interface NeedsYouServiceDeps {
   readonly getProjectState: () => ProjectState
   readonly connectedHosts: () => readonly ProjectHost[]
-  readonly beads: Pick<BeadsService, 'listForProject'>
+  readonly beads: Pick<BeadsService, 'listForProject' | 'storeForProject'>
+  readonly cityRigs?: (project: HostProject) => Promise<readonly CityRig[] | undefined>
   readonly github: Pick<GitHubService, 'pullsForProject'>
   readonly observeCandidates?: (listener: () => void) => Disposer
   readonly onCandidatesChanged?: (candidateRevision: number) => void
@@ -133,16 +171,16 @@ export class NeedsYouService {
     this.assertCurrent(lease)
     const candidateRevision = this.candidateRevision
     const candidateSet = this.candidates()
-    const sources = await mapConcurrent(
-      candidateSet.sources,
-      MAX_CONCURRENT_SOURCES,
-      (candidate) => {
+    const stores: StoreReads = new Map()
+    const [reads, askReads] = await Promise.all([
+      mapConcurrent(candidateSet.sources, MAX_CONCURRENT_SOURCES, (candidate) => {
         this.assertCurrent(lease)
         return candidateRevision === this.candidateRevision
-          ? this.readSource(candidate)
+          ? this.readSource(candidate, stores)
           : Promise.resolve(undefined)
-      },
-    )
+      }),
+      this.readAskStores(stores),
+    ])
     this.assertCurrent(lease)
     if (candidateRevision !== this.candidateRevision) return undefined
     lease.candidateRevision = candidateRevision
@@ -152,67 +190,92 @@ export class NeedsYouService {
       demandGeneration: lease.demandGeneration,
       revision: lease.revision,
       observedAt: this.now(),
-      sources: sources.filter((source) => source !== undefined),
+      sources: attributeStores(reads.filter((read) => read !== undefined)),
+      askStores: askReads
+        .filter(
+          (ask) =>
+            !reads.some((read) => read !== undefined && read.storeKey === ask.storeKey),
+        )
+        .map((ask) => ask.snapshot),
       candidateLimit: MAX_SOURCES,
       omittedSourceCount: candidateSet.omittedSourceCount,
       candidateRevision,
     }
   }
 
-  private async readSource(source: NeedsYouSource): Promise<NeedsYouSourceSnapshot> {
+  private async readSource(
+    source: NeedsYouSource,
+    stores: StoreReads,
+  ): Promise<SourceRead> {
     const beadsObservedAt = this.now()
     const pullsObservedAt = this.now()
-    let project: { readonly host: ProjectHost; readonly root: HostPath }
+    let project: HostProject
     try {
       project = { host: this.host(source.hostId), root: source.root }
     } catch (reason) {
       const message = errorMessage(reason, READ_FAILURE_MESSAGE)
       return {
-        ...source,
-        beads: {
-          response: { available: false, reason: 'error', message },
-          observedAt: beadsObservedAt,
-          itemLimit: MAX_ITEMS_PER_SOURCE,
-          truncated: false,
-        },
-        pulls: {
-          response: { available: false, reason: 'error', message },
-          observedAt: pullsObservedAt,
-          itemLimit: MAX_ITEMS_PER_SOURCE,
-          truncated: false,
+        storeKey: storeKey(source.root, undefined),
+        snapshot: {
+          ...source,
+          beads: {
+            response: { available: false, reason: 'error', message },
+            observedAt: beadsObservedAt,
+            itemLimit: MAX_ITEMS_PER_SOURCE,
+            truncated: false,
+          },
+          pulls: {
+            response: { available: false, reason: 'error', message },
+            observedAt: pullsObservedAt,
+            itemLimit: MAX_ITEMS_PER_SOURCE,
+            truncated: false,
+          },
         },
       }
     }
-    const [beads, pulls] = await Promise.all([
-      this.readBeads(source, project),
+    const [store, pulls] = await Promise.all([
+      this.readStore(project, stores),
       this.readPulls(source, project),
     ])
-    const boundedBeads = boundBeads(beads)
+    const boundedBeads = boundBeads(store.response, beadNeedsHuman)
     const boundedPulls = boundPulls(pulls)
     return {
-      ...source,
-      beads: {
-        response: boundedBeads.response,
-        observedAt: beadsObservedAt,
-        itemLimit: MAX_ITEMS_PER_SOURCE,
-        truncated: boundedBeads.truncated,
-      },
-      pulls: {
-        response: boundedPulls.response,
-        observedAt: pullsObservedAt,
-        itemLimit: MAX_ITEMS_PER_SOURCE,
-        truncated: boundedPulls.truncated,
+      storeKey: store.key,
+      snapshot: {
+        ...source,
+        beads: {
+          response: boundedBeads.response,
+          observedAt: beadsObservedAt,
+          itemLimit: MAX_ITEMS_PER_SOURCE,
+          truncated: boundedBeads.truncated,
+        },
+        pulls: {
+          response: boundedPulls.response,
+          observedAt: pullsObservedAt,
+          itemLimit: MAX_ITEMS_PER_SOURCE,
+          truncated: boundedPulls.truncated,
+        },
       },
     }
   }
 
-  private async readBeads(
-    source: NeedsYouSource,
-    project: { readonly host: ProjectHost; readonly root: HostPath },
-  ): Promise<BeadsListResponse> {
+  private async readStore(
+    project: HostProject,
+    stores: StoreReads,
+  ): Promise<{ readonly key: string; readonly response: BeadsListResponse }> {
+    const key = storeKey(
+      project.root,
+      await this.deps.beads.storeForProject(project, 'interactive'),
+    )
+    const pending = stores.get(key) ?? this.readBeads(project)
+    stores.set(key, pending)
+    return { key, response: await pending }
+  }
+
+  private async readBeads(project: HostProject): Promise<BeadsListResponse> {
     try {
       return await this.deps.beads.listForProject(
-        { root: source.root, issuesOnly: true },
+        { root: project.root, issuesOnly: true },
         project,
         'interactive',
       )
@@ -225,9 +288,81 @@ export class NeedsYouService {
     }
   }
 
+  private async readAskStores(stores: StoreReads): Promise<readonly AskStoreRead[]> {
+    const { cityRigs } = this.deps
+    if (cityRigs === undefined) return []
+    const reads = await Promise.all(
+      this.deps.connectedHosts().map((host) => this.readAskStore(host, cityRigs, stores)),
+    )
+    return reads.filter((read) => read !== undefined)
+  }
+
+  private async readAskStore(
+    host: ProjectHost,
+    cityRigs: NonNullable<NeedsYouServiceDeps['cityRigs']>,
+    stores: StoreReads,
+  ): Promise<AskStoreRead | undefined> {
+    const observedAt = this.now()
+    const roots = this.deps
+      .getProjectState()
+      .projects.filter(
+        (project) =>
+          project.connectionState === 'connected' &&
+          project.registeredRoot.hostId === host.hostId,
+      )
+      .map((project) => project.registeredRoot)
+    for (const root of roots) {
+      let rigs: readonly CityRig[] | undefined
+      try {
+        rigs = await cityRigs({ host, root })
+      } catch (reason) {
+        return {
+          snapshot: {
+            name: ASK_RIG_NAME,
+            root,
+            beads: {
+              response: {
+                available: false,
+                reason: 'error',
+                message: `Gas City rig list unavailable: ${errorMessage(reason, READ_FAILURE_MESSAGE)}`,
+              },
+              observedAt,
+              itemLimit: MAX_ITEMS_PER_SOURCE,
+              truncated: false,
+            },
+          },
+        }
+      }
+      if (rigs === undefined) continue
+      const rig = rigs.find(
+        (candidate) => candidate.name === ASK_RIG_NAME && candidate.path.startsWith('/'),
+      )
+      if (rig === undefined) return undefined
+      const store = await this.readStore(
+        { host, root: hostPath(host.hostId, rig.path) },
+        stores,
+      )
+      const bounded = boundBeads(store.response, isOpenLabelledAsk)
+      return {
+        storeKey: store.key,
+        snapshot: {
+          name: rig.name,
+          root: hostPath(host.hostId, rig.path),
+          beads: {
+            response: bounded.response,
+            observedAt,
+            itemLimit: MAX_ITEMS_PER_SOURCE,
+            truncated: bounded.truncated,
+          },
+        },
+      }
+    }
+    return undefined
+  }
+
   private async readPulls(
     source: NeedsYouSource,
-    project: { readonly host: ProjectHost; readonly root: HostPath },
+    project: HostProject,
   ): Promise<PullsResponse> {
     try {
       return await this.deps.github.pullsForProject(
@@ -361,12 +496,41 @@ function sameCandidates(
   })
 }
 
-function boundBeads(response: BeadsListResponse): {
+function storeKey(root: HostPath, storePath: string | undefined): string {
+  return storePath === undefined
+    ? `${root.hostId}\u0000root\u0000${root.path}`
+    : `${root.hostId}\u0000store\u0000${storePath}`
+}
+
+function attributeStores(
+  reads: readonly SourceRead[],
+): readonly NeedsYouSourceSnapshot[] {
+  const owners = new Map<string, SourceRead>()
+  for (const read of reads) {
+    const owner = owners.get(read.storeKey)
+    const holdsStore = read.storeKey.endsWith(`\u0000${read.snapshot.root.path}/.beads`)
+    if (owner === undefined || holdsStore) owners.set(read.storeKey, read)
+  }
+  return reads.map((read) =>
+    owners.get(read.storeKey) === read
+      ? read.snapshot
+      : {
+          ...read.snapshot,
+          beads: { ...read.snapshot.beads, response: NO_ASKS, truncated: false },
+        },
+  )
+}
+
+function boundBeads(
+  response: BeadsListResponse,
+  needsYou: (issue: BeadIssue) => boolean,
+): {
   readonly response: BeadsListResponse
   readonly truncated: boolean
 } {
   if (!response.available) return { response, truncated: false }
-  const issues = response.issues.slice(0, MAX_ITEMS_PER_SOURCE).map((issue) => ({
+  const asks = response.issues.filter(needsYou)
+  const issues = asks.slice(0, MAX_ITEMS_PER_SOURCE).map((issue) => ({
     id: issue.id,
     title: issue.title,
     status: issue.status,
@@ -390,7 +554,7 @@ function boundBeads(response: BeadsListResponse): {
       dependencies: [],
       gates: [],
     },
-    truncated: response.issues.length > MAX_ITEMS_PER_SOURCE,
+    truncated: asks.length > MAX_ITEMS_PER_SOURCE,
   }
 }
 

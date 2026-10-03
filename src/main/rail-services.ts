@@ -29,6 +29,8 @@ export function ownRailServices(
         emit('needs-you:changed', { candidateRevision }),
       beads,
       github,
+      cityRigs: async (target) =>
+        (await cityReader.inCity(target)) ? cityReader.rigs(target) : undefined,
     }),
   }
 }

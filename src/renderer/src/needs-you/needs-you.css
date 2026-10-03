@@ -84,6 +84,11 @@
   overflow-wrap: anywhere;
 }
 
+.needs-you-title {
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
 .needs-you-source,
 .needs-you-action,
 .needs-you-context {

@@ -29,12 +29,19 @@ export interface NeedsYouSourceSnapshot extends NeedsYouSource {
   readonly pulls: NeedsYouSourceRead<PullsResponse>
 }
 
+export interface NeedsYouAskStoreSnapshot {
+  readonly name: string
+  readonly root: HostPath
+  readonly beads: NeedsYouSourceRead<BeadsListResponse>
+}
+
 export interface NeedsYouSnapshot {
   readonly version: typeof NEEDS_YOU_PROJECTION_VERSION
   readonly demandGeneration: number
   readonly revision: number
   readonly observedAt: number
   readonly sources: readonly NeedsYouSourceSnapshot[]
+  readonly askStores?: readonly NeedsYouAskStoreSnapshot[]
   readonly candidateLimit?: number
   readonly omittedSourceCount?: number
   readonly candidateRevision?: number

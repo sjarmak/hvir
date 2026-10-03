@@ -91,6 +91,18 @@ export function logBeadsFailure(
   })
 }
 
+export function parseBeadsWhereOutput(stdout: string): string | undefined {
+  let raw: unknown
+  try {
+    raw = JSON.parse(stdout)
+  } catch {
+    return undefined
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const path = (raw as Record<string, unknown>)['path']
+  return typeof path === 'string' && path.startsWith('/') ? path : undefined
+}
+
 /** Parse `bd list --json` output; exported for tests. */
 export function parseBeadsListOutput(stdout: string): readonly BeadIssue[] {
   const trimmed = stdout.trim()

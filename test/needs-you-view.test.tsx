@@ -187,7 +187,7 @@ describe('Needs you view', () => {
     )
     await render()
     expect(container.textContent).toContain('2 workspaces omitted')
-    expect(container.textContent).toContain('Partial: first 50 issues')
+    expect(container.textContent).toContain('Partial: first 50 items needing you')
   })
 
   it('retries unavailable session attention with the explicit refresh', async () => {
@@ -226,6 +226,74 @@ describe('Needs you view', () => {
       root: sourceRoot,
       beadId: 'bead-1',
     })
+  })
+
+  it('lists only sources with problems and shows decisions-store asks without a link', async () => {
+    const source = response.sources[0]!
+    const quiet = {
+      ...source,
+      workspaceName: 'quiet-worktree',
+      root: hostPath(asHostId('local'), '/quiet'),
+      beads: {
+        observedAt: 10,
+        response: {
+          available: false as const,
+          reason: 'no-database' as const,
+          message: 'No beads database in this project.',
+        },
+      },
+      pulls: {
+        observedAt: 10,
+        response: {
+          available: false as const,
+          reason: 'no-github-repo' as const,
+          message: 'No GitHub remote is configured for this workspace',
+        },
+      },
+    }
+    if (!source.beads.response.available) throw new Error('Expected available fixture')
+    const snapshot = {
+      ...response,
+      sources: [source, quiet],
+      askStores: [
+        {
+          name: 'decisions',
+          root: hostPath(asHostId('local'), '/city/decisions'),
+          beads: {
+            observedAt: 10,
+            response: {
+              ...source.beads.response,
+              issues: [
+                {
+                  ...source.beads.response.issues[0]!,
+                  id: 'dec-9',
+                  title: 'Pick a vendor',
+                },
+              ],
+            },
+          },
+        },
+      ],
+    }
+    invoke.mockImplementation((channel, request) =>
+      Promise.resolve(
+        channel === 'needs-you:release'
+          ? undefined
+          : { ...snapshot, demandGeneration: request.demandGeneration },
+      ),
+    )
+    await render()
+    expect(container.querySelector('.needs-you-reads summary')?.textContent).toContain(
+      '1 of 3 sources reported problems',
+    )
+    expect(container.querySelectorAll('.needs-you-reads div')).toHaveLength(1)
+    expect(container.textContent).not.toContain('quiet-worktree')
+    expect(container.textContent).not.toContain('No beads database')
+    const ask = [...container.querySelectorAll('.needs-you-list li')].find((item) =>
+      item.textContent?.includes('dec-9 · Pick a vendor'),
+    )!
+    expect(ask.querySelector('button, a')).toBeNull()
+    expect(ask.textContent).toContain('Decision requested')
   })
 
   it('does not scan on a timer and releases observation when hidden', async () => {
@@ -274,7 +342,7 @@ describe('Needs you view', () => {
     await render()
     expect(container.textContent).toContain('2 workspaces omitted')
     expect(container.textContent).toContain('128-workspace read limit')
-    expect(container.textContent).toContain('Partial: first 50 issues')
+    expect(container.textContent).toContain('Partial: first 50 items needing you')
   })
 
   it('revokes a pending action on blur without disabling actions on return', async () => {

@@ -10,6 +10,7 @@ import type { SessionsProjectionRow } from '../../../shared'
 import type { SessionsProjectionCoordinator } from '../sessions/sessions-projection-coordinator'
 import { useSessionsForeground } from '../sessions/use-sessions-foreground'
 import { NeedsYouCoordinator } from './needs-you-coordinator'
+import { needsYouProblems } from './needs-you-problems'
 import { needsYouRows, type NeedsYouBeadTarget, type NeedsYouRow } from './needs-you-rows'
 import './needs-you.css'
 
@@ -78,16 +79,21 @@ export function NeedsYouView({
         ? needsYouRows(
             sessions.status === 'available' ? sessions.rows : [],
             reads.status === 'available' ? reads.snapshot.sources : [],
+            reads.status === 'available' ? reads.snapshot.askStores : [],
           )
         : [],
     [foreground, reads, sessions],
+  )
+  const problems = useMemo(
+    () => (reads.status === 'available' ? needsYouProblems(reads.snapshot) : []),
+    [reads],
   )
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
   const page = Math.min(pageIndex, pageCount - 1)
   const visible = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
   const activate = async (row: NeedsYouRow): Promise<void> => {
-    if (opening || row.target.kind === 'pull') return
+    if (opening || row.target.kind === 'pull' || row.target.kind === 'ask') return
     if (row.target.kind === 'session') {
       onSession(row.target.row)
       return
@@ -126,8 +132,9 @@ export function NeedsYouView({
         </button>
       </header>
       <p className="needs-you-scope">
-        Beads and PRs: open, present workspaces on connected hosts only. PR searches
-        include up to 30 authored and 30 review-requested items per repository.
+        Beads and PRs: open, present workspaces on connected hosts, plus the Gas City
+        decisions store. PR searches include up to 30 authored and 30 review-requested
+        items per repository.
       </p>
       <div role="status">
         {!foreground ? (
@@ -155,6 +162,8 @@ export function NeedsYouView({
                 {row.title}
                 <span className="needs-you-action">Open on GitHub</span>
               </a>
+            ) : row.target.kind === 'ask' ? (
+              <span className="needs-you-title">{row.title}</span>
             ) : (
               <button
                 type="button"
@@ -181,7 +190,7 @@ export function NeedsYouView({
         reads.status === 'available' &&
         sessions.status === 'available' && (
           <p>
-            No actionable items in the available reads. Unavailable sources below may
+            No actionable items in the available reads. Sources with problems below may
             still need attention.
           </p>
         )}
@@ -208,7 +217,12 @@ export function NeedsYouView({
       )}
       {foreground && reads.status === 'available' && (
         <details className="needs-you-reads" open>
-          <summary>Source availability and read times</summary>
+          <summary>
+            {problems.length} of{' '}
+            {reads.snapshot.sources.length + (reads.snapshot.askStores?.length ?? 0)}{' '}
+            sources reported problems · Read at{' '}
+            {new Date(reads.snapshot.observedAt).toLocaleTimeString()}
+          </summary>
           {(reads.snapshot.omittedSourceCount ?? 0) > 0 && (
             <p className="needs-you-error">
               {reads.snapshot.omittedSourceCount} workspaces omitted by the{' '}
@@ -217,30 +231,14 @@ export function NeedsYouView({
             </p>
           )}
           {reads.snapshot.sources.length === 0 && <p>No eligible workspaces.</p>}
-          {reads.snapshot.sources.map((source) => (
-            <div key={JSON.stringify(source.root)}>
+          {problems.map((problem) => (
+            <div key={problem.key}>
               <strong>
-                {source.projectName} / {source.workspaceName} · {source.root.hostId}:
-                {source.root.path}
+                {problem.name} · {problem.root.hostId}:{problem.root.path}
               </strong>
-              <p>
-                Beads:{' '}
-                {source.beads.response.available
-                  ? 'Available'
-                  : source.beads.response.message}{' '}
-                · Read at {new Date(source.beads.observedAt).toLocaleTimeString()}
-                {source.beads.truncated &&
-                  ` · Partial: first ${source.beads.itemLimit} issues only. Open the Beads rail for the full list.`}
-              </p>
-              <p>
-                PRs:{' '}
-                {source.pulls.response.available
-                  ? source.pulls.response.repo
-                  : source.pulls.response.message}{' '}
-                · Read at {new Date(source.pulls.observedAt).toLocaleTimeString()}
-                {source.pulls.truncated &&
-                  ` · Partial: first ${source.pulls.itemLimit} items per search only.`}
-              </p>
+              {problem.details.map((detail) => (
+                <p key={detail}>{detail}</p>
+              ))}
             </div>
           ))}
         </details>

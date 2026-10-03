@@ -140,6 +140,44 @@ describe('Needs you source identities', () => {
       expect(rows.filter((row) => row.target.kind === 'pull')).toHaveLength(1)
     }))
 
+  it('lists decisions-store asks as unlinked rows ahead of workspace rows', () => {
+    const workspace = source('local', '/repo')
+    const rows = needsYouRows(
+      [],
+      [workspace],
+      [
+        {
+          name: 'decisions',
+          root: hostPath(asHostId('work'), '/city/decisions'),
+          beads: {
+            observedAt: 1,
+            response: {
+              ...workspace.beads.response,
+              ...(workspace.beads.response.available
+                ? {
+                    issues: [
+                      {
+                        ...workspace.beads.response.issues[0]!,
+                        id: 'dec-1',
+                        title: 'Pick',
+                      },
+                    ],
+                  }
+                : {}),
+            },
+          },
+        },
+      ],
+    )
+    expect(rows[0]).toMatchObject({
+      title: 'dec-1 · Pick',
+      reason: 'Decision requested',
+      context: 'decisions · work:/city/decisions',
+      target: { kind: 'ask' },
+    })
+    expect(new Set(rows.map((row) => row.key)).size).toBe(rows.length)
+  })
+
   it('uses the newer successful repository read when a review request has cleared', () => {
     const earlier = source('local', '/repo', 1)
     const later = source('local', '/worktree', 2)

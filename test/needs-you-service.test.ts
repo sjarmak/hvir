@@ -229,6 +229,7 @@ describe('NeedsYouService', () => {
             gates: [{ id: 'gate', title: 'Gate', gateType: 'human', state: 'open' }],
           }),
         ),
+        storeForProject: noStore,
       },
       github: { pullsForProject: vi.fn(() => Promise.resolve(pullsUnavailable)) },
     })
@@ -356,11 +357,12 @@ describe('NeedsYouService', () => {
   it('reads beads and pulls on the interactive exec lane', async () => {
     const listForProject = vi.fn(() => Promise.resolve(beadsUnavailable))
     const pullsForProject = vi.fn(() => Promise.resolve(pullsUnavailable))
+    const storeForProject = vi.fn(noStore)
     const service = new NeedsYouService({
       getProjectState: () =>
         state([workspace('workspace-one', hostPath(asHostId('local'), '/work/one'))]),
       connectedHosts: () => [host('local')],
-      beads: { listForProject },
+      beads: { listForProject, storeForProject },
       github: { pullsForProject },
     })
     await service.acquire(owner, { demandGeneration: 1 })
@@ -374,8 +376,232 @@ describe('NeedsYouService', () => {
       expect.anything(),
       'interactive',
     )
+    expect(storeForProject).toHaveBeenCalledWith(expect.anything(), 'interactive')
+  })
+
+  it('reads a store shared by several worktrees once and reports its asks under the workspace that holds it', async () => {
+    const listForProject = vi.fn(() =>
+      Promise.resolve(available([issue('ask-1', { labels: ['needs-human'] })])),
+    )
+    const service = new NeedsYouService({
+      getProjectState: () =>
+        state([
+          workspace('worktree-a', hostPath(asHostId('local'), '/trees/a')),
+          workspace('main', hostPath(asHostId('local'), '/work/repo')),
+          workspace('worktree-b', hostPath(asHostId('local'), '/work/repo-b')),
+        ]),
+      connectedHosts: () => [host('local')],
+      beads: {
+        listForProject,
+        storeForProject: () => Promise.resolve('/work/repo/.beads'),
+      },
+      github: { pullsForProject: vi.fn(() => Promise.resolve(pullsUnavailable)) },
+    })
+
+    const snapshot = await service.acquire(owner, { demandGeneration: 1 })
+
+    expect(listForProject).toHaveBeenCalledTimes(1)
+    expect(
+      snapshot.sources.map((source) => [
+        source.root.path,
+        issueIds(source.beads.response),
+      ]),
+    ).toEqual([
+      ['/trees/a', []],
+      ['/work/repo', ['ask-1']],
+      ['/work/repo-b', []],
+    ])
+  })
+
+  it('reports a shared store without a holding workspace once, under the first worktree', async () => {
+    const service = new NeedsYouService({
+      getProjectState: () =>
+        state([
+          workspace('worktree-a', hostPath(asHostId('local'), '/trees/a')),
+          workspace('worktree-b', hostPath(asHostId('local'), '/trees/b')),
+        ]),
+      connectedHosts: () => [host('local')],
+      beads: {
+        listForProject: () => Promise.reject(new Error('Dolt down')),
+        storeForProject: () => Promise.resolve('/home/.beads'),
+      },
+      github: { pullsForProject: vi.fn(() => Promise.resolve(pullsUnavailable)) },
+    })
+
+    const snapshot = await service.acquire(owner, { demandGeneration: 1 })
+
+    expect(snapshot.sources.map((source) => source.beads.response.available)).toEqual([
+      false,
+      true,
+    ])
+  })
+
+  it('keeps asks that sit beyond the item limit in a large store and truncates only asks', async () => {
+    const filler = Array.from({ length: 200 }, (_, index) => issue(`work-${index}`))
+    const asks = Array.from({ length: 51 }, (_, index) =>
+      issue(`ask-${index}`, { labels: ['needs/stephanie'] }),
+    )
+    const answered = issue('answered', {
+      labels: ['needs/stephanie'],
+      metadata: { 'gc.answered': '2026-10-01' },
+    })
+    let issues: readonly BeadIssue[] = [...filler, answered, asks[0]!]
+    const service = serviceFor(
+      state([workspace('workspace-one', hostPath(asHostId('local'), '/work/one'))]),
+      () => () => undefined,
+      () => Promise.resolve(available(issues)),
+    )
+
+    const first = await service.acquire(owner, { demandGeneration: 1 })
+    expect(issueIds(first.sources[0]!.beads.response)).toEqual(['ask-0'])
+    expect(first.sources[0]!.beads.truncated).toBe(false)
+
+    issues = [...filler, ...asks]
+    const second = await service.snapshot(owner, { demandGeneration: 1 })
+    expect(issueIds(second.sources[0]!.beads.response)).toHaveLength(50)
+    expect(second.sources[0]!.beads.truncated).toBe(true)
+  })
+
+  it('reads the decisions rig of a connected city and applies the open-asks rule to it', async () => {
+    const reads: string[] = []
+    const cityRigs = vi.fn(() =>
+      Promise.resolve([
+        { name: 'hq', path: '/city' },
+        { name: 'decisions', path: '/city/decisions' },
+      ]),
+    )
+    const service = new NeedsYouService({
+      getProjectState: () =>
+        state([workspace('workspace-one', hostPath(asHostId('local'), '/work/one'))]),
+      connectedHosts: () => [host('local')],
+      beads: {
+        listForProject: (request) => {
+          reads.push(request.root.path)
+          return Promise.resolve(
+            request.root.path === '/city/decisions'
+              ? available([
+                  issue('dec-open', { labels: ['needs/stephanie'] }),
+                  issue('dec-answered', {
+                    labels: ['needs/stephanie'],
+                    metadata: { 'gc.answered': '2026-09-27' },
+                  }),
+                  issue('dec-internal', { issueType: 'decision' }),
+                ])
+              : beadsUnavailable,
+          )
+        },
+        storeForProject: (project) =>
+          Promise.resolve(
+            project.root.path === '/city/decisions'
+              ? '/city/decisions/.beads'
+              : undefined,
+          ),
+      },
+      github: { pullsForProject: vi.fn(() => Promise.resolve(pullsUnavailable)) },
+      cityRigs,
+    })
+
+    const snapshot = await service.acquire(owner, { demandGeneration: 1 })
+
+    expect(reads.sort()).toEqual(['/city/decisions', '/work/one'])
+    expect(snapshot.askStores).toHaveLength(1)
+    expect(snapshot.askStores?.[0]).toMatchObject({
+      name: 'decisions',
+      root: hostPath(asHostId('local'), '/city/decisions'),
+    })
+    expect(issueIds(snapshot.askStores![0]!.beads.response)).toEqual(['dec-open'])
+  })
+
+  it('does not list the decisions store separately when an open workspace already reads it', async () => {
+    const listForProject = vi.fn(() =>
+      Promise.resolve(available([issue('dec-open', { labels: ['needs/stephanie'] })])),
+    )
+    const service = new NeedsYouService({
+      getProjectState: () =>
+        state([
+          workspace('workspace-one', hostPath(asHostId('local'), '/city/decisions')),
+        ]),
+      connectedHosts: () => [host('local')],
+      beads: {
+        listForProject,
+        storeForProject: () => Promise.resolve('/city/decisions/.beads'),
+      },
+      github: { pullsForProject: vi.fn(() => Promise.resolve(pullsUnavailable)) },
+      cityRigs: () => Promise.resolve([{ name: 'decisions', path: '/city/decisions' }]),
+    })
+
+    const snapshot = await service.acquire(owner, { demandGeneration: 1 })
+
+    expect(listForProject).toHaveBeenCalledTimes(1)
+    expect(snapshot.askStores).toEqual([])
+    expect(issueIds(snapshot.sources[0]!.beads.response)).toEqual(['dec-open'])
+  })
+
+  it('reports an unreadable rig list as an unavailable decisions store and skips hosts outside a city', async () => {
+    const outside = new NeedsYouService({
+      getProjectState: () =>
+        state([workspace('workspace-one', hostPath(asHostId('local'), '/work/one'))]),
+      connectedHosts: () => [host('local')],
+      beads: {
+        listForProject: () => Promise.resolve(beadsUnavailable),
+        storeForProject: noStore,
+      },
+      github: { pullsForProject: vi.fn(() => Promise.resolve(pullsUnavailable)) },
+      cityRigs: () => Promise.resolve(undefined),
+    })
+    expect((await outside.acquire(owner, { demandGeneration: 1 })).askStores).toEqual([])
+
+    const failing = new NeedsYouService({
+      getProjectState: () =>
+        state([workspace('workspace-one', hostPath(asHostId('local'), '/work/one'))]),
+      connectedHosts: () => [host('local')],
+      beads: {
+        listForProject: () => Promise.resolve(beadsUnavailable),
+        storeForProject: noStore,
+      },
+      github: { pullsForProject: vi.fn(() => Promise.resolve(pullsUnavailable)) },
+      cityRigs: () => Promise.reject(new Error('gc exceeded its 15000ms timeout')),
+    })
+    const snapshot = await failing.acquire(owner, { demandGeneration: 1 })
+    expect(snapshot.askStores?.[0]?.beads.response).toEqual({
+      available: false,
+      reason: 'error',
+      message: 'Gas City rig list unavailable: gc exceeded its 15000ms timeout',
+    })
   })
 })
+
+const noStore = (): Promise<string | undefined> => Promise.resolve(undefined)
+
+function issue(id: string, extra: Partial<BeadIssue> = {}): BeadIssue {
+  return {
+    id,
+    title: id,
+    status: 'open',
+    priority: 2,
+    issueType: 'task',
+    labels: [],
+    dependencyCount: 0,
+    dependentCount: 0,
+    ...extra,
+  }
+}
+
+function available(issues: readonly BeadIssue[]): BeadsListResponse {
+  return {
+    available: true,
+    issues,
+    readyIds: [],
+    dispatchableIds: [],
+    dispatchabilitySource: 'structural',
+    dependencies: [],
+    gates: [],
+  }
+}
+
+function issueIds(response: BeadsListResponse): readonly string[] {
+  return response.available ? response.issues.map((entry) => entry.id) : []
+}
 
 function serviceFor(
   projectState: ProjectState | (() => ProjectState),
@@ -389,6 +615,7 @@ function serviceFor(
     observeCandidates,
     beads: {
       listForProject: vi.fn((request: BeadsListRequest) => readBeads(request)),
+      storeForProject: noStore,
     },
     github: {
       pullsForProject: vi.fn(() => Promise.resolve(pullsUnavailable)),

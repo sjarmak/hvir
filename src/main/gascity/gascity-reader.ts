@@ -135,6 +135,10 @@ export class GasCityReader {
     return this.contexts.get(target, withConfig)
   }
 
+  rigs(target: GasCityTarget): Promise<readonly GasCityRig[]> {
+    return this.rigLists.get(target)
+  }
+
   /** What is already known about a workspace's city, without starting a read. */
   peekContext(root: HostPath): GasCityContext | undefined {
     return this.contexts.peek(root)

@@ -4,6 +4,7 @@ import { BeadsService } from '../src/main/beads/beads-service'
 import {
   classifyListFailure,
   parseBeadsListOutput,
+  parseBeadsWhereOutput,
   parseDigraphEdges,
   parseDispatchableOutput,
   parseGatesOutput,
@@ -509,6 +510,45 @@ describe('BeadsService.list enrichment', () => {
     expect(result.available).toBe(true)
     expect(exec.mock.calls).toHaveLength(1)
     expect(exec.mock.calls[0]?.[2]).toMatchObject({ lane: 'interactive' })
+  })
+
+  it('resolves the store a workspace reads from on the lane the caller asks for', async () => {
+    const { host, exec } = fakeHost({
+      exec: () => execResult(0, JSON.stringify({ path: '/projects/main/.beads' })),
+    })
+    await expect(
+      service(host).storeForProject({ host, root: ROOT }, 'interactive'),
+    ).resolves.toBe('/projects/main/.beads')
+    expect(exec.mock.calls[0]?.slice(0, 2)).toEqual([
+      'bd',
+      ['-C', '/projects/demo', 'where', '--json'],
+    ])
+    expect(exec.mock.calls[0]?.[2]).toMatchObject({ lane: 'interactive' })
+  })
+
+  it('reports no store when bd finds no project or cannot run', async () => {
+    const missing = fakeHost({ exec: () => execResult(1, '', 'no beads project found') })
+    await expect(
+      service(missing.host).storeForProject({ host: missing.host, root: ROOT }),
+    ).resolves.toBeUndefined()
+    const broken = fakeHost({ exec: () => Promise.reject(new Error('spawn bd ENOENT')) })
+    await expect(
+      service(broken.host).storeForProject({ host: broken.host, root: ROOT }),
+    ).resolves.toBeUndefined()
+  })
+
+  it('accepts only an absolute store path from bd where output', () => {
+    expect(parseBeadsWhereOutput('{"path":"/a/.beads","prefix":"a"}')).toBe('/a/.beads')
+    for (const output of [
+      '',
+      'not json',
+      '[]',
+      'null',
+      '{"path":3}',
+      '{"path":"relative"}',
+    ]) {
+      expect(parseBeadsWhereOutput(output)).toBeUndefined()
+    }
   })
 
   it('falls back to structural when the predicate errors', async () => {

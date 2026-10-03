@@ -24,7 +24,9 @@ function issue(overrides: Partial<BeadIssue> & { readonly id: string }): BeadIss
   }
 }
 
-function snapshot(overrides: Partial<BeadsSnapshot> & { readonly issues: readonly BeadIssue[] }): BeadsSnapshot {
+function snapshot(
+  overrides: Partial<BeadsSnapshot> & { readonly issues: readonly BeadIssue[] },
+): BeadsSnapshot {
   return {
     available: true,
     readyIds: [],
@@ -68,7 +70,9 @@ describe('classifyBeads — Ready next', () => {
     const structural = classifyBeads(
       snapshot({ issues: [issue({ id: 'a' })], readyIds: ['a'], dispatchableIds: ['a'] }),
     )
-    expect(section(structural, 'readyNext').label).toBe('Dependency-ready / needs classification')
+    expect(section(structural, 'readyNext').label).toBe(
+      'Dependency-ready / needs classification',
+    )
     expect(section(structural, 'readyNext').note).toMatch(/structural approximation/i)
 
     const predicate = classifyBeads(
@@ -99,7 +103,11 @@ describe('classifyBeads — containers never inflate human counts', () => {
     )
     expect(section(view, 'readyNext').count).toBe(1)
     // convoy/molecule/infra are hidden orchestration; epic is a planned outcome.
-    expect(view.orchestrationIssues.map((i) => i.id).sort()).toEqual(['convoy', 'infra', 'mol'])
+    expect(view.orchestrationIssues.map((i) => i.id).sort()).toEqual([
+      'convoy',
+      'infra',
+      'mol',
+    ])
     expect(section(view, 'planned').groups?.map((g) => g.outcome.id)).toEqual(['epic'])
   })
 })
@@ -137,6 +145,27 @@ describe('classifyBeads — human / deferred / ship / blocked routing', () => {
     )
     expect(section(view, 'answeredByYou').cards.map((card) => card.issue.id)).toEqual([
       'answered',
+    ])
+  })
+
+  it('routes needs/stephanie work to Needs you until it carries an answer', () => {
+    const view = classifyBeads(
+      snapshot({
+        issues: [
+          issue({ id: 'asked', labels: ['needs/stephanie'] }),
+          issue({
+            id: 'ruled',
+            labels: ['needs/stephanie'],
+            metadata: { 'gc.answered': '2026-10-02' },
+          }),
+        ],
+      }),
+    )
+    expect(section(view, 'needsYou').cards.map((card) => card.issue.id)).toEqual([
+      'asked',
+    ])
+    expect(section(view, 'answeredByYou').cards.map((card) => card.issue.id)).toEqual([
+      'ruled',
     ])
   })
 
@@ -190,11 +219,17 @@ describe('classifyBeads — human / deferred / ship / blocked routing', () => {
       issue({ id: 'plain' }),
     ]
     const view = classifyBeads(
-      snapshot({ issues, readyIds: ['branch', 'noland', 'plain'], dispatchableIds: ['branch', 'noland', 'plain'] }),
+      snapshot({
+        issues,
+        readyIds: ['branch', 'noland', 'plain'],
+        dispatchableIds: ['branch', 'noland', 'plain'],
+      }),
     )
     const ship = section(view, 'readyToShip')
     expect(ship.cards.map((c) => c.issue.id).sort()).toEqual(['branch', 'noland'])
-    expect(ship.cards.find((c) => c.issue.id === 'branch')?.shipState).toBe('Branch ready')
+    expect(ship.cards.find((c) => c.issue.id === 'branch')?.shipState).toBe(
+      'Branch ready',
+    )
     expect(ship.cards.find((c) => c.issue.id === 'noland')?.shipState).toMatch(/no-land/i)
     // Only the plain leaf remains a candidate for the executable queue.
     expect(section(view, 'readyNext').cards.map((c) => c.issue.id)).toEqual(['plain'])
@@ -214,7 +249,13 @@ describe('classifyBeads — human / deferred / ship / blocked routing', () => {
 
   it('surfaces gates under Needs you with what they unblock', () => {
     const gates: BeadGate[] = [
-      { id: 'g1', title: 'Approve release', gateType: 'human', blockedId: 'ship', state: 'open' },
+      {
+        id: 'g1',
+        title: 'Approve release',
+        gateType: 'human',
+        blockedId: 'ship',
+        state: 'open',
+      },
     ]
     const view = classifyBeads(
       snapshot({ issues: [issue({ id: 'ship', issueType: 'merge-request' })], gates }),
@@ -271,7 +312,9 @@ describe('classifyBeads — dependency cards', () => {
     )
     const card = section(view, 'blocked').cards.find((c) => c.issue.id === 'work')
     if (!card) throw new Error('expected blocked card')
-    expect(card.blockedBy).toEqual([{ id: 'blocker', title: 'Title blocker', status: 'in_progress' }])
+    expect(card.blockedBy).toEqual([
+      { id: 'blocker', title: 'Title blocker', status: 'in_progress' },
+    ])
     expect(card.unlocksCount).toBe(2)
     expect(card.nextUnblock).toEqual({ action: 'Resolve “Title blocker”', owner: 'alex' })
   })
@@ -317,7 +360,11 @@ describe('classifyBeads — data hygiene', () => {
       issue({ id: 'weird', issueType: 'wibble' }),
     ]
     const view = classifyBeads(
-      snapshot({ issues, readyIds: ['known', 'weird'], dispatchableIds: ['known', 'weird'] }),
+      snapshot({
+        issues,
+        readyIds: ['known', 'weird'],
+        dispatchableIds: ['known', 'weird'],
+      }),
     )
     expect(view.dataHygiene.map((i) => i.id)).toEqual(['weird'])
     expect(section(view, 'readyNext').cards.map((c) => c.issue.id)).toEqual(['known'])
