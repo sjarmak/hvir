@@ -148,6 +148,19 @@ describe('GitHubService.pulls', () => {
     })
   })
 
+  it('skips gh entirely when the workspace has no GitHub remote', async () => {
+    const { host, exec } = fakeHost((command, args) =>
+      command === 'git' && args[0] === 'remote'
+        ? execResult(0, '')
+        : defaultResponder(command, args),
+    )
+    expect(await service(host).pulls({ root: ROOT })).toMatchObject({
+      available: false,
+      reason: 'no-github-repo',
+    })
+    expect(exec.mock.calls.some(([command]) => command === 'gh')).toBe(false)
+  })
+
   it('reports gh missing when the login shell cannot find it', async () => {
     const { host } = fakeHost((command, args) =>
       command === 'gh'

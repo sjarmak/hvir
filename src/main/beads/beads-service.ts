@@ -1,3 +1,5 @@
+import { posix } from 'node:path'
+
 import {
   hostPathEquals,
   isExecutableLeaf,
@@ -46,6 +48,19 @@ export class BeadsService {
     project: { readonly host: ProjectHost; readonly root: HostPath },
   ): Promise<BeadsListResponse> {
     const { host, root } = project
+    if (req.issuesOnly === true) {
+      const base = await this.runList(host, root, [])
+      if (!base.ok) return base.unavailable
+      return {
+        available: true,
+        issues: base.issues,
+        readyIds: [],
+        dispatchableIds: [],
+        dispatchabilitySource: 'structural',
+        dependencies: [],
+        gates: [],
+      }
+    }
     // Core fetch: without these two the panel has nothing to show, so their
     // failure fails the whole snapshot (existing behaviour, preserved).
     const [base, ready] = await Promise.all([
@@ -267,14 +282,6 @@ export class BeadsService {
     }
   }
 
-  /**
-   * Scheduler-dispatchable ids. If a dispatchability predicate is configured —
-   * `<root>/.beads/dispatchability.jq` or the `BEADS_DISPATCHABILITY_JQ` path —
-   * we run the raw bd JSON through it and trust its output (the scheduler
-   * contract is the authority). Otherwise we fall back to a purely structural
-   * filter over typed fields: dependency-ready ∩ executable-leaf. Either way the
-   * result is computed once, here, never re-derived in the UI.
-   */
   private async computeDispatchable(
     host: ProjectHost,
     root: HostPath,
@@ -300,7 +307,7 @@ export class BeadsService {
     const predicate = await this.resolveDispatchabilityPredicate(host, root)
     if (predicate === undefined) return structural()
     try {
-      const result = await host.exec('jq', ['-cf', predicate], {
+      const result = await host.exec('jq', dispatchabilityJqArgs(predicate), {
         cwd: root,
         loginShell: true,
         input: baseStdout,
@@ -352,4 +359,14 @@ export class BeadsService {
     }
     return undefined
   }
+}
+
+export function dispatchabilityJqArgs(predicate: string): readonly string[] {
+  const module = posix.basename(predicate, '.jq')
+  return [
+    '-L',
+    posix.dirname(predicate),
+    '-c',
+    `include "${module}"; [ .[] | select(scheduler_dispatchable) | .id ]`,
+  ]
 }

@@ -440,7 +440,33 @@ describe('BeadsService.list enrichment', () => {
     if (!result.available) throw new Error('expected availability')
     expect(result.dispatchableIds).toEqual(['leaf-2'])
     expect(result.dispatchabilitySource).toBe('predicate')
-    expect(exec.mock.calls.some(([command]) => command === 'jq')).toBe(true)
+    const jqCall = exec.mock.calls.find(([command]) => command === 'jq')
+    expect(jqCall?.[1]).toEqual([
+      '-L',
+      `${ROOT.path}/.beads`,
+      '-c',
+      'include "dispatchability"; [ .[] | select(scheduler_dispatchable) | .id ]',
+    ])
+  })
+
+  it('reads only the base list when the request is issues-only', async () => {
+    const { host, exec } = enrichedHost({
+      base: [issueJson({ id: 'leaf-1' }), issueJson({ id: 'epic-1', issue_type: 'epic' })],
+      ready: [issueJson({ id: 'leaf-1' })],
+      hasPredicate: true,
+    })
+    const result = await service(host).list({ root: ROOT, issuesOnly: true })
+    if (!result.available) throw new Error('expected availability')
+    expect(result.issues.map((issue) => issue.id)).toEqual(['leaf-1', 'epic-1'])
+    expect(result).toMatchObject({
+      readyIds: [],
+      dispatchableIds: [],
+      dispatchabilitySource: 'structural',
+      dependencies: [],
+      gates: [],
+    })
+    expect(exec.mock.calls).toHaveLength(1)
+    expect(exec.mock.calls[0]?.[0]).toBe('bd')
   })
 
   it('falls back to structural when the predicate errors', async () => {

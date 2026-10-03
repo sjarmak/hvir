@@ -207,7 +207,10 @@ export class NeedsYouService {
     project: { readonly host: ProjectHost; readonly root: HostPath },
   ): Promise<BeadsListResponse> {
     try {
-      return await this.deps.beads.listForProject({ root: source.root }, project)
+      return await this.deps.beads.listForProject(
+        { root: source.root, issuesOnly: true },
+        project,
+      )
     } catch (reason) {
       return {
         available: false,

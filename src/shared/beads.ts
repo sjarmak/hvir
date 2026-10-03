@@ -101,6 +101,7 @@ export interface BeadsListRequest {
   readonly includeClosed?: boolean
   /** Also fetch orchestration/infra/template beads for the debug view (lazy). */
   readonly includeInternals?: boolean
+  readonly issuesOnly?: boolean
 }
 
 export interface BeadsSnapshot {

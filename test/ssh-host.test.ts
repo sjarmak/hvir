@@ -902,6 +902,24 @@ describe('SshHost remote behavior', () => {
     await host.dispose()
   })
 
+  it('reports a budget spent waiting for the background lane as a timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      const { host, client, channels } = execBudgetFixture(3, 4)
+      const running = host.exec('poll-one', [], { lane: 'background' })
+      await vi.waitFor(() => expect(client.exec).toHaveBeenCalledTimes(1))
+      const queued = host.exec('poll-two', [], { lane: 'background', timeout: 50 })
+      const rejected = expect(queued).rejects.toThrow('poll-two exceeded its 50ms timeout')
+      await vi.advanceTimersByTimeAsync(60)
+      await rejected
+      settleExec(channels[0])
+      await expect(running).resolves.toMatchObject({ code: 0 })
+      await host.dispose()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('retries a transient SSH channel-open race', async () => {
     const channel = Object.assign(new EventEmitter(), {
       stderr: new EventEmitter(),

@@ -5,6 +5,7 @@ import {
   asSessionsWorkspaceHandle,
   hostPath,
   type BeadIssue,
+  type BeadsListRequest,
   type BeadsListResponse,
   type HostPath,
   type ProjectState,
@@ -35,6 +36,7 @@ describe('NeedsYouService', () => {
     const root = hostPath(asHostId('local'), '/work/one')
     const second = hostPath(asHostId('local'), '/work/two')
     const reads: string[] = []
+    const requests: BeadsListRequest[] = []
     const service = serviceFor(
       state([
         workspace('workspace-one', root),
@@ -44,8 +46,9 @@ describe('NeedsYouService', () => {
         workspace('missing', hostPath(asHostId('local'), '/work/missing'), false, true),
       ]),
       () => () => {},
-      ({ root: candidate }) => {
-        reads.push(candidate.path)
+      (request) => {
+        reads.push(request.root.path)
+        requests.push(request)
         return Promise.resolve(beadsUnavailable)
       },
     )
@@ -57,6 +60,7 @@ describe('NeedsYouService', () => {
       '/work/two',
     ])
     expect(reads).toEqual(['/work/one', '/work/two'])
+    expect(requests.every((request) => request.issuesOnly === true)).toBe(true)
     expect(
       snapshot.sources.every((source) => source.pulls.response.available === false),
     ).toBe(true)
@@ -310,7 +314,7 @@ describe('NeedsYouService', () => {
 function serviceFor(
   projectState: ProjectState | (() => ProjectState),
   observeCandidates: (listener: () => void) => Disposer,
-  readBeads: (request: { readonly root: HostPath }) => Promise<BeadsListResponse>,
+  readBeads: (request: BeadsListRequest) => Promise<BeadsListResponse>,
 ): NeedsYouService {
   return new NeedsYouService({
     getProjectState:
@@ -318,7 +322,7 @@ function serviceFor(
     connectedHosts: () => [host('local')],
     observeCandidates,
     beads: {
-      listForProject: vi.fn((request: { readonly root: HostPath }) => readBeads(request)),
+      listForProject: vi.fn((request: BeadsListRequest) => readBeads(request)),
     },
     github: {
       pullsForProject: vi.fn(() => Promise.resolve(pullsUnavailable)),

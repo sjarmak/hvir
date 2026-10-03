@@ -27,7 +27,7 @@ import { parseWorktreeList } from '../git/git-parsers'
 import { pullDetailQueryArgs, pullsQueryArgs } from './github-query'
 
 const GH_TIMEOUT_MS = 20_000
-const GIT_TIMEOUT_MS = 5_000
+const GIT_TIMEOUT_MS = 20_000
 const REPO_TTL_MS = 10 * 60_000
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024
 const DETAIL_MAX_OUTPUT_BYTES = 1024 * 1024
@@ -71,7 +71,7 @@ export class GitHubService {
 
   async probe(requestedRoot: HostPath): Promise<PullsProbeResponse> {
     const { host, root } = this.activeProject(requestedRoot)
-    return { hasGitHubRemote: (await this.remoteRepos(host, root)).size > 0 }
+    return { hasGitHubRemote: ((await this.remoteRepos(host, root))?.size ?? 0) > 0 }
   }
 
   async pulls(req: PullsRequest): Promise<PullsResponse> {
@@ -163,16 +163,23 @@ export class GitHubService {
     project: { readonly host: ProjectHost; readonly root: HostPath },
   ): Promise<PullsResponse> {
     const { host, root } = project
-    const repo = await this.resolveRepo(host, root)
-    if (!repo.ok) return repo.unavailable
     const [branch, localRepos] = await Promise.all([
       this.currentBranch(host, root),
       this.remoteRepos(host, root),
     ])
+    if (localRepos !== undefined && localRepos.size === 0) {
+      return {
+        available: false,
+        reason: 'no-github-repo',
+        message: 'No GitHub remote is configured for this workspace',
+      }
+    }
+    const repo = await this.resolveRepo(host, root)
+    if (!repo.ok) return repo.unavailable
     const result = await this.gh(host, root, pullsQueryArgs(repo.repo, branch))
     if (!result.ok) return result.unavailable
     try {
-      const parsed = parsePullsOutput(result.stdout, localRepos)
+      const parsed = parsePullsOutput(result.stdout, localRepos ?? new Set())
       return {
         available: true,
         repo: repo.repo,
@@ -290,17 +297,17 @@ export class GitHubService {
   private async remoteRepos(
     host: ProjectHost,
     root: HostPath,
-  ): Promise<ReadonlySet<string>> {
+  ): Promise<ReadonlySet<string> | undefined> {
     try {
       const result = await host.exec('git', ['remote', '-v'], this.gitOptions(root))
       if (result.code !== 0) {
         console.error('[github] git remote exited non-zero', result.stderr.trim())
-        return new Set()
+        return undefined
       }
       return githubRemoteRepos(result.stdout)
     } catch (reason) {
       console.error('[github] remote lookup failed', errorMessage(reason))
-      return new Set()
+      return undefined
     }
   }
 

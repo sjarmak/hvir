@@ -244,7 +244,15 @@ export class SshHost implements ProjectHost {
     const deadline = execDeadline(opts.signal, opts.timeout)
     // Connecting performs its own short capability probe through exec(). Do
     // not reserve a buffered slot until that handshake has completed.
-    const release = await this.execSlots.acquire(opts.lane ?? 'interactive', deadline.signal)
+    let release: () => void
+    try {
+      release = await this.execSlots.acquire(opts.lane ?? 'interactive', deadline.signal)
+    } catch (reason) {
+      deadline.dispose()
+      throw deadline.expired() && opts.timeout !== undefined
+        ? new ExecTimeoutError(command, opts.timeout)
+        : reason
+    }
     try {
       const stream = await this.transportPool.openChannel(
         'control',
