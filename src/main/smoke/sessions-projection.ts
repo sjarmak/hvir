@@ -38,6 +38,7 @@ export async function verifySessionsProjectionSmoke(options: {
   readonly supervisor: PtySupervisor
   readonly usageHost: ProjectHost
   readonly usageProvider: HarnessProvider
+  readonly needsYouSnapshotCount: () => number
   readonly captureDirectory?: HostPath
 }): Promise<string> {
   const {
@@ -53,6 +54,7 @@ export async function verifySessionsProjectionSmoke(options: {
     supervisor,
     usageHost,
     usageProvider,
+    needsYouSnapshotCount,
     captureDirectory,
   } = options
   publishState(state)
@@ -274,7 +276,12 @@ export async function verifySessionsProjectionSmoke(options: {
     throw new Error('Sessions overview retained observation demand after Open returned')
   }
   const pickerStatus = await verifySessionsProjectPickerReturn(win)
-  const needsYouStatus = await verifyNeedsYouView(win, usageHost, captureDirectory)
+  const needsYouStatus = await verifyNeedsYouView(
+    win,
+    usageHost,
+    needsYouSnapshotCount,
+    captureDirectory,
+  )
   const qolRailStatus = await verifyQolRailView(win)
   const checkpointStatus = await verifyReviewCheckpointView({
     win,

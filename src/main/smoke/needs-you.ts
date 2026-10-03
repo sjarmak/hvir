@@ -11,8 +11,8 @@ export function createSmokeNeedsYou(options: {
   readonly beads: BeadsService
   readonly github: GitHubService
   readonly emit: EmitRendererEvent
-}): NeedsYouService {
-  return new NeedsYouService({
+}) {
+  const service = new NeedsYouService({
     getProjectState: () => options.projectFixture.get(),
     connectedHosts: () => [options.host],
     beads: options.beads,
@@ -20,4 +20,14 @@ export function createSmokeNeedsYou(options: {
     onCandidatesChanged: (candidateRevision) =>
       options.emit('needs-you:changed', { candidateRevision }),
   })
+  let snapshotCount = 0
+  return {
+    acquire: service.acquire.bind(service),
+    snapshot: (...args: Parameters<NeedsYouService['snapshot']>) => {
+      snapshotCount += 1
+      return service.snapshot(...args)
+    },
+    release: service.release.bind(service),
+    snapshotCount: () => snapshotCount,
+  }
 }

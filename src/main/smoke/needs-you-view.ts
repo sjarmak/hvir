@@ -5,6 +5,7 @@ import type { ProjectHost } from '../project-host'
 export async function verifyNeedsYouView(
   win: BrowserWindow,
   host: ProjectHost,
+  snapshotCount: () => number,
   captureDirectory?: HostPath,
 ): Promise<string> {
   if (!win.isVisible()) win.show()
@@ -59,26 +60,13 @@ export async function verifyNeedsYouView(
   } finally {
     win.setContentSize(originalSize[0]!, originalSize[1]!)
   }
+  const refreshSnapshotCount = snapshotCount()
   await win.webContents.executeJavaScript(`
     document.querySelector('.needs-you-header button')?.click()
   `)
-  await waitFor(
-    win,
-    `document.querySelector('.needs-you-view [role=status]')?.textContent?.includes('Reading') === true`,
-  )
-  await waitFor(
-    win,
-    `Boolean(document.querySelector('.needs-you-reads')) && !document.querySelector('.needs-you-view [role=status]')?.textContent?.includes('Reading')`,
-  )
-  const refreshedSnapshot = (await win.webContents.executeJavaScript(`
-    window.hvir.invoke('needs-you:snapshot', { demandGeneration: 1 })
-  `)) as { readonly demandGeneration: number; readonly revision: number }
-  if (
-    refreshedSnapshot.demandGeneration !== liveSnapshot.demandGeneration ||
-    refreshedSnapshot.revision <= liveSnapshot.revision
-  ) {
-    throw new Error('Needs you smoke refresh did not produce a newer active snapshot')
-  }
+  await waitForSnapshotCall(snapshotCount, refreshSnapshotCount)
+  await waitForRefreshedSnapshot(win, liveSnapshot)
+  await waitFor(win, `Boolean(document.querySelector('.needs-you-reads'))`)
   await win.webContents.executeJavaScript(`
     document.querySelector('.project-tab .project-tab-main')?.click()
   `)
@@ -90,6 +78,38 @@ export async function verifyNeedsYouView(
   `)) as boolean
   if (!released) throw new Error('Needs you retained demand after workspace return')
   return 'Needs you keyboard entry + responsive reads + refresh + release'
+}
+
+async function waitForSnapshotCall(
+  snapshotCount: () => number,
+  previous: number,
+): Promise<void> {
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    if (snapshotCount() > previous) return
+    await new Promise<void>((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error('Needs you smoke refresh did not invoke a snapshot read')
+}
+
+async function waitForRefreshedSnapshot(
+  win: BrowserWindow,
+  previous: { readonly demandGeneration: number; readonly revision: number },
+): Promise<void> {
+  const deadline = Date.now() + 30_000
+  while (Date.now() < deadline) {
+    const snapshot = (await win.webContents.executeJavaScript(`
+      window.hvir.invoke('needs-you:snapshot', { demandGeneration: 1 })
+    `)) as { readonly demandGeneration: number; readonly revision: number }
+    if (
+      snapshot.demandGeneration === previous.demandGeneration &&
+      snapshot.revision > previous.revision
+    ) {
+      return
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 25))
+  }
+  throw new Error('Needs you smoke refresh did not produce a newer active snapshot')
 }
 
 async function waitFor(win: BrowserWindow, condition: string): Promise<void> {

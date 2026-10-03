@@ -511,9 +511,8 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
         supervisor,
         usageHost: host,
         usageProvider: sessionsUsageSmokeProvider,
-        captureDirectory: process.env.HVIR_SESSIONS_CAPTURE_DIR
-          ? localPath(process.env.HVIR_SESSIONS_CAPTURE_DIR)
-          : undefined,
+        needsYouSnapshotCount: smokeNeedsYou.snapshotCount,
+        captureDirectory: process.env.HVIR_SESSIONS_CAPTURE_DIR ? localPath(process.env.HVIR_SESSIONS_CAPTURE_DIR) : undefined,
       })
       console.log(`[smoke] Sessions projection OK (${result})`)
       console.log('HVIR_SMOKE_OK')
