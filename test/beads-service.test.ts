@@ -526,7 +526,7 @@ describe('BeadsService.list enrichment', () => {
     expect(exec.mock.calls[0]?.[2]).toMatchObject({ lane: 'interactive' })
   })
 
-  it('reports no store when bd finds no project or cannot run', async () => {
+  it('reports no store when bd finds no project and rejects execution failures', async () => {
     const missing = fakeHost({ exec: () => execResult(1, '', 'no beads project found') })
     await expect(
       service(missing.host).storeForProject({ host: missing.host, root: ROOT }),
@@ -534,7 +534,7 @@ describe('BeadsService.list enrichment', () => {
     const broken = fakeHost({ exec: () => Promise.reject(new Error('spawn bd ENOENT')) })
     await expect(
       service(broken.host).storeForProject({ host: broken.host, root: ROOT }),
-    ).resolves.toBeUndefined()
+    ).rejects.toThrow('spawn bd ENOENT')
   })
 
   it('accepts only an absolute store path from bd where output', () => {

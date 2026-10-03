@@ -61,6 +61,17 @@ interface AskStoreRead {
   readonly snapshot: NeedsYouAskStoreSnapshot
 }
 
+interface AskSource {
+  readonly host: ProjectHost
+  readonly roots: readonly HostPath[]
+}
+
+interface CandidateSet {
+  readonly sources: readonly NeedsYouSource[]
+  readonly askSources: readonly AskSource[]
+  readonly omittedSourceCount: number
+}
+
 export interface NeedsYouServiceDeps {
   readonly getProjectState: () => ProjectState
   readonly connectedHosts: () => readonly ProjectHost[]
@@ -93,10 +104,7 @@ export class NeedsYouService {
   private readonly now: () => number
   private candidateRevision = 0
   private candidatesDisposer?: Disposer
-  private observedCandidates?: {
-    readonly sources: readonly NeedsYouSource[]
-    readonly omittedSourceCount: number
-  }
+  private observedCandidates?: CandidateSet
 
   constructor(private readonly deps: NeedsYouServiceDeps) {
     this.now = deps.now ?? (() => Date.now())
@@ -179,7 +187,7 @@ export class NeedsYouService {
           ? this.readSource(candidate, stores)
           : Promise.resolve(undefined)
       }),
-      this.readAskStores(stores),
+      this.readAskStores(candidateSet.askSources, stores),
     ])
     this.assertCurrent(lease)
     if (candidateRevision !== this.candidateRevision) return undefined
@@ -190,7 +198,10 @@ export class NeedsYouService {
       demandGeneration: lease.demandGeneration,
       revision: lease.revision,
       observedAt: this.now(),
-      sources: attributeStores(reads.filter((read) => read !== undefined)),
+      sources: attributeStores(
+        reads.filter((read) => read !== undefined),
+        askReads,
+      ),
       askStores: askReads
         .filter(
           (ask) =>
@@ -263,10 +274,20 @@ export class NeedsYouService {
     project: HostProject,
     stores: StoreReads,
   ): Promise<{ readonly key: string; readonly response: BeadsListResponse }> {
-    const key = storeKey(
-      project.root,
-      await this.deps.beads.storeForProject(project, 'interactive'),
-    )
+    let resolvedStore: string | undefined
+    try {
+      resolvedStore = await this.deps.beads.storeForProject(project, 'interactive')
+    } catch (reason) {
+      return {
+        key: storeKey(project.root, undefined),
+        response: {
+          available: false,
+          reason: 'error',
+          message: errorMessage(reason, READ_FAILURE_MESSAGE),
+        },
+      }
+    }
+    const key = storeKey(project.root, resolvedStore)
     const pending = stores.get(key) ?? this.readBeads(project)
     stores.set(key, pending)
     return { key, response: await pending }
@@ -288,33 +309,28 @@ export class NeedsYouService {
     }
   }
 
-  private async readAskStores(stores: StoreReads): Promise<readonly AskStoreRead[]> {
+  private async readAskStores(
+    sources: readonly AskSource[],
+    stores: StoreReads,
+  ): Promise<readonly AskStoreRead[]> {
     const { cityRigs } = this.deps
     if (cityRigs === undefined) return []
     const reads = await Promise.all(
-      this.deps.connectedHosts().map((host) => this.readAskStore(host, cityRigs, stores)),
+      sources.map((source) => this.readAskStore(source, cityRigs, stores)),
     )
     return reads.filter((read) => read !== undefined)
   }
 
   private async readAskStore(
-    host: ProjectHost,
+    source: AskSource,
     cityRigs: NonNullable<NeedsYouServiceDeps['cityRigs']>,
     stores: StoreReads,
   ): Promise<AskStoreRead | undefined> {
     const observedAt = this.now()
-    const roots = this.deps
-      .getProjectState()
-      .projects.filter(
-        (project) =>
-          project.connectionState === 'connected' &&
-          project.registeredRoot.hostId === host.hostId,
-      )
-      .map((project) => project.registeredRoot)
-    for (const root of roots) {
+    for (const root of source.roots) {
       let rigs: readonly CityRig[] | undefined
       try {
-        rigs = await cityRigs({ host, root })
+        rigs = await cityRigs({ host: source.host, root })
       } catch (reason) {
         return {
           snapshot: {
@@ -339,7 +355,7 @@ export class NeedsYouService {
       )
       if (rig === undefined) return undefined
       const store = await this.readStore(
-        { host, root: hostPath(host.hostId, rig.path) },
+        { host: source.host, root: hostPath(source.host.hostId, rig.path) },
         stores,
       )
       const bounded = boundBeads(store.response, isOpenLabelledAsk)
@@ -347,7 +363,7 @@ export class NeedsYouService {
         storeKey: store.key,
         snapshot: {
           name: rig.name,
-          root: hostPath(host.hostId, rig.path),
+          root: hostPath(source.host.hostId, rig.path),
           beads: {
             response: bounded.response,
             observedAt,
@@ -379,17 +395,33 @@ export class NeedsYouService {
     }
   }
 
-  private candidates(): {
-    readonly sources: readonly NeedsYouSource[]
-    readonly omittedSourceCount: number
-  } {
+  private candidates(): CandidateSet {
     const connected = new Map(
       this.deps.connectedHosts().map((host) => [host.hostId, host] as const),
     )
     const seen = new Set<string>()
     const sources: NeedsYouSource[] = []
+    const rootsByHost = new Map<string, { host: ProjectHost; roots: HostPath[] }>()
     for (const project of this.deps.getProjectState().projects) {
       if (project.connectionState !== 'connected') continue
+      const host = connected.get(project.registeredRoot.hostId)
+      if (host !== undefined) {
+        const held = rootsByHost.get(host.hostId)
+        if (held === undefined) {
+          rootsByHost.set(host.hostId, { host, roots: [project.registeredRoot] })
+        } else if (
+          !held.roots.some(
+            (root) =>
+              root.hostId === project.registeredRoot.hostId &&
+              root.path === project.registeredRoot.path,
+          )
+        ) {
+          rootsByHost.set(host.hostId, {
+            host,
+            roots: [...held.roots, project.registeredRoot],
+          })
+        }
+      }
       for (const workspace of project.workspaces) {
         if (workspace.closed || workspace.missing) continue
         if (!connected.has(workspace.root.hostId)) continue
@@ -413,6 +445,12 @@ export class NeedsYouService {
     )
     return {
       sources: sorted.slice(0, MAX_SOURCES),
+      askSources: [...rootsByHost.values()]
+        .sort((left, right) => left.host.hostId.localeCompare(right.host.hostId))
+        .map(({ host, roots }) => ({
+          host,
+          roots: [...roots].sort((left, right) => left.path.localeCompare(right.path)),
+        })),
       omittedSourceCount: Math.max(0, sorted.length - MAX_SOURCES),
     }
   }
@@ -448,7 +486,7 @@ export class NeedsYouService {
       const current = this.candidates()
       this.observedCandidates = current
       if (
-        !sameCandidates(previous.sources, current.sources) ||
+        !sameCandidates(previous, current) ||
         previous.omittedSourceCount !== current.omittedSourceCount
       ) {
         this.candidateRevision += 1
@@ -480,13 +518,11 @@ function rootsMissingFrom(
     .filter((root) => !known.has(root))
 }
 
-function sameCandidates(
-  left: readonly NeedsYouSource[],
-  right: readonly NeedsYouSource[],
-): boolean {
-  if (left.length !== right.length) return false
-  return left.every((candidate, index) => {
-    const other = right[index]
+function sameCandidates(left: CandidateSet, right: CandidateSet): boolean {
+  if (left.sources.length !== right.sources.length) return false
+  if (left.askSources.length !== right.askSources.length) return false
+  const sameWorkspaces = left.sources.every((candidate, index) => {
+    const other = right.sources[index]
     return (
       candidate.hostId === other?.hostId &&
       candidate.root.path === other.root.path &&
@@ -494,6 +530,21 @@ function sameCandidates(
       candidate.workspaceId === other.workspaceId
     )
   })
+  return (
+    sameWorkspaces &&
+    left.askSources.every((source, index) => {
+      const other = right.askSources[index]
+      return (
+        source.host.hostId === other?.host.hostId &&
+        source.roots.length === other.roots.length &&
+        source.roots.every(
+          (root, rootIndex) =>
+            root.hostId === other.roots[rootIndex]?.hostId &&
+            root.path === other.roots[rootIndex]?.path,
+        )
+      )
+    })
+  )
 }
 
 function storeKey(root: HostPath, storePath: string | undefined): string {
@@ -504,8 +555,14 @@ function storeKey(root: HostPath, storePath: string | undefined): string {
 
 function attributeStores(
   reads: readonly SourceRead[],
+  askReads: readonly AskStoreRead[],
 ): readonly NeedsYouSourceSnapshot[] {
   const owners = new Map<string, SourceRead>()
+  const asksByStore = new Map(
+    askReads.flatMap((read) =>
+      read.storeKey === undefined ? [] : [[read.storeKey, read.snapshot.beads] as const],
+    ),
+  )
   for (const read of reads) {
     const owner = owners.get(read.storeKey)
     const holdsStore = read.storeKey.endsWith(`\u0000${read.snapshot.root.path}/.beads`)
@@ -513,7 +570,10 @@ function attributeStores(
   }
   return reads.map((read) =>
     owners.get(read.storeKey) === read
-      ? read.snapshot
+      ? {
+          ...read.snapshot,
+          beads: asksByStore.get(read.storeKey) ?? read.snapshot.beads,
+        }
       : {
           ...read.snapshot,
           beads: { ...read.snapshot.beads, response: NO_ASKS, truncated: false },

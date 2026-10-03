@@ -117,17 +117,13 @@ export class BeadsService {
     lane: ExecLane = 'background',
   ): Promise<string | undefined> {
     const { host, root } = project
-    try {
-      const result = await host.exec('bd', ['-C', root.path, 'where', '--json'], {
-        maxBuffer: MAX_OUTPUT_BYTES,
-        loginShell: true,
-        lane,
-        timeout: 20_000,
-      })
-      return result.code === 0 ? parseBeadsWhereOutput(result.stdout) : undefined
-    } catch {
-      return undefined
-    }
+    const result = await host.exec('bd', ['-C', root.path, 'where', '--json'], {
+      maxBuffer: MAX_OUTPUT_BYTES,
+      loginShell: true,
+      lane,
+      timeout: 20_000,
+    })
+    return result.code === 0 ? parseBeadsWhereOutput(result.stdout) : undefined
   }
 
   /**

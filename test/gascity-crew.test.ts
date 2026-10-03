@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import * as hegel from '@hegeldev/hegel'
+import * as gs from '@hegeldev/hegel/generators'
 
 import { parseResolvedConfig } from '../src/main/gascity/gascity-config'
 import { deriveCrew } from '../src/main/gascity/gascity-crew'
@@ -286,4 +288,14 @@ describe('gc rig list parsing', () => {
   it('returns nothing for a path outside every rig', () => {
     expect(rigForPath(rigs, '/tmp/elsewhere')).toBeUndefined()
   })
+
+  it('rejects invalid JSON instead of reporting an empty rig list', () => {
+    expect(() => parseRigListOutput('gc: not in a city directory')).toThrow(/not JSON/)
+  })
+
+  it('rejects every non-JSON diagnostic prefix', () =>
+    hegel.test((tc) => {
+      const diagnostic = tc.draw(gs.text({ maxSize: 40 }))
+      expect(() => parseRigListOutput(`not-json:${diagnostic}`)).toThrow(/not JSON/)
+    }))
 })

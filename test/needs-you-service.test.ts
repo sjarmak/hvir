@@ -15,6 +15,7 @@ import {
   NeedsYouLeaseExpiredError,
   NeedsYouService,
 } from '../src/main/needs-you/needs-you-service'
+import { parseRigListOutput } from '../src/main/gascity/gascity-parse'
 import type { SessionsDemandOwner } from '../src/main/sessions/sessions-demand-owner'
 import type { ProjectHost } from '../src/main/project-host'
 import type { Disposer } from '../src/shared'
@@ -64,6 +65,23 @@ describe('NeedsYouService', () => {
     expect(
       snapshot.sources.every((source) => source.pulls.response.available === false),
     ).toBe(true)
+  })
+
+  it('keeps connected workspaces when the project registered root host is disconnected', async () => {
+    const localRoot = hostPath(asHostId('local'), '/work/one')
+    const projectState = withRegisteredRoot(
+      state([workspace('workspace-one', localRoot)]),
+      hostPath(asHostId('remote'), '/registered/project'),
+    )
+    const service = serviceFor(
+      projectState,
+      () => () => undefined,
+      () => Promise.resolve(beadsUnavailable),
+    )
+
+    const snapshot = await service.acquire(owner, { demandGeneration: 1 })
+
+    expect(snapshot.sources.map((source) => source.root)).toEqual([localRoot])
   })
 
   it('releases an owner and rejects a late read instead of publishing it', async () => {
@@ -513,8 +531,21 @@ describe('NeedsYouService', () => {
   })
 
   it('does not list the decisions store separately when an open workspace already reads it', async () => {
+    const broaderHumanWork = Array.from({ length: 50 }, (_, index) =>
+      issue(`decision-${index}`, { issueType: 'decision' }),
+    )
     const listForProject = vi.fn(() =>
-      Promise.resolve(available([issue('dec-open', { labels: ['needs/stephanie'] })])),
+      Promise.resolve(
+        available([
+          ...broaderHumanWork,
+          issue('dec-open', { labels: ['needs/stephanie'] }),
+          issue('dec-answered', {
+            labels: ['needs/stephanie'],
+            metadata: { 'gc.answered': '2026-10-02' },
+          }),
+          issue('needs-human', { labels: ['needs-human'] }),
+        ]),
+      ),
     )
     const service = new NeedsYouService({
       getProjectState: () =>
@@ -535,6 +566,89 @@ describe('NeedsYouService', () => {
     expect(listForProject).toHaveBeenCalledTimes(1)
     expect(snapshot.askStores).toEqual([])
     expect(issueIds(snapshot.sources[0]!.beads.response)).toEqual(['dec-open'])
+    expect(snapshot.sources[0]!.beads.truncated).toBe(false)
+  })
+
+  it('reports store-resolution failures as source problems without reading per root', async () => {
+    const listForProject = vi.fn(() => Promise.resolve(available([])))
+    const service = new NeedsYouService({
+      getProjectState: () =>
+        state([workspace('workspace-one', hostPath(asHostId('local'), '/work/one'))]),
+      connectedHosts: () => [host('local')],
+      beads: {
+        listForProject,
+        storeForProject: () => Promise.reject(new Error('bd where timed out')),
+      },
+      github: { pullsForProject: vi.fn(() => Promise.resolve(pullsUnavailable)) },
+    })
+
+    const snapshot = await service.acquire(owner, { demandGeneration: 1 })
+
+    expect(listForProject).not.toHaveBeenCalled()
+    expect(snapshot.sources[0]!.beads.response).toEqual({
+      available: false,
+      reason: 'error',
+      message: 'bd where timed out',
+    })
+  })
+
+  it('invalidates decisions reads when their registered project roots change', async () => {
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    let notifyCandidates!: () => void
+    let resolveRigs!: (rigs: readonly { name: string; path: string }[]) => void
+    const pendingRigs = new Promise<readonly { name: string; path: string }[]>(
+      (resolve) => {
+        resolveRigs = resolve
+      },
+    )
+    const changed = vi.fn()
+    const rigRoots: string[] = []
+    const workspaceRoot = hostPath(asHostId('local'), '/work/one')
+    let currentState = withRegisteredRoot(
+      state([workspace('workspace-one', workspaceRoot)]),
+      hostPath(asHostId('local'), '/city/one'),
+    )
+    const service = new NeedsYouService({
+      getProjectState: () => currentState,
+      connectedHosts: () => [host('local')],
+      observeCandidates: (listener) => {
+        notifyCandidates = listener
+        return () => undefined
+      },
+      onCandidatesChanged: changed,
+      beads: {
+        listForProject: () => Promise.resolve(beadsUnavailable),
+        storeForProject: noStore,
+      },
+      github: { pullsForProject: vi.fn(() => Promise.resolve(pullsUnavailable)) },
+      cityRigs: ({ root }) => {
+        rigRoots.push(root.path)
+        return rigRoots.length === 1
+          ? pendingRigs
+          : Promise.resolve([{ name: 'decisions', path: `${root.path}/decisions` }])
+      },
+    })
+    const reading = service.acquire(owner, { demandGeneration: 1 })
+
+    currentState = withRegisteredRoot(
+      state([workspace('workspace-one', workspaceRoot)]),
+      hostPath(asHostId('local'), '/city/two'),
+    )
+    notifyCandidates()
+    resolveRigs([{ name: 'decisions', path: '/city/one/decisions' }])
+
+    const snapshot = await reading
+
+    expect(changed).toHaveBeenCalledWith(1)
+    expect(rigRoots).toEqual(['/city/one', '/city/two'])
+    expect(snapshot.candidateRevision).toBe(1)
+    expect(snapshot.askStores?.map((store) => store.root.path)).toEqual([
+      '/city/two/decisions',
+    ])
+    expect(warned).toHaveBeenCalledWith(
+      '[needs-you] workspace candidates changed',
+      expect.objectContaining({ candidateRevision: 1 }),
+    )
   })
 
   it('reports an unreadable rig list as an unavailable decisions store and skips hosts outside a city', async () => {
@@ -560,13 +674,14 @@ describe('NeedsYouService', () => {
         storeForProject: noStore,
       },
       github: { pullsForProject: vi.fn(() => Promise.resolve(pullsUnavailable)) },
-      cityRigs: () => Promise.reject(new Error('gc exceeded its 15000ms timeout')),
+      cityRigs: () => Promise.resolve().then(() => parseRigListOutput('gc: not JSON')),
     })
     const snapshot = await failing.acquire(owner, { demandGeneration: 1 })
     expect(snapshot.askStores?.[0]?.beads.response).toEqual({
       available: false,
       reason: 'error',
-      message: 'Gas City rig list unavailable: gc exceeded its 15000ms timeout',
+      message:
+        'Gas City rig list unavailable: gc rig list returned output that is not JSON',
     })
   })
 })
@@ -649,6 +764,16 @@ function state(
     ],
     activeProjectId: 'project-one',
     activeWorkspaceId: workspaces[0]!.id,
+  }
+}
+
+function withRegisteredRoot(
+  projectState: ProjectState,
+  registeredRoot: HostPath,
+): ProjectState {
+  return {
+    ...projectState,
+    projects: projectState.projects.map((project) => ({ ...project, registeredRoot })),
   }
 }
 

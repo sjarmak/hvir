@@ -85,8 +85,8 @@ export function parseRigListOutput(stdout: string): readonly GasCityRig[] {
   let decoded: unknown
   try {
     decoded = JSON.parse(trimmed)
-  } catch {
-    return []
+  } catch (reason) {
+    throw new Error('gc rig list returned output that is not JSON', { cause: reason })
   }
   const rows: readonly unknown[] = Array.isArray(decoded)
     ? decoded
