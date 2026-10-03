@@ -1,10 +1,10 @@
-import type { NeedsYouSnapshot } from '../../../shared'
+import type { NeedsYouChangedEvent, NeedsYouSnapshot } from '../../../shared'
 
 export interface NeedsYouReadPort {
   observe(generation: number): Promise<NeedsYouSnapshot>
   refresh(generation: number): Promise<NeedsYouSnapshot>
   release(generation: number): Promise<void>
-  subscribe?(listener: () => void): () => void
+  subscribe?(listener: (event?: NeedsYouChangedEvent) => void): () => void
 }
 
 export type NeedsYouReadState =
@@ -21,7 +21,7 @@ export class NeedsYouCoordinator {
   private consumers = 0
   private established = false
   private unsubscribe?: () => void
-  private invalidated = false
+  private invalidatedAt: number | undefined
 
   constructor(
     private readonly port: NeedsYouReadPort,
@@ -40,8 +40,8 @@ export class NeedsYouCoordinator {
     if (this.consumers === 1) {
       this.generation = ++nextDemandGeneration
       this.established = false
-      this.unsubscribe = this.port.subscribe?.(() => {
-        this.invalidated = true
+      this.unsubscribe = this.port.subscribe?.((event) => {
+        this.invalidatedAt = event?.candidateRevision ?? Number.POSITIVE_INFINITY
         if (this.current.status !== 'pending') this.publishInvalidated()
       })
       void this.read(true)
@@ -70,7 +70,7 @@ export class NeedsYouCoordinator {
 
   private async read(initial: boolean): Promise<void> {
     const generation = this.generation
-    this.invalidated = false
+    this.invalidatedAt = undefined
     this.publish({ status: 'pending' })
     try {
       const snapshot = await (initial
@@ -81,7 +81,10 @@ export class NeedsYouCoordinator {
         throw new Error('Needs you received an obsolete observation. Refresh to retry.')
       }
       this.established = true
-      if (this.invalidated) {
+      if (
+        this.invalidatedAt !== undefined &&
+        (snapshot.candidateRevision ?? Number.NEGATIVE_INFINITY) < this.invalidatedAt
+      ) {
         this.publishInvalidated()
         return
       }

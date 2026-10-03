@@ -165,6 +165,36 @@ describe('Needs you renderer demand', () => {
     stop()
   })
 
+  it('delivers a snapshot that already reflects the topology change announced mid-read', async () => {
+    let announce!: (event: { readonly candidateRevision: number }) => void
+    let complete!: (value: NeedsYouSnapshot) => void
+    let generation = 0
+    const coordinator = new NeedsYouCoordinator(
+      {
+        observe: (value) => {
+          generation = value
+          return new Promise((resolve) => {
+            complete = resolve
+          })
+        },
+        refresh: () => Promise.reject(new Error('unused')),
+        release: () => Promise.resolve(),
+        subscribe: (listener) => {
+          announce = listener
+          return () => undefined
+        },
+      },
+      vi.fn(),
+    )
+    const stop = coordinator.acquire()
+    announce({ candidateRevision: 2 })
+    complete({ ...snapshot(generation), candidateRevision: 2 })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(coordinator.snapshot().status).toBe('available')
+    stop()
+  })
+
   it('reacquires after initial observe fails', async () => {
     const observe = vi
       .fn((generation: number) => Promise.resolve(snapshot(generation)))

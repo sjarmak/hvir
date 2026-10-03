@@ -37,6 +37,7 @@ export interface NeedsYouSnapshot {
   readonly sources: readonly NeedsYouSourceSnapshot[]
   readonly candidateLimit?: number
   readonly omittedSourceCount?: number
+  readonly candidateRevision?: number
 }
 
 export interface NeedsYouChangedEvent {

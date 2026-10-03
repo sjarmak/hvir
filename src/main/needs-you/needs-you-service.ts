@@ -21,6 +21,7 @@ import {
 const MAX_CONCURRENT_SOURCES = 4
 const MAX_SOURCES = 128
 const MAX_ITEMS_PER_SOURCE = 50
+const MAX_READ_ATTEMPTS = 3
 const READ_FAILURE_MESSAGE = 'Needs you source read failed'
 
 export interface NeedsYouServiceDeps {
@@ -121,16 +122,29 @@ export class NeedsYouService {
   }
 
   private async readOnce(lease: Lease): Promise<NeedsYouSnapshot> {
+    for (let attempt = 0; attempt < MAX_READ_ATTEMPTS; attempt += 1) {
+      const snapshot = await this.readCandidates(lease)
+      if (snapshot !== undefined) return snapshot
+    }
+    throw new NeedsYouLeaseExpiredError()
+  }
+
+  private async readCandidates(lease: Lease): Promise<NeedsYouSnapshot | undefined> {
     this.assertCurrent(lease)
     const candidateRevision = this.candidateRevision
     const candidateSet = this.candidates()
-    const candidates = candidateSet.sources
-    const sources = await mapConcurrent(candidates, MAX_CONCURRENT_SOURCES, (candidate) =>
-      this.readSourceIfCurrent(lease, candidateRevision, candidate),
+    const sources = await mapConcurrent(
+      candidateSet.sources,
+      MAX_CONCURRENT_SOURCES,
+      (candidate) => {
+        this.assertCurrent(lease)
+        return candidateRevision === this.candidateRevision
+          ? this.readSource(candidate)
+          : Promise.resolve(undefined)
+      },
     )
     this.assertCurrent(lease)
-    if (candidateRevision !== this.candidateRevision)
-      throw new NeedsYouLeaseExpiredError()
+    if (candidateRevision !== this.candidateRevision) return undefined
     lease.candidateRevision = candidateRevision
     lease.revision += 1
     return {
@@ -138,21 +152,11 @@ export class NeedsYouService {
       demandGeneration: lease.demandGeneration,
       revision: lease.revision,
       observedAt: this.now(),
-      sources,
+      sources: sources.filter((source) => source !== undefined),
       candidateLimit: MAX_SOURCES,
       omittedSourceCount: candidateSet.omittedSourceCount,
+      candidateRevision,
     }
-  }
-
-  private async readSourceIfCurrent(
-    lease: Lease,
-    candidateRevision: number,
-    candidate: NeedsYouSource,
-  ): Promise<NeedsYouSourceSnapshot> {
-    this.assertCurrent(lease)
-    if (candidateRevision !== this.candidateRevision)
-      throw new NeedsYouLeaseExpiredError()
-    return this.readSource(candidate)
   }
 
   private async readSource(source: NeedsYouSource): Promise<NeedsYouSourceSnapshot> {
@@ -308,6 +312,11 @@ export class NeedsYouService {
         previous.omittedSourceCount !== current.omittedSourceCount
       ) {
         this.candidateRevision += 1
+        console.warn('[needs-you] workspace candidates changed', {
+          candidateRevision: this.candidateRevision,
+          added: rootsMissingFrom(current.sources, previous.sources),
+          removed: rootsMissingFrom(previous.sources, current.sources),
+        })
         this.deps.onCandidatesChanged?.(this.candidateRevision)
       }
     })
@@ -319,6 +328,16 @@ export class NeedsYouService {
     void dispose?.()
     this.observedCandidates = undefined
   }
+}
+
+function rootsMissingFrom(
+  sources: readonly NeedsYouSource[],
+  others: readonly NeedsYouSource[],
+): readonly string[] {
+  const known = new Set(others.map((source) => `${source.hostId}:${source.root.path}`))
+  return sources
+    .map((source) => `${source.hostId}:${source.root.path}`)
+    .filter((root) => !known.has(root))
 }
 
 function sameCandidates(

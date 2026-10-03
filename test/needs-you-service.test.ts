@@ -87,7 +87,8 @@ describe('NeedsYouService', () => {
     await expect(reading).rejects.toBeInstanceOf(NeedsYouLeaseExpiredError)
   })
 
-  it('revokes an in-flight read when registered workspace candidates change', async () => {
+  it('rereads against the new candidate set when candidates change mid-read', async () => {
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     let notifyCandidates!: () => void
     let resolveBeads!: (response: BeadsListResponse) => void
     const pending = new Promise<BeadsListResponse>((resolve) => {
@@ -113,7 +114,47 @@ describe('NeedsYouService', () => {
     notifyCandidates()
     resolveBeads(beadsUnavailable)
 
-    await expect(reading).rejects.toBeInstanceOf(NeedsYouLeaseExpiredError)
+    const snapshot = await reading
+    expect(snapshot.sources.map((source) => source.root.path)).toEqual([
+      '/work/one',
+      '/work/two',
+    ])
+    expect(snapshot.candidateRevision).toBe(1)
+    expect(warned).toHaveBeenCalledWith('[needs-you] workspace candidates changed', {
+      candidateRevision: 1,
+      added: ['local:/work/two'],
+      removed: [],
+    })
+  })
+
+  it('expires the read when candidates keep changing on every attempt', async () => {
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    let notifyCandidates!: () => void
+    let reads = 0
+    let currentState = state([
+      workspace('workspace-0', hostPath(asHostId('local'), '/work/0')),
+    ])
+    const service = serviceFor(
+      () => currentState,
+      (listener) => {
+        notifyCandidates = listener
+        return () => undefined
+      },
+      () => {
+        reads += 1
+        currentState = state([
+          workspace(`workspace-${reads}`, hostPath(asHostId('local'), `/work/${reads}`)),
+        ])
+        notifyCandidates()
+        return Promise.resolve(beadsUnavailable)
+      },
+    )
+
+    await expect(service.acquire(owner, { demandGeneration: 3 })).rejects.toBeInstanceOf(
+      NeedsYouLeaseExpiredError,
+    )
+    expect(reads).toBe(3)
+    expect(warned).toHaveBeenCalledTimes(3)
   })
 
   it('does not start queued source reads after release', async () => {
@@ -143,6 +184,7 @@ describe('NeedsYouService', () => {
   })
 
   it('emits topology changes only after the candidate set changes and strips queue payloads', async () => {
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     let notifyCandidates!: () => void
     let currentState = state([
       workspace('workspace-one', hostPath(asHostId('local'), '/work/one')),
@@ -221,6 +263,7 @@ describe('NeedsYouService', () => {
     ])
     notifyCandidates()
     expect(changed).toHaveBeenCalledWith(1)
+    expect(warned).toHaveBeenCalledOnce()
     service.release(owner, 5)
   })
 
