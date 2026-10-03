@@ -20,7 +20,7 @@ export interface SmokeCompanionOptions {
   readonly cleanup: SmokeCleanup
   readonly sessions: Pick<
     SmokeSessionsPorts,
-    'observation' | 'transcripts' | 'companionSinks'
+    'observation' | 'transcripts' | 'companionSinks' | 'createSibling'
   >
   readonly actionable: ActionableAttentionSet
   readonly mirrors: Pick<PtySupervisor, 'attachMirror'>
@@ -41,6 +41,7 @@ export interface SmokeCompanion extends ApplicationCompanion {
   /** Every Push the owner sent, in order; nothing leaves the process. */
   readonly pushes: readonly SmokePush[]
   readonly rendererRoot: string
+  readonly createSibling: () => Promise<SmokeCompanion>
 }
 
 /**
@@ -91,7 +92,18 @@ export async function installSmokeCompanion(
     },
     push: { fetch: recordingFetch(pushes) },
   })
-  return { ...companion, diagnostics, pushes, rendererRoot: options.rendererRoot }
+  return {
+    ...companion,
+    diagnostics,
+    pushes,
+    rendererRoot: options.rendererRoot,
+    createSibling: () =>
+      installSmokeCompanion({
+        ...options,
+        sessions: options.sessions.createSibling(),
+        publish: () => undefined,
+      }),
+  }
 }
 
 /** Records the sink request and answers 200; the smoke never reaches a network. */

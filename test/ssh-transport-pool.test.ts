@@ -29,6 +29,22 @@ import { createTestSshHost } from './ssh-host-test-fixture'
 const OWNER_ID = 71
 
 describe('SshHost transport pool', () => {
+  it('passes raw stdin bytes to the remote exec channel', async () => {
+    const fixture = await poolFixture()
+    const input = Buffer.from([0xff, 0x00, 0x61, 0xfe])
+
+    await expect(fixture.host.exec('cat', [], { input })).resolves.toMatchObject({
+      code: 0,
+    })
+    const endCalls = (
+      fixture.clients[0]?.channels[0] as unknown as {
+        readonly end: { readonly mock: { readonly calls: readonly unknown[][] } }
+      }
+    )?.end.mock.calls
+    expect(endCalls).toContainEqual([input])
+    await fixture.host.dispose()
+  })
+
   it('keeps 12 PTYs live across terminal transports while control exec remains available', async () => {
     const fixture = await poolFixture()
     const { host, supervisor, clients } = fixture

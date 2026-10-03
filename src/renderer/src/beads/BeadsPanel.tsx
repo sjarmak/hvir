@@ -58,6 +58,9 @@ interface BeadsPanelProps {
    * into nothing. Defaults to true for callers that own no terminal.
    */
   readonly canLaunch?: boolean
+  readonly focusBeadId?: string
+  readonly onFocusHandled?: (id: string) => void
+  readonly onFocusUnavailable?: (id: string) => void
 }
 
 export function BeadsPanel({
@@ -67,6 +70,9 @@ export function BeadsPanel({
   onCrewAction,
   onBeadAction,
   canLaunch = true,
+  focusBeadId,
+  onFocusHandled,
+  onFocusUnavailable,
 }: BeadsPanelProps): ReactElement {
   const launchHint = canLaunch ? undefined : LAUNCH_UNAVAILABLE_HINT
   const [response, setResponse] = useState<BeadsListResponse>()
@@ -82,6 +88,11 @@ export function BeadsPanel({
   // form does not discard a half-typed title.
   const [createTitle, setCreateTitle] = useState('')
   const [pendingFocus, setPendingFocus] = useState<string>()
+  const handledFocusRef = useRef<string | undefined>(undefined)
+  const focusRequestIdRef = useRef<string | undefined>(undefined)
+  const responseVersionRef = useRef(0)
+  const focusResponseVersionRef = useRef(0)
+  const [responseVersion, setResponseVersion] = useState(0)
   const rootRef = useRef<HTMLElement>(null)
   const refreshController = useRef<VisibilityRefresh | undefined>(undefined)
   const requestSerial = useRef(0)
@@ -112,6 +123,13 @@ export function BeadsPanel({
         : new Map<string, string>(),
     [response, showClosed],
   )
+  const needsYouIds = useMemo(() => {
+    if (response?.available !== true) return new Set<string>()
+    const section = classifyBeads(response).sections.find(
+      (entry) => entry.key === 'needsYou',
+    )
+    return new Set((section?.cards ?? []).map((card) => card.issue.id))
+  }, [response])
 
   const refresh = useCallback(async (): Promise<void> => {
     const serial = ++requestSerial.current
@@ -124,6 +142,8 @@ export function BeadsPanel({
       })
       if (serial !== requestSerial.current) return
       setResponse(result)
+      responseVersionRef.current += 1
+      setResponseVersion(responseVersionRef.current)
       setError(undefined)
     } catch (reason) {
       if (serial !== requestSerial.current) return
@@ -196,18 +216,52 @@ export function BeadsPanel({
   // the scroll runs from the effect below, after the re-render that mounts it.
   // A bead with no section is not on screen (internals or closed hidden); its
   // chip is already disabled, so this is a no-op by design rather than by luck.
-  const focusBead = (id: string): void => {
-    const section = placement.get(id)
-    if (section === undefined) return
-    setCollapsedSections((current) => {
-      if (!current.has(section)) return current
-      const next = new Set(current)
-      next.delete(section)
-      return next
-    })
-    setExpanded((current) => new Set([...current, id]))
-    setPendingFocus(id)
-  }
+  const focusBead = useCallback(
+    (id: string): void => {
+      const section = placement.get(id)
+      if (section === undefined) return
+      setCollapsedSections((current) => {
+        if (!current.has(section)) return current
+        const next = new Set(current)
+        next.delete(section)
+        return next
+      })
+      setExpanded((current) => new Set([...current, id]))
+      setPendingFocus(id)
+    },
+    [placement],
+  )
+
+  useEffect(() => {
+    if (focusRequestIdRef.current !== focusBeadId) {
+      focusRequestIdRef.current = focusBeadId
+      handledFocusRef.current = undefined
+      focusResponseVersionRef.current = responseVersionRef.current + 1
+      if (focusBeadId && responseVersionRef.current > 0) {
+        refreshController.current?.request()
+      }
+    }
+    if (!focusBeadId || !response?.available) return
+    if (handledFocusRef.current === focusBeadId) return
+    if (responseVersion < focusResponseVersionRef.current) return
+    if (!needsYouIds.has(focusBeadId) || !placement.has(focusBeadId)) {
+      handledFocusRef.current = focusBeadId
+      onFocusUnavailable?.(focusBeadId)
+      return
+    }
+    focusBead(focusBeadId)
+    handledFocusRef.current = focusBeadId
+    onFocusHandled?.(focusBeadId)
+  }, [
+    focusBead,
+    focusBeadId,
+    onFocusHandled,
+    onFocusUnavailable,
+    needsYouIds,
+    placement,
+    responseVersion,
+    response?.available,
+  ])
 
   useEffect(() => {
     if (pendingFocus === undefined) return

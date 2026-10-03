@@ -11,6 +11,7 @@ import { registerDocumentReviewIpc } from './ipc/features/document-review'
 import { registerFilesystemIpc } from './ipc/features/filesystem'
 import { registerGasCityIpc } from './ipc/features/gascity'
 import { registerGitHubIpc } from './ipc/features/github'
+import { registerNeedsYouIpc } from './ipc/features/needs-you'
 import { registerArchitectureReviewIpc } from './ipc/features/architecture-review'
 import { registerGitIpc } from './ipc/features/git'
 import { registerHarnessIpc } from './ipc/features/harness'
@@ -49,6 +50,7 @@ export function registerIpcHandlers(
     registerBeadsIpc(router, deps)
     registerGasCityIpc(router, deps)
     registerGitHubIpc(router, deps)
+    registerNeedsYouIpc(router, deps)
     registerCompanionIpc(router, deps)
     router.assertComplete()
     return router

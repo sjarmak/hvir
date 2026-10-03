@@ -111,6 +111,15 @@ export class SshFileAccess {
     return Buffer.from(value)
   }
 
+  async readlink(path: HostPath): Promise<Buffer> {
+    this.assertPath(path)
+    const value = await this.sftp<string>((s, done) => s.readlink(path.path, done))
+    if (value.includes('\uFFFD')) {
+      throw new Error('SSH symlink target cannot be represented exactly')
+    }
+    return Buffer.from(value, 'utf8')
+  }
+
   async readTextFile(
     path: HostPath,
     encoding: BufferEncoding = 'utf8',

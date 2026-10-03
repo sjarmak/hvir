@@ -1,12 +1,13 @@
 import { useState, type FormEvent } from 'react'
+import { InstanceSwitcher } from './instance-switcher'
 
 interface PairScreenProps {
   readonly error?: string
   readonly onPair: (code: string) => Promise<void>
+  readonly onLeave?: () => void
 }
 
-/** Where every Companion page starts: one pairing code, typed once. */
-export function PairScreen({ error, onPair }: PairScreenProps) {
+export function PairScreen({ error, onPair, onLeave }: PairScreenProps) {
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const trimmed = code.trim()
@@ -26,6 +27,7 @@ export function PairScreen({ error, onPair }: PairScreenProps) {
   return (
     <main className="companion companion-pair">
       <h1 className="companion-title">hvir Companion</h1>
+      <InstanceSwitcher onLeave={onLeave} />
       <p className="companion-hint">
         Open Settings, Companion on the desktop, issue a pairing code, and type it here.
       </p>

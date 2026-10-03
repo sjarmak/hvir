@@ -38,7 +38,14 @@ export class BeadsService {
   constructor(private readonly deps: BeadsServiceDeps) {}
 
   async list(req: BeadsListRequest): Promise<BeadsListResponse> {
-    const { host, root } = this.activeProject(req.root)
+    return this.listForProject(req, this.activeProject(req.root))
+  }
+
+  async listForProject(
+    req: BeadsListRequest,
+    project: { readonly host: ProjectHost; readonly root: HostPath },
+  ): Promise<BeadsListResponse> {
+    const { host, root } = project
     // Core fetch: without these two the panel has nothing to show, so their
     // failure fails the whole snapshot (existing behaviour, preserved).
     const [base, ready] = await Promise.all([
@@ -155,6 +162,8 @@ export class BeadsService {
       result = await host.exec('bd', args, {
         maxBuffer: MAX_OUTPUT_BYTES,
         loginShell: true,
+        lane: 'background',
+        timeout: 20_000,
       })
     } catch (reason) {
       const message = reason instanceof Error ? reason.message : String(reason)
@@ -216,7 +225,12 @@ export class BeadsService {
           '-n',
           '0',
         ],
-        { maxBuffer: MAX_OUTPUT_BYTES, loginShell: true },
+        {
+          maxBuffer: MAX_OUTPUT_BYTES,
+          loginShell: true,
+          lane: 'background',
+          timeout: 20_000,
+        },
       )
       if (result.code !== 0) {
         console.error('[beads] dependency edges unavailable', { code: result.code })
@@ -238,7 +252,12 @@ export class BeadsService {
       const result = await host.exec(
         'bd',
         ['-C', root.path, 'gate', 'list', '--json', '--no-pager'],
-        { maxBuffer: MAX_OUTPUT_BYTES, loginShell: true },
+        {
+          maxBuffer: MAX_OUTPUT_BYTES,
+          loginShell: true,
+          lane: 'background',
+          timeout: 20_000,
+        },
       )
       if (result.code !== 0) return []
       return parseGatesOutput(result.stdout)
@@ -286,6 +305,8 @@ export class BeadsService {
         loginShell: true,
         input: baseStdout,
         maxBuffer: MAX_OUTPUT_BYTES,
+        lane: 'background',
+        timeout: 20_000,
       })
       if (result.code !== 0) {
         console.error(

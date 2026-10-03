@@ -24,9 +24,9 @@ import { createFilenameSearchCoordinator } from '../filename-search'
 import { createProjectFileOperationCoordinator } from '../project-file-operations'
 import { ProjectFolderPickerCoordinator } from '../project-folder-picker'
 import { createDocumentReviewRuntime } from '../document-review'
-import { BeadsService } from '../beads/beads-service'
 import { GasCityService } from '../gascity/gascity-service'
-import { GitHubService } from '../github/github-service'
+import { createSmokeNeedsYou } from './needs-you'
+import { memoryOnlyHealth } from './health'
 import { HarnessProfileStore } from '../harness/harness-profile-store'
 import {
   HarnessProviderRegistry,
@@ -39,7 +39,7 @@ import type { EmitRendererEvent } from '../ipc/deps'
 import { PtySupervisor } from '../pty/pty-supervisor'
 import { createWorkerClient, workerPath } from '../worker-host'
 import { createWorkspaceCleanup } from '../workspace-cleanup'
-import { SmokeCleanup } from './cleanup'
+import { runSmokeCleanup, SmokeCleanup } from './cleanup'
 import { smokeOwnedResourceEvidence } from './owned-resource-evidence'
 import {
   reportSmokeFailureEvidence,
@@ -67,6 +67,7 @@ import { verifyViewerContent } from './viewer-content'
 import { verifyWorkbenchHealthScenario } from './workbench-health-scenario'
 import { verifyRendererRecoveryScenario } from './renderer-recovery-scenario'
 import { verifySessionsProjectionScenario } from './sessions-projection-scenario'
+import { createQolRailServices } from './qol-rail-services'
 import { sessionsUsageSmokeProvider } from './sessions-usage-provider'
 import { createTerminalMoveSmokeHarness } from './terminal-move'
 import { createSmokeTerminalSessionStore } from './terminal-session-store'
@@ -82,7 +83,6 @@ import {
   localPath,
   type Disposer,
   type EchoWorkerProtocol,
-  type WorkbenchHealthSnapshot,
 } from '../../shared'
 
 /** Production-composed Electron acceptance workflow selected by `HVIR_SMOKE=1`. */
@@ -172,11 +172,6 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
         ),
       (worker) => worker.dispose(),
     )
-
-    const { git, worktrees } = createSmokeGitWorker(host, projectRoot, cleanup)
-
-    const filenameSearch = createFilenameSearchCoordinator(git)
-    cleanup.defer('filename search', () => filenameSearch.dispose())
     const externalMoveSmoke = createExternalMoveSmokeControl()
     const smokeAttention = createSmokeAttention()
     cleanup.defer('attention', () => smokeAttention.dispose())
@@ -213,6 +208,14 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       projectReturn: smokeProjectReturnState,
       set: setSmokeProjectState,
     } = projectFixture
+    const { git, worktrees, reviewCheckpoint } = createSmokeGitWorker(
+      host,
+      projectRoot,
+      cleanup,
+      { projectState: projectFixture.get, resources: rendererResources },
+    )
+    const filenameSearch = createFilenameSearchCoordinator(git)
+    cleanup.defer('filename search', () => filenameSearch.dispose())
     const documentReviewPath = joinHostPath(
       smokeRoot,
       '.hvir-smoke-document-review-drafts.json',
@@ -289,14 +292,22 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       attachTickets: sessionsAttachTickets,
       hostOptions: smokeHostOptions,
     } = sessionsPorts
-    const smokeBeads = new BeadsService({
-      getProject: () => ({ host, root: smokeRoot }),
+    const qolRailServices = createQolRailServices({
+      host,
+      root: smokeRoot,
+      synthetic: mode === 'sessions-projection',
     })
+    const smokeBeads = qolRailServices.beads
     const smokeGasCity = new GasCityService({
       getProject: () => ({ host, root: smokeRoot }),
     })
-    const smokeGitHub = new GitHubService({
-      getProject: () => ({ host, root: smokeRoot }),
+    const smokeGitHub = qolRailServices.github
+    const smokeNeedsYou = createSmokeNeedsYou({
+      host: qolRailServices.host,
+      projectFixture,
+      beads: smokeBeads,
+      github: smokeGitHub,
+      emit,
     })
     const smokeCompanion = await installSmokeCompanion({
       host,
@@ -375,6 +386,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       ),
       echoWorker: worker,
       gitWorker: git,
+      reviewCheckpoint,
       filenameSearch,
       projectFiles,
       projectFolderPicker,
@@ -409,6 +421,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       beads: smokeBeads,
       gascity: smokeGasCity,
       github: smokeGitHub,
+      needsYou: smokeNeedsYou,
       updateAttention: smokeAttention.updateAttention,
       companion: smokeCompanion.settings,
       updateWebPaneBindings: (owner, bindings) =>
@@ -754,9 +767,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     console.error('HVIR_SMOKE_FAIL', err)
     return 1
   } finally {
-    try {
-      await cleanup.run()
-    } catch (cleanupError) {
+    await runSmokeCleanup(cleanup, scenarioFailed, (_cleanupError) => {
       reportSmokeFailureEvidence(
         'cleanup',
         smokeOwnedResourceEvidence(
@@ -768,17 +779,6 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
         null,
         cleanupFailureResource,
       )
-      console.error('HVIR_SMOKE_CLEANUP_FAIL', cleanupError)
-      // A successful scenario must still fail when cleanup does not complete.
-      if (!scenarioFailed) {
-        // eslint-disable-next-line no-unsafe-finally
-        throw cleanupError
-      }
-    }
+    })
   }
-}
-
-/** The smoke build keeps no durable health evidence; a read and an acknowledge both say so. */
-function memoryOnlyHealth(): WorkbenchHealthSnapshot {
-  return { version: 1, evidence: 'memory-only', items: [], dropped: 0 }
 }

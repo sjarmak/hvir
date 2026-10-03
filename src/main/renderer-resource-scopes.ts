@@ -18,6 +18,7 @@ export type RendererResourceQualifier =
         | 'sessions-observation'
         | 'sessions-usage-observation'
         | 'sessions-transcript-observation'
+        | 'needs-you-observation'
     }
   | {
       readonly lifetime: 'workspace'
@@ -30,6 +31,7 @@ export type RendererResourceQualifier =
         | 'document-review'
         | 'document-review-delivery'
         | 'architecture-review'
+        | 'review-checkpoint'
       readonly root: HostPath
       readonly id: string
     }

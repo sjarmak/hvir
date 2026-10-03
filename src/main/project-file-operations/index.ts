@@ -6,6 +6,7 @@ import {
 } from '../../shared'
 import type { ProjectHost } from '../project-host/project-host'
 import type { RendererResourceScopes } from '../renderer-resource-scopes'
+import type { WorkbenchRuntime } from '../workbench-runtime'
 import {
   ProjectFileOperationCoordinator,
   type ProjectFileWorkspaceAuthority,
@@ -25,6 +26,19 @@ export * from './project-entry-organization'
 export * from './project-entry-removal'
 export * from './delete-project-entry'
 export * from './staging-cleanup'
+
+export function ownProjectFileOperationCoordinator(
+  runtime: Pick<WorkbenchRuntime, 'own'>,
+  projects: { state(): ProjectState },
+  hosts: { hostById(hostId: string): ProjectHost | undefined },
+  resources: RendererResourceScopes,
+): ProjectFileOperationCoordinator {
+  return runtime.own(
+    'project file operations',
+    createProjectFileOperationCoordinator(projects, hosts, resources),
+    (operations) => operations.dispose(),
+  )
+}
 
 export function createProjectFileOperationCoordinator(
   projects: { state(): ProjectState },

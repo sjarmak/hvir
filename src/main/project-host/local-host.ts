@@ -471,6 +471,10 @@ export class LocalHost implements ProjectHost {
     return fsp.readFile(this.resolve(path), { signal: opts.signal })
   }
 
+  async readlink(path: HostPath): Promise<Buffer> {
+    return fsp.readlink(this.resolve(path), { encoding: 'buffer' })
+  }
+
   async readTextFile(
     path: HostPath,
     encoding: BufferEncoding = 'utf8',

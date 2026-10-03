@@ -17,6 +17,9 @@ import type { PtySupervisor } from '../pty/pty-supervisor'
 import { SESSIONS_USAGE_SMOKE_TOTAL } from './sessions-usage-provider'
 import { captureSessionsVisuals } from './sessions-visual'
 import { verifySessionsProjectPickerReturn } from './sessions-project-picker'
+import { verifyNeedsYouView } from './needs-you-view'
+import { verifyQolRailView } from './qol-rail-view'
+import { verifyReviewCheckpointView } from './review-checkpoint-view'
 
 const USAGE_SESSION_ID = '00000000-0000-4000-8000-000000006511'
 const USAGE_SESSION_TITLE = 'Usage cumulative fixture'
@@ -271,10 +274,18 @@ export async function verifySessionsProjectionSmoke(options: {
     throw new Error('Sessions overview retained observation demand after Open returned')
   }
   const pickerStatus = await verifySessionsProjectPickerReturn(win)
+  const needsYouStatus = await verifyNeedsYouView(win, usageHost, captureDirectory)
+  const qolRailStatus = await verifyQolRailView(win)
+  const checkpointStatus = await verifyReviewCheckpointView({
+    win,
+    host: usageHost,
+    state,
+    publishState,
+  })
   const hiddenTerminalStatus = await ensureSessionsLiveTerminal(win, supervisor)
   const hiddenStatus = await verifySessionsHiddenRelease(win)
   const captureStatus = captures.length > 0 ? ` + ${captures.length} visual captures` : ''
-  return `cross-project/worktree + renderer rollover + stale Open + quiet release + ${terminalStatus}${captureStatus} + ${overviewStatus} + ${pickerStatus} + hidden ${hiddenTerminalStatus} + ${hiddenStatus}`
+  return `cross-project/worktree + renderer rollover + stale Open + quiet release + ${terminalStatus}${captureStatus} + ${overviewStatus} + ${pickerStatus} + ${needsYouStatus} + ${qolRailStatus} + ${checkpointStatus} + hidden ${hiddenTerminalStatus} + ${hiddenStatus}`
 }
 
 async function verifySessionsHiddenRelease(win: BrowserWindow): Promise<string> {
@@ -507,8 +518,10 @@ async function verifySessionsOverview(
             if (!retained.textContent?.includes('Retained smoke session')) {
               return reject(new Error('Sessions overview omitted the safe retained terminal title'));
             }
-            if (overview.textContent?.includes('plain-shell-default')) {
-              return reject(new Error('Sessions overview exposed a profile identity'));
+            if (![...retained.querySelectorAll('.session-fact')].some(fact =>
+              fact.querySelector('dt')?.textContent === 'Profile' && fact.querySelector('dd')?.textContent
+            )) {
+              return reject(new Error('Sessions overview omitted the retained launch profile'));
             }
               button('Working', overview)?.click();
               const filtered = () => {

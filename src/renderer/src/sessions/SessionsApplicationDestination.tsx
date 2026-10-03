@@ -5,6 +5,7 @@ import type {
   SessionsAttachExternalTarget,
   SessionsLivePtyQualifier,
   SessionsTerminalHandle,
+  SessionsProjectionRow,
   SessionsWorkspaceQualifier,
 } from '../../../shared'
 import type { SessionsCommandPort } from './sessions-command-port'
@@ -29,6 +30,7 @@ export function SessionsApplicationDestination({
   onOpened,
   onError,
   onAttachExternal,
+  initialTarget,
 }: {
   readonly active: boolean
   readonly runtime: SessionsDestinationRuntime
@@ -39,6 +41,7 @@ export function SessionsApplicationDestination({
     workspaceId: string,
     target: SessionsAttachExternalTarget,
   ) => Promise<boolean>
+  readonly initialTarget?: SessionsProjectionRow
 }): ReactElement | null {
   if (!active) return null
   return (
@@ -50,6 +53,7 @@ export function SessionsApplicationDestination({
       onFocusOpened={runtime.focusProjectedSession}
       onOpenFailed={onError}
       onAttachExternal={onAttachExternal}
+      initialTarget={initialTarget}
     />
   )
 }

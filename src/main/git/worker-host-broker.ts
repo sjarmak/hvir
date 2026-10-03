@@ -33,6 +33,8 @@ export async function dispatchWorkerHostCall(
     throw new Error('git worker requested an inactive host')
   }
   const { host, root } = project
+  if (call.operation === 'reviewCheckpoint')
+    throw new Error('Checkpoint operation requires its dedicated grant')
   if (call.operation === 'readTextFile') {
     await assertProjectPath(call.path, root, host)
     return host.readTextFile(call.path)

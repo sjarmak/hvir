@@ -19,6 +19,49 @@ export interface PullSummary {
   readonly checks: PullChecks
   readonly review: PullReview
   readonly openFeedback: number
+  readonly headOid?: string
+}
+
+export interface PullReviewComment {
+  readonly id: string
+  readonly body: string
+  readonly author?: string
+  readonly createdAt?: string
+  readonly commitOid?: string
+}
+
+export interface PullReviewThread {
+  readonly id: string
+  readonly body: string
+  readonly author?: string
+  readonly path?: string
+  readonly line?: number
+  readonly isResolved: boolean
+  readonly isOutdated: boolean
+  readonly reviewedCommitOid?: string
+  readonly comments: readonly PullReviewComment[]
+  readonly commentsPageComplete: boolean
+}
+
+export interface PullDetail {
+  readonly available: true
+  readonly repo: string
+  readonly number: number
+  readonly url: string
+  readonly title: string
+  readonly headOid?: string
+  readonly threads: readonly PullReviewThread[]
+  readonly threadsPageComplete: boolean
+  readonly payloadTruncated: boolean
+}
+
+export type PullDetailResponse = PullDetail | PullsUnavailable
+
+export interface PullDetailRequest {
+  readonly root: HostPath
+  readonly repo: string
+  readonly number: number
+  readonly headOid?: string
 }
 
 export interface PullsSnapshot {

@@ -1,4 +1,4 @@
-import { invoke, type IpcFeatureContract } from '../ipc-contract'
+import { invoke, payload, type IpcFeatureContract } from '../ipc-contract'
 import { type GitDiffRequest, type GitDiffResponse } from '../viewer-types'
 import {
   type GitBlameRun,
@@ -18,6 +18,10 @@ import {
 } from '../git-types'
 import { type ProjectState } from '../workspace-types'
 import { type OperationResult } from '../operation-result'
+import type {
+  ReviewCheckpointRequest,
+  ReviewCheckpointResult,
+} from '../review-checkpoint'
 
 export const gitIpc = {
   invoke: {
@@ -31,7 +35,13 @@ export const gitIpc = {
     'git:fetch': invoke<GitFetchRequest, OperationResult<ProjectState>>(),
     'git:pull': invoke<GitPullRequest, OperationResult<ProjectState>>(),
     'git:switch-branch': invoke<GitSwitchBranchRequest, OperationResult<ProjectState>>(),
+    'git:review-checkpoint': invoke<
+      ReviewCheckpointRequest & { readonly id: string },
+      ReviewCheckpointResult
+    >(),
   },
-  send: {},
+  send: {
+    'git:review-checkpoint-cancel': payload<{ readonly id: string }>(),
+  },
   event: {},
 } satisfies IpcFeatureContract

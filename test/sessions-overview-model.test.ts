@@ -189,6 +189,63 @@ describe('Sessions overview policy', () => {
     ])
   })
 
+  it('shows the hvir launch profile after model facts with a display-name fallback', () => {
+    const fixture = row('profiled')
+    const named = sessionsOverviewCardFacts({
+      ...fixture,
+      profile: {
+        status: 'available',
+        value: { id: asHarnessProfileId('omni-profile'), displayName: 'Omni Dev' },
+      },
+    })
+    const fallback = sessionsOverviewCardFacts({
+      ...fixture,
+      profile: {
+        status: 'available',
+        value: { id: asHarnessProfileId('omni-profile') },
+      },
+    })
+
+    expect(named.facts.at(-1)).toEqual({
+      label: 'Profile',
+      value: 'Omni Dev',
+      tone: 'available',
+    })
+    expect(fallback.facts.at(-1)).toEqual({
+      label: 'Profile',
+      value: 'omni-profile',
+      tone: 'available',
+    })
+  })
+
+  it('retains stale profile identity and omits profiles from external rows', () => {
+    const fixture = row('profiled')
+    const stale = sessionsOverviewCardFacts({
+      ...fixture,
+      profile: {
+        status: 'stale',
+        value: { id: asHarnessProfileId('omni-profile'), displayName: 'Omni Dev' },
+        observedAt: 10,
+        reason: 'source-stale',
+      },
+    })
+    const external = sessionsOverviewCardFacts({
+      ...fixture,
+      origin: { kind: 'external-agent', sourceId: 'gas-city', sourceName: 'Gas City' },
+      profile: {
+        status: 'available',
+        value: { id: asHarnessProfileId('foreign-profile'), displayName: 'Foreign' },
+      },
+    })
+
+    expect(stale.facts.at(-1)).toEqual({
+      label: 'Profile',
+      value: 'Stale · Omni Dev',
+      tone: 'stale',
+    })
+    expect(external.facts.some((fact) => fact.label === 'Profile')).toBe(false)
+  })
+
   it('fills quiet footers without hiding non-neutral action', () => {
     const quiet = sessionsOverviewCardFacts(row('quiet'))
     const attention = sessionsOverviewCardFacts(
@@ -439,8 +496,7 @@ function row(
       kind: options.kind ?? 'agent',
     },
     profile: {
-      status: 'available',
-      value: { id: asHarnessProfileId('fixture-profile') },
+      status: 'unsupported',
     },
     title: options.title ?? id,
     lifecycle: options.lifecycle ?? 'retained',

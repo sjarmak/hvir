@@ -80,6 +80,7 @@ function hostBackedByLocal(local: LocalHost, hostId = 'ssh-test'): ProjectHost {
     spawnPty: unused,
     connectLoopback: unused,
     readFile: unused,
+    readlink: (path) => local.readlink(localize(path)),
     readTextFile: (path, encoding, options) =>
       local.readTextFile(localize(path), encoding, options),
     readTextFilePrefix: (path, maxBytes, options) =>

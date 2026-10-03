@@ -130,12 +130,19 @@ describe('HarnessProfileStore', () => {
       input: { ...created, identityId: 'claude-5' },
     })
     expect(changed.launchRevision).toBe(created.launchRevision + 1)
+    const omni = await store.save({
+      input: input({
+        providerId: asHarnessProviderId('claude-code'),
+        identityId: 'claude-omni',
+      }),
+    })
+    expect(omni.identityId).toBe('claude-omni')
     expect(() =>
       store.save({
-        input: input({
-          providerId: asHarnessProviderId('claude-code'),
-          identityId: 'claude-2',
-        }),
+        input: {
+          ...input({ providerId: asHarnessProviderId('claude-code') }),
+          identityId: 'claude-6',
+        },
       }),
     ).toThrow(/Unknown identity/)
   })

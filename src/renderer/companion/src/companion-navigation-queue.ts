@@ -24,6 +24,7 @@ export class CompanionNavigationQueue {
   private pending = ''
   private send?: CompanionNavigationSender
   private draining = false
+  private epoch = 0
 
   constructor(private readonly limit: number = MAX_COMPANION_INPUT_CHARS) {}
 
@@ -42,16 +43,30 @@ export class CompanionNavigationQueue {
     if (!this.draining) void this.drain()
   }
 
+  clear(): void {
+    this.epoch += 1
+    this.key = undefined
+    this.pending = ''
+    this.send = undefined
+    this.draining = false
+  }
+
   private async drain(): Promise<void> {
     this.draining = true
+    const epoch = this.epoch
     try {
-      while (this.pending.length > 0 && this.send !== undefined) {
+      while (epoch === this.epoch && this.pending.length > 0 && this.send !== undefined) {
         const key = this.key
         const accepted = await this.send(this.take())
+        if (epoch !== this.epoch) return
         if (!accepted && this.key === key) this.pending = ''
       }
+    } catch (error: unknown) {
+      if (epoch !== this.epoch) return
+      this.pending = ''
+      throw error
     } finally {
-      this.draining = false
+      if (epoch === this.epoch) this.draining = false
     }
   }
 

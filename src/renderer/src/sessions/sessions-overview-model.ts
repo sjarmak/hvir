@@ -133,8 +133,14 @@ export function sessionsOverviewCardFacts(
       (value) => value.state !== 'idle',
     ),
     fact('Model', row.model, (value) => value.displayName ?? value.id),
+    profileFact(row),
   ].filter((candidate): candidate is SessionsOverviewCardFact => candidate !== undefined)
   return { facts: candidates }
+}
+
+function profileFact(row: SessionsProjectionRow): SessionsOverviewCardFact | undefined {
+  if (row.origin.kind !== 'hvir-terminal') return undefined
+  return fact('Profile', row.profile, (value) => value.displayName ?? value.id)
 }
 
 /** A prompt shows its message beside the word; nothing else carries a detail (ADR-951). */

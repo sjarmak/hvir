@@ -2,13 +2,14 @@ import { join } from 'node:path'
 import { app, BrowserWindow, dialog, shell } from 'electron'
 import { ownArchitectureReview } from './architecture-review/runtime'
 import { registerIpcHandlers } from './ipc'
-import { createProjectCommands } from './ipc/project-commands'
+import { createApplicationProjectCommands } from './ipc/project-commands'
 import { GitMutationCoordinator } from './git/mutation-coordinator'
 import { GitMutationAuthorization } from './git/mutation-authorization'
-import { ownGitWorker } from './git/worker-runtime'
+import { ownReviewCheckpointRuntime } from './git/review-checkpoint-runtime'
+import { ownEchoWorker } from './echo-worker-runtime'
 import { gitDiscoveryWorker, gitMutationWorker } from './git/worker-ports'
 import { HtmlPreviewProtocol } from './html-preview-protocol'
-import { createWorkerClient, workerPath, type WorkerClient } from './worker-host'
+import type { WorkerClient } from './worker-host'
 import { electronTrash, ProjectHostCatalog, RendererSshPrompter } from './project-host'
 import { ProjectFolderPickerCoordinator as FolderPicker } from './project-folder-picker'
 import { electronReveal } from './project-host/electron-project-reveal'
@@ -33,20 +34,18 @@ import { TerminalWorkspaceMoveCoordinator } from './terminal/terminal-workspace-
 import { installMirrorGeometryNotice } from './terminal/mirror-geometry-notice'
 import { installMirrorInputNotice } from './terminal/mirror-input-notice'
 import { installTerminalIdentityPublication } from './terminal/terminal-identity-publication'
-import { RendererResourceScopes, type RendererOwner } from './renderer-resource-scopes'
+import { RendererResourceScopes } from './renderer-resource-scopes'
 import { createRendererPresentationInstaller } from './renderer-presentation-resources'
 import { createElectronWindowManager } from './window/electron-window-manager'
 import { WorkbenchRuntime } from './workbench-runtime'
 import { RuntimeDiagnostics } from './diagnostics/runtime-diagnostics'
 import { createDiagnosticReportCoordinator } from './diagnostics/diagnostic-report-coordinator'
 import { RendererEventPublisher } from './renderer-event-publisher'
-import { createFilenameSearchCoordinator } from './filename-search'
-import { createProjectFileOperationCoordinator } from './project-file-operations'
 import type { DocumentReviewRuntime } from './document-review'
 import { installApplicationDocumentReviewRuntime } from './document-review/document-review-application'
 import { installApplicationSessionsObservation } from './sessions/sessions-observation-application'
 import { applicationRuntime, applicationUserDataPath } from './application-runtime'
-import { localPath, type EchoWorkerProtocol, type GitWorkerProtocol } from '../shared'
+import { localPath, type EchoWorkerProtocol } from '../shared'
 HtmlPreviewProtocol.registerScheme()
 /** The built renderer directory: the workbench window and the Companion page. */
 const rendererRoot = join(__dirname, '../renderer')
@@ -91,7 +90,6 @@ function createWorkbenchEntry(): void {
     (authorizations) => authorizations.dispose(),
   )
   let echoWorker: WorkerClient<EchoWorkerProtocol> | null = null
-  let gitWorker: WorkerClient<GitWorkerProtocol> | null = null
   let projectRegistry: ProjectRegistry | null = null
   let sshPrompter: RendererSshPrompter | null = null
   let ptySupervisor: PtySupervisor | null = null
@@ -207,22 +205,16 @@ function createWorkbenchEntry(): void {
       .catch((error) =>
         console.warn('[harness] legacy recovery profile import failed', error),
       )
-    echoWorker = runtime.own(
-      'echo worker',
-      createWorkerClient<EchoWorkerProtocol>(workerPath('echo-worker.js'), 'hvir-echo'),
-      (worker) => worker.dispose(),
+    echoWorker = ownEchoWorker(runtime)
+    const checkpointRuntime = ownReviewCheckpointRuntime(
+      runtime,
+      projectRegistry,
+      gitMutationAuthorizations,
+      rendererScopes,
+      hostCatalog,
     )
-    gitWorker = ownGitWorker(runtime, projectRegistry, gitMutationAuthorizations)
-    const filenameSearch = runtime.own(
-      'filename search',
-      createFilenameSearchCoordinator(gitWorker),
-      (search) => search.dispose(),
-    )
-    const projectFiles = runtime.own(
-      'project file operations',
-      createProjectFileOperationCoordinator(registry, hostCatalog, rendererScopes),
-      (operations) => operations.dispose(),
-    )
+    const { gitWorker, reviewCheckpoint, filenameSearch, projectFiles } =
+      checkpointRuntime
     const gasCity = ownGasCityRuntime(
       runtime,
       { projects: projectRegistry, hosts: hostCatalog },
@@ -341,23 +333,25 @@ function createWorkbenchEntry(): void {
     installTerminalIdentityPublication(runtime, ptySupervisor, rendererEvents)
     installMirrorInputNotice(runtime, ptySupervisor, rendererEvents)
     installMirrorGeometryNotice(runtime, ptySupervisor, rendererEvents)
-    const withSshPresentation = <T>(owner: RendererOwner, operation: () => T): T => {
-      if (!sshPrompter) throw new Error('SSH prompting is unavailable')
-      return sshPrompter.runForOwner(owner, operation)
-    }
-    const projectCommands = createProjectCommands({
+    if (!sshPrompter) throw new Error('SSH prompting is unavailable')
+    const projectCommands = createApplicationProjectCommands(
       projects,
-      workspaces: workspaceCoordinator,
-      git: gitMutations,
-      withSshPresentation,
-    })
-    const getProject = () => registry.active
+      workspaceCoordinator,
+      gitMutations,
+      sshPrompter,
+    )
     runtime.own(
       'IPC authority router',
       registerIpcHandlers({
-        architectureReview: ownArchitectureReview(rendererScopes, runtime, gitMutations, harnessProfileStore),
+        architectureReview: ownArchitectureReview(
+          rendererScopes,
+          runtime,
+          gitMutations,
+          harnessProfileStore,
+        ),
         echoWorker,
         gitWorker,
+        reviewCheckpoint,
         filenameSearch,
         projectFiles,
         projectFolderPicker: new FolderPicker(hostCatalog, projects, rendererScopes),
@@ -394,7 +388,13 @@ function createWorkbenchEntry(): void {
         harnessProfiles: harnessProfileStore,
         harnessProbes: harnessProbeManager,
         remoteImagePaste,
-        ...ownRailServices(getProject, gasCity.reader),
+        ...ownRailServices(
+          () => registry.active,
+          gasCity.reader,
+          registry,
+          hostCatalog,
+          emit,
+        ),
         companion: companion.settings,
         updateAttention: (owner, set) => attention?.updateAttention(owner, set),
         updateWebPaneBindings: (owner, bindings) =>

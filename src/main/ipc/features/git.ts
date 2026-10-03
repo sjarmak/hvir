@@ -10,11 +10,12 @@ import {
 import type { IpcRegistrar } from '../authority-router'
 import type { IpcDeps } from '../deps'
 import { operationResult } from '../operation-result'
+import type { ReviewCheckpointCoordinator } from '../../git/review-checkpoint-coordinator'
 
 type GitIpcDeps = Pick<
   IpcDeps,
   'getProject' | 'gitWorker' | 'fetchGit' | 'pullGit' | 'switchGitBranch'
->
+> & { readonly reviewCheckpoint: Pick<ReviewCheckpointCoordinator, 'request' | 'cancel'> }
 
 export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
   ipc.handle('git:diff-inputs', async (req) => {
@@ -110,5 +111,95 @@ export function registerGitIpc(ipc: IpcRegistrar, deps: GitIpcDeps): void {
       const root = await ipc.authority.projectPath(req.root, project.root, project.host)
       return deps.switchGitBranch(root, req.branch)
     }),
+  )
+
+  ipc.handle('git:review-checkpoint', async (req, context) => {
+    assertReviewCheckpointRequest(req)
+    const owner = context.owner()
+    const project = deps.getProject()
+    const root = await ipc.authority.projectPath(req.root, project.root, project.host)
+    const { id, ...checkpointRequest } = req
+    return deps.reviewCheckpoint.request(owner, id, { ...checkpointRequest, root })
+  })
+  ipc.handleSend('git:review-checkpoint-cancel', (req, context) => {
+    if (!isCheckpointCancel(req)) return
+    void deps.reviewCheckpoint.cancel(context.owner(), req.id)
+  })
+}
+
+function isCheckpointCancel(value: unknown): value is { readonly id: string } {
+  const id =
+    typeof value === 'object' && value !== null
+      ? (value as { id?: unknown }).id
+      : undefined
+  return typeof id === 'string' && id.length > 0 && id.length <= 128
+}
+
+function assertReviewCheckpointRequest(value: unknown): void {
+  if (!value || typeof value !== 'object')
+    throw new Error('Invalid review checkpoint request')
+  const candidate = value as {
+    id?: unknown
+    action?: unknown
+    root?: unknown
+    checkpoint?: unknown
+    change?: unknown
+  }
+  if (
+    typeof candidate.id !== 'string' ||
+    candidate.id.length === 0 ||
+    candidate.id.length > 128 ||
+    !isCheckpointPath(candidate.root) ||
+    typeof candidate.action !== 'string' ||
+    !['status', 'capture', 'clear', 'diff'].includes(candidate.action)
+  )
+    throw new Error('Invalid review checkpoint request')
+  if (candidate.action === 'diff') {
+    if (
+      typeof candidate.checkpoint !== 'string' ||
+      candidate.checkpoint.length === 0 ||
+      candidate.checkpoint.length > 128 ||
+      !candidate.change ||
+      typeof candidate.change !== 'object'
+    )
+      throw new Error('Invalid review checkpoint diff request')
+    const change = candidate.change as {
+      path?: unknown
+      before?: unknown
+      after?: unknown
+    }
+    if (
+      !isCheckpointPath(change.path) ||
+      !isCheckpointObject(change.before) ||
+      !isCheckpointObject(change.after)
+    )
+      throw new Error('Invalid review checkpoint diff request')
+  }
+}
+
+function isCheckpointPath(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as { hostId?: unknown; path?: unknown }
+  return (
+    typeof candidate.hostId === 'string' &&
+    candidate.hostId.length > 0 &&
+    candidate.hostId.length <= 128 &&
+    typeof candidate.path === 'string' &&
+    candidate.path.length > 0 &&
+    candidate.path.length <= 16_384
+  )
+}
+
+function isCheckpointObject(value: unknown): boolean {
+  if (value === null) return true
+  if (!value || typeof value !== 'object') return false
+  const candidate = value as { mode?: unknown; oid?: unknown }
+  return (
+    (candidate.mode === '100644' ||
+      candidate.mode === '100755' ||
+      candidate.mode === '120000') &&
+    typeof candidate.oid === 'string' &&
+    candidate.oid.length > 0 &&
+    candidate.oid.length <= 128
   )
 }

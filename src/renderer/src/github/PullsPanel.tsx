@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 
-import type { HostPath, PullSummary, PullsResponse } from '../../../shared'
+import type { HostPath, PullDetail, PullSummary, PullsResponse } from '../../../shared'
 import { createVisibilityRefresh, type VisibilityRefresh } from '../beads/beads-refresh'
 import {
   checksLabel,
@@ -15,6 +15,7 @@ import { PullWorkspaceAction } from './PullWorkspaceAction'
 import type { PullWorkspaceNavigation } from './pull-workspaces'
 
 import './pulls.css'
+import { preparePullFeedbackPreview } from './pull-feedback-preview'
 
 const VISIBLE_POLL_INTERVAL_MS = 60_000
 const SLOW_HOST_POLL_CEILING_MS = 300_000
@@ -36,8 +37,21 @@ export function PullsPanel({
   const [checkouts, setCheckouts] = useState<PullCheckoutsResponse>()
   const [error, setError] = useState<string>()
   const [loading, setLoading] = useState(false)
+  const [detail, setDetail] = useState<PullDetail>()
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [selectedThreads, setSelectedThreads] = useState<ReadonlySet<string>>(new Set())
+  const [copyStatus, setCopyStatus] = useState<string>()
+  const detailSerial = useRef(0)
   const requestSerial = useRef(0)
   const refreshController = useRef<VisibilityRefresh | undefined>(undefined)
+
+  const clearDetail = useCallback((): void => {
+    detailSerial.current += 1
+    setDetail(undefined)
+    setDetailLoading(false)
+    setSelectedThreads(new Set())
+    setCopyStatus(undefined)
+  }, [])
 
   const refresh = useCallback(async (): Promise<void> => {
     const serial = ++requestSerial.current
@@ -73,15 +87,19 @@ export function PullsPanel({
       controller.dispose()
       refreshController.current = undefined
       requestSerial.current += 1
+      clearDetail()
+      setResponse(undefined)
+      setCheckouts(undefined)
+      setError(undefined)
     }
-  }, [refresh])
+  }, [clearDetail, refresh])
 
   useEffect(() => {
     const controller = refreshController.current
     const updateVisibility = (): void => {
-      controller?.setVisible(
-        connected && !hidden && document.visibilityState !== 'hidden',
-      )
+      const visible = connected && !hidden && document.visibilityState !== 'hidden'
+      if (!visible) clearDetail()
+      controller?.setVisible(visible)
     }
     const onFocus = (): void => controller?.focus()
     updateVisibility()
@@ -91,7 +109,30 @@ export function PullsPanel({
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', updateVisibility)
     }
-  }, [connected, hidden, refresh])
+  }, [connected, hidden, refresh, clearDetail])
+
+  useEffect(() => {
+    if (detail === undefined) return
+    const current =
+      response?.available === true
+        ? [
+            ...response.branchPulls,
+            ...response.authored,
+            ...response.reviewRequested,
+          ].find((pull) => pull.number === detail.number)
+        : undefined
+    if (
+      error === undefined &&
+      response?.available === true &&
+      response.repo === detail.repo &&
+      current?.headOid === detail.headOid
+    )
+      return
+    clearDetail()
+    setCopyStatus(
+      'Pull request changed or is unavailable; refresh details before copying feedback.',
+    )
+  }, [detail, response, error, clearDetail])
 
   return (
     <section
@@ -116,7 +157,10 @@ export function PullsPanel({
           {loading ? '…' : '⟳'}
         </button>
       </div>
-      <div className="pulls-body">{renderBody()}</div>
+      <div className="pulls-body">
+        {renderBody()}
+        {renderDetail()}
+      </div>
     </section>
   )
 
@@ -229,7 +273,175 @@ export function PullsPanel({
           disabled={!connected || hidden}
           onCheckouts={setCheckouts}
         />
+        <button
+          type="button"
+          className="pulls-detail-button"
+          disabled={!connected || hidden || pull.headOid === undefined || detailLoading}
+          onClick={() => void loadDetail(pull)}
+        >
+          {detailLoading ? 'Loading…' : 'Details'}
+        </button>
       </div>
+    )
+  }
+
+  async function loadDetail(pull: PullSummary): Promise<void> {
+    if (
+      pull.headOid === undefined ||
+      response?.available !== true ||
+      hidden ||
+      !connected ||
+      document.visibilityState === 'hidden'
+    )
+      return
+    const serial = ++detailSerial.current
+    setDetailLoading(true)
+    setDetail(undefined)
+    setSelectedThreads(new Set())
+    setCopyStatus(undefined)
+    try {
+      const result = await window.hvir.invoke('github:detail', {
+        root,
+        repo: response.repo,
+        number: pull.number,
+        headOid: pull.headOid,
+      })
+      if (serial !== detailSerial.current || hidden || !connected) return
+      if (result.available) setDetail(result)
+      else setCopyStatus(result.message)
+    } catch (reason) {
+      if (serial === detailSerial.current) {
+        setCopyStatus(reason instanceof Error ? reason.message : String(reason))
+      }
+    } finally {
+      if (serial === detailSerial.current) setDetailLoading(false)
+    }
+  }
+
+  function renderDetail(): ReactElement | null {
+    if (detail === undefined && copyStatus === undefined) return null
+    const preview =
+      detail === undefined
+        ? undefined
+        : preparePullFeedbackPreview(detail, selectedThreads)
+    return (
+      <section
+        className="pulls-detail pulls-feedback-detail"
+        aria-label="Pull request feedback"
+      >
+        <div className="pulls-detail-header">
+          <span>Selected feedback</span>
+          <button type="button" onClick={clearDetail}>
+            Close
+          </button>
+        </div>
+        {copyStatus !== undefined ? <p role="alert">{copyStatus}</p> : null}
+        {detail !== undefined ? (
+          <>
+            <p>Current pull request head: {detail.headOid ?? 'unknown'}</p>
+            {!detail.threadsPageComplete || detail.payloadTruncated ? (
+              <p role="status">Some hosted feedback is incomplete or truncated.</p>
+            ) : null}
+            <ul>
+              {detail.threads.map((thread) => (
+                <li key={thread.id}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={selectedThreads.has(thread.id)}
+                      onChange={(event) => {
+                        detailSerial.current += 1
+                        const next = new Set(selectedThreads)
+                        if (event.currentTarget.checked) next.add(thread.id)
+                        else next.delete(thread.id)
+                        setSelectedThreads(next)
+                        setCopyStatus(undefined)
+                      }}
+                    />
+                    <span>
+                      {thread.path ?? 'location unknown'}
+                      {thread.line === undefined ? '' : `:${thread.line}`}
+                    </span>
+                  </label>
+                  <div className="pulls-detail-thread-state">
+                    {thread.isResolved ? 'resolved' : 'open'}
+                    {thread.isOutdated ? ' · outdated' : ''}
+                    {thread.reviewedCommitOid === undefined
+                      ? ' · reviewed commit unknown'
+                      : ` · reviewed ${thread.reviewedCommitOid}`}
+                  </div>
+                  <div className="pulls-detail-comments">
+                    {thread.comments.map((comment) => (
+                      <p key={comment.id}>
+                        <strong>
+                          {comment.author === undefined
+                            ? 'unknown author'
+                            : `@${comment.author}`}
+                        </strong>
+                        {comment.createdAt === undefined
+                          ? null
+                          : ` · ${comment.createdAt}`}
+                        : {comment.body}
+                      </p>
+                    ))}
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <pre className="pulls-detail-preview" aria-label="Exact feedback preview">
+              {preview?.ok === true ? preview.text : preview?.reason}
+            </pre>
+            <button
+              type="button"
+              disabled={preview?.ok !== true}
+              onClick={() => {
+                if (preview?.ok !== true) return
+                const generation = detailSerial.current
+                try {
+                  const clipboard = navigator.clipboard
+                  if (clipboard === undefined) {
+                    setCopyStatus('Clipboard copy was refused.')
+                    return
+                  }
+                  void clipboard.writeText(preview.text).then(
+                    () => {
+                      if (
+                        generation === detailSerial.current &&
+                        detail !== undefined &&
+                        connected &&
+                        !hidden
+                      ) {
+                        setCopyStatus('Exact preview copied.')
+                      }
+                    },
+                    () => {
+                      if (
+                        generation === detailSerial.current &&
+                        detail !== undefined &&
+                        connected &&
+                        !hidden
+                      ) {
+                        setCopyStatus('Clipboard copy was refused.')
+                      }
+                    },
+                  )
+                } catch {
+                  if (
+                    generation === detailSerial.current &&
+                    detail !== undefined &&
+                    connected &&
+                    !hidden
+                  ) {
+                    setCopyStatus('Clipboard copy was refused.')
+                  }
+                }
+              }}
+            >
+              Copy preview
+            </button>
+          </>
+        ) : null}
+      </section>
     )
   }
 }

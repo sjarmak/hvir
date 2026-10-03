@@ -107,8 +107,8 @@ describe('SessionsOverview', () => {
     expect(host.textContent).not.toContain('Unavailable · Not materialized')
     expect(host.textContent).toContain('Review release notes')
     expect(host.textContent).toContain('Deploy preview shell')
-    expect(host.textContent).not.toContain('codex-default')
-    expect(host.textContent).not.toContain('plain-shell-default')
+    expect(host.textContent).toContain('Profilecodex-default')
+    expect(host.textContent).toContain('Profileplain-shell-default')
     const shellCard = [...host.querySelectorAll<HTMLElement>('.session-card')].find(
       (card) => card.textContent?.includes('Deploy preview shell'),
     )!
@@ -137,7 +137,7 @@ describe('SessionsOverview', () => {
     expect(agentCard.querySelector('.session-fact.actionable')?.textContent).toBe(
       'AttentionBell',
     )
-    expect(agentCard.querySelectorAll('.session-fact.available')).toHaveLength(1)
+    expect(agentCard.querySelectorAll('.session-fact.available')).toHaveLength(2)
     void act(() => agentCard.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true })))
     expect(document.querySelector('[role="dialog"]')).not.toBeNull()
     act(() => button('Shells').click())

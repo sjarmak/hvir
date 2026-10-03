@@ -46,6 +46,7 @@ export interface SmokeSessionsPortsOptions {
 }
 
 export interface SmokeSessionsPorts {
+  readonly createSibling: () => SmokeSessionsPorts
   readonly observation: SessionsObservationPort
   readonly usage: SessionsUsageObservationPort
   readonly transcripts: SessionsTranscriptPort
@@ -151,6 +152,7 @@ export function createSmokeSessionsPorts(
     transcripts,
     attachTickets,
     companionSinks,
+    createSibling: () => createSmokeSessionsPorts(options),
     hostOptions,
     missingCompanionSinks,
   }

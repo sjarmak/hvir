@@ -14,7 +14,6 @@ import { useWebPaneWorkspace } from './dashboards/use-web-pane-workspace'
 import { TerminalWorkspaceCollection } from './terminal/TerminalWorkspaceCollection'
 import { useTerminalWorkspaceRuntime } from './terminal/use-terminal-workspace-runtime'
 import { useTerminalAttention } from './terminal/use-terminal-attention'
-import { ProjectsBar } from './workspaces/ProjectsBar'
 import { useExternalAttention } from './workspaces/use-external-attention'
 import { MissingWorkspaceNotice } from './workspaces/MissingWorkspaceNotice'
 import { useProjectSession } from './workspaces/project-session'
@@ -44,9 +43,10 @@ import { TerminalLayoutControls } from './workbench/TerminalLayoutControls'
 import { useRendererReady } from './workbench/use-renderer-ready'
 import { useTerminalPathActivation } from './workbench/use-terminal-path-activation'
 import * as review from './document-review/use-document-review-workspace'
-import { SessionsApplicationDestination } from './sessions/SessionsApplicationDestination'
+import { AppApplicationDestinations } from './needs-you/AppApplicationDestinations'
+import { useApplicationNavigation } from './needs-you/use-application-navigation'
+import { AppProjectNavigation } from './workspaces/AppProjectNavigation'
 export function App(): ReactElement {
-  const [destination, setDestination] = useState<'workspace' | 'sessions'>('workspace')
   const theme = useAppTheme()
   const settings = useAppSettings()
   const rootRef = useRef<HostPath | undefined>(undefined)
@@ -207,6 +207,14 @@ export function App(): ReactElement {
   deactivateWebPaneRef.current = () => web.setActive(false)
   const terminalCommands = useTerminalCommands(session.activeWorkspace?.id)
   const rail = useRailExtensions(session, layout, terminalCommands)
+  const { destination, setDestination, needsYou, beadTarget } = useApplicationNavigation({
+    projectState,
+    root,
+    switchWorkspace: session.switchWorkspace,
+    onError: session.reportError,
+    beadsEnabled: rail.beads.beadsEnabled,
+    setRailMode: layout.setRailMode,
+  })
   useEffect(() => {
     if (overlays.projectPickerOpen) void refreshHosts()
   }, [overlays.projectPickerOpen, refreshHosts])
@@ -379,46 +387,19 @@ export function App(): ReactElement {
   )
   return (
     <div className="app-shell">
-      {projectState ? (
-        <ProjectsBar
-          state={projectState}
-          rollups={terminalAttention.rollups}
-          external={externalAttention}
-          busy={session.busy}
-          onAdd={overlays.openProjectPicker}
-          onSwitch={(projectId, workspaceId) => {
-            setDestination('workspace')
-            void session.switchWorkspace(projectId, workspaceId)
-          }}
-          onRefresh={(projectId) => void session.refreshProject(projectId)}
-          onCloseProject={(projectId) => void session.closeProject(projectId)}
-          onPrune={(projectId) => void session.pruneWorktrees(projectId)}
-          onDismiss={(projectId, workspaceId) =>
-            void session.dismissWorkspace(projectId, workspaceId)
-          }
-          onPlanCloseWorkspace={session.planWorkspaceClose}
-          onCloseWorkspace={(projectId, workspaceId, plan, terminateTerminals) =>
-            void session.closeWorkspace(projectId, workspaceId, plan, terminateTerminals)
-          }
-          onReopenWorkspace={(projectId, workspaceId) =>
-            void session.reopenWorkspace(projectId, workspaceId)
-          }
-          watchTier={session.watchTier}
-          statusError={session.error}
-          onChangeConnection={overlays.openProjectPicker}
-          onDisconnect={() => void session.disconnect()}
-          onReconnect={() => void session.reconnect()}
-          theme={theme}
-          onTheme={(nextTheme) => setAppTheme(nextTheme)}
-          onSettings={() => overlays.openSettings()}
-          sessionsActive={destination === 'sessions'}
-          onSessions={() => setDestination('sessions')}
-        />
-      ) : null}
+      <AppProjectNavigation
+        session={session}
+        terminalAttention={terminalAttention}
+        externalAttention={externalAttention}
+        overlays={overlays}
+        theme={theme}
+        destination={destination}
+        setDestination={setDestination}
+      />
       <main
         className={`workbench${connectionState === 'connected' ? '' : ' project-stale'}${terminalMode === 'maximized' ? ' terminal-focused' : ''}${terminalMode === 'collapsed' ? ' terminal-collapsed' : ''}${treeCollapsed ? ' tree-collapsed' : ''}${layout.terminalRailCompact ? ' terminal-rail-compact' : ''}${web.focused && web.active ? ' web-focused' : ''}`}
         ref={workbenchRef}
-        hidden={destination === 'sessions'}
+        hidden={destination !== 'workspace'}
       >
         <aside
           className="tree-panel"
@@ -496,7 +477,14 @@ export function App(): ReactElement {
                 autoFetchIntervalMs={settings.gitAutoFetchIntervalMs}
               />
             ) : null}
-            <RailPanels rail={rail} session={session} layout={layout} />
+            <RailPanels
+              rail={rail}
+              session={session}
+              layout={layout}
+              focusBeadId={beadTarget?.beadId}
+              onFocusHandled={needsYou.beadHandled}
+              onFocusUnavailable={needsYou.beadUnavailable}
+            />
           </div>
         </aside>
         <PaneResizer
@@ -637,10 +625,15 @@ export function App(): ReactElement {
           onAddHarness={overlays.openAddHarnessSettings}
         />
       </main>
-      <SessionsApplicationDestination
-        active={destination === 'sessions'}
+      <AppApplicationDestinations
+        destination={destination}
         runtime={terminalWorkspaces}
-        onOpened={(state) => (showTerminal(), accept(state), setDestination('workspace'))}
+        projection={terminalWorkspaces.sessionsProjection}
+        sessionTarget={needsYou.sessionTarget}
+        needsYou={needsYou}
+        showTerminal={showTerminal}
+        accept={accept}
+        setDestination={setDestination}
         onError={session.reportError}
         onAttachExternal={terminalCommands.requestExternalAttach}
       />

@@ -25,6 +25,7 @@ import { sessionDetailsModel } from '../harness/session-details-model'
 import { useSessionDetailsPopover } from '../harness/use-session-details-popover'
 import { useSessionsDetailsUsage } from '../harness/use-session-details-usage'
 import type { SessionsCommandPort } from './sessions-command-port'
+import { sameSessionTarget } from './sessions-overview-target'
 import { SessionsProjectLaunchers } from './SessionsProjectLaunchers'
 import { SessionsLaunchDialog } from './SessionsLaunchDialog'
 import { useSessionsLaunch } from './use-sessions-launch'
@@ -79,7 +80,9 @@ interface SessionsOverviewProps {
     workspaceId: string,
     target: SessionsAttachExternalTarget,
   ) => Promise<boolean>
+  readonly initialTarget?: SessionsProjectionRow
 }
+
 
 export function SessionsOverview({
   commands,
@@ -89,6 +92,7 @@ export function SessionsOverview({
   onFocusOpened,
   onOpenFailed,
   onAttachExternal,
+  initialTarget,
 }: SessionsOverviewProps): ReactElement {
   const source = projection
   const foreground = useSessionsForeground()
@@ -138,6 +142,7 @@ export function SessionsOverview({
   const [pageIndex, setPageIndex] = useState(0)
   const previousOrder = useRef<readonly SessionsTerminalHandle[]>([])
   const pendingFocus = useRef<SessionsTerminalHandle | undefined>(undefined)
+  const initialFocusKey = useRef<string | undefined>(undefined)
   const rowElements = useRef(new Map<SessionsTerminalHandle, HTMLElement>())
   const collectionControl = useRef<HTMLButtonElement>(null)
   const openGeneration = useRef(0)
@@ -204,6 +209,42 @@ export function SessionsOverview({
       else collectionControl.current?.focus()
     }
   }, [foreground, handles, pageIndex, selected, snapshot.status])
+  useEffect(() => {
+    if (!foreground || snapshot.status !== 'available') return
+    const key = initialTarget
+      ? JSON.stringify([
+          initialTarget.handle,
+          initialTarget.project.id,
+          initialTarget.workspace.id,
+          initialTarget.workspace.qualifier,
+          initialTarget.livePty,
+        ])
+      : undefined
+    if (!key) {
+      initialFocusKey.current = undefined
+      return
+    }
+    if (initialFocusKey.current === key) return
+    initialFocusKey.current = key
+    const target = snapshot.rows.find((row) => sameSessionTarget(row, initialTarget!))
+    if (!target) {
+      setFeedback('That session is no longer available.')
+      return
+    }
+    setSelected(target.handle)
+    pendingFocus.current = target.handle
+    const index = handles.indexOf(target.handle)
+    if (index < 0) return
+    const nextPage = Math.floor(index / SESSIONS_OVERVIEW_PAGE_SIZE)
+    if (nextPage !== pageIndex) setPageIndex(nextPage)
+  }, [
+    foreground,
+    handles,
+    initialTarget,
+    pageIndex,
+    snapshot.rows,
+    snapshot.status,
+  ])
   useEffect(() => {
     const handle = pendingFocus.current
     if (!handle || !page.rows.some((row) => row.handle === handle)) return

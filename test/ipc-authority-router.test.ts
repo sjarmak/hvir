@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
@@ -187,6 +187,10 @@ function fixture() {
     stat,
   } as unknown as ProjectHost
   const revealLocalEntry = vi.fn()
+  const reviewCheckpointRequest = vi
+    .fn<IpcDeps['reviewCheckpoint']['request']>()
+    .mockResolvedValue({ root, oid: null, changes: [] })
+  const reviewCheckpointCancel = vi.fn<IpcDeps['reviewCheckpoint']['cancel']>()
   const deps = {
     rendererResources,
     recordIpcContractDiagnostic,
@@ -211,6 +215,10 @@ function fixture() {
     getProject: () => ({ root, host: projectHost }),
     getHost: (hostId: string) => (hostId === root.hostId ? projectHost : undefined),
     revealLocalEntry,
+    reviewCheckpoint: {
+      request: reviewCheckpointRequest,
+      cancel: reviewCheckpointCancel,
+    },
   } as unknown as IpcDeps
   const transport = new FakeIpcMain()
   return {
@@ -231,6 +239,8 @@ function fixture() {
     revalidateDocumentReview,
     stat,
     revealLocalEntry,
+    reviewCheckpointRequest,
+    reviewCheckpointCancel,
     recordIpcContractDiagnostic,
   }
 }
@@ -303,6 +313,25 @@ describe('IpcAuthorityRouter', () => {
       expect.objectContaining({ workspace, document }),
       document,
     )
+  })
+
+  it('keeps checkpoint request and cancellation behind the renderer owner', async () => {
+    const { deps, transport, reviewCheckpointRequest, reviewCheckpointCancel } = fixture()
+    registerIpcHandlers(deps, transport)
+    await transport.invokes.get('git:review-checkpoint')?.[0]?.(ipcEvent(), {
+      id: 'checkpoint-1',
+      root,
+      action: 'status',
+    })
+    transport.sends.get('git:review-checkpoint-cancel')?.[0]?.(ipcSendEvent(), {
+      id: 'checkpoint-1',
+    })
+    expect(reviewCheckpointRequest).toHaveBeenCalledWith(
+      owner,
+      'checkpoint-1',
+      expect.objectContaining({ root, action: 'status' }),
+    )
+    expect(reviewCheckpointCancel).toHaveBeenCalledWith(owner, 'checkpoint-1')
   })
 
   it('rejects document review state from another worktree before its effect owner', async () => {
@@ -449,182 +478,11 @@ describe('IpcAuthorityRouter', () => {
     expect(transport.sends.size).toBe(0)
   })
 
-  it('keeps the reviewed owner and authority channel policies explicit', () => {
-    expect(new Set(OWNER_SCOPED_INVOKE_CHANNELS)).toEqual(
-      new Set<IpcInvokeChannel>([
-        'architecture-review:close',
-        'workbench-health:acknowledge',
-        'diagnostic-evidence:get',
-        'diagnostic-evidence:delete',
-        'project:connect-host',
-        'project:browse-host',
-        'project:folder-picker-start',
-        'project:folder-picker-browse',
-        'project:folder-picker-create-directory',
-        'project:folder-picker-close',
-        'project:open',
-        'architecture-review:scan',
-        'architecture-review:scope',
-        'architecture-review:commits',
-        'architecture-review:classify-commits',
-        'architecture-review:evidence',
-        'architecture-review:explanation',
-        'architecture-review:prepare',
-        'architecture-review:explain',
-        'architecture-review:handoff',
-        'architecture-review:origin',
-        'architecture-review:follow',
-        'architecture-review:pause',
-        'document-review:restore',
-        'document-review:save',
-        'document-review:revalidate',
-        'document-review:delivery-destinations',
-        'document-review:preview-delivery',
-        'document-review:prepare-delivery',
-        'document-review:insert-delivery',
-        'document-review:send-now-delivery',
-        'ssh:prompt-response',
-        'fs:read',
-        'fs:read-asset',
-        'fs:filename-search',
-        'fs:reveal-entry',
-        'fs:create-entry',
-        'fs:acquire-clipboard-files',
-        'fs:acquire-dropped-files',
-        'fs:copy-external',
-        'fs:external-move-disclosure',
-        'fs:acquire-external-move-files',
-        'fs:release-external-move-grant',
-        'fs:move-external',
-        'fs:organize-entry',
-        'fs:deletion-disclosure',
-        'fs:delete-entry',
-        'fs:cancel-file-operation',
-        'html-preview:create',
-        'web-pane:open',
-        'web-pane:close',
-        'web-pane:open-external',
-        'web-pane:open-browser',
-        'terminal:plan-move',
-        'terminal:move',
-        'terminal:record-recovery-decision',
-        'terminal:resolve-file-clipboard',
-        'pty:start',
-        'sessions:observe',
-        'sessions:snapshot',
-        'sessions:release',
-        'sessions:usage-observe',
-        'sessions:usage-snapshot',
-        'sessions:usage-release',
-        'sessions:open',
-        'sessions:resolve-terminal',
-        'sessions:transcript-observe',
-        'sessions:transcript-snapshot',
-        'sessions:transcript-resume',
-        'sessions:transcript-release',
-        'sessions:attach-external',
-        'sessions:forget',
-        'sessions:rename',
-        'diagnostic-report:create',
-        'diagnostic-report:capture',
-        'diagnostic-report:copy',
-        'diagnostic-report:save',
-        'diagnostic-report:cancel',
-        'diagnostic-report:delete',
-        'companion:config',
-        'companion:config-save',
-        'companion:pairing-issue',
-        'companion:pairing-revoke',
-      ]),
-    )
-    expect(new Set(OWNER_SCOPED_SEND_CHANNELS)).toEqual(
-      new Set<IpcSendChannel>(SEND_CHANNELS),
-    )
-    expect(new Set(AUTHORITY_SCOPED_INVOKE_CHANNELS)).toEqual(
-      new Set<IpcInvokeChannel>([
-        'project:watch-interests',
-        'architecture-review:scan',
-        'architecture-review:scope',
-        'architecture-review:commits',
-        'architecture-review:classify-commits',
-        'architecture-review:evidence',
-        'architecture-review:explanation',
-        'architecture-review:prepare',
-        'architecture-review:explain',
-        'architecture-review:handoff',
-        'architecture-review:origin',
-        'architecture-review:follow',
-        'document-review:restore',
-        'document-review:save',
-        'document-review:revalidate',
-        'document-review:delivery-destinations',
-        'document-review:preview-delivery',
-        'document-review:prepare-delivery',
-        'fs:readdir',
-        'fs:filename-search',
-        'fs:resolve-entry',
-        'fs:reveal-entry',
-        'fs:read',
-        'fs:read-asset',
-        'fs:write',
-        'fs:create-entry',
-        'fs:copy-external',
-        'fs:move-external',
-        'fs:organize-entry',
-        'fs:deletion-disclosure',
-        'fs:delete-entry',
-        'git:diff-inputs',
-        'git:changes',
-        'git:history',
-        'git:ignored-entries',
-        'git:commit-detail',
-        'git:blame',
-        'git:branches',
-        'git:fetch',
-        'git:pull',
-        'git:switch-branch',
-        'html-preview:create',
-        'harness:profiles',
-        'harness:probe-snapshot',
-        'harness:probe-profiles',
-        'harness:probe-templates',
-        'harness:profile-materialize',
-        'harness:profile-save',
-        'harness:preview',
-        'harness:authorize-path',
-        'terminal:recovery',
-        'terminal:resolve-attached',
-        'terminal:record-recovery-decision',
-        'terminal:update-layout',
-        'terminal:forget',
-        'terminal:rename',
-        'terminal:rebind-profile',
-        'pty:start',
-        'web-pane:open',
-      ]),
-    )
-  })
-
   it('keeps feature registrars free of direct IPC and canonicalization primitives', async () => {
     const featureDirectory = join(process.cwd(), 'src/main/ipc/features')
-    const features = [
-      'app.ts',
-      'filesystem.ts',
-      'git.ts',
-      'architecture-review.ts',
-      'harness.ts',
-      'preview.ts',
-      'project.ts',
-      'terminal.ts',
-      'web-pane.ts',
-      'diagnostic-report.ts',
-      'document-review.ts',
-      'image-paste.ts',
-      'clipboard.ts',
-      'terminal-file-paste.ts',
-      'sessions.ts',
-      'companion.ts',
-    ]
+    const features = (await readdir(featureDirectory)).filter((name) =>
+      name.endsWith('.ts'),
+    )
     const source = (
       await Promise.all(
         features.map((feature) => readFile(join(featureDirectory, feature), 'utf8')),

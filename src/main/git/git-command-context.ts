@@ -10,6 +10,8 @@ import {
   type HostPath,
   type Stat,
   type TextWorkload,
+  type ReviewCheckpointHostRequest,
+  type ReviewCheckpointHostResult,
 } from '../../shared'
 import type { ExecOptions } from '../project-host'
 
@@ -17,13 +19,18 @@ const GIT_STATUS_MAX_BUFFER = 20 * 1024 * 1024
 const GIT_STATUS_MAX_RECORDS = (GIT_CHANGE_DISPLAY_LIMIT + 1) * 2
 
 /** The exact host operations used by the off-thread Git engine. */
-export interface GitExecOptions extends ExecOptions {
+export interface GitExecOptions extends Omit<ExecOptions, 'input'> {
+  readonly input?: string
   /** Permit one exact read-only Git command to persist refreshed index stat data. */
   readonly allowIndexRefresh?: true
 }
 
 export interface GitHostPort {
   readonly hostId: HostId
+  reviewCheckpoint?(
+    root: HostPath,
+    request: ReviewCheckpointHostRequest,
+  ): Promise<ReviewCheckpointHostResult>
   exec(
     command: string,
     args: readonly string[],
@@ -77,7 +84,7 @@ export class GitCommandContext {
   mutate(
     root: HostPath,
     args: readonly string[],
-    opts: ExecOptions = {},
+    opts: GitExecOptions = {},
   ): Promise<ExecResult> {
     this.assertHost(root)
     return this.host.exec('git', ['-C', root.path, ...args], opts)

@@ -2,6 +2,7 @@ import type { CompanionClient } from './companion-client'
 import { selectedCompanionRow, type CompanionConnection } from './companion-store'
 import type { CompanionTerminalPaneFactory } from './companion-terminal-pane'
 import { PairScreen } from './pair-screen'
+import { InstanceSwitcher } from './instance-switcher'
 import { SessionsList } from './sessions-list'
 import { TerminalView } from './terminal-view'
 import { TranscriptView } from './transcript-view'
@@ -17,11 +18,18 @@ interface CompanionAppProps {
 export function CompanionApp({ client, createPane }: CompanionAppProps) {
   const session = useCompanionSession(client)
   if (session.connection.phase === 'unpaired') {
-    return <PairScreen error={session.connection.error} onPair={session.pair} />
+    return (
+      <PairScreen
+        error={session.connection.error}
+        onPair={session.pair}
+        onLeave={session.leave}
+      />
+    )
   }
   const { state } = session
   return (
     <main className="companion">
+      <InstanceSwitcher onLeave={session.leave} />
       <ConnectionBanner connection={session.connection} onReconnect={session.reconnect} />
       {session.notice === undefined ? null : (
         <p className="companion-error" role="alert">

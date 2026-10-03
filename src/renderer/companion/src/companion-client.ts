@@ -94,6 +94,7 @@ export interface CompanionClient {
   forget(): void
   openEvents(
     listener: (event: CompanionStreamEvent) => void,
+    signal?: AbortSignal,
   ): Promise<CompanionEventStream>
   snapshot(page: string): Promise<CompanionSnapshot>
   select(
@@ -163,7 +164,7 @@ export function createCompanionClient(options: CompanionClientOptions): Companio
       ...(request.signal === undefined ? {} : { signal: request.signal }),
     })
     if (response.status === 401) {
-      tokens.clear()
+      if (tokens.read() === token) tokens.clear()
       throw new CompanionUnauthorizedError()
     }
     if (!isSuccess(response.status)) throw await failure(response)
@@ -198,8 +199,13 @@ export function createCompanionClient(options: CompanionClientOptions): Companio
 
   async function openEvents(
     listener: (event: CompanionStreamEvent) => void,
+    signal?: AbortSignal,
   ): Promise<CompanionEventStream> {
     const controller = new AbortController()
+    if (signal !== undefined) {
+      if (signal.aborted) controller.abort()
+      else signal.addEventListener('abort', () => controller.abort(), { once: true })
+    }
     const response = await authorized({
       method: 'GET',
       url: '/api/events',

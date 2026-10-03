@@ -14,6 +14,7 @@ import {
   GIT_FETCH_TYPE,
   GIT_PULL_TYPE,
   GIT_SWITCH_BRANCH_TYPE,
+  GIT_REVIEW_CHECKPOINT_TYPE,
   asHostId,
   hostPath,
   type DiffBase,
@@ -26,6 +27,9 @@ import {
   type WorkerHostResult,
   type HostId,
   type Stat,
+  type ReviewCheckpointRequest,
+  type ReviewCheckpointHostRequest,
+  type ReviewCheckpointHostResult,
 } from '../shared'
 import type { GitExecOptions, GitHostPort } from '../main/git/git-command-context'
 import { GitEngine } from '../main/git/git-engine'
@@ -70,9 +74,13 @@ async function handle(request: WorkerRequest): Promise<void> {
       raw['relatedWorktreeRoots'],
       root,
     )
-    const engine = new GitEngine(new ProxyGitHost(root.hostId), root)
+    const operationId =
+      typeof raw['operationId'] === 'string' ? raw['operationId'] : undefined
+    const engine = new GitEngine(new ProxyGitHost(root.hostId, operationId), root)
     let result: unknown
-    if (request.type === GIT_WORKTREES_TYPE) {
+    if (request.type === GIT_REVIEW_CHECKPOINT_TYPE) {
+      result = await engine.reviewCheckpoint(checkpointRequest(raw, root))
+    } else if (request.type === GIT_WORKTREES_TYPE) {
       result = await engine.worktrees(root)
     } else if (request.type === GIT_BRANCHES_TYPE) {
       result = await engine.branches(root)
@@ -143,6 +151,27 @@ async function handle(request: WorkerRequest): Promise<void> {
   }
 }
 
+function checkpointRequest(
+  raw: Record<string, unknown>,
+  root: HostPath,
+): ReviewCheckpointRequest {
+  const action = raw['action']
+  if (action === 'status' || action === 'capture' || action === 'clear')
+    return { root, action }
+  const change = raw['change']
+  if (
+    action !== 'diff' ||
+    typeof raw['checkpoint'] !== 'string' ||
+    !change ||
+    typeof change !== 'object' ||
+    !('path' in change) ||
+    !isRawPath(change.path)
+  )
+    throw new Error('Invalid checkpoint request')
+  assertProjectPath(decodePath(change.path), root)
+  return { ...raw, root } as unknown as ReviewCheckpointRequest
+}
+
 function decodeRelatedWorktreeRoots(value: unknown, root: HostPath): readonly HostPath[] {
   if (value === undefined) return []
   if (!Array.isArray(value) || value.length > 1_000 || !value.every(isRawPath)) {
@@ -156,7 +185,23 @@ function decodeRelatedWorktreeRoots(value: unknown, root: HostPath): readonly Ho
 }
 
 class ProxyGitHost implements GitHostPort {
-  constructor(readonly hostId: HostId) {}
+  constructor(
+    readonly hostId: HostId,
+    private readonly operationId?: string,
+  ) {}
+  reviewCheckpoint(
+    path: HostPath,
+    request: ReviewCheckpointHostRequest,
+  ): Promise<ReviewCheckpointHostResult> {
+    if (!this.operationId) throw new Error('Missing checkpoint operation grant')
+    return hostCall({
+      operation: 'reviewCheckpoint',
+      hostId: this.hostId,
+      path,
+      operationId: this.operationId,
+      request,
+    }) as Promise<ReviewCheckpointHostResult>
+  }
   exec(
     command: string,
     args: readonly string[],

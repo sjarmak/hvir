@@ -522,7 +522,7 @@ describe('Companion page terminal mirror', () => {
     expect(host.querySelector('#companion-terminal-text')).toBeNull()
   })
 
-  it('hiding the page disarms; pagehide disarms', async () => {
+  it('hiding the page disarms; pagehide suspends the page', async () => {
     await openMirror()
     await click(armButton())
     expect(armButton().dataset['armed']).toBe('true')
@@ -538,7 +538,8 @@ describe('Companion page terminal mirror', () => {
       await Promise.resolve()
     })
     await settle()
-    expect(armButton().dataset['armed']).toBe('false')
+    expect(host.querySelector('.companion-arm')).toBeNull()
+    expect(host.textContent).toContain('This page is suspended')
   })
 
   it('a terminal ended event disarms and shows the plain sentence', async () => {

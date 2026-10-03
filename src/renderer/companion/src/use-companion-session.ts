@@ -58,6 +58,7 @@ export interface CompanionSession {
   readonly arming: CompanionInputArmingControl
   readonly pair: (code: string) => Promise<void>
   readonly reconnect: () => void
+  readonly leave: () => void
   readonly select: (handle: SessionsTerminalHandle) => Promise<void>
   readonly back: () => void
   readonly resume: () => Promise<void>
@@ -89,16 +90,47 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
   const [feed] = useState(() => new CompanionMirrorFeed())
   const [navigationQueue] = useState(() => new CompanionNavigationQueue())
   const stream = useRef<CompanionEventStream>(undefined)
+  const openingController = useRef<AbortController>(undefined)
+  const lifecycle = useRef({ generation: 0, left: false })
   const mirrorHandle =
     state.terminal?.status === 'live' ? state.terminal.handle : undefined
   const arming = useInputArming(mirrorHandle)
 
+  const leave = useCallback(() => {
+    lifecycle.current = {
+      generation: lifecycle.current.generation + 1,
+      left: true,
+    }
+    stream.current?.close()
+    stream.current = undefined
+    openingController.current?.abort()
+    openingController.current = undefined
+    navigationQueue.clear()
+    feed.clear()
+    arming.disarm()
+    setState(EMPTY_COMPANION_PAGE)
+    setNotice(undefined)
+    setConnection(
+      client.paired()
+        ? { phase: 'disconnected', detail: 'This page is suspended' }
+        : { phase: 'unpaired' },
+    )
+  }, [client, feed, navigationQueue, arming])
+
   useEffect(() => {
-    if (!client.paired()) return
+    window.addEventListener('pagehide', leave)
+    return () => window.removeEventListener('pagehide', leave)
+  }, [leave])
+
+  useEffect(() => {
+    if (!client.paired() || lifecycle.current.left) return
     let active = true
+    const generation = lifecycle.current.generation
+    const controller = new AbortController()
+    openingController.current = controller
     feed.clear()
     const opening = client.openEvents((event) => {
-      if (!active) return
+      if (!active || lifecycle.current.left || lifecycle.current.generation !== generation) return
       if (event.type === 'terminal') feed.push(event.terminal)
       setState((current) => {
         switch (event.type) {
@@ -110,17 +142,26 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
             return applyCompanionTerminal(current, event.terminal)
         }
       })
-    })
+    }, controller.signal)
     opening.then(
       (opened) => {
-        if (!active) {
+        if (
+          !active ||
+          lifecycle.current.left ||
+          lifecycle.current.generation !== generation
+        ) {
           opened.close()
           return
         }
         stream.current = opened
         setConnection({ phase: 'connected', page: opened.page })
         void opened.done.then((end) => {
-          if (!active || end.kind === 'aborted') return
+          if (
+            !active ||
+            lifecycle.current.left ||
+            lifecycle.current.generation !== generation ||
+            end.kind === 'aborted'
+          ) return
           stream.current = undefined
           if (end.kind === 'closed' && end.reason === 'revoked') {
             client.forget()
@@ -134,7 +175,11 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
         })
       },
       (error: unknown) => {
-        if (!active) return
+        if (
+          !active ||
+          lifecycle.current.left ||
+          lifecycle.current.generation !== generation
+        ) return
         setConnection(
           error instanceof CompanionUnauthorizedError
             ? { phase: 'unpaired', error: PAIRING_EXPIRED }
@@ -144,6 +189,8 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
     )
     return () => {
       active = false
+      controller.abort()
+      if (openingController.current === controller) openingController.current = undefined
       stream.current?.close()
       stream.current = undefined
     }
@@ -165,14 +212,20 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
       verb: (page: string) => Promise<T>,
       refused: (failure: CompanionHttpFailure) => string = (failure) => failure.message,
     ): Promise<T | undefined> => {
-      if (page === undefined) {
+      const generation = lifecycle.current.generation
+      if (page === undefined || lifecycle.current.left) {
         setNotice('Not connected to the desktop')
         return undefined
       }
       setNotice(undefined)
       try {
-        return await verb(page)
+        const result = await verb(page)
+        return lifecycle.current.left || lifecycle.current.generation !== generation
+          ? undefined
+          : result
       } catch (error: unknown) {
+        if (lifecycle.current.left || lifecycle.current.generation !== generation)
+          return undefined
         if (error instanceof CompanionUnauthorizedError) {
           expire()
         } else {
@@ -188,12 +241,16 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
 
   const pair = useCallback(
     async (code: string) => {
+      const generation = lifecycle.current.generation
+      lifecycle.current.left = false
       try {
         await client.pair(code)
       } catch (error: unknown) {
+        if (lifecycle.current.left || lifecycle.current.generation !== generation) return
         setConnection({ phase: 'unpaired', error: describe(error) })
         return
       }
+      if (lifecycle.current.left || lifecycle.current.generation !== generation) return
       setState(EMPTY_COMPANION_PAGE)
       setConnection({ phase: 'connecting' })
       setAttempt((count) => count + 1)
@@ -202,6 +259,10 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
   )
 
   const reconnect = useCallback(() => {
+    lifecycle.current = {
+      generation: lifecycle.current.generation + 1,
+      left: false,
+    }
     setState(EMPTY_COMPANION_PAGE)
     setNotice(undefined)
     setConnection({ phase: 'connecting' })
@@ -213,9 +274,12 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
   // lease's `ended` and the new `opened` never replays the old screen.
   const select = useCallback(
     async (handle: SessionsTerminalHandle) => {
+      if (lifecycle.current.left) return
+      const generation = lifecycle.current.generation
       feed.clear()
       setState((current) => beginCompanionSelection(current, handle))
       const transcript = await run((current) => client.select(current, handle))
+      if (lifecycle.current.left || lifecycle.current.generation !== generation) return
       setState((current) =>
         transcript
           ? selectCompanionRow(current, transcript)
@@ -311,15 +375,23 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
   // scaled view already draws. Either way the rejection tells the fit to ask again.
   const viewport = useCallback(
     async (cols: number, rows: number) => {
-      if (page === undefined || mirrorHandle === undefined) {
+      const generation = lifecycle.current.generation
+      if (
+        page === undefined ||
+        mirrorHandle === undefined ||
+        lifecycle.current.left
+      ) {
         throw new Error('No mirror is live')
       }
       try {
         await client.viewport(page, mirrorHandle, { cols, rows })
       } catch (error: unknown) {
+        if (lifecycle.current.left || lifecycle.current.generation !== generation)
+          return
         if (error instanceof CompanionUnauthorizedError) expire()
         throw error
       }
+      if (lifecycle.current.left || lifecycle.current.generation !== generation) return
     },
     [client, page, mirrorHandle, expire],
   )
@@ -332,6 +404,7 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
     arming,
     pair,
     reconnect,
+    leave,
     select,
     back,
     resume,

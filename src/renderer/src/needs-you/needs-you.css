@@ -1,0 +1,153 @@
+.needs-you-view {
+  min-height: 0;
+  overflow: auto;
+  padding: 20px;
+  background: var(--app-bg);
+  color: var(--text);
+  font-size: calc(12px * var(--hvir-interface-scale));
+}
+
+.needs-you-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.needs-you-header h1 {
+  margin: 0;
+  font-size: calc(20px * var(--hvir-interface-scale));
+}
+
+.needs-you-header p,
+.needs-you-scope,
+.needs-you-reads {
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.needs-you-scope {
+  max-width: 75ch;
+  margin-bottom: 24px;
+}
+
+.needs-you-view button {
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.needs-you-view button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.needs-you-view :is(button, a, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.needs-you-view :is(button, a):hover:not(:disabled) {
+  color: var(--text-strong);
+  background: var(--surface-hover);
+}
+
+.needs-you-list {
+  padding: 0;
+  list-style: none;
+}
+
+.needs-you-list li {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr) minmax(120px, 25%);
+  gap: 6px 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.needs-you-list :is(button, a) {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-strong);
+  text-align: left;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.needs-you-source,
+.needs-you-action,
+.needs-you-context {
+  color: var(--text-muted);
+  font-size: calc(11px * var(--hvir-interface-scale));
+}
+
+.needs-you-action {
+  flex-shrink: 0;
+}
+
+.needs-you-context {
+  grid-column: 2 / -1;
+  overflow-wrap: anywhere;
+}
+
+.needs-you-reason {
+  color: var(--text);
+}
+
+.needs-you-error {
+  color: var(--danger-text);
+}
+
+.needs-you-pagination {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.needs-you-reads {
+  margin-top: 24px;
+  overflow-wrap: anywhere;
+}
+
+.needs-you-reads summary {
+  cursor: pointer;
+}
+
+.needs-you-reads div {
+  margin-top: 14px;
+}
+
+.needs-you-reads p {
+  margin: 4px 0;
+}
+
+@media (max-width: 680px) {
+  .needs-you-view {
+    padding: 12px;
+  }
+
+  .needs-you-list li {
+    grid-template-columns: 48px minmax(0, 1fr);
+  }
+
+  .needs-you-reason,
+  .needs-you-context {
+    grid-column: 2;
+  }
+
+  .needs-you-list :is(button, a) {
+    flex-direction: column;
+    gap: 4px;
+  }
+}

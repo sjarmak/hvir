@@ -17,9 +17,17 @@ import {
   documentReviewInsertContract,
 } from '../harness-composer-contracts'
 
-const CLAUDE_IDENTITIES = [1, 3, 4, 5].map((account) => ({
-  id: `claude-${account}`,
-  displayName: `claude-${account}`,
+const CLAUDE_IDENTITY_DESCRIPTORS = [
+  { id: 'claude-1', displayName: 'claude-1', configHomeSegment: 'account1' },
+  { id: 'claude-2', displayName: 'claude-2', configHomeSegment: 'account2' },
+  { id: 'claude-3', displayName: 'claude-3', configHomeSegment: 'account3' },
+  { id: 'claude-4', displayName: 'claude-4', configHomeSegment: 'account4' },
+  { id: 'claude-5', displayName: 'claude-5', configHomeSegment: 'account5' },
+  { id: 'claude-omni', displayName: 'claude-omni', configHomeSegment: 'account-omni' },
+]
+const CLAUDE_IDENTITIES = CLAUDE_IDENTITY_DESCRIPTORS.map(({ id, displayName }) => ({
+  id,
+  displayName,
 }))
 
 const CLAUDE_CONTEXT_PRESSURE: HarnessContextPressurePolicy = {
@@ -54,9 +62,8 @@ export const claudeCodeProvider: HarnessProvider = {
     artifactPathBindings: [],
     identities: CLAUDE_IDENTITIES,
     async applyIdentity(host, identityId, spec) {
-      const identity = CLAUDE_IDENTITIES.find(({ id }) => id === identityId)
+      const identity = CLAUDE_IDENTITY_DESCRIPTORS.find(({ id }) => id === identityId)
       if (!identity) throw new Error(`Unknown Claude identity '${identityId}'`)
-      const account = identityId.slice('claude-'.length)
       const result = await host.exec('printenv', ['HOME'], {
         loginShell: true,
         timeout: 5_000,
@@ -66,7 +73,7 @@ export const claudeCodeProvider: HarnessProvider = {
       if (result.code !== 0 || !home.startsWith('/')) {
         throw new Error('Claude identity requires an absolute home directory')
       }
-      const configDirectory = `${home}/.claude-homes/account${account}/.claude`
+      const configDirectory = `${home}/.claude-homes/${identity.configHomeSegment}/.claude`
       return {
         spec: {
           ...spec,

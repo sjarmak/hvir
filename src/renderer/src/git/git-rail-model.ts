@@ -12,7 +12,7 @@ import {
   gitUpstreamSummary,
 } from './git-sync-status'
 
-export type GitRailView = 'changes' | 'history'
+export type GitRailView = 'changes' | 'history' | 'review'
 export type GitSyncOperation = 'fetch' | 'pull'
 
 export interface GitRailModel {

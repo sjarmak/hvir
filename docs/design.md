@@ -131,6 +131,7 @@ highlighting without turning hvir into an IDE.
 > Lifecycle: Partially superseded
 > Superseded by: [ADR-021](adr/ADR-021-system-git-dirty-navigation-safety.md) | partial | Clean-worktree navigation prerequisite and handing every dirty branch switch or pull to the terminal.
 > Superseded by: [ADR-963](adr/ADR-963-architecture-review-history-and-agent-worktrees.md) | partial | Creating no branch at all; the architecture review creates one hvir/architecture/ branch per agent launch.
+> Superseded by: [ADR-970](adr/ADR-970-explicit-review-checkpoint.md) | partial | Git mutation scope, for explicit private review-checkpoint object/ref writes only.
 
 System Git runs behind an off-thread engine and a main-owned `ProjectHost` broker; the few
 mutations hvir exposes are exact, bounded navigation operations.
@@ -765,6 +766,38 @@ and symbolic links and submodules remain disclosed exclusions.
 PR rows open or reopen an existing workspace through the current navigation owner after matching
 its host-qualified checkout and configured upstream to the PR source repository and branch.
 
+
+### [ADR-969 — Demand-scoped Needs you navigation](adr/ADR-969-demand-scoped-needs-you-navigation.md)
+
+> Lifecycle: Active
+
+A foreground-only destination combines existing session attention with bounded read-only
+Beads and PR snapshots across registered, connected workspaces. Source owners retain
+classification and navigation authority; launch profile identity is not runtime provenance.
+
+### [ADR-970 — One explicit review checkpoint per workspace](adr/ADR-970-explicit-review-checkpoint.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-005](adr/ADR-005-system-git-engine.md) | partial | Git mutation scope, for explicit private review-checkpoint object/ref writes only.
+
+Explicit user actions save or clear one private Git tree baseline without changing HEAD,
+branches, working files, or staging; foreground comparison remains read-only.
+
+### [ADR-971 — Selected hosted pull-request feedback handoff](adr/ADR-971-selected-hosted-pr-feedback.md)
+
+> Lifecycle: Active
+
+The active-workspace GitHub owner supplies bounded, explicitly requested review threads.
+Selected feedback remains untrusted text in an exact preview with clipboard-only handoff;
+workspace, pull-request, and head drift invalidate its selection.
+
+### [ADR-972 — Explicit Companion instance links](adr/ADR-972-companion-instance-links.md)
+
+> Lifecycle: Active
+
+Named origin-local links navigate between independently paired Companion pages.
+Current endpoint identity stays visible; leaving releases demand and disarms input.
+No shared credentials, cross-origin reads, discovery, or combined view are introduced.
 
 ## 5. Architecture
 

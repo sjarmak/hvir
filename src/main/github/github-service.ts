@@ -5,6 +5,8 @@ import {
   type PullsProbeResponse,
   type PullsRequest,
   type PullsResponse,
+  type PullDetailRequest,
+  type PullDetailResponse,
   type PullsUnavailable,
   type PullCheckoutsRequest,
   type PullCheckoutsResponse,
@@ -19,14 +21,16 @@ import {
   parseRepoView,
   parseBranchUpstreams,
   githubRemoteRepositoryMap,
+  parsePullDetailOutput,
 } from './github-parse'
 import { parseWorktreeList } from '../git/git-parsers'
-import { pullsQueryArgs } from './github-query'
+import { pullDetailQueryArgs, pullsQueryArgs } from './github-query'
 
 const GH_TIMEOUT_MS = 20_000
 const GIT_TIMEOUT_MS = 5_000
 const REPO_TTL_MS = 10 * 60_000
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024
+const DETAIL_MAX_OUTPUT_BYTES = 1024 * 1024
 const GH_MISSING: GhResult = {
   ok: false,
   unavailable: {
@@ -59,6 +63,7 @@ export class GitHubService {
     { readonly repo: string; readonly at: number }
   >()
   private readonly now: () => number
+  private readonly details = new Map<string, Promise<PullDetailResponse>>()
 
   constructor(private readonly deps: GitHubServiceDeps) {
     this.now = deps.now ?? (() => Date.now())
@@ -70,7 +75,94 @@ export class GitHubService {
   }
 
   async pulls(req: PullsRequest): Promise<PullsResponse> {
-    const { host, root } = this.activeProject(req.root)
+    return this.pullsForProject(req, this.activeProject(req.root))
+  }
+
+  async detail(req: PullDetailRequest): Promise<PullDetailResponse> {
+    const project = this.activeProject(req.root)
+    if (
+      !Number.isInteger(req.number) ||
+      req.number < 1 ||
+      typeof req.repo !== 'string' ||
+      req.repo.trim() === ''
+    ) {
+      return {
+        available: false,
+        reason: 'error',
+        message: 'Invalid pull request identity',
+      }
+    }
+    if (typeof req.headOid !== 'string' || req.headOid.trim() === '') {
+      return {
+        available: false,
+        reason: 'error',
+        message: 'Pull request head identity is unknown',
+      }
+    }
+    const key = `${project.root.hostId}\u0000${project.root.path}\u0000${req.repo.toLowerCase()}\u0000${req.number}\u0000${req.headOid}`
+    const existing = this.details.get(key)
+    if (existing !== undefined) return existing
+    const pending = this.readDetail(req, project)
+    this.details.set(key, pending)
+    try {
+      return await pending
+    } finally {
+      if (this.details.get(key) === pending) this.details.delete(key)
+    }
+  }
+
+  private async readDetail(
+    req: PullDetailRequest,
+    project: { readonly host: ProjectHost; readonly root: HostPath },
+  ): Promise<PullDetailResponse> {
+    const { host, root } = project
+    const resolved = await this.resolveRepo(host, root)
+    if (!resolved.ok) return resolved.unavailable
+    if (resolved.repo.toLowerCase() !== req.repo.toLowerCase()) {
+      return {
+        available: false,
+        reason: 'error',
+        message: 'Pull request repository is not active',
+      }
+    }
+    const result = await this.gh(
+      host,
+      root,
+      pullDetailQueryArgs(resolved.repo, req.number),
+      DETAIL_MAX_OUTPUT_BYTES,
+    )
+    if (!result.ok) return result.unavailable
+    this.activeProject(req.root)
+    const current = await this.resolveRepo(host, root, true)
+    if (!current.ok) return current.unavailable
+    this.activeProject(req.root)
+    if (current.repo.toLowerCase() !== resolved.repo.toLowerCase()) {
+      return {
+        available: false,
+        reason: 'error',
+        message: 'GitHub repository changed while loading details',
+      }
+    }
+    try {
+      const detail = parsePullDetailOutput(result.stdout, current.repo, req.number)
+      if (detail.headOid === undefined || detail.headOid !== req.headOid) {
+        return {
+          available: false,
+          reason: 'error',
+          message: 'Pull request changed while loading details',
+        }
+      }
+      return detail
+    } catch (reason) {
+      return { available: false, reason: 'error', message: errorMessage(reason) }
+    }
+  }
+
+  async pullsForProject(
+    _req: PullsRequest,
+    project: { readonly host: ProjectHost; readonly root: HostPath },
+  ): Promise<PullsResponse> {
+    const { host, root } = project
     const repo = await this.resolveRepo(host, root)
     if (!repo.ok) return repo.unavailable
     const [branch, localRepos] = await Promise.all([
@@ -167,10 +259,14 @@ export class GitHubService {
     return project
   }
 
-  private async resolveRepo(host: ProjectHost, root: HostPath): Promise<RepoResult> {
+  private async resolveRepo(
+    host: ProjectHost,
+    root: HostPath,
+    refresh = false,
+  ): Promise<RepoResult> {
     const key = `${root.hostId}\u0000${root.path}`
     const cached = this.repos.get(key)
-    if (cached !== undefined && this.now() - cached.at < REPO_TTL_MS) {
+    if (!refresh && cached !== undefined && this.now() - cached.at < REPO_TTL_MS) {
       return { ok: true, repo: cached.repo }
     }
     const result = await this.gh(host, root, ['repo', 'view', '--json', 'nameWithOwner'])
@@ -230,6 +326,7 @@ export class GitHubService {
     host: ProjectHost,
     root: HostPath,
     args: readonly string[],
+    maxBuffer = MAX_OUTPUT_BYTES,
   ): Promise<GhResult> {
     let result
     try {
@@ -238,7 +335,7 @@ export class GitHubService {
         loginShell: true,
         lane: 'background',
         timeout: GH_TIMEOUT_MS,
-        maxBuffer: MAX_OUTPUT_BYTES,
+        maxBuffer,
       })
     } catch (reason) {
       const message = errorMessage(reason)

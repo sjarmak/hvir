@@ -46,6 +46,8 @@ import type { SessionsObservationPort } from '../sessions/sessions-observation-p
 import type { SessionsUsageObservationPort } from '../sessions/sessions-usage-observation-port'
 import type { SessionsTranscriptPort } from '../sessions/sessions-transcript-port'
 import type { SessionsAttachTicketRegistry } from '../sessions/sessions-attach-tickets'
+import type { NeedsYouService } from '../needs-you/needs-you-service'
+import type { ReviewCheckpointCoordinator } from '../git/review-checkpoint-coordinator'
 
 export type EmitRendererEvent = <E extends IpcEventChannel>(
   channel: E,
@@ -209,7 +211,9 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly systemClipboard?: SystemClipboardPort
   readonly beads: Pick<BeadsService, 'list' | 'probe'>
   readonly gascity: Pick<GasCityService, 'crew' | 'probe' | 'analyticsConfig'>
-  readonly github: Pick<GitHubService, 'pulls' | 'probe' | 'checkouts'>
+  readonly github: Pick<GitHubService, 'pulls' | 'probe' | 'checkouts' | 'detail'>
+  readonly needsYou: Pick<NeedsYouService, 'acquire' | 'snapshot' | 'release'>
+  readonly reviewCheckpoint: Pick<ReviewCheckpointCoordinator, 'request' | 'cancel'>
   /** Companion settings (ADR-949); the view it answers with carries no secret. */
   readonly companion: Pick<
     CompanionSettingsPort,

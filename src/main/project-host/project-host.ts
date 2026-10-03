@@ -46,7 +46,7 @@ export interface ExecOptions {
   /** Remove inherited variables before applying `env`. */
   readonly unsetEnv?: readonly string[]
   /** Written to the child's stdin before the stream is exposed. */
-  readonly input?: string
+  readonly input?: Uint8Array | string
   /**
    * Keep stdin open for `ExecStreamHandle.write()` / `.end()`.
    *
@@ -323,6 +323,7 @@ export interface ProjectHost {
   connectLoopback(endpoint: LoopbackEndpoint): Promise<Duplex>
 
   readFile(path: HostPath, opts?: ReadFileOptions): Promise<Buffer>
+  readlink(path: HostPath): Promise<Buffer>
   readTextFile(
     path: HostPath,
     encoding?: BufferEncoding,

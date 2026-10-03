@@ -83,19 +83,30 @@ export function createProjectFixtureCommands(options: {
     | 'pullGit'
     | 'respondSshPrompt'
   > = {
-    getProject: () =>
-      projectFixture.get().root.hostId === smokeRemoteHost.hostId
-        ? { host: smokeRemoteHost, root: smokeRemoteRoot }
-        : { host, root: smokeRoot },
+    getProject: () => {
+      const state = projectFixture.get()
+      return state.root.hostId === smokeRemoteHost.hostId
+        ? { host: smokeRemoteHost, root: state.root }
+        : { host, root: state.root }
+    },
     getHost: (hostId) => (hostId === smokeRemoteHost.hostId ? smokeRemoteHost : host),
     connectedHosts: () => [host],
-    getRegisteredWorkspaceRoot: (root) =>
-      hostPathEquals(root, smokeRoot) ||
-      hostPathEquals(root, smokeCloseableRoot) ||
-      hostPathEquals(root, smokeWebSwitchRoot) ||
-      hostPathEquals(root, smokeRemoteRoot)
+    getRegisteredWorkspaceRoot: (root) => {
+      const state = projectFixture.get()
+      const registeredRoots = state.projects.flatMap((project) => [
+        project.registeredRoot,
+        ...project.workspaces.map((workspace) => workspace.root),
+      ])
+      return [
+        smokeRoot,
+        smokeCloseableRoot,
+        smokeWebSwitchRoot,
+        smokeRemoteRoot,
+        ...registeredRoots,
+      ].some((candidate) => hostPathEquals(candidate, root))
         ? root
-        : undefined,
+        : undefined
+    },
     revealLocalEntry: (path) => revealedEntries.push(path),
     getProjectState: () => projectFixture.get(),
     listHosts: smokeHostOptions,

@@ -34,6 +34,7 @@ import { WorkbenchHealthControl } from '../health/WorkbenchHealthControl'
 import { ClosedWorktreesDialog, CloseWorkspaceDialog } from './WorkspaceCatalogDialogs'
 import { RemoveUnfinishedHandoffDialog } from './UnfinishedHandoffs'
 import { useUnfinishedHandoffs } from './use-unfinished-handoffs'
+import { ApplicationDestinationTabs } from './ApplicationDestinationTabs'
 
 interface ProjectsBarProps {
   readonly state: ProjectState
@@ -68,6 +69,8 @@ interface ProjectsBarProps {
   readonly onSettings: () => void
   readonly sessionsActive: boolean
   readonly onSessions: () => void
+  readonly needsYouActive?: boolean
+  readonly onNeedsYou?: () => void
 }
 
 export function ProjectsBar({
@@ -94,6 +97,8 @@ export function ProjectsBar({
   onSettings,
   sessionsActive,
   onSessions,
+  needsYouActive = false,
+  onNeedsYou = () => undefined,
 }: ProjectsBarProps): ReactElement {
   const [pruneProjectId, setPruneProjectId] = useState<string>()
   const [closeProjectId, setCloseProjectId] = useState<string>()
@@ -206,16 +211,14 @@ export function ProjectsBar({
           aria-label="Projects"
           data-diagnostic-capture="project-navigation"
         >
-          <button
-            type="button"
-            className={`sessions-destination${sessionsActive ? ' active' : ''}`}
-            aria-current={sessionsActive ? 'page' : undefined}
-            onClick={onSessions}
-          >
-            Sessions
-          </button>
+          <ApplicationDestinationTabs
+            sessionsActive={sessionsActive}
+            onSessions={onSessions}
+            needsYouActive={needsYouActive}
+            onNeedsYou={onNeedsYou}
+          />
           {state.projects.map((project) => {
-            const active = !sessionsActive && project.id === state.activeProjectId
+            const active = !sessionsActive && !needsYouActive && project.id === state.activeProjectId
             const remote = project.registeredRoot.hostId !== 'local'
             const workspaceIds = project.workspaces.map((workspace) => workspace.id)
             const actionable = aggregateActionableWorkspaceAttention(
@@ -336,7 +339,7 @@ export function ProjectsBar({
           </button>
           <span className="projects-bar-spacer" />
         </nav>
-        {activeProject && showWorkspacesBar && !sessionsActive ? (
+        {activeProject && showWorkspacesBar && !sessionsActive && !needsYouActive ? (
           <nav
             className="workspaces-bar"
             aria-label="Workspaces"
@@ -344,7 +347,7 @@ export function ProjectsBar({
           >
             {openWorkspaces.map((workspace) => (
               <div
-                className={`workspace-tab${!sessionsActive && workspace.id === state.activeWorkspaceId ? ' active' : ''}${workspace.missing ? ' missing' : ''}`}
+                className={`workspace-tab${!sessionsActive && !needsYouActive && workspace.id === state.activeWorkspaceId ? ' active' : ''}${workspace.missing ? ' missing' : ''}`}
                 key={workspace.id}
                 title={workspaceStatusTitle(workspace)}
                 onMouseDown={(event) => {

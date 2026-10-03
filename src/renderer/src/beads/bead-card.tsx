@@ -9,6 +9,7 @@ import {
 import { isBeadId, type HoneycombLinkConfig } from '../../../shared'
 import type { BeadStore } from './analytics-links'
 import { BeadTraceLink } from './BeadTraceLink'
+import { BeadEvalDetail } from './BeadEvalDetail'
 import type { BeadCard } from './beads-model'
 
 /**
@@ -127,6 +128,7 @@ export function beadDetail(
         {issue.closedAt ? <span>closed {formatDate(issue.closedAt)}</span> : null}
       </div>
       {onBeadAction ? beadActions(issue.id, issue.status, onBeadAction, disabledHint) : null}
+      <BeadEvalDetail metadata={issue.metadata} />
       {card.nextUnblock ? (
         <div className="beads-field">
           <span className="beads-field-label">Next unblock</span>

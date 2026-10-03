@@ -44,14 +44,27 @@ export function RailPanels({
   rail,
   session,
   layout,
+  focusBeadId,
+  onFocusHandled,
+  onFocusUnavailable,
 }: {
   readonly rail: RailExtensions
   readonly session: RailSession
   readonly layout: RailLayout
+  readonly focusBeadId?: string
+  readonly onFocusHandled?: (id: string) => void
+  readonly onFocusUnavailable?: (id: string) => void
 }): ReactElement {
   return (
     <>
-      <BeadsRailPanel beads={rail.beads} session={session} layout={layout} />
+      <BeadsRailPanel
+        beads={rail.beads}
+        session={session}
+        layout={layout}
+        focusBeadId={focusBeadId}
+        onFocusHandled={onFocusHandled}
+        onFocusUnavailable={onFocusUnavailable}
+      />
       <GitHubRailPanel github={rail.github} session={session} layout={layout} />
     </>
   )

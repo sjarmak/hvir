@@ -65,6 +65,20 @@ export class SmokeCleanup {
   }
 }
 
+export async function runSmokeCleanup(
+  cleanup: SmokeCleanup,
+  scenarioFailed: boolean,
+  onFailure: (error: unknown) => void,
+): Promise<void> {
+  try {
+    await cleanup.run()
+  } catch (error) {
+    onFailure(error)
+    console.error('HVIR_SMOKE_CLEANUP_FAIL', error)
+    if (!scenarioFailed) throw error
+  }
+}
+
 export async function runCleanupTaskWithinDeadline(
   task: SmokeCleanupTask,
   timeoutMs = DEFAULT_CLEANUP_TASK_TIMEOUT_MS,

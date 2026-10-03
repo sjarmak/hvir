@@ -1,12 +1,21 @@
-import { hostPath, hostPathEquals, type HostPath } from '../../shared'
+import {
+  containsHostPath,
+  hostPath,
+  hostPathEquals,
+  type HostPath,
+  type ProjectState,
+} from '../../shared'
 import type { GitWorkerProtocol } from '../../shared/worker-protocol'
 import type { ArchitectureWorktreePort } from '../architecture-review/handoff'
 import { hvirWorktreeLocation, hvirWorktreeTarget } from '../git/hvir-worktrees'
 import { GitMutationAuthorization } from '../git/mutation-authorization'
 import type { AddedWorktree, HeldWorktree } from '../git/mutation-coordinator'
 import { GitWorkerHostRouter } from '../git/worker-host-router'
+import { ReviewCheckpointCoordinator } from '../git/review-checkpoint-coordinator'
+import { ReviewCheckpointHost } from '../git/review-checkpoint-host'
 import { gitMutationWorker, type GitWorker } from '../git/worker-ports'
 import type { ProjectHost } from '../project-host'
+import { RendererResourceScopes } from '../renderer-resource-scopes'
 import { createWorkerClient, workerPath, type WorkerClient } from '../worker-host'
 import type { SmokeCleanup } from './cleanup'
 
@@ -18,11 +27,27 @@ export function createSmokeGitWorker(
   host: ProjectHost,
   root: HostPath,
   cleanup: SmokeCleanup,
+  options?: {
+    readonly projectState?: () => ProjectState
+    readonly resources?: RendererResourceScopes
+  },
 ): {
   readonly git: WorkerClient<GitWorkerProtocol>
   readonly worktrees: ArchitectureWorktreePort
+  readonly reviewCheckpoint: ReviewCheckpointCoordinator
 } {
-  const { authorizations, router } = createSmokeGitAuthority(host, root, cleanup)
+  const checkpoints = cleanup.acquire(
+    'review checkpoint host',
+    () => new ReviewCheckpointHost(),
+    (owned) => owned.dispose(),
+  )
+  const { authorizations, router } = createSmokeGitAuthority(
+    host,
+    root,
+    cleanup,
+    checkpoints,
+    options?.projectState,
+  )
   const git = cleanup.acquire(
     'Git worker',
     () =>
@@ -34,7 +59,18 @@ export function createSmokeGitWorker(
     (worker) => worker.dispose(),
   )
   const worktrees = smokeArchitectureWorktrees(host, root, git, authorizations, cleanup)
-  return { git, worktrees }
+  const reviewCheckpoint = cleanup.acquire(
+    'review checkpoint coordinator',
+    () =>
+      new ReviewCheckpointCoordinator({
+        registry: smokeCheckpointRegistry(host, root, options?.projectState) as never,
+        worker: git,
+        checkpoints,
+        resources: options?.resources ?? new RendererResourceScopes(),
+      }),
+    (coordinator) => coordinator.dispose(),
+  )
+  return { git, worktrees, reviewCheckpoint }
 }
 
 const SMOKE_PROJECT_ID = 'smoke-project'
@@ -45,6 +81,8 @@ function createSmokeGitAuthority(
   host: ProjectHost,
   root: HostPath,
   cleanup: SmokeCleanup,
+  checkpoints: ReviewCheckpointHost,
+  projectState?: () => ProjectState,
 ): {
   readonly authorizations: GitMutationAuthorization
   readonly router: GitWorkerHostRouter
@@ -57,11 +95,56 @@ function createSmokeGitAuthority(
   const router = new GitWorkerHostRouter({
     authorizations,
     authority: {
-      authorityForPath: (hostId) =>
-        hostId === host.hostId ? { projectId: SMOKE_PROJECT_ID, host, root } : undefined,
+      authorityForPath: (hostId, path) =>
+        hostId === host.hostId
+          ? projectAuthority(host, root, path, projectState?.())
+          : undefined,
     },
+    checkpoints,
   })
   return { authorizations, router }
+}
+
+function projectAuthority(
+  host: ProjectHost,
+  root: HostPath,
+  path: string,
+  state?: ProjectState,
+) {
+  const candidate = hostPath(host.hostId, path)
+  if (state && containsHostPath(state.root, candidate))
+    return { projectId: state.activeProjectId, host, root: state.root }
+  if (containsHostPath(root, candidate))
+    return { projectId: SMOKE_PROJECT_ID, host, root }
+  return undefined
+}
+
+function smokeCheckpointRegistry(
+  host: ProjectHost,
+  root: HostPath,
+  projectState?: () => ProjectState,
+) {
+  const fallback = {
+    projectId: SMOKE_PROJECT_ID,
+    workspaceId: SMOKE_WORKSPACE_ID,
+    root,
+    host,
+  }
+  return {
+    get active() {
+      const state = projectState?.()
+      const activeWorkspaceId = state?.activeWorkspaceId
+      const project = state?.projects.find(
+        (candidate) => candidate.id === state.activeProjectId,
+      )
+      const workspace = project?.workspaces.find(
+        (candidate) => candidate.id === activeWorkspaceId,
+      )
+      return project && workspace
+        ? { projectId: project.id, workspaceId: workspace.id, root: workspace.root, host }
+        : fallback
+    },
+  }
 }
 
 /**

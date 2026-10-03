@@ -3,14 +3,16 @@ import { createWorkerClient, workerPath, type WorkerClient } from '../worker-hos
 import type { WorkbenchRuntime } from '../workbench-runtime'
 import type { GitMutationAuthorization } from './mutation-authorization'
 import { GitWorkerHostRouter, type GitWorkerAuthorityPort } from './worker-host-router'
+import type { ReviewCheckpointHost } from './review-checkpoint-host'
 
 /** Compose the Git worker with its host broker and application-owned lifetime. */
 export function ownGitWorker(
   runtime: Pick<WorkbenchRuntime, 'own'>,
   authority: GitWorkerAuthorityPort,
   authorizations: GitMutationAuthorization,
+  checkpoints?: ReviewCheckpointHost,
 ): WorkerClient<GitWorkerProtocol> {
-  const router = new GitWorkerHostRouter({ authority, authorizations })
+  const router = new GitWorkerHostRouter({ authority, authorizations, checkpoints })
   return runtime.own(
     'Git worker',
     createWorkerClient<GitWorkerProtocol>(

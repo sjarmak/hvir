@@ -19,6 +19,7 @@ import type { ProjectHost } from '../project-host'
 import { waitFor } from './attention-away-probe'
 import { expectStatus, openEvents, send } from './companion-http'
 import type { SmokeCompanion } from './companion-smoke'
+import { verifyCompanionSwitching } from './companion-switching'
 
 export const COMPANION_SMOKE_SESSION_ID = 'companion-smoke-session'
 const COMPANION_SMOKE_TITLE = 'Companion smoke session'
@@ -26,8 +27,7 @@ const STEP_TIMEOUT_MS = 10_000
 
 export interface CompanionScenarioOptions {
   readonly companion: SmokeCompanion
-  /** Lists the built renderer bundle, so the wasm module is found by its hashed name. */
-  readonly bundle: Pick<ProjectHost, 'readdir'>
+  readonly bundle: Pick<ProjectHost, 'readdir' | 'writeFile'>
   readonly root: HostPath
   readonly providerId: HarnessProviderId
   readonly addRetained: (root: HostPath, session: TerminalRecoverySession) => void
@@ -93,6 +93,7 @@ export async function verifyCompanionScenario(
   await settings.revokePairing()
   const refused = await send(port, 'GET', '/api/sessions?page=x', { headers: bearer })
   expectStatus(refused, 401, 'GET /api/sessions after revoke')
+  await verifyCompanionSwitching(companion, options.bundle)
   const unexpected = companion.diagnostics.filter(
     (diagnostic) =>
       diagnostic.kind === 'listener-failed' || diagnostic.kind === 'request-failure',
@@ -105,7 +106,7 @@ export async function verifyCompanionScenario(
     mirrorInputAllowed: false,
   })
   await waitFor(() => !server.listening, STEP_TIMEOUT_MS, 'listener close')
-  return `port ${port}, ${assets} assets, ${wasm} served as wasm, ${snapshot.rows.length} rows, leases released, revoke refused`
+  return `port ${port}, ${assets} assets, ${wasm} served as wasm, ${snapshot.rows.length} rows, leases released, revoke refused, two-origin phone switching verified`
 }
 
 function requestedPort(): number {

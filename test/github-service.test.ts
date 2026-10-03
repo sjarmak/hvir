@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { GitHubService } from '../src/main/github/github-service'
 import { PULLS_QUERY, pullsQueryArgs } from '../src/main/github/github-query'
+import { parsePullDetailOutput } from '../src/main/github/github-parse'
 import type { ExecOptions, ProjectHost } from '../src/main/project-host'
 import { asHostId, hostPath, type ExecResult } from '../src/shared'
 
@@ -343,5 +344,175 @@ describe('pullsQueryArgs', () => {
     expect(flagFor('branch=@feat')).toBe('-f')
     expect(flagFor('hasBranch=true')).toBe('-F')
     expect(args).toContain('mine=repo:acme/widgets is:pr is:open author:@me')
+  })
+})
+
+describe('GitHubService.detail', () => {
+  it('reads bounded selected feedback and preserves reviewed identity', async () => {
+    const detailOutput = JSON.stringify({
+      data: {
+        repository: {
+          pullRequest: {
+            number: 12,
+            title: 'Panel',
+            url: 'https://github.com/acme/widgets/pull/12',
+            headRefOid: 'head-12',
+            reviewThreads: {
+              pageInfo: { hasNextPage: false },
+              nodes: [
+                {
+                  id: 'thread-1',
+                  isResolved: false,
+                  isOutdated: true,
+                  path: 'src/panel.ts',
+                  line: 8,
+                  comments: {
+                    pageInfo: { hasNextPage: false },
+                    nodes: [
+                      {
+                        id: 'comment-1',
+                        body: 'Please revisit this',
+                        author: { login: 'reviewer' },
+                        commit: { oid: 'head-12' },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    })
+    const { host, exec } = fakeHost((command, args) =>
+      command === 'gh' && args[1] === 'graphql'
+        ? execResult(0, detailOutput)
+        : defaultResponder(command, args),
+    )
+    const response = await service(host).detail({
+      root: ROOT,
+      repo: 'acme/widgets',
+      number: 12,
+      headOid: 'head-12',
+    })
+    expect(response).toMatchObject({
+      available: true,
+      repo: 'acme/widgets',
+      headOid: 'head-12',
+      threads: [{ id: 'thread-1', isOutdated: true, reviewedCommitOid: 'head-12' }],
+      payloadTruncated: false,
+    })
+    const graphql = exec.mock.calls.find(
+      (call) => call[0] === 'gh' && call[1][1] === 'graphql',
+    )
+    expect(graphql?.[2]?.maxBuffer).toBe(1024 * 1024)
+  })
+
+  it('only discloses incomplete replies when page metadata says they are incomplete', () => {
+    const comments = Array.from({ length: 20 }, (_, index) => ({
+      id: `comment-${index}`,
+      body: 'feedback',
+    }))
+    const output = JSON.stringify({
+      data: {
+        repository: {
+          pullRequest: {
+            number: 12,
+            title: 'Panel',
+            url: 'https://github.com/acme/widgets/pull/12',
+            headRefOid: 'head-12',
+            reviewThreads: {
+              pageInfo: { hasNextPage: false },
+              nodes: [
+                {
+                  id: 'thread-1',
+                  comments: { pageInfo: { hasNextPage: false }, nodes: comments },
+                },
+              ],
+            },
+          },
+        },
+      },
+    })
+    const complete = parsePullDetailOutput(output, 'acme/widgets', 12)
+    expect(complete.payloadTruncated).toBe(false)
+    const incomplete = parsePullDetailOutput(
+      output.replace(/("comments":\{"pageInfo":\{"hasNextPage":)false/, '$1true'),
+      'acme/widgets',
+      12,
+    )
+    expect(incomplete.payloadTruncated).toBe(true)
+    const missingPageInfo = parsePullDetailOutput(
+      output.replace(
+        '"reviewThreads":{"pageInfo":{"hasNextPage":false},"nodes"',
+        '"reviewThreads":{"nodes"',
+      ),
+      'acme/widgets',
+      12,
+    )
+    expect(missingPageInfo.payloadTruncated).toBe(true)
+  })
+
+  it('fails closed when the requested head identity is unknown or stale', async () => {
+    const { host } = fakeHost()
+    await expect(
+      service(host).detail({ root: ROOT, repo: 'acme/widgets', number: 12 }),
+    ).resolves.toMatchObject({ available: false, reason: 'error' })
+    await expect(
+      service(host).detail({
+        root: ROOT,
+        repo: 'acme/widgets',
+        number: 12,
+        headOid: 'stale',
+      }),
+    ).resolves.toMatchObject({ available: false, reason: 'error' })
+  })
+
+  it('fails closed when the active repository changes during the detail read', async () => {
+    let repoReads = 0
+    const { host } = fakeHost((command, args) => {
+      if (command === 'gh' && args[0] === 'repo') {
+        repoReads += 1
+        return execResult(
+          0,
+          JSON.stringify({
+            nameWithOwner: repoReads === 1 ? 'acme/widgets' : 'acme/other',
+          }),
+        )
+      }
+      if (command === 'gh') {
+        return execResult(
+          0,
+          JSON.stringify({
+            data: {
+              repository: {
+                pullRequest: {
+                  number: 12,
+                  title: 'Panel',
+                  url: 'https://github.com/acme/widgets/pull/12',
+                  headRefOid: 'head-12',
+                  reviewThreads: {
+                    pageInfo: { hasNextPage: false },
+                    nodes: [],
+                  },
+                },
+              },
+            },
+          }),
+        )
+      }
+      return defaultResponder(command, args)
+    })
+    await expect(
+      service(host).detail({
+        root: ROOT,
+        repo: 'acme/widgets',
+        number: 12,
+        headOid: 'head-12',
+      }),
+    ).resolves.toMatchObject({
+      available: false,
+      message: 'GitHub repository changed while loading details',
+    })
   })
 })

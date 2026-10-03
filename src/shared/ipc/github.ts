@@ -6,6 +6,8 @@ import type {
   PullsResponse,
   PullCheckoutsRequest,
   PullCheckoutsResponse,
+  PullDetailRequest,
+  PullDetailResponse,
 } from '../github'
 
 export const githubIpc = {
@@ -13,6 +15,7 @@ export const githubIpc = {
     'github:pulls': invoke<PullsRequest, PullsResponse>(),
     'github:probe': invoke<PullsProbeRequest, PullsProbeResponse>(),
     'github:checkouts': invoke<PullCheckoutsRequest, PullCheckoutsResponse>(),
+    'github:detail': invoke<PullDetailRequest, PullDetailResponse>(),
   },
   send: {},
   event: {},

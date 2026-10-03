@@ -32,6 +32,7 @@ export interface FakeCall {
   readonly method: string
   readonly authorization?: string
   readonly body?: unknown
+  readonly signal?: AbortSignal
 }
 
 type Unbranded<T> = Omit<Partial<T>, 'handle'> & { readonly handle: string }
@@ -102,17 +103,38 @@ export class FakeCompanionServer {
   viewportStatus = 200
   /** While true, select replies wait until `releaseSelect` is called. */
   holdSelect = false
+  holdEvents = false
+  holdViewport = false
+  holdPair = false
   transcriptReply: SessionsTranscriptSnapshot = transcript({ handle: 'none' })
   mutationReply: SessionsMutationResponse = { outcome: 'accepted' }
   private controller?: ReadableStreamDefaultController<Uint8Array>
   private readonly encoder = new TextEncoder()
   private heldSelects: (() => void)[] = []
+  private heldEvents: (() => void)[] = []
+  private heldViewports: (() => void)[] = []
+  private heldPairs: (() => void)[] = []
 
   readonly fetch: CompanionFetch = (url, init) => {
     const response = this.answer(url, init)
     if (this.holdSelect && url.endsWith('/select')) {
       return new Promise((resolve) => {
         this.heldSelects.push(() => resolve(response))
+      })
+    }
+    if (this.holdPair && url === '/pair') {
+      return new Promise((resolve) => {
+        this.heldPairs.push(() => resolve(response))
+      })
+    }
+    if (this.holdEvents && url === '/api/events') {
+      return new Promise((resolve) => {
+        this.heldEvents.push(() => resolve(response))
+      })
+    }
+    if (this.holdViewport && url.endsWith('/viewport')) {
+      return new Promise((resolve) => {
+        this.heldViewports.push(() => resolve(response))
       })
     }
     return Promise.resolve(response)
@@ -139,6 +161,18 @@ export class FakeCompanionServer {
     for (const release of this.heldSelects.splice(0)) release()
   }
 
+  releaseEvents(): void {
+    for (const release of this.heldEvents.splice(0)) release()
+  }
+
+  releaseViewports(): void {
+    for (const release of this.heldViewports.splice(0)) release()
+  }
+
+  releasePair(): void {
+    for (const release of this.heldPairs.splice(0)) release()
+  }
+
   emit(event: string, data: unknown): void {
     if (!this.controller) throw new Error('no open event stream')
     this.controller.enqueue(
@@ -161,6 +195,7 @@ export class FakeCompanionServer {
       method: init.method,
       authorization: init.headers['authorization'],
       body: init.body === undefined ? undefined : JSON.parse(init.body),
+      signal: init.signal,
     })
     if (url === '/pair') {
       return this.pairStatus === 200

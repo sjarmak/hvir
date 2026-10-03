@@ -14,6 +14,7 @@ import {
   type HarnessProviderDescriptor,
 } from '../src/shared'
 import { parseHarnessArguments } from '../src/renderer/src/settings/harness-argument-editor'
+import { harnessProviderCatalog } from '../src/main/harness/harness-provider'
 
 let root: Root | undefined
 let host: HTMLDivElement | undefined
@@ -34,6 +35,30 @@ afterEach(() => {
 })
 
 describe('HarnessProfileEditor', () => {
+  it('offers the real Claude catalog and selects Omni without changing other settings', () => {
+    const onInput = vi.fn<(input: HarnessProfileInput) => void>()
+    renderEditor({
+      onInput,
+      providers: harnessProviderCatalog(),
+    })
+
+    changeSelect(labelledSelect('Provider'), 'claude-code')
+    const identity = labelledSelect('Identity')
+    expect([...identity.options].map((option) => option.value)).toEqual([
+      '',
+      'claude-1',
+      'claude-2',
+      'claude-3',
+      'claude-4',
+      'claude-5',
+      'claude-omni',
+    ])
+    const before = onInput.mock.lastCall?.[0]
+    changeSelect(identity, 'claude-omni')
+    expect(onInput).toHaveBeenLastCalledWith({ ...before, identityId: 'claude-omni' })
+    expect(identity.value).toBe('claude-omni')
+  })
+
   it('toggles both disclosure indicators through native summary activation', () => {
     renderEditor()
 
@@ -211,12 +236,14 @@ function renderEditor(options: EditorHarnessOptions = {}): void {
 }
 
 interface EditorHarnessOptions {
+  readonly providers?: readonly HarnessProviderDescriptor[]
   readonly onInput?: (input: HarnessProfileInput) => void
   readonly onAuthorize?: () => void
   readonly onPickBinding?: (index: number) => void
 }
 
 function EditorHarness({
+  providers = testProviders(),
   onInput,
   onAuthorize = () => undefined,
   onPickBinding = () => undefined,
@@ -236,7 +263,6 @@ function EditorHarness({
     input,
     argvText: '',
   }
-  const providers = testProviders()
 
   return createElement(HarnessProfileEditor, {
     draft,

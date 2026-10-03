@@ -20,6 +20,58 @@ const { SFTP } = require('ssh2/lib/protocol/SFTP.js') as {
 }
 
 describe('SshFileAccess', () => {
+  it('returns symlink target bytes without resolving the target', async () => {
+    const hostId = asHostId('ssh:test')
+    const path = hostPath(hostId, '/project/link')
+    const readlink = vi.fn(
+      (_path: string, callback: (error: Error | undefined, value: string) => void) =>
+        callback(undefined, '../outside/target'),
+    )
+    const session = Object.assign(new EventEmitter(), { readlink, end: vi.fn() })
+    const files = new SshFileAccess(
+      { hostId, openSftp: () => Promise.resolve(session as unknown as SFTPWrapper) },
+      {},
+    )
+
+    await expect(files.readlink(path)).resolves.toEqual(Buffer.from('../outside/target'))
+    expect(readlink).toHaveBeenCalledWith('/project/link', expect.any(Function))
+    files.dispose()
+  })
+
+  it('rejects replacement characters in remote symlink targets', async () => {
+    const hostId = asHostId('ssh:test')
+    const path = hostPath(hostId, '/project/link')
+    const session = Object.assign(new EventEmitter(), {
+      readlink: vi.fn(
+        (_path: string, callback: (error: Error | undefined, value: string) => void) =>
+          callback(undefined, '/tmp/\uFFFD'),
+      ),
+      end: vi.fn(),
+    })
+    const files = new SshFileAccess(
+      { hostId, openSftp: () => Promise.resolve(session as unknown as SFTPWrapper) },
+      {},
+    )
+
+    await expect(files.readlink(path)).rejects.toThrow(
+      'SSH symlink target cannot be represented exactly',
+    )
+    files.dispose()
+  })
+
+  it('rejects a symlink path for another host before opening SFTP', async () => {
+    const openSftp = vi.fn()
+    const files = new SshFileAccess(
+      { hostId: asHostId('ssh:test'), openSftp },
+      {},
+    )
+
+    await expect(files.readlink(hostPath(asHostId('ssh:other'), '/project/link'))).rejects.toThrow(
+      'SshHost expected ssh:test, got ssh:other',
+    )
+    expect(openSftp).not.toHaveBeenCalled()
+  })
+
   it('invalidates cached descendants and parent listings', () => {
     const files = fileAccess()
     const cache = new Map<string, unknown>([

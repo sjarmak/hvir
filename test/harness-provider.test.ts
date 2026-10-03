@@ -13,6 +13,7 @@ import {
 import { HarnessProviderRegistry } from '../src/main/harness/harness-provider-registry'
 import { providerTemplateProfiles } from '../src/main/harness/harness-profile-store'
 import { asHarnessProviderId, asHostId, hostPath, localPath } from '../src/shared'
+import type { ProjectHost } from '../src/main/project-host'
 
 const context = {
   sessionId: '3d33e340-b73f-4f3b-885b-cc47a22cb844',
@@ -43,6 +44,51 @@ describe('Harness providers', () => {
     expect(claudeCodeProvider.sessionIdentity).toBe('preassigned')
     expect(claudeCodeProvider.telemetry).toBeDefined()
     expect(claudeCodeProvider.usageTelemetry).toBeDefined()
+  })
+
+  it('offers every registered Claude account identity including claude-omni', () => {
+    expect(claudeCodeProvider.profile.identities).toEqual([
+      { id: 'claude-1', displayName: 'claude-1' },
+      { id: 'claude-2', displayName: 'claude-2' },
+      { id: 'claude-3', displayName: 'claude-3' },
+      { id: 'claude-4', displayName: 'claude-4' },
+      { id: 'claude-5', displayName: 'claude-5' },
+      { id: 'claude-omni', displayName: 'claude-omni' },
+    ])
+  })
+
+  it('maps Claude identities to exact account homes on local and SSH hosts', async () => {
+    if (!claudeCodeProvider.profile.applyIdentity)
+      throw new Error('Claude identity application is unavailable')
+    const hosts = [
+      { hostId: asHostId('local'), home: '/home/local' },
+      { hostId: asHostId('ssh-test'), home: '/home/remote' },
+    ]
+    for (const { hostId, home } of hosts) {
+      const host = {
+        hostId,
+        exec: () => Promise.resolve({ code: 0, stdout: `${home}\n`, stderr: '' }),
+      } as unknown as ProjectHost
+      for (const [identityId, account] of [
+        ['claude-2', 'account2'],
+        ['claude-omni', 'account-omni'],
+      ] as const) {
+        const applied = await claudeCodeProvider.profile.applyIdentity(host, identityId, {
+          file: 'claude',
+          args: [],
+          env: {},
+          shellEnvironment: true,
+        })
+        const directory = `${home}/.claude-homes/${account}/.claude`
+        expect(applied.spec.env).toEqual({ CLAUDE_CONFIG_DIR: directory })
+        expect(applied.previewEnvironment).toContainEqual({
+          name: 'CLAUDE_CONFIG_DIR',
+          operation: 'set',
+          displayValue: directory,
+          redacted: false,
+        })
+      }
+    }
   })
 
   it('forks Claude Code with exact preassigned parent and child identities', () => {
@@ -413,9 +459,11 @@ describe('Harness providers', () => {
       catalog.find(({ id }) => id === 'claude-code')?.profileGuidance.identities,
     ).toEqual([
       { id: 'claude-1', displayName: 'claude-1' },
+      { id: 'claude-2', displayName: 'claude-2' },
       { id: 'claude-3', displayName: 'claude-3' },
       { id: 'claude-4', displayName: 'claude-4' },
       { id: 'claude-5', displayName: 'claude-5' },
+      { id: 'claude-omni', displayName: 'claude-omni' },
     ])
     expect(
       catalog.find(({ id }) => id === 'codex')?.architectureExplanation,

@@ -115,6 +115,61 @@
   opacity: 0.5;
 }
 
+.review-checkpoint-actions {
+  display: flex;
+  gap: 5px;
+  padding: 8px;
+  border-bottom: 1px solid #282d36;
+}
+
+.review-checkpoint-actions button {
+  flex: 1;
+  padding: 4px 5px;
+  font-size: calc(9px * var(--hvir-interface-scale));
+}
+
+.review-checkpoint-files {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 0;
+}
+
+.review-checkpoint-files button {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 0;
+  color: var(--text-primary);
+  font-size: calc(10px * var(--hvir-interface-scale));
+  text-align: left;
+}
+
+.review-checkpoint-files button:hover,
+.review-checkpoint-files button.active {
+  background: #20242c;
+}
+
+.review-checkpoint-files button span:last-child {
+  flex: none;
+  color: var(--text-muted);
+  font-size: calc(9px * var(--hvir-interface-scale));
+}
+
+.review-checkpoint-baseline {
+  padding: 7px 10px;
+  color: var(--text-muted);
+  font-size: calc(10px * var(--hvir-interface-scale));
+  overflow-wrap: anywhere;
+}
+
+.review-checkpoint-diff {
+  height: 360px;
+  min-height: 240px;
+  overflow: auto;
+}
+
 .git-empty {
   padding: 14px 10px;
   color: #747e8d;

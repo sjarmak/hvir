@@ -3,7 +3,7 @@ fragment pull on PullRequest {
   number title url state isDraft headRefName updatedAt reviewDecision
   headRepository { nameWithOwner }
   author { login }
-  commits(last: 1) { nodes { commit { committedDate statusCheckRollup { state } } } }
+  commits(last: 1) { nodes { commit { oid committedDate statusCheckRollup { state } } } }
   reviewThreads(last: 100) { nodes { isResolved isOutdated } }
   reviews(last: 50) { nodes { state body submittedAt author { __typename login } } }
   comments(last: 50) { nodes { createdAt author { __typename login } } }
@@ -23,6 +23,24 @@ export const PULLS_QUERY = `query(
   review: search(query: $review, type: ISSUE, first: 30) { nodes { ...pull } }
 }
 ${PULL_FIELDS}`
+
+export const PULL_DETAIL_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      number title url headRefOid
+      reviewThreads(first: 40) {
+        pageInfo { hasNextPage }
+        nodes {
+          id isResolved isOutdated path line
+          comments(first: 20) {
+            pageInfo { hasNextPage }
+            nodes { id body createdAt commit { oid } author { login } }
+          }
+        }
+      }
+    }
+  }
+}`
 
 export function pullsQueryArgs(
   repo: string,
@@ -46,5 +64,21 @@ export function pullsQueryArgs(
     `mine=repo:${repo} is:pr is:open author:@me`,
     '-f',
     `review=repo:${repo} is:pr is:open review-requested:@me`,
+  ]
+}
+
+export function pullDetailQueryArgs(repo: string, number: number): readonly string[] {
+  const [owner = '', name = ''] = repo.split('/')
+  return [
+    'api',
+    'graphql',
+    '-f',
+    `query=${PULL_DETAIL_QUERY}`,
+    '-f',
+    `owner=${owner}`,
+    '-f',
+    `name=${name}`,
+    '-F',
+    `number=${number}`,
   ]
 }

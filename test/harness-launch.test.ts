@@ -95,6 +95,35 @@ describe('harness launch composition', () => {
     )
   })
 
+  it('applies the Claude Omni identity to fresh, resume, and fork launches', async () => {
+    const profile = await store.save({
+      input: input({
+        providerId: asHarnessProviderId('claude-code'),
+        identityId: 'claude-omni',
+      }),
+    })
+    const configDirectory = join(homedir(), '.claude-homes/account-omni/.claude')
+    for (const mode of ['fresh', 'resume', 'fork'] as const) {
+      const resolved = await resolve(
+        profile,
+        mode,
+        undefined,
+        undefined,
+        mode === 'fork' ? 'parent-session-id' : undefined,
+      )
+      expect(resolved.spec.env).toEqual({ CLAUDE_CONFIG_DIR: configDirectory })
+      expect(resolved.artifact.environment).toEqual({
+        CLAUDE_CONFIG_DIR: configDirectory,
+      })
+      expect(commandPreview(resolved, mode).environment).toContainEqual({
+        name: 'CLAUDE_CONFIG_DIR',
+        operation: 'set',
+        displayValue: configDirectory,
+        redacted: false,
+      })
+    }
+  })
+
   it('places Codex profile flags before the resume subcommand and resolves grants', async () => {
     const canonical = await host.realpath(localPath(outside))
     const grant = await store.authorizePath(canonical)

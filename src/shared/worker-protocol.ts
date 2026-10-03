@@ -11,6 +11,12 @@ import type { ExecResult, Stat } from './fs-types'
 import type { GitDiffRequest, GitDiffResponse } from './viewer-types'
 import type { TextWorkload } from './viewer-workload-policy'
 import type {
+  ReviewCheckpointHostRequest,
+  ReviewCheckpointHostResult,
+  ReviewCheckpointRequest,
+  ReviewCheckpointResult,
+} from './review-checkpoint'
+import type {
   GitBlameRun,
   GitBlameRequest,
   GitChanges,
@@ -39,6 +45,13 @@ export type WorkerResponse<T = unknown> =
   | { readonly id: number; readonly ok: false; readonly error: string }
 
 export type WorkerHostCallInput =
+  | {
+      readonly hostId: string
+      readonly operation: 'reviewCheckpoint'
+      readonly path: HostPath
+      readonly operationId: string
+      readonly request: ReviewCheckpointHostRequest
+    }
   | {
       readonly hostId: string
       readonly operation: 'exec'
@@ -74,7 +87,8 @@ export type WorkerHostCall = WorkerHostCallInput & {
   readonly callId: number
 }
 
-export type WorkerHostValue = ExecResult | Stat | string | TextWorkload
+export type WorkerHostValue =
+  ExecResult | Stat | string | TextWorkload | ReviewCheckpointHostResult
 
 export type WorkerHostResult =
   | {
@@ -132,6 +146,7 @@ export const GIT_BRANCHES_TYPE = 'git:branches' as const
 export const GIT_FETCH_TYPE = 'git:fetch' as const
 export const GIT_PULL_TYPE = 'git:pull' as const
 export const GIT_SWITCH_BRANCH_TYPE = 'git:switch-branch' as const
+export const GIT_REVIEW_CHECKPOINT_TYPE = 'git:review-checkpoint' as const
 
 export interface GitWorkerPayload extends GitDiffRequest {
   /** Project confinement boundary, independently revalidated by the worker. */
@@ -139,6 +154,10 @@ export interface GitWorkerPayload extends GitDiffRequest {
 }
 
 export interface GitWorkerProtocol {
+  readonly [GIT_REVIEW_CHECKPOINT_TYPE]: WorkerOperation<
+    ReviewCheckpointRequest & { readonly operationId: string },
+    ReviewCheckpointResult
+  >
   readonly [GIT_BRANCHES_TYPE]: WorkerOperation<
     { readonly root: HostPath },
     GitBranchModel

@@ -1,6 +1,6 @@
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 
-import { SmokeCleanup } from '../src/main/smoke/cleanup'
+import { runSmokeCleanup, SmokeCleanup } from '../src/main/smoke/cleanup'
 
 describe('SmokeCleanup', () => {
   it('releases each acquired worker when a later worker fails to start', async () => {
@@ -93,5 +93,45 @@ describe('SmokeCleanup', () => {
     await failure
     expect(failed).toEqual(['stalled'])
     expect(survivor).toHaveBeenCalledOnce()
+  })
+
+  it('completes the smoke cleanup policy when cleanup succeeds', async () => {
+    const cleanup = new SmokeCleanup()
+    const onFailure = vi.fn()
+
+    await runSmokeCleanup(cleanup, false, onFailure)
+
+    expect(onFailure).not.toHaveBeenCalled()
+  })
+
+  it('preserves a failed scenario result when cleanup also fails', async () => {
+    const cleanup = new SmokeCleanup()
+    cleanup.defer('failure', () => {
+      throw new Error('cleanup failure')
+    })
+    const onFailure = vi.fn()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    onTestFinished(() => consoleError.mockRestore())
+
+    await runSmokeCleanup(cleanup, true, onFailure)
+
+    expect(onFailure).toHaveBeenCalledOnce()
+    expect(consoleError).toHaveBeenCalledOnce()
+  })
+
+  it('fails a successful scenario when cleanup rejects', async () => {
+    const cleanup = new SmokeCleanup()
+    cleanup.defer('failure', () => {
+      throw new Error('cleanup failure')
+    })
+    const onFailure = vi.fn()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    onTestFinished(() => consoleError.mockRestore())
+
+    await expect(runSmokeCleanup(cleanup, false, onFailure)).rejects.toThrow(
+      'Electron smoke cleanup failed',
+    )
+    expect(onFailure).toHaveBeenCalledOnce()
+    expect(consoleError).toHaveBeenCalledOnce()
   })
 })

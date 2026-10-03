@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SessionsOverview } from '../src/renderer/src/sessions/SessionsOverview'
+import { sameSessionTarget } from '../src/renderer/src/sessions/sessions-overview-target'
 import {
   MAX_SESSIONS_PROJECTION_ROWS,
   SESSIONS_PROJECTION_VERSION,
@@ -21,6 +22,7 @@ import {
   type SessionsObservationSnapshot,
   type SessionsOpenRequest,
   type SessionsOpenResponse,
+  type SessionsProjectionRow,
   type SessionsTerminalResolutionResponse,
   type SessionsUsageDemandTarget,
   type SessionsUsageSnapshot,
@@ -48,6 +50,88 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 describe('SessionsOverview', () => {
+  it('focuses an exact incoming target when projection changes from loading to available', async () => {
+    let resolveObserve!: (value: SessionsObservationSnapshot) => void
+    const pending = new Promise<SessionsObservationSnapshot>((resolve) => {
+      resolveObserve = resolve
+    })
+    installApi({ observe: () => pending })
+    await renderOverview({ initialTarget: incomingTarget() }, false)
+    expect(document.activeElement?.classList.contains('session-card')).toBe(false)
+    await act(async () => {
+      resolveObserve(snapshot(1))
+      await settle()
+    })
+    expect(document.activeElement).toBe(host.querySelector('.session-card'))
+  })
+
+  it('focuses an exact incoming target when the destination returns to foreground', async () => {
+    focused = false
+    installApi()
+    await renderOverview({ initialTarget: incomingTarget() })
+    expect(document.activeElement?.classList.contains('session-card')).toBe(false)
+    focused = true
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'))
+      await settle()
+    })
+    expect(document.activeElement).toBe(host.querySelector('.session-card'))
+  })
+
+  it('does not re-focus the incoming target after a user selection and refresh', async () => {
+    let revision = 7
+    const api = installApi({
+      snapshot: (demandGeneration) => ({
+        ...snapshot(demandGeneration),
+        revision,
+      }),
+    })
+    await renderOverview({ initialTarget: incomingTarget() })
+    const cards = host.querySelectorAll<HTMLElement>('.session-card')
+    act(() => {
+      cards[1]?.focus()
+      cards[1]?.click()
+    })
+    expect(document.activeElement).toBe(cards[1])
+    await act(async () => {
+      revision = 8
+      api.emit({ demandGeneration: 1, revision: 8 })
+      await settle()
+    })
+    expect(document.activeElement).toBe(cards[1])
+  })
+
+  it('matches refreshed serialized live qualifiers by value and rejects workspace revision changes', () => {
+    const original = {
+      handle: asSessionsTerminalHandle('terminal-private-agent'),
+      project: { id: 'project', name: 'Project' },
+      workspace: {
+        id: 'workspace',
+        name: 'main',
+        qualifier: sessionsWorkspaceQualifier(11, 0, 0),
+      },
+      livePty: {
+        handle: asSessionsPtyHandle('live-instance-agent'),
+        rendererOwnerId: 4,
+        rendererGeneration: 6,
+      },
+    } as unknown as SessionsProjectionRow
+    const refreshed = {
+      ...original,
+      workspace: { ...original.workspace, qualifier: sessionsWorkspaceQualifier(11, 0, 0) },
+      livePty: original.livePty === undefined ? undefined : { ...original.livePty },
+    }
+    expect(sameSessionTarget(original, refreshed)).toBe(true)
+    expect(
+      sameSessionTarget(original, {
+        ...refreshed,
+        workspace: {
+          ...refreshed.workspace,
+          qualifier: sessionsWorkspaceQualifier(99, 0, 0),
+        },
+      }),
+    ).toBe(false)
+  })
   it('distinguishes the true empty state from a filtered empty state', async () => {
     installApi({
       snapshot: (demandGeneration) => ({
@@ -222,6 +306,7 @@ describe('SessionsOverview', () => {
 })
 function installApi(
   options: {
+    readonly observe?: (demandGeneration: number) => Promise<SessionsObservationSnapshot>
     readonly snapshot?: (demandGeneration: number) => SessionsObservationSnapshot
     readonly open?: (request: unknown) => Promise<SessionsOpenResponse>
     readonly resolveTerminal?: (
@@ -236,7 +321,9 @@ function installApi(
   const listeners = new Set<(payload: unknown) => void>()
   const usageListeners = new Set<(payload: unknown) => void>()
   const readSnapshot = options.snapshot ?? snapshot
-  const observe = vi.fn((generation: number) => Promise.resolve(readSnapshot(generation)))
+  const observe = vi.fn(
+    options.observe ?? ((generation: number) => Promise.resolve(readSnapshot(generation))),
+  )
   const release = vi.fn((_generation: number) => Promise.resolve())
   const open = vi.fn(
     options.open ?? ((_request: unknown) => Promise.resolve(openedResponse())),
@@ -347,6 +434,7 @@ async function renderOverview(
     readonly observation?: SessionsRendererObservationPort
   } = {},
   strict = false,
+  settleProjection = true,
 ): Promise<void> {
   await act(async () => {
     const {
@@ -368,8 +456,25 @@ async function renderOverview(
       />
     )
     root.render(strict ? <StrictMode>{overview}</StrictMode> : overview)
-    await settle()
+    if (settleProjection) await settle()
   })
+}
+
+function incomingTarget(): SessionsProjectionRow {
+  return {
+    handle: asSessionsTerminalHandle('terminal-private-agent'),
+    project: { id: asSessionsProjectHandle('opaque-project'), name: 'Project One' },
+    workspace: {
+      id: asSessionsWorkspaceHandle('opaque-workspace'),
+      name: 'main',
+      qualifier: sessionsWorkspaceQualifier(11, 0, 0),
+    },
+    livePty: {
+      handle: asSessionsPtyHandle('live-instance-agent'),
+      rendererOwnerId: 4,
+      rendererGeneration: 6,
+    },
+  } as SessionsProjectionRow
 }
 
 function availableSurface(

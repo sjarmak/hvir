@@ -7,8 +7,9 @@ import {
   type GitWorkerAuthorityPort,
 } from '../src/main/git/worker-host-router'
 import { dispatchWorkerHostCall } from '../src/main/git/worker-host-broker'
+import { ReviewCheckpointHost } from '../src/main/git/review-checkpoint-host'
 import type { ProjectHost } from '../src/main/project-host'
-import { localPath, type WorkerHostCall } from '../src/shared'
+import { asHostId, hostPath, localPath, type WorkerHostCall } from '../src/shared'
 
 const root = localPath('/repo')
 const host = {
@@ -73,5 +74,55 @@ describe('GitWorkerHostRouter', () => {
     await router.route(read)
 
     expect(dispatch).toHaveBeenCalledWith(read, authority, {})
+  })
+
+  it('routes checkpoints only through their dedicated operation owner', async () => {
+    const checkpoints = new ReviewCheckpointHost()
+    const dispatch = vi.spyOn(checkpoints, 'dispatch').mockResolvedValue(null)
+    const ordinary = vi.fn<typeof dispatchWorkerHostCall>()
+    const authorizations = new GitMutationAuthorization()
+    const router = new GitWorkerHostRouter({
+      authority: { authorityForPath: () => authority },
+      authorizations,
+      checkpoints,
+      dispatch: ordinary,
+    })
+    const call: WorkerHostCall = {
+      kind: 'host-call',
+      callId: 5,
+      hostId: root.hostId,
+      operation: 'reviewCheckpoint',
+      path: root,
+      operationId: 'capture-grant',
+      request: { action: 'inspect' },
+    }
+    await expect(router.route(call)).resolves.toBeNull()
+    expect(dispatch).toHaveBeenCalledWith('capture-grant', authority, call.request)
+    expect(ordinary).not.toHaveBeenCalled()
+    for (const path of [
+      localPath('/repo/child'),
+      hostPath(asHostId('ssh:other'), '/repo'),
+    ]) {
+      await expect(router.route({ ...call, path })).rejects.toThrow('authority')
+    }
+    expect(dispatch).toHaveBeenCalledTimes(1)
+    checkpoints.dispose()
+    authorizations.dispose()
+  })
+
+  it('rejects checkpoint calls when their dedicated owner is unavailable', async () => {
+    const { router, dispatch } = fixture()
+    await expect(
+      router.route({
+        kind: 'host-call',
+        callId: 6,
+        hostId: root.hostId,
+        operation: 'reviewCheckpoint',
+        path: root,
+        operationId: 'missing',
+        request: { action: 'inspect' },
+      }),
+    ).rejects.toThrow('authority')
+    expect(dispatch).not.toHaveBeenCalled()
   })
 })

@@ -23,6 +23,7 @@ import {
 import { useCommitClassifications } from '../architecture-review/use-commit-classifications'
 import { GitBranchControls } from './GitBranchControls'
 import { GitChangesView } from './GitChangesView'
+import { ReviewCheckpointPanel } from './ReviewCheckpointPanel'
 import { GitHistoryView } from './GitHistoryView'
 import { useGitCommitDetails } from './use-git-commit-details'
 import { useGitRailController } from './use-git-rail-controller'
@@ -136,6 +137,14 @@ export function GitPanel({
         </button>
         <button
           type="button"
+          className={model.view === 'review' ? 'active' : ''}
+          disabled={connectionState !== 'connected'}
+          onClick={() => controller.selectView('review')}
+        >
+          Since review
+        </button>
+        <button
+          type="button"
           onClick={() => onOpenArchitectureReview()}
           disabled={connectionState !== 'connected'}
         >
@@ -154,6 +163,12 @@ export function GitPanel({
             loading={model.changesLoading}
             error={model.changesError}
             onOpen={onOpenChange}
+          />
+        ) : model.view === 'review' ? (
+          <ReviewCheckpointPanel
+            root={root}
+            connectionState={connectionState}
+            visible={!hidden}
           />
         ) : (
           <GitHistoryView

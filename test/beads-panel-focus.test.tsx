@@ -24,7 +24,7 @@ const BEADS: BeadsListResponse = {
       priority: 2,
       issueType: 'task',
       assignee: 'mem-worker-ash',
-      labels: [],
+      labels: ['needs-human'],
       dependencyCount: 0,
       dependentCount: 0,
     },
@@ -69,10 +69,12 @@ const CREW: GasCityCrewResponse = {
 let host: HTMLDivElement
 let root: Root
 let scrollIntoView: ReturnType<typeof vi.fn>
+let beadResponses: (BeadsListResponse | Promise<BeadsListResponse>)[] | undefined
 
 beforeEach(() => {
-  ;(globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT =
-    true
+  ;(
+    globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true
   vi.useFakeTimers()
   scrollIntoView = vi.fn()
   Element.prototype.scrollIntoView = scrollIntoView as unknown as () => void
@@ -82,7 +84,7 @@ beforeEach(() => {
   const invoke = vi.fn((channel: string) => {
     switch (channel) {
       case 'beads:list':
-        return Promise.resolve(BEADS)
+        return Promise.resolve(beadResponses?.shift() ?? BEADS)
       case 'gascity:probe':
         return Promise.resolve({ hasCity: true })
       case 'gascity:crew':
@@ -102,12 +104,20 @@ afterEach(() => {
   host.remove()
   vi.useRealTimers()
   vi.restoreAllMocks()
+  beadResponses = undefined
 })
 
-async function renderPanel(): Promise<void> {
+async function renderPanel(
+  props: Partial<Parameters<typeof BeadsPanel>[0]> = {},
+): Promise<void> {
   act(() => {
     root.render(
-      createElement(BeadsPanel, { root: ROOT, connected: true, onCrewAction: () => undefined }),
+      createElement(BeadsPanel, {
+        root: ROOT,
+        connected: true,
+        onCrewAction: () => undefined,
+        ...props,
+      }),
     )
   })
   // The probe answers, then the crew fetch, then the bead list: three promise
@@ -120,8 +130,8 @@ async function renderPanel(): Promise<void> {
 }
 
 function heldChip(id: string): HTMLButtonElement {
-  const chip = [...host.querySelectorAll<HTMLButtonElement>('.crew-held-bead')].find((button) =>
-    button.textContent?.includes(id),
+  const chip = [...host.querySelectorAll<HTMLButtonElement>('.crew-held-bead')].find(
+    (button) => button.textContent?.includes(id),
   )
   if (!chip) throw new Error(`no held chip for ${id}`)
   return chip
@@ -137,6 +147,93 @@ function sectionHeaderOf(beadId: string): HTMLButtonElement {
 }
 
 describe('BeadsPanel held-bead focus', () => {
+  it('refreshes immediately for an incoming target on an already visible panel', async () => {
+    await renderPanel()
+    beadResponses = [
+      {
+        ...BEADS,
+        issues: BEADS.issues.map((issue) => ({ ...issue, title: 'Fresh title' })),
+      },
+    ]
+    const onFocusHandled = vi.fn()
+
+    await renderPanel({ focusBeadId: 'mem-1', onFocusHandled })
+
+    expect(host.textContent).toContain('Fresh title')
+    expect(onFocusHandled).toHaveBeenCalledWith('mem-1')
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+  })
+
+  it('focuses an externally selected bead after its list arrives', async () => {
+    const onFocusHandled = vi.fn()
+    await renderPanel({ focusBeadId: 'mem-1', onFocusHandled })
+
+    const row = host.querySelector('[data-bead-id="mem-1"]')
+    expect(row?.querySelector('.beads-row')?.classList.contains('expanded')).toBe(true)
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(onFocusHandled).toHaveBeenCalledWith('mem-1')
+  })
+
+  it('reports a selected bead that the fresh list no longer exposes', async () => {
+    const onFocusUnavailable = vi.fn()
+    await renderPanel({ focusBeadId: 'mem-gone', onFocusUnavailable })
+
+    expect(onFocusUnavailable).toHaveBeenCalledWith('mem-gone')
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  it('waits for a fresh actionable list instead of focusing cached placement', async () => {
+    let release!: (response: BeadsListResponse) => void
+    await renderPanel()
+    beadResponses = [
+      new Promise<BeadsListResponse>((resolve) => {
+        release = resolve
+      }),
+    ]
+    const onFocusHandled = vi.fn()
+    act(() => {
+      root.render(
+        createElement(BeadsPanel, {
+          root: ROOT,
+          connected: true,
+          hidden: true,
+          focusBeadId: 'mem-1',
+          onFocusHandled,
+          onCrewAction: () => undefined,
+        }),
+      )
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(onFocusHandled).not.toHaveBeenCalled()
+    expect(scrollIntoView).not.toHaveBeenCalled()
+
+    const removed = {
+      ...BEADS,
+      issues: BEADS.issues.map((issue) =>
+        issue.id === 'mem-1' ? { ...issue, labels: [] } : issue,
+      ),
+    }
+    act(() => {
+      root.render(
+        createElement(BeadsPanel, {
+          root: ROOT,
+          connected: true,
+          focusBeadId: 'mem-1',
+          onFocusHandled,
+          onCrewAction: () => undefined,
+        }),
+      )
+    })
+    await act(async () => {
+      release(removed)
+      await Promise.resolve()
+    })
+    expect(onFocusHandled).not.toHaveBeenCalled()
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+
   it('clicking a held bead on a crew card expands and scrolls its bead row', async () => {
     await renderPanel()
     const row = host.querySelector('[data-bead-id="mem-1"]')

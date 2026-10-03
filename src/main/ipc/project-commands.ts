@@ -3,6 +3,7 @@ import type { ProjectCoordinator } from '../project-coordinator'
 import type { RendererOwner } from '../renderer-resource-scopes'
 import type { WorkspaceCoordinator } from '../workspace-coordinator'
 import type { IpcDeps } from './deps'
+import type { RendererSshPrompter } from '../project-host/renderer-ssh-prompter'
 
 type ProjectCommandDeps = Pick<
   IpcDeps,
@@ -75,4 +76,18 @@ export function createProjectCommands({
     fetchGit: (root) => git.fetch(root),
     pullGit: (root) => git.pull(root),
   }
+}
+
+export function createApplicationProjectCommands(
+  projects: ProjectCoordinator,
+  workspaces: WorkspaceCoordinator,
+  git: GitMutationCoordinator,
+  sshPrompter: RendererSshPrompter,
+): ProjectCommandDeps {
+  return createProjectCommands({
+    projects,
+    workspaces,
+    git,
+    withSshPresentation: (owner, operation) => sshPrompter.runForOwner(owner, operation),
+  })
 }

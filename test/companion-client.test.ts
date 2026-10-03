@@ -404,6 +404,22 @@ describe('companion client', () => {
     )
     expect(tokens.read()).toBeUndefined()
   })
+
+  it('does not clear a replacement token when an older request answers 401', async () => {
+    let answer: ((response: CompanionResponse) => void) | undefined
+    const tokens = memoryTokens('old-token')
+    const fetch: CompanionFetch = () =>
+      new Promise((resolve) => {
+        answer = resolve
+      })
+    const client = createCompanionClient({ fetch, tokens })
+    const request = client.snapshot('page-1')
+    tokens.write('new-token')
+    answer?.(jsonResponse(401, { error: 'old request' }))
+
+    await expect(request).rejects.toBeInstanceOf(CompanionUnauthorizedError)
+    expect(tokens.read()).toBe('new-token')
+  })
 })
 
 describe('SSE frame parser', () => {

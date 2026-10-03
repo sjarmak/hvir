@@ -23,11 +23,18 @@ import {
   snapshot,
   transcript,
 } from './companion-page-fixture'
+import { useCompanionSession, type CompanionSession } from '../src/renderer/companion/src/use-companion-session'
 
 export let host: HTMLDivElement
 export let server: FakeCompanionServer
 export let panes: ReturnType<typeof fakePaneFactory>
 let root: Root
+export let sessionProbe: CompanionSession | undefined
+
+function SessionProbe({ client }: { readonly client: ReturnType<typeof createCompanionClient> }) {
+  sessionProbe = useCompanionSession(client)
+  return null
+}
 
 export function useCompanionPage(): void {
   beforeEach(() => {
@@ -53,8 +60,21 @@ export function useCompanionPage(): void {
     act(() => root.unmount())
     host.remove()
     delete (window as unknown as { hvir?: unknown }).hvir
+    sessionProbe = undefined
     delete (document as unknown as { hidden?: unknown }).hidden
   })
+}
+
+export async function renderSessionProbe(): Promise<void> {
+  const client = createCompanionClient({
+    fetch: server.fetch,
+    tokens: browserTokenStore(() => localStorage),
+  })
+  await act(async () => {
+    root.render(createElement(SessionProbe, { client }))
+    await Promise.resolve()
+  })
+  await settle()
 }
 
 export async function settle(): Promise<void> {

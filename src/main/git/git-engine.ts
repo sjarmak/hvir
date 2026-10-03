@@ -9,65 +9,56 @@ import type {
   HostPath,
   WorktreeDiscovery,
   WorkspaceActivityResult,
+  ReviewCheckpointRequest,
+  ReviewCheckpointResult,
 } from '../../shared'
-import { GitBranchCapability } from './git-branches'
+import { createGitCapabilities } from './git-capabilities'
 import { GitCommandContext, type GitHostPort } from './git-command-context'
-import { GitDetailCapability } from './git-detail'
-import { GitDiffCapability } from './git-diff'
-import { GitHistoryCapability } from './git-history'
-import { GitStatusCapability } from './git-status'
-import { GitWorktreeCapability, type HvirWorktreeChange } from './git-worktrees'
+import type { HvirWorktreeChange } from './git-worktrees'
 
 export { GIT_FETCH_ARGS, GIT_PULL_ARGS } from './git-branches'
 export { parseLocalBranches, parseWorktreeList } from './git-parsers'
 
 /** Stable worker-facing façade over cohesive, host-local Git capabilities. */
 export class GitEngine {
-  private readonly worktreeCapability: GitWorktreeCapability
-  private readonly statusCapability: GitStatusCapability
-  private readonly branchCapability: GitBranchCapability
-  private readonly diffCapability: GitDiffCapability
-  private readonly historyCapability: GitHistoryCapability
-  private readonly detailCapability: GitDetailCapability
+  private readonly capabilities: ReturnType<typeof createGitCapabilities>
 
   constructor(host: GitHostPort, projectRoot?: HostPath) {
-    const context = new GitCommandContext(host, projectRoot)
-    this.worktreeCapability = new GitWorktreeCapability(context)
-    this.statusCapability = new GitStatusCapability(context)
-    this.branchCapability = new GitBranchCapability(context, this.worktreeCapability)
-    this.diffCapability = new GitDiffCapability(context)
-    this.historyCapability = new GitHistoryCapability(context)
-    this.detailCapability = new GitDetailCapability(context)
+    this.capabilities = createGitCapabilities(new GitCommandContext(host, projectRoot))
+  }
+
+  reviewCheckpoint(request: ReviewCheckpointRequest): Promise<ReviewCheckpointResult> {
+    return this.capabilities.reviewCheckpoint(request)
   }
 
   worktrees(projectRoot: HostPath): Promise<WorktreeDiscovery> {
-    return this.worktreeCapability.discover(projectRoot)
+    return this.capabilities.worktree.discover(projectRoot)
   }
 
   pruneWorktrees(projectRoot: HostPath): Promise<WorktreeDiscovery> {
-    return this.worktreeCapability.prune(projectRoot)
+    return this.capabilities.worktree.prune(projectRoot)
   }
 
   workspaceActivity(
     workspaceRoot: HostPath,
     relatedWorktreeRoots: readonly HostPath[] = [],
   ): Promise<WorkspaceActivityResult> {
-    return this.statusCapability.workspaceActivity(workspaceRoot, relatedWorktreeRoots)
+    return this.capabilities.status.workspaceActivity(workspaceRoot, relatedWorktreeRoots)
   }
 
   branches(workspaceRoot: HostPath): Promise<GitBranchModel> {
-    return this.branchCapability.branches(workspaceRoot)
+    return this.capabilities.branch.branches(workspaceRoot)
   }
 
   fetch(workspaceRoot: HostPath): Promise<void> {
-    return this.branchCapability.fetch(workspaceRoot)
+    return this.capabilities.branch.fetch(workspaceRoot)
   }
 
   pullFastForward(
     workspaceRoot: HostPath,
     _relatedWorktreeRoots: readonly HostPath[] = [],
   ): Promise<void> {
-    return this.branchCapability.pullFastForward(workspaceRoot)
+    return this.capabilities.branch.pullFastForward(workspaceRoot)
   }
 
   switchBranch(
@@ -75,7 +66,7 @@ export class GitEngine {
     branch: string,
     _relatedWorktreeRoots: readonly HostPath[] = [],
   ): Promise<void> {
-    return this.branchCapability.switchBranch(workspaceRoot, branch)
+    return this.capabilities.branch.switchBranch(workspaceRoot, branch)
   }
 
   diffInputs(
@@ -83,18 +74,18 @@ export class GitEngine {
     base: DiffBase,
     revision?: string,
   ): Promise<GitDiffResponse> {
-    return this.diffCapability.inputs(path, base, revision)
+    return this.capabilities.diff.inputs(path, base, revision)
   }
 
   hvirWorktree(root: HostPath, change: HvirWorktreeChange): Promise<WorktreeDiscovery> {
-    return this.worktreeCapability.change(root, change)
+    return this.capabilities.worktree.change(root, change)
   }
 
   changes(
     projectRoot: HostPath,
     relatedWorktreeRoots: readonly HostPath[] = [],
   ): Promise<GitChanges> {
-    return this.statusCapability.changes(projectRoot, relatedWorktreeRoots)
+    return this.capabilities.status.changes(projectRoot, relatedWorktreeRoots)
   }
 
   ignoredEntries(
@@ -102,10 +93,10 @@ export class GitEngine {
     directory: HostPath,
     names: readonly string[],
   ): Promise<{ readonly ignoredNames: readonly string[] }> {
-    return this.statusCapability.ignoredEntries(projectRoot, directory, names)
+    return this.capabilities.status.ignoredEntries(projectRoot, directory, names)
   }
   ignoredPaths(projectRoot: HostPath, paths: readonly string[]) {
-    return this.statusCapability.ignoredPaths(projectRoot, paths)
+    return this.capabilities.status.ignoredPaths(projectRoot, paths)
   }
 
   history(
@@ -115,14 +106,14 @@ export class GitEngine {
     path?: HostPath,
     allRefs = false,
   ): Promise<GitHistoryPage> {
-    return this.historyCapability.history(projectRoot, limit, cursor, path, allRefs)
+    return this.capabilities.history.history(projectRoot, limit, cursor, path, allRefs)
   }
 
   blame(path: HostPath): Promise<readonly GitBlameRun[]> {
-    return this.detailCapability.blame(path)
+    return this.capabilities.detail.blame(path)
   }
 
   commitDetail(projectRoot: HostPath, hash: string): Promise<GitCommitDetail> {
-    return this.detailCapability.commitDetail(projectRoot, hash)
+    return this.capabilities.detail.commitDetail(projectRoot, hash)
   }
 }

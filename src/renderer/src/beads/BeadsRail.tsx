@@ -51,10 +51,16 @@ export function BeadsRailPanel({
   beads,
   session,
   layout,
+  focusBeadId,
+  onFocusHandled,
+  onFocusUnavailable,
 }: {
   readonly beads: BeadsWorkspace
   readonly session: BeadsRailContext
   readonly layout: Pick<BeadsRailLayout, 'railMode'>
+  readonly focusBeadId?: string
+  readonly onFocusHandled?: (id: string) => void
+  readonly onFocusUnavailable?: (id: string) => void
 }): ReactElement | null {
   if (!beads.beadsEnabled || !session.root) return null
   const root = session.root
@@ -67,6 +73,9 @@ export function BeadsRailPanel({
       onCrewAction={beads.requestCrewAction}
       onBeadAction={beads.requestBeadAction}
       canLaunch={beads.actionsAvailable}
+      focusBeadId={focusBeadId}
+      onFocusHandled={onFocusHandled}
+      onFocusUnavailable={onFocusUnavailable}
     />
   )
 }
