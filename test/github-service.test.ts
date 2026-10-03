@@ -158,7 +158,21 @@ describe('GitHubService.pulls', () => {
       available: false,
       reason: 'no-github-repo',
     })
-    expect(exec.mock.calls.some(([command]) => command === 'gh')).toBe(false)
+    expect(exec.mock.calls.map(([command, args]) => [command, args[0]])).toEqual([
+      ['git', 'remote'],
+    ])
+  })
+
+  it('runs every read on the lane the caller asks for', async () => {
+    const { host, exec } = fakeHost()
+    const snapshot = await service(host).pullsForProject(
+      { root: ROOT },
+      { host, root: ROOT },
+      'interactive',
+    )
+    expect(snapshot.available).toBe(true)
+    expect(exec.mock.calls.length).toBeGreaterThan(0)
+    expect(exec.mock.calls.every((call) => call[2]?.lane === 'interactive')).toBe(true)
   })
 
   it('reports gh missing when the login shell cannot find it', async () => {

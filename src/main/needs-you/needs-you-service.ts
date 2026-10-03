@@ -214,6 +214,7 @@ export class NeedsYouService {
       return await this.deps.beads.listForProject(
         { root: source.root, issuesOnly: true },
         project,
+        'interactive',
       )
     } catch (reason) {
       return {
@@ -229,7 +230,11 @@ export class NeedsYouService {
     project: { readonly host: ProjectHost; readonly root: HostPath },
   ): Promise<PullsResponse> {
     try {
-      return await this.deps.github.pullsForProject({ root: source.root }, project)
+      return await this.deps.github.pullsForProject(
+        { root: source.root },
+        project,
+        'interactive',
+      )
     } catch (reason) {
       return {
         available: false,

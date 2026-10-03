@@ -13,7 +13,7 @@ import {
   type PullCheckout,
   type ExecResult,
 } from '../../shared'
-import type { ExecOptions, ProjectHost } from '../project-host'
+import type { ExecLane, ExecOptions, ProjectHost } from '../project-host'
 import {
   classifyGhFailure,
   githubRemoteRepos,
@@ -161,12 +161,10 @@ export class GitHubService {
   async pullsForProject(
     _req: PullsRequest,
     project: { readonly host: ProjectHost; readonly root: HostPath },
+    lane: ExecLane = 'background',
   ): Promise<PullsResponse> {
     const { host, root } = project
-    const [branch, localRepos] = await Promise.all([
-      this.currentBranch(host, root),
-      this.remoteRepos(host, root),
-    ])
+    const localRepos = await this.remoteRepos(host, root, lane)
     if (localRepos !== undefined && localRepos.size === 0) {
       return {
         available: false,
@@ -174,9 +172,18 @@ export class GitHubService {
         message: 'No GitHub remote is configured for this workspace',
       }
     }
-    const repo = await this.resolveRepo(host, root)
+    const [branch, repo] = await Promise.all([
+      this.currentBranch(host, root, lane),
+      this.resolveRepo(host, root, false, lane),
+    ])
     if (!repo.ok) return repo.unavailable
-    const result = await this.gh(host, root, pullsQueryArgs(repo.repo, branch))
+    const result = await this.gh(
+      host,
+      root,
+      pullsQueryArgs(repo.repo, branch),
+      MAX_OUTPUT_BYTES,
+      lane,
+    )
     if (!result.ok) return result.unavailable
     try {
       const parsed = parsePullsOutput(result.stdout, localRepos ?? new Set())
@@ -270,13 +277,20 @@ export class GitHubService {
     host: ProjectHost,
     root: HostPath,
     refresh = false,
+    lane: ExecLane = 'background',
   ): Promise<RepoResult> {
     const key = `${root.hostId}\u0000${root.path}`
     const cached = this.repos.get(key)
     if (!refresh && cached !== undefined && this.now() - cached.at < REPO_TTL_MS) {
       return { ok: true, repo: cached.repo }
     }
-    const result = await this.gh(host, root, ['repo', 'view', '--json', 'nameWithOwner'])
+    const result = await this.gh(
+      host,
+      root,
+      ['repo', 'view', '--json', 'nameWithOwner'],
+      MAX_OUTPUT_BYTES,
+      lane,
+    )
     if (!result.ok) return result
     try {
       const repo = parseRepoView(result.stdout)
@@ -297,9 +311,10 @@ export class GitHubService {
   private async remoteRepos(
     host: ProjectHost,
     root: HostPath,
+    lane: ExecLane = 'background',
   ): Promise<ReadonlySet<string> | undefined> {
     try {
-      const result = await host.exec('git', ['remote', '-v'], this.gitOptions(root))
+      const result = await host.exec('git', ['remote', '-v'], this.gitOptions(root, lane))
       if (result.code !== 0) {
         console.error('[github] git remote exited non-zero', result.stderr.trim())
         return undefined
@@ -314,12 +329,13 @@ export class GitHubService {
   private async currentBranch(
     host: ProjectHost,
     root: HostPath,
+    lane: ExecLane = 'background',
   ): Promise<string | undefined> {
     try {
       const result = await host.exec(
         'git',
         ['symbolic-ref', '--quiet', '--short', 'HEAD'],
-        this.gitOptions(root),
+        this.gitOptions(root, lane),
       )
       const branch = result.stdout.trim()
       return result.code === 0 && branch !== '' ? branch : undefined
@@ -334,13 +350,14 @@ export class GitHubService {
     root: HostPath,
     args: readonly string[],
     maxBuffer = MAX_OUTPUT_BYTES,
+    lane: ExecLane = 'background',
   ): Promise<GhResult> {
     let result
     try {
       result = await host.exec('gh', args, {
         cwd: root,
         loginShell: true,
-        lane: 'background',
+        lane,
         timeout: GH_TIMEOUT_MS,
         maxBuffer,
       })
@@ -362,10 +379,10 @@ export class GitHubService {
     return { ok: true, stdout: result.stdout }
   }
 
-  private gitOptions(root: HostPath): ExecOptions {
+  private gitOptions(root: HostPath, lane: ExecLane = 'background'): ExecOptions {
     return {
       cwd: root,
-      lane: 'background',
+      lane,
       timeout: GIT_TIMEOUT_MS,
       maxBuffer: MAX_OUTPUT_BYTES,
       maxStdoutNulRecords: 32_768,

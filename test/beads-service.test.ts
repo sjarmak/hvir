@@ -9,11 +9,7 @@ import {
   parseGatesOutput,
 } from '../src/main/beads/beads-parse'
 import type { ProjectHost } from '../src/main/project-host'
-import {
-  asHostId,
-  hostPath,
-  type ExecResult,
-} from '../src/shared'
+import { asHostId, hostPath, type ExecResult } from '../src/shared'
 
 const ROOT = hostPath(asHostId('local'), '/projects/demo')
 
@@ -141,8 +137,9 @@ describe('BeadsService.list', () => {
       expect(opts?.unsetEnv).toBeUndefined()
     }
     // The core list query still carries the canonical flags.
-    const listCall = exec.mock.calls.find(([, args]) =>
-      (args as string[]).includes('--json') && (args as string[]).includes('--flat'),
+    const listCall = exec.mock.calls.find(
+      ([, args]) =>
+        (args as string[]).includes('--json') && (args as string[]).includes('--flat'),
     )
     expect(listCall?.[1]).toEqual(
       expect.arrayContaining(['-C', ROOT.path, 'list', '--json', '--flat', '--no-pager']),
@@ -182,8 +179,10 @@ describe('BeadsService.list', () => {
     if (!result.available) throw new Error('expected availability')
     expect(result.closedIssues?.map((issue) => issue.id)).toEqual(['demo-9'])
     expect(
-      exec.mock.calls.some(([, args]) =>
-        (args as string[]).includes('--status') && (args as string[]).includes('closed'),
+      exec.mock.calls.some(
+        ([, args]) =>
+          (args as string[]).includes('--status') &&
+          (args as string[]).includes('closed'),
       ),
     ).toBe(true)
   })
@@ -285,7 +284,9 @@ describe('classifyListFailure', () => {
   })
 
   it('keeps no-database and generic failures distinct from unreachable', () => {
-    expect(classifyListFailure(ROOT, 'no beads project found', 1).reason).toBe('no-database')
+    expect(classifyListFailure(ROOT, 'no beads project found', 1).reason).toBe(
+      'no-database',
+    )
     const generic = classifyListFailure(ROOT, 'dolt server exploded', 2)
     expect(generic).toMatchObject({ reason: 'error', message: 'dolt server exploded' })
   })
@@ -333,7 +334,8 @@ describe('parseBeadsListOutput', () => {
       parseBeadsListOutput('[{"id":"hv 1","title":"t","status":"open"}]'),
     ).toThrow(/not a valid bd id/)
     expect(
-      parseBeadsListOutput('[{"id":"projects-sl7.4","title":"t","status":"open"}]')[0]?.id,
+      parseBeadsListOutput('[{"id":"projects-sl7.4","title":"t","status":"open"}]')[0]
+        ?.id,
     ).toBe('projects-sl7.4')
   })
 })
@@ -357,13 +359,25 @@ describe('parseGatesOutput', () => {
   it('parses gates and tolerates field-name variants', () => {
     const gates = parseGatesOutput(
       JSON.stringify([
-        { id: 'g1', title: 'Approve release', gate_type: 'human', blocked_id: 'gc-x', state: 'open' },
+        {
+          id: 'g1',
+          title: 'Approve release',
+          gate_type: 'human',
+          blocked_id: 'gc-x',
+          state: 'open',
+        },
         { id: 'g2', title: 'CI', type: 'gh:run', issue_id: 'gc-y', status: 'open' },
         { title: 'no id, dropped' },
       ]),
     )
     expect(gates).toEqual([
-      { id: 'g1', title: 'Approve release', gateType: 'human', blockedId: 'gc-x', state: 'open' },
+      {
+        id: 'g1',
+        title: 'Approve release',
+        gateType: 'human',
+        blockedId: 'gc-x',
+        state: 'open',
+      },
       { id: 'g2', title: 'CI', gateType: 'gh:run', blockedId: 'gc-y', state: 'open' },
     ])
   })
@@ -377,8 +391,14 @@ describe('parseGatesOutput', () => {
 describe('parseDispatchableOutput', () => {
   it('accepts an id array, an object array, and newline-delimited forms', () => {
     expect(parseDispatchableOutput('["gc-a","gc-b"]')).toEqual(['gc-a', 'gc-b'])
-    expect(parseDispatchableOutput('[{"id":"gc-a"},{"id":"gc-c"}]')).toEqual(['gc-a', 'gc-c'])
-    expect(parseDispatchableOutput('{"id":"gc-a"}\n{"id":"gc-b"}')).toEqual(['gc-a', 'gc-b'])
+    expect(parseDispatchableOutput('[{"id":"gc-a"},{"id":"gc-c"}]')).toEqual([
+      'gc-a',
+      'gc-c',
+    ])
+    expect(parseDispatchableOutput('{"id":"gc-a"}\n{"id":"gc-b"}')).toEqual([
+      'gc-a',
+      'gc-b',
+    ])
     expect(parseDispatchableOutput('gc-a\ngc-b')).toEqual(['gc-a', 'gc-b'])
   })
 
@@ -400,9 +420,11 @@ describe('BeadsService.list enrichment', () => {
       statType: overrides.hasPredicate ? 'file' : 'missing',
       exec: (command, args) => {
         if (command === 'jq') return overrides.jq?.() ?? execResult(0, '[]')
-        if (args.includes('gate')) return execResult(0, JSON.stringify(overrides.gates ?? []))
+        if (args.includes('gate'))
+          return execResult(0, JSON.stringify(overrides.gates ?? []))
         if (args.includes('digraph')) return execResult(0, overrides.digraph ?? '')
-        if (args.includes('--ready')) return execResult(0, JSON.stringify(overrides.ready))
+        if (args.includes('--ready'))
+          return execResult(0, JSON.stringify(overrides.ready))
         return execResult(0, JSON.stringify(overrides.base))
       },
     })
@@ -451,7 +473,10 @@ describe('BeadsService.list enrichment', () => {
 
   it('reads only the base list when the request is issues-only', async () => {
     const { host, exec } = enrichedHost({
-      base: [issueJson({ id: 'leaf-1' }), issueJson({ id: 'epic-1', issue_type: 'epic' })],
+      base: [
+        issueJson({ id: 'leaf-1' }),
+        issueJson({ id: 'epic-1', issue_type: 'epic' }),
+      ],
       ready: [issueJson({ id: 'leaf-1' })],
       hasPredicate: true,
     })
@@ -467,6 +492,23 @@ describe('BeadsService.list enrichment', () => {
     })
     expect(exec.mock.calls).toHaveLength(1)
     expect(exec.mock.calls[0]?.[0]).toBe('bd')
+    expect(exec.mock.calls[0]?.[2]).toMatchObject({ lane: 'background' })
+  })
+
+  it('runs an issues-only read on the lane the caller asks for', async () => {
+    const { host, exec } = enrichedHost({
+      base: [issueJson({ id: 'leaf-1' })],
+      ready: [],
+      hasPredicate: false,
+    })
+    const result = await service(host).listForProject(
+      { root: ROOT, issuesOnly: true },
+      { host, root: ROOT },
+      'interactive',
+    )
+    expect(result.available).toBe(true)
+    expect(exec.mock.calls).toHaveLength(1)
+    expect(exec.mock.calls[0]?.[2]).toMatchObject({ lane: 'interactive' })
   })
 
   it('falls back to structural when the predicate errors', async () => {
@@ -489,7 +531,15 @@ describe('BeadsService.list enrichment', () => {
       base: [issueJson({ id: 'gc-a' }), issueJson({ id: 'gc-b' })],
       ready: [],
       digraph: 'gc-a gc-b',
-      gates: [{ id: 'g1', title: 'Approve', gate_type: 'human', blocked_id: 'gc-a', state: 'open' }],
+      gates: [
+        {
+          id: 'g1',
+          title: 'Approve',
+          gate_type: 'human',
+          blocked_id: 'gc-a',
+          state: 'open',
+        },
+      ],
     })
     const result = await service(host).list({ root: ROOT })
     if (!result.available) throw new Error('expected availability')

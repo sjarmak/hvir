@@ -352,6 +352,29 @@ describe('NeedsYouService', () => {
     expect(reads).not.toHaveBeenCalled()
     remote.release(owner, 1)
   })
+
+  it('reads beads and pulls on the interactive exec lane', async () => {
+    const listForProject = vi.fn(() => Promise.resolve(beadsUnavailable))
+    const pullsForProject = vi.fn(() => Promise.resolve(pullsUnavailable))
+    const service = new NeedsYouService({
+      getProjectState: () =>
+        state([workspace('workspace-one', hostPath(asHostId('local'), '/work/one'))]),
+      connectedHosts: () => [host('local')],
+      beads: { listForProject },
+      github: { pullsForProject },
+    })
+    await service.acquire(owner, { demandGeneration: 1 })
+    expect(listForProject).toHaveBeenCalledWith(
+      expect.objectContaining({ issuesOnly: true }),
+      expect.anything(),
+      'interactive',
+    )
+    expect(pullsForProject).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'interactive',
+    )
+  })
 })
 
 function serviceFor(

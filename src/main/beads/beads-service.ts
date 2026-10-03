@@ -14,7 +14,7 @@ import {
   type DispatchabilitySource,
   type HostPath,
 } from '../../shared'
-import type { ProjectHost } from '../project-host'
+import type { ExecLane, ProjectHost } from '../project-host'
 import {
   classifyListFailure,
   joinRoot,
@@ -46,10 +46,11 @@ export class BeadsService {
   async listForProject(
     req: BeadsListRequest,
     project: { readonly host: ProjectHost; readonly root: HostPath },
+    lane: ExecLane = 'background',
   ): Promise<BeadsListResponse> {
     const { host, root } = project
     if (req.issuesOnly === true) {
-      const base = await this.runList(host, root, [])
+      const base = await this.runList(host, root, [], lane)
       if (!base.ok) return base.unavailable
       return {
         available: true,
@@ -147,6 +148,7 @@ export class BeadsService {
     host: ProjectHost,
     root: HostPath,
     extraArgs: readonly string[],
+    lane: ExecLane = 'background',
   ): Promise<
     | {
         readonly ok: true
@@ -177,7 +179,7 @@ export class BeadsService {
       result = await host.exec('bd', args, {
         maxBuffer: MAX_OUTPUT_BYTES,
         loginShell: true,
-        lane: 'background',
+        lane,
         timeout: 20_000,
       })
     } catch (reason) {
