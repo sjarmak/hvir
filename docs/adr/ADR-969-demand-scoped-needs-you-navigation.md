@@ -41,7 +41,9 @@ feedback are distinct reasons. Prose is not classified and no semantic priority 
 is introduced. GitHub identities include the repository and PR number; project data
 retains its host-qualified source. Refresh is explicit for CLI-backed snapshots.
 
-Session selection routes to the existing Sessions owner with exact identity. Bead
+Session selection opens the exact terminal in its workspace through the existing
+Sessions open request, and falls back to the Sessions destination with the exact row
+selected when that terminal is unavailable or the request fails. Bead
 selection routes through the existing workspace and Beads panel owners, and the
 destination confirms the requested bead against its own read before revealing it.
 PR selection retains the explicit GitHub link. No action starts an agent, creates a

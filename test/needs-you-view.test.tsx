@@ -12,16 +12,26 @@ import {
 } from 'vitest'
 import { NeedsYouView } from '../src/renderer/src/needs-you/NeedsYouView'
 import { sessionsProjectionFixture } from './sessions-projection-fixture'
-import { asHostId, hostPath, type HvirApi, type NeedsYouSnapshot } from '../src/shared'
+import {
+  asHarnessProviderId,
+  asHostId,
+  asSessionsProjectHandle,
+  asSessionsPtyHandle,
+  asSessionsTerminalHandle,
+  asSessionsWorkspaceHandle,
+  hostPath,
+  SESSIONS_HVIR_ORIGIN,
+  sessionsWorkspaceQualifier,
+  type HvirApi,
+  type NeedsYouSnapshot,
+  type SessionsProjectionRow,
+} from '../src/shared'
 
 let container: HTMLDivElement
 let root: Root
 let invoke: ReturnType<
   typeof vi.fn<
-    (
-      channel: string,
-      request: { demandGeneration: number },
-    ) => Promise<NeedsYouSnapshot | undefined>
+    (channel: string, request: { demandGeneration: number }) => Promise<unknown>
   >
 >
 let focused: MockInstance<() => boolean>
@@ -102,17 +112,79 @@ afterEach(async () => {
   vi.clearAllMocks()
 })
 
-const render = async () =>
+const onSession = vi.fn()
+const onOpened = vi.fn()
+const onFocusOpened = vi.fn(() => Promise.resolve(true))
+
+const render = async (projection = sessionsProjectionFixture()) =>
   interact(() =>
     root.render(
       <NeedsYouView
-        projection={sessionsProjectionFixture()}
-        onSession={vi.fn()}
+        projection={projection}
+        onSession={onSession}
+        onOpened={onOpened}
+        onFocusOpened={onFocusOpened}
         onBead={onBead}
         onError={onError}
       />,
     ),
   )
+
+const unsupported = { status: 'unsupported' as const }
+const liveRow: SessionsProjectionRow = {
+  handle: asSessionsTerminalHandle('terminal'),
+  origin: SESSIONS_HVIR_ORIGIN,
+  project: { id: asSessionsProjectHandle('project'), name: 'Project' },
+  workspace: {
+    id: asSessionsWorkspaceHandle('workspace'),
+    name: 'main',
+    main: true,
+    qualifier: sessionsWorkspaceQualifier(1, 0, 0),
+  },
+  host: { id: 'local', label: 'Local', kind: 'local', connectionState: 'connected' },
+  provider: { id: asHarnessProviderId('codex'), name: 'Codex', kind: 'agent' },
+  profile: unsupported,
+  title: 'Waiting session',
+  lifecycle: 'live',
+  connectionState: 'connected',
+  attention: { status: 'available', value: 'prompt' },
+  working: unsupported,
+  model: unsupported,
+  context: unsupported,
+  turn: unsupported,
+  telemetryFreshness: unsupported,
+  usage: unsupported,
+  livePty: {
+    handle: asSessionsPtyHandle('pty'),
+    rendererOwnerId: 1,
+    rendererGeneration: 2,
+  },
+}
+
+const projectionWith = (row: SessionsProjectionRow) => {
+  const projection = sessionsProjectionFixture()
+  const snapshot = {
+    ...projection.snapshot(),
+    demandGeneration: 7,
+    sourceRevision: 9,
+    rows: [row],
+  }
+  Object.assign(projection, { snapshot: () => snapshot })
+  return projection
+}
+
+const sessionButton = () =>
+  [...container.querySelectorAll('button')].find((button) =>
+    button.textContent?.includes('Waiting session'),
+  )!
+
+const openedResponse = {
+  outcome: 'opened' as const,
+  state: { projects: [] },
+  handle: liveRow.handle,
+  workspaceQualifier: liveRow.workspace.qualifier,
+  livePty: liveRow.livePty,
+}
 
 describe('Needs you view', () => {
   it('pages a bounded list with native controls without dropping targets', async () => {
@@ -195,16 +267,7 @@ describe('Needs you view', () => {
     const failed = { status: 'unavailable' as const }
     const projection = sessionsProjectionFixture()
     Object.assign(projection, { snapshot: () => failed, retry })
-    await interact(() =>
-      root.render(
-        <NeedsYouView
-          projection={projection}
-          onSession={vi.fn()}
-          onBead={onBead}
-          onError={onError}
-        />,
-      ),
-    )
+    await render(projection)
     await interact(() =>
       container.querySelector<HTMLButtonElement>('.needs-you-header button')!.click(),
     )
@@ -371,5 +434,101 @@ describe('Needs you view', () => {
     expect(beadButton().disabled).toBe(false)
     await interact(() => rejectAction(new Error('Obsolete action failed')))
     expect(container.textContent).not.toContain('Obsolete action failed')
+  })
+
+  it('opens the exact terminal from the projection snapshot and focuses its PTY', async () => {
+    const respond = invoke.getMockImplementation()!
+    invoke.mockImplementation((channel, request) =>
+      channel === 'sessions:open'
+        ? Promise.resolve(openedResponse)
+        : respond(channel, request),
+    )
+    await render(projectionWith(liveRow))
+    await interact(() => sessionButton().click())
+    expect(invoke).toHaveBeenCalledWith('sessions:open', {
+      demandGeneration: 7,
+      sourceRevision: 9,
+      handle: liveRow.handle,
+      projectId: liveRow.project.id,
+      workspaceId: liveRow.workspace.id,
+      workspaceQualifier: liveRow.workspace.qualifier,
+      livePty: liveRow.livePty,
+    })
+    expect(onOpened).toHaveBeenCalledWith(openedResponse.state)
+    expect(onFocusOpened).toHaveBeenCalledWith(
+      liveRow.handle,
+      liveRow.workspace.qualifier,
+      liveRow.livePty,
+    )
+    expect(onSession).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the Sessions destination with the exact row when the terminal is unavailable', async () => {
+    const respond = invoke.getMockImplementation()!
+    invoke.mockImplementation((channel, request) =>
+      channel === 'sessions:open'
+        ? Promise.resolve({ outcome: 'unavailable', reason: 'terminal-unavailable' })
+        : respond(channel, request),
+    )
+    await render(projectionWith(liveRow))
+    await interact(() => sessionButton().click())
+    expect(onSession).toHaveBeenCalledWith(liveRow)
+    expect(onOpened).not.toHaveBeenCalled()
+    expect(onFocusOpened).not.toHaveBeenCalled()
+    expect(sessionButton().disabled).toBe(false)
+  })
+
+  it('falls back to the Sessions destination when the open request throws', async () => {
+    const respond = invoke.getMockImplementation()!
+    invoke.mockImplementation((channel, request) =>
+      channel === 'sessions:open'
+        ? Promise.reject(new Error('ipc failed'))
+        : respond(channel, request),
+    )
+    await render(projectionWith(liveRow))
+    await interact(() => sessionButton().click())
+    expect(onSession).toHaveBeenCalledWith(liveRow)
+    expect(onError).toHaveBeenCalledWith('The exact terminal could not be opened')
+    expect(onOpened).not.toHaveBeenCalled()
+  })
+
+  it('reports an opened terminal that refuses focus', async () => {
+    const respond = invoke.getMockImplementation()!
+    invoke.mockImplementation((channel, request) =>
+      channel === 'sessions:open'
+        ? Promise.resolve(openedResponse)
+        : respond(channel, request),
+    )
+    onFocusOpened.mockResolvedValueOnce(false)
+    await render(projectionWith(liveRow))
+    await interact(() => sessionButton().click())
+    expect(onOpened).toHaveBeenCalledWith(openedResponse.state)
+    expect(onError).toHaveBeenCalledWith(
+      'The exact terminal changed before it could receive focus',
+    )
+    expect(onSession).not.toHaveBeenCalled()
+  })
+
+  it('does not navigate when the view is backgrounded before the open resolves', async () => {
+    let resolveOpen!: (value: unknown) => void
+    const respond = invoke.getMockImplementation()!
+    invoke.mockImplementation((channel, request) =>
+      channel === 'sessions:open'
+        ? new Promise((resolve) => {
+            resolveOpen = resolve
+          })
+        : respond(channel, request),
+    )
+    await render(projectionWith(liveRow))
+    await interact(() => sessionButton().click())
+    expect(sessionButton().textContent).toContain('Opening…')
+    focused.mockReturnValue(false)
+    await interact(() => {
+      window.dispatchEvent(new Event('blur'))
+    })
+    await interact(() => resolveOpen(openedResponse))
+    expect(onOpened).not.toHaveBeenCalled()
+    expect(onFocusOpened).not.toHaveBeenCalled()
+    expect(onSession).not.toHaveBeenCalled()
   })
 })

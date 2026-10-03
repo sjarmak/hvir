@@ -50,6 +50,8 @@ export function ApplicationDestinations({
         <NeedsYouView
           projection={projection}
           onSession={onSession}
+          onOpened={onOpened}
+          onFocusOpened={runtime.focusProjectedSession}
           onBead={onBead}
           onError={onError}
         />

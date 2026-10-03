@@ -26,6 +26,7 @@ import { useSessionDetailsPopover } from '../harness/use-session-details-popover
 import { useSessionsDetailsUsage } from '../harness/use-session-details-usage'
 import type { SessionsCommandPort } from './sessions-command-port'
 import { sameSessionTarget } from './sessions-overview-target'
+import { requestSessionOpen } from './sessions-open-request'
 import { SessionsProjectLaunchers } from './SessionsProjectLaunchers'
 import { SessionsLaunchDialog } from './SessionsLaunchDialog'
 import { useSessionsLaunch } from './use-sessions-launch'
@@ -82,7 +83,6 @@ interface SessionsOverviewProps {
   ) => Promise<boolean>
   readonly initialTarget?: SessionsProjectionRow
 }
-
 
 export function SessionsOverview({
   commands,
@@ -237,14 +237,7 @@ export function SessionsOverview({
     if (index < 0) return
     const nextPage = Math.floor(index / SESSIONS_OVERVIEW_PAGE_SIZE)
     if (nextPage !== pageIndex) setPageIndex(nextPage)
-  }, [
-    foreground,
-    handles,
-    initialTarget,
-    pageIndex,
-    snapshot.rows,
-    snapshot.status,
-  ])
+  }, [foreground, handles, initialTarget, pageIndex, snapshot.rows, snapshot.status])
   useEffect(() => {
     const handle = pendingFocus.current
     if (!handle || !page.rows.some((row) => row.handle === handle)) return
@@ -288,15 +281,7 @@ export function SessionsOverview({
       setOpening(row.handle)
       setFeedback('Opening exact terminal…')
       try {
-        const result = await window.hvir.invoke('sessions:open', {
-          demandGeneration: captured.demandGeneration,
-          sourceRevision: captured.sourceRevision,
-          handle: row.handle,
-          projectId: row.project.id,
-          workspaceId: row.workspace.id,
-          workspaceQualifier: row.workspace.qualifier,
-          livePty: row.livePty,
-        })
+        const result = await requestSessionOpen(captured, row)
         if (generation !== openGeneration.current) return
         if (result.outcome === 'unavailable') {
           setFeedback(

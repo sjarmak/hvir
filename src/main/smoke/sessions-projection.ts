@@ -17,6 +17,7 @@ import type { PtySupervisor } from '../pty/pty-supervisor'
 import { SESSIONS_USAGE_SMOKE_TOTAL } from './sessions-usage-provider'
 import { captureSessionsVisuals } from './sessions-visual'
 import { verifySessionsProjectPickerReturn } from './sessions-project-picker'
+import { verifyNeedsYouSessionOpen } from './needs-you-session-open'
 import { verifyNeedsYouView } from './needs-you-view'
 import { verifyQolRailView } from './qol-rail-view'
 import { verifyReviewCheckpointView } from './review-checkpoint-view'
@@ -290,9 +291,10 @@ export async function verifySessionsProjectionSmoke(options: {
     publishState,
   })
   const hiddenTerminalStatus = await ensureSessionsLiveTerminal(win, supervisor)
+  const needsYouSessionStatus = await verifyNeedsYouSessionOpen(win, supervisor)
   const hiddenStatus = await verifySessionsHiddenRelease(win)
   const captureStatus = captures.length > 0 ? ` + ${captures.length} visual captures` : ''
-  return `cross-project/worktree + renderer rollover + stale Open + quiet release + ${terminalStatus}${captureStatus} + ${overviewStatus} + ${pickerStatus} + ${needsYouStatus} + ${qolRailStatus} + ${checkpointStatus} + hidden ${hiddenTerminalStatus} + ${hiddenStatus}`
+  return `cross-project/worktree + renderer rollover + stale Open + quiet release + ${terminalStatus}${captureStatus} + ${overviewStatus} + ${pickerStatus} + ${needsYouStatus} + ${qolRailStatus} + ${checkpointStatus} + hidden ${hiddenTerminalStatus} + ${needsYouSessionStatus} + ${hiddenStatus}`
 }
 
 async function verifySessionsHiddenRelease(win: BrowserWindow): Promise<string> {

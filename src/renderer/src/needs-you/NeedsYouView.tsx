@@ -6,7 +6,14 @@ import {
   useSyncExternalStore,
   type ReactElement,
 } from 'react'
-import type { SessionsProjectionRow } from '../../../shared'
+import type {
+  ProjectState,
+  SessionsLivePtyQualifier,
+  SessionsProjectionRow,
+  SessionsTerminalHandle,
+  SessionsWorkspaceQualifier,
+} from '../../../shared'
+import { requestSessionOpen } from '../sessions/sessions-open-request'
 import type { SessionsProjectionCoordinator } from '../sessions/sessions-projection-coordinator'
 import { useSessionsForeground } from '../sessions/use-sessions-foreground'
 import { NeedsYouCoordinator } from './needs-you-coordinator'
@@ -21,11 +28,19 @@ const PAGE_SIZE = 50
 export function NeedsYouView({
   projection,
   onSession,
+  onOpened,
+  onFocusOpened,
   onBead,
   onError,
 }: {
   readonly projection: SessionsProjectionCoordinator
   readonly onSession: (row: SessionsProjectionRow) => void
+  readonly onOpened: (state: ProjectState) => void
+  readonly onFocusOpened: (
+    handle: SessionsTerminalHandle,
+    workspaceQualifier: SessionsWorkspaceQualifier,
+    livePty: SessionsLivePtyQualifier,
+  ) => Promise<boolean>
   readonly onBead: (target: NeedsYouBeadTarget) => Promise<boolean | void>
   readonly onError: (message: string) => void
 }): ReactElement {
@@ -92,10 +107,33 @@ export function NeedsYouView({
   const page = Math.min(pageIndex, pageCount - 1)
   const visible = rows.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
 
+  const openSession = async (key: string, row: SessionsProjectionRow): Promise<void> => {
+    const generation = ++actionGeneration.current
+    setOpening(key)
+    setFeedback(undefined)
+    const result = await requestSessionOpen(projection.snapshot(), row).catch(
+      () => 'failed' as const,
+    )
+    if (generation !== actionGeneration.current) return
+    setOpening(undefined)
+    if (result === 'failed') onError('The exact terminal could not be opened')
+    if (result === 'failed' || result.outcome === 'unavailable') {
+      onSession(row)
+      return
+    }
+    onOpened(result.state)
+    const focused = await onFocusOpened(
+      result.handle,
+      result.workspaceQualifier,
+      result.livePty,
+    )
+    if (!focused) onError('The exact terminal changed before it could receive focus')
+  }
+
   const activate = async (row: NeedsYouRow): Promise<void> => {
     if (opening || row.target.kind === 'pull' || row.target.kind === 'ask') return
     if (row.target.kind === 'session') {
-      onSession(row.target.row)
+      await openSession(row.key, row.target.row)
       return
     }
     const generation = ++actionGeneration.current
