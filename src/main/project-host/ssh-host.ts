@@ -814,6 +814,11 @@ export class SshHost implements ProjectHost {
           value: import('ssh2').AnyAuthMethod | false,
         ) => void
         void (async (): Promise<import('ssh2').AnyAuthMethod | false> => {
+          if (password !== undefined) {
+            if (this.cachedPassword === password) this.cachedPassword = undefined
+            credentialAttempt.password = undefined
+            password = undefined
+          }
           if (authenticationCancelled || !isActive()) return false
           // `ssh2` passes null before the first authentication attempt. That
           // means the server's methods are not known yet, not that none are
@@ -871,11 +876,6 @@ export class SshHost implements ProjectHost {
                 credentialAttempt.password = password
                 return { type: 'password', username: config.user, password }
               }
-            }
-            if (password !== undefined) {
-              if (this.cachedPassword === password) this.cachedPassword = undefined
-              credentialAttempt.password = undefined
-              password = undefined
             }
             promptedForPassword = true
             password = (

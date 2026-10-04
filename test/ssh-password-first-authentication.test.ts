@@ -114,6 +114,35 @@ describe('SshHost password-first authentication', () => {
     await host.dispose()
   })
 
+  it('does not cache a rejected password after keyboard-interactive succeeds', async () => {
+    const prompt = vi
+      .fn<() => Promise<readonly string[] | undefined>>()
+      .mockResolvedValueOnce(['rejected password'])
+      .mockResolvedValueOnce(['one-time answer'])
+    const host = createTestSshHost({
+      config: aliasConfig(),
+      prompter: { prompt },
+    })
+    const attempt = createCredentialAttempt(host)
+    const config = connectConfig(host, attempt, 'pool')
+
+    await expect(nextAuth(config, null)).resolves.toMatchObject({ type: 'none' })
+    await expect(
+      nextAuth(config, ['keyboard-interactive', 'password']),
+    ).resolves.toMatchObject({ type: 'password', password: 'rejected password' })
+    const keyboard = await nextAuth(config, ['keyboard-interactive', 'password'])
+    if (keyboard === false || keyboard.type !== 'keyboard-interactive') {
+      throw new Error('Expected keyboard-interactive authentication')
+    }
+    await expect(answerKeyboardInteractive(keyboard, 'Second factor')).resolves.toEqual([
+      'one-time answer',
+    ])
+    rememberSuccessfulCredentials(host, attempt)
+
+    expect(cachedPassword(host)).toBeUndefined()
+    await host.dispose()
+  })
+
   it('prefers password for every generated transport count when both methods remain', async () => {
     await hegel.testAsync(async (testCase) => {
       const transportCount = testCase.draw(gs.integers({ minValue: 1, maxValue: 8 }))
@@ -202,6 +231,10 @@ function rememberSuccessfulCredentials(
       rememberSuccessfulCredentials(value: TestCredentialAttempt): void
     }
   ).rememberSuccessfulCredentials(attempt)
+}
+
+function cachedPassword(host: SshHost): string | undefined {
+  return (host as unknown as { cachedPassword?: string }).cachedPassword
 }
 
 function connectConfig(
