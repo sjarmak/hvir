@@ -728,6 +728,7 @@ export class SshHost implements ProjectHost {
     const { config, agentSocket, prompter } = this.options
     const attempted = new Set<string>()
     let password: string | undefined
+    let promptedForPassword = false
     let authenticationCancelled = false
     let keyboardInteractiveRounds = 0
     const prompt = async (request: SshPrompt): Promise<readonly string[] | undefined> => {
@@ -813,6 +814,11 @@ export class SshHost implements ProjectHost {
           value: import('ssh2').AnyAuthMethod | false,
         ) => void
         void (async (): Promise<import('ssh2').AnyAuthMethod | false> => {
+          if (password !== undefined) {
+            if (this.cachedPassword === password) this.cachedPassword = undefined
+            credentialAttempt.password = undefined
+            password = undefined
+          }
           if (authenticationCancelled || !isActive()) return false
           // `ssh2` passes null before the first authentication attempt. That
           // means the server's methods are not known yet, not that none are
@@ -858,6 +864,34 @@ export class SshHost implements ProjectHost {
               passphrase,
             }
           }
+          if (methods === null) {
+            attempted.add('none')
+            return { type: 'none', username: config.user }
+          }
+          if (available.has('password') && !promptedForPassword) {
+            if (!attempted.has('password')) {
+              attempted.add('password')
+              password = this.cachedPassword
+              if (password) {
+                credentialAttempt.password = password
+                return { type: 'password', username: config.user, password }
+              }
+            }
+            promptedForPassword = true
+            password = (
+              await prompt({
+                hostId: this.hostId,
+                kind: 'password',
+                title: `Authenticate to ${config.alias}`,
+                prompts: [{ text: `Password for ${config.user}`, echo: false }],
+              })
+            )?.[0]
+            if (password && isActive()) {
+              credentialAttempt.password = password
+              return { type: 'password', username: config.user, password }
+            }
+            if (authenticationCancelled || !isActive()) return false
+          }
           if (available.has('keyboard-interactive') && !attempted.has('keyboard')) {
             attempted.add('keyboard')
             return {
@@ -883,22 +917,6 @@ export class SshHost implements ProjectHost {
                   .then((a) => finish([...(a ?? [])]))
                   .catch(() => finish([]))
               },
-            }
-          }
-          if (available.has('password') && !attempted.has('password')) {
-            attempted.add('password')
-            password ??= this.cachedPassword
-            password ??= (
-              await prompt({
-                hostId: this.hostId,
-                kind: 'password',
-                title: `Authenticate to ${config.alias}`,
-                prompts: [{ text: `Password for ${config.user}`, echo: false }],
-              })
-            )?.[0]
-            if (password && isActive()) {
-              credentialAttempt.password = password
-              return { type: 'password', username: config.user, password }
             }
           }
           return false

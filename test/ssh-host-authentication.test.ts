@@ -335,6 +335,23 @@ describe('SshHost authentication', () => {
     await host.dispose()
   })
 
+  it('does not fall through to keyboard-interactive after password is cancelled', async () => {
+    const prompt = vi.fn(() => Promise.resolve(undefined))
+    const host = createTestSshHost({
+      config: aliasConfig(),
+      prompter: { prompt },
+    })
+    const config = connectConfig(host)
+
+    await expect(nextAuth(config, null)).resolves.toMatchObject({ type: 'none' })
+    await expect(nextAuth(config, ['keyboard-interactive', 'password'])).resolves.toBe(
+      false,
+    )
+    await expect(nextAuth(config, ['keyboard-interactive'])).resolves.toBe(false)
+    expect(prompt).toHaveBeenCalledOnce()
+    await host.dispose()
+  })
+
   it('does not fall through to password after keyboard-interactive is cancelled', async () => {
     const prompt = vi.fn(() => Promise.resolve(undefined))
     const host = createTestSshHost({
@@ -342,7 +359,9 @@ describe('SshHost authentication', () => {
       prompter: { prompt },
     })
     const config = connectConfig(host)
-    const keyboard = await nextAuth(config, null)
+
+    await expect(nextAuth(config, null)).resolves.toMatchObject({ type: 'none' })
+    const keyboard = await nextAuth(config, ['keyboard-interactive'])
     expect(keyboard).toMatchObject({ type: 'keyboard-interactive' })
     if (keyboard === false || keyboard.type !== 'keyboard-interactive') {
       throw new Error('Expected keyboard-interactive authentication')
