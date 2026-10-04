@@ -27,9 +27,10 @@ export function CompanionApp({ client, createPane }: CompanionAppProps) {
     )
   }
   const { state } = session
+  const showingSession = state.terminal !== undefined || state.transcript !== undefined
   return (
     <main className="companion">
-      <InstanceSwitcher onLeave={session.leave} />
+      {showingSession ? null : <InstanceSwitcher onLeave={session.leave} collapsible />}
       <ConnectionBanner connection={session.connection} onReconnect={session.reconnect} />
       {session.notice === undefined ? null : (
         <p className="companion-error" role="alert">
