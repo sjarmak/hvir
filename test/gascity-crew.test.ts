@@ -230,6 +230,69 @@ describe('crew diagnostics', () => {
     })
     expect(derived.diagnostics).toMatchObject({ namedSessions: 0, pinned: 0 })
   })
+
+  it('classifies pack agents from qualified templates and encoded tmux names', () => {
+    const derived = deriveCrew({
+      sessions: parseSessionListOutput(
+        JSON.stringify([
+          {
+            id: 'om-wisp-3ls2',
+            session_name: 'core__control-dispatcher-om-wisp-3ls2',
+            template: 'omni-experiments/core.control-dispatcher',
+            work_dir: LIVE_CITY,
+          },
+          {
+            id: 'om-wisp-kfh',
+            session_name: 'bd__dog-om-wisp-kfh',
+            work_dir: LIVE_CITY,
+          },
+        ]),
+        HOST,
+      ),
+      config: parseResolvedConfig(`
+[[agent]]
+name = "control-dispatcher"
+
+[[agent]]
+name = "dog"
+`),
+      rigRoot: hostPath(HOST, LIVE_CITY),
+      cityRoot: hostPath(HOST, LIVE_CITY),
+      cityWorkspace: true,
+      hqRigName: 'hq',
+      includeInternals: true,
+      tierSource: 'config',
+    })
+    expect(derived.diagnostics.unmatched).toEqual([])
+    expect(derived.members.map((member) => [member.label, member.tier])).toEqual([
+      ['bd__dog-om-wisp-kfh', 'internal'],
+      ['core__control-dispatcher-om-wisp-3ls2', 'internal'],
+    ])
+  })
+
+  it('classifies every encoded binding identity backed by a configured agent', () =>
+    hegel.test((tc) => {
+      const agentNumber = tc.draw(gs.integers({ minValue: 0, maxValue: 10_000 }))
+      const bindingNumber = tc.draw(gs.integers({ minValue: 0, maxValue: 10_000 }))
+      const agent = `agent-${agentNumber}`
+      const binding = `pack-${bindingNumber}`
+      const id = `gc-${agentNumber}-${bindingNumber}`
+      const derived = deriveCrew({
+        sessions: parseSessionListOutput(
+          JSON.stringify([{ id, session_name: `${binding}__${agent}-${id}`, work_dir: LIVE_CITY }]),
+          HOST,
+        ),
+        config: parseResolvedConfig(`[[agent]]\nname = "${agent}"`),
+        rigRoot: hostPath(HOST, LIVE_CITY),
+        cityRoot: hostPath(HOST, LIVE_CITY),
+        cityWorkspace: true,
+        hqRigName: 'hq',
+        includeInternals: true,
+        tierSource: 'config',
+      })
+      expect(derived.diagnostics.unmatched).toEqual([])
+      expect(derived.members[0]?.tier).toBe('internal')
+    }))
 })
 
 describe('gc session list parsing', () => {

@@ -209,7 +209,8 @@ interface CrewCandidate {
 
 function crewCandidate(session: GasCitySession, input: DeriveCrewInput): CrewCandidate {
   const named = matchNamedSession(session, input.config)
-  const tier = sessionTier(session, named, input)
+  const boundAgent = bindingAgentName(session)
+  const tier = sessionTier(session, named, boundAgent, input)
   const poolName = tier === 'worker' ? workerPoolName(session, input) : undefined
   const template = unqualifiedTemplate(session.template)
   const cityLead = tier === 'lead' && isCityLead(session, named, input)
@@ -219,8 +220,9 @@ function crewCandidate(session: GasCitySession, input: DeriveCrewInput): CrewCan
     named,
     classified:
       named !== undefined ||
-      (template !== undefined &&
-        input.config.agents.some((agent) => agent.name === template)),
+      input.config.agents.some(
+        (agent) => agent.name === template || agent.name === boundAgent,
+      ),
     member: {
       key: session.id,
       tier,
@@ -278,9 +280,10 @@ function rootedRig(
 function sessionTier(
   session: GasCitySession,
   named: GasCityNamedSessionConfig | undefined,
+  boundAgent: string | undefined,
   input: DeriveCrewInput,
 ): GasCityCrewTier {
-  if (isBindingQualified(session.name) || named?.binding !== undefined) return 'internal'
+  if (boundAgent !== undefined || named?.binding !== undefined) return 'internal'
   if (input.tierSource === 'session-fields') {
     return session.configuredNamedSession === true && session.pool === undefined
       ? 'lead'
@@ -300,6 +303,24 @@ function isPinned(named: GasCityNamedSessionConfig): boolean {
 
 function isBindingQualified(name: string): boolean {
   return name.includes('.')
+}
+
+function bindingAgentName(session: GasCitySession): string | undefined {
+  const identities = [session.name, session.alias, session.template, decodedTmuxName(session)]
+  for (const identity of identities) {
+    if (identity === undefined) continue
+    const name = basename(identity)
+    if (!isBindingQualified(name)) continue
+    return name.slice(name.indexOf('.') + 1)
+  }
+  return undefined
+}
+
+function decodedTmuxName(session: GasCitySession): string | undefined {
+  const suffix = `-${session.id}`
+  if (!session.name.endsWith(suffix)) return undefined
+  const encoded = session.name.slice(0, -suffix.length)
+  return encoded.includes('__') ? encoded.replaceAll('__', '.') : undefined
 }
 
 /**
