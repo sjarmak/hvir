@@ -201,6 +201,11 @@ describe('sessions companion contract', () => {
     expect(isCompanionRow(row({ canMirror: 'yes' }))).toBe(false)
   })
 
+  it('accepts only true for the optional live terminal fact', () => {
+    expect(isCompanionRow(row({ hasLiveTerminal: true }))).toBe(true)
+    expect(isCompanionRow(row({ hasLiveTerminal: false }))).toBe(false)
+  })
+
   it('accepts every terminal event variant and rejects extra keys', () => {
     const opened = {
       type: 'opened',

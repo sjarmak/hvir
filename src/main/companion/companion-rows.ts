@@ -107,6 +107,7 @@ function companionRow(
     working,
     turn: session.telemetry.turn,
     canAnswer,
+    ...(session.livePty === undefined ? {} : { hasLiveTerminal: true }),
     canMirror: companionMirrorEligible(session, workspace),
   }
 }

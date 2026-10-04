@@ -260,6 +260,14 @@ body {
   overflow-wrap: anywhere;
 }
 
+.companion-transcripts > summary {
+  margin-bottom: 8px;
+  color: var(--companion-muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .companion-rows {
   list-style: none;
   margin: 0;

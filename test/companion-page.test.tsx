@@ -94,8 +94,8 @@ describe('Companion page', () => {
     await renderPaired()
     await emit('snapshot', snapshot(1, [READY_ROW, STALE_ROW, QUIET_ROW]))
 
-    expect(rowHandles()).toEqual(['ready-1', 'stale-1', 'quiet-1'])
-    const [ready, stale, quiet] = [...host.querySelectorAll('.companion-row')]
+    expect(rowHandles()).toEqual(['quiet-1', 'ready-1', 'stale-1'])
+    const [quiet, ready, stale] = [...host.querySelectorAll('.companion-row')]
     expect(ready?.querySelector('.companion-badge-attention')?.textContent).toBe('ready')
     expect(ready?.querySelector('.companion-badge-stale')).toBeNull()
     expect(stale?.querySelector('.companion-badge-stale')?.textContent).toBe(
@@ -135,16 +135,22 @@ describe('Companion page', () => {
     const groups = [...host.querySelectorAll<HTMLElement>('.companion-group')]
     expect(
       groups.map((group) => group.querySelector('.companion-group-title')?.textContent),
-    ).toEqual(['api / main on prod', 'hvir / feat/beads', 'hvir / main'])
-    expect(groups.map((group) => group.dataset['workspace'])).toEqual(['w3', 'w2', 'w1'])
+    ).toEqual(['hvir / main'])
+    expect(groups.map((group) => group.dataset['workspace'])).toEqual(['w1'])
     expect(
       groups.map((group) =>
         [...group.querySelectorAll<HTMLElement>('.companion-row')].map(
           (element) => element.dataset['handle'],
         ),
       ),
-    ).toEqual([['remote-1'], ['feature-1'], ['ready-1', 'quiet-1']])
-    expect(rowHandles()).toEqual(['remote-1', 'feature-1', 'ready-1', 'quiet-1'])
+    ).toEqual([['quiet-1']])
+    expect(rowHandles()).toEqual(['quiet-1', 'remote-1', 'ready-1', 'feature-1'])
+    expect(host.querySelector('.companion-transcripts summary')?.textContent).toBe(
+      'Transcripts (3)',
+    )
+    expect(host.querySelector<HTMLDetailsElement>('.companion-transcripts')?.open).toBe(
+      true,
+    )
   })
 
   it('shows a prompt row with its badge and the message under the title (ADR-951)', async () => {
@@ -198,9 +204,9 @@ describe('Companion page', () => {
           [index]?.querySelectorAll('.companion-badge') ?? []),
       ].map((badge) => badge.textContent ?? '')
     expect(badges(0)).toEqual(['working'])
-    expect(badges(1)).toEqual(['working'])
-    expect(badges(2)).toEqual(['waiting-for-user'])
-    expect(badges(3)).toEqual([])
+    expect(badges(1)).toEqual([])
+    expect(badges(2)).toEqual(['working'])
+    expect(badges(3)).toEqual(['waiting-for-user'])
     expect(
       host
         .querySelector('.companion-badge-working')
@@ -245,9 +251,21 @@ describe('Companion page', () => {
     expect(host.querySelector('.companion-transcript')).not.toBeNull()
     expect(
       [...host.querySelectorAll('.companion-turn')].map((turn) => turn.textContent),
-    ).toEqual(['userplease fix the build', 'assistantWhich branch?'])
+    ).toEqual(['assistantWhich branch?', 'userplease fix the build'])
     expect(host.querySelector('.companion-pending-prompt')?.textContent).toBe(
       'Which branch?',
+    )
+    const pending = host.querySelector('.companion-pending')
+    const form = host.querySelector('.companion-message-form')
+    const turns = host.querySelector('.companion-turns')
+    expect(pending).not.toBeNull()
+    expect(form).not.toBeNull()
+    expect(turns).not.toBeNull()
+    expect(pending!.compareDocumentPosition(turns!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+    expect(form!.compareDocumentPosition(turns!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
     )
 
     await click(button('release'))
@@ -268,6 +286,21 @@ describe('Companion page', () => {
       body: { page: 'page-1', handle: 'ready-1', message: 'ship it' },
     })
     expect(host.querySelector<HTMLTextAreaElement>('#companion-message')?.value).toBe('')
+  })
+
+  it('places transcript-only rows in a collapsible section after workspaces', async () => {
+    const transcriptOnly = row({ handle: 'transcript-1', title: 'Detached worker' })
+    await renderPaired()
+    await emit('snapshot', snapshot(1, [transcriptOnly, QUIET_ROW]))
+
+    const workspace = host.querySelector('.companion-group')
+    const transcripts = host.querySelector<HTMLDetailsElement>('.companion-transcripts')
+    expect(workspace?.nextElementSibling).toBe(transcripts)
+    expect(transcripts?.open).toBe(false)
+    expect(transcripts?.querySelector('summary')?.textContent).toBe('Transcripts (1)')
+    expect(transcripts?.querySelector('.companion-row')?.textContent).toContain(
+      'Detached worker',
+    )
   })
 
   it('follows transcript events for the selected row and offers resume when lost', async () => {

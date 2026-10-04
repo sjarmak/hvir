@@ -10,6 +10,7 @@ import {
   MAX_SESSIONS_SUBMIT_MESSAGE,
   sessionsTranscriptUnavailableMessage,
 } from '../../../shared'
+import { newestTranscriptTurns } from './companion-transcript-turns'
 
 const STREAM_SENTENCES: Record<
   Exclude<SessionsTranscriptSnapshot['stream'], 'live'>,
@@ -48,7 +49,6 @@ export function TranscriptView(props: TranscriptViewProps) {
         <h2 className="companion-transcript-title">{row?.title ?? transcript.handle}</h2>
       </header>
       <TranscriptStatus transcript={transcript} onResume={onResume} />
-      <TranscriptTurns transcript={transcript} />
       {transcript.pending === undefined ? null : (
         <PendingInteraction
           pending={transcript.pending}
@@ -57,6 +57,7 @@ export function TranscriptView(props: TranscriptViewProps) {
         />
       )}
       {canAnswer ? <MessageForm onSubmit={onSubmit} /> : null}
+      <TranscriptTurns transcript={transcript} />
     </section>
   )
 }
@@ -120,7 +121,7 @@ function TranscriptTurns({
         </p>
       ) : null}
       <ol className="companion-turns">
-        {transcript.turns.map((turn) => (
+        {newestTranscriptTurns(transcript.turns).map((turn) => (
           <Turn key={turn.ordinal} turn={turn} />
         ))}
       </ol>

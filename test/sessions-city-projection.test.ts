@@ -1,3 +1,5 @@
+import * as hegel from '@hegeldev/hegel'
+import * as gs from '@hegeldev/hegel/generators'
 import { describe, expect, it } from 'vitest'
 
 import type {
@@ -35,6 +37,10 @@ import {
   MAX_SESSIONS_PROJECTION_ROWS,
   asHarnessProfileId,
   asHarnessProviderId,
+  asHostId,
+  asSessionsProjectHandle,
+  asSessionsWorkspaceHandle,
+  hostPath,
   localPath,
   type HostPath,
   type ProjectState,
@@ -286,6 +292,135 @@ describe('A terminal attached to a Gas City session', () => {
     expect(attached.lifecycle).toBe('live')
     // The terminal is still hvir's to open.
     expect(sessionsTerminalSurfaceEligible(attached)).toBe(true)
+  })
+
+  it('deduplicates every generated attached session identity into one row', () =>
+    hegel.test((testCase) => {
+      const suffix = testCase.draw(gs.integers({ minValue: 0, maxValue: 1_000_000 }))
+      const sessionKey = `gc-generated-${suffix}`
+      const title = `generated-${suffix}`
+      const source = assemble([
+        hostCity({
+          sessions: [
+            fact({ sessionKey, label: title, workDir: memPanel, rigRoot: memRoot }),
+          ],
+        }),
+      ], {
+        sessions: [attachedTerminal('terminal-generated', sessionKey)],
+        ptys: [livePty('terminal-generated')],
+      })
+
+      expect(source.sessions).toHaveLength(1)
+      expect(row(source, title).handle).toBe('terminal-generated')
+    }))
+
+  it('joins only the matching host when two cities use the same session key', () => {
+    const remoteHost = asHostId('ssh-prod')
+    const remoteRoot = hostPath(remoteHost, '/srv/city/rigs/mem')
+    const localWorkspace = assemble([]).workspaces.find(
+      (candidate) => candidate.workspaceName === 'main',
+    )!
+    const remoteWorkspace = {
+      projectId: asSessionsProjectHandle('sessions-project-remote'),
+      projectName: 'Remote rig',
+      workspaceId: asSessionsWorkspaceHandle('sessions-workspace-remote'),
+      qualifier: localWorkspace.qualifier,
+      workspaceName: 'remote-main',
+      main: true,
+      closed: false,
+      missing: false,
+      host: {
+        id: remoteHost,
+        label: 'Production',
+        kind: 'ssh' as const,
+        connectionState: 'connected' as const,
+      },
+    }
+    const terminal = assemble([], {
+      sessions: [attachedTerminal('terminal-shared', 'shared-key')],
+      ptys: [livePty('terminal-shared')],
+    }).sessions[0]!
+    const projection = projectCitySessions({
+      cities: [
+        hostCity({
+          sessions: [
+            fact({ sessionKey: 'shared-key', label: 'local-session', rigRoot: memRoot }),
+          ],
+        }),
+        {
+          ...hostCity({
+            sessions: [
+              fact({
+                sessionKey: 'shared-key',
+                label: 'remote-session',
+                rigRoot: remoteRoot,
+              }),
+            ],
+          }),
+          root: remoteRoot,
+          cityRoot: hostPath(remoteHost, '/srv/city'),
+        },
+      ],
+      workspaces: [
+        { root: memRoot, projectRoot: memRoot, workspace: localWorkspace },
+        { root: remoteRoot, projectRoot: remoteRoot, workspace: remoteWorkspace },
+      ],
+      identities: createSessionsProjectionIdentityScope(),
+      providers: new Map(),
+      capacity: 2,
+      attached: [
+        {
+          attachment: externalSessionAttachment({
+            sourceId: 'gas-city',
+            key: 'shared-key',
+          }),
+          session: terminal,
+        },
+      ],
+    })
+
+    expect(projection.merged.get('terminal-shared')?.title).toBe('local-session')
+    expect(projection.sessions.map((session) => session.title)).toEqual(['remote-session'])
+  })
+
+  it('still merges an attached session after unattached rows fill capacity', () => {
+    const workspace = assemble([]).workspaces.find(
+      (candidate) => candidate.workspaceName === 'main',
+    )!
+    const terminal = assemble([], {
+      sessions: [attachedTerminal('terminal-late', 'attached-late')],
+      ptys: [livePty('terminal-late')],
+    }).sessions[0]!
+    const projection = projectCitySessions({
+      cities: [
+        hostCity({
+          sessions: [
+            fact({ sessionKey: 'unattached-first', label: 'first', rigRoot: memRoot }),
+            fact({
+              sessionKey: 'attached-late',
+              label: 'attached',
+              rigRoot: memRoot,
+            }),
+          ],
+        }),
+      ],
+      workspaces: [{ root: memRoot, projectRoot: memRoot, workspace }],
+      identities: createSessionsProjectionIdentityScope(),
+      providers: new Map(),
+      capacity: 0,
+      attached: [
+        {
+          attachment: externalSessionAttachment({
+            sourceId: 'gas-city',
+            key: 'attached-late',
+          }),
+          session: terminal,
+        },
+      ],
+    })
+
+    expect(projection.sessions).toEqual([])
+    expect(projection.merged.get('terminal-late')?.title).toBe('attached')
   })
 })
 
