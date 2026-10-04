@@ -42,12 +42,7 @@ import { createWorkerClient, workerPath } from '../worker-host'
 import { createWorkspaceCleanup } from '../workspace-cleanup'
 import { runSmokeCleanup, SmokeCleanup } from './cleanup'
 import { smokeOwnedResourceEvidence } from './owned-resource-evidence'
-import {
-  reportSmokeFailureEvidence,
-  smokeCleanupResource,
-  type SmokeFailureCheckpoint,
-  type SmokeFailurePhase,
-} from './failure-evidence.mts'
+import { createSmokeFailureTracker } from './failure-tracker'
 import { recordRendererIsolationSelection } from './renderer-isolation'
 import { createSmokeImagePasteFallback } from './image-paste-fallback'
 import { verifyDiagnosticRestart } from './diagnostic-report-restart'
@@ -104,55 +99,21 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
   } = dependencies
   let smokeWindow: BrowserWindow | undefined
   let smokeSupervisor: PtySupervisor | undefined
-  let cleanupFailureResource: ReturnType<typeof smokeCleanupResource> = null
   let discardedRendererGenerations = 0
   let stopSmokeWatch: Disposer | undefined
+  const failure = createSmokeFailureTracker(() =>
+    smokeOwnedResourceEvidence(
+      smokeWindow,
+      smokeSupervisor,
+      stopSmokeWatch !== undefined,
+      rendererResources,
+    ),
+  )
   const cleanup = new SmokeCleanup((name) => interruptionCheckpoint.disposed(name), {
-    onFailure: (name) => {
-      cleanupFailureResource = smokeCleanupResource(name)
-      reportSmokeFailureEvidence(
-        'cleanup',
-        smokeOwnedResourceEvidence(
-          smokeWindow,
-          smokeSupervisor,
-          stopSmokeWatch !== undefined,
-          rendererResources,
-        ),
-        null,
-        cleanupFailureResource,
-      )
-    },
+    onFailure: failure.recordCleanupFailure,
   })
   let scenarioFailed = false
-  let failurePhase: SmokeFailurePhase = 'resources-created'
-  let failureCheckpoint: SmokeFailureCheckpoint | null = null
-  const recordSmokePhase = (phase: SmokeFailurePhase): void => {
-    failurePhase = phase
-    failureCheckpoint = null
-    reportSmokeFailureEvidence(
-      phase,
-      smokeOwnedResourceEvidence(
-        smokeWindow,
-        smokeSupervisor,
-        stopSmokeWatch !== undefined,
-        rendererResources,
-      ),
-    )
-  }
-  const recordSmokeCheckpoint = (checkpoint: SmokeFailureCheckpoint): void => {
-    failureCheckpoint = checkpoint
-    reportSmokeFailureEvidence(
-      failurePhase,
-      smokeOwnedResourceEvidence(
-        smokeWindow,
-        smokeSupervisor,
-        stopSmokeWatch !== undefined,
-        rendererResources,
-      ),
-      checkpoint,
-    )
-  }
-  recordSmokePhase(failurePhase)
+  failure.recordPhase('resources-created')
   try {
     const defaultHarnessProviderId = harnessProviderCatalog().find(
       (provider) => provider.default,
@@ -222,7 +183,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       '.hvir-smoke-document-review-drafts.json',
     )
     await host.connect()
-    recordSmokePhase('host-connected')
+    failure.recordPhase('host-connected')
     await host.exec('rm', ['-f', '--', harnessProfilesPath.path])
     const {
       liveReloadPath,
@@ -449,7 +410,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       await stopSmokeWatch?.()
       stopSmokeWatch = undefined
     })
-    recordSmokePhase('watch-active')
+    failure.recordPhase('watch-active')
     const win = createWindow(() => {
       discardedRendererGenerations++
     })
@@ -464,10 +425,10 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     const initialRendererGeneration = rendererResources.currentOwner(
       win.webContents.id,
     ).generation
-    recordSmokePhase('window-ready')
+    failure.recordPhase('window-ready')
     console.log('[smoke] window ready-to-show OK')
     await verifyRendererReadiness(win)
-    recordSmokePhase('renderer-ready')
+    failure.recordPhase('renderer-ready')
     const predecessorSelectionObserved = await recordRendererIsolationSelection(
       win,
       interruptionCheckpoint,
@@ -478,7 +439,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       watcherActive: stopSmokeWatch !== undefined,
       predecessorSelectionObserved,
     })
-    recordSmokePhase('scenario-active')
+    failure.recordPhase('scenario-active')
     if (await verifyDevelopmentPerformanceMode(win, mode)) return 0
     if (mode === 'renderer-recovery') {
       const result = await verifyRendererRecoveryScenario({
@@ -492,7 +453,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
         host,
         readiness,
         discardedGenerations: () => discardedRendererGenerations,
-        checkpoint: recordSmokeCheckpoint,
+        checkpoint: failure.recordCheckpoint,
       })
       console.log(`[smoke] renderer recovery OK (${result})`)
       console.log('HVIR_SMOKE_OK')
@@ -551,7 +512,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
         switchedState: () => smokeProjectReturnState('smoke-project-return'),
         publish: (state) => emit('project:state', setSmokeProjectState(state)),
         revealedEntries,
-        checkpoint: recordSmokeCheckpoint,
+        checkpoint: failure.recordCheckpoint,
       })
       console.log(`[smoke] project file operations OK (${projectFilesResult})`)
       const result = await verifyWorkspaceRemoteWorkflow({
@@ -599,7 +560,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
         emitState: (state) => emit('project:state', state),
         interruptionCheckpoint,
         predecessorSelectionObserved,
-        checkpoint: recordSmokeCheckpoint,
+        checkpoint: failure.recordCheckpoint,
       })
       console.log(`[smoke] web pane workflow OK (${result})`)
       console.log('HVIR_SMOKE_OK')
@@ -609,7 +570,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       const result = await verifyRendererAuthorityLifecycle({
         win,
         resources: rendererResources,
-        checkpoint: recordSmokeCheckpoint,
+        checkpoint: failure.recordCheckpoint,
       })
       console.log(`[smoke] renderer authority lifecycle OK (${result})`)
       console.log('HVIR_SMOKE_OK')
@@ -617,7 +578,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     }
     if (mode === 'document-review') {
       const result = await verifyDocumentReviewWorkflow({
-        checkpoint: recordSmokeCheckpoint,
+        checkpoint: failure.recordCheckpoint,
         win,
         host,
         root: smokeRoot,
@@ -647,7 +608,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
             type: 'change',
             path: joinHostPath(smokeRoot, '.git/index'),
           }),
-        recordSmokeCheckpoint,
+        failure.recordCheckpoint,
       )
       console.log(`[smoke] source/diff viewer positions OK (${result})`)
       console.log('HVIR_SMOKE_OK')
@@ -655,7 +616,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     }
     if (mode === 'viewer-content') {
       await verifyViewerContent({
-        checkpoint: recordSmokeCheckpoint,
+        checkpoint: failure.recordCheckpoint,
         win,
         projectState: projectFixture,
         supervisor,
@@ -682,7 +643,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       const presentation = await verifyTerminalPresentationLifecycle(
         win,
         supervisor,
-        recordSmokeCheckpoint,
+        failure.recordCheckpoint,
         smokeRoot,
       )
       console.log(`[smoke] terminal presentation lifecycle OK (${presentation})`)
@@ -764,31 +725,10 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     throw new Error('Selected smoke scenario has no implementation')
   } catch (err) {
     scenarioFailed = true
-    reportSmokeFailureEvidence(
-      failurePhase,
-      smokeOwnedResourceEvidence(
-        smokeWindow,
-        smokeSupervisor,
-        stopSmokeWatch !== undefined,
-        rendererResources,
-      ),
-      failureCheckpoint,
-    )
+    failure.reportFailure()
     console.error('HVIR_SMOKE_FAIL', err)
     return 1
   } finally {
-    await runSmokeCleanup(cleanup, scenarioFailed, (_cleanupError) => {
-      reportSmokeFailureEvidence(
-        'cleanup',
-        smokeOwnedResourceEvidence(
-          smokeWindow,
-          smokeSupervisor,
-          stopSmokeWatch !== undefined,
-          rendererResources,
-        ),
-        null,
-        cleanupFailureResource,
-      )
-    })
+    await runSmokeCleanup(cleanup, scenarioFailed, failure.reportCleanup)
   }
 }
