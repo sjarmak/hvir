@@ -165,6 +165,7 @@ export const MIRROR_ROW = row({
   origin: { kind: 'hvir-terminal' },
   canAnswer: false,
   canMirror: true,
+  hasLiveTerminal: true,
 })
 
 export const NOT_PROJECTED = transcript({

@@ -17,6 +17,33 @@ export interface CompanionRowGroup {
   readonly rows: readonly CompanionRow[]
 }
 
+export interface CompanionRowSections {
+  readonly workspaceGroups: readonly CompanionRowGroup[]
+  readonly transcriptRows: readonly CompanionRow[]
+}
+
+export function sectionCompanionRows(
+  rows: readonly CompanionRow[],
+): CompanionRowSections {
+  const workspaceRows: CompanionRow[] = []
+  const transcriptRows: CompanionRow[] = []
+  for (const row of rows) {
+    if (
+      row.origin.kind === 'external-agent' &&
+      row.hasLiveTerminal !== true &&
+      !row.canMirror
+    ) {
+      transcriptRows.push(row)
+    } else {
+      workspaceRows.push(row)
+    }
+  }
+  return {
+    workspaceGroups: groupCompanionRows(workspaceRows),
+    transcriptRows,
+  }
+}
+
 export function groupCompanionRows(
   rows: readonly CompanionRow[],
 ): readonly CompanionRowGroup[] {

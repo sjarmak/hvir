@@ -182,6 +182,26 @@ describe('companion rows', () => {
     ])
   })
 
+  it('keeps the live terminal fact when a disconnected host cannot mirror it', () => {
+    const session = {
+      ...external(EXTERNAL, 'Attached remote', 1_700),
+      lifecycle: 'live' as const,
+      livePty: livePtyQualifier(),
+    }
+    const rows = companionRows({
+      observation: observation([session]),
+      working: [],
+      actionable: [],
+      resolveExternal: () => EXTERNAL_KEY,
+    })
+
+    expect(rows[0]).toMatchObject({
+      handle: EXTERNAL,
+      hasLiveTerminal: true,
+      canMirror: false,
+    })
+  })
+
   it('takes an external row attention from the entry its resolver names', () => {
     const rows = companionRows({
       observation: observation([external(EXTERNAL, 'city-worker', 1_700)]),

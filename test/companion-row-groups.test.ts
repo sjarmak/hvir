@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   companionGroupTitle,
   groupCompanionRows,
+  sectionCompanionRows,
 } from '../src/renderer/companion/src/companion-row-groups'
 import { asSessionsProjectHandle, asSessionsWorkspaceHandle } from '../src/shared'
 import { row } from './companion-page-fixture'
@@ -69,5 +70,34 @@ describe('Companion row groups', () => {
     const groups = groupCompanionRows(rows)
     expect(groups[0]?.rows).not.toBe(rows)
     expect(rows).toHaveLength(1)
+  })
+
+  it('places transcript-only rows after workspace groups', () => {
+    const terminal = row({
+      handle: 'terminal',
+      origin: { kind: 'hvir-terminal' },
+      canAnswer: false,
+    })
+    const attached = row({
+      handle: 'attached',
+      canMirror: true,
+      hasLiveTerminal: true,
+    })
+    const legacyAttached = row({ handle: 'legacy-attached', canMirror: true })
+    const transcript = row({ handle: 'transcript', canMirror: false })
+
+    const sections = sectionCompanionRows([
+      transcript,
+      terminal,
+      attached,
+      legacyAttached,
+    ])
+
+    expect(sections.workspaceGroups.flatMap((group) => group.rows)).toEqual([
+      terminal,
+      attached,
+      legacyAttached,
+    ])
+    expect(sections.transcriptRows).toEqual([transcript])
   })
 })

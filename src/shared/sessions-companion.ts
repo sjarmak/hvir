@@ -103,6 +103,7 @@ export interface CompanionRow {
   readonly turn: SessionsFact<SessionsTurnFact>
   /** The row stands for a session that takes answers and messages. */
   readonly canAnswer: boolean
+  readonly hasLiveTerminal?: true
   /** The row is a live hvir terminal on a connected host, so a page may mirror it. */
   readonly canMirror: boolean
 }
@@ -260,6 +261,7 @@ export function isCompanionRow(value: unknown): value is CompanionRow {
     typeof value['working'] === 'boolean' &&
     isFact(value['turn'], isTurn) &&
     typeof value['canAnswer'] === 'boolean' &&
+    (value['hasLiveTerminal'] === undefined || value['hasLiveTerminal'] === true) &&
     typeof value['canMirror'] === 'boolean'
   )
 }
@@ -353,7 +355,7 @@ const ROW_REQUIRED_KEYS = [
   'canAnswer',
   'canMirror',
 ] as const
-const ROW_OPTIONAL_KEYS = ['reason', 'promptBody'] as const
+const ROW_OPTIONAL_KEYS = ['reason', 'promptBody', 'hasLiveTerminal'] as const
 const RESPOND_KEYS = ['handle', 'pendingRevision', 'optionOrdinal'] as const
 const SUBMIT_KEYS = ['handle', 'message'] as const
 const INPUT_KEYS = ['data'] as const

@@ -161,10 +161,17 @@ export function projectCitySessions({
 }: SessionsCityProjectionInput): SessionsCityProjection {
   const sessions: SessionsObservedSession[] = []
   const merged = new Map<string, SessionsObservedSession>()
-  const attachedByDigest = new Map(
-    attached
-      .filter((terminal) => terminal.attachment.sourceId === 'gas-city')
-      .map((terminal) => [terminal.attachment.sessionDigest, terminal] as const),
+  const workspaceHostById = new Map(
+    workspaces.map((target) => [target.workspace.workspaceId, target.workspace.host.id]),
+  )
+  const attachedByKey = new Map(
+    attached.flatMap((terminal) => {
+      if (terminal.attachment.sourceId !== 'gas-city') return []
+      const hostId = workspaceHostById.get(terminal.session.workspaceId)
+      return hostId === undefined
+        ? []
+        : [[hostSessionKey(hostId, terminal.attachment.sessionDigest), terminal] as const]
+    }),
   )
   const pendingByKey = new Map(
     pending.map((signal) => [pendingKey(signal.hostId, signal.sessionKey), signal]),
@@ -176,8 +183,11 @@ export function projectCitySessions({
     for (const fact of city.sessions) {
       const target = externalTarget(fact, city)
       const waiting = pendingByKey.get(pendingKey(city.root.hostId, fact.sessionKey))
-      const claimed = attachedByDigest.get(
-        externalSessionDigest('gas-city', fact.sessionKey),
+      const claimed = attachedByKey.get(
+        hostSessionKey(
+          city.root.hostId,
+          externalSessionDigest('gas-city', fact.sessionKey),
+        ),
       )
       if (claimed !== undefined) {
         // An attached session is not a new row and does not consume capacity:
@@ -195,7 +205,7 @@ export function projectCitySessions({
         )
         continue
       }
-      if (sessions.length >= capacity) break
+      if (sessions.length >= capacity) continue
       const workspace = placeCitySession(fact, placement)
       if (workspace === undefined) continue
       const handle = identities.externalSession(target)
@@ -366,6 +376,10 @@ function contextFact(
 
 /** The host and session a declared interaction belongs to, as one key. */
 function pendingKey(hostId: HostId, sessionKey: string): string {
+  return hostSessionKey(hostId, sessionKey)
+}
+
+function hostSessionKey(hostId: string, sessionKey: string): string {
   return `${hostId}\u0000${sessionKey}`
 }
 
