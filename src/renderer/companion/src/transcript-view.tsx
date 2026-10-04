@@ -112,6 +112,11 @@ function TranscriptTurns({
 }) {
   return (
     <>
+      <ol className="companion-turns">
+        {newestTranscriptTurns(transcript.turns).map((turn) => (
+          <Turn key={turn.ordinal} turn={turn} />
+        ))}
+      </ol>
       {transcript.older || transcript.dropped > 0 ? (
         <p className="companion-status">
           {transcript.dropped > 0
@@ -120,11 +125,6 @@ function TranscriptTurns({
           {transcript.older ? 'Older turns stay on the desktop.' : ''}
         </p>
       ) : null}
-      <ol className="companion-turns">
-        {newestTranscriptTurns(transcript.turns).map((turn) => (
-          <Turn key={turn.ordinal} turn={turn} />
-        ))}
-      </ol>
     </>
   )
 }

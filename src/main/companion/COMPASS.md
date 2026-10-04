@@ -104,7 +104,7 @@ supervisor's doors.
   serves `companion/index.html` and flat `assets/<name>` files whose extension it names.
 - **`companion-rows.ts`**: the join of observation sessions with the actionable set into
   `CompanionRow`. Deliberately drops `livePty`, host id, and the workspace qualifier; exposes
-  `canMirror` and `canAnswer` as booleans instead. `promptBodyOf` copies the entry's `body`
+  `canMirror`, `canAnswer` and, when a live terminal backs the session, `hasLiveTerminal: true` instead. `promptBodyOf` copies the entry's `body`
   onto the row only when the row's attention is an available `prompt`. `working` is a boolean
   from the same set's `working` handles: what a window shows working, which the renderer sends
   beside its entries in `app:attention` and `ActionableAttentionSet` merges across windows
@@ -463,7 +463,7 @@ otherwise.
   mirror stays until the next select or the page closes.
 - **`CompanionRow` is exact-key checked.** `isCompanionRow` rejects unknown keys, so a new
   field goes into `ROW_REQUIRED_KEYS`/`ROW_OPTIONAL_KEYS` and the guard, and never `livePty`.
-  `promptBody` is the optional-key example: `ROW_OPTIONAL_KEYS = ['reason', 'promptBody']`,
+  `promptBody` is the optional-key example: `ROW_OPTIONAL_KEYS = ['reason', 'promptBody', 'hasLiveTerminal']`,
   and `isPromptBodyFor` admits it only when `attention` is `{ status: 'available', value:
   'prompt' }` and the string passes `isActionableAttentionBody` (1 to 120 characters). A
   `promptBody` beside a Ready, Bell, stale, or unsupported attention fails the whole row. The

@@ -84,6 +84,11 @@ describe('Companion row groups', () => {
       hasLiveTerminal: true,
     })
     const legacyAttached = row({ handle: 'legacy-attached', canMirror: true })
+    const attachedOffline = row({
+      handle: 'attached-offline',
+      canMirror: false,
+      hasLiveTerminal: true,
+    })
     const transcript = row({ handle: 'transcript', canMirror: false })
 
     const sections = sectionCompanionRows([
@@ -91,12 +96,14 @@ describe('Companion row groups', () => {
       terminal,
       attached,
       legacyAttached,
+      attachedOffline,
     ])
 
     expect(sections.workspaceGroups.flatMap((group) => group.rows)).toEqual([
       terminal,
       attached,
       legacyAttached,
+      attachedOffline,
     ])
     expect(sections.transcriptRows).toEqual([transcript])
   })

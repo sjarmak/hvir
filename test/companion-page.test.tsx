@@ -288,6 +288,43 @@ describe('Companion page', () => {
     expect(host.querySelector<HTMLTextAreaElement>('#companion-message')?.value).toBe('')
   })
 
+  it('keeps an attached session on a disconnected host out of the transcript section', async () => {
+    const attachedOffline = row({
+      handle: 'attached-offline',
+      title: 'Attached worker',
+      canMirror: false,
+      hasLiveTerminal: true,
+    })
+    await renderPaired()
+    await emit('snapshot', snapshot(1, [attachedOffline, QUIET_ROW]))
+
+    expect(host.querySelector('.companion-transcripts')).toBeNull()
+    expect(host.querySelector('.companion-group')?.textContent).toContain(
+      'Attached worker',
+    )
+  })
+
+  it('puts the earlier-turns note after the newest-first turns', async () => {
+    server.transcriptReply = transcript({
+      handle: 'ready-1',
+      turns: [{ ordinal: 5, role: 'user', kind: 'text', text: 'latest' }],
+      older: true,
+      dropped: 4,
+    })
+    await renderPaired()
+    await emit('snapshot', snapshot(1, [READY_ROW]))
+    await click(host.querySelector<HTMLElement>('.companion-row') as HTMLElement)
+
+    const turns = host.querySelector('.companion-turns')
+    const note = [...host.querySelectorAll('.companion-status')].find((node) =>
+      node.textContent?.includes('earlier turns not shown'),
+    )
+    expect(note).toBeDefined()
+    expect(turns!.compareDocumentPosition(note!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+  })
+
   it('places transcript-only rows in a collapsible section after workspaces', async () => {
     const transcriptOnly = row({ handle: 'transcript-1', title: 'Detached worker' })
     await renderPaired()
