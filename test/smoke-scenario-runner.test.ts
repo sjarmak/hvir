@@ -937,7 +937,7 @@ describe('Electron smoke command contracts', () => {
       expect(failureEvidenceScenario).toContain(`'${awaiting}'`)
       expect(failureEvidenceScenario).toContain(`'${ready}'`)
     }
-    expect(smokeWorkflow).toContain('recordSmokeCheckpoint,\n        smokeRoot')
+    expect(smokeWorkflow).toContain('failure.recordCheckpoint,\n        smokeRoot')
     expect(terminalPresentationScenario).toContain('.terminal-recovery-status')
     expect(terminalPresentationScenario).toContain('onExit: (exit) =>')
     expect(terminalExplicitLaunchScenario).toContain('.terminal-recovery-status')
@@ -1093,7 +1093,7 @@ describe('Electron smoke command contracts', () => {
       expect(failureEvidenceScenario).toContain(`'${ready}'`)
     }
     expect(projectFileReadiness).not.toContain('project-files-local-interactions')
-    expect(smokeWorkflow).toContain('checkpoint: recordSmokeCheckpoint')
+    expect(smokeWorkflow).toContain('checkpoint: failure.recordCheckpoint')
     expect(projectFileOperationsScenario).not.toContain('Date.now()')
     expect(projectFileOperationsScenario).toContain(
       "document.querySelector('.file-operation-feedback.error')",
