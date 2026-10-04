@@ -15,11 +15,13 @@ import {
 interface InstanceSwitcherProps {
   readonly currentUrl?: string
   readonly onLeave?: () => void
+  readonly collapsible?: boolean
 }
 
 export function InstanceSwitcher({
   currentUrl = globalThis.location.href,
   onLeave,
+  collapsible = false,
 }: InstanceSwitcherProps) {
   const storage = companionInstanceStorage()
   const endpoint = useMemo(() => safeEndpoint(currentUrl), [currentUrl])
@@ -108,8 +110,8 @@ export function InstanceSwitcher({
     }
   }
 
-  return (
-    <section className="companion-instance-switcher">
+  const contents = (
+    <>
       <p className="companion-instance-current">
         Current endpoint: <code>{endpoint}</code>
       </p>
@@ -260,8 +262,19 @@ export function InstanceSwitcher({
           )}
         </div>
       </details>
-    </section>
+    </>
   )
+
+  if (collapsible) {
+    return (
+      <details className="companion-instance-switcher">
+        <summary>Companion instance</summary>
+        {contents}
+      </details>
+    )
+  }
+
+  return <section className="companion-instance-switcher">{contents}</section>
 }
 
 function safeEndpoint(value: string): string {

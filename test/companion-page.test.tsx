@@ -56,6 +56,25 @@ const QUIET_ROW = row({
 })
 
 describe('Companion page', () => {
+  it('collapses the instance switcher on the Sessions list and expands it on request', async () => {
+    await renderPaired()
+
+    const switcher = host.querySelector<HTMLDetailsElement>(
+      '.companion-instance-switcher',
+    )
+    expect(switcher?.tagName).toBe('DETAILS')
+    expect(switcher?.open).toBe(false)
+    expect(switcher?.querySelector('summary')?.textContent).toBe('Companion instance')
+
+    await click(switcher?.querySelector('summary') as HTMLElement)
+
+    expect(switcher?.open).toBe(true)
+    expect(switcher?.querySelector('.companion-instance-current')?.textContent).toContain(
+      'Current endpoint:',
+    )
+    expect(switcher?.textContent).toContain('Switch Companion instance')
+  })
+
   it('shows the pairing screen without a token and pairs with the code typed', async () => {
     await render()
     expect(host.querySelector('#companion-pair-code')).not.toBeNull()
@@ -249,6 +268,7 @@ describe('Companion page', () => {
       body: { page: 'page-1' },
     })
     expect(host.querySelector('.companion-transcript')).not.toBeNull()
+    expect(host.querySelector('.companion-instance-switcher')).toBeNull()
     expect(
       [...host.querySelectorAll('.companion-turn')].map((turn) => turn.textContent),
     ).toEqual(['assistantWhich branch?', 'userplease fix the build'])
@@ -412,6 +432,25 @@ describe('Companion page', () => {
     expect(host.querySelector('.companion-connection')).toBeNull()
   })
 
+  it('keeps a disconnected banner visible inside a session without the switcher', async () => {
+    server.transcriptReply = transcript({ handle: 'ready-1' })
+    await renderPaired()
+    await emit('snapshot', snapshot(1, [READY_ROW]))
+    await click(host.querySelector<HTMLElement>('.companion-row') as HTMLElement)
+
+    act(() => {
+      server.drop()
+    })
+    await settle()
+    await settle()
+
+    expect(host.querySelector('.companion-transcript')).not.toBeNull()
+    expect(host.querySelector('.companion-instance-switcher')).toBeNull()
+    expect(host.querySelector('.companion-connection')?.textContent).toContain(
+      'Disconnected',
+    )
+  })
+
   it('returns to the pairing screen when the server revokes the pairing', async () => {
     await renderPaired()
     await emit('snapshot', snapshot(1, [READY_ROW]))
@@ -447,6 +486,7 @@ describe('Companion page terminal mirror', () => {
     await openMirror('tail')
     expect(host.querySelector('.companion-terminal')).not.toBeNull()
     expect(host.querySelector('.companion-transcript')).toBeNull()
+    expect(host.querySelector('.companion-instance-switcher')).toBeNull()
     expect(panes.panes).toHaveLength(1)
     const pane = panes.panes[0]!
     expect([pane.cols, pane.rows]).toEqual([132, 43])
