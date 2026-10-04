@@ -25,6 +25,7 @@ import { verifyReviewCheckpointView } from './review-checkpoint-view'
 const USAGE_SESSION_ID = '00000000-0000-4000-8000-000000006511'
 const USAGE_SESSION_TITLE = 'Usage cumulative fixture'
 const DISCONNECTED_USAGE_TITLE = 'Disconnected usage fixture'
+const HIDDEN_RELEASE_PROBE_GENERATION = 1_000_000
 
 export async function verifySessionsProjectionSmoke(options: {
   readonly win: BrowserWindow
@@ -292,9 +293,10 @@ export async function verifySessionsProjectionSmoke(options: {
   })
   const hiddenTerminalStatus = await ensureSessionsLiveTerminal(win, supervisor)
   const needsYouSessionStatus = await verifyNeedsYouSessionOpen(win, supervisor)
+  const secondHiddenTerminalStatus = await ensureSessionsLiveTerminal(win, supervisor, 2)
   const hiddenStatus = await verifySessionsHiddenRelease(win)
   const captureStatus = captures.length > 0 ? ` + ${captures.length} visual captures` : ''
-  return `cross-project/worktree + renderer rollover + stale Open + quiet release + ${terminalStatus}${captureStatus} + ${overviewStatus} + ${pickerStatus} + ${needsYouStatus} + ${qolRailStatus} + ${checkpointStatus} + hidden ${hiddenTerminalStatus} + ${needsYouSessionStatus} + ${hiddenStatus}`
+  return `cross-project/worktree + renderer rollover + stale Open + quiet release + ${terminalStatus}${captureStatus} + ${overviewStatus} + ${pickerStatus} + ${needsYouStatus} + ${qolRailStatus} + ${checkpointStatus} + hidden ${hiddenTerminalStatus} + ${needsYouSessionStatus} + ${secondHiddenTerminalStatus} + ${hiddenStatus}`
 }
 
 async function verifySessionsHiddenRelease(win: BrowserWindow): Promise<string> {
@@ -349,6 +351,7 @@ async function verifySessionsHiddenRelease(win: BrowserWindow): Promise<string> 
   const released = (await win.webContents.executeJavaScript(`
     new Promise((resolve, reject) => {
       const deadline = Date.now() + 5_000;
+      let lastObserveError;
       const poll = () => {
         if (document.visibilityState === 'hidden' || !document.hasFocus()) {
           const detail = document.querySelector('.sessions-terminal-detail');
@@ -359,13 +362,33 @@ async function verifySessionsHiddenRelease(win: BrowserWindow): Promise<string> 
             input?.__hvirTerminalDelivery?.presentation !== 'hidden'
           ) {
             if (Date.now() > deadline) {
-              return reject(new Error('hidden Sessions retained a presented detail surface'));
+              return reject(new Error('hidden Sessions retained a presented detail surface: ' + JSON.stringify({
+                detail: detail instanceof HTMLElement,
+                detailEngines: input?.querySelectorAll('.terminal-engine-host').length ?? 0,
+                presentation: input?.__hvirTerminalDelivery?.presentation,
+                visibility: document.visibilityState,
+                focused: document.hasFocus()
+              })));
             }
             return setTimeout(poll, 25);
           }
-          return window.hvir.invoke('sessions:snapshot', { demandGeneration: 1 }).then(
-            () => reject(new Error('hidden Sessions retained demand')),
-            () => resolve('detail surface and demand released')
+          return window.hvir.invoke('sessions:observe', {
+            demandGeneration: ${HIDDEN_RELEASE_PROBE_GENERATION}
+          }).then(
+            () => window.hvir.invoke('sessions:release', {
+              demandGeneration: ${HIDDEN_RELEASE_PROBE_GENERATION}
+            }).then(() => {
+              resolve('detail surface and demand released');
+            }, reject),
+            (error) => {
+              lastObserveError = error;
+              if (Date.now() > deadline) {
+                return reject(new Error(
+                  'hidden Sessions retained demand: ' + String(lastObserveError)
+                ));
+              }
+              setTimeout(poll, 25);
+            }
           );
         }
         if (Date.now() > deadline) return reject(new Error('Sessions did not become hidden or unfocused'));
@@ -380,16 +403,20 @@ async function verifySessionsHiddenRelease(win: BrowserWindow): Promise<string> 
 async function ensureSessionsLiveTerminal(
   win: BrowserWindow,
   supervisor: PtySupervisor,
+  minimumLiveTerminals = 1,
 ): Promise<string> {
   const status = (await win.webContents.executeJavaScript(`
     new Promise((resolve, reject) => {
       let menuOpened = false;
+      let launchRequested = false;
       const deadline = Date.now() + 15_000;
       const poll = () => {
-        const live = [...document.querySelectorAll('.terminal-surface')].find((surface) =>
+        const live = [...document.querySelectorAll('.terminal-surface')].filter((surface) =>
           (surface.getAttribute('data-terminal-status') || '').startsWith('pid ')
         );
-        if (live) return resolve(live.getAttribute('data-terminal-status'));
+        if (live.length >= ${minimumLiveTerminals}) {
+          return resolve(live.map((surface) => surface.getAttribute('data-terminal-status')).join(', '));
+        }
         if (Date.now() > deadline) {
           return reject(new Error('Sessions live terminal timed out: ' + JSON.stringify({
             rows: document.querySelectorAll('.terminal-list-row').length,
@@ -400,7 +427,7 @@ async function ensureSessionsLiveTerminal(
         }
         const failure = document.querySelector('.terminal-recovery-status')?.textContent?.trim();
         const add = document.querySelector('button[aria-label="New terminal"]');
-        if (!menuOpened && add instanceof HTMLButtonElement && !add.disabled) {
+        if (!launchRequested && !menuOpened && add instanceof HTMLButtonElement && !add.disabled) {
           add.click();
           menuOpened = true;
         }
@@ -409,6 +436,7 @@ async function ensureSessionsLiveTerminal(
         if (menuOpened && shell instanceof HTMLButtonElement) {
           shell.click();
           menuOpened = false;
+          launchRequested = true;
         } else if (failure && !document.querySelector('.terminal-new-menu')) {
           return reject(new Error('Sessions live terminal failed: ' + failure));
         }
@@ -417,8 +445,10 @@ async function ensureSessionsLiveTerminal(
       poll();
     });
   `)) as string
-  if (supervisor.list().length < 1 || !status.startsWith('pid ')) {
-    throw new Error(`Sessions overview lacked one supervised live PTY (${status})`)
+  if (supervisor.list().length < minimumLiveTerminals || !status.startsWith('pid ')) {
+    throw new Error(
+      `Sessions overview lacked ${minimumLiveTerminals} supervised live PTYs (${status})`,
+    )
   }
   return `live PTY ${status}`
 }
