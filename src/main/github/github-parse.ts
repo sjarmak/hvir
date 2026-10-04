@@ -242,6 +242,7 @@ function pullsOf(
 export function parsePullsOutput(
   stdout: string,
   localRepos: ReadonlySet<string>,
+  currentBranch: string | undefined,
 ): ParsedPulls {
   const parsed: unknown = JSON.parse(stdout)
   const root = asRecord(parsed)
@@ -255,12 +256,17 @@ export function parsePullsOutput(
   const data = asRecord(root?.['data'])
   if (data === undefined) throw new Error('GitHub GraphQL response carried no data')
   const viewer = asString(asRecord(data['viewer'])?.['login']) ?? ''
+  const repository = asRecord(data['repository'])
+  const defaultBranch = asString(asRecord(repository?.['defaultBranchRef'])?.['name'])
   return {
     viewer,
-    branchPulls: pullsOf(asRecord(data['repository'])?.['branch'], viewer, (node) => {
-      const head = headRepositoryOf(node)
-      return head !== undefined && localRepos.has(head)
-    }),
+    branchPulls:
+      currentBranch !== undefined && currentBranch === defaultBranch
+        ? []
+        : pullsOf(repository?.['branch'], viewer, (node) => {
+            const head = headRepositoryOf(node)
+            return head !== undefined && localRepos.has(head)
+          }),
     authored: pullsOf(data['mine'], viewer),
     reviewRequested: pullsOf(data['review'], viewer),
   }

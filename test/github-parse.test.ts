@@ -52,8 +52,11 @@ function prNode(overrides: Record<string, unknown> = {}): Record<string, unknown
 
 const LOCAL_REPOS: ReadonlySet<string> = new Set(['acme/widgets', 'stephanie/widgets'])
 
-function parse(stdout: string): ReturnType<typeof parsePullsOutput> {
-  return parsePullsOutput(stdout, LOCAL_REPOS)
+function parse(
+  stdout: string,
+  branch = 'feat/panel',
+): ReturnType<typeof parsePullsOutput> {
+  return parsePullsOutput(stdout, LOCAL_REPOS, branch)
 }
 
 function graphqlOutput(data: Record<string, unknown>): string {
@@ -298,6 +301,44 @@ describe('parsePullsOutput', () => {
       }),
     )
     expect(parsed.branchPulls.map((pull) => pull.number)).toEqual([1])
+  })
+
+  it('omits default-branch pulls without hiding closed feature-branch pulls', () => {
+    const output = graphqlOutput({
+      viewer: { login: 'stephanie' },
+      repository: {
+        defaultBranchRef: { name: 'main' },
+        branch: { nodes: [prNode({ state: 'CLOSED' })] },
+      },
+      mine: { nodes: [] },
+      review: { nodes: [] },
+    })
+    expect(parse(output, 'main').branchPulls).toEqual([])
+    expect(parse(output, 'feat/panel').branchPulls).toMatchObject([
+      { number: 7, state: 'closed' },
+    ])
+  })
+
+  it('suppresses branch pulls exactly when the branch is the repository default', () => {
+    hegel.test((testCase) => {
+      const defaultBranch = testCase.draw(
+        generators.sampledFrom(['main', 'master', 'trunk', 'release']),
+      )
+      const state = testCase.draw(
+        generators.sampledFrom(['OPEN', 'CLOSED', 'MERGED']),
+      )
+      const output = graphqlOutput({
+        viewer: { login: 'stephanie' },
+        repository: {
+          defaultBranchRef: { name: defaultBranch },
+          branch: { nodes: [prNode({ state })] },
+        },
+        mine: { nodes: [] },
+        review: { nodes: [] },
+      })
+      expect(parse(output, defaultBranch).branchPulls).toEqual([])
+      expect(parse(output, `${defaultBranch}/feature`).branchPulls).toHaveLength(1)
+    })
   })
 
   it('counts open feedback only on the viewer own pulls', () => {
