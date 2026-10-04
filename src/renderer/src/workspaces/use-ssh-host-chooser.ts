@@ -8,7 +8,6 @@ const emptyFields: AddSshHostRequest = { alias: '', hostname: '', username: '', 
 const message = (reason: unknown): string =>
   reason instanceof Error ? reason.message : String(reason)
 
-/** Owns chooser requests and feedback; configuration and connection effects stay behind ports. */
 export function useSshHostChooser(
   port: SshHostChooserPort,
   initialHostId: string,

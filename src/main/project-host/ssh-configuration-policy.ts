@@ -51,7 +51,6 @@ export function validateSshHostRequest(value: unknown): AddSshHostRequest {
   return { alias, hostname, username, port, ...(identityFile ? { identityFile } : {}) }
 }
 
-/** Preserve the original bytes; exact new fields precede existing wildcard defaults. */
 export function prependSshHost(
   text: string,
   request: AddSshHostRequest,
@@ -78,7 +77,6 @@ export function prependSshHost(
       .replaceAll('"', '\\"')
     lines.push(`  IdentityFile "${quoted}"`)
   }
-  // Only original global directives need their all-host scope restored after the new block.
   const hasGlobalDirectives = SSHConfig.parse(text).some(
     (line) => 'param' in line && Boolean(line.param) && !('config' in line),
   )

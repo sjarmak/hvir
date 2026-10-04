@@ -5,7 +5,6 @@ import { localPath } from '../../shared/host-path'
 import type { ProjectHostCatalog } from './project-host-catalog'
 import type { SshConfigurationPort } from './ssh-configuration-port'
 
-/** Native identity picker and local-account defaults around the catalog-owned capability. */
 export function createElectronSshConfiguration(
   catalog: Pick<ProjectHostCatalog, 'refreshHosts' | 'addSshHost'>,
 ): SshConfigurationPort {

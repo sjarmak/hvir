@@ -8,7 +8,6 @@ import { createElectronSshConfiguration } from '../project-host/electron-ssh-con
 import type { SshConfigurationPort } from '../project-host/ssh-configuration-port'
 import type { SmokeCleanup } from './cleanup'
 
-/** Real config/catalog owner in a disposable home; no ambient SSH or server credentials. */
 export async function createSshHostChooserSmoke(
   host: LocalHost,
   root: HostPath,
@@ -63,7 +62,6 @@ export async function createSshHostChooserSmoke(
   }
 }
 
-/** Chromium form → production preload/authority IPC → LocalHost save → explicit Connect. */
 export async function verifySshHostChooserSmoke(
   win: BrowserWindow,
   host: LocalHost,

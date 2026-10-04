@@ -10,7 +10,6 @@ import {
   validateSshHostRequest,
 } from './ssh-configuration-policy'
 
-/** Fixed-destination, bounded local SSH config access; no connection/authentication authority. */
 export class SshConfiguration {
   private readonly file: HostPath
   private readonly directory: HostPath
@@ -123,7 +122,6 @@ export class SshConfiguration {
       if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return { text: '' }
       throw reason
     }
-    // Resolve existing links outside the missing-config catch: broken links are refresh failures.
     if (purpose === 'discovery' && before.type === 'symlink') {
       path = await this.local.realpath(path)
       before = await this.local.stat(path)

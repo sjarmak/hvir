@@ -209,9 +209,6 @@ export function App(): ReactElement {
     setRailMode: layout.setRailMode,
   })
   useEffect(() => {
-    if (overlays.projectPickerOpen) void refreshHosts()
-  }, [overlays.projectPickerOpen, refreshHosts])
-  useEffect(() => {
     if (root) setWorkspaceRoot(root)
   }, [root, setWorkspaceRoot])
   useEffect(() => {

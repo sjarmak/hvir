@@ -82,7 +82,6 @@ describe('SSH configuration policy', () => {
         ignoreCase: true,
         matchExec: false,
       })
-      // The parser's Host metadata names the first matching section, not a setting.
       delete before['host']
       delete after['host']
       expect(after).toEqual(before)

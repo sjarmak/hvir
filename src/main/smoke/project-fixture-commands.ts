@@ -218,7 +218,6 @@ export function createProjectFixtureCommands(options: {
   return { ports, browseHost: browseSmokeHost, openedFolderSelections, revealedEntries }
 }
 
-/** Synthetic catalog presentation belongs to the project/host fixture, not the smoke root. */
 export function smokeProjectHostOptions(host: ProjectHost, remote: ProjectHost) {
   return () => [
     {
