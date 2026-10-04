@@ -486,17 +486,51 @@ describe('githubRemoteRepos', () => {
 describe('classifyGhFailure', () => {
   it('names the actionable failures', () => {
     expect(
-      classifyGhFailure('To get started with GitHub CLI, please run:  gh auth login')
+      classifyGhFailure(
+        'To get started with GitHub CLI, please run:  gh auth login',
+        false,
+      )
         .reason,
     ).toBe('gh-unauthenticated')
-    expect(classifyGhFailure('API rate limit exceeded for user').reason).toBe(
+    expect(classifyGhFailure('API rate limit exceeded for user', false).reason).toBe(
       'rate-limited',
     )
     expect(
       classifyGhFailure(
         'none of the git remotes configured for this repository point to a known GitHub host',
+        false,
       ).reason,
     ).toBe('no-github-repo')
-    expect(classifyGhFailure('something else').reason).toBe('error')
+    expect(classifyGhFailure('something else', false).reason).toBe('error')
+  })
+
+  it.each([
+    'Requires authentication',
+    'The token in default is invalid',
+    'HTTP 401: Bad credentials',
+  ])('distinguishes remote unauthenticated failures from local ones: %s', (stderr) => {
+    expect(classifyGhFailure(stderr, true).reason).toBe(
+      'gh-remote-unauthenticated',
+    )
+    expect(classifyGhFailure(stderr, false).reason).toBe('gh-unauthenticated')
+  })
+
+  it('classifies authentication markers regardless of surrounding output', () => {
+    hegel.test((testCase) => {
+      const marker = testCase.draw(
+        generators.sampledFrom([
+          'Requires authentication',
+          'token in default is invalid',
+          'HTTP 401',
+        ]),
+      )
+      const prefix = testCase.draw(generators.text({ maxSize: 20 }))
+      const suffix = testCase.draw(generators.text({ maxSize: 20 }))
+      const stderr = `${prefix}${marker}${suffix}`
+      expect(classifyGhFailure(stderr, true).reason).toBe(
+        'gh-remote-unauthenticated',
+      )
+      expect(classifyGhFailure(stderr, false).reason).toBe('gh-unauthenticated')
+    })
   })
 })

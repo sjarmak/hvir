@@ -343,12 +343,21 @@ export function parseBranchUpstreams(
   return result
 }
 
-export function classifyGhFailure(stderr: string): PullsUnavailable {
+export function classifyGhFailure(
+  stderr: string,
+  remote: boolean,
+): PullsUnavailable {
   const message = stderr.trim() === '' ? 'gh exited without output' : stderr.trim()
   if (
-    /gh auth login|not logged in|authentication required|bad credentials/i.test(stderr)
+    /gh auth login|not logged in|authentication required|requires authentication|bad credentials|token in .* is invalid|http:?[ \t]+401/i.test(
+      stderr,
+    )
   ) {
-    return { available: false, reason: 'gh-unauthenticated', message }
+    return {
+      available: false,
+      reason: remote ? 'gh-remote-unauthenticated' : 'gh-unauthenticated',
+      message,
+    }
   }
   if (/rate limit/i.test(stderr))
     return { available: false, reason: 'rate-limited', message }

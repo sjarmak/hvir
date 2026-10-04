@@ -192,6 +192,19 @@ describe('PullsPanel', () => {
     )
   })
 
+  it('explains how to authenticate gh when remote sessions cannot read credentials', async () => {
+    response = {
+      available: false,
+      reason: 'gh-remote-unauthenticated',
+      message: 'The token in default is invalid',
+    }
+    render()
+    await flush()
+    expect(host.querySelector('[role="status"]')?.textContent).toMatch(
+      /remote host.*gh auth login --insecure-storage/i,
+    )
+  })
+
   it('notes a branch with no pull request', async () => {
     response = { ...response, available: true, branchPulls: [] } as PullsResponse
     render()
