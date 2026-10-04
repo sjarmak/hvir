@@ -36,6 +36,13 @@ export async function verifyReviewCheckpointView(options: {
       win,
       `document.querySelector('.git-panel .panel-meta')?.textContent === ${JSON.stringify(directory.split('/').at(-1))}`,
     )
+    await waitFor(
+      win,
+      `(() => {
+      const buttons = [...document.querySelectorAll('.rail-nav button')];
+      return !buttons.some(button => button.textContent?.trim() === 'PRs') && buttons.some(button => button.textContent?.trim() === 'Files' && button.classList.contains('active'));
+    })()`,
+    )
     await click(win, '.rail-nav', 'Git')
     await waitFor(win, `document.querySelector('.git-panel')?.hidden === false`)
     await click(win, '.git-tabs', 'Since review')
