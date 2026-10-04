@@ -188,14 +188,6 @@
       "reconsiderWhen": "Process launch supervision and interruption/cleanup become distinct production owners with separate externally observable contracts."
     },
     {
-      "path": "test/ssh-host.test.ts",
-      "kind": "durable",
-      "maxLines": 1621,
-      "owner": "SshHost immediate transport adapter tests",
-      "rationale": "The suite characterizes the single public host adapter using its immediate SSH boundary; authentication, reconnect, and teardown assertions share the adapter's lifecycle fixture.",
-      "reconsiderWhen": "Authentication, reconnect, or transport capacity moves out of the public adapter into a separate production owner with its own immediate boundary."
-    },
-    {
       "path": "test/terminal-ipc-resume.test.ts",
       "kind": "durable",
       "maxLines": 1182,
