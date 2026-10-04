@@ -61,6 +61,60 @@ describe('ProjectHostCatalog', () => {
     expect(readIdentity).toHaveBeenCalledWith(localPath(identity))
   })
 
+  it('uses the alias identity agent instead of the ambient agent', async () => {
+    const home = await sshHome(
+      'Host work\n  HostName work.example.test\n  User picard\n  IdentityAgent ~/.ssh/work-agent.sock\n',
+    )
+    const catalog = await ProjectHostCatalog.create({
+      prompter: { prompt: () => Promise.resolve(undefined) },
+      trustFile: localPath(join(home, 'known-hosts.json')),
+      home,
+      agentSocket: '/tmp/ambient-agent.sock',
+    })
+    catalogs.push(catalog)
+    const host = (await catalog.materializeHost('work')) as SshHost
+
+    await expect(nextAuth(connectConfig(host), ['agent'])).resolves.toMatchObject({
+      type: 'agent',
+      agent: join(home, '.ssh/work-agent.sock'),
+    })
+  })
+
+  it('disables the ambient agent when the alias configures none', async () => {
+    const home = await sshHome(
+      'Host work\n  HostName work.example.test\n  User picard\n  IdentityAgent none\n',
+    )
+    const catalog = await ProjectHostCatalog.create({
+      prompter: { prompt: () => Promise.resolve(undefined) },
+      trustFile: localPath(join(home, 'known-hosts.json')),
+      home,
+      agentSocket: '/tmp/ambient-agent.sock',
+    })
+    catalogs.push(catalog)
+    const host = (await catalog.materializeHost('work')) as SshHost
+
+    await expect(nextAuth(connectConfig(host), ['agent'])).resolves.toBe(false)
+  })
+
+  it('uses the ambient agent when the alias has no identity-agent directive', async () => {
+    const home = await sshHome(
+      'Host work\n  HostName work.example.test\n  User picard\n',
+    )
+    const catalog = await ProjectHostCatalog.create({
+      prompter: { prompt: () => Promise.resolve(undefined) },
+      trustFile: localPath(join(home, 'known-hosts.json')),
+      home,
+      agentSocket: '/tmp/ambient-agent.sock',
+    })
+    catalogs.push(catalog)
+    const host = (await catalog.materializeHost('work')) as SshHost
+
+    await expect(nextAuth(connectConfig(host), ['agent'])).resolves.toMatchObject({
+      type: 'agent',
+      agent: '/tmp/ambient-agent.sock',
+    })
+  })
+
   it('binds alias trust to the configured local metadata record', async () => {
     const home = await sshHome('Host work\n  HostName work.example.test\n  User picard\n')
     const trustFile = join(home, 'known-hosts.json')

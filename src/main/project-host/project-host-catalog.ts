@@ -157,7 +157,10 @@ export class ProjectHostCatalog {
         this.local,
         identityFileCandidates(config, this.home),
       ),
-      agentSocket: this.agentSocket,
+      agentSocket:
+        config.identityAgent === null
+          ? undefined
+          : (config.identityAgent ?? this.agentSocket),
       prompter: this.prompter,
       trust: this.trust.forAlias(config.alias),
     })
