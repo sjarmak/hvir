@@ -409,7 +409,13 @@ function renderDialog({
   act(() => {
     root.render(
       <SessionDialog
-        hosts={[localHost, sshHost]}
+        sshConfiguration={{
+          snapshot: () => Promise.resolve([localHost, sshHost]),
+          defaults: () => Promise.resolve({ username: 'picard', port: 22 }),
+          refresh: () => Promise.resolve([localHost, sshHost]),
+          save: () => Promise.resolve([]),
+          pickIdentity: () => Promise.resolve(undefined),
+        }}
         currentRoot={hostPath(asHostId(currentHost.hostId), '/current')}
         suspended={false}
         onCancel={vi.fn()}
@@ -426,6 +432,7 @@ function renderDialog({
 }
 
 async function chooseFolder(): Promise<void> {
+  await waitFor(() => buttonOrUndefined('Choose folder')?.disabled === false)
   await clickButton('Choose folder')
   flushFrames()
 }

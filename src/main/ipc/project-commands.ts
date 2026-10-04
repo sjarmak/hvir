@@ -1,3 +1,5 @@
+import { createElectronSshConfiguration } from '../project-host/electron-ssh-configuration'
+import type { ProjectHostCatalog } from '../project-host/project-host-catalog'
 import type { GitMutationCoordinator } from '../git/mutation-coordinator'
 import type { ProjectCoordinator } from '../project-coordinator'
 import type { RendererOwner } from '../renderer-resource-scopes'
@@ -7,6 +9,8 @@ import type { RendererSshPrompter } from '../project-host/renderer-ssh-prompter'
 
 type ProjectCommandDeps = Pick<
   IpcDeps,
+  | 'sshConfiguration'
+  | 'listHosts'
   | 'connectHost'
   | 'disconnectHost'
   | 'browseHost'
@@ -28,19 +32,22 @@ type ProjectCommandDeps = Pick<
   | 'pullGit'
 >
 
-/** Adapts project coordinators to IPC commands without putting policy in the root. */
 export function createProjectCommands({
+  hosts,
   projects,
   workspaces,
   git,
   withSshPresentation,
 }: {
+  readonly hosts: Pick<ProjectHostCatalog, 'listHosts' | 'refreshHosts' | 'addSshHost'>
   readonly projects: ProjectCoordinator
   readonly workspaces: WorkspaceCoordinator
   readonly git: GitMutationCoordinator
   readonly withSshPresentation: <T>(owner: RendererOwner, operation: () => T) => T
 }): ProjectCommandDeps {
   return {
+    sshConfiguration: createElectronSshConfiguration(hosts),
+    listHosts: () => hosts.listHosts(),
     connectHost: (hostId, owner) =>
       withSshPresentation(owner, () => projects.connectHost(hostId)),
     disconnectHost: (hostId) => projects.disconnectHost(hostId),
@@ -79,12 +86,14 @@ export function createProjectCommands({
 }
 
 export function createApplicationProjectCommands(
+  hosts: Pick<ProjectHostCatalog, 'listHosts' | 'refreshHosts' | 'addSshHost'>,
   projects: ProjectCoordinator,
   workspaces: WorkspaceCoordinator,
   git: GitMutationCoordinator,
   sshPrompter: RendererSshPrompter,
 ): ProjectCommandDeps {
   return createProjectCommands({
+    hosts,
     projects,
     workspaces,
     git,

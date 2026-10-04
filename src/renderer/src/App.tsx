@@ -114,14 +114,7 @@ export function App(): ReactElement {
     isIgnoreRulePath: isGitIgnoreRulePath,
   })
   const accept = session.acceptProjectState
-  const {
-    projectState,
-    root,
-    activeWorkspace,
-    connectionState,
-    rootError,
-    refreshHosts,
-  } = session
+  const { projectState, root, activeWorkspace, connectionState, rootError } = session
   const documentReview = review.useReviewWorkspace(activeWorkspace, reviewWatch)
   const { watch: watchVersion, ignored: ignoredRefreshVersion } = session.versions
   const { content: contentVersion, git: gitVersion } = session.versions
@@ -215,9 +208,6 @@ export function App(): ReactElement {
     beadsEnabled: rail.beads.beadsEnabled,
     setRailMode: layout.setRailMode,
   })
-  useEffect(() => {
-    if (overlays.projectPickerOpen) void refreshHosts()
-  }, [overlays.projectPickerOpen, refreshHosts])
   useEffect(() => {
     if (root) setWorkspaceRoot(root)
   }, [root, setWorkspaceRoot])
@@ -639,7 +629,6 @@ export function App(): ReactElement {
       />
       {overlays.projectPickerOpen ? (
         <SessionDialog
-          hosts={session.hosts}
           currentRoot={root}
           suspended={session.prompts.length > 0}
           onCancel={overlays.closeProjectPicker}

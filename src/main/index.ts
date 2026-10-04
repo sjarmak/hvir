@@ -335,6 +335,7 @@ function createWorkbenchEntry(): void {
     installMirrorGeometryNotice(runtime, ptySupervisor, rendererEvents)
     if (!sshPrompter) throw new Error('SSH prompting is unavailable')
     const projectCommands = createApplicationProjectCommands(
+      hostCatalog,
       projects,
       workspaceCoordinator,
       gitMutations,
@@ -363,7 +364,6 @@ function createWorkbenchEntry(): void {
         getRegisteredWorkspaceRoot: (root) => registry.registeredWorkspaceRoot(root),
         revealLocalEntry: electronReveal(shell),
         getProjectState: () => registry.state(),
-        listHosts: () => hostCatalog?.listHosts() ?? [],
         ...projectCommands,
         respondSshPrompt: (owner, id, answers) =>
           sshPrompter?.respond(owner, id, answers),

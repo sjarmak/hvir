@@ -3,6 +3,7 @@ import { installSmokeCompanion } from './companion-smoke'
 import { verifyCompanionScenario } from './companion'
 import { createSmokeSessionsPorts } from './sessions-ports'
 import { terminalScenarioTable } from './terminal-scenario-table'
+import { createSshHostChooserSmoke, verifySshHostChooserSmoke } from './ssh-host-chooser'
 import type { ElectronSmokeDependencies } from './bootstrap-contract'
 import { SmokeRendererReadiness } from './renderer-readiness-observer'
 import { verifyTerminalLifecycleScenario } from './terminal-lifecycle-scenario'
@@ -292,6 +293,12 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       attachTickets: sessionsAttachTickets,
       hostOptions: smokeHostOptions,
     } = sessionsPorts
+    const sshChooser = await createSshHostChooserSmoke(
+      host,
+      smokeRoot,
+      smokeHostOptions,
+      cleanup,
+    )
     const qolRailServices = createQolRailServices({
       host,
       root: smokeRoot,
@@ -356,6 +363,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       openedFolderSelections,
       revealedEntries,
     } = createProjectFixtureCommands({
+      sshChooser,
       host,
       smokeRemoteHost,
       smokeRoot,
@@ -512,7 +520,9 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
         usageHost: host,
         usageProvider: sessionsUsageSmokeProvider,
         needsYouSnapshotCount: smokeNeedsYou.snapshotCount,
-        captureDirectory: process.env.HVIR_SESSIONS_CAPTURE_DIR ? localPath(process.env.HVIR_SESSIONS_CAPTURE_DIR) : undefined,
+        captureDirectory: process.env.HVIR_SESSIONS_CAPTURE_DIR
+          ? localPath(process.env.HVIR_SESSIONS_CAPTURE_DIR)
+          : undefined,
       })
       console.log(`[smoke] Sessions projection OK (${result})`)
       console.log('HVIR_SMOKE_OK')
@@ -526,6 +536,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       return 0
     }
     if (mode === 'workspace-remote') {
+      console.log('[smoke] ' + (await verifySshHostChooserSmoke(win, host, sshChooser)))
       const projectFilesResult = await verifyProjectFileOperationsSmoke({
         win,
         localHost: host,

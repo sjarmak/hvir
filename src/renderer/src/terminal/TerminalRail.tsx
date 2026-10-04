@@ -152,13 +152,7 @@ export function TerminalRail({
     return () => {
       cancelled = true
     }
-  }, [
-    detailsRequest,
-    detailsRow,
-    dismissDetails,
-    projection.status,
-    sessionsProjection,
-  ])
+  }, [detailsRequest, detailsRow, dismissDetails, projection.status, sessionsProjection])
   const detailsModel = detailsRow
     ? sessionDetailsModel(detailsRow, detailsUsage)
     : detailsRequest && projection.status === 'available'
@@ -166,7 +160,10 @@ export function TerminalRail({
       : undefined
   const { menuRef: launchMenuRef, menuStyle: launchMenuStyle } =
     useTerminalLaunchMenuLayout(menuOpen)
-  const [renaming, setRenaming] = useState<{ readonly id: string; readonly value: string }>()
+  const [renaming, setRenaming] = useState<{
+    readonly id: string
+    readonly value: string
+  }>()
   const applyCompact = (next: boolean): void => {
     if (next && menuOpen) onToggleMenu()
     if (next && moveMenuOpen) onToggleMoveMenu()
@@ -361,6 +358,7 @@ export function TerminalRail({
             session.providerId,
             connectionState,
           )
+          const status = session.status.replace(/(?:^| · )pid -?\d+$/, '')
           return (
             <div
               key={session.id}
@@ -397,7 +395,7 @@ export function TerminalRail({
                     <span className="terminal-list-profile">
                       {profileDisplayName(profiles, session.profileId)}
                     </span>{' '}
-                    · {session.status}
+                    · {status}
                     {identityLabel(session.identityStatus)}
                   </span>
                   {showsContext ? (
