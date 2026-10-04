@@ -186,7 +186,7 @@ export class GitHubService {
     )
     if (!result.ok) return result.unavailable
     try {
-      const parsed = parsePullsOutput(result.stdout, localRepos ?? new Set())
+      const parsed = parsePullsOutput(result.stdout, localRepos ?? new Set(), branch)
       return {
         available: true,
         repo: repo.repo,

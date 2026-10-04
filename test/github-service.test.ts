@@ -90,6 +90,47 @@ describe('GitHubService.pulls', () => {
     expect(graphql?.[2]?.timeout).toBeGreaterThan(0)
   })
 
+  it('omits pull requests whose head is the repository default branch', async () => {
+    const { host } = fakeHost((command, args) => {
+      if (command === 'git' && args[0] === 'symbolic-ref') {
+        return execResult(0, 'main\n')
+      }
+      if (command !== 'gh' || args[1] !== 'graphql') {
+        return defaultResponder(command, args)
+      }
+      return execResult(
+        0,
+        JSON.stringify({
+          data: {
+            viewer: { login: 'stephanie' },
+            repository: {
+              defaultBranchRef: { name: 'main' },
+              branch: {
+                nodes: [
+                  {
+                    number: 12,
+                    title: 'Old main pull request',
+                    url: 'https://github.com/acme/widgets/pull/12',
+                    state: 'CLOSED',
+                    headRefName: 'main',
+                    headRepository: { nameWithOwner: 'acme/widgets' },
+                  },
+                ],
+              },
+            },
+            mine: { nodes: [] },
+            review: { nodes: [] },
+          },
+        }),
+      )
+    })
+    await expect(service(host).pulls({ root: ROOT })).resolves.toMatchObject({
+      available: true,
+      branch: 'main',
+      branchPulls: [],
+    })
+  })
+
   it('reuses the resolved repo until it goes stale', async () => {
     let now = 0
     const { host, exec } = fakeHost()

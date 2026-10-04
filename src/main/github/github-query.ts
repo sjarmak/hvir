@@ -15,6 +15,7 @@ export const PULLS_QUERY = `query(
 ) {
   viewer { login }
   repository(owner: $owner, name: $name) @include(if: $hasBranch) {
+    defaultBranchRef { name }
     branch: pullRequests(
       headRefName: $branch, first: 5, orderBy: { field: UPDATED_AT, direction: DESC }
     ) { nodes { ...pull } }
