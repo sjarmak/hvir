@@ -159,6 +159,16 @@ export async function hide(): Promise<void> {
   await settle()
 }
 
+/** The page coming back into view, as after unlocking the phone. */
+export async function show(): Promise<void> {
+  Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
+  await act(async () => {
+    document.dispatchEvent(new Event('visibilitychange'))
+    await Promise.resolve()
+  })
+  await settle()
+}
+
 export const MIRROR_ROW = row({
   handle: 'term-1',
   title: 'claude in shell',

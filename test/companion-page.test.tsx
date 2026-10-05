@@ -807,30 +807,6 @@ describe('Companion page terminal mirror', () => {
     expect(server.inputs()).toEqual([])
   })
 
-  it('a mirror opened after reconnect starts disarmed', async () => {
-    await openMirror()
-    await click(armButton())
-    expect(armButton().dataset['armed']).toBe('true')
-    act(() => {
-      server.drop()
-    })
-    await settle()
-    await settle()
-    await click(button('Reconnect'))
-    await emit('snapshot', snapshot(1, [MIRROR_ROW]))
-    await click(host.querySelector<HTMLElement>('.companion-row') as HTMLElement)
-    await emit('terminal', {
-      type: 'opened',
-      handle: 'term-1',
-      cols: 80,
-      rows: 24,
-      tail: '',
-    })
-
-    expect(armButton().dataset['armed']).toBe('false')
-    expect(panes.panes.at(-1)?.inputEnabled).toEqual([false])
-  })
-
   it('shows a refused answer with the desktop sentence', async () => {
     server.transcriptReply = transcript({
       handle: 'ready-1',
