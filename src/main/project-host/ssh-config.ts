@@ -30,25 +30,29 @@ export function parseSshConfig(
     const one = (value: string | string[] | undefined): string | undefined =>
       Array.isArray(value) ? value[0] : value
     const hostname = one(values['hostname']) ?? alias
-    const user = one(values['user']) ?? process.env['USER'] ?? 'unknown'
+    const localUser = environment['USER'] ?? process.env['USER'] ?? 'unknown'
+    const user = one(values['user']) ?? localUser
     const rawPort = Number.parseInt(one(values['port']) ?? '22', 10)
+    const port = Number.isFinite(rawPort) ? rawPort : 22
     const rawIdentity = values['identityfile']
     const identityFiles = (
       Array.isArray(rawIdentity) ? rawIdentity : rawIdentity ? [rawIdentity] : []
-    ).map((path) => expandSshValue(path, home, hostname, user))
+    ).map((path) => expandSshValue(path, home, hostname, user, localUser, port))
     const rawIdentityAgent = one(values['identityagent'])
     const identityAgent = resolveIdentityAgent(
       rawIdentityAgent,
       home,
       hostname,
       user,
+      localUser,
+      port,
       environment,
     )
     return {
       alias,
       hostname,
       user,
-      port: Number.isFinite(rawPort) ? rawPort : 22,
+      port,
       identityFiles,
       ...(identityAgent === undefined ? {} : { identityAgent }),
     }
@@ -60,21 +64,27 @@ function resolveIdentityAgent(
   home: string,
   hostname: string,
   user: string,
+  localUser: string,
+  port: number,
   environment: Readonly<Record<string, string | undefined>>,
 ): string | null | undefined {
   if (value === undefined) return undefined
-  if (value.toLowerCase() === 'none') return null
+  if (value === 'none') return null
   if (value === 'SSH_AUTH_SOCK') return environment['SSH_AUTH_SOCK'] ?? null
   const variable = value.match(/^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))$/)
   const variableName = variable?.[1] ?? variable?.[2]
   if (variableName) return environment[variableName] ?? null
   const variables = [...value.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)]
   if (variables.some((match) => environment[match[1]!] === undefined)) return null
-  const expandedEnvironment = value.replace(
-    /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,
-    (_match, name: string) => environment[name]!,
+  return expandSshValue(
+    value,
+    home,
+    hostname,
+    user,
+    localUser,
+    port,
+    environment,
   )
-  return expandSshValue(expandedEnvironment, home, hostname, user)
 }
 
 function expandSshValue(
@@ -82,11 +92,31 @@ function expandSshValue(
   home: string,
   hostname: string,
   user: string,
+  localUser: string,
+  port: number,
+  environment?: Readonly<Record<string, string | undefined>>,
 ): string {
+  const tokens = {
+    '%': '%',
+    d: home,
+    h: hostname,
+    r: user,
+    u: localUser,
+    p: String(port),
+  } as const
+  const expansionPattern =
+    environment === undefined
+      ? /%([%dhrup])/g
+      : /%([%dhrup])|\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g
   return value
     .replace(/^~(?=\/|$)/, home)
-    .replaceAll('%d', home)
-    .replaceAll('%h', hostname)
-    .replaceAll('%r', user)
-    .replaceAll('%%', '%')
+    .replace(
+      expansionPattern,
+      (_match, token: keyof typeof tokens | undefined, name: string | undefined) => {
+        if (token !== undefined) return tokens[token]
+        const replacement = name === undefined ? undefined : environment?.[name]
+        if (replacement !== undefined) return replacement
+        throw new Error(`Missing SSH environment variable ${name}`)
+      },
+    )
 }
