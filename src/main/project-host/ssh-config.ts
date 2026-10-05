@@ -36,7 +36,7 @@ export function parseSshConfig(
     const hostname = one(values['hostname']) ?? alias
     const localUser = environment['USER'] ?? process.env['USER'] ?? 'unknown'
     const user = one(values['user']) ?? localUser
-    const configuredPort = one(values['port'])?.trim() ?? String(DEFAULT_SSH_PORT)
+    const configuredPort = one(values['port']) ?? String(DEFAULT_SSH_PORT)
     const rawPort = /^\d+$/.test(configuredPort) ? Number(configuredPort) : Number.NaN
     const port =
       Number.isInteger(rawPort) && rawPort >= MIN_SSH_PORT && rawPort <= MAX_SSH_PORT
@@ -78,15 +78,24 @@ function resolveIdentityAgent(
 ): string | null | undefined {
   if (value === undefined) return undefined
   if (value === 'none') return null
-  if (value === 'SSH_AUTH_SOCK') return environment['SSH_AUTH_SOCK'] ?? null
+  if (value === 'SSH_AUTH_SOCK') return ownEnvironmentValue(environment, 'SSH_AUTH_SOCK') ?? null
   const variable = value.match(
     /^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))$/,
   )
   const variableName = variable?.[1] ?? variable?.[2]
-  if (variableName) return environment[variableName] ?? null
+  if (variableName) return ownEnvironmentValue(environment, variableName) ?? null
   const variables = [...value.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)]
-  if (variables.some((match) => environment[match[1]!] === undefined)) return null
+  if (variables.some((match) => ownEnvironmentValue(environment, match[1]!) === undefined)) {
+    return null
+  }
   return expandSshValue(value, home, hostname, user, localUser, port, environment)
+}
+
+function ownEnvironmentValue(
+  environment: Readonly<Record<string, string | undefined>>,
+  name: string,
+): string | undefined {
+  return Object.hasOwn(environment, name) ? environment[name] : undefined
 }
 
 function expandSshValue(
@@ -119,7 +128,7 @@ function expandSshValue(
         if (name === undefined || environment === undefined) {
           throw new Error('Invalid SSH value expansion')
         }
-        const replacement = environment[name]
+        const replacement = ownEnvironmentValue(environment, name)
         if (replacement === undefined) {
           throw new Error(`Missing SSH environment variable ${name}`)
         }

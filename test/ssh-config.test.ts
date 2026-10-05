@@ -193,6 +193,34 @@ Host *
     },
   )
 
+  it.each(['constructor', '__proto__', 'toString'])(
+    'treats inherited environment property %s as missing',
+    (name) => {
+      const braced = '${' + name + '}'
+
+      expect(
+        parseSshConfig(`Host work\n  IdentityAgent $${name}\n`, '/home/me', {}),
+      ).toEqual([expect.objectContaining({ identityAgent: null })])
+      expect(
+        parseSshConfig(`Host work\n  IdentityAgent ${braced}\n`, '/home/me', {}),
+      ).toEqual([expect.objectContaining({ identityAgent: null })])
+      expect(
+        parseSshConfig(`Host work\n  IdentityAgent /tmp/${braced}.sock\n`, '/home/me', {}),
+      ).toEqual([expect.objectContaining({ identityAgent: null })])
+    },
+  )
+
+  it('never resolves inherited object properties as identity-agent variables', () =>
+    hegel.test((testCase) => {
+      const name = testCase.draw(gs.sampledFrom(['constructor', '__proto__', 'toString']))
+      const braced = '${' + name + '}'
+      const value = testCase.draw(gs.sampledFrom([`$${name}`, braced, `/tmp/${braced}.sock`]))
+
+      expect(parseSshConfig(`Host work\n  IdentityAgent ${value}\n`, '/home/me', {})).toEqual(
+        [expect.objectContaining({ identityAgent: null })],
+      )
+    }))
+
   it.each([
     ['/tmp/~/.ssh/agent.sock', '/tmp/~/.ssh/agent.sock'],
     ['~other/.ssh/agent.sock', '~other/.ssh/agent.sock'],
