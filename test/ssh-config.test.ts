@@ -32,6 +32,17 @@ Host *
     ])
   })
 
+  it('falls back to port 22 when the configured port is malformed', () => {
+    expect(
+      parseSshConfig('Host work\n  Port abc\n  IdentityFile ~/.ssh/key-%p\n', '/home/me'),
+    ).toEqual([
+      expect.objectContaining({
+        port: 22,
+        identityFiles: ['/home/me/.ssh/key-22'],
+      }),
+    ])
+  })
+
   it('expands identity tokens once for files and agents', () => {
     expect(
       parseSshConfig(
@@ -54,6 +65,26 @@ Host *
         identityFiles: ['/keys/%d-local-user@dev.example.test-2202'],
         identityAgent: '/tmp/%h-local-user@remote-user-2202.sock',
       },
+    ])
+  })
+
+  it('expands the home-directory token in identity-file paths', () => {
+    expect(parseSshConfig('Host work\n  IdentityFile %d/.ssh/key\n', '/home/me')).toEqual(
+      [
+        expect.objectContaining({
+          identityFiles: ['/home/me/.ssh/key'],
+        }),
+      ],
+    )
+  })
+
+  it('preserves environment syntax in identity-file paths', () => {
+    expect(
+      parseSshConfig('Host work\n  IdentityFile ${IDENTITY_ROOT}/key\n', '/home/me', {}),
+    ).toEqual([
+      expect.objectContaining({
+        identityFiles: ['${IDENTITY_ROOT}/key'],
+      }),
     ])
   })
 
@@ -102,9 +133,7 @@ Host *
         '/home/me',
         { USER: 'local-user', AGENT_ROOT: '~/%u' },
       ),
-    ).toEqual([
-      expect.objectContaining({ identityAgent: '~/%u/dev.example.test.sock' }),
-    ])
+    ).toEqual([expect.objectContaining({ identityAgent: '~/%u/dev.example.test.sock' })])
   })
 
   it.each([
