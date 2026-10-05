@@ -2,24 +2,30 @@ import { useEffect, useRef, useState, type ReactElement } from 'react'
 
 import {
   hostPathEquals,
+  unwrapOperation,
   type HostPath,
   type PullSummary,
   type WorkspaceState,
 } from '../../../shared'
 import type { PullCheckoutsResponse } from '../../../shared/github'
-import { resolvePullWorkspaces, type PullWorkspaceNavigation } from './pull-workspaces'
+import {
+  canCreatePullWorktree,
+  resolvePullWorkspaces,
+  type PullWorkspaceNavigation,
+} from './pull-workspaces'
 
 interface PullWorkspaceActionProps {
   readonly root: HostPath
   readonly pull: PullSummary
   readonly checkouts: PullCheckoutsResponse | undefined
+  readonly repo: string | undefined
   readonly navigation: PullWorkspaceNavigation | undefined
   readonly disabled: boolean
   readonly onCheckouts: (response: PullCheckoutsResponse) => void
 }
 
 export function PullWorkspaceAction(props: PullWorkspaceActionProps): ReactElement {
-  const { root, pull, checkouts, navigation, disabled, onCheckouts } = props
+  const { root, pull, checkouts, repo, navigation, disabled, onCheckouts } = props
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string>()
   const latest = useRef(props)
@@ -84,6 +90,38 @@ export function PullWorkspaceAction(props: PullWorkspaceActionProps): ReactEleme
     }
   }
 
+  async function create(): Promise<void> {
+    if (busy.current || disabled || !navigation) return
+    busy.current = true
+    const serial = generation.current
+    setPending(true)
+    setError(undefined)
+    try {
+      const state = unwrapOperation(
+        await window.hvir.invoke('github:create-worktree', { root, number: pull.number }),
+      )
+      latest.current.navigation?.acceptProjectState(state)
+      const fresh = await window.hvir
+        .invoke('github:checkouts', { root })
+        .catch((reason: unknown) => {
+          throw new Error(
+            `Created the worktree, but could not refresh checkouts: ${
+              reason instanceof Error ? reason.message : String(reason)
+            }. Refresh the PRs tab.`,
+          )
+        })
+      if (!alive.current || serial !== generation.current) return
+      latest.current.onCheckouts(fresh)
+    } catch (reason) {
+      if (alive.current && serial === generation.current) {
+        setError(reason instanceof Error ? reason.message : String(reason))
+      }
+    } finally {
+      busy.current = false
+      if (alive.current) setPending(false)
+    }
+  }
+
   function action(workspace: WorkspaceState, showPath = false): ReactElement {
     const current = workspace.id === navigation?.activeWorkspaceId
     const label = current
@@ -138,6 +176,18 @@ export function PullWorkspaceAction(props: PullWorkspaceActionProps): ReactEleme
               </ul>
             </details>
           )
+        ) : match.status === 'none' && navigation && canCreatePullWorktree(pull, repo) ? (
+          <button
+            type="button"
+            className="pulls-workspace-button"
+            disabled={disabled || pending}
+            aria-label={`Create worktree for PR #${pull.number}`}
+            onClick={() => {
+              void create()
+            }}
+          >
+            {pending ? 'Creating…' : 'Create worktree'}
+          </button>
         ) : (
           <span
             className="pulls-workspace-note"

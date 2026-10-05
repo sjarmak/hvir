@@ -22,7 +22,7 @@ const COMMIT = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/
 
 /** The directory hvir owns beside a registered root; refuses a root with no parent. */
 export function hvirWorktreeLocation(root: HostPath): string {
-  const location = locationOf(root.path)
+  const location = hvirWorktreeLocationOf(root.path)
   if (!location) throw new Error('Invalid hvir worktree root')
   return location
 }
@@ -54,7 +54,7 @@ export function isHvirWorktreeTarget(rootPath: string, target: unknown): boolean
     return false
   if (!branch.startsWith(HVIR_ARCHITECTURE_BRANCH_PREFIX)) return false
   const slug = branch.slice(HVIR_ARCHITECTURE_BRANCH_PREFIX.length)
-  const location = locationOf(rootPath)
+  const location = hvirWorktreeLocationOf(rootPath)
   return (
     SLUG.test(slug) &&
     COMMIT.test(commit) &&
@@ -72,7 +72,7 @@ export function hvirWorktreeSlug(branch: string | undefined): string | undefined
 
 /** True only for `<root>.hvir-worktrees/<slug>` with a valid slug: never the root itself. */
 export function isHvirWorktreePath(rootPath: string, path: unknown): boolean {
-  const location = locationOf(rootPath)
+  const location = hvirWorktreeLocationOf(rootPath)
   if (location === undefined || typeof path !== 'string') return false
   if (!path.startsWith(`${location}/`)) return false
   return SLUG.test(path.slice(location.length + 1))
@@ -96,7 +96,7 @@ export function sameHvirWorktreeTarget(
   )
 }
 
-function locationOf(path: string): string | undefined {
+export function hvirWorktreeLocationOf(path: string): string | undefined {
   return path.startsWith('/') &&
     path !== '/' &&
     !path.endsWith('/') &&

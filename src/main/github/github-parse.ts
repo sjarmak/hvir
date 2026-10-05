@@ -365,3 +365,35 @@ export function classifyGhFailure(stderr: string, remote: boolean): PullsUnavail
   }
   return { available: false, reason: 'error', message }
 }
+
+export interface PullHead {
+  readonly open: boolean
+  readonly headRef: string
+  readonly crossRepository: boolean
+}
+
+export function parsePullHead(stdout: string, number: number): PullHead {
+  const data = asRecord(JSON.parse(stdout) as unknown)
+  const headRef = asString(data?.['headRefName'])
+  const state = asString(data?.['state'])
+  const crossRepository = data?.['isCrossRepository']
+  if (
+    data?.['number'] !== number ||
+    headRef === undefined ||
+    headRef === '' ||
+    state === undefined ||
+    typeof crossRepository !== 'boolean'
+  ) {
+    throw new Error('gh pr view returned no usable pull request head')
+  }
+  return { open: state === 'OPEN', headRef, crossRepository }
+}
+
+export function githubRemoteFor(remoteOutput: string, repo: string): string | undefined {
+  const wanted = repo.toLowerCase()
+  const matches = [...githubRemoteRepositoryMap(remoteOutput)]
+    .filter(([, value]) => value === wanted)
+    .map(([remote]) => remote)
+    .sort()
+  return matches.includes('origin') ? 'origin' : matches[0]
+}

@@ -132,6 +132,7 @@ highlighting without turning hvir into an IDE.
 > Superseded by: [ADR-021](adr/ADR-021-system-git-dirty-navigation-safety.md) | partial | Clean-worktree navigation prerequisite and handing every dirty branch switch or pull to the terminal.
 > Superseded by: [ADR-963](adr/ADR-963-architecture-review-history-and-agent-worktrees.md) | partial | Creating no branch at all; the architecture review creates one hvir/architecture/ branch per agent launch.
 > Superseded by: [ADR-970](adr/ADR-970-explicit-review-checkpoint.md) | partial | Git mutation scope, for explicit private review-checkpoint object/ref writes only.
+> Superseded by: [ADR-974](adr/ADR-974-pull-request-worktree-creation.md) | partial | Git mutation scope, for one fetch and one tracking worktree add per explicit Create worktree action on a PR row.
 
 System Git runs behind an off-thread engine and a main-owned `ProjectHost` broker; the few
 mutations hvir exposes are exact, bounded navigation operations.
@@ -161,6 +162,7 @@ sandboxed HTML rendering.
 > Superseded by: [ADR-033](adr/ADR-033-successful-discovery-dismisses-missing-workspaces.md) | partial | Missing worktrees remaining visible until explicit dismissal.
 > Superseded by: [ADR-963](adr/ADR-963-architecture-review-history-and-agent-worktrees.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
 > Superseded by: [ADR-968](adr/ADR-968-pull-request-workspace-navigation.md) | partial | Workspace selection existing only in the top tier, for explicit PR-row shortcuts into the existing workspace navigation owner.
+> Superseded by: [ADR-974](adr/ADR-974-pull-request-worktree-creation.md) | partial | Creating no worktree at all; an explicit Create worktree action on a PR row creates one hvir-owned worktree for that PR.
 
 Host-qualified registered projects own discovered worktree workspaces without making hvir a
 worktree orchestrator.
@@ -767,8 +769,9 @@ and symbolic links and submodules remain disclosed exclusions.
 
 ### [ADR-968 — Pull request shortcuts to existing workspaces](adr/ADR-968-pull-request-workspace-navigation.md)
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-008](adr/ADR-008-project-worktree-workspaces.md) | partial | Workspace selection existing only in the top tier, for explicit PR-row shortcuts into the existing workspace navigation owner.
+> Superseded by: [ADR-974](adr/ADR-974-pull-request-worktree-creation.md) | partial | The PR workspace action creating no checkout; a PR with no verified checkout may offer Create worktree.
 
 PR rows open or reopen an existing workspace through the current navigation owner after matching
 its host-qualified checkout and configured upstream to the PR source repository and branch.
@@ -813,6 +816,16 @@ No shared credentials, cross-origin reads, discovery, or combined view are intro
 Diff-derived commit markers persist on disk per repository, keyed by commit, parent, scanners
 and layout; unclassified commits and fleet labels are never stored. Hidden views withdraw
 queued classification requests.
+
+### [ADR-974 — Pull request worktree creation](adr/ADR-974-pull-request-worktree-creation.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-005](adr/ADR-005-system-git-engine.md) | partial | Git mutation scope, for one fetch and one tracking worktree add per explicit Create worktree action on a PR row.
+> Supersedes: [ADR-008](adr/ADR-008-project-worktree-workspaces.md) | partial | Creating no worktree at all; an explicit Create worktree action on a PR row creates one hvir-owned worktree for that PR.
+> Supersedes: [ADR-968](adr/ADR-968-pull-request-workspace-navigation.md) | partial | The PR workspace action creating no checkout; a PR with no verified checkout may offer Create worktree.
+
+An open same-repository PR with no checkout offers one explicit action that fetches, then adds
+`<root>.hvir-worktrees/pr-<number>` on the PR head branch tracking its remote, under exact grants.
 
 ## 5. Architecture
 

@@ -5,8 +5,10 @@ import { describe, expect, it } from 'vitest'
 import {
   classifyGhFailure,
   githubRemoteRepos,
+  githubRemoteFor,
   githubRemoteRepositoryMap,
   parseBranchUpstreams,
+  parsePullHead,
   parsePullsOutput,
   parseRepoView,
 } from '../src/main/github/github-parse'
@@ -533,12 +535,9 @@ describe('classifyGhFailure', () => {
     'xhttp 401',
     'Fix http 401 handling in parser',
     'hello gh: HTTP 401',
-  ])(
-    'does not classify a coincidental HTTP 401 mention: %s',
-    (stderr) => {
-      expect(classifyGhFailure(stderr, false).reason).toBe('error')
-    },
-  )
+  ])('does not classify a coincidental HTTP 401 mention: %s', (stderr) => {
+    expect(classifyGhFailure(stderr, false).reason).toBe('error')
+  })
 
   it.each([
     'HTTP 401\nAPI rate limit exceeded',
@@ -570,5 +569,49 @@ describe('classifyGhFailure', () => {
       expect(classifyGhFailure(stderr, true).reason).toBe('gh-remote-unauthenticated')
       expect(classifyGhFailure(stderr, false).reason).toBe('gh-unauthenticated')
     })
+  })
+})
+
+describe('parsePullHead', () => {
+  it('reads the head branch, open state and fork flag of the requested PR', () => {
+    expect(
+      parsePullHead(
+        '{"number":7,"state":"OPEN","headRefName":"feat/x","isCrossRepository":false}',
+        7,
+      ),
+    ).toEqual({ open: true, headRef: 'feat/x', crossRepository: false })
+    expect(
+      parsePullHead(
+        '{"number":7,"state":"MERGED","headRefName":"feat/x","isCrossRepository":true}',
+        7,
+      ),
+    ).toEqual({ open: false, headRef: 'feat/x', crossRepository: true })
+  })
+
+  it.each([
+    '{"number":8,"state":"OPEN","headRefName":"feat/x","isCrossRepository":false}',
+    '{"number":7,"state":"OPEN","headRefName":"","isCrossRepository":false}',
+    '{"number":7,"state":"OPEN","headRefName":"feat/x"}',
+    '[]',
+  ])('refuses %s', (stdout) => {
+    expect(() => parsePullHead(stdout, 7)).toThrow('no usable pull request head')
+  })
+})
+
+describe('githubRemoteFor', () => {
+  const remotes = [
+    'upstream\thttps://github.com/acme/widgets.git (fetch)',
+    'origin\tgit@github.com:Acme/Widgets.git (fetch)',
+    'fork\thttps://github.com/me/widgets.git (fetch)',
+  ].join('\n')
+
+  it('prefers origin among the remotes that point at the repository', () => {
+    expect(githubRemoteFor(remotes, 'acme/widgets')).toBe('origin')
+  })
+
+  it('falls back to the first matching remote by name, or none', () => {
+    const withoutOrigin = remotes.replace('origin\t', 'zeta\t')
+    expect(githubRemoteFor(withoutOrigin, 'acme/widgets')).toBe('upstream')
+    expect(githubRemoteFor(remotes, 'other/widgets')).toBeUndefined()
   })
 })

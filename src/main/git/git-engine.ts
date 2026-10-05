@@ -15,6 +15,7 @@ import type {
 import { createGitCapabilities } from './git-capabilities'
 import { GitCommandContext, type GitHostPort } from './git-command-context'
 import type { HvirWorktreeChange } from './git-worktrees'
+import type { PullWorktreeTarget } from './pull-worktrees'
 
 export { GIT_FETCH_ARGS, GIT_PULL_ARGS } from './git-branches'
 export { parseLocalBranches, parseWorktreeList } from './git-parsers'
@@ -79,6 +80,10 @@ export class GitEngine {
 
   hvirWorktree(root: HostPath, change: HvirWorktreeChange): Promise<WorktreeDiscovery> {
     return this.capabilities.worktree.change(root, change)
+  }
+
+  pullWorktree(root: HostPath, target: PullWorktreeTarget): Promise<WorktreeDiscovery> {
+    return this.capabilities.worktree.addPull(root, target)
   }
 
   changes(

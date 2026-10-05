@@ -59,7 +59,7 @@ function mutationCall(
 function grantRequest(
   kind: Exclude<
     GitMutationGrantRequest['kind'],
-    'worktree-add' | 'worktree-remove' | 'branch-delete'
+    'worktree-add' | 'pull-worktree-add' | 'worktree-remove' | 'branch-delete'
   >,
 ): GitMutationGrantRequest {
   return kind === 'branch-switch'

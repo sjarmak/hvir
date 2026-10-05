@@ -30,6 +30,7 @@ type ProjectCommandDeps = Pick<
   | 'switchGitBranch'
   | 'fetchGit'
   | 'pullGit'
+  | 'createPullWorktree'
 >
 
 export function createProjectCommands({
@@ -82,6 +83,7 @@ export function createProjectCommands({
     switchGitBranch: (root, branch) => git.switchBranch(root, branch),
     fetchGit: (root) => git.fetch(root),
     pullGit: (root) => git.pull(root),
+    createPullWorktree: (root, source) => git.addPullWorktree(root, source),
   }
 }
 

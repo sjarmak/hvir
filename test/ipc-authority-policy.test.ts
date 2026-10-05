@@ -150,6 +150,7 @@ describe('IPC authority channel policy', () => {
         'git:fetch',
         'git:pull',
         'git:switch-branch',
+        'github:create-worktree',
         'git:review-checkpoint',
         'html-preview:create',
         'harness:profiles',

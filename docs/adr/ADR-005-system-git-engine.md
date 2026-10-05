@@ -4,6 +4,7 @@
 > Superseded by: [ADR-021](ADR-021-system-git-dirty-navigation-safety.md) | partial | Clean-worktree navigation prerequisite and handing every dirty branch switch or pull to the terminal.
 > Superseded by: [ADR-963](ADR-963-architecture-review-history-and-agent-worktrees.md) | partial | Creating no branch at all; the architecture review creates one hvir/architecture/ branch per agent launch.
 > Superseded by: [ADR-970](ADR-970-explicit-review-checkpoint.md) | partial | Git mutation scope, for explicit private review-checkpoint object/ref writes only.
+> Superseded by: [ADR-974](ADR-974-pull-request-worktree-creation.md) | partial | Git mutation scope, for one fetch and one tracking worktree add per explicit Create worktree action on a PR row.
 
 ## Context
 

@@ -606,3 +606,69 @@ describe('GitHubService.detail', () => {
     })
   })
 })
+
+describe('GitHubService.pullWorktreeSource', () => {
+  function headResponder(
+    head: string,
+    remotes = 'origin\thttps://github.com/acme/widgets (fetch)\n',
+  ): Responder {
+    return (command, args) => {
+      if (command === 'git' && args[0] === 'remote') return execResult(0, remotes)
+      if (args[0] === 'repo') return execResult(0, '{"nameWithOwner":"acme/widgets"}')
+      if (args[0] === 'pr') return execResult(0, head)
+      return execResult(1, '', 'unexpected')
+    }
+  }
+  const sameRepo =
+    '{"number":12,"state":"OPEN","headRefName":"feat/panel","isCrossRepository":false}'
+
+  it('resolves the head branch and the remote for an open same-repository PR', async () => {
+    const { host, exec } = fakeHost(headResponder(sameRepo))
+    await expect(service(host).pullWorktreeSource(ROOT, 12)).resolves.toEqual({
+      number: 12,
+      branch: 'feat/panel',
+      remote: 'origin',
+    })
+    const view = exec.mock.calls.find((call) => call[1][0] === 'pr')
+    expect(view?.[1]).toEqual([
+      'pr',
+      'view',
+      '12',
+      '--repo',
+      'acme/widgets',
+      '--json',
+      'number,state,headRefName,isCrossRepository',
+    ])
+  })
+
+  it.each([
+    [
+      'a fork',
+      '{"number":12,"state":"OPEN","headRefName":"feat/panel","isCrossRepository":true}',
+      'comes from a fork',
+    ],
+    [
+      'a closed PR',
+      '{"number":12,"state":"CLOSED","headRefName":"feat/panel","isCrossRepository":false}',
+      'no longer open',
+    ],
+  ])('refuses %s', async (_label, head, message) => {
+    const { host } = fakeHost(headResponder(head))
+    await expect(service(host).pullWorktreeSource(ROOT, 12)).rejects.toThrow(message)
+  })
+
+  it('refuses when no remote points at the repository, or the number is invalid', async () => {
+    const { host } = fakeHost(
+      headResponder(sameRepo, 'origin\thttps://github.com/me/widgets (fetch)\n'),
+    )
+    await expect(service(host).pullWorktreeSource(ROOT, 12)).rejects.toThrow(
+      'No git remote',
+    )
+    await expect(service(host).pullWorktreeSource(ROOT, 0)).rejects.toThrow(
+      'Invalid pull request number',
+    )
+    await expect(
+      service(host).pullWorktreeSource(hostPath(ROOT.hostId, '/elsewhere'), 12),
+    ).rejects.toThrow('active workspace root')
+  })
+})

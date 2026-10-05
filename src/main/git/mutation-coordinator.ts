@@ -12,6 +12,11 @@ import {
   type HvirWorktreeTarget,
 } from './hvir-worktrees'
 import type { GitMutationGrant, GitMutationGrantRequest } from './mutation-authorization'
+import {
+  pullWorktreeTarget,
+  type PullWorktreeSource,
+  type PullWorktreeTarget,
+} from './pull-worktrees'
 import { HandoffsInFlight } from '../architecture-review/handoffs-in-flight'
 import {
   inspectUnfinishedHandoff,
@@ -44,6 +49,7 @@ export interface GitMutationWorkerPort {
   discover(root: HostPath): Promise<WorktreeDiscovery>
   pruneWorktrees(root: HostPath): Promise<WorktreeDiscovery>
   addWorktree(root: HostPath, target: HvirWorktreeTarget): Promise<WorktreeDiscovery>
+  addPullWorktree(root: HostPath, target: PullWorktreeTarget): Promise<WorktreeDiscovery>
   removeWorktree(root: HostPath, target: HvirWorktreeTarget): Promise<WorktreeDiscovery>
   deleteHvirBranch(root: HostPath, target: HvirWorktreeTarget): Promise<WorktreeDiscovery>
   switchBranch(
@@ -150,6 +156,53 @@ export class GitMutationCoordinator {
         release()
         throw error
       }
+    })
+  }
+
+  addPullWorktree(root: HostPath, source: PullWorktreeSource): Promise<ProjectState> {
+    return this.options.workspaces.serialize(async () => {
+      this.assertActive(
+        root,
+        'Worktree creation belongs to another workspace',
+        'creating a worktree',
+      )
+      const project = this.activeProject()
+      const { registeredRoot } = project
+      const target = pullWorktreeTarget(
+        registeredRoot,
+        source.number,
+        source.branch,
+        source.remote,
+      )
+      const { authorizations, worker, registry } = this.options
+      const fetchGrant = authorizations.grant({
+        kind: 'fetch',
+        projectId: project.id,
+        root: registeredRoot,
+      })
+      try {
+        await worker.fetch(registeredRoot)
+      } finally {
+        fetchGrant.revoke()
+      }
+      const addGrant = authorizations.grant({
+        kind: 'pull-worktree-add',
+        projectId: project.id,
+        root: registeredRoot,
+        target,
+      })
+      let discovery: WorktreeDiscovery
+      try {
+        discovery = await worker.addPullWorktree(registeredRoot, target)
+      } finally {
+        addGrant.revoke()
+      }
+      const state = await registry.reconcileWorktrees(project.id, discovery)
+      const added = state.projects
+        .find((candidate) => candidate.id === project.id)
+        ?.workspaces.some((workspace) => workspace.root.path === target.path)
+      if (!added) throw new Error('Git did not report the new worktree')
+      return state
     })
   }
 

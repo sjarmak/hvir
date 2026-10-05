@@ -22,6 +22,7 @@ import type { BeadsService } from '../beads/beads-service'
 import type { CompanionSettingsPort } from '../companion/companion-settings'
 import type { GasCityService } from '../gascity/gascity-service'
 import type { GitHubService } from '../github/github-service'
+import type { PullWorktreeSource } from '../git/pull-worktrees'
 import type { HarnessProfileStoreContract } from '../harness/harness-profile-store'
 import type { HarnessProbeManager } from '../harness/harness-probe'
 import type { RemoteImagePasteCoordinator } from '../harness/remote-image-paste'
@@ -165,6 +166,10 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly switchGitBranch: (root: HostPath, branch: string) => Promise<ProjectState>
   readonly fetchGit: (root: HostPath) => Promise<ProjectState>
   readonly pullGit: (root: HostPath) => Promise<ProjectState>
+  readonly createPullWorktree: (
+    root: HostPath,
+    source: PullWorktreeSource,
+  ) => Promise<ProjectState>
   readonly respondSshPrompt: (
     owner: RendererOwner,
     id: number,
@@ -213,7 +218,10 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly systemClipboard?: SystemClipboardPort
   readonly beads: Pick<BeadsService, 'list' | 'probe'>
   readonly gascity: Pick<GasCityService, 'crew' | 'probe' | 'analyticsConfig'>
-  readonly github: Pick<GitHubService, 'pulls' | 'probe' | 'checkouts' | 'detail'>
+  readonly github: Pick<
+    GitHubService,
+    'pulls' | 'probe' | 'checkouts' | 'detail' | 'pullWorktreeSource'
+  >
   readonly needsYou: Pick<NeedsYouService, 'acquire' | 'snapshot' | 'release'>
   readonly reviewCheckpoint: Pick<ReviewCheckpointCoordinator, 'request' | 'cancel'>
   /** Companion settings (ADR-949); the view it answers with carries no secret. */

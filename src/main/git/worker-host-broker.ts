@@ -17,6 +17,11 @@ import {
   sameHvirWorktreeTarget,
 } from './hvir-worktrees'
 import type { GitHostCallPermissions } from './mutation-authorization'
+import {
+  isPullWorktreeTarget,
+  pullWorktreeStart,
+  samePullWorktreeTarget,
+} from './pull-worktrees'
 
 const canonicalRoots = new WeakMap<ProjectHost, Map<string, Promise<HostPath>>>()
 const MAX_ARGUMENTS = 256
@@ -69,6 +74,7 @@ export async function dispatchWorkerHostCall(
     '--verbose',
   ])
   const worktreeAdd = call.args[2] === 'worktree' && call.args[3] === 'add'
+  const pullWorktreeAdd = worktreeAdd && call.args[4] === '--track'
   const worktreeRemove = call.args[2] === 'worktree' && call.args[3] === 'remove'
   const branchDelete = call.args[2] === 'update-ref'
   const branchSwitch =
@@ -80,8 +86,12 @@ export async function dispatchWorkerHostCall(
   if (worktreePrune && !permissions.allowWorktreePrune) {
     throw new Error('git worker requested an unauthorized worktree prune')
   }
+  if (pullWorktreeAdd && !isGrantedPullWorktreeAdd(call.args, permissions)) {
+    throw new Error('git worker requested an unauthorized pull worktree add')
+  }
   if (
     worktreeAdd &&
+    !pullWorktreeAdd &&
     !sameHvirWorktreeTarget(permissions.allowWorktreeAdd, {
       branch: call.args[5]!,
       path: call.args[6]!,
@@ -303,6 +313,7 @@ function validateGitInvocation(args: readonly string[]): void {
         sameArgs(rest, ['list', '--porcelain']) ||
         sameArgs(rest, ['prune', '--expire', 'now', '--verbose']) ||
         isHvirWorktreeAdd(commandRoot, rest) ||
+        isPullWorktreeAdd(commandRoot, rest) ||
         (rest.length === 2 &&
           rest[0] === 'remove' &&
           isHvirWorktreePath(commandRoot, rest[1]))
@@ -350,6 +361,42 @@ function isHvirWorktreeAdd(commandRoot: string, rest: readonly string[]): boolea
       commit,
     })
   )
+}
+
+function isPullWorktreeAdd(commandRoot: string, rest: readonly string[]): boolean {
+  const [add, track, flag, branch = '', path, start] = rest
+  const target = { branch, path, remote: remoteOf(start, branch) }
+  return (
+    rest.length === 6 &&
+    add === 'add' &&
+    track === '--track' &&
+    flag === '-b' &&
+    isSafeBranchName(branch) &&
+    isPullWorktreeTarget(commandRoot, target)
+  )
+}
+
+function isGrantedPullWorktreeAdd(
+  args: readonly string[],
+  permissions: GitHostCallPermissions,
+): boolean {
+  const granted = permissions.allowPullWorktreeAdd
+  if (!granted) return false
+  const [, , , , , , branch, path, start] = args
+  return (
+    args.length === 9 &&
+    branch !== undefined &&
+    path !== undefined &&
+    start === pullWorktreeStart(granted) &&
+    samePullWorktreeTarget(granted, { branch, path, remote: granted.remote })
+  )
+}
+
+function remoteOf(start: string | undefined, branch: string): string | undefined {
+  const prefix = 'refs/remotes/'
+  const suffix = `/${branch}`
+  if (!start?.startsWith(prefix) || !start.endsWith(suffix)) return undefined
+  return start.slice(prefix.length, start.length - suffix.length)
 }
 
 /** `refs/heads/hvir/architecture/<slug>`: the only ref the broker lets hvir delete. */

@@ -105,6 +105,11 @@ export interface PullCheckoutsRequest {
   readonly root: HostPath
 }
 
+export interface PullWorktreeRequest {
+  readonly root: HostPath
+  readonly number: number
+}
+
 export interface PullsRequest {
   readonly root: HostPath
 }

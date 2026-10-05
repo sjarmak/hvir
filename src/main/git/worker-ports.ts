@@ -7,6 +7,7 @@ import {
   GIT_FETCH_TYPE,
   GIT_HVIR_WORKTREE_TYPE,
   GIT_PRUNE_WORKTREES_TYPE,
+  GIT_PULL_WORKTREE_TYPE,
   GIT_PULL_TYPE,
   GIT_SWITCH_BRANCH_TYPE,
   GIT_WORKSPACE_ACTIVITY_TYPE,
@@ -33,6 +34,8 @@ export function gitMutationWorker(worker: GitWorker): GitMutationWorkerPort {
     discover: (root) => worker.request(GIT_WORKTREES_TYPE, { root }),
     addWorktree: (root, target) =>
       worker.request(GIT_HVIR_WORKTREE_TYPE, { root, operation: 'add', ...target }),
+    addPullWorktree: (root, target) =>
+      worker.request(GIT_PULL_WORKTREE_TYPE, { root, ...target }),
     removeWorktree: (root, target) =>
       worker.request(GIT_HVIR_WORKTREE_TYPE, { root, operation: 'remove', ...target }),
     deleteHvirBranch: (root, target) =>

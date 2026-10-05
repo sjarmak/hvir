@@ -98,6 +98,7 @@ function fixture() {
     discover: vi.fn(() => Promise.resolve(pruned)),
     pruneWorktrees: vi.fn(() => Promise.resolve(pruned)),
     addWorktree: vi.fn(() => Promise.resolve(pruned)),
+    addPullWorktree: vi.fn(() => Promise.resolve(pruned)),
     removeWorktree: vi.fn(() => Promise.resolve(pruned)),
     deleteHvirBranch: vi.fn(() => Promise.resolve(pruned)),
     switchBranch: vi.fn(() => Promise.resolve()),
@@ -290,6 +291,59 @@ describe('GitMutationCoordinator', () => {
       'did not report the new worktree',
     )
     expect(worker.addWorktree).toHaveBeenCalledOnce()
+    expect(revoke).toHaveBeenCalledOnce()
+  })
+
+  it('fetches, then creates a pull request worktree under two exact grants', async () => {
+    const { coordinator, registry, worker, authorizations, revoke, state } = fixture()
+    const added = localPath('/project.hvir-worktrees/pr-7')
+    const project = state.projects[0]!
+    const withWorktree: ProjectState = {
+      ...state,
+      projects: [
+        {
+          ...project,
+          workspaces: [
+            ...project.workspaces,
+            { ...project.workspaces[1]!, id: 'workspace-pr', root: added },
+          ],
+        },
+      ],
+    }
+    vi.mocked(registry.reconcileWorktrees).mockResolvedValueOnce(withWorktree)
+
+    const result = await coordinator.addPullWorktree(root, {
+      number: 7,
+      branch: 'feature/x',
+      remote: 'origin',
+    })
+
+    const target = { branch: 'feature/x', path: added.path, remote: 'origin' }
+    expect(result).toBe(withWorktree)
+    expect(vi.mocked(authorizations.grant).mock.calls).toEqual([
+      [{ kind: 'fetch', projectId: 'project-1', root }],
+      [{ kind: 'pull-worktree-add', projectId: 'project-1', root, target }],
+    ])
+    expect(worker.fetch).toHaveBeenCalledWith(root)
+    expect(worker.addPullWorktree).toHaveBeenCalledWith(root, target)
+    expect(vi.mocked(worker.fetch).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(worker.addPullWorktree).mock.invocationCallOrder[0]!,
+    )
+    expect(revoke).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops before creating when the fetch fails, and refuses another workspace', async () => {
+    const { coordinator, worker, authorizations, revoke } = fixture()
+    const source = { number: 7, branch: 'feature/x', remote: 'origin' }
+
+    await expect(coordinator.addPullWorktree(worktreeRoot, source)).rejects.toThrow(
+      'another workspace',
+    )
+    expect(authorizations.grant).not.toHaveBeenCalled()
+
+    vi.mocked(worker.fetch).mockRejectedValueOnce(new Error('offline'))
+    await expect(coordinator.addPullWorktree(root, source)).rejects.toThrow('offline')
+    expect(worker.addPullWorktree).not.toHaveBeenCalled()
     expect(revoke).toHaveBeenCalledOnce()
   })
 })

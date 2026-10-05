@@ -5,12 +5,25 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { PullWorkspaceAction } from '../src/renderer/src/github/PullWorkspaceAction'
-import { asHostId, hostPath, type PullSummary, type WorkspaceState } from '../src/shared'
+import {
+  asHostId,
+  hostPath,
+  type ProjectState,
+  type PullSummary,
+  type WorkspaceState,
+} from '../src/shared'
 import type { PullCheckoutsResponse } from '../src/shared/github'
 
 const ROOT = hostPath(asHostId('local'), '/repo')
 const TARGET = hostPath(ROOT.hostId, '/feature')
-const PULL = { number: 7, headRef: 'feature', headRepo: 'acme/repo' } as PullSummary
+const PULL = {
+  number: 7,
+  state: 'open',
+  headRef: 'feature',
+  headRepo: 'acme/repo',
+} as PullSummary
+const NO_CHECKOUTS: PullCheckoutsResponse = { available: true, checkouts: [] }
+const CREATED_STATE = { activeWorkspaceId: 'main' } as ProjectState
 const WORKSPACE: WorkspaceState = {
   id: 'feature',
   root: TARGET,
@@ -30,6 +43,8 @@ let host: HTMLDivElement
 let root: Root
 let invoke: ReturnType<typeof vi.fn>
 let open: ReturnType<typeof vi.fn<(workspace: WorkspaceState) => Promise<void>>>
+let acceptProjectState: ReturnType<typeof vi.fn<(state: ProjectState) => void>>
+let onCheckouts: ReturnType<typeof vi.fn<(response: PullCheckoutsResponse) => void>>
 let mounted: boolean
 
 beforeEach(() => {
@@ -40,6 +55,8 @@ beforeEach(() => {
   mounted = true
   invoke = vi.fn().mockResolvedValue(CHECKOUTS)
   open = vi.fn().mockResolvedValue(undefined)
+  acceptProjectState = vi.fn()
+  onCheckouts = vi.fn()
   Object.defineProperty(window, 'hvir', { configurable: true, value: { invoke } })
 })
 
@@ -49,16 +66,22 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function render(workspaces = [WORKSPACE], activeWorkspaceId = 'main', disabled = false) {
+function render(
+  workspaces = [WORKSPACE],
+  activeWorkspaceId = 'main',
+  disabled = false,
+  { pull = PULL, checkouts = CHECKOUTS } = {},
+) {
   act(() =>
     root.render(
       <PullWorkspaceAction
         root={ROOT}
-        pull={PULL}
-        checkouts={CHECKOUTS}
+        pull={pull}
+        checkouts={checkouts}
+        repo="Acme/Repo"
         disabled={disabled}
-        navigation={{ workspaces, activeWorkspaceId, open }}
-        onCheckouts={vi.fn()}
+        navigation={{ workspaces, activeWorkspaceId, open, acceptProjectState }}
+        onCheckouts={onCheckouts}
       />,
     ),
   )
@@ -124,11 +147,13 @@ describe('PR workspace action', () => {
           root={ROOT}
           pull={PULL}
           checkouts={checkouts}
+          repo="acme/repo"
           disabled={false}
           navigation={{
             workspaces: [WORKSPACE, second],
             activeWorkspaceId: 'main',
             open,
+            acceptProjectState,
           }}
           onCheckouts={vi.fn()}
         />,
@@ -163,4 +188,68 @@ describe('PR workspace action', () => {
       expect(open).not.toHaveBeenCalled()
     },
   )
+
+  describe('without a checkout', () => {
+    const none = { checkouts: NO_CHECKOUTS }
+
+    it('creates a worktree, adopts the new project state and rereads checkouts', async () => {
+      invoke
+        .mockResolvedValueOnce({ ok: true, value: CREATED_STATE })
+        .mockResolvedValueOnce(CHECKOUTS)
+      render([WORKSPACE], 'main', false, none)
+      expect(host.textContent).toContain('Create worktree')
+      await click('[aria-label="Create worktree for PR #7"]')
+      expect(invoke).toHaveBeenNthCalledWith(1, 'github:create-worktree', {
+        root: ROOT,
+        number: 7,
+      })
+      expect(acceptProjectState).toHaveBeenCalledExactlyOnceWith(CREATED_STATE)
+      expect(invoke).toHaveBeenNthCalledWith(2, 'github:checkouts', { root: ROOT })
+      expect(onCheckouts).toHaveBeenCalledExactlyOnceWith(CHECKOUTS)
+      expect(open).not.toHaveBeenCalled()
+    })
+
+    it('reports a refused creation without adopting any state', async () => {
+      invoke.mockResolvedValue({
+        ok: false,
+        error: "a branch named 'feature' already exists",
+      })
+      render([WORKSPACE], 'main', false, none)
+      await click('[aria-label="Create worktree for PR #7"]')
+      expect(acceptProjectState).not.toHaveBeenCalled()
+      expect(onCheckouts).not.toHaveBeenCalled()
+      expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+        'already exists',
+      )
+    })
+
+    it('says the worktree exists when only the checkout reread fails', async () => {
+      invoke
+        .mockResolvedValueOnce({ ok: true, value: CREATED_STATE })
+        .mockRejectedValueOnce(new Error('gh timed out'))
+      render([WORKSPACE], 'main', false, none)
+      await click('[aria-label="Create worktree for PR #7"]')
+      expect(acceptProjectState).toHaveBeenCalledExactlyOnceWith(CREATED_STATE)
+      expect(host.querySelector('[role="alert"]')?.textContent).toMatch(
+        /Created the worktree, but could not refresh checkouts: gh timed out/,
+      )
+    })
+
+    it.each([
+      ['a fork', { ...PULL, headRepo: 'someone/repo' }],
+      ['a closed PR', { ...PULL, state: 'closed' as const }],
+    ])('offers no creation for %s', (_label, pull) => {
+      render([WORKSPACE], 'main', false, { ...none, pull })
+      expect(host.textContent).toContain('No checkout')
+      expect(host.querySelector('button')).toBeNull()
+    })
+
+    it('offers no creation while the checkout is unverified', () => {
+      render([WORKSPACE], 'main', false, {
+        checkouts: { available: true, checkouts: [{ root: TARGET, branch: 'feature' }] },
+      })
+      expect(host.textContent).toContain('Checkout unverified')
+      expect(host.querySelector('button')).toBeNull()
+    })
+  })
 })

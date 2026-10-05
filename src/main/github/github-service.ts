@@ -23,7 +23,10 @@ import {
   parseBranchUpstreams,
   githubRemoteRepositoryMap,
   parsePullDetailOutput,
+  parsePullHead,
+  githubRemoteFor,
 } from './github-parse'
+import type { PullWorktreeSource } from '../git/pull-worktrees'
 import { parseWorktreeList } from '../git/git-parsers'
 import { pullDetailQueryArgs, pullsQueryArgs } from './github-query'
 
@@ -254,6 +257,53 @@ export class GitHubService {
     } catch (reason) {
       return this.checkoutsError(errorMessage(reason))
     }
+  }
+
+  async pullWorktreeSource(
+    requestedRoot: HostPath,
+    number: number,
+  ): Promise<PullWorktreeSource> {
+    if (!Number.isSafeInteger(number) || number < 1) {
+      throw new Error('Invalid pull request number')
+    }
+    const { host, root } = this.activeProject(requestedRoot)
+    const repo = await this.resolveRepo(host, root, false, 'interactive')
+    if (!repo.ok) throw new Error(repo.unavailable.message)
+    const [view, remotes] = await Promise.all([
+      this.gh(
+        host,
+        root,
+        [
+          'pr',
+          'view',
+          String(number),
+          '--repo',
+          repo.repo,
+          '--json',
+          'number,state,headRefName,isCrossRepository',
+        ],
+        DETAIL_MAX_OUTPUT_BYTES,
+        'interactive',
+      ),
+      host.exec('git', ['remote', '-v'], this.gitOptions(root, 'interactive')),
+    ])
+    this.activeProject(requestedRoot)
+    if (!view.ok) throw new Error(view.unavailable.message)
+    if (remotes.code !== 0) {
+      throw new Error(remotes.stderr.trim() || 'Git remote lookup failed')
+    }
+    const head = parsePullHead(view.stdout, number)
+    if (!head.open) throw new Error(`PR #${number} is no longer open`)
+    if (head.crossRepository) {
+      throw new Error(
+        `PR #${number} comes from a fork; hvir only creates worktrees for branches in ${repo.repo}`,
+      )
+    }
+    const remote = githubRemoteFor(remotes.stdout, repo.repo)
+    if (remote === undefined) {
+      throw new Error(`No git remote in this checkout points at ${repo.repo}`)
+    }
+    return { number, branch: head.headRef, remote }
   }
 
   private checkoutsError(message: string): PullCheckoutsResponse {

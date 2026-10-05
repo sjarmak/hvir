@@ -7,6 +7,7 @@
 > Superseded by: [ADR-033](ADR-033-successful-discovery-dismisses-missing-workspaces.md) | partial | Missing worktrees remaining visible until explicit dismissal.
 > Superseded by: [ADR-963](ADR-963-architecture-review-history-and-agent-worktrees.md) | partial | Creating no worktree at all; the architecture review creates one hvir-owned worktree per agent launch.
 > Superseded by: [ADR-968](ADR-968-pull-request-workspace-navigation.md) | partial | Workspace selection existing only in the top tier, for explicit PR-row shortcuts into the existing workspace navigation owner.
+> Superseded by: [ADR-974](ADR-974-pull-request-worktree-creation.md) | partial | Creating no worktree at all; an explicit Create worktree action on a PR row creates one hvir-owned worktree for that PR.
 
 ## Context
 

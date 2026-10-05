@@ -10,6 +10,7 @@ interface GitHubRailSession {
   readonly projectState?: ProjectState
   readonly switchWorkspace: (projectId: string, workspaceId: string) => Promise<void>
   readonly reopenWorkspace: (projectId: string, workspaceId: string) => Promise<void>
+  readonly acceptProjectState: (state: ProjectState) => void
 }
 
 interface GitHubRailLayout {
@@ -107,6 +108,7 @@ export function GitHubRailPanel({
                 workspace.closed
                   ? session.reopenWorkspace(project.id, workspace.id)
                   : session.switchWorkspace(project.id, workspace.id),
+              acceptProjectState: session.acceptProjectState,
             }
           : undefined
       }

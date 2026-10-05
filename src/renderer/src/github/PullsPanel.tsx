@@ -269,6 +269,7 @@ export function PullsPanel({
           root={root}
           pull={pull}
           checkouts={checkouts}
+          repo={response?.available ? response.repo : undefined}
           navigation={navigation}
           disabled={!connected || hidden}
           onCheckouts={setCheckouts}

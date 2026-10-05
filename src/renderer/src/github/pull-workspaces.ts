@@ -1,4 +1,9 @@
-import { hostPathEquals, type PullSummary, type WorkspaceState } from '../../../shared'
+import {
+  hostPathEquals,
+  type ProjectState,
+  type PullSummary,
+  type WorkspaceState,
+} from '../../../shared'
 import type { PullCheckoutsResponse } from '../../../shared/github'
 
 export type PullWorkspaceMatch =
@@ -9,6 +14,19 @@ export interface PullWorkspaceNavigation {
   readonly workspaces: readonly WorkspaceState[]
   readonly activeWorkspaceId: string
   readonly open: (workspace: WorkspaceState) => Promise<void>
+  readonly acceptProjectState: (state: ProjectState) => void
+}
+
+export function canCreatePullWorktree(
+  pull: Pick<PullSummary, 'state' | 'headRepo'>,
+  repo: string | undefined,
+): boolean {
+  return (
+    pull.state === 'open' &&
+    repo !== undefined &&
+    pull.headRepo !== undefined &&
+    pull.headRepo.toLowerCase() === repo.toLowerCase()
+  )
 }
 
 export function resolvePullWorkspaces(

@@ -103,6 +103,7 @@ it.each([false, true])(
               projectState: state,
               switchWorkspace,
               reopenWorkspace,
+              acceptProjectState: vi.fn(),
             }}
           />,
         )

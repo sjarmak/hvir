@@ -1,7 +1,8 @@
 # ADR-968: Pull request shortcuts to existing workspaces
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-008](ADR-008-project-worktree-workspaces.md) | partial | Workspace selection existing only in the top tier, for explicit PR-row shortcuts into the existing workspace navigation owner.
+> Superseded by: [ADR-974](ADR-974-pull-request-worktree-creation.md) | partial | The PR workspace action creating no checkout; a PR with no verified checkout may offer Create worktree.
 
 ## Context
 

@@ -323,6 +323,7 @@ async function fixture(options: { readonly terminalIds?: readonly string[] } = {
     discover: (at) => engine.worktrees(at),
     pruneWorktrees: (at) => engine.pruneWorktrees(at),
     addWorktree: change('add'),
+    addPullWorktree: () => Promise.reject(new Error('unused')),
     removeWorktree: change('remove'),
     deleteHvirBranch: change('delete-branch'),
     switchBranch: () => Promise.reject(new Error('unused')),

@@ -8,7 +8,10 @@ import type {
   PullCheckoutsResponse,
   PullDetailRequest,
   PullDetailResponse,
+  PullWorktreeRequest,
 } from '../github'
+import type { OperationResult } from '../operation-result'
+import type { ProjectState } from '../workspace-types'
 
 export const githubIpc = {
   invoke: {
@@ -16,6 +19,7 @@ export const githubIpc = {
     'github:probe': invoke<PullsProbeRequest, PullsProbeResponse>(),
     'github:checkouts': invoke<PullCheckoutsRequest, PullCheckoutsResponse>(),
     'github:detail': invoke<PullDetailRequest, PullDetailResponse>(),
+    'github:create-worktree': invoke<PullWorktreeRequest, OperationResult<ProjectState>>(),
   },
   send: {},
   event: {},

@@ -141,6 +141,7 @@ export const GIT_COMMIT_DETAIL_TYPE = 'git:commit-detail' as const
 export const GIT_WORKTREES_TYPE = 'git:worktrees' as const
 export const GIT_PRUNE_WORKTREES_TYPE = 'git:prune-worktrees' as const
 export const GIT_HVIR_WORKTREE_TYPE = 'git:hvir-worktree' as const
+export const GIT_PULL_WORKTREE_TYPE = 'git:pull-worktree' as const
 export const GIT_WORKSPACE_ACTIVITY_TYPE = 'git:workspace-activity' as const
 export const GIT_BRANCHES_TYPE = 'git:branches' as const
 export const GIT_FETCH_TYPE = 'git:fetch' as const
@@ -194,6 +195,15 @@ export interface GitWorkerProtocol {
       readonly branch: string
       readonly path: string
       readonly commit: string
+    },
+    WorktreeDiscovery
+  >
+  readonly [GIT_PULL_WORKTREE_TYPE]: WorkerOperation<
+    {
+      readonly root: HostPath
+      readonly branch: string
+      readonly path: string
+      readonly remote: string
     },
     WorktreeDiscovery
   >

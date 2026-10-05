@@ -139,6 +139,7 @@ export const AUTHORITY_SCOPED_INVOKE_CHANNELS = [
   'git:fetch',
   'git:pull',
   'git:switch-branch',
+  'github:create-worktree',
   'html-preview:create',
   'harness:profiles',
   'harness:probe-snapshot',
