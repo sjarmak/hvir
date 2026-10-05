@@ -32,7 +32,7 @@ Host *
     ])
   })
 
-  it.each(['abc', '22abc', '0', '-1', '9'.repeat(400)])(
+  it.each(['abc', '22abc', '0', '-1', '1e3', '0x50', '22.5', '65536', '9'.repeat(400)])(
     'falls back to port 22 when the configured port is %s',
     (configuredPort) => {
       expect(
@@ -180,6 +180,7 @@ Host *
     ['SSH_AUTH_SOCK', {}, null],
     ['$WORK_AGENT', { WORK_AGENT: '/tmp/work-agent.sock' }, '/tmp/work-agent.sock'],
     ['${AGENT_ROOT}/agent.sock', { AGENT_ROOT: '/tmp/work' }, '/tmp/work/agent.sock'],
+    ['${EMPTY_AGENT}/s', { EMPTY_AGENT: '' }, '/s'],
     ['$MISSING_AGENT', {}, null],
     ['${MISSING_AGENT}/agent.sock', {}, null],
     ['${EMPTY_AGENT}', { EMPTY_AGENT: '' }, ''],
@@ -197,6 +198,7 @@ Host *
     ['~other/.ssh/agent.sock', '~other/.ssh/agent.sock'],
     ['prefix$WORK_AGENT', 'prefix$WORK_AGENT'],
     ['${1AGENT}', '${1AGENT}'],
+    ['/tmp/${1X}/s', '/tmp/${1X}/s'],
   ])('preserves literal identity-agent value %s', (value, identityAgent) => {
     expect(
       parseSshConfig(`Host work\n  IdentityAgent ${value}\n`, '/home/me', {
@@ -204,6 +206,12 @@ Host *
         '1AGENT': '/tmp/digit-agent.sock',
       }),
     ).toEqual([expect.objectContaining({ identityAgent })])
+  })
+
+  it('rejects missing environment variables introduced by home expansion', () => {
+    expect(() =>
+      parseSshConfig('Host work\n  IdentityAgent ~/s\n', '/home/${MISSING_HOME}', {}),
+    ).toThrow('Missing SSH environment variable MISSING_HOME')
   })
 
   it('expands identity-agent tokens exactly once for every alias', () =>
