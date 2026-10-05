@@ -510,12 +510,20 @@ describe('classifyGhFailure', () => {
     expect(classifyGhFailure(stderr, false).reason).toBe('gh-unauthenticated')
   })
 
-  it.each(['Bad credentials', 'not logged in', 'authentication required', 'HTTP: 401'])(
-    'classifies an independent authentication marker: %s',
-    (stderr) => {
-      expect(classifyGhFailure(stderr, false).reason).toBe('gh-unauthenticated')
-    },
-  )
+  it.each([
+    'Bad credentials',
+    'not logged in',
+    'authentication required',
+    'HTTP: 401',
+    'gh: HTTP 401: Unauthorized (https://api.github.com/graphql)',
+    'gh: HTTP 401 (https://api.github.com/graphql)',
+    '  HTTP 401',
+    'HTTP/1.1 401 Unauthorized',
+    'HTTP/2 401',
+    'error\rHTTP 401',
+  ])('classifies an independent authentication marker: %s', (stderr) => {
+    expect(classifyGhFailure(stderr, false).reason).toBe('gh-unauthenticated')
+  })
 
   it.each(['HTTP 4010', 'xhttp 401', 'Fix http 401 handling in parser'])(
     'does not classify a coincidental HTTP 401 mention: %s',
@@ -524,10 +532,11 @@ describe('classifyGhFailure', () => {
     },
   )
 
-  it('prefers a rate-limit failure over a later bare HTTP 401 mention', () => {
-    expect(
-      classifyGhFailure('HTTP 403: API rate limit exceeded; HTTP 401', false).reason,
-    ).toBe('rate-limited')
+  it.each([
+    'HTTP 401\nAPI rate limit exceeded',
+    'API rate limit exceeded; Bad credentials',
+  ])('prefers a rate-limit failure when authentication also matches: %s', (stderr) => {
+    expect(classifyGhFailure(stderr, false).reason).toBe('rate-limited')
   })
 
   it('bounds the text accepted between token and invalid', () => {
@@ -544,6 +553,7 @@ describe('classifyGhFailure', () => {
           'Requires authentication',
           'token in default is invalid',
           'HTTP 401',
+          'gh: HTTP 401',
         ]),
       )
       const prefix = testCase.draw(generators.text({ maxSize: 20 }))

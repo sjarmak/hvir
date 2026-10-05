@@ -348,7 +348,7 @@ export function classifyGhFailure(stderr: string, remote: boolean): PullsUnavail
   if (/rate limit/i.test(stderr))
     return { available: false, reason: 'rate-limited', message }
   if (
-    /gh auth login|not logged in|authentication required|requires authentication|bad credentials|token in [^\n]{0,200} is invalid|(?:^|[\r\n])[ \t]*http[ :/]*(?:\d(?:\.\d)?[ :]+)?401\b/i.test(
+    /gh auth login|not logged in|authentication required|requires authentication|bad credentials|token in [^\n]{0,200} is invalid|(?:^|[\r\n])[ \t]*(?:gh: )?http[ :/]*(?:\d(?:\.\d)?[ :]+)?401\b/i.test(
       stderr,
     )
   ) {
