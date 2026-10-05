@@ -284,6 +284,7 @@ describe('gc command construction', () => {
     expect(gasCityCommand('attach', 'mayor')).toEqual({
       command: "gc session attach 'mayor'",
       key: 'gc:mayor',
+      attaches: { sourceId: 'gas-city', alias: 'mayor' },
     })
   })
 
@@ -291,10 +292,8 @@ describe('gc command construction', () => {
     expect(gasCityCommand('attach', 'mayor', 'gc-mayor-01')).toEqual({
       command: "gc session attach 'mayor'",
       key: 'gc:mayor',
-      attaches: { sourceId: 'gas-city', key: 'gc-mayor-01' },
+      attaches: { sourceId: 'gas-city', alias: 'mayor', key: 'gc-mayor-01' },
     })
-    // The command still names the alias; only the recorded target is the id.
-    expect(gasCityCommand('attach', 'mayor').attaches).toBeUndefined()
   })
 
   it('claims no attach target for one-shot commands', () => {

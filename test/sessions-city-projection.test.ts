@@ -383,6 +383,26 @@ describe('A terminal attached to a Gas City session', () => {
     expect(projection.sessions.map((session) => session.title)).toEqual(['remote-session'])
   })
 
+  it('joins a terminal attached by agent alias when no session id was known', () => {
+    const source = assemble([hostCity()], {
+      sessions: [attachedTerminal('terminal-alias', undefined, 'mem-worker-1')],
+      ptys: [livePty('terminal-alias')],
+    })
+
+    expect(source.sessions).toHaveLength(3)
+    expect(row(source, 'mem-worker-1').handle).toBe('terminal-alias')
+  })
+
+  it('joins by alias after gc restarts the agent under a new session id', () => {
+    const source = assemble([hostCity()], {
+      sessions: [attachedTerminal('terminal-old', 'gc-mem-worker-1-old', 'mem-worker-1')],
+      ptys: [livePty('terminal-old')],
+    })
+
+    expect(source.sessions).toHaveLength(3)
+    expect(row(source, 'mem-worker-1').handle).toBe('terminal-old')
+  })
+
   it('still merges an attached session after unattached rows fill capacity', () => {
     const workspace = assemble([]).workspaces.find(
       (candidate) => candidate.workspaceName === 'main',
@@ -605,7 +625,11 @@ function assemble(
 }
 
 /** A terminal hvir launched to attach to one gc session, as main recorded it. */
-function attachedTerminal(id: string, sessionKey: string): OwnedTerminalSession {
+function attachedTerminal(
+  id: string,
+  sessionKey: string | undefined,
+  alias?: string,
+): OwnedTerminalSession {
   return {
     id,
     providerId: shell,
@@ -614,7 +638,8 @@ function attachedTerminal(id: string, sessionKey: string): OwnedTerminalSession 
     recoverySkipCount: 0,
     attachedExternalSession: externalSessionAttachment({
       sourceId: 'gas-city',
-      key: sessionKey,
+      ...(sessionKey === undefined ? {} : { key: sessionKey }),
+      ...(alias === undefined ? {} : { alias }),
     }),
     hostId: memRoot.hostId,
     workspaceRoot: memRoot,

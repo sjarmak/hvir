@@ -25,12 +25,6 @@ export interface GasCityCommand {
    * one-shot commands that want a fresh shell every time.
    */
   readonly key?: string
-  /**
-   * The gc session this command attaches to, named exactly. Only `attach`
-   * carries one, and only when the caller could name the session rather than an
-   * alias: it is what lets the terminal it opens be recognized later as the one
-   * showing that session, instead of being matched by title or timing.
-   */
   readonly attaches?: ExternalSessionAttachTarget
 }
 
@@ -61,9 +55,11 @@ export function gasCityCommand(
     case 'attach':
       return {
         ...gasCityAttachCommand(target),
-        ...(sessionId === undefined
-          ? {}
-          : { attaches: { sourceId: 'gas-city', key: sessionId } }),
+        attaches: {
+          sourceId: 'gas-city',
+          alias: target,
+          ...(sessionId === undefined ? {} : { key: sessionId }),
+        },
       }
     case 'peek':
       return { command: `gc session peek ${quoted}` }

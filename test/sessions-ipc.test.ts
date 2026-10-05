@@ -474,6 +474,7 @@ describe('Sessions IPC', () => {
     expect(sessionsAttachTickets.mint).toHaveBeenCalledExactlyOnceWith(owner, {
       sourceId: 'gas-city',
       key: 'gc-mem-worker-1',
+      alias: 'mem-worker-1',
     })
     expect(switchWorkspace).toHaveBeenCalledExactlyOnceWith(
       'project-real',

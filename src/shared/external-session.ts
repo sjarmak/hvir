@@ -17,7 +17,8 @@ export interface ExternalSessionAttachTarget {
    * The foreign identifier. It crosses terminal IPC as the argument of the
    * attach hvir is about to run, and is hashed before anything persists it.
    */
-  readonly key: string
+  readonly key?: string
+  readonly alias?: string
 }
 
 /**
@@ -40,7 +41,8 @@ export type ExternalSessionAttachRequest =
  */
 export interface ExternalSessionAttachment {
   readonly sourceId: SessionsExternalSourceId
-  readonly sessionDigest: string
+  readonly sessionDigest?: string
+  readonly aliasDigest?: string
 }
 
 /** Every source that can be attached to; the validator's allowed set. */
@@ -59,14 +61,22 @@ export function isExternalSessionAttachTarget(
   value: unknown,
 ): value is ExternalSessionAttachTarget {
   if (typeof value !== 'object' || value === null) return false
-  const candidate = value as Partial<ExternalSessionAttachTarget>
+  const candidate = value as Record<string, unknown>
   return (
-    typeof candidate.sourceId === 'string' &&
-    (EXTERNAL_SESSION_SOURCE_IDS as readonly string[]).includes(candidate.sourceId) &&
-    typeof candidate.key === 'string' &&
-    candidate.key.length > 0 &&
-    candidate.key.length <= MAX_EXTERNAL_SESSION_KEY_LENGTH &&
-    ![...candidate.key].some((character) => {
+    typeof candidate['sourceId'] === 'string' &&
+    (EXTERNAL_SESSION_SOURCE_IDS as readonly string[]).includes(candidate['sourceId']) &&
+    (candidate['key'] !== undefined || candidate['alias'] !== undefined) &&
+    (candidate['key'] === undefined || isExternalSessionKey(candidate['key'])) &&
+    (candidate['alias'] === undefined || isExternalSessionKey(candidate['alias']))
+  )
+}
+
+function isExternalSessionKey(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= MAX_EXTERNAL_SESSION_KEY_LENGTH &&
+    ![...value].some((character) => {
       const code = character.charCodeAt(0)
       return code <= 31 || code === 127
     })
@@ -103,7 +113,10 @@ export function isExternalSessionAttachment(
   return (
     typeof candidate.sourceId === 'string' &&
     (EXTERNAL_SESSION_SOURCE_IDS as readonly string[]).includes(candidate.sourceId) &&
-    isExternalSessionDigest(candidate.sessionDigest)
+    (candidate.sessionDigest !== undefined || candidate.aliasDigest !== undefined) &&
+    (candidate.sessionDigest === undefined ||
+      isExternalSessionDigest(candidate.sessionDigest)) &&
+    (candidate.aliasDigest === undefined || isExternalSessionDigest(candidate.aliasDigest))
   )
 }
 
@@ -112,5 +125,9 @@ export function sameExternalSessionAttachment(
   right: ExternalSessionAttachment | undefined,
 ): boolean {
   if (!left || !right) return left === right
-  return left.sourceId === right.sourceId && left.sessionDigest === right.sessionDigest
+  if (left.sourceId !== right.sourceId) return false
+  return (
+    (left.sessionDigest !== undefined && left.sessionDigest === right.sessionDigest) ||
+    (left.aliasDigest !== undefined && left.aliasDigest === right.aliasDigest)
+  )
 }

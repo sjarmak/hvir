@@ -168,9 +168,16 @@ export function projectCitySessions({
     attached.flatMap((terminal) => {
       if (terminal.attachment.sourceId !== 'gas-city') return []
       const hostId = workspaceHostById.get(terminal.session.workspaceId)
-      return hostId === undefined
-        ? []
-        : [[hostSessionKey(hostId, terminal.attachment.sessionDigest), terminal] as const]
+      if (hostId === undefined) return []
+      const { sessionDigest, aliasDigest } = terminal.attachment
+      return [
+        ...(sessionDigest === undefined
+          ? []
+          : [[hostSessionKey(hostId, sessionDigest), terminal] as const]),
+        ...(aliasDigest === undefined
+          ? []
+          : [[hostAliasKey(hostId, aliasDigest), terminal] as const]),
+      ]
     }),
   )
   const pendingByKey = new Map(
@@ -183,12 +190,19 @@ export function projectCitySessions({
     for (const fact of city.sessions) {
       const target = externalTarget(fact, city)
       const waiting = pendingByKey.get(pendingKey(city.root.hostId, fact.sessionKey))
-      const claimed = attachedByKey.get(
-        hostSessionKey(
-          city.root.hostId,
-          externalSessionDigest('gas-city', fact.sessionKey),
-        ),
-      )
+      const claimed =
+        attachedByKey.get(
+          hostSessionKey(
+            city.root.hostId,
+            externalSessionDigest('gas-city', fact.sessionKey),
+          ),
+        ) ??
+        attachedByKey.get(
+          hostAliasKey(
+            city.root.hostId,
+            externalSessionDigest('gas-city', fact.attachTarget),
+          ),
+        )
       if (claimed !== undefined) {
         // An attached session is not a new row and does not consume capacity:
         // hvir already published a row for the terminal, and hvir's own
@@ -381,6 +395,10 @@ function pendingKey(hostId: HostId, sessionKey: string): string {
 
 function hostSessionKey(hostId: string, sessionKey: string): string {
   return `${hostId}\u0000${sessionKey}`
+}
+
+function hostAliasKey(hostId: string, aliasDigest: string): string {
+  return `${hostId}\u0000alias\u0000${aliasDigest}`
 }
 
 /**

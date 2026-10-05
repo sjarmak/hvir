@@ -191,6 +191,7 @@ export function registerSessionsIpc(ipc: IpcRegistrar, deps: SessionsIpcDeps): v
     const ticket = deps.sessionsAttachTickets.mint(owner, {
       sourceId: target.target.sourceId,
       key: target.target.key,
+      alias: target.attachTarget,
     })
     const state = await deps.switchWorkspace(target.projectId, target.workspaceId)
     deps.rendererResources.assertCurrent(owner)
