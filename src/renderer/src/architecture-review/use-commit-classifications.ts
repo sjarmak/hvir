@@ -23,7 +23,8 @@ export function useCommitClassifications(
   }, [store, head])
   const revisionsKey = revisions.join('\n')
   useEffect(() => {
-    if (revisionsKey !== '') store.request(revisionsKey.split('\n'))
+    if (revisionsKey === '') return
+    return store.retain(revisionsKey.split('\n'))
   }, [store, revisionsKey, state.generation])
   return state
 }

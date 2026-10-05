@@ -30,6 +30,7 @@ export class CommitClassificationStore {
   private readonly known = new Map<string, ArchitectureCommitChange>()
   private readonly fleet = new Map<string, FleetCommitClassification>()
   private readonly requested = new Set<string>()
+  private readonly demand = new Map<string, number>()
   private queue: string[] = []
   private readonly listeners = new Set<() => void>()
   private head: string | undefined
@@ -59,8 +60,25 @@ export class CommitClassificationStore {
     }
   }
 
-  request(revisions: readonly string[]): void {
-    if (this.released) return
+  retain(revisions: readonly string[]): () => void {
+    if (this.released) return () => undefined
+    for (const revision of revisions)
+      this.demand.set(revision, (this.demand.get(revision) ?? 0) + 1)
+    this.enqueue(revisions)
+    let retained = true
+    return () => {
+      if (!retained) return
+      retained = false
+      for (const revision of revisions) {
+        const count = (this.demand.get(revision) ?? 0) - 1
+        if (count > 0) this.demand.set(revision, count)
+        else this.demand.delete(revision)
+      }
+      this.prune()
+    }
+  }
+
+  private enqueue(revisions: readonly string[]): void {
     let added = false
     for (const revision of revisions) {
       if (this.requested.has(revision)) continue
@@ -87,6 +105,16 @@ export class CommitClassificationStore {
     this.reset()
   }
 
+  private prune(): void {
+    if (this.released) return
+    const kept = this.queue.filter((revision) => this.demand.has(revision))
+    if (kept.length === this.queue.length) return
+    for (const revision of this.queue)
+      if (!this.demand.has(revision)) this.requested.delete(revision)
+    this.queue = kept
+    this.publish()
+  }
+
   private reset(): void {
     this.epoch += 1
     this.generation += 1
@@ -111,7 +139,8 @@ export class CommitClassificationStore {
         } catch (cause) {
           if (epoch !== this.epoch) continue
           for (const revision of batch) this.requested.delete(revision)
-          this.error = cause instanceof Error ? cause.message : 'Classification failed'
+          if (batch.some((revision) => this.demand.has(revision)))
+            this.error = cause instanceof Error ? cause.message : 'Classification failed'
         }
         this.publish()
       }
