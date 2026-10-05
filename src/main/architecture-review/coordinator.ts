@@ -51,6 +51,7 @@ import type {
 import { captureArchitecture, validateArchitectureRequest } from './capture'
 import { affectsArchitectureCapture } from './capture-entries'
 import { listArchitectureCommits } from './commit-range'
+import type { CommitChangeStore } from './commit-change-store'
 import {
   ArchitectureCommitClassifier,
   type ModuleImportsPort,
@@ -82,6 +83,7 @@ export interface ArchitectureReviewPorts {
   readonly liveState?: typeof readArchitectureLiveState
   readonly commits?: typeof listArchitectureCommits
   readonly imports?: ModuleImportsPort
+  readonly commitChanges?: CommitChangeStore
   readonly explanationModel?: ArchitectureExplanationModelPort
   readonly explanationContext?: typeof readArchitectureExplanationContext
   /** Worktree creation and brief writing for the agent handoff (ADR-963). */
@@ -136,6 +138,7 @@ export class ArchitectureReviewCoordinator {
           imports: ports.imports,
           scan: this.scanPair,
           blobs: this.blobs,
+          ...(ports.commitChanges === undefined ? {} : { store: ports.commitChanges }),
         })
       : undefined
   }
@@ -596,6 +599,9 @@ export class ArchitectureReviewCoordinator {
     this.reviews.clear()
     this.explanations.clear()
     this.launches.clear()
+    void this.ports.commitChanges?.flush().catch((error: unknown) => {
+      console.error('[architecture-review] commit classification store flush failed', error)
+    })
   }
   private stopFollower(key: string): void {
     const follower = this.followers.get(key)

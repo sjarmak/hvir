@@ -806,6 +806,14 @@ Named origin-local links navigate between independently paired Companion pages.
 Current endpoint identity stays visible; leaving releases demand and disarms input.
 No shared credentials, cross-origin reads, discovery, or combined view are introduced.
 
+### [ADR-973 — Persisted commit classification markers](adr/ADR-973-persisted-commit-classification-markers.md)
+
+> Lifecycle: Active
+
+Diff-derived commit markers persist on disk per repository, keyed by commit, parent, scanners
+and layout; unclassified commits and fleet labels are never stored. Hidden views withdraw
+queued classification requests.
+
 ## 5. Architecture
 
 ### Process model

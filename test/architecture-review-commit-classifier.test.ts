@@ -19,6 +19,7 @@ import {
 } from '../src/main/architecture-review/analysis'
 import { changeFromAnalysis } from '../src/main/architecture-review/commit-change'
 import { CommitChangeCache } from '../src/main/architecture-review/commit-change-cache'
+import { CommitChangeStore } from '../src/main/architecture-review/commit-change-store'
 import {
   inArchitectureScope,
   isSource,
@@ -160,6 +161,37 @@ it('classifies each commit against its first parent and caches the answers', asy
   const again = await subject.classify(r.host, request, signal())
   expect(again.classifications).toEqual(result)
   expect(imports).toHaveBeenCalledTimes(1)
+})
+
+it('answers commits classified in an earlier process from the store on disk', async () => {
+  const r = await repository()
+  const added = await r.commit('add modules', {
+    'src/a.ts': "import { b } from './b'\nexport const a = b\n",
+    'src/b.ts': 'export const b = 1\n',
+  })
+  const docs = await r.commit('docs', { 'README.md': 'hello\n' })
+  const directory = await mkdtemp(join(tmpdir(), 'hvir-commit-change-store-'))
+  roots.push(directory)
+  const request = { root: localPath(r.root), revisions: [docs, added] }
+  const store = () => new CommitChangeStore({ files: new LocalHost(), directory })
+  const first = store()
+  const { imports } = classifier()
+  const earlier = await new ArchitectureCommitClassifier({ imports, store: first }).classify(
+    r.host,
+    request,
+    signal(),
+  )
+  await first.flush()
+
+  const unused = vi.fn<ModuleImportsPort>(() => {
+    throw new Error('modules were read again')
+  })
+  const later = await new ArchitectureCommitClassifier({
+    imports: unused,
+    store: store(),
+  }).classify(r.host, request, signal())
+  expect(later.classifications).toEqual(earlier.classifications)
+  expect(unused).not.toHaveBeenCalled()
 })
 
 it('marks a commit the fleet has classified from its note, reading no modules', async () => {

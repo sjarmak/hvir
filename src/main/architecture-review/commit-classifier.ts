@@ -34,6 +34,7 @@ import {
   type EdgeTable,
 } from './commit-change'
 import { CommitChangeCache, type CommitChangeKey } from './commit-change-cache'
+import type { CommitChangeStore } from './commit-change-store'
 import { fleetCommitChange, readFleetClassifications } from './fleet-classification'
 import { readArchitectureBlobs, readArchitectureBlobSizes } from './git-blobs'
 import type { ArchitectureBlobCache } from './scan-caches'
@@ -69,6 +70,7 @@ export interface ArchitectureCommitClassifierPorts {
   readonly cacheEntries?: number
   readonly budget?: ReadBudget
   readonly blobs?: ArchitectureBlobCache
+  readonly store?: CommitChangeStore
 }
 
 const HASH = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/
@@ -137,6 +139,7 @@ export class ArchitectureCommitClassifier {
     const head = (await run(['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
     if (!HASH.test(head)) throw new Error('Git did not name HEAD')
     if (request.revisions.length === 0) return { head, classifications: [] }
+    await this.openStore(root)
     const layout = await readHeadLayout(
       run,
       async (objects) =>
@@ -200,9 +203,12 @@ export class ArchitectureCommitClassifier {
         continue
       }
       const key = this.keyOf(root, diff, layout.id)
+      const structuralKey = { ...key, scanners: COMMIT_CHANGE_CLASSIFIER_VERSION }
       const cached =
-        this.cache.lookup({ ...key, scanners: COMMIT_CHANGE_CLASSIFIER_VERSION }) ??
-        this.cache.lookup(key)
+        this.cache.lookup(structuralKey) ??
+        this.cache.lookup(key) ??
+        this.ports.store?.lookup(structuralKey) ??
+        this.ports.store?.lookup(key)
       if (cached !== undefined) {
         answers.set(revision, cached)
         continue
@@ -223,7 +229,17 @@ export class ArchitectureCommitClassifier {
   }
 
   private remember(key: CommitChangeKey, change: ArchitectureCommitChange): void {
-    if (change !== 'unclassified') this.cache.store(key, change)
+    if (change === 'unclassified') return
+    this.cache.store(key, change)
+    this.ports.store?.store(key, change)
+  }
+
+  private async openStore(root: HostPath): Promise<void> {
+    try {
+      await this.ports.store?.open(root)
+    } catch (error) {
+      console.warn('[architecture-review] commit classification store unavailable', error)
+    }
   }
 
   private keyOf(root: HostPath, diff: CommitDiff, layout: string): CommitChangeKey {
