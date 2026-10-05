@@ -518,14 +518,22 @@ describe('classifyGhFailure', () => {
     'gh: HTTP 401: Unauthorized (https://api.github.com/graphql)',
     'gh: HTTP 401 (https://api.github.com/graphql)',
     '  HTTP 401',
+    'HTTP401',
     'HTTP/1.1 401 Unauthorized',
     'HTTP/2 401',
+    'HTTP/2: 401',
     'error\rHTTP 401',
+    'a\rtoken in b\rc is invalid',
   ])('classifies an independent authentication marker: %s', (stderr) => {
     expect(classifyGhFailure(stderr, false).reason).toBe('gh-unauthenticated')
   })
 
-  it.each(['HTTP 4010', 'xhttp 401', 'Fix http 401 handling in parser'])(
+  it.each([
+    'HTTP 4010',
+    'xhttp 401',
+    'Fix http 401 handling in parser',
+    'hello gh: HTTP 401',
+  ])(
     'does not classify a coincidental HTTP 401 mention: %s',
     (stderr) => {
       expect(classifyGhFailure(stderr, false).reason).toBe('error')
