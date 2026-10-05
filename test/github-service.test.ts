@@ -241,6 +241,28 @@ describe('GitHubService.pulls', () => {
     expect(spy).toHaveBeenCalled()
   })
 
+  it('identifies unauthenticated gh output from a remote execution host', async () => {
+    const spy = quiet()
+    const remoteRoot = hostPath(asHostId('ssh-mac'), '/projects/widgets')
+    const exec = vi.fn((command: string, args: readonly string[]) =>
+      Promise.resolve(
+        command === 'gh'
+          ? execResult(4, '', 'The token in default is invalid')
+          : defaultResponder(command, args),
+      ),
+    )
+    const host = { hostId: remoteRoot.hostId, exec } as unknown as ProjectHost
+    const github = new GitHubService({
+      getProject: () => ({ host, root: remoteRoot }),
+    })
+
+    await expect(github.pulls({ root: remoteRoot })).resolves.toMatchObject({
+      available: false,
+      reason: 'gh-remote-unauthenticated',
+    })
+    expect(spy).toHaveBeenCalled()
+  })
+
   it('does not cache a failed repo lookup', async () => {
     quiet()
     let fail = true

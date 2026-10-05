@@ -75,7 +75,12 @@ export interface PullsSnapshot {
 }
 
 export type PullsUnavailableReason =
-  'gh-missing' | 'gh-unauthenticated' | 'no-github-repo' | 'rate-limited' | 'error'
+  | 'gh-missing'
+  | 'gh-unauthenticated'
+  | 'gh-remote-unauthenticated'
+  | 'no-github-repo'
+  | 'rate-limited'
+  | 'error'
 
 export interface PullsUnavailable {
   readonly available: false

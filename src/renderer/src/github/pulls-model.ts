@@ -32,6 +32,8 @@ const REVIEW_LABELS: Readonly<Record<PullReview, string>> = {
 const HINTS: Readonly<Record<PullsUnavailableReason, string>> = {
   'gh-missing': 'Install the GitHub CLI (gh) on this host, then refresh.',
   'gh-unauthenticated': 'Run gh auth login in a terminal, then refresh.',
+  'gh-remote-unauthenticated':
+    'On this remote host, stored credentials may be unreadable from the SSH session. Run gh auth login --insecure-storage on that host, then refresh.',
   'no-github-repo':
     'gh could not resolve a GitHub repository here. Pick one with gh repo set-default.',
   'rate-limited': 'GitHub rate limit reached. The next refresh tries again.',

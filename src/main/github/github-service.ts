@@ -1,6 +1,7 @@
 import {
   hostPathEquals,
   isHostPathShape,
+  LOCAL_HOST_ID,
   type HostPath,
   type PullsProbeResponse,
   type PullsRequest,
@@ -374,7 +375,10 @@ export class GitHubService {
         code: result.code,
         stderr: result.stderr.trim(),
       })
-      return { ok: false, unavailable: classifyGhFailure(result.stderr) }
+      return {
+        ok: false,
+        unavailable: classifyGhFailure(result.stderr, host.hostId !== LOCAL_HOST_ID),
+      }
     }
     return { ok: true, stdout: result.stdout }
   }

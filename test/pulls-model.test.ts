@@ -107,6 +107,7 @@ describe('labels', () => {
     const reasons: readonly PullsUnavailableReason[] = [
       'gh-missing',
       'gh-unauthenticated',
+      'gh-remote-unauthenticated',
       'no-github-repo',
       'rate-limited',
       'error',
@@ -119,5 +120,12 @@ describe('labels', () => {
     expect(
       unavailableHint({ available: false, reason: 'gh-unauthenticated', message: '' }),
     ).toMatch(/gh auth login/)
+    expect(
+      unavailableHint({
+        available: false,
+        reason: 'gh-remote-unauthenticated',
+        message: '',
+      }),
+    ).toMatch(/gh auth login --insecure-storage/)
   })
 })

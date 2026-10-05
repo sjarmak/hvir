@@ -324,9 +324,7 @@ describe('parsePullsOutput', () => {
       const defaultBranch = testCase.draw(
         generators.sampledFrom(['main', 'master', 'trunk', 'release']),
       )
-      const state = testCase.draw(
-        generators.sampledFrom(['OPEN', 'CLOSED', 'MERGED']),
-      )
+      const state = testCase.draw(generators.sampledFrom(['OPEN', 'CLOSED', 'MERGED']))
       const output = graphqlOutput({
         viewer: { login: 'stephanie' },
         repository: {
@@ -486,17 +484,83 @@ describe('githubRemoteRepos', () => {
 describe('classifyGhFailure', () => {
   it('names the actionable failures', () => {
     expect(
-      classifyGhFailure('To get started with GitHub CLI, please run:  gh auth login')
-        .reason,
+      classifyGhFailure(
+        'To get started with GitHub CLI, please run:  gh auth login',
+        false,
+      ).reason,
     ).toBe('gh-unauthenticated')
-    expect(classifyGhFailure('API rate limit exceeded for user').reason).toBe(
+    expect(classifyGhFailure('API rate limit exceeded for user', false).reason).toBe(
       'rate-limited',
     )
     expect(
       classifyGhFailure(
         'none of the git remotes configured for this repository point to a known GitHub host',
+        false,
       ).reason,
     ).toBe('no-github-repo')
-    expect(classifyGhFailure('something else').reason).toBe('error')
+    expect(classifyGhFailure('something else', false).reason).toBe('error')
+  })
+
+  it.each([
+    'Requires authentication',
+    'The token in default is invalid',
+    'HTTP 401: Bad credentials',
+  ])('distinguishes remote unauthenticated failures from local ones: %s', (stderr) => {
+    expect(classifyGhFailure(stderr, true).reason).toBe('gh-remote-unauthenticated')
+    expect(classifyGhFailure(stderr, false).reason).toBe('gh-unauthenticated')
+  })
+
+  it.each([
+    'Bad credentials',
+    'not logged in',
+    'authentication required',
+    'HTTP: 401',
+    'gh: HTTP 401: Unauthorized (https://api.github.com/graphql)',
+    'gh: HTTP 401 (https://api.github.com/graphql)',
+    '  HTTP 401',
+    'HTTP/1.1 401 Unauthorized',
+    'HTTP/2 401',
+    'error\rHTTP 401',
+  ])('classifies an independent authentication marker: %s', (stderr) => {
+    expect(classifyGhFailure(stderr, false).reason).toBe('gh-unauthenticated')
+  })
+
+  it.each(['HTTP 4010', 'xhttp 401', 'Fix http 401 handling in parser'])(
+    'does not classify a coincidental HTTP 401 mention: %s',
+    (stderr) => {
+      expect(classifyGhFailure(stderr, false).reason).toBe('error')
+    },
+  )
+
+  it.each([
+    'HTTP 401\nAPI rate limit exceeded',
+    'API rate limit exceeded; Bad credentials',
+  ])('prefers a rate-limit failure when authentication also matches: %s', (stderr) => {
+    expect(classifyGhFailure(stderr, false).reason).toBe('rate-limited')
+  })
+
+  it('bounds the text accepted between token and invalid', () => {
+    const bounded = `token in ${'x'.repeat(200)} is invalid`
+    const oversized = `token in ${'x'.repeat(201)} is invalid`
+    expect(classifyGhFailure(bounded, false).reason).toBe('gh-unauthenticated')
+    expect(classifyGhFailure(oversized, false).reason).toBe('error')
+  })
+
+  it('classifies authentication markers regardless of surrounding output', () => {
+    hegel.test((testCase) => {
+      const marker = testCase.draw(
+        generators.sampledFrom([
+          'Requires authentication',
+          'token in default is invalid',
+          'HTTP 401',
+          'gh: HTTP 401',
+        ]),
+      )
+      const prefix = testCase.draw(generators.text({ maxSize: 20 }))
+      const suffix = testCase.draw(generators.text({ maxSize: 20 }))
+      const stderr = `${prefix}\n${marker}\n${suffix}`
+      expect(classifyGhFailure(stderr, true).reason).toBe('gh-remote-unauthenticated')
+      expect(classifyGhFailure(stderr, false).reason).toBe('gh-unauthenticated')
+    })
   })
 })
