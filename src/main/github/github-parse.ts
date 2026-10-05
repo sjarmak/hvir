@@ -343,13 +343,12 @@ export function parseBranchUpstreams(
   return result
 }
 
-export function classifyGhFailure(
-  stderr: string,
-  remote: boolean,
-): PullsUnavailable {
+export function classifyGhFailure(stderr: string, remote: boolean): PullsUnavailable {
   const message = stderr.trim() === '' ? 'gh exited without output' : stderr.trim()
+  if (/rate limit/i.test(stderr))
+    return { available: false, reason: 'rate-limited', message }
   if (
-    /gh auth login|not logged in|authentication required|requires authentication|bad credentials|token in .* is invalid|http:?[ \t]+401/i.test(
+    /gh auth login|not logged in|authentication required|requires authentication|bad credentials|token in [^\n]{0,200} is invalid|(?:^|[\r\n])[ \t]*http[ :/]*(?:\d(?:\.\d)?[ :]+)?401\b/i.test(
       stderr,
     )
   ) {
@@ -359,8 +358,6 @@ export function classifyGhFailure(
       message,
     }
   }
-  if (/rate limit/i.test(stderr))
-    return { available: false, reason: 'rate-limited', message }
   if (
     /git remotes|not a git repository|could not resolve to a repository/i.test(stderr)
   ) {

@@ -324,9 +324,7 @@ describe('parsePullsOutput', () => {
       const defaultBranch = testCase.draw(
         generators.sampledFrom(['main', 'master', 'trunk', 'release']),
       )
-      const state = testCase.draw(
-        generators.sampledFrom(['OPEN', 'CLOSED', 'MERGED']),
-      )
+      const state = testCase.draw(generators.sampledFrom(['OPEN', 'CLOSED', 'MERGED']))
       const output = graphqlOutput({
         viewer: { login: 'stephanie' },
         repository: {
@@ -489,8 +487,7 @@ describe('classifyGhFailure', () => {
       classifyGhFailure(
         'To get started with GitHub CLI, please run:  gh auth login',
         false,
-      )
-        .reason,
+      ).reason,
     ).toBe('gh-unauthenticated')
     expect(classifyGhFailure('API rate limit exceeded for user', false).reason).toBe(
       'rate-limited',
@@ -509,10 +506,35 @@ describe('classifyGhFailure', () => {
     'The token in default is invalid',
     'HTTP 401: Bad credentials',
   ])('distinguishes remote unauthenticated failures from local ones: %s', (stderr) => {
-    expect(classifyGhFailure(stderr, true).reason).toBe(
-      'gh-remote-unauthenticated',
-    )
+    expect(classifyGhFailure(stderr, true).reason).toBe('gh-remote-unauthenticated')
     expect(classifyGhFailure(stderr, false).reason).toBe('gh-unauthenticated')
+  })
+
+  it.each(['Bad credentials', 'not logged in', 'authentication required', 'HTTP: 401'])(
+    'classifies an independent authentication marker: %s',
+    (stderr) => {
+      expect(classifyGhFailure(stderr, false).reason).toBe('gh-unauthenticated')
+    },
+  )
+
+  it.each(['HTTP 4010', 'xhttp 401', 'Fix http 401 handling in parser'])(
+    'does not classify a coincidental HTTP 401 mention: %s',
+    (stderr) => {
+      expect(classifyGhFailure(stderr, false).reason).toBe('error')
+    },
+  )
+
+  it('prefers a rate-limit failure over a later bare HTTP 401 mention', () => {
+    expect(
+      classifyGhFailure('HTTP 403: API rate limit exceeded; HTTP 401', false).reason,
+    ).toBe('rate-limited')
+  })
+
+  it('bounds the text accepted between token and invalid', () => {
+    const bounded = `token in ${'x'.repeat(200)} is invalid`
+    const oversized = `token in ${'x'.repeat(201)} is invalid`
+    expect(classifyGhFailure(bounded, false).reason).toBe('gh-unauthenticated')
+    expect(classifyGhFailure(oversized, false).reason).toBe('error')
   })
 
   it('classifies authentication markers regardless of surrounding output', () => {
@@ -526,10 +548,8 @@ describe('classifyGhFailure', () => {
       )
       const prefix = testCase.draw(generators.text({ maxSize: 20 }))
       const suffix = testCase.draw(generators.text({ maxSize: 20 }))
-      const stderr = `${prefix}${marker}${suffix}`
-      expect(classifyGhFailure(stderr, true).reason).toBe(
-        'gh-remote-unauthenticated',
-      )
+      const stderr = `${prefix}\n${marker}\n${suffix}`
+      expect(classifyGhFailure(stderr, true).reason).toBe('gh-remote-unauthenticated')
       expect(classifyGhFailure(stderr, false).reason).toBe('gh-unauthenticated')
     })
   })
