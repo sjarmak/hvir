@@ -33,7 +33,11 @@ import {
   type CommitTreeEntry,
 } from './commit-file-tree'
 import { buildGitGraphLayout, type GitGraphRow } from './git-graph-layout'
-import { gitGraphWidth, RAIL_GRAPH_LANE_METRICS } from './git-graph-lane-metrics'
+import {
+  fitGitGraphLaneMetrics,
+  gitGraphWidth,
+  RAIL_GRAPH_LANE_METRICS,
+} from './git-graph-lane-metrics'
 import { GitGraphCell, GitGraphContinuation } from './GitGraphLanes'
 import { GitHistoryRangeBar } from './GitHistoryRangeBar'
 import type { RailCommitDetailState } from './use-git-commit-details'
@@ -42,6 +46,7 @@ import { measureVariableRows, variableVirtualRange } from './virtual-range'
 const HISTORY_COMMIT_ROW_HEIGHT = 40
 const HISTORY_CHILD_ROW_HEIGHT = 22
 const HISTORY_OVERSCAN = 8
+const RAIL_GRAPH_MAX_WIDTH = 96
 
 interface GitHistoryViewProps {
   readonly commits: readonly GitCommitSummary[]
@@ -261,8 +266,16 @@ function HistoryCommitList({
     }
   }, [commits.length, expanded, hasMore, onLoadMore])
 
-  const layout = useMemo(() => buildGitGraphLayout(shown), [shown])
-  const graphWidth = gitGraphWidth(layout.laneCount, RAIL_GRAPH_LANE_METRICS)
+  const layout = useMemo(
+    () => buildGitGraphLayout(shown, { omitAbsentParents: architectureOnly }),
+    [architectureOnly, shown],
+  )
+  const laneMetrics = fitGitGraphLaneMetrics(
+    layout.laneCount,
+    RAIL_GRAPH_LANE_METRICS,
+    RAIL_GRAPH_MAX_WIDTH,
+  )
+  const graphWidth = gitGraphWidth(layout.laneCount, laneMetrics)
   const items = useMemo<readonly RailHistoryItem[]>(() => {
     const next: RailHistoryItem[] = []
     for (const [position, graphRow] of layout.rows.entries()) {
@@ -429,7 +442,7 @@ function HistoryCommitList({
                     row={item.graphRow}
                     width={graphWidth}
                     height={item.height}
-                    metrics={RAIL_GRAPH_LANE_METRICS}
+                    metrics={laneMetrics}
                   />
                   <span className="git-rail-commit-copy">
                     <strong>
@@ -481,7 +494,7 @@ function HistoryCommitList({
                 row={item.graphRow}
                 width={graphWidth}
                 height={item.height}
-                metrics={RAIL_GRAPH_LANE_METRICS}
+                metrics={laneMetrics}
               />
               <RailHistoryChild
                 item={item}

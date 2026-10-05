@@ -30,9 +30,17 @@ interface ActiveLane {
  * Assign stable lanes to a topologically ordered commit stream. The model is
  * intentionally renderer-neutral: the SVG layer only paints the visible rows.
  */
+export interface GitGraphLayoutOptions {
+  readonly omitAbsentParents?: boolean
+}
+
 export function buildGitGraphLayout(
   commits: readonly GitCommitSummary[],
+  options: GitGraphLayoutOptions = {},
 ): GitGraphLayout {
+  const present = options.omitAbsentParents
+    ? new Set(commits.map((commit) => commit.hash))
+    : undefined
   const lanes: Array<ActiveLane | undefined> = []
   const rows: GitGraphRow[] = []
   let nextColor = 0
@@ -63,7 +71,10 @@ export function buildGitGraphLayout(
     for (const lane of matchingLanes.slice(1)) lanes[lane] = undefined
     lanes[commitLane] = undefined
 
-    commit.parents.forEach((parent, parentIndex) => {
+    const parents = present
+      ? commit.parents.filter((parent) => present.has(parent))
+      : commit.parents
+    parents.forEach((parent, parentIndex) => {
       let parentLane = lanes.findIndex((active) => active?.target === parent)
       let parentColor = parentLane >= 0 ? lanes[parentLane]?.color : undefined
       if (parentLane < 0) {

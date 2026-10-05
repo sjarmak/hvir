@@ -31,6 +31,31 @@ describe('Git graph layout', () => {
     )
   })
 
+  it('keeps a filtered stream with absent parents in one lane when asked', () => {
+    const filtered = [
+      commit('e', ['d']),
+      commit('c', ['b']),
+      commit('a', ['z']),
+    ]
+
+    expect(buildGitGraphLayout(filtered).laneCount).toBe(3)
+    const layout = buildGitGraphLayout(filtered, { omitAbsentParents: true })
+    expect(layout.laneCount).toBe(1)
+    expect(layout.rows.map((row) => row.lane)).toEqual([0, 0, 0])
+  })
+
+  it('still links parents present in a filtered stream', () => {
+    const layout = buildGitGraphLayout(
+      [commit('merge', ['main', 'gone']), commit('main', ['x'])],
+      { omitAbsentParents: true },
+    )
+
+    expect(layout.laneCount).toBe(1)
+    expect(layout.rows[1]?.segments).toEqual([
+      expect.objectContaining({ fromLane: 0, toLane: 0, incoming: true }),
+    ])
+  })
+
   it('retains commit metadata for refs and selection', () => {
     const layout = buildGitGraphLayout([commit('head', [], ['HEAD -> main', 'tag: v1'])])
 

@@ -16,3 +16,13 @@ export const RAIL_GRAPH_LANE_METRICS: GitGraphLaneMetrics = {
 export function gitGraphWidth(laneCount: number, metrics: GitGraphLaneMetrics): number {
   return Math.max(2, laneCount) * metrics.laneWidth + metrics.padding * 2
 }
+
+export function fitGitGraphLaneMetrics(
+  laneCount: number,
+  metrics: GitGraphLaneMetrics,
+  maxWidth: number,
+): GitGraphLaneMetrics {
+  if (gitGraphWidth(laneCount, metrics) <= maxWidth) return metrics
+  const laneWidth = (maxWidth - metrics.padding * 2) / Math.max(2, laneCount)
+  return { ...metrics, laneWidth }
+}
