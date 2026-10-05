@@ -32,16 +32,31 @@ Host *
     ])
   })
 
-  it('falls back to port 22 when the configured port is malformed', () => {
-    expect(
-      parseSshConfig('Host work\n  Port abc\n  IdentityFile ~/.ssh/key-%p\n', '/home/me'),
-    ).toEqual([
-      expect.objectContaining({
-        port: 22,
-        identityFiles: ['/home/me/.ssh/key-22'],
-      }),
-    ])
-  })
+  it.each(['abc', '22abc', '0', '-1', '1e3', '0x50', '22.5', '65536', '9'.repeat(400)])(
+    'falls back to port 22 when the configured port is %s',
+    (configuredPort) => {
+      expect(
+        parseSshConfig(
+          `Host work\n  Port ${configuredPort}\n  IdentityFile ~/.ssh/key-%p\n`,
+          '/home/me',
+        ),
+      ).toEqual([
+        expect.objectContaining({
+          port: 22,
+          identityFiles: ['/home/me/.ssh/key-22'],
+        }),
+      ])
+    },
+  )
+
+  it('rejects every numeric port with trailing non-numeric input', () =>
+    hegel.test((testCase) => {
+      const port = testCase.draw(gs.integers({ minValue: 1, maxValue: 65_535 }))
+
+      expect(parseSshConfig(`Host work\n  Port ${port}x\n`, '/home/me')).toEqual([
+        expect.objectContaining({ port: 22 }),
+      ])
+    }))
 
   it('expands identity tokens once for files and agents', () => {
     expect(
@@ -114,6 +129,26 @@ Host *
     ])
   })
 
+  it('expands the home-directory token in identity-agent paths', () => {
+    expect(
+      parseSshConfig('Host work\n  IdentityAgent %d/.ssh/agent.sock\n', '/home/me'),
+    ).toEqual([expect.objectContaining({ identityAgent: '/home/me/.ssh/agent.sock' })])
+  })
+
+  it('defaults the remote user and hostname to the local user and alias', () => {
+    expect(
+      parseSshConfig('Host work\n  IdentityAgent /tmp/%u-%r@%h.sock\n', '/home/me', {
+        USER: 'local-user',
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        hostname: 'work',
+        user: 'local-user',
+        identityAgent: '/tmp/local-user-local-user@work.sock',
+      }),
+    ])
+  })
+
   it('preserves an explicit identity-agent opt out', () => {
     expect(parseSshConfig('Host work\n  IdentityAgent none\n', '/home/me')).toEqual([
       expect.objectContaining({ identityAgent: null }),
@@ -137,26 +172,47 @@ Host *
   })
 
   it.each([
-    ['SSH_AUTH_SOCK', { SSH_AUTH_SOCK: '/tmp/session-agent.sock' }, '/tmp/session-agent.sock'],
-    ['$WORK_AGENT', { WORK_AGENT: '/tmp/work-agent.sock' }, '/tmp/work-agent.sock'],
     [
-      '${AGENT_ROOT}/agent.sock',
-      { AGENT_ROOT: '/tmp/work' },
-      '/tmp/work/agent.sock',
+      'SSH_AUTH_SOCK',
+      { SSH_AUTH_SOCK: '/tmp/session-agent.sock' },
+      '/tmp/session-agent.sock',
     ],
+    ['SSH_AUTH_SOCK', {}, null],
+    ['$WORK_AGENT', { WORK_AGENT: '/tmp/work-agent.sock' }, '/tmp/work-agent.sock'],
+    ['${AGENT_ROOT}/agent.sock', { AGENT_ROOT: '/tmp/work' }, '/tmp/work/agent.sock'],
+    ['${EMPTY_AGENT}/s', { EMPTY_AGENT: '' }, '/s'],
     ['$MISSING_AGENT', {}, null],
+    ['${MISSING_AGENT}/agent.sock', {}, null],
+    ['${EMPTY_AGENT}', { EMPTY_AGENT: '' }, ''],
   ] as const)(
     'resolves identity-agent environment form %s',
     (value, environment, identityAgent) => {
       expect(
-        parseSshConfig(
-          `Host work\n  IdentityAgent ${value}\n`,
-          '/home/me',
-          environment,
-        ),
+        parseSshConfig(`Host work\n  IdentityAgent ${value}\n`, '/home/me', environment),
       ).toEqual([expect.objectContaining({ identityAgent })])
     },
   )
+
+  it.each([
+    ['/tmp/~/.ssh/agent.sock', '/tmp/~/.ssh/agent.sock'],
+    ['~other/.ssh/agent.sock', '~other/.ssh/agent.sock'],
+    ['prefix$WORK_AGENT', 'prefix$WORK_AGENT'],
+    ['${1AGENT}', '${1AGENT}'],
+    ['/tmp/${1X}/s', '/tmp/${1X}/s'],
+  ])('preserves literal identity-agent value %s', (value, identityAgent) => {
+    expect(
+      parseSshConfig(`Host work\n  IdentityAgent ${value}\n`, '/home/me', {
+        WORK_AGENT: '/tmp/work-agent.sock',
+        '1AGENT': '/tmp/digit-agent.sock',
+      }),
+    ).toEqual([expect.objectContaining({ identityAgent })])
+  })
+
+  it('rejects missing environment variables introduced by home expansion', () => {
+    expect(() =>
+      parseSshConfig('Host work\n  IdentityAgent ~/s\n', '/home/${MISSING_HOME}', {}),
+    ).toThrow('Missing SSH environment variable MISSING_HOME')
+  })
 
   it('expands identity-agent tokens exactly once for every alias', () =>
     hegel.test((testCase) => {

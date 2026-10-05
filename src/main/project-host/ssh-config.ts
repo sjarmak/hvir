@@ -1,5 +1,9 @@
 import SSHConfig from 'ssh-config'
 
+const DEFAULT_SSH_PORT = 22
+const MIN_SSH_PORT = 1
+const MAX_SSH_PORT = 65_535
+
 export interface SshAliasConfig {
   readonly alias: string
   readonly hostname: string
@@ -32,8 +36,12 @@ export function parseSshConfig(
     const hostname = one(values['hostname']) ?? alias
     const localUser = environment['USER'] ?? process.env['USER'] ?? 'unknown'
     const user = one(values['user']) ?? localUser
-    const rawPort = Number.parseInt(one(values['port']) ?? '22', 10)
-    const port = Number.isFinite(rawPort) ? rawPort : 22
+    const configuredPort = one(values['port'])?.trim() ?? String(DEFAULT_SSH_PORT)
+    const rawPort = /^\d+$/.test(configuredPort) ? Number(configuredPort) : Number.NaN
+    const port =
+      Number.isInteger(rawPort) && rawPort >= MIN_SSH_PORT && rawPort <= MAX_SSH_PORT
+        ? rawPort
+        : DEFAULT_SSH_PORT
     const rawIdentity = values['identityfile']
     const identityFiles = (
       Array.isArray(rawIdentity) ? rawIdentity : rawIdentity ? [rawIdentity] : []
@@ -108,9 +116,14 @@ function expandSshValue(
       expansionPattern,
       (_match, token: keyof typeof tokens | undefined, name: string | undefined) => {
         if (token !== undefined) return tokens[token]
-        const replacement = name === undefined ? undefined : environment?.[name]
-        if (replacement !== undefined) return replacement
-        throw new Error(`Missing SSH environment variable ${name}`)
+        if (name === undefined || environment === undefined) {
+          throw new Error('Invalid SSH value expansion')
+        }
+        const replacement = environment[name]
+        if (replacement === undefined) {
+          throw new Error(`Missing SSH environment variable ${name}`)
+        }
+        return replacement
       },
     )
 }
