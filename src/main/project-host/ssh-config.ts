@@ -71,20 +71,14 @@ function resolveIdentityAgent(
   if (value === undefined) return undefined
   if (value === 'none') return null
   if (value === 'SSH_AUTH_SOCK') return environment['SSH_AUTH_SOCK'] ?? null
-  const variable = value.match(/^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))$/)
+  const variable = value.match(
+    /^\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))$/,
+  )
   const variableName = variable?.[1] ?? variable?.[2]
   if (variableName) return environment[variableName] ?? null
   const variables = [...value.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g)]
   if (variables.some((match) => environment[match[1]!] === undefined)) return null
-  return expandSshValue(
-    value,
-    home,
-    hostname,
-    user,
-    localUser,
-    port,
-    environment,
-  )
+  return expandSshValue(value, home, hostname, user, localUser, port, environment)
 }
 
 function expandSshValue(
