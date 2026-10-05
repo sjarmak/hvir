@@ -126,6 +126,15 @@ export function selectCompanionRow(
   return { ...state, selected: transcript.handle, transcript }
 }
 
+/**
+ * A reopened stream is a new page whose snapshot revisions start over, so the
+ * rows are dropped; the open session stays on screen until it is selected again.
+ */
+export function keepCompanionSelection(state: CompanionPageState): CompanionPageState {
+  const { selected, transcript, terminal } = state
+  return selected === undefined ? EMPTY_COMPANION_PAGE : { selected, transcript, terminal }
+}
+
 export function clearCompanionSelection(state: CompanionPageState): CompanionPageState {
   return { snapshot: state.snapshot }
 }

@@ -1,7 +1,10 @@
 /**
  * One page's lifecycle against the listener: pairing, one event stream at a
- * time, and the verbs the page may perform. The stream is reopened only when
- * a person asks (ADR-949 forbids a retry loop from a phone), and a 401 from
+ * time, and the verbs the page may perform. A lost stream is reopened when a
+ * person asks, or once each time the page comes back into view: a phone that
+ * was locked or switched away from loses its stream, and that one reopen is
+ * never a retry loop. A page restored from history waits for a person
+ * (ADR-972). A reopen keeps the open session and selects it again. A 401 from
  * anywhere sends the page back to pairing.
  *
  * A mirror (ADR-950) is selected optimistically: the row is marked selected
@@ -32,6 +35,7 @@ import {
   beginCompanionSelection,
   clearCompanionSelection,
   describeStreamEnd,
+  keepCompanionSelection,
   selectCompanionRow,
   type CompanionConnection,
   type CompanionPageState,
@@ -92,6 +96,11 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
   const stream = useRef<CompanionEventStream>(undefined)
   const openingController = useRef<AbortController>(undefined)
   const lifecycle = useRef({ generation: 0, left: false })
+  /** The row a reopen kept on screen, selected again once the new stream opens. */
+  const reselect = useRef<SessionsTerminalHandle>(undefined)
+  /** Armed when the page comes back into view; spent by the one reopen it allows. */
+  const reopenOnReturn = useRef(false)
+  const [shown, setShown] = useState(0)
   const mirrorHandle =
     state.terminal?.status === 'live' ? state.terminal.handle : undefined
   const arming = useInputArming(mirrorHandle)
@@ -122,46 +131,71 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
     return () => window.removeEventListener('pagehide', leave)
   }, [leave])
 
+  /** The listener no longer accepts the token: back to pairing, stream closed. */
+  const expire = useCallback(() => {
+    stream.current?.close()
+    stream.current = undefined
+    setState(EMPTY_COMPANION_PAGE)
+    setConnection({ phase: 'unpaired', error: PAIRING_EXPIRED })
+  }, [])
+
   useEffect(() => {
     if (!client.paired() || lifecycle.current.left) return
     let active = true
     const generation = lifecycle.current.generation
+    const current = () =>
+      active && !lifecycle.current.left && lifecycle.current.generation === generation
     const controller = new AbortController()
     openingController.current = controller
     feed.clear()
     const opening = client.openEvents((event) => {
-      if (!active || lifecycle.current.left || lifecycle.current.generation !== generation) return
+      if (!current()) return
       if (event.type === 'terminal') feed.push(event.terminal)
-      setState((current) => {
+      setState((page) => {
         switch (event.type) {
           case 'snapshot':
-            return applyCompanionSnapshot(current, event.snapshot)
+            return applyCompanionSnapshot(page, event.snapshot)
           case 'transcript':
-            return applyCompanionTranscript(current, event.transcript)
+            return applyCompanionTranscript(page, event.transcript)
           case 'terminal':
-            return applyCompanionTerminal(current, event.terminal)
+            return applyCompanionTerminal(page, event.terminal)
         }
       })
     }, controller.signal)
     opening.then(
       (opened) => {
-        if (
-          !active ||
-          lifecycle.current.left ||
-          lifecycle.current.generation !== generation
-        ) {
+        if (!current()) {
           opened.close()
           return
         }
         stream.current = opened
         setConnection({ phase: 'connected', page: opened.page })
+        const kept = reselect.current
+        reselect.current = undefined
+        // The listener opens a fresh mirror on select, so the kept row is selected again.
+        if (kept !== undefined) {
+          client.select(opened.page, kept).then(
+            (transcript) => {
+              if (!current()) return
+              setState((page) =>
+                page.selected === kept ? selectCompanionRow(page, transcript) : page,
+              )
+            },
+            (error: unknown) => {
+              if (!current()) return
+              if (error instanceof CompanionUnauthorizedError) {
+                expire()
+                return
+              }
+              setState((page) =>
+                page.selected === kept ? clearCompanionSelection(page) : page,
+              )
+              setNotice(describe(error))
+            },
+          )
+        }
         void opened.done.then((end) => {
-          if (
-            !active ||
-            lifecycle.current.left ||
-            lifecycle.current.generation !== generation ||
-            end.kind === 'aborted'
-          ) return
+          if (!current() || end.kind === 'aborted') return
           stream.current = undefined
           if (end.kind === 'closed' && end.reason === 'revoked') {
             client.forget()
@@ -175,11 +209,7 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
         })
       },
       (error: unknown) => {
-        if (
-          !active ||
-          lifecycle.current.left ||
-          lifecycle.current.generation !== generation
-        ) return
+        if (!current()) return
         setConnection(
           error instanceof CompanionUnauthorizedError
             ? { phase: 'unpaired', error: PAIRING_EXPIRED }
@@ -194,17 +224,9 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
       stream.current?.close()
       stream.current = undefined
     }
-  }, [client, feed, attempt])
+  }, [client, feed, attempt, expire])
 
   const page = connection.phase === 'connected' ? connection.page : undefined
-
-  /** The listener no longer accepts the token: back to pairing, stream closed. */
-  const expire = useCallback(() => {
-    stream.current?.close()
-    stream.current = undefined
-    setState(EMPTY_COMPANION_PAGE)
-    setConnection({ phase: 'unpaired', error: PAIRING_EXPIRED })
-  }, [])
 
   /** A verb the person asked for: its refusal replaces the notice, and nothing else does. */
   const run = useCallback(
@@ -258,17 +280,6 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
     [client],
   )
 
-  const reconnect = useCallback(() => {
-    lifecycle.current = {
-      generation: lifecycle.current.generation + 1,
-      left: false,
-    }
-    setState(EMPTY_COMPANION_PAGE)
-    setNotice(undefined)
-    setConnection({ phase: 'connecting' })
-    setAttempt((count) => count + 1)
-  }, [])
-
   // The listener opens a fresh mirror on every select, so frames held from
   // before are stale: dropped first, so a view mounting between the old
   // lease's `ended` and the new `opened` never replays the old screen.
@@ -297,6 +308,45 @@ export function useCompanionSession(client: CompanionClient): CompanionSession {
   const selected = state.selected
   const pendingRevision = state.transcript?.pending?.revision
   const { armed, touch, disarm } = arming
+
+  const reconnect = useCallback(() => {
+    reopenOnReturn.current = false
+    reselect.current = selected
+    lifecycle.current = {
+      generation: lifecycle.current.generation + 1,
+      left: false,
+    }
+    disarm()
+    setState(keepCompanionSelection)
+    setNotice(undefined)
+    setConnection({ phase: 'connecting' })
+    setAttempt((count) => count + 1)
+  }, [selected, disarm])
+
+  // Leaving the kept row any way at all (Back, another row, pairing again)
+  // cancels its reselect, so the desktop never opens a mirror nobody shows.
+  useEffect(() => {
+    if (reselect.current !== selected) reselect.current = undefined
+  }, [selected])
+
+  useEffect(() => {
+    const changed = () => {
+      reopenOnReturn.current = !document.hidden
+      if (!document.hidden) setShown((count) => count + 1)
+    }
+    document.addEventListener('visibilitychange', changed)
+    return () => document.removeEventListener('visibilitychange', changed)
+  }, [])
+
+  useEffect(() => {
+    if (
+      connection.phase === 'disconnected' &&
+      reopenOnReturn.current &&
+      !lifecycle.current.left
+    ) {
+      reconnect()
+    }
+  }, [connection, shown, reconnect])
 
   const resume = useCallback(async () => {
     if (selected === undefined) return
