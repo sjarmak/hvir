@@ -2,29 +2,14 @@ import * as hegel from '@hegeldev/hegel'
 import * as gs from '@hegeldev/hegel/generators'
 import { describe, expect, it } from 'vitest'
 
-import type {
-  CitySessionFact,
-  HostCitySessions,
-} from '../src/main/gascity/gascity-city-sessions'
 import { externalSessionAttachment } from '../src/main/terminal/external-session-attachment'
-import type { OwnedTerminalSession } from '../src/main/terminal/session-registry'
-import type { ObservedManagedPty } from '../src/main/pty/pty-supervisor'
 import { assembleSessionsObservation } from '../src/main/sessions/sessions-observation-port'
-import type { HostCityEvents } from '../src/main/gascity/city-event-facts'
 import {
   SESSIONS_GAS_CITY_PROVIDER,
   cityPendingSignals,
   projectCitySessions,
 } from '../src/main/sessions/sessions-city-projection'
 import { createSessionsProjectionIdentityScope } from '../src/main/sessions/sessions-projection-identities'
-import {
-  resolveSessionsExternalAttach,
-  resolveSessionsExternalSession,
-} from '../src/main/sessions/sessions-external-resolution'
-import {
-  SESSIONS_ATTACH_TICKET_TTL_MS,
-  SessionsAttachTicketRegistry,
-} from '../src/main/sessions/sessions-attach-tickets'
 import { joinSessionsProjection } from '../src/renderer/src/sessions/sessions-projection-coordinator'
 import {
   DEFAULT_SESSIONS_OVERVIEW_POLICY,
@@ -36,27 +21,36 @@ import { sessionsTerminalSurfaceEligible } from '../src/renderer/src/sessions/se
 import {
   MAX_SESSIONS_PROJECTION_ROWS,
   asHarnessProfileId,
-  asHarnessProviderId,
   asHostId,
   asSessionsProjectHandle,
   asSessionsWorkspaceHandle,
   hostPath,
   localPath,
-  type HostPath,
-  type ProjectState,
-  type SessionsAttachExternalRequest,
-  type SessionsObservationSnapshot,
-  type SessionsTerminalHandle,
 } from '../src/shared'
 
-const codex = asHarnessProviderId('codex')
-const shell = asHarnessProviderId('plain-shell')
-const city = localPath('/private/city')
-const memRoot = localPath('/private/city/rigs/mem')
-const memPanel = localPath('/private/city/rigs/mem/worktrees/panel')
-const memUnknown = localPath('/private/city/rigs/mem/worktrees/not-registered')
-const polecatRoot = localPath('/private/city/rigs/polecat')
-const unrelated = localPath('/private/elsewhere/repo')
+import {
+  codex,
+  shell,
+  memRoot,
+  memPanel,
+  polecatRoot,
+  unrelated,
+  assemble,
+  attachedTerminal,
+  livePty,
+  snapshot,
+  titles,
+  row,
+  workspaceOf,
+  projectOf,
+  hostCity,
+  fact,
+  projectState,
+  hostOptions,
+  providers,
+  cityEvents,
+  pendingFor,
+} from './sessions-city-fixtures'
 
 describe('Gas City sessions in the global projection', () => {
   it('groups every placeable session under the project and workspace that owns it', () => {
@@ -299,16 +293,19 @@ describe('A terminal attached to a Gas City session', () => {
       const suffix = testCase.draw(gs.integers({ minValue: 0, maxValue: 1_000_000 }))
       const sessionKey = `gc-generated-${suffix}`
       const title = `generated-${suffix}`
-      const source = assemble([
-        hostCity({
-          sessions: [
-            fact({ sessionKey, label: title, workDir: memPanel, rigRoot: memRoot }),
-          ],
-        }),
-      ], {
-        sessions: [attachedTerminal('terminal-generated', sessionKey)],
-        ptys: [livePty('terminal-generated')],
-      })
+      const source = assemble(
+        [
+          hostCity({
+            sessions: [
+              fact({ sessionKey, label: title, workDir: memPanel, rigRoot: memRoot }),
+            ],
+          }),
+        ],
+        {
+          sessions: [attachedTerminal('terminal-generated', sessionKey)],
+          ptys: [livePty('terminal-generated')],
+        },
+      )
 
       expect(source.sessions).toHaveLength(1)
       expect(row(source, title).handle).toBe('terminal-generated')
@@ -380,7 +377,9 @@ describe('A terminal attached to a Gas City session', () => {
     })
 
     expect(projection.merged.get('terminal-shared')?.title).toBe('local-session')
-    expect(projection.sessions.map((session) => session.title)).toEqual(['remote-session'])
+    expect(projection.sessions.map((session) => session.title)).toEqual([
+      'remote-session',
+    ])
   })
 
   it('joins a terminal attached by agent alias when no session id was known', () => {
@@ -604,421 +603,3 @@ describe('Gas City rows in the overview model', () => {
     expect(sessionsOverviewPage(grouped, 1).rows).toHaveLength(5)
   })
 })
-
-function assemble(
-  cities: readonly HostCitySessions[],
-  hvir: {
-    readonly sessions?: readonly OwnedTerminalSession[]
-    readonly ptys?: readonly ObservedManagedPty[]
-    readonly events?: readonly HostCityEvents[]
-  } = {},
-) {
-  return assembleSessionsObservation({
-    projectState: projectState(),
-    hosts: hostOptions(),
-    providers: providers(),
-    sessions: hvir.sessions ?? [],
-    ptys: hvir.ptys ?? [],
-    cities,
-    ...(hvir.events === undefined ? {} : { events: hvir.events }),
-  })
-}
-
-/** A terminal hvir launched to attach to one gc session, as main recorded it. */
-function attachedTerminal(
-  id: string,
-  sessionKey: string | undefined,
-  alias?: string,
-): OwnedTerminalSession {
-  return {
-    id,
-    providerId: shell,
-    profileId: asHarnessProfileId('plain-shell-default'),
-    launchRevision: 1,
-    recoverySkipCount: 0,
-    attachedExternalSession: externalSessionAttachment({
-      sourceId: 'gas-city',
-      ...(sessionKey === undefined ? {} : { key: sessionKey }),
-      ...(alias === undefined ? {} : { alias }),
-    }),
-    hostId: memRoot.hostId,
-    workspaceRoot: memRoot,
-    cwd: memRoot,
-    title: 'Shell · main',
-    position: 0,
-    active: true,
-    updatedAt: 1,
-  }
-}
-
-function livePty(id: string): ObservedManagedPty {
-  return {
-    info: {
-      instanceId: `pty-instance-${id}`,
-      id,
-      ownerId: 7,
-      ownerGeneration: 4,
-      hostId: memRoot.hostId,
-      cwd: memRoot,
-      workspaceRoot: memRoot,
-      providerId: shell,
-      capabilities: {
-        sessionIdentity: 'none',
-        exactResume: false,
-        contextPresentation: 'none',
-      },
-      profileId: asHarnessProfileId('plain-shell-default'),
-      pid: 123,
-      startedAt: 1,
-      resumed: false,
-      identityStatus: 'none',
-    },
-    telemetry: undefined,
-  }
-}
-
-function snapshot(base: ReturnType<typeof assemble>): SessionsObservationSnapshot {
-  return { ...base, demandGeneration: 1, revision: 1 }
-}
-
-function titles(source: ReturnType<typeof assemble>): readonly string[] {
-  return source.sessions.map((session) => session.title)
-}
-
-function row(source: ReturnType<typeof assemble>, title: string) {
-  const found = source.sessions.find((session) => session.title === title)
-  if (found === undefined) throw new Error(`no projected session titled ${title}`)
-  return found
-}
-
-function workspaceOf(
-  source: ReturnType<typeof assemble>,
-  title: string,
-): string | undefined {
-  const workspaceId = row(source, title).workspaceId
-  return source.workspaces.find((workspace) => workspace.workspaceId === workspaceId)
-    ?.workspaceName
-}
-
-function projectOf(
-  source: ReturnType<typeof assemble>,
-  title: string,
-): string | undefined {
-  const workspaceId = row(source, title).workspaceId
-  return source.workspaces.find((workspace) => workspace.workspaceId === workspaceId)
-    ?.projectName
-}
-
-function hostCity(
-  overrides: {
-    readonly sessions?: readonly CitySessionFact[]
-    readonly stale?: boolean
-  } = {},
-): HostCitySessions {
-  return {
-    root: memRoot,
-    cityRoot: city,
-    observedAt: 1_700_000_000_000,
-    staleAfterMs: 3_000,
-    stale: overrides.stale === true,
-    sessions: overrides.sessions ?? [
-      fact({
-        sessionKey: 'gc-mem-worker-1',
-        label: 'mem-worker-1',
-        workDir: memPanel,
-        rigRoot: memRoot,
-        provider: 'codex',
-        contextPercent: 41,
-      }),
-      fact({
-        sessionKey: 'gc-mem-worker-2',
-        label: 'mem-worker-2',
-        workDir: memUnknown,
-        rigRoot: memRoot,
-      }),
-      fact({
-        sessionKey: 'gc-polecat-lead',
-        label: 'polecat-lead',
-        tier: 'lead',
-        cityLead: true,
-        rigRoot: polecatRoot,
-        state: 'asleep',
-      }),
-    ],
-  }
-}
-
-function fact(
-  overrides: Partial<CitySessionFact> & {
-    readonly sessionKey: string
-    readonly label: string
-  },
-): CitySessionFact {
-  const state = overrides.state ?? 'active'
-  return {
-    tier: 'worker',
-    attachTarget: overrides.label,
-    ...overrides,
-    state,
-    activity: state === 'active' ? 'active' : 'idle',
-  }
-}
-
-function projectState(): ProjectState {
-  const memProjectId = `project:local:${memRoot.path}`
-  const polecatProjectId = `project:local:${polecatRoot.path}`
-  return {
-    revision: 1,
-    root: memRoot,
-    connectionState: 'connected',
-    watchTier: 'native',
-    activeProjectId: memProjectId,
-    activeWorkspaceId: `workspace:local:${memRoot.path}`,
-    projects: [
-      {
-        id: memProjectId,
-        registeredRoot: memRoot,
-        displayName: 'Memory rig',
-        connectionState: 'connected',
-        watchTier: 'native',
-        activeWorkspaceId: `workspace:local:${memRoot.path}`,
-        workspaces: [
-          workspace(memRoot, 'main', true),
-          workspace(memPanel, 'panel', false),
-        ],
-      },
-      {
-        id: polecatProjectId,
-        registeredRoot: polecatRoot,
-        displayName: 'Polecat rig',
-        connectionState: 'connected',
-        watchTier: 'native',
-        activeWorkspaceId: `workspace:local:${polecatRoot.path}`,
-        workspaces: [workspace(polecatRoot, 'polecat-main', true)],
-      },
-    ],
-  }
-}
-
-function workspace(root: HostPath, name: string, main: boolean) {
-  return {
-    id: `workspace:local:${root.path}`,
-    root,
-    name,
-    main,
-    closed: false,
-    missing: false,
-    repository: true,
-    changedFiles: 0,
-  }
-}
-
-function hostOptions() {
-  return [
-    {
-      hostId: 'local',
-      label: 'Local',
-      kind: 'local' as const,
-      connectionState: 'connected' as const,
-      watchTier: 'native' as const,
-    },
-  ]
-}
-
-function providers() {
-  return [
-    {
-      id: codex,
-      displayName: 'Codex',
-      telemetrySupported: true,
-      sessionKind: 'agent' as const,
-    },
-    {
-      id: shell,
-      displayName: 'Shell',
-      telemetrySupported: false,
-      sessionKind: 'shell' as const,
-    },
-  ]
-}
-
-describe('exact resolution from a projected Gas City row', () => {
-  it('answers what a row stands for and where an attach would land', () => {
-    const identities = createSessionsProjectionIdentityScope()
-    const observation = assembleSessionsObservation({
-      projectState: projectState(),
-      hosts: hostOptions(),
-      providers: providers(),
-      sessions: [],
-      ptys: [],
-      cities: [hostCity()],
-      identities,
-    })
-    const worker = row(observation, 'mem-worker-1')
-    const workspace = observation.workspaces.find(
-      (candidate) => candidate.workspaceId === worker.workspaceId,
-    )!
-
-    expect(
-      resolveSessionsExternalSession({
-        request: {
-          handle: worker.handle,
-          projectionDemandGeneration: 3,
-          sourceRevision: 5,
-        },
-        activeDemandGeneration: 3,
-        sourceRevision: 5,
-        observation,
-        identities,
-      }),
-    ).toEqual({
-      outcome: 'resolved',
-      // The foreign identifier and the city root live here, on main's side of
-      // the boundary, and nowhere in the projection the renderer holds.
-      target: {
-        sourceId: 'gas-city',
-        hostId: memRoot.hostId,
-        key: 'gc-mem-worker-1',
-        attachTarget: 'mem-worker-1',
-        cityRoot: city,
-      },
-      live: false,
-    })
-    expect(
-      resolveSessionsExternalAttach({
-        request: attachRequest(worker.handle, workspace),
-        activeDemandGeneration: 3,
-        sourceRevision: 5,
-        observation,
-        identities,
-        projectState: projectState(),
-      }),
-    ).toMatchObject({
-      outcome: 'resolved',
-      projectId: `project:local:${memRoot.path}`,
-      workspaceId: `workspace:local:${memPanel.path}`,
-      attachTarget: 'mem-worker-1',
-    })
-  })
-
-  it('refuses a row hvir owns outright and a projection that moved on', () => {
-    const identities = createSessionsProjectionIdentityScope()
-    const observation = assembleSessionsObservation({
-      projectState: projectState(),
-      hosts: hostOptions(),
-      providers: providers(),
-      sessions: [ownTerminal('own-shell')],
-      ptys: [],
-      cities: [hostCity()],
-      identities,
-    })
-    const own = row(observation, 'Shell · main')
-    const worker = row(observation, 'mem-worker-1')
-    const workspace = observation.workspaces.find(
-      (candidate) => candidate.workspaceId === worker.workspaceId,
-    )!
-
-    // hvir's own terminal is a session, but not one any supervisor can be asked
-    // about: there is no exact join recorded for it.
-    expect(
-      resolveSessionsExternalSession({
-        request: { handle: own.handle, projectionDemandGeneration: 3, sourceRevision: 5 },
-        activeDemandGeneration: 3,
-        sourceRevision: 5,
-        observation,
-        identities,
-      }),
-    ).toEqual({ outcome: 'unavailable', reason: 'not-projected' })
-    expect(
-      resolveSessionsExternalSession({
-        request: {
-          handle: worker.handle,
-          projectionDemandGeneration: 3,
-          sourceRevision: 4,
-        },
-        activeDemandGeneration: 3,
-        sourceRevision: 5,
-        observation,
-        identities,
-      }),
-    ).toEqual({ outcome: 'unavailable', reason: 'stale-projection' })
-    expect(
-      resolveSessionsExternalAttach({
-        request: attachRequest(own.handle, workspace),
-        activeDemandGeneration: 3,
-        sourceRevision: 5,
-        observation,
-        identities,
-        projectState: projectState(),
-      }),
-    ).toEqual({ outcome: 'unavailable', reason: 'not-projected' })
-  })
-
-  it('mints a single-use ticket so a renderer can attach without the identifier', () => {
-    const registry = new SessionsAttachTicketRegistry()
-    const owner = { id: 7, generation: 4 }
-    const attach = { sourceId: 'gas-city' as const, key: 'gc-mem-worker-1' }
-    const ticket = registry.mint(owner, attach)
-
-    expect(ticket).toMatch(/^[a-f0-9]{32}$/)
-    expect(registry.redeem(owner, ticket)).toEqual(attach)
-    // Spent: a second launch asks for a second ticket.
-    expect(registry.redeem(owner, ticket)).toBeUndefined()
-    // Another renderer, or the same one after a rollover, cannot spend it.
-    const second = registry.mint(owner, attach)
-    expect(registry.redeem({ id: 7, generation: 5 }, second)).toBeUndefined()
-    expect(registry.redeem(owner, 'not-a-ticket')).toBeUndefined()
-  })
-
-  it('drops a ticket nobody redeemed before it went stale', () => {
-    let now = 1_000
-    const registry = new SessionsAttachTicketRegistry({ now: () => now })
-    const owner = { id: 7, generation: 4 }
-    const ticket = registry.mint(owner, { sourceId: 'gas-city', key: 'gc-mem-worker-1' })
-    now += SESSIONS_ATTACH_TICKET_TTL_MS + 1
-
-    expect(registry.redeem(owner, ticket)).toBeUndefined()
-  })
-})
-
-function attachRequest(
-  handle: SessionsTerminalHandle,
-  workspace: SessionsObservationSnapshot['workspaces'][number],
-): SessionsAttachExternalRequest {
-  return {
-    demandGeneration: 3,
-    sourceRevision: 5,
-    handle,
-    projectId: workspace.projectId,
-    workspaceId: workspace.workspaceId,
-    workspaceQualifier: workspace.qualifier,
-  }
-}
-
-/** A terminal hvir launched itself, attached to nothing foreign. */
-function ownTerminal(id: string): OwnedTerminalSession {
-  const { attachedExternalSession: _attached, ...rest } = attachedTerminal(id, 'unused')
-  return rest
-}
-
-function cityEvents(
-  overrides: {
-    readonly stream?: HostCityEvents['stream']
-    readonly reason?: HostCityEvents['reason']
-    readonly pending?: HostCityEvents['pending']
-  } = {},
-): HostCityEvents {
-  return {
-    hostId: memRoot.hostId,
-    cityRoot: city,
-    stream: overrides.stream ?? 'live',
-    ...(overrides.reason === undefined ? {} : { reason: overrides.reason }),
-    observedAt: 1_700_000_000_000,
-    lifecycle: [],
-    pending: overrides.pending ?? [],
-  }
-}
-
-function pendingFor(sessionKey: string, requestId = 'req-1') {
-  return { sessionKey, requestId, kind: 'tool-approval' }
-}
