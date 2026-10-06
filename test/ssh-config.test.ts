@@ -242,6 +242,22 @@ Host *
     ).toThrow('Missing SSH environment variable MISSING_HOME')
   })
 
+  it('rejects inherited environment variables introduced by home expansion', () => {
+    expect(() =>
+      parseSshConfig('Host work\n  IdentityAgent ~/s\n', '/home/${constructor}', {}),
+    ).toThrow('Missing SSH environment variable constructor')
+  })
+
+  it('never resolves inherited object properties introduced by home expansion', () =>
+    hegel.test((testCase) => {
+      const name = testCase.draw(gs.sampledFrom(['constructor', '__proto__', 'toString']))
+      const braced = '${' + name + '}'
+
+      expect(() =>
+        parseSshConfig('Host work\n  IdentityAgent ~/s\n', `/home/${braced}`, {}),
+      ).toThrow(`Missing SSH environment variable ${name}`)
+    }))
+
   it('expands identity-agent tokens exactly once for every alias', () =>
     hegel.test((testCase) => {
       const fragment = testCase
