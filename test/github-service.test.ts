@@ -81,13 +81,27 @@ describe('GitHubService.pulls', () => {
       branchPulls: [{ number: 12, review: 'approved', checks: 'none' }],
     })
     const graphql = exec.mock.calls.find((call) => call[1][1] === 'graphql')
-    expect(graphql?.[1]).toEqual(pullsQueryArgs('acme/widgets', 'feat/panel'))
+    expect(graphql?.[1]).toEqual(pullsQueryArgs('acme/widgets', 'feat/panel', 30))
     expect(graphql?.[2]).toMatchObject({
       cwd: ROOT,
       loginShell: true,
       lane: 'background',
     })
     expect(graphql?.[2]?.timeout).toBeGreaterThan(0)
+  })
+
+  it.each([
+    [undefined, 30],
+    [60, 60],
+    [100, 100],
+    [0, 30],
+    [101, 30],
+    [2.5, 30],
+  ])('requests %s pull requests per list as %s', async (limit, expected) => {
+    const { host, exec } = fakeHost()
+    await service(host).pulls({ root: ROOT, ...(limit === undefined ? {} : { limit }) })
+    const graphql = exec.mock.calls.find((call) => call[1][1] === 'graphql')
+    expect(graphql?.[1]).toEqual(pullsQueryArgs('acme/widgets', 'feat/panel', expected))
   })
 
   it('omits pull requests whose head is the repository default branch', async () => {
@@ -427,12 +441,13 @@ describe('GitHubService.checkouts', () => {
 
 describe('pullsQueryArgs', () => {
   it('passes every value as a raw string field except the boolean', () => {
-    const args = pullsQueryArgs('acme/widgets', '@feat')
+    const args = pullsQueryArgs('acme/widgets', '@feat', 60)
     expect(args).toContain(`query=${PULLS_QUERY}`)
     expect(args).toContain('branch=@feat')
     const flagFor = (value: string) => args[args.indexOf(value) - 1]
     expect(flagFor('branch=@feat')).toBe('-f')
     expect(flagFor('hasBranch=true')).toBe('-F')
+    expect(flagFor('limit=60')).toBe('-F')
     expect(args).toContain('mine=repo:acme/widgets is:pr is:open author:@me')
   })
 })

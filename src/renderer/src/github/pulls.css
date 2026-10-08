@@ -124,6 +124,7 @@
 }
 
 .pulls-detail-button,
+.pulls-more,
 .pulls-feedback-detail button {
   padding: 3px 6px;
   border: 1px solid var(--border-subtle);
@@ -136,17 +137,20 @@
 }
 
 .pulls-detail-button:hover:enabled,
+.pulls-more:hover:enabled,
 .pulls-feedback-detail button:hover:enabled {
   background: var(--surface-hover);
 }
 
 .pulls-detail-button:disabled,
+.pulls-more:disabled,
 .pulls-feedback-detail button:disabled {
   color: var(--text-muted);
   cursor: default;
 }
 
 .pulls-detail-button:focus-visible,
+.pulls-more:focus-visible,
 .pulls-feedback-detail button:focus-visible,
 .pulls-feedback-detail input:focus-visible {
   outline: 1px solid var(--accent);
@@ -334,4 +338,8 @@
   color: var(--text-strong);
   font-size: 10px;
   overflow-wrap: anywhere;
+}
+
+.pulls-more {
+  margin: 8px 10px 0;
 }

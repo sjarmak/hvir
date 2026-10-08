@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 
-import type { HostPath, PullDetail, PullSummary, PullsResponse } from '../../../shared'
+import {
+  PULLS_MAX_LIMIT,
+  PULLS_PAGE_SIZE,
+  type HostPath,
+  type PullDetail,
+  type PullSummary,
+  type PullsResponse,
+} from '../../../shared'
 import { createVisibilityRefresh, type VisibilityRefresh } from '../beads/beads-refresh'
 import {
   checksLabel,
@@ -42,6 +49,8 @@ export function PullsPanel({
   const [detailPull, setDetailPull] = useState<number>()
   const [selectedThreads, setSelectedThreads] = useState<ReadonlySet<string>>(new Set())
   const [copyStatus, setCopyStatus] = useState<string>()
+  const [limit, setLimit] = useState(PULLS_PAGE_SIZE)
+  const limitRef = useRef(PULLS_PAGE_SIZE)
   const detailSerial = useRef(0)
   const requestSerial = useRef(0)
   const refreshController = useRef<VisibilityRefresh | undefined>(undefined)
@@ -59,7 +68,7 @@ export function PullsPanel({
     setLoading(true)
     try {
       const [result, checkoutResult] = await Promise.all([
-        window.hvir.invoke('github:pulls', { root }),
+        window.hvir.invoke('github:pulls', { root, limit: limitRef.current }),
         window.hvir.invoke('github:checkouts', { root }).catch((reason: unknown) => ({
           available: false as const,
           message: reason instanceof Error ? reason.message : String(reason),
@@ -88,6 +97,8 @@ export function PullsPanel({
       controller.dispose()
       refreshController.current = undefined
       requestSerial.current += 1
+      limitRef.current = PULLS_PAGE_SIZE
+      setLimit(PULLS_PAGE_SIZE)
       clearDetail()
       setResponse(undefined)
       setCheckouts(undefined)
@@ -209,7 +220,33 @@ export function PullsPanel({
         {sections.every((section) => section.pulls.length === 0) ? (
           <p className="pulls-empty">Nothing open that is yours or waiting on you.</p>
         ) : null}
+        {response.hasMore ? renderShowMore() : null}
       </>
+    )
+  }
+
+  function renderShowMore(): ReactElement {
+    if (limit >= PULLS_MAX_LIMIT) {
+      return (
+        <p className="pulls-section-note">
+          Showing the first {PULLS_MAX_LIMIT} of each list. Open GitHub for the rest.
+        </p>
+      )
+    }
+    return (
+      <button
+        type="button"
+        className="pulls-more"
+        disabled={loading || !connected}
+        onClick={() => {
+          const next = Math.min(limit + PULLS_PAGE_SIZE, PULLS_MAX_LIMIT)
+          limitRef.current = next
+          setLimit(next)
+          refreshController.current?.request()
+        }}
+      >
+        Show more pull requests
+      </button>
     )
   }
 

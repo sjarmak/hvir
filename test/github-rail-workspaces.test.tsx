@@ -68,6 +68,7 @@ it.each([false, true])(
           branch: 'main',
           branchPulls: [],
           reviewRequested: [],
+          hasMore: false,
           authored: [
             {
               number: 7,

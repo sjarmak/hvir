@@ -11,7 +11,7 @@ fragment pull on PullRequest {
 
 export const PULLS_QUERY = `query(
   $owner: String!, $name: String!, $branch: String!, $hasBranch: Boolean!,
-  $mine: String!, $review: String!
+  $mine: String!, $review: String!, $limit: Int!
 ) {
   viewer { login }
   repository(owner: $owner, name: $name) @include(if: $hasBranch) {
@@ -20,8 +20,8 @@ export const PULLS_QUERY = `query(
       headRefName: $branch, first: 5, orderBy: { field: UPDATED_AT, direction: DESC }
     ) { nodes { ...pull } }
   }
-  mine: search(query: $mine, type: ISSUE, first: 30) { nodes { ...pull } }
-  review: search(query: $review, type: ISSUE, first: 30) { nodes { ...pull } }
+  mine: search(query: $mine, type: ISSUE, first: $limit) { issueCount nodes { ...pull } }
+  review: search(query: $review, type: ISSUE, first: $limit) { issueCount nodes { ...pull } }
 }
 ${PULL_FIELDS}`
 
@@ -46,6 +46,7 @@ export const PULL_DETAIL_QUERY = `query($owner: String!, $name: String!, $number
 export function pullsQueryArgs(
   repo: string,
   branch: string | undefined,
+  limit: number,
 ): readonly string[] {
   const [owner = '', name = ''] = repo.split('/')
   return [
@@ -65,6 +66,8 @@ export function pullsQueryArgs(
     `mine=repo:${repo} is:pr is:open author:@me`,
     '-f',
     `review=repo:${repo} is:pr is:open review-requested:@me`,
+    '-F',
+    `limit=${limit}`,
   ]
 }
 

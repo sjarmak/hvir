@@ -72,6 +72,7 @@ export interface PullsSnapshot {
   readonly branchPulls: readonly PullSummary[]
   readonly authored: readonly PullSummary[]
   readonly reviewRequested: readonly PullSummary[]
+  readonly hasMore: boolean
 }
 
 export type PullsUnavailableReason =
@@ -110,8 +111,12 @@ export interface PullWorktreeRequest {
   readonly number: number
 }
 
+export const PULLS_PAGE_SIZE = 30
+export const PULLS_MAX_LIMIT = 100
+
 export interface PullsRequest {
   readonly root: HostPath
+  readonly limit?: number
 }
 
 export interface PullsProbeRequest {

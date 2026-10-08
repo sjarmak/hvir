@@ -35,6 +35,7 @@ function snapshot(overrides: Partial<PullsSnapshot> = {}): PullsSnapshot {
     branchPulls: [],
     authored: [],
     reviewRequested: [],
+    hasMore: false,
     ...overrides,
   }
 }

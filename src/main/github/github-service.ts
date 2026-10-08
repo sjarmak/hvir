@@ -2,6 +2,8 @@ import {
   hostPathEquals,
   isHostPathShape,
   LOCAL_HOST_ID,
+  PULLS_MAX_LIMIT,
+  PULLS_PAGE_SIZE,
   type HostPath,
   type PullsProbeResponse,
   type PullsRequest,
@@ -56,6 +58,15 @@ type GhResult =
 type RepoResult =
   | { readonly ok: true; readonly repo: string }
   | { readonly ok: false; readonly unavailable: PullsUnavailable }
+
+function pullsLimit(requested: unknown): number {
+  return typeof requested === 'number' &&
+    Number.isInteger(requested) &&
+    requested >= 1 &&
+    requested <= PULLS_MAX_LIMIT
+    ? requested
+    : PULLS_PAGE_SIZE
+}
 
 function errorMessage(reason: unknown): string {
   return reason instanceof Error ? reason.message : String(reason)
@@ -163,7 +174,7 @@ export class GitHubService {
   }
 
   async pullsForProject(
-    _req: PullsRequest,
+    req: PullsRequest,
     project: { readonly host: ProjectHost; readonly root: HostPath },
     lane: ExecLane = 'background',
   ): Promise<PullsResponse> {
@@ -184,7 +195,7 @@ export class GitHubService {
     const result = await this.gh(
       host,
       root,
-      pullsQueryArgs(repo.repo, branch),
+      pullsQueryArgs(repo.repo, branch, pullsLimit(req.limit)),
       MAX_OUTPUT_BYTES,
       lane,
     )
@@ -199,6 +210,7 @@ export class GitHubService {
         branchPulls: parsed.branchPulls,
         authored: parsed.authored,
         reviewRequested: parsed.reviewRequested,
+        hasMore: parsed.hasMore,
       }
     } catch (reason) {
       return { available: false, reason: 'error', message: errorMessage(reason) }

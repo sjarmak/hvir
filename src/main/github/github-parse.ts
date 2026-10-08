@@ -20,6 +20,7 @@ export interface ParsedPulls {
   readonly branchPulls: readonly PullSummary[]
   readonly authored: readonly PullSummary[]
   readonly reviewRequested: readonly PullSummary[]
+  readonly hasMore: boolean
 }
 
 export function parsePullDetailOutput(
@@ -239,6 +240,11 @@ function pullsOf(
   })
 }
 
+function searchHasMore(connection: unknown): boolean {
+  const total = asRecord(connection)?.['issueCount']
+  return typeof total === 'number' && total > nodesOf(connection).length
+}
+
 export function parsePullsOutput(
   stdout: string,
   localRepos: ReadonlySet<string>,
@@ -269,6 +275,7 @@ export function parsePullsOutput(
           }),
     authored: pullsOf(data['mine'], viewer),
     reviewRequested: pullsOf(data['review'], viewer),
+    hasMore: searchHasMore(data['mine']) || searchHasMore(data['review']),
   }
 }
 

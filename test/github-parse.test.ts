@@ -231,6 +231,25 @@ describe('parsePullsOutput', () => {
     ])
   })
 
+  it.each([
+    [{ issueCount: 1 }, { issueCount: 0 }, false],
+    [{ issueCount: 2 }, { issueCount: 0 }, true],
+    [{ issueCount: 1 }, { issueCount: 3 }, true],
+    [{}, {}, false],
+  ])(
+    'reports more matches when a search total exceeds its page: %o %o',
+    (mine, review, more) => {
+      const parsed = parse(
+        graphqlOutput({
+          viewer: { login: 'v' },
+          mine: { ...mine, nodes: [prNode()] },
+          review: { ...review, nodes: [] },
+        }),
+      )
+      expect(parsed.hasMore).toBe(more)
+    },
+  )
+
   it('maps rollup, review and state vocabularies', () => {
     const pull = (overrides: Record<string, unknown>) =>
       parse(

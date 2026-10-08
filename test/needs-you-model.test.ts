@@ -50,6 +50,7 @@ const pulls = (extra: Partial<PullsSnapshot> = {}): PullsSnapshot => ({
   authored: [],
   reviewRequested: [],
   branchPulls: [],
+  hasMore: false,
   ...extra,
 })
 const source = (

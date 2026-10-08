@@ -51,6 +51,7 @@ const source = (host: string, path: string, observedAt = 1): NeedsYouSourceSnaps
       available: true,
       repo: 'org/repo',
       viewer: 'me',
+      hasMore: false,
       branchPulls: [],
       authored: [],
       reviewRequested: [
@@ -192,6 +193,7 @@ describe('Needs you source identities', () => {
           authored: [],
           reviewRequested: [],
           branchPulls: [],
+          hasMore: false,
         },
       },
     }

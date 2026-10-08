@@ -58,6 +58,7 @@ beforeEach(() => {
     branchPulls: [pull(1, { checks: 'failing', openFeedback: 2, author: 'stephanie' })],
     authored: [pull(1), pull(3, { draft: true })],
     reviewRequested: [pull(2, { review: 'review-required' })],
+    hasMore: false,
   }
   detailResponse = {
     available: true,
@@ -210,6 +211,31 @@ describe('PullsPanel', () => {
     render()
     await flush()
     expect(host.textContent).toContain('No pull request for feat/panel.')
+  })
+
+  it('raises the pull request limit a page at a time while GitHub has more', async () => {
+    const invoke = (window.hvir as unknown as { invoke: ReturnType<typeof vi.fn> }).invoke
+    const limits = (): readonly unknown[] =>
+      invoke.mock.calls
+        .filter((call) => call[0] === 'github:pulls')
+        .map((call) => (call[1] as { limit?: number }).limit)
+    response = { ...response, hasMore: true } as PullsResponse
+    render()
+    await flush()
+    expect(limits()).toEqual([30])
+    for (const expected of [60, 90, 100]) {
+      act(() => host.querySelector<HTMLButtonElement>('.pulls-more')?.click())
+      await flush()
+      expect(limits().at(-1)).toBe(expected)
+    }
+    expect(host.querySelector('.pulls-more')).toBeNull()
+    expect(host.textContent).toContain('Showing the first 100 of each list.')
+  })
+
+  it('offers no more pull requests when GitHub returned every match', async () => {
+    render()
+    await flush()
+    expect(host.querySelector('.pulls-more')).toBeNull()
   })
 
   it('does not query while hidden and polls while visible', async () => {
