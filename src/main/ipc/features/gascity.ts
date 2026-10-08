@@ -6,6 +6,6 @@ type GasCityIpcDeps = Pick<IpcDeps, 'gascity' | 'getExternalAttention'>
 export function registerGasCityIpc(ipc: IpcRegistrar, deps: GasCityIpcDeps): void {
   ipc.handle('gascity:crew', (req) => deps.gascity.crew(req))
   ipc.handle('gascity:probe', (req) => deps.gascity.probe(req.root))
-  ipc.handle('gascity:analytics-config', () => deps.gascity.analyticsConfig())
+  ipc.handle('gascity:analytics-config', (req) => deps.gascity.analyticsConfig(req))
   ipc.handle('gascity:attention', () => deps.getExternalAttention())
 }

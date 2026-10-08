@@ -60,10 +60,14 @@ export function agentName(
   rig: string,
   session: Pick<GasCitySession, 'alias' | 'name'>,
 ): string | undefined {
-  const source = session.alias ?? session.name
-  const agent = source.slice(source.lastIndexOf('/') + 1)
+  const agent = agentBasename(session)
   if (!SAFE_COMPONENT.test(rig) || !SAFE_COMPONENT.test(agent)) return undefined
   return `${rig}.${agent}`
+}
+
+export function agentBasename(session: Pick<GasCitySession, 'alias' | 'name'>): string {
+  const source = session.alias ?? session.name
+  return source.slice(source.lastIndexOf('/') + 1)
 }
 
 export function sessionTraceUrl(

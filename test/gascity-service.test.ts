@@ -181,7 +181,12 @@ describe('GasCityService', () => {
       'session list': execResult(
         0,
         JSON.stringify([
-          { id: 'gc-1', name: 'mem-pl', state: 'active', work_dir: '/home/dev/city/rigs/mem' },
+          {
+            id: 'gc-1',
+            name: 'mem-pl',
+            state: 'active',
+            work_dir: '/home/dev/city/rigs/mem',
+          },
         ]),
       ),
       'rig list': execResult(1, '', 'boom'),
@@ -200,7 +205,12 @@ describe('GasCityService', () => {
         'session list': execResult(
           0,
           JSON.stringify([
-            { id: 'gc-1', name: 'aoa-worker-elm', state: 'active', work_dir: '/elsewhere' },
+            {
+              id: 'gc-1',
+              name: 'aoa-worker-elm',
+              state: 'active',
+              work_dir: '/elsewhere',
+            },
           ]),
         ),
         'rig list': RIG_LIST,
@@ -479,28 +489,74 @@ rig = "mem"
 })
 
 describe('analyticsConfig', () => {
-  it('returns the overlay defaults when built without an environment', () => {
-    const { host, exec } = stubHost({})
-    expect(service(host).analyticsConfig()).toEqual({
-      honeycomb: { team: 'steph.jarmak', environment: 'test', dataset: 'gas-city-agent' },
-      omni: {
-        baseUrl: 'https://sjarmak.omniapp.co',
-        dashboardId: 'gas-city-factory-rig-health',
-        rigFilterId: 'QMdNGURu',
-      },
+  const CITY_MARKER = '/home/dev/city/city.toml'
+
+  function cityHost(files: Readonly<Record<string, string>>) {
+    const { host, exec } = stubHost(
+      { 'rig list': execResult(0, JSON.stringify([{ name: 'mem', path: ROOT.path }])) },
+      [CITY_MARKER],
+    )
+    const readTextFilePrefix = vi.fn((path: HostPath) => {
+      const content = files[path.path]
+      return content === undefined
+        ? Promise.reject(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))
+        : Promise.resolve({
+            content,
+            byteLength: content.length,
+            lineCount: 1,
+            complete: true,
+          })
     })
-    expect(exec).not.toHaveBeenCalled()
+    return { host: { ...host, exec, readTextFilePrefix } as unknown as ProjectHost }
+  }
+
+  function configured(host: ProjectHost, env: Readonly<Record<string, string>> = {}) {
+    return new GasCityService({ getProject: () => ({ host, root: ROOT }), env })
+  }
+
+  it('shows neither surface for a city that opted into neither', async () => {
+    const { host } = cityHost({})
+    expect(await configured(host).analyticsConfig({ root: ROOT })).toEqual({})
   })
 
-  it('reads the injected environment and never touches the host', () => {
-    const { host, exec } = stubHost({})
-    const configured = new GasCityService({
-      getProject: () => ({ host, root: ROOT }),
-      env: { HONEYCOMB_TEAM: 'acme', OMNI_BASE_URL: 'off' },
+  it('shows each surface the city opted into, with the gated agents', async () => {
+    const { host } = cityHost({
+      '/home/dev/city/.gc/honeycomb-tracing-seats': 'mayor:claude\n*:codex\n',
+      '/home/dev/city/.gc/omni-analytics':
+        'https://sjarmak.omniapp.co\ndashboard=city-activity\n',
     })
-    expect(configured.analyticsConfig()).toEqual({
-      honeycomb: { team: 'acme', environment: 'test', dataset: 'gas-city-agent' },
+    expect(await configured(host).analyticsConfig({ root: ROOT })).toEqual({
+      honeycomb: {
+        team: 'steph.jarmak',
+        environment: 'test',
+        dataset: 'gas-city-agent',
+        agents: ['mayor', '*'],
+      },
+      omni: { baseUrl: 'https://sjarmak.omniapp.co', dashboardId: 'city-activity' },
     })
-    expect(exec).not.toHaveBeenCalled()
+  })
+
+  it('lets the environment switch a surface off in every city', async () => {
+    const { host } = cityHost({
+      '/home/dev/city/.gc/honeycomb-tracing-seats': '*:claude\n',
+      '/home/dev/city/.gc/omni-analytics': 'https://sjarmak.omniapp.co',
+    })
+    expect(
+      await configured(host, {
+        HONEYCOMB_TEAM: 'off',
+        OMNI_BASE_URL: 'off',
+      }).analyticsConfig({
+        root: ROOT,
+      }),
+    ).toEqual({})
+  })
+
+  it('refuses a workspace other than the active one', async () => {
+    const { host } = cityHost({})
+    await expect(
+      configured(host).analyticsConfig({
+        root: hostPath(asHostId('local'), '/elsewhere'),
+      }),
+    ).rejects.toThrow(/active workspace/)
   })
 })

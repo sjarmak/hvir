@@ -2,12 +2,19 @@ import type { ReactElement } from 'react'
 
 import {
   crewActivityBand,
+  gateTracesAgent,
   type BeadIssue,
   type GasCityAnalyticsConfig,
   type GasCityCrew,
   type GasCityCrewResponse,
 } from '../../../shared'
-import { agentName, omniAnalyticsUrl, sessionTraceUrl, traceLinkTitle } from './analytics-links'
+import {
+  agentBasename,
+  agentName,
+  omniAnalyticsUrl,
+  sessionTraceUrl,
+  traceLinkTitle,
+} from './analytics-links'
 import { buildCrewView, type CrewCard, type CrewGroup, type HeldBead } from './crew-model'
 import {
   GAS_CITY_ACTIONS,
@@ -28,11 +35,7 @@ interface CrewSectionProps {
   readonly issues: readonly BeadIssue[]
   readonly collapsed: boolean
   readonly onToggle: () => void
-  readonly onAction: (
-    action: GasCityAction,
-    target: string,
-    sessionId?: string,
-  ) => void
+  readonly onAction: (action: GasCityAction, target: string, sessionId?: string) => void
   /** When set, every session action is disabled and this says why. */
   readonly actionsDisabledHint?: string
   /** Focus a held bead's row in the bead sections; held chips are inert without it. */
@@ -84,10 +87,6 @@ export function CrewSection({
 
   const view = buildCrewView(response, issues)
   if (view.total === 0) return null
-  // Only a rig-scoped crew has one rig to filter Analytics on. A city-scoped
-  // response still carries the HQ rig it was resolved from, which would pin the
-  // dashboard on the wrong rig, so the city view gets no Analytics link; each
-  // member's Trace link carries its own rig instead.
   const rig = response.scope === 'rig' ? response.rigName : undefined
 
   return (
@@ -106,7 +105,7 @@ export function CrewSection({
           </span>
           <span className="beads-section-count">{view.total}</span>
         </button>
-        {analytics?.omni && rig !== undefined ? (
+        {analytics?.omni ? (
           <a
             className="crew-analytics"
             href={omniAnalyticsUrl(analytics.omni, rig)}
@@ -123,7 +122,11 @@ export function CrewSection({
           {view.leads.map((card) => renderCard(card, true))}
           {view.pools.map((group) => renderPool(group))}
           {view.internals.length > 0
-            ? renderPool({ key: 'internals', label: 'orchestration', cards: view.internals })
+            ? renderPool({
+                key: 'internals',
+                label: 'orchestration',
+                cards: view.internals,
+              })
             : null}
           {renderUnaccounted(response)}
           {response.tierSource === 'config' ? (
@@ -161,7 +164,8 @@ export function CrewSection({
             {unmatched.length > UNMATCHED_SHOWN
               ? ` +${unmatched.length - UNMATCHED_SHOWN}`
               : ''}{' '}
-            — no named session or agent describes {unmatched.length === 1 ? 'it' : 'them'}.
+            — no named session or agent describes {unmatched.length === 1 ? 'it' : 'them'}
+            .
           </p>
         ) : null}
       </div>
@@ -201,9 +205,15 @@ export function CrewSection({
           disabled={actionsBlocked}
           onClick={() => onAction('attach', member.target, member.session?.id)}
         >
-          {lead ? <span className="crew-pin" aria-hidden="true">📌</span> : null}
+          {lead ? (
+            <span className="crew-pin" aria-hidden="true">
+              📌
+            </span>
+          ) : null}
           <span className="crew-name">{member.label}</span>
-          <span className={`crew-state crew-state-${crewActivityBand(state)}`}>{state}</span>
+          <span className={`crew-state crew-state-${crewActivityBand(state)}`}>
+            {state}
+          </span>
           {member.session?.contextPct !== undefined ? (
             <span className="crew-context">{Math.round(member.session.contextPct)}%</span>
           ) : null}
@@ -212,7 +222,9 @@ export function CrewSection({
           <div className="crew-bead" title={bead.title}>
             <span className="crew-bead-title">{bead.title}</span>
             {bead.formula ? <span className="crew-bead-tag">{bead.formula}</span> : null}
-            {bead.molecule ? <span className="crew-bead-tag">{bead.molecule}</span> : null}
+            {bead.molecule ? (
+              <span className="crew-bead-tag">{bead.molecule}</span>
+            ) : null}
           </div>
         ) : null}
         {card.held.length > 0 ? renderHeld(card.held) : null}
@@ -273,7 +285,12 @@ export function CrewSection({
    * ever opens a query gas-city cannot match.
    */
   function renderTrace({ member }: CrewCard): ReactElement | null {
-    if (!analytics?.honeycomb || !member.session || member.traceRig === undefined) {
+    if (
+      !analytics?.honeycomb ||
+      !member.session ||
+      member.traceRig === undefined ||
+      !gateTracesAgent(analytics.honeycomb, agentBasename(member.session))
+    ) {
       return null
     }
     const href = sessionTraceUrl(analytics.honeycomb, member.traceRig, member.session)
@@ -297,4 +314,3 @@ function scopeHint(scope: 'city' | 'rig'): string {
     ? 'Orchestration workspace: every rig’s lead and every active worker'
     : 'Rig workspace: this rig’s crew plus the city’s leads'
 }
-

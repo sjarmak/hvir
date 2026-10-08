@@ -1,8 +1,12 @@
 import {
-  analyticsConfigFromEnv,
+  analyticsConfigFor,
+  CITY_OMNI_FILE,
+  CITY_TRACING_GATE_FILE,
   hostPathEquals,
+  joinHostPath,
   isHostPathShape,
   type GasCityAnalyticsConfig,
+  type GasCityAnalyticsConfigRequest,
   type GasCityCrewRequest,
   type GasCityCrewResponse,
   type GasCityProbeResponse,
@@ -100,12 +104,21 @@ export class GasCityService {
     return { hasCity: await this.reader.inCity(this.activeProject(requestedRoot)) }
   }
 
-  /**
-   * Where the Honeycomb and Omni links point. Pure over the environment: no
-   * exec, no workspace, so no `activeProject` guard. Never carries a key.
-   */
-  analyticsConfig(): GasCityAnalyticsConfig {
-    return analyticsConfigFromEnv(this.deps.env ?? {})
+  async analyticsConfig(
+    req: GasCityAnalyticsConfigRequest,
+  ): Promise<GasCityAnalyticsConfig> {
+    const target = this.activeProject(req.root)
+    const { cityRoot } = await this.reader.context(target, false)
+    if (cityRoot === undefined) return {}
+    const [tracingSeats, omniCity] = await Promise.all(
+      [CITY_TRACING_GATE_FILE, CITY_OMNI_FILE].map((file) =>
+        readCityFile(target, joinHostPath(cityRoot, file)),
+      ),
+    )
+    return analyticsConfigFor(this.deps.env ?? {}, {
+      ...(tracingSeats === undefined ? {} : { tracingSeats }),
+      ...(omniCity === undefined ? {} : { omniCity }),
+    })
   }
 
   /**
@@ -122,7 +135,31 @@ export class GasCityService {
   }
 }
 
-function failure(reason: GasCityUnavailable['reason'], cause: unknown): GasCityUnavailable {
+const CITY_FILE_MAX_BYTES = 16 * 1024
+
+async function readCityFile(
+  { host }: GasCityTarget,
+  path: HostPath,
+): Promise<string | undefined> {
+  try {
+    const read = await host.readTextFilePrefix(path, CITY_FILE_MAX_BYTES)
+    return read.complete ? read.content : undefined
+  } catch (reason) {
+    if (!isMissing(reason))
+      console.warn(`[gascity] ${path.path} unreadable; link hidden`, reason)
+    return undefined
+  }
+}
+
+function isMissing(reason: unknown): boolean {
+  const code = (reason as { code?: unknown } | null)?.code
+  return code === 'ENOENT' || code === 2 || /no such file/i.test(String(reason))
+}
+
+function failure(
+  reason: GasCityUnavailable['reason'],
+  cause: unknown,
+): GasCityUnavailable {
   return {
     available: false,
     reason,

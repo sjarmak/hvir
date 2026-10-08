@@ -1,16 +1,11 @@
+import type { HostPath } from './host-path'
+
 /**
  * Overlay-only defaults (feat/beads-panel). The team slug, environment, dataset,
  * Omni origin, dashboard id and rig filter id below are Honeycomb/Omni UI path
  * segments for Stephanie's workspace, not secrets and not upstream hvir
  * configuration; override or disable through the environment. No API key is
  * ever read here.
- *
- * One absence rule, applied to every variable: unset or blank means "use the
- * overlay default", so a fresh shell shows both surfaces; an explicit value that
- * fails validation, or the literal `off`, hides that surface (its config field
- * is undefined and the panel renders no link). That is the "not configured"
- * degrade path. `off` is spelled out because it would otherwise pass the
- * path-segment rule and turn into a Honeycomb 404 instead of a hidden link.
  */
 
 /** Where the Honeycomb query UI lives for the traced dataset. */
@@ -29,13 +24,35 @@ export interface OmniLinkConfig {
   readonly rigFilterId?: string
 }
 
+export interface CityTracingGate {
+  readonly agents: readonly string[]
+}
+
 /** A surface absent here is hidden in the panel. */
 export interface GasCityAnalyticsConfig {
-  readonly honeycomb?: HoneycombLinkConfig
+  readonly honeycomb?: HoneycombLinkConfig & CityTracingGate
   readonly omni?: OmniLinkConfig
 }
 
-export type GasCityAnalyticsConfigRequest = Record<string, never>
+export interface GasCityAnalyticsConfigRequest {
+  readonly root: HostPath
+}
+
+export interface CityAnalyticsFiles {
+  readonly tracingSeats?: string
+  readonly omniCity?: string
+}
+
+export interface OmniCityFile {
+  readonly origin: string
+  readonly dashboardId?: string
+  readonly rigFilterId?: string
+}
+
+const OMNI_CITY_KEYS = { dashboard: 'dashboardId', rig_filter: 'rigFilterId' } as const
+
+export const CITY_TRACING_GATE_FILE = '.gc/honeycomb-tracing-seats'
+export const CITY_OMNI_FILE = '.gc/omni-analytics'
 
 export const HONEYCOMB_LINK_DEFAULTS: HoneycombLinkConfig = {
   team: 'steph.jarmak',
@@ -136,8 +153,74 @@ function omniFromEnv(env: Env): OmniLinkConfig | undefined {
   }
 }
 
-/** Pure: the environment in, the link configuration out. Never reads a key. */
-export function analyticsConfigFromEnv(env: Env): GasCityAnalyticsConfig {
+const GATE_LINE = /^(\*|[A-Za-z0-9_.-]+):(claude|nebius|codex)$/
+
+export function parseTracingGate(text: string): CityTracingGate | undefined {
+  const lines = text.endsWith('\n') ? text.slice(0, -1).split('\n') : text.split('\n')
+  const agents: string[] = []
+  for (const line of lines) {
+    const match = GATE_LINE.exec(line)
+    if (match === null) return undefined
+    agents.push(match[1] as string)
+  }
+  return agents.length === 0 ? undefined : { agents: [...new Set(agents)] }
+}
+
+export function gateTracesAgent(gate: CityTracingGate, agent: string): boolean {
+  return gate.agents.includes('*') || gate.agents.includes(agent)
+}
+
+export function parseOmniCityFile(text: string): OmniCityFile | undefined {
+  const [origin, ...settings] = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line !== '')
+  if (origin === undefined) return undefined
+  const fields: { dashboardId?: string; rigFilterId?: string } = {}
+  for (const line of settings) {
+    const [key, value, ...extra] = line.split('=').map((part) => part.trim())
+    const field = OMNI_CITY_KEYS[key as keyof typeof OMNI_CITY_KEYS]
+    if (field === undefined || value === undefined || extra.length > 0) return undefined
+    if (fields[field] !== undefined || !SAFE_COMPONENT.test(value)) return undefined
+    fields[field] = value
+  }
+  return { origin, ...fields }
+}
+
+export function analyticsConfigFor(
+  env: Env,
+  files: CityAnalyticsFiles,
+): GasCityAnalyticsConfig {
+  const gate =
+    files.tracingSeats === undefined ? undefined : parseTracingGate(files.tracingSeats)
+  const honeycomb = gate === undefined ? undefined : honeycombFromEnv(env)
+  const city =
+    files.omniCity === undefined ? undefined : parseOmniCityFile(files.omniCity)
+  const omni =
+    city === undefined || isOff(readVar(env, 'OMNI_BASE_URL'))
+      ? undefined
+      : omniFromEnv({
+          ...env,
+          OMNI_BASE_URL: city.origin,
+          ...(city.dashboardId === undefined
+            ? {}
+            : {
+                OMNI_DASHBOARD_ID: city.dashboardId,
+                OMNI_RIG_FILTER_ID: city.rigFilterId ?? OFF,
+              }),
+        })
+  return {
+    ...(honeycomb === undefined || gate === undefined
+      ? {}
+      : { honeycomb: { ...honeycomb, ...gate } }),
+    ...(omni === undefined ? {} : { omni }),
+  }
+}
+
+export function analyticsConfigFromEnv(env: Env): {
+  readonly honeycomb?: HoneycombLinkConfig
+  readonly omni?: OmniLinkConfig
+} {
   const honeycomb = honeycombFromEnv(env)
   const omni = omniFromEnv(env)
   return {

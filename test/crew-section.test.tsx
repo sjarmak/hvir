@@ -586,8 +586,13 @@ describe('CrewSection observability links', () => {
 
   const noop = (): void => undefined
   const analytics: GasCityAnalyticsConfig = {
-    honeycomb: { team: 'steph.jarmak', environment: 'test', dataset: 'gas-city-agent' },
-    omni: { baseUrl: 'https://sjarmak.omniapp.co' },
+    honeycomb: {
+      team: 'steph.jarmak',
+      environment: 'test',
+      dataset: 'gas-city-agent',
+      agents: ['*'],
+    },
+    omni: { baseUrl: 'https://sjarmak.omniapp.co', rigFilterId: 'QMdNGURu' },
   }
 
   /** The opening tags of every anchor whose text is exactly `label`. */
@@ -613,7 +618,12 @@ describe('CrewSection observability links', () => {
       response: crew([
         member({
           traceRig: 'mem',
-          session: { id: 'gc-1', name: 'polecat', state: 'active', template: 'mem/worker' },
+          session: {
+            id: 'gc-1',
+            name: 'polecat',
+            state: 'active',
+            template: 'mem/worker',
+          },
         }),
       ]),
       issues: [],
@@ -677,20 +687,40 @@ describe('CrewSection observability links', () => {
     expect(anchors(none, 'Trace')).toHaveLength(0)
   })
 
-  it('keeps Trace but drops Analytics for a city-scoped crew', () => {
-    // gascity-service resolves the city root through a rig, so a city-scoped
-    // response still carries rigName; the Omni filter would pin every member on
-    // it, but each member's own trace rig still names the right spans.
+  it('gives a city-scoped crew an unfiltered Analytics link and per-rig Trace', () => {
     const response = base().response as GasCityCrew
     const markup = render(
       base({ response: { ...response, scope: 'city', rigName: 'hq' } }),
     )
-    expect(anchors(markup, 'Analytics')).toHaveLength(0)
+    const [analyticsTag] = anchors(markup, 'Analytics')
+    expect(hrefOf(analyticsTag as string)).toBe('https://sjarmak.omniapp.co')
     const [traceTag] = anchors(markup, 'Trace')
     expect(filtersOf(hrefOf(traceTag as string))).toEqual({
       'gen_ai.agent.name': 'mem.polecat',
       'gc.rig': 'mem',
     })
+  })
+
+  it('renders Trace only for members the city tracing gate names', () => {
+    const gated = (agents: readonly string[]) =>
+      anchors(
+        render(
+          base({
+            analytics: {
+              ...analytics,
+              honeycomb: {
+                ...(analytics.honeycomb as NonNullable<
+                  GasCityAnalyticsConfig['honeycomb']
+                >),
+                agents,
+              },
+            },
+          }),
+        ),
+        'Trace',
+      )
+    expect(gated(['polecat'])).toHaveLength(1)
+    expect(gated(['mayor'])).toHaveLength(0)
   })
 
   it('links the city lead under the rig the crew derived for it', () => {

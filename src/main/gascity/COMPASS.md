@@ -70,9 +70,14 @@ pack-stamped lead that a rig override suspended drops out, leaving the hand-defi
 - **`src/renderer/src/beads/gascity-commands.ts`** — the gc command vocabulary
   (attach / peek / reset / handoff) and the one place a target is shell-quoted.
 - **`src/renderer/src/beads/crew-model.ts`** — the bead join and tier grouping, pure.
-- **`src/shared/gascity-analytics.ts`** — the non-secret Honeycomb / Omni link configuration,
-  read from the main-process environment (`gascity:analytics-config`). Overlay-only defaults
-  live here under an explicit header; no API key is ever read.
+- **`src/shared/gascity-analytics.ts`** — the non-secret Honeycomb / Omni link configuration
+  (`gascity:analytics-config`). The main-process environment says where each surface lives or
+  turns it off everywhere; the city opts in per surface. Honeycomb needs a valid
+  `<city>/.gc/honeycomb-tracing-seats` (gas-city's own tracing gate, parsed with its rules), and
+  Trace renders only for members that gate names. Omni needs `<city>/.gc/omni-analytics`: the Omni
+  origin on the first line, then optional `dashboard=<id>` and `rig_filter=<id>` lines naming
+  the city's own dashboard. Origin alone keeps the fleet rig-health dashboard. A city-scoped crew gets the Analytics link without a rig filter.
+  Overlay-only defaults live here under an explicit header; no API key is ever read.
 - **`src/renderer/src/beads/analytics-links.ts`** — pure URL builders for the Trace and
   Analytics links; the one place the gas-city identity facts below are encoded.
 

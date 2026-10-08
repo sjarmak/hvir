@@ -106,7 +106,7 @@ export function BeadsPanel({
     hidden,
     includeInternals: showInternals,
   })
-  const analytics = useAnalyticsConfig(connected && !hidden)
+  const analytics = useAnalyticsConfig(root, connected && !hidden)
   // The store decides the work-id hash, so no store known means no link.
   const store = beadStore(crew.response?.available === true ? crew.response : undefined)
   const traceScope: BeadTraceScope | undefined =
