@@ -61,10 +61,18 @@ export interface WorkspaceCoordinatorOptions {
     callbacks: ProjectWatchCallbacks,
   ) => WorkspaceWatchPort
   readonly shouldPoll?: () => boolean
+  readonly now?: () => number
   readonly onError?: (message: string, error: unknown) => void
 }
 
+export const BACKGROUND_ACTIVITY_INTERVAL_MS = 30_000
+
 type RefreshMode = 'full' | 'passive'
+
+interface WorkspaceRevision {
+  readonly head?: string
+  readonly branch?: string
+}
 
 interface RefreshRecord {
   readonly generation: number
@@ -81,6 +89,7 @@ export class WorkspaceCoordinator {
   private readonly refreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly projectGenerations = new Map<string, number>()
   private readonly suspendedPassiveActivity = new Map<string, Set<string>>()
+  private readonly activitySampledAt = new Map<string, Map<string, number>>()
   private watch?: WorkspaceWatchPort
   private watchGeneration = 0
   private watchInterestCache: ProjectWatchInterestCache = new Map()
@@ -226,6 +235,7 @@ export class WorkspaceCoordinator {
 
   invalidateProject(projectId: string): void {
     this.projectGenerations.set(projectId, this.projectGeneration(projectId) + 1)
+    this.activitySampledAt.delete(projectId)
     const timer = this.refreshTimers.get(projectId)
     if (timer) clearTimeout(timer)
     this.refreshTimers.delete(projectId)
@@ -317,13 +327,26 @@ export class WorkspaceCoordinator {
       ]),
     )
     const suspended = this.suspendedFor(projectId)
+    const sampledAt = this.sampledAtFor(projectId)
     const presentIds = new Set(present.map((workspace) => workspace.id))
     for (const workspaceId of suspended) {
       if (!presentIds.has(workspaceId)) suspended.delete(workspaceId)
     }
+    for (const workspaceId of sampledAt.keys()) {
+      if (!presentIds.has(workspaceId)) sampledAt.delete(workspaceId)
+    }
+    const now = this.options.now?.() ?? Date.now()
     const targets =
       mode === 'full'
-        ? present
+        ? present.filter((workspace) =>
+            this.dueForFullSample(
+              projectId,
+              workspace,
+              previous.get(workspace.id),
+              sampledAt.get(workspace.id),
+              now,
+            ),
+          )
         : present.filter((workspace) => {
             if (!workspace.closed) return false
             const prior = previous.get(workspace.id)
@@ -349,12 +372,38 @@ export class WorkspaceCoordinator {
       if (!this.isCurrent(projectId, generation)) return this.options.registry.state()
     }
     if (activity.size === 0) return this.options.registry.state()
+    for (const workspaceId of activity.keys()) sampledAt.set(workspaceId, now)
     const state = await this.options.registry.updateWorkspaceActivity(projectId, activity)
     for (const [workspaceId, result] of activity) {
       if (result.changedFiles > 0) suspended.add(workspaceId)
       else suspended.delete(workspaceId)
     }
     return state
+  }
+
+  private dueForFullSample(
+    projectId: string,
+    workspace: RegisteredProjectState['workspaces'][number],
+    previous: WorkspaceRevision | undefined,
+    sampledAt: number | undefined,
+    now: number,
+  ): boolean {
+    const active = this.options.registry.active
+    if (active.projectId === projectId && active.workspaceId === workspace.id) return true
+    if (sampledAt === undefined) return true
+    if (previous === undefined) return true
+    if (previous.head !== workspace.head || previous.branch !== workspace.branch) {
+      return true
+    }
+    return now - sampledAt >= BACKGROUND_ACTIVITY_INTERVAL_MS
+  }
+
+  private sampledAtFor(projectId: string): Map<string, number> {
+    const existing = this.activitySampledAt.get(projectId)
+    if (existing) return existing
+    const created = new Map<string, number>()
+    this.activitySampledAt.set(projectId, created)
+    return created
   }
 
   private poll(): void {
