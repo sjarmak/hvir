@@ -6,6 +6,7 @@ import type { ProjectHost } from '../src/main/project-host'
 import {
   BACKGROUND_ACTIVITY_INTERVAL_MS,
   WorkspaceCoordinator,
+  type WorkspaceDiscoveryPort,
   type WorkspaceRegistryPort,
   type WorkspaceWatchPort,
 } from '../src/main/workspace-coordinator'
@@ -154,7 +155,9 @@ function fixture(options: { readonly now?: () => number } = {}) {
   }
   const discovery = {
     discover: vi.fn<() => Promise<WorktreeDiscovery>>(() => Promise.resolve(discovered)),
-    workspaceActivity: vi.fn(() => Promise.resolve(workspaceActivity)),
+    workspaceActivity: vi.fn<WorkspaceDiscoveryPort['workspaceActivity']>(() =>
+      Promise.resolve(workspaceActivity),
+    ),
   }
   const removal = {
     removeMissingWorkspace: vi.fn((_projectId: string, workspaceId: string) => {
