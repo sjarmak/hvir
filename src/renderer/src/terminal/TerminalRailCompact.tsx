@@ -6,6 +6,7 @@ import {
   compactAttentionSummary,
 } from './terminal-rail-compact-rollups'
 import type { TerminalSession } from './terminal-workspace-model'
+import { TerminalBellIcon } from './TerminalBellIcon'
 
 export function TerminalRailCompact({
   hidden,
@@ -47,7 +48,11 @@ export function TerminalRailCompact({
             aria-label={rollup.label}
             title={rollup.label}
           >
-            <span aria-hidden="true">{rollup.letter}</span>
+            {rollup.state === 'bell' ? (
+              <TerminalBellIcon />
+            ) : (
+              <span aria-hidden="true">{rollup.letter}</span>
+            )}
             {rollup.count}
           </span>
         ))}
@@ -77,7 +82,9 @@ export function TerminalRailCompact({
                 title={label}
                 onClick={() => onFocusSession(session.id)}
               >
-                <span aria-hidden="true">{MARKER_TEXT[state]}</span>
+                <span aria-hidden="true">
+                  {state === 'bell' ? <TerminalBellIcon /> : MARKER_TEXT[state]}
+                </span>
               </button>
             </div>
           )

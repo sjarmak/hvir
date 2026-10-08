@@ -5,6 +5,10 @@ import type { PtySupervisor } from '../pty/pty-supervisor'
 import type { SmokeFailureCheckpoint } from './failure-evidence.mts'
 import { ensureExplicitBareShellLaunch } from './terminal-explicit-launch'
 import { verifyTerminalClipboardFilePaste } from './terminal-file-paste'
+import {
+  verifyTerminalEngineGestures,
+  verifyTerminalEngineFit,
+} from './terminal-engine-gestures'
 import { verifyTerminalContextMenu } from './terminal-context-menu'
 import { verifyTerminalCursorPresentation } from './terminal-cursor-presentation'
 import { verifyTerminalHorizonPresentation } from './terminal-horizon-presentation'
@@ -16,6 +20,8 @@ import { verifyTerminalPalettePresentation } from './terminal-palette-presentati
 import { verifyTerminalProjectReturn } from './terminal-project-return'
 import { verifyTerminalSemanticNavigation } from './terminal-semantic-navigation'
 import { verifyTerminalSearch } from './terminal-search'
+import { verifyStreamingTerminalSearch } from './terminal-search-streaming'
+import { focusSmokeWindow } from './window-focus'
 import { verifyTerminalThemeGalleryPresentation } from './terminal-theme-gallery-presentation'
 import { verifySynchronizedOutput } from './terminal-synchronized-output'
 import { verifySessionDetailsPopover } from './session-details-popover'
@@ -29,6 +35,13 @@ export async function verifyTerminalPresentationLifecycle(
   checkpoint('terminal-presentation-explicit-launch-awaiting')
   const explicitLaunch = await ensureExplicitBareShellLaunch(win, supervisor)
   checkpoint('terminal-presentation-explicit-launch-ready')
+  checkpoint('terminal-presentation-engine-gestures-awaiting')
+  const engineStatus = await verifyTerminalEngineGestures(win, supervisor)
+  checkpoint('terminal-presentation-engine-gestures-ready')
+  checkpoint('terminal-presentation-engine-fit-awaiting')
+  await verifyTerminalEngineFit(win)
+  checkpoint('terminal-presentation-engine-fit-ready')
+  await focusSmokeWindow(win)
   checkpoint('terminal-presentation-session-details-awaiting')
   const sessionDetailsStatus = await verifySessionDetailsPopover(win)
   checkpoint('terminal-presentation-session-details-ready')
@@ -232,11 +245,16 @@ export async function verifyTerminalPresentationLifecycle(
   checkpoint('terminal-presentation-typography-awaiting')
   const typographyStatus = await verifyLiveTerminalTypography(win, supervisor)
   checkpoint('terminal-presentation-typography-ready')
+  const streamingSearch = await verifyStreamingTerminalSearch(win, supervisor)
+  console.log(`[smoke:terminal-streaming-search] ${streamingSearch}`)
   checkpoint('terminal-presentation-theme-gallery-awaiting')
   const themeGalleryStatus = await verifyTerminalThemeGalleryPresentation(win, supervisor)
   checkpoint('terminal-presentation-theme-gallery-ready')
   return [
+    streamingSearch,
     explicitLaunch,
+    engineStatus,
+    'engine content-box fit + fractional padding + DPR',
     middleClickCloseStatus,
     paletteStatus,
     semanticStatus,

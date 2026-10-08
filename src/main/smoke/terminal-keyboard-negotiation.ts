@@ -2,6 +2,7 @@ import type { BrowserWindow, InputEvent as ElectronInputEvent } from 'electron'
 
 import { plainShellProvider } from '../harness/harness-provider'
 import type { ManagedPty, PtySupervisor } from '../pty/pty-supervisor'
+import { terminalProbeSourceDelivery } from './terminal-probe-source'
 
 interface KeyboardProbePhase {
   readonly name: string
@@ -107,13 +108,13 @@ const SUCCESS_PREFIX = '__HVIR_KEYBOARD_OK__:'
 const FAILURE_PREFIX = '__HVIR_KEYBOARD_FAIL__:'
 const CLOSED_PREFIX = '__HVIR_KEYBOARD_CLOSED__:'
 const CLOSED_SUCCESS_MARKER = `${CLOSED_PREFIX}0`
+const SHELL_READY_MARKER = '__HVIR_KEYBOARD_SHELL_READY__'
 const EXPECTED_SUCCESS_MARKER = `${SUCCESS_PREFIX}${KEYBOARD_PROBE_PHASES.flatMap(
   (phase) =>
     phase.inputs.map((input) => `${phase.name}.${input.name}=${input.expectedHex}`),
 ).join(',')}`
 const RESET_PROTOCOLS_HEX = '1b5b3c751b5b3e343b306d'
 const PROBE_SOURCE_VARIABLE = 'HVIR_KEYBOARD_PROBE_B64'
-const PROBE_SOURCE_CHUNK_LENGTH = 640
 
 const KEYBOARD_PROBE_SOURCE = `
 const phases = ${JSON.stringify(KEYBOARD_PROBE_PHASES)};
@@ -214,13 +215,12 @@ if (!process.stdin.isTTY || typeof process.stdin.setRawMode !== 'function') {
 }
 `
 
-const PROBE_SOURCE_CHUNKS = chunkProbeSource(
-  Buffer.from(KEYBOARD_PROBE_SOURCE).toString('base64'),
+const SOURCE_DELIVERY = terminalProbeSourceDelivery(
+  KEYBOARD_PROBE_SOURCE,
+  PROBE_SOURCE_VARIABLE,
+  '__HVIR_KEYBOARD_DELIVERY_',
 )
-const DELIVERY_MARKERS = Array.from(
-  { length: PROBE_SOURCE_CHUNKS.length + 1 },
-  (_, index) => `__HVIR_KEYBOARD_DELIVERY_${index}__`,
-)
+const DELIVERY_MARKERS = SOURCE_DELIVERY.map(({ marker }) => marker)
 const EXPECTED_EVENTS = [
   ...DELIVERY_MARKERS,
   CLIENT_STARTED_MARKER,
@@ -229,6 +229,7 @@ const EXPECTED_EVENTS = [
   ),
   EXPECTED_SUCCESS_MARKER,
   CLOSED_SUCCESS_MARKER,
+  SHELL_READY_MARKER,
 ] as const
 
 /** Prove that the bundled terminal encodes browser input from VT-negotiated state. */
@@ -266,6 +267,9 @@ export async function verifyNegotiatedTerminalKeyboard(
         `keyboard probe delivery ${index} was not acknowledged`,
       )
     }
+    const baseline = await readTerminalDataEvents(win, terminal.id)
+    let userEvents = 0
+    let responseEvents = 0
     supervisor.write(terminal.id, terminal.ownerId, keyboardProbeLaunchCommand())
 
     await waitForProbeObservation(
@@ -275,6 +279,7 @@ export async function verifyNegotiatedTerminalKeyboard(
       'keyboard probe client did not execute',
     )
     for (const phase of KEYBOARD_PROBE_PHASES) {
+      responseEvents += 1
       for (const input of phase.inputs) {
         const marker = keyboardProbeInputMarker(phase, input)
         await waitForProbeObservation(
@@ -283,6 +288,10 @@ export async function verifyNegotiatedTerminalKeyboard(
           marker,
           `${phase.name} ${input.name} keyboard input did not become ready`,
         )
+        await assertTerminalDataEvents(win, terminal.id, baseline, {
+          user: userEvents,
+          terminalResponse: responseEvents,
+        })
         await requireActiveTerminalEngine(win, terminal.id)
         win.webContents.sendInputEvent({
           type: 'keyDown',
@@ -294,6 +303,7 @@ export async function verifyNegotiatedTerminalKeyboard(
           keyCode: input.keyCode,
           modifiers: [...input.modifiers],
         })
+        userEvents += 1
       }
     }
 
@@ -309,7 +319,17 @@ export async function verifyNegotiatedTerminalKeyboard(
       CLOSED_SUCCESS_MARKER,
       'negotiated keyboard probe did not restore its terminal state',
     )
+    await waitForProbeObservation(
+      observation,
+      () => terminalExit,
+      SHELL_READY_MARKER,
+      'keyboard probe did not return input ownership to its shell',
+    )
     observation.assertExactEvents()
+    await assertTerminalDataEvents(win, terminal.id, baseline, {
+      user: userEvents,
+      terminalResponse: responseEvents,
+    })
 
     const retained = supervisor.get(terminal.id)
     if (
@@ -334,6 +354,59 @@ export async function verifyNegotiatedTerminalKeyboard(
   }
 }
 
+interface TerminalDataEvents {
+  readonly user: number
+  readonly terminalResponse: number
+}
+
+async function readTerminalDataEvents(
+  win: BrowserWindow,
+  sessionId: string,
+): Promise<TerminalDataEvents> {
+  const counts: unknown = await win.webContents.executeJavaScript(`
+    (() => {
+      const surface = document.querySelector(
+        '.terminal-surface[data-terminal-session="' +
+        CSS.escape(${JSON.stringify(sessionId)}) + '"]'
+      );
+      return surface?.querySelector('.terminal-engine-host')
+        ?.__hvirTerminalPerformance?.dataEvents;
+    })()
+  `)
+  if (
+    !counts ||
+    typeof counts !== 'object' ||
+    !('user' in counts) ||
+    !('terminalResponse' in counts) ||
+    !Number.isSafeInteger(counts.user) ||
+    !Number.isSafeInteger(counts.terminalResponse)
+  ) {
+    throw new Error('keyboard probe data-source counts unavailable')
+  }
+  return counts as TerminalDataEvents
+}
+
+async function assertTerminalDataEvents(
+  win: BrowserWindow,
+  sessionId: string,
+  baseline: TerminalDataEvents,
+  expected: TerminalDataEvents,
+): Promise<void> {
+  const current = await readTerminalDataEvents(win, sessionId)
+  const observed = {
+    user: current.user - baseline.user,
+    terminalResponse: current.terminalResponse - baseline.terminalResponse,
+  }
+  if (
+    observed.user !== expected.user ||
+    observed.terminalResponse !== expected.terminalResponse
+  ) {
+    throw new Error(
+      `keyboard probe emitted duplicate or misclassified PTY-bound data: expected ${JSON.stringify(expected)}, observed ${JSON.stringify(observed)}`,
+    )
+  }
+}
+
 function requireSolePlainShellTerminal(
   supervisor: PtySupervisor,
   ownerId: number,
@@ -352,28 +425,12 @@ function keyboardProbeInputMarker(
   return `${READY_PREFIX}${phase.name}:${input.name}`
 }
 
-function chunkProbeSource(encoded: string): readonly string[] {
-  const chunks: string[] = []
-  for (let offset = 0; offset < encoded.length; offset += PROBE_SOURCE_CHUNK_LENGTH) {
-    chunks.push(encoded.slice(offset, offset + PROBE_SOURCE_CHUNK_LENGTH))
-  }
-  return chunks
-}
-
 function keyboardProbeDeliveryCommands(): readonly string[] {
-  return [
-    `${PROBE_SOURCE_VARIABLE}=''`,
-    ...PROBE_SOURCE_CHUNKS.map(
-      (chunk) => `${PROBE_SOURCE_VARIABLE}="$${PROBE_SOURCE_VARIABLE}"'${chunk}'`,
-    ),
-  ].map(
-    (assignment, index) =>
-      `${assignment}; printf '%s\\n' '__HVIR_KEYBOARD_DELIVERY_''${index}__'\n`,
-  )
+  return SOURCE_DELIVERY.map(({ command }) => command)
 }
 
 function keyboardProbeLaunchCommand(): string {
-  return `printf '%s\\n' '__HVIR_KEYBOARD_CLIENT_''STARTED__'; node -e "eval(Buffer.from(process.argv[1],'base64').toString())" "$${PROBE_SOURCE_VARIABLE}"; unset ${PROBE_SOURCE_VARIABLE}\n`
+  return `printf '%s\\n' '__HVIR_KEYBOARD_CLIENT_''STARTED__'; node -e "eval(Buffer.from(process.argv[1],'base64').toString())" "$${PROBE_SOURCE_VARIABLE}"; unset ${PROBE_SOURCE_VARIABLE}; printf '%s%s\\n' '__HVIR_KEYBOARD_' 'SHELL_READY__'\n`
 }
 
 class KeyboardProbeObservation {

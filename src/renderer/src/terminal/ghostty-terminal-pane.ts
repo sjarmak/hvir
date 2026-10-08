@@ -1,5 +1,6 @@
 import {
   Terminal as GhosttyTerminal,
+  FitAddon,
   init,
   type CursorBlink as GhosttyCursorBlink,
   type CursorStyle as GhosttyCursorStyle,
@@ -10,12 +11,10 @@ import {
 } from 'ghostty-web'
 import ghosttyWasmUrl from 'ghostty-web/ghostty-vt.wasm?url'
 
-import {
-  TerminalWheelController,
-  terminalWheelNotch,
-  type ComposerSubmitMode,
-  type Disposer,
-  type HarnessModifiedKeyProtocol,
+import type {
+  ComposerSubmitMode,
+  Disposer,
+  HarnessModifiedKeyProtocol,
 } from '../../../shared'
 import type {
   TerminalEvent,
@@ -36,7 +35,6 @@ import type {
 } from './terminal-pane'
 import { translateGhosttyTerminalEvent } from './ghostty-terminal-events'
 import { terminalColorThemeEquals } from './terminal-palette'
-import { TerminalFitController } from './ghostty-terminal-fit'
 import { FileLinkProvider } from './ghostty-terminal-file-link-provider'
 import { TerminalHeldGeometryMark } from './terminal-held-geometry-mark'
 import { resolveGhosttyTerminalFilePaste } from './ghostty-terminal-file-paste'
@@ -47,6 +45,11 @@ import {
 
 let initializeGhostty: Promise<void> | undefined
 const TERMINAL_SCROLLBACK_BYTES = 10_000_000
+const SEARCH_HIGHLIGHT_STYLE = {
+  fill: 'color-mix(in srgb, var(--accent) 42%, transparent)',
+  border: 'color-mix(in srgb, var(--accent) 86%, white 14%)',
+  borderWidth: 1,
+} as const
 
 function toGhosttyTheme(theme: TerminalColorTheme): GhosttyTheme {
   return {
@@ -150,7 +153,7 @@ class DataListenerSet {
 
 class GhosttyTerminalPane implements TerminalPane {
   private readonly terminal: GhosttyTerminal
-  private readonly fit: TerminalFitController
+  private readonly fit: FitAddon
   private readonly nativeProvenance = new WeakMap<
     TerminalEventProvenance,
     GhosttyTerminalEventProvenance
@@ -175,10 +178,18 @@ class GhosttyTerminalPane implements TerminalPane {
       scrollbackBytes: TERMINAL_SCROLLBACK_BYTES,
       theme: toGhosttyTheme(theme),
       disableContextMenu: true,
+      wheelScroll: {
+        linesPerStep: 3,
+        maxMouseReports: 5,
+        maxFallbackKeys: 1,
+        alternateScreenFallback: 'page',
+        mouseEncoding: 'sgr',
+      },
       resolveClipboardFilePaste: (file) =>
         resolveGhosttyTerminalFilePaste(window.hvir, file),
     })
-    this.fit = new TerminalFitController(this.terminal)
+    this.fit = new FitAddon({ resizeDebounceMs: 75 })
+    this.terminal.loadAddon(this.fit)
     this.terminal.attachCustomKeyEventHandler((event) => {
       const pasteFallback = ghosttyClipboardPasteFallback(event)
       if (pasteFallback !== undefined) {
@@ -204,14 +215,13 @@ class GhosttyTerminalPane implements TerminalPane {
   private presentation: TerminalPresentation = 'visible'
   private held?: TerminalSize
   private readonly heldMark = new TerminalHeldGeometryMark()
-  private readonly wheel = new TerminalWheelController()
   private searchHighlight?: Readonly<{
     owner: object
-    range: GhosttyRetainedBufferRange
+    handle: { dispose(): void }
   }>
-  private searchHighlightLayer?: HTMLDivElement
   private hasPresentedFrame = false
-  private processingPtyOutput = 0
+  private userDataEvents = 0
+  private terminalResponseDataEvents = 0
 
   readonly events: TerminalPaneEvents = {
     onData: (callback) => this.dataListeners.on(callback),
@@ -233,8 +243,15 @@ class GhosttyTerminalPane implements TerminalPane {
       configurable: true,
       get: () => ({
         ...this.terminal.getRenderStats(),
+        dataEvents: {
+          user: this.userDataEvents,
+          terminalResponse: this.terminalResponseDataEvents,
+        },
         cols: this.terminal.cols,
         rows: this.terminal.rows,
+        cellWidth: this.terminal.renderer?.getMetrics().width,
+        cellHeight: this.terminal.renderer?.getMetrics().height,
+        hasSelection: this.terminal.hasSelection(),
         retainedRows: this.terminal.getScrollbackLength(),
         retainedByteLimit: this.disposed ? 0 : this.terminal.getScrollbackByteLimit(),
         palette: this.theme,
@@ -255,14 +272,10 @@ class GhosttyTerminalPane implements TerminalPane {
     this.surface = surface
     this.terminal.setRenderPaused(true)
     this.engineDisposers.push(
-      this.terminal.onData((data) =>
-        this.emitData(data, this.processingPtyOutput > 0 ? 'terminal-response' : 'user'),
-      ),
+      this.terminal.onDataWithSource(({ data, source }) => this.emitData(data, source)),
       this.terminal.onResize((size) => {
         this.resizeListeners.emit(size)
-        this.renderSearchHighlight()
       }),
-      this.terminal.onScroll(() => this.renderSearchHighlight()),
       this.terminal.onTerminalEvent((event) => {
         const translated = translateGhosttyTerminalEvent(event, (provenance) =>
           this.retainProvenance(provenance),
@@ -271,18 +284,13 @@ class GhosttyTerminalPane implements TerminalPane {
       }),
     )
     this.terminal.open(surface)
-    const searchHighlightLayer = document.createElement('div')
-    searchHighlightLayer.className = 'terminal-search-match-highlight-layer'
-    searchHighlightLayer.setAttribute('aria-hidden', 'true')
-    surface.append(searchHighlightLayer)
-    this.searchHighlightLayer = searchHighlightLayer
     this.terminal.registerLinkProvider(
       new FileLinkProvider(this.terminal, (target) => this.linkListeners.emit(target)),
     )
-    this.terminal.attachCustomWheelEventHandler((event) => this.handleWheel(event))
     const canvas = this.terminal.renderer?.getCanvas()
     if (canvas) canvas.style.visibility = 'hidden'
     this.fit.fit()
+    if (this.presentation === 'hidden') this.fit.suspend()
     // A fresh pane must begin from an explicitly reset VT buffer. Depending on
     // WASM allocator reuse, construction can expose cells and rendition from
     // the terminal just freed during reconnect. Reset only after the initial
@@ -302,13 +310,7 @@ class GhosttyTerminalPane implements TerminalPane {
 
   write(data: string): void {
     if (this.disposed) return
-    this.processingPtyOutput += 1
-    try {
-      this.terminal.write(data)
-      this.renderSearchHighlight()
-    } finally {
-      this.processingPtyOutput -= 1
-    }
+    this.terminal.write(data)
   }
 
   resize(cols: number, rows: number): void {
@@ -364,11 +366,10 @@ class GhosttyTerminalPane implements TerminalPane {
     if (this.disposed || presentation === this.presentation) return
     this.presentation = presentation
     if (presentation === 'hidden') {
-      this.fit.suspend()
+      if (this.mounted) this.fit.suspend()
       this.terminal.setRenderPaused(true)
       const canvas = this.terminal.renderer?.getCanvas()
       if (canvas) canvas.style.visibility = 'hidden'
-      this.renderSearchHighlight()
     } else {
       this.revealAfterSettledFit()
     }
@@ -499,17 +500,15 @@ class GhosttyTerminalPane implements TerminalPane {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
-    this.fit.dispose()
+    this.fit.suspend()
     for (const disposer of this.engineDisposers) disposer.dispose()
     this.engineDisposers.length = 0
     const renderer = this.terminal.renderer
     const canvas = renderer?.getCanvas()
     renderer?.clear()
     if (canvas) canvas.style.visibility = 'hidden'
+    this.releaseSearchHighlight()
     this.terminal.dispose()
-    this.searchHighlight = undefined
-    this.searchHighlightLayer?.remove()
-    this.searchHighlightLayer = undefined
     this.held = undefined
     this.surface?.remove()
     this.surface = undefined
@@ -521,7 +520,11 @@ class GhosttyTerminalPane implements TerminalPane {
   }
 
   private emitData(data: string, source: TerminalPaneDataSource): void {
-    if (source === 'user') this.terminal.resetCursorBlink()
+    if (this.disposed) return
+    if (source === 'user') {
+      this.userDataEvents += 1
+      this.terminal.resetCursorBlink()
+    } else this.terminalResponseDataEvents += 1
     this.dataListeners.emit(data, source)
   }
 
@@ -542,14 +545,15 @@ class GhosttyTerminalPane implements TerminalPane {
     owner: object,
     match: GhosttyRetainedBufferRange,
   ): boolean {
-    const revealed = this.revealEventLocation({
-      screen: 'normal',
-      row: match.start.row,
-      column: match.start.column,
-    })
-    if (!revealed) return false
-    this.searchHighlight = { owner, range: match }
-    this.renderSearchHighlight()
+    if (this.disposed || !this.mounted) return false
+    if (!this.terminal.revealRetainedBufferRange(match)) return false
+    const handle = this.terminal.highlightRetainedBufferRange(
+      match,
+      SEARCH_HIGHLIGHT_STYLE,
+    )
+    if (!handle) return false
+    this.releaseSearchHighlight()
+    this.searchHighlight = { owner, handle }
     return true
   }
 
@@ -559,87 +563,13 @@ class GhosttyTerminalPane implements TerminalPane {
   }
 
   private releaseSearchHighlight(): void {
+    this.searchHighlight?.handle.dispose()
     this.searchHighlight = undefined
-    this.searchHighlightLayer?.replaceChildren()
-  }
-
-  private renderSearchHighlight(): void {
-    const highlight = this.searchHighlight
-    if (!highlight) return
-    const layer = this.searchHighlightLayer
-    if (!layer) return
-    layer.replaceChildren()
-    const renderer = this.terminal.renderer
-    if (
-      !highlight ||
-      this.presentation === 'hidden' ||
-      this.activeEventScreen() !== 'normal' ||
-      !renderer
-    ) {
-      return
-    }
-    const metrics = renderer.getMetrics()
-    if (metrics.width <= 0 || metrics.height <= 0) return
-    const scrollbackLength = this.terminal.getScrollbackLength()
-    const viewportY = Math.max(0, Math.floor(this.terminal.getViewportY()))
-    const firstVisibleRow = scrollbackLength - viewportY
-    const lastVisibleRow = firstVisibleRow + this.terminal.rows - 1
-    const firstMatchRow = Math.max(highlight.range.start.row, firstVisibleRow)
-    const lastMatchRow = Math.min(highlight.range.end.row, lastVisibleRow)
-    const canvas = renderer.getCanvas()
-    const cols = this.terminal.cols
-    if (firstMatchRow > lastMatchRow || cols <= 0) return
-
-    for (let row = firstMatchRow; row <= lastMatchRow; row += 1) {
-      const startColumn = Math.max(
-        0,
-        Math.min(
-          cols - 1,
-          row === highlight.range.start.row ? highlight.range.start.column : 0,
-        ),
-      )
-      const endColumn = Math.max(
-        0,
-        Math.min(
-          cols - 1,
-          row === highlight.range.end.row ? highlight.range.end.column : cols - 1,
-        ),
-      )
-      if (endColumn < startColumn) continue
-      const segment = document.createElement('div')
-      segment.className = 'terminal-search-match-highlight'
-      segment.dataset.retainedRow = String(row)
-      segment.style.left = `${canvas.offsetLeft + startColumn * metrics.width}px`
-      segment.style.top = `${
-        canvas.offsetTop + (row - firstVisibleRow) * metrics.height
-      }px`
-      segment.style.width = `${(endColumn - startColumn + 1) * metrics.width}px`
-      segment.style.height = `${metrics.height}px`
-      layer.append(segment)
-    }
   }
 
   private emitClipboardPaste(fallbackData: string): void {
     this.terminal.resetCursorBlink()
     this.clipboardPasteListeners.emit(fallbackData)
-  }
-
-  private handleWheel(event: WheelEvent): boolean {
-    const term = this.terminal.wasmTerm
-    const renderer = this.terminal.renderer
-    const result = this.wheel.handle(terminalWheelNotch(event), {
-      alternateScreen: term?.isAlternateScreen() ?? false,
-      mouseTracking: term?.hasMouseTracking() ?? false,
-      sgrMouse: term?.getMode(1006) ?? false,
-      cols: this.terminal.cols,
-      rows: this.terminal.rows,
-      cellWidth: renderer?.charWidth ?? 1,
-      cellHeight: renderer?.charHeight ?? 16,
-    })
-    for (const data of result.data) {
-      this.emitData(data, 'user')
-    }
-    return result.handled
   }
 
   private revealAfterSettledFit(): void {
@@ -663,7 +593,6 @@ class GhosttyTerminalPane implements TerminalPane {
     // Canvas/GPU backing stores can otherwise remain stale until a later
     // physical resize happens to force a full render.
     this.redraw()
-    this.renderSearchHighlight()
     const canvas = this.terminal.renderer?.getCanvas()
     this.hasPresentedFrame = true
     if (canvas) canvas.style.visibility = ''
@@ -673,11 +602,8 @@ class GhosttyTerminalPane implements TerminalPane {
 class GhosttyRetainedBufferSearch implements TerminalRetainedBufferSearch {
   readonly query: string
   readonly caseSensitive: boolean
-  readonly matches: readonly TerminalRetainedBufferRange[]
-  private readonly nativeRanges = new WeakMap<
-    TerminalRetainedBufferRange,
-    GhosttyRetainedBufferRange
-  >()
+  private readonly listeners = new Set<() => void>()
+  private readonly updates: { dispose(): void }
   private disposed = false
 
   constructor(
@@ -687,37 +613,48 @@ class GhosttyRetainedBufferSearch implements TerminalRetainedBufferSearch {
   ) {
     this.query = native.query
     this.caseSensitive = native.caseSensitive
-    this.matches = native.matches.map((match) => {
-      const retained: TerminalRetainedBufferRange = Object.freeze({
-        start: Object.freeze({ row: match.start.row, column: match.start.column }),
-        end: Object.freeze({ row: match.end.row, column: match.end.column }),
-      })
-      this.nativeRanges.set(retained, match)
-      return retained
+    this.updates = native.onUpdate(() => {
+      for (const listener of [...this.listeners]) listener()
     })
   }
-
+  // The engine's immutable plain metadata already has the neutral contract's
+  // shape. Reuse it: native object authentication owns foreign/stale rejection,
+  // and a PTY write must not copy or traverse the entire match list.
+  get matches(): readonly TerminalRetainedBufferRange[] {
+    return this.disposed ? [] : this.native.matches
+  }
+  get pending(): boolean {
+    return this.native.pending
+  }
+  get invalidated(): boolean {
+    return this.native.invalidated
+  }
+  onUpdate(listener: () => void): () => void {
+    if (this.disposed) return () => undefined
+    this.listeners.add(listener)
+    return () => {
+      this.listeners.delete(listener)
+    }
+  }
+  resolve(match: TerminalRetainedBufferRange): TerminalRetainedBufferRange | undefined {
+    return this.disposed ? undefined : this.native.resolve(match)
+  }
+  clearReveal(): void {
+    this.clearRevealedRange()
+  }
   reveal(match: TerminalRetainedBufferRange): boolean {
-    const native = this.nativeRange(match)
-    if (!native || this.native.extract(native) === undefined) return false
-    return this.revealRange(native)
+    const current = this.resolve(match)
+    return current ? this.revealRange(current) : false
   }
-
   extract(match: TerminalRetainedBufferRange): string | undefined {
-    const native = this.nativeRange(match)
-    return native ? this.native.extract(native) : undefined
+    return this.disposed ? undefined : this.native.extract(match)
   }
-
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
+    this.updates.dispose()
+    this.listeners.clear()
     this.clearRevealedRange()
     this.native.dispose()
-  }
-
-  private nativeRange(
-    match: TerminalRetainedBufferRange,
-  ): GhosttyRetainedBufferRange | undefined {
-    return this.disposed ? undefined : this.nativeRanges.get(match)
   }
 }
