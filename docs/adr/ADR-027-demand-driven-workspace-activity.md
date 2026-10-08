@@ -1,8 +1,9 @@
 # ADR-027: Demand-driven Git workspace activity
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-008](ADR-008-project-worktree-workspaces.md) | partial | Periodic Git work refreshing activity for every open workspace.
 > Supersedes: [ADR-023](ADR-023-closed-workspace-lifecycle.md) | partial | Fixed per-worktree periodic status cadence.
+> Superseded by: [ADR-975](ADR-975-bounded-background-workspace-sampling.md) | partial | A full demand-driven refresh sampling status for every present worktree of the project.
 
 ## Context
 

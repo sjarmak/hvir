@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import type { ProjectHost } from '../src/main/project-host'
 import {
+  BACKGROUND_ACTIVITY_INTERVAL_MS,
   WorkspaceCoordinator,
   type WorkspaceRegistryPort,
   type WorkspaceWatchPort,
@@ -101,7 +102,7 @@ function projectWithStaleWorkspace(
   }
 }
 
-function fixture() {
+function fixture(options: { readonly now?: () => number } = {}) {
   let state = projectState()
   let active = {
     host,
@@ -181,6 +182,7 @@ function fixture() {
     emitWatch: vi.fn(),
     createWatch,
     onError: (message) => errors.push(message),
+    ...options,
   })
   return {
     coordinator,
@@ -489,6 +491,82 @@ describe('WorkspaceCoordinator', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('samples only the active workspace during a full refresh burst', async () => {
+    let clock = 1_000
+    const { coordinator, registry, discovery } = fixture({ now: () => clock })
+    const twoWorkspaces = projectWithStaleWorkspace(false)
+    const twoDiscovered: WorktreeDiscovery = {
+      repository: true,
+      worktrees: [
+        { root, detached: false, bare: false },
+        { root: staleRoot, detached: false, bare: false },
+      ],
+    }
+    vi.mocked(registry.projectById).mockReturnValue(twoWorkspaces)
+    vi.mocked(registry.reconcileWorktrees).mockResolvedValue({
+      ...projectState(),
+      projects: [twoWorkspaces],
+    })
+    discovery.discover.mockResolvedValue(twoDiscovered)
+
+    await coordinator.refresh('project-1')
+    expect(discovery.workspaceActivity.mock.calls.map(([target]) => target)).toEqual([
+      root,
+      staleRoot,
+    ])
+
+    discovery.workspaceActivity.mockClear()
+    clock += 1_000
+    await coordinator.refresh('project-1')
+    expect(discovery.workspaceActivity.mock.calls.map(([target]) => target)).toEqual([
+      root,
+    ])
+
+    discovery.workspaceActivity.mockClear()
+    clock += BACKGROUND_ACTIVITY_INTERVAL_MS
+    await coordinator.refresh('project-1')
+    expect(discovery.workspaceActivity.mock.calls.map(([target]) => target)).toEqual([
+      root,
+      staleRoot,
+    ])
+  })
+
+  it('samples a background workspace again as soon as its head moves', async () => {
+    let clock = 1_000
+    const { coordinator, registry, discovery } = fixture({ now: () => clock })
+    const before = projectWithStaleWorkspace(false)
+    const moved = {
+      ...before,
+      workspaces: before.workspaces.map((workspace) =>
+        workspace.id === 'workspace-stale'
+          ? { ...workspace, head: 'b'.repeat(40) }
+          : workspace,
+      ),
+    }
+    vi.mocked(registry.projectById).mockReturnValue(before)
+    vi.mocked(registry.reconcileWorktrees).mockResolvedValue({
+      ...projectState(),
+      projects: [before],
+    })
+    discovery.discover.mockResolvedValue({
+      repository: true,
+      worktrees: [
+        { root, detached: false, bare: false },
+        { root: staleRoot, detached: false, bare: false },
+      ],
+    })
+    await coordinator.refresh('project-1')
+    discovery.workspaceActivity.mockClear()
+
+    clock += 1_000
+    vi.mocked(registry.projectById).mockReturnValueOnce(before).mockReturnValue(moved)
+    await coordinator.refresh('project-1')
+    expect(discovery.workspaceActivity.mock.calls.map(([target]) => target)).toEqual([
+      root,
+      staleRoot,
+    ])
   })
 
   it('suspends repeated passive status for a closed dirty workspace', async () => {

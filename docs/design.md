@@ -336,9 +336,10 @@ generic prompt delivery, or repository artifact.
 
 ### [ADR-027 — Demand-driven Git workspace activity](adr/ADR-027-demand-driven-workspace-activity.md)
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-008](adr/ADR-008-project-worktree-workspaces.md) | partial | Periodic Git work refreshing activity for every open workspace.
 > Supersedes: [ADR-023](adr/ADR-023-closed-workspace-lifecycle.md) | partial | Fixed per-worktree periodic status cadence.
+> Superseded by: [ADR-975](adr/ADR-975-bounded-background-workspace-sampling.md) | partial | A full demand-driven refresh sampling status for every present worktree of the project.
 
 Periodic discovery no longer implies status for every open worktree; exact activity status is
 demand-driven, clean closed workspaces retain bounded sampling, and stable dirty filters cannot
@@ -826,6 +827,15 @@ queued classification requests.
 
 An open same-repository PR with no checkout offers one explicit action that fetches, then adds
 `<root>.hvir-worktrees/pr-<number>` on the PR head branch tracking its remote, under exact grants.
+
+### [ADR-975 — Bounded background workspace sampling](adr/ADR-975-bounded-background-workspace-sampling.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-027](adr/ADR-027-demand-driven-workspace-activity.md) | partial | A full demand-driven refresh sampling status for every present worktree of the project.
+
+A full refresh always samples the active workspace; a background worktree is re-sampled when its
+HEAD or branch moves and otherwise at most once per thirty seconds, so shared `.git` bursts from
+agent-driven worktrees no longer run status across the whole project on every event.
 
 ## 5. Architecture
 
