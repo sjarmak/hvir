@@ -427,4 +427,19 @@ describe('PullsPanel', () => {
       )
     },
   )
+
+  it('anchors the feedback detail under the selected pull request row', async () => {
+    render()
+    await flush()
+    const detailButton = host.querySelector<HTMLButtonElement>(
+      '[data-pull-number="1"] .pulls-detail-button',
+    )
+    act(() => detailButton?.click())
+    await flush()
+    const details = host.querySelectorAll('.pulls-feedback-detail')
+    expect(details).toHaveLength(1)
+    const row = details[0]?.closest('li')?.querySelector('[data-pull-number]')
+    expect(row?.getAttribute('data-pull-number')).toBe('1')
+    expect(host.querySelector('.pulls-body > .pulls-feedback-detail')).toBeNull()
+  })
 })

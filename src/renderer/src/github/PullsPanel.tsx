@@ -39,6 +39,7 @@ export function PullsPanel({
   const [loading, setLoading] = useState(false)
   const [detail, setDetail] = useState<PullDetail>()
   const [detailLoading, setDetailLoading] = useState(false)
+  const [detailPull, setDetailPull] = useState<number>()
   const [selectedThreads, setSelectedThreads] = useState<ReadonlySet<string>>(new Set())
   const [copyStatus, setCopyStatus] = useState<string>()
   const detailSerial = useRef(0)
@@ -159,10 +160,20 @@ export function PullsPanel({
       </div>
       <div className="pulls-body">
         {renderBody()}
-        {renderDetail()}
+        {detailAnchored() ? null : renderDetail()}
       </div>
     </section>
   )
+
+  function detailAnchored(): boolean {
+    return (
+      error === undefined &&
+      response?.available === true &&
+      pullSections(response).some((section) =>
+        section.pulls.some((pull) => pull.number === detailPull),
+      )
+    )
+  }
 
   function renderBody(): ReactElement {
     if (error !== undefined) {
@@ -217,7 +228,10 @@ export function PullsPanel({
         ) : (
           <ul className="pulls-list">
             {section.pulls.map((pull) => (
-              <li key={pull.number}>{renderPull(pull, section.key === 'review')}</li>
+              <li key={pull.number}>
+                {renderPull(pull, section.key === 'review')}
+                {pull.number === detailPull ? renderDetail() : null}
+              </li>
             ))}
           </ul>
         )}
@@ -296,6 +310,7 @@ export function PullsPanel({
     )
       return
     const serial = ++detailSerial.current
+    setDetailPull(pull.number)
     setDetailLoading(true)
     setDetail(undefined)
     setSelectedThreads(new Set())
