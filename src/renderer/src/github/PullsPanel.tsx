@@ -17,7 +17,12 @@ import {
   type PullsSnapshot,
 } from '../../../shared'
 import { createVisibilityRefresh, type VisibilityRefresh } from '../beads/beads-refresh'
-import { pullSections, unavailableHint, type PullSection } from './pulls-model'
+import {
+  pullSections,
+  unavailableHint,
+  type PullSection,
+  type PullSectionKey,
+} from './pulls-model'
 
 import type { PullCheckoutsResponse } from '../../../shared/github'
 import { PullRow } from './PullRow'
@@ -56,6 +61,14 @@ export function PullsPanel({
   const detailSerial = useRef(0)
   const requestSerial = useRef(0)
   const refreshController = useRef<VisibilityRefresh | undefined>(undefined)
+  const [collapsed, setCollapsed] = useState<ReadonlySet<PullSectionKey>>(new Set())
+  const toggleSection = useCallback((key: PullSectionKey): void => {
+    setCollapsed((current) => {
+      const next = new Set(current)
+      if (!next.delete(key)) next.add(key)
+      return next
+    })
+  }, [])
   const { now, sections } = useMemo(() => {
     const at = Date.now()
     return {
@@ -266,13 +279,22 @@ export function PullsPanel({
     snapshot: PullsSnapshot,
     emptyNote: string | undefined,
   ): ReactElement {
+    const open = !collapsed.has(section.key)
     return (
       <div className="pulls-section" key={section.key}>
-        <div className="pulls-section-header">
+        <button
+          type="button"
+          className="pulls-section-header"
+          aria-expanded={open}
+          onClick={() => toggleSection(section.key)}
+        >
+          <span className="pulls-section-chevron" aria-hidden="true">
+            {open ? '▾' : '▸'}
+          </span>
           <span className="pulls-section-label">{section.label}</span>
           <span className="pulls-section-count">{section.rows.length}</span>
-        </div>
-        {section.rows.length === 0 && emptyNote !== undefined ? (
+        </button>
+        {!open ? null : section.rows.length === 0 && emptyNote !== undefined ? (
           <p className="pulls-section-note">{emptyNote}</p>
         ) : (
           <ul className="pulls-list">

@@ -247,6 +247,33 @@ describe('PullsPanel', () => {
     ).toBe('waiting on @ben, @platform')
   })
 
+  it('does not repeat the reason chip as a status badge', async () => {
+    render()
+    await flush()
+    const failing = host.querySelector('[data-pull-number="1"] .pulls-badges')
+    expect(failing?.querySelector('.pulls-reason')?.textContent).toBe('CI failing')
+    expect(failing?.textContent?.match(/CI failing/g)).toHaveLength(1)
+    const draft = host.querySelector('[data-pull-number="3"] .pulls-badges')
+    expect(draft?.querySelector('.pulls-reason')?.textContent).toBe('Draft')
+    expect(draft?.textContent?.match(/draft/gi)).toHaveLength(1)
+  })
+
+  it('collapses and expands a section from its header, keeping the count', async () => {
+    render()
+    await flush()
+    const header = [
+      ...host.querySelectorAll<HTMLButtonElement>('.pulls-section-header'),
+    ].find((candidate) => candidate.textContent?.includes('Drafts'))
+    expect(header?.getAttribute('aria-expanded')).toBe('true')
+    act(() => header?.click())
+    expect(sectionNumbers('Drafts')).toEqual([])
+    expect(header?.getAttribute('aria-expanded')).toBe('false')
+    expect(header?.querySelector('.pulls-section-count')?.textContent).toBe('1')
+    expect(sectionNumbers('Needs you')).toEqual(['2'])
+    act(() => header?.click())
+    expect(sectionNumbers('Drafts')).toEqual(['3'])
+  })
+
   it('says why and what to do when gh is not signed in', async () => {
     response = {
       available: false,

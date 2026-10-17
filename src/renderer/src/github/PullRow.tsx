@@ -43,8 +43,12 @@ function Badges({
   showAuthor,
 }: Pick<PullRowProps, 'row' | 'now' | 'showAuthor'>): ReactElement {
   const { pull, reason, since, waitingOn } = row
-  const checks = checksLabel(pull.checks)
-  const review = reviewLabel(pull.review)
+  /** A status badge that only restates the reason chip is left out. */
+  const badge = (label: string): string =>
+    label.toLowerCase() === reason.toLowerCase() ? '' : label
+  const draft = pull.draft ? badge('draft') : ''
+  const checks = badge(checksLabel(pull.checks))
+  const review = badge(reviewLabel(pull.review))
   return (
     <span className="pulls-badges">
       {reason !== '' ? <span className="pulls-badge pulls-reason">{reason}</span> : null}
@@ -52,7 +56,7 @@ function Badges({
       {pull.state !== 'open' ? (
         <span className={`pulls-badge pulls-state-${pull.state}`}>{pull.state}</span>
       ) : null}
-      {pull.draft ? <span className="pulls-badge">draft</span> : null}
+      {draft !== '' ? <span className="pulls-badge">{draft}</span> : null}
       {checks !== '' ? (
         <span className={`pulls-badge pulls-checks-${pull.checks}`}>{checks}</span>
       ) : null}

@@ -161,7 +161,25 @@
   display: flex;
   align-items: center;
   gap: 5px;
+  width: 100%;
   padding: 5px 8px 3px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pulls-section-header:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.pulls-section-chevron {
+  width: 8px;
+  color: var(--text-muted);
+  font-size: 10px;
 }
 
 .pulls-section-label {
