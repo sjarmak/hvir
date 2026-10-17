@@ -14,6 +14,7 @@ import {
 } from '../src/main/github/github-parse'
 import { openFeedbackCount, type FeedbackNode } from '../src/main/github/pr-feedback'
 
+const CREATED = '2026-09-29T09:00:00Z'
 const HEAD_AT = '2026-09-30T12:00:00Z'
 const BEFORE = '2026-09-30T11:00:00Z'
 const AFTER = '2026-09-30T13:00:00Z'
@@ -36,6 +37,7 @@ function prNode(overrides: Record<string, unknown> = {}): Record<string, unknown
     state: 'OPEN',
     isDraft: false,
     headRefName: 'feat/panel',
+    createdAt: CREATED,
     updatedAt: AFTER,
     reviewDecision: 'REVIEW_REQUIRED',
     author: { login: 'stephanie' },
@@ -217,10 +219,13 @@ describe('parsePullsOutput', () => {
         headRef: 'feat/panel',
         headRepo: 'acme/widgets',
         author: 'stephanie',
+        createdAt: CREATED,
         updatedAt: AFTER,
         checks: 'passing',
         review: 'review-required',
         openFeedback: 0,
+        headCommittedAt: HEAD_AT,
+        reviewers: [],
       },
     ])
     expect(parsed.authored.map((pull) => [pull.number, pull.draft, pull.review])).toEqual(
@@ -298,6 +303,325 @@ describe('parsePullsOutput', () => {
       }),
     )
     expect(parsed.authored[0]?.openFeedback).toBe(3)
+  })
+
+  it('reads the change size only when GitHub reports numbers', () => {
+    const pull = (overrides: Record<string, unknown>) =>
+      parse(
+        graphqlOutput({ viewer: { login: 'v' }, mine: { nodes: [prNode(overrides)] } }),
+      ).authored[0]
+    expect(pull({ additions: 12, deletions: 3, changedFiles: 4 })).toMatchObject({
+      additions: 12,
+      deletions: 3,
+      changedFiles: 4,
+    })
+    const sparse = pull({ additions: null, deletions: '3', createdAt: null })
+    expect(sparse).not.toHaveProperty('additions')
+    expect(sparse).not.toHaveProperty('deletions')
+    expect(sparse).not.toHaveProperty('changedFiles')
+    expect(sparse?.createdAt).toBe('')
+  })
+
+  function reviewer(typename: string, name: string): Record<string, unknown> {
+    return typename === 'Team'
+      ? { __typename: 'Team', combinedSlug: name }
+      : { __typename: typename, login: name }
+  }
+
+  function requested(at: string, who: Record<string, unknown>): Record<string, unknown> {
+    return { __typename: 'ReviewRequestedEvent', createdAt: at, requestedReviewer: who }
+  }
+
+  it('builds reviewers from requests, opinionated reviews and request events', () => {
+    const parsed = parse(
+      graphqlOutput({
+        viewer: { login: 'stephanie' },
+        mine: {
+          nodes: [
+            prNode({
+              reviewRequests: {
+                nodes: [
+                  { requestedReviewer: reviewer('User', 'ben') },
+                  { requestedReviewer: reviewer('Team', 'acme/platform') },
+                  { requestedReviewer: reviewer('Bot', 'copilot') },
+                  { requestedReviewer: null },
+                  { requestedReviewer: { __typename: 'User' } },
+                ],
+              },
+              latestOpinionatedReviews: {
+                nodes: [
+                  {
+                    state: 'CHANGES_REQUESTED',
+                    submittedAt: BEFORE,
+                    author: reviewer('User', 'ben'),
+                  },
+                  {
+                    state: 'APPROVED',
+                    submittedAt: AFTER,
+                    author: reviewer('User', 'cara'),
+                  },
+                  {
+                    state: 'COMMENTED',
+                    submittedAt: AFTER,
+                    author: reviewer('User', 'dana'),
+                  },
+                  {
+                    state: 'APPROVED',
+                    submittedAt: AFTER,
+                    author: reviewer('Bot', 'copilot'),
+                  },
+                  { state: 'APPROVED', submittedAt: AFTER, author: null },
+                ],
+              },
+              timelineItems: {
+                nodes: [
+                  requested(CREATED, reviewer('User', 'ben')),
+                  requested(CREATED, reviewer('User', 'cara')),
+                  requested(BEFORE, reviewer('Team', 'acme/platform')),
+                  requested(AFTER, reviewer('User', 'ben')),
+                  requested(AFTER, reviewer('Bot', 'copilot')),
+                  { __typename: 'ReviewRequestedEvent', requestedReviewer: null },
+                  { __typename: 'ReadyForReviewEvent', createdAt: CREATED },
+                  { __typename: 'ReadyForReviewEvent', createdAt: BEFORE },
+                  {
+                    __typename: 'AssignedEvent',
+                    createdAt: BEFORE,
+                    assignee: { login: 'ben' },
+                  },
+                  {
+                    __typename: 'AssignedEvent',
+                    createdAt: AFTER,
+                    assignee: { login: 'stephanie' },
+                  },
+                  { __typename: 'LabeledEvent', createdAt: AFTER },
+                ],
+              },
+              assignees: { nodes: [{ login: 'ben' }, { login: 'stephanie' }] },
+            }),
+          ],
+        },
+      }),
+    )
+    const pull = parsed.authored[0]
+    expect(pull?.reviewers).toEqual([
+      {
+        login: 'ben',
+        kind: 'user',
+        pending: true,
+        requestedAt: AFTER,
+        reviewState: 'changes-requested',
+        reviewedAt: BEFORE,
+      },
+      { login: 'acme/platform', kind: 'team', pending: true, requestedAt: BEFORE },
+      {
+        login: 'cara',
+        kind: 'user',
+        pending: false,
+        requestedAt: CREATED,
+        reviewState: 'approved',
+        reviewedAt: AFTER,
+      },
+    ])
+    expect(pull?.readyForReviewAt).toBe(BEFORE)
+    expect(pull?.viewerAssignedAt).toBe(AFTER)
+  })
+
+  it('names an enterprise team by its combined slug and drops mannequins', () => {
+    const enterprise = { __typename: 'EnterpriseTeam', combinedSlug: 'acme/sec' }
+    const parsed = parse(
+      graphqlOutput({
+        viewer: { login: 'stephanie' },
+        mine: {
+          nodes: [
+            prNode({
+              reviewRequests: {
+                nodes: [
+                  { requestedReviewer: enterprise },
+                  { requestedReviewer: { __typename: 'Mannequin', login: 'ghost' } },
+                ],
+              },
+              timelineItems: { nodes: [requested(BEFORE, enterprise)] },
+            }),
+          ],
+        },
+      }),
+    )
+    expect(parsed.authored[0]?.reviewers).toEqual([
+      { login: 'acme/sec', kind: 'team', pending: true, requestedAt: BEFORE },
+    ])
+  })
+
+  it('lets a later valid timestamp replace a malformed one on every timeline slot', () => {
+    const me = { login: 'stephanie' }
+    const parsed = parse(
+      graphqlOutput({
+        viewer: me,
+        review: {
+          nodes: [
+            prNode({
+              author: { login: 'ann' },
+              reviewRequests: { nodes: [{ requestedReviewer: reviewer('User', 'ben') }] },
+              reviews: {
+                nodes: [
+                  {
+                    state: 'COMMENTED',
+                    submittedAt: 'bad',
+                    author: reviewer('User', 'stephanie'),
+                  },
+                  {
+                    state: 'COMMENTED',
+                    submittedAt: AFTER,
+                    author: reviewer('User', 'stephanie'),
+                  },
+                  {
+                    state: 'COMMENTED',
+                    submittedAt: 'bad',
+                    author: reviewer('User', 'stephanie'),
+                  },
+                ],
+              },
+              timelineItems: {
+                nodes: [
+                  requested('bad', reviewer('User', 'ben')),
+                  requested(AFTER, reviewer('User', 'ben')),
+                  requested('bad', reviewer('User', 'ben')),
+                  { __typename: 'ReadyForReviewEvent', createdAt: 'bad' },
+                  { __typename: 'ReadyForReviewEvent', createdAt: BEFORE },
+                  { __typename: 'AssignedEvent', createdAt: 'bad', assignee: me },
+                  { __typename: 'AssignedEvent', createdAt: AFTER, assignee: me },
+                ],
+              },
+              assignees: { nodes: [me] },
+            }),
+          ],
+        },
+      }),
+    )
+    expect(parsed.reviewRequested[0]).toMatchObject({
+      readyForReviewAt: BEFORE,
+      viewerAssignedAt: AFTER,
+      viewerReviewedAt: AFTER,
+      reviewers: [{ login: 'ben', pending: true, requestedAt: AFTER }],
+    })
+  })
+
+  it('forgets the assignment time once the viewer is no longer assigned', () => {
+    const parsed = parse(
+      graphqlOutput({
+        viewer: { login: 'stephanie' },
+        mine: {
+          nodes: [
+            prNode({
+              timelineItems: {
+                nodes: [
+                  {
+                    __typename: 'AssignedEvent',
+                    createdAt: AFTER,
+                    assignee: { login: 'stephanie' },
+                  },
+                ],
+              },
+              assignees: { nodes: [{ login: 'ben' }] },
+            }),
+          ],
+        },
+      }),
+    )
+    expect(parsed.authored[0]).not.toHaveProperty('viewerAssignedAt')
+  })
+
+  it('lists a pull the viewer is only assigned to under reviewRequested, once', () => {
+    const assigned = (number: number) =>
+      prNode({
+        number,
+        author: { login: 'ann' },
+        timelineItems: {
+          nodes: [
+            {
+              __typename: 'AssignedEvent',
+              createdAt: AFTER,
+              assignee: { login: 'stephanie' },
+            },
+          ],
+        },
+        assignees: { nodes: [{ login: 'stephanie' }] },
+      })
+    const parsed = parse(
+      graphqlOutput({
+        viewer: { login: 'stephanie' },
+        review: { issueCount: 1, nodes: [assigned(40)] },
+        assigned: { issueCount: 2, nodes: [assigned(40), assigned(41)] },
+      }),
+    )
+    expect(parsed.reviewRequested.map((pull) => pull.number)).toEqual([40, 41])
+    expect(parsed.reviewRequested[1]?.viewerAssignedAt).toBe(AFTER)
+    expect(parsed.hasMore).toBe(false)
+    expect(
+      parse(
+        graphqlOutput({
+          viewer: { login: 'stephanie' },
+          assigned: { issueCount: 2, nodes: [assigned(41)] },
+        }),
+      ).hasMore,
+    ).toBe(true)
+  })
+
+  it('takes the viewer latest submission from the reviews connection', () => {
+    const parsed = parse(
+      graphqlOutput({
+        viewer: { login: 'stephanie' },
+        review: {
+          nodes: [
+            prNode({
+              author: { login: 'ben' },
+              reviews: {
+                nodes: [
+                  {
+                    state: 'COMMENTED',
+                    submittedAt: AFTER,
+                    author: reviewer('User', 'stephanie'),
+                  },
+                  {
+                    state: 'APPROVED',
+                    submittedAt: BEFORE,
+                    author: reviewer('User', 'stephanie'),
+                  },
+                  {
+                    state: 'APPROVED',
+                    submittedAt: HEAD_AT,
+                    author: reviewer('User', 'cara'),
+                  },
+                ],
+              },
+              latestOpinionatedReviews: {
+                nodes: [
+                  {
+                    state: 'APPROVED',
+                    submittedAt: BEFORE,
+                    author: reviewer('User', 'stephanie'),
+                  },
+                ],
+              },
+            }),
+            prNode({ number: 8, author: { login: 'ben' } }),
+          ],
+        },
+      }),
+    )
+    const [reviewed, untouched] = parsed.reviewRequested
+    expect(reviewed?.viewerReviewedAt).toBe(AFTER)
+    expect(reviewed?.reviewers).toEqual([
+      {
+        login: 'stephanie',
+        kind: 'user',
+        pending: false,
+        reviewState: 'approved',
+        reviewedAt: BEFORE,
+      },
+    ])
+    expect(untouched).not.toHaveProperty('viewerReviewedAt')
+    expect(untouched).not.toHaveProperty('readyForReviewAt')
+    expect(untouched?.reviewers).toEqual([])
   })
 
   it('keeps only branch pulls whose head lives in a local remote', () => {

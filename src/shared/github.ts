@@ -6,6 +6,25 @@ export type PullChecks = 'passing' | 'failing' | 'pending' | 'none'
 
 export type PullReview = 'approved' | 'changes-requested' | 'review-required' | 'none'
 
+export type PullReviewerKind = 'user' | 'team'
+
+export type PullReviewerState = 'approved' | 'changes-requested'
+
+/**
+ * One reviewer's standing on a pull request (ADR-976). A user is named by login; a team
+ * by its combined `org/slug`. Bots never appear. `pending` means the reviewer is in the
+ * current review requests; `requestedAt` is the latest review-requested event naming
+ * them; `reviewState` and `reviewedAt` describe their latest opinionated review.
+ */
+export interface PullReviewer {
+  readonly login: string
+  readonly kind: PullReviewerKind
+  readonly pending: boolean
+  readonly requestedAt?: string
+  readonly reviewState?: PullReviewerState
+  readonly reviewedAt?: string
+}
+
 export interface PullSummary {
   readonly number: number
   readonly title: string
@@ -15,11 +34,25 @@ export interface PullSummary {
   readonly headRef: string
   readonly headRepo?: string
   readonly author: string
+  readonly createdAt: string
   readonly updatedAt: string
   readonly checks: PullChecks
   readonly review: PullReview
   readonly openFeedback: number
   readonly headOid?: string
+  /** Committed date of the head commit, when GitHub reports one. */
+  readonly headCommittedAt?: string
+  /** The last ready-for-review event; absent when the pull request was never a draft. */
+  readonly readyForReviewAt?: string
+  /** The latest assigned event naming the viewer, while the viewer is still assigned. */
+  readonly viewerAssignedAt?: string
+  /** The viewer's latest review submission on this pull request, if any. */
+  readonly viewerReviewedAt?: string
+  readonly additions?: number
+  readonly deletions?: number
+  readonly changedFiles?: number
+  /** Reviewers who are pending or hold an opinionated review (ADR-976). */
+  readonly reviewers: readonly PullReviewer[]
 }
 
 export interface PullReviewComment {

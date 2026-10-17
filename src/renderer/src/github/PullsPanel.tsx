@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from 'react'
 
 import {
   PULLS_MAX_LIMIT,
@@ -7,18 +14,13 @@ import {
   type PullDetail,
   type PullSummary,
   type PullsResponse,
+  type PullsSnapshot,
 } from '../../../shared'
 import { createVisibilityRefresh, type VisibilityRefresh } from '../beads/beads-refresh'
-import {
-  checksLabel,
-  pullSections,
-  reviewLabel,
-  unavailableHint,
-  type PullSection,
-} from './pulls-model'
+import { pullSections, unavailableHint, type PullSection } from './pulls-model'
 
 import type { PullCheckoutsResponse } from '../../../shared/github'
-import { PullWorkspaceAction } from './PullWorkspaceAction'
+import { PullRow } from './PullRow'
 import type { PullWorkspaceNavigation } from './pull-workspaces'
 
 import './pulls.css'
@@ -54,6 +56,13 @@ export function PullsPanel({
   const detailSerial = useRef(0)
   const requestSerial = useRef(0)
   const refreshController = useRef<VisibilityRefresh | undefined>(undefined)
+  const { now, sections } = useMemo(() => {
+    const at = Date.now()
+    return {
+      now: at,
+      sections: response?.available === true ? pullSections(response, at) : [],
+    }
+  }, [response])
 
   const clearDetail = useCallback((): void => {
     detailSerial.current += 1
@@ -179,9 +188,8 @@ export function PullsPanel({
   function detailAnchored(): boolean {
     return (
       error === undefined &&
-      response?.available === true &&
-      pullSections(response).some((section) =>
-        section.pulls.some((pull) => pull.number === detailPull),
+      sections.some((section) =>
+        section.rows.some((row) => row.pull.number === detailPull),
       )
     )
   }
@@ -205,7 +213,6 @@ export function PullsPanel({
         </div>
       )
     }
-    const sections = pullSections(response)
     const branchNote =
       response.branch === undefined
         ? 'Detached HEAD, so no branch pull request.'
@@ -213,11 +220,15 @@ export function PullsPanel({
     return (
       <>
         {sections.map((section) =>
-          section.key === 'branch' || section.pulls.length > 0
-            ? renderSection(section, section.key === 'branch' ? branchNote : undefined)
+          section.key === 'branch' || section.rows.length > 0
+            ? renderSection(
+                section,
+                response,
+                section.key === 'branch' ? branchNote : undefined,
+              )
             : null,
         )}
-        {sections.every((section) => section.pulls.length === 0) ? (
+        {sections.every((section) => section.rows.length === 0) ? (
           <p className="pulls-empty">Nothing open that is yours or waiting on you.</p>
         ) : null}
         {response.hasMore ? renderShowMore() : null}
@@ -252,87 +263,39 @@ export function PullsPanel({
 
   function renderSection(
     section: PullSection,
+    snapshot: PullsSnapshot,
     emptyNote: string | undefined,
   ): ReactElement {
     return (
       <div className="pulls-section" key={section.key}>
         <div className="pulls-section-header">
           <span className="pulls-section-label">{section.label}</span>
-          <span className="pulls-section-count">{section.pulls.length}</span>
+          <span className="pulls-section-count">{section.rows.length}</span>
         </div>
-        {section.pulls.length === 0 && emptyNote !== undefined ? (
+        {section.rows.length === 0 && emptyNote !== undefined ? (
           <p className="pulls-section-note">{emptyNote}</p>
         ) : (
           <ul className="pulls-list">
-            {section.pulls.map((pull) => (
-              <li key={pull.number}>
-                {renderPull(pull, section.key === 'review')}
-                {pull.number === detailPull ? renderDetail() : null}
+            {section.rows.map((row) => (
+              <li key={row.pull.number}>
+                <PullRow
+                  row={row}
+                  now={now}
+                  showAuthor={row.pull.author !== snapshot.viewer}
+                  root={root}
+                  repo={snapshot.repo}
+                  checkouts={checkouts}
+                  navigation={navigation}
+                  disabled={!connected || hidden}
+                  detailLoading={detailLoading}
+                  onCheckouts={setCheckouts}
+                  onDetail={(pull) => void loadDetail(pull)}
+                />
+                {row.pull.number === detailPull ? renderDetail() : null}
               </li>
             ))}
           </ul>
         )}
-      </div>
-    )
-  }
-
-  function renderPull(pull: PullSummary, showAuthor: boolean): ReactElement {
-    const checks = checksLabel(pull.checks)
-    const review = reviewLabel(pull.review)
-    return (
-      <div className="pulls-row" data-pull-number={pull.number}>
-        <a
-          className="pulls-link"
-          href={pull.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          title={`${pull.headRef} · open on GitHub`}
-        >
-          <span className="pulls-line">
-            <span className="pulls-number">#{pull.number}</span>
-            <span className="pulls-row-title">{pull.title}</span>
-          </span>
-          <span className="pulls-badges">
-            {pull.state !== 'open' ? (
-              <span className={`pulls-badge pulls-state-${pull.state}`}>
-                {pull.state}
-              </span>
-            ) : null}
-            {pull.draft ? <span className="pulls-badge">draft</span> : null}
-            {checks !== '' ? (
-              <span className={`pulls-badge pulls-checks-${pull.checks}`}>{checks}</span>
-            ) : null}
-            {review !== '' ? (
-              <span className={`pulls-badge pulls-review-${pull.review}`}>{review}</span>
-            ) : null}
-            {pull.openFeedback > 0 ? (
-              <span className="pulls-badge pulls-feedback">
-                {pull.openFeedback} open{' '}
-                {pull.openFeedback === 1 ? 'comment' : 'comments'}
-              </span>
-            ) : null}
-            {showAuthor && pull.author !== '' ? (
-              <span className="pulls-author">@{pull.author}</span>
-            ) : null}
-          </span>
-        </a>
-        <PullWorkspaceAction
-          root={root}
-          pull={pull}
-          checkouts={checkouts}
-          repo={response?.available ? response.repo : undefined}
-          navigation={navigation}
-          disabled={!connected || hidden}
-          onCheckouts={setCheckouts}
-        />
-        <button
-          type="button"
-          className="pulls-detail-button"
-          disabled={!connected || hidden || pull.headOid === undefined || detailLoading}
-          onClick={() => void loadDetail(pull)}
-        >
-          {detailLoading ? 'Loading…' : 'Details'}
-        </button>
       </div>
     )
   }

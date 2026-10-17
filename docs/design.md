@@ -837,6 +837,14 @@ A full refresh always samples the active workspace; a background worktree is re-
 HEAD or branch moves and otherwise at most once per thirty seconds, so shared `.git` bursts from
 agent-driven worktrees no longer run status across the whole project on every event.
 
+### [ADR-976 — Pull request waits by holder and business time](adr/ADR-976-pull-request-waits-by-holder-and-business-time.md)
+
+> Lifecycle: Active
+
+The pull request query carries per-reviewer state and request events; shared pure modules
+derive who holds each pull request and for how long in business time, and the GitHub rail
+and Needs you list the oldest ask first with no poller, store, or GitHub write.
+
 ## 5. Architecture
 
 ### Process model

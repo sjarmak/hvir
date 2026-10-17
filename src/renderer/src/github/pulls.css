@@ -343,3 +343,28 @@
 .pulls-more {
   margin: 8px 10px 0;
 }
+
+.pulls-reason {
+  color: var(--text);
+}
+
+.pulls-age-neutral {
+  color: var(--text-muted);
+}
+
+.pulls-age-amber {
+  color: var(--warning-text);
+  border-color: var(--warning-text);
+}
+
+.pulls-age-red {
+  color: var(--danger-text);
+  border-color: var(--danger-text);
+}
+
+.pulls-waiting-on {
+  flex-basis: 100%;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1.5;
+}

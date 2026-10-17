@@ -449,6 +449,8 @@ describe('pullsQueryArgs', () => {
     expect(flagFor('hasBranch=true')).toBe('-F')
     expect(flagFor('limit=60')).toBe('-F')
     expect(args).toContain('mine=repo:acme/widgets is:pr is:open author:@me')
+    expect(args).toContain('review=repo:acme/widgets is:pr is:open review-requested:@me')
+    expect(args).toContain('assigned=repo:acme/widgets is:pr is:open assignee:@me')
   })
 })
 

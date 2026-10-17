@@ -24,6 +24,7 @@ import {
   sessionsWorkspaceQualifier,
   type HvirApi,
   type NeedsYouSnapshot,
+  type PullsSnapshot,
   type SessionsProjectionRow,
 } from '../src/shared'
 
@@ -357,6 +358,71 @@ describe('Needs you view', () => {
     )!
     expect(ask.querySelector('button, a')).toBeNull()
     expect(ask.textContent).toContain('Decision requested')
+  })
+
+  it('advances pull request ages on a local clock without re-reading sources', async () => {
+    const friday = new Date(2026, 9, 16, 16).getTime()
+    const monday = new Date(2026, 9, 19, 9).getTime()
+    const pulls: PullsSnapshot = {
+      available: true,
+      repo: 'acme/widgets',
+      viewer: 'stephanie',
+      branchPulls: [],
+      authored: [],
+      reviewRequested: [
+        {
+          number: 7,
+          title: 'Add the panel',
+          url: 'https://github.com/acme/widgets/pull/7',
+          state: 'open',
+          draft: false,
+          headRef: 'feat/panel',
+          author: 'ann',
+          createdAt: new Date(friday).toISOString(),
+          updatedAt: new Date(friday).toISOString(),
+          checks: 'passing',
+          review: 'none',
+          openFeedback: 0,
+          reviewers: [
+            {
+              login: 'stephanie',
+              kind: 'user',
+              pending: true,
+              requestedAt: new Date(friday).toISOString(),
+            },
+          ],
+        },
+      ],
+      hasMore: false,
+    }
+    const source = response.sources[0]!
+    const snapshot = {
+      ...response,
+      sources: [{ ...source, pulls: { observedAt: 10, response: pulls } }],
+    }
+    invoke.mockImplementation((channel, request) =>
+      Promise.resolve(
+        channel === 'needs-you:release'
+          ? undefined
+          : { ...snapshot, demandGeneration: request.demandGeneration },
+      ),
+    )
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(friday)
+      await render()
+      const reason = () =>
+        [...container.querySelectorAll('.needs-you-list li')]
+          .find((item) => item.textContent?.includes('#7'))
+          ?.querySelector('.needs-you-reason')?.textContent
+      expect(reason()).toBe('Requested · 0m')
+      vi.setSystemTime(monday)
+      await interact(() => vi.advanceTimersByTime(60_000))
+      expect(reason()).toBe('Requested · 17h')
+      expect(invoke).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('does not scan on a timer and releases observation when hidden', async () => {

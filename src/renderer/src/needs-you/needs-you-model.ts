@@ -1,8 +1,12 @@
-import type {
-  BeadIssue,
-  BeadsListResponse,
-  PullsResponse,
-  PullSummary,
+import {
+  businessMsBetween,
+  formatBusinessAge,
+  pullWaitRows,
+  type BeadIssue,
+  type BeadsListResponse,
+  type PullsResponse,
+  type PullSummary,
+  type PullWaitRow,
 } from '../../../shared'
 import { classifyBeads } from '../beads/beads-model'
 
@@ -17,27 +21,37 @@ export function needsYouBeads(response: BeadsListResponse): readonly BeadIssue[]
 export interface NeedsYouPull {
   readonly pull: PullSummary
   readonly reasons: readonly string[]
+  /** Epoch ms of the oldest ask this item counts from. */
+  readonly since: number
+  /** Business-time age of the ask, as the row shows it. */
+  readonly age: string
 }
 
-export function needsYouPulls(response: PullsResponse): readonly NeedsYouPull[] {
+function feedbackReason(pull: PullSummary): readonly string[] {
+  if (pull.openFeedback === 0) return []
+  return [`${pull.openFeedback} feedback item${pull.openFeedback === 1 ? '' : 's'}`]
+}
+
+function reasonsOf(row: PullWaitRow, viewer: string): readonly string[] {
+  const feedback = row.pull.author === viewer ? feedbackReason(row.pull) : []
+  return row.list === 'needs' ? [row.reason, ...feedback] : feedback
+}
+
+/**
+ * Inbound asks and the viewer's own pull requests whose ball came back (ADR-976), oldest
+ * ask first, with open feedback on the viewer's own pull requests appended as a reason.
+ */
+export function needsYouPulls(
+  response: PullsResponse,
+  now: number,
+): readonly NeedsYouPull[] {
   if (!response.available) return []
-  const requested = response.reviewRequested.filter((pull) => pull.state === 'open')
-  const authored = response.authored.filter((pull) => pull.state === 'open')
-  const numbers = [
-    ...new Set([...requested, ...authored].map((pull) => pull.number)),
-  ].sort((left, right) => left - right)
-  return numbers.flatMap((number) => {
-    const review = requested.find((pull) => pull.number === number)
-    const own = authored.find((pull) => pull.number === number)
-    const pull = own ?? review
-    if (!pull) return []
-    const reasons = [
-      ...(review ? ['Review requested'] : []),
-      ...(own?.checks === 'failing' ? ['CI failing'] : []),
-      ...(own && own.openFeedback > 0
-        ? [`${own.openFeedback} feedback item${own.openFeedback === 1 ? '' : 's'}`]
-        : []),
-    ]
-    return reasons.length ? [{ pull, reasons }] : []
-  })
+  return pullWaitRows(response, now)
+    .flatMap((row): NeedsYouPull[] => {
+      const reasons = reasonsOf(row, response.viewer)
+      if (reasons.length === 0) return []
+      const age = formatBusinessAge(businessMsBetween(row.since, now))
+      return [{ pull: row.pull, reasons, since: row.since, age }]
+    })
+    .sort((left, right) => left.since - right.since)
 }

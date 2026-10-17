@@ -29,7 +29,8 @@ export interface NeedsYouRow {
 export function needsYouRows(
   sessions: readonly SessionsProjectionRow[],
   sources: readonly NeedsYouSourceSnapshot[],
-  askStores: readonly NeedsYouAskStoreSnapshot[] = [],
+  askStores: readonly NeedsYouAskStoreSnapshot[],
+  now: number,
 ): readonly NeedsYouRow[] {
   const sessionRows: NeedsYouRow[] = sessions
     .filter(
@@ -83,19 +84,16 @@ export function needsYouRows(
     const response = source.pulls.response
     if (!response.available) return beads
     if (latestPullSources.get(response.repo.toLowerCase()) !== source) return beads
-    const pulls = needsYouPulls(response).flatMap(({ pull, reasons }): NeedsYouRow[] => {
-      const key = JSON.stringify(['pull', response.repo.toLowerCase(), pull.number])
-      return [
-        {
-          key,
-          title: `${response.repo} #${pull.number} · ${pull.title}`,
-          source: 'PR',
-          context,
-          reason: reasons.join(' · '),
-          target: { kind: 'pull', url: pull.url },
-        },
-      ]
-    })
+    const pulls = needsYouPulls(response, now).map(
+      ({ pull, reasons, age }): NeedsYouRow => ({
+        key: JSON.stringify(['pull', response.repo.toLowerCase(), pull.number]),
+        title: `${response.repo} #${pull.number} · ${pull.title}`,
+        source: 'PR',
+        context,
+        reason: [...reasons, age].join(' · '),
+        target: { kind: 'pull', url: pull.url },
+      }),
+    )
     return [...beads, ...pulls]
   })
   const askRows = askStores.flatMap((store): NeedsYouRow[] =>

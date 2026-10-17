@@ -79,10 +79,12 @@ it.each([false, true])(
               headRef: 'feature',
               headRepo: 'acme/repo',
               author: 'alice',
+              createdAt: '2026-10-01T00:00:00Z',
               updatedAt: '',
               checks: 'none',
               review: 'none',
               openFeedback: 0,
+              reviewers: [],
             },
           ],
         }

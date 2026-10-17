@@ -9,11 +9,17 @@ import {
   asHostId,
   hostPath,
   type PullDetailResponse,
+  type PullReviewer,
   type PullSummary,
   type PullsResponse,
 } from '../src/shared'
 
 const ROOT = hostPath(asHostId('local'), '/projects/widgets')
+
+/** October 2026, local time: the 9th is a Friday, the 12th the Monday after. */
+const october = (day: number, hour = 0): number => new Date(2026, 9, day, hour).getTime()
+const iso = (ms: number): string => new Date(ms).toISOString()
+const NOW = october(12, 17)
 
 function pull(number: number, overrides: Partial<PullSummary> = {}): PullSummary {
   return {
@@ -25,13 +31,23 @@ function pull(number: number, overrides: Partial<PullSummary> = {}): PullSummary
     headRef: `branch-${number}`,
     headRepo: 'acme/widgets',
     author: 'ben',
-    updatedAt: '2026-09-30T00:00:00Z',
+    createdAt: iso(october(1, 9)),
+    updatedAt: iso(october(2, 9)),
     checks: 'none',
     review: 'none',
     openFeedback: 0,
     headOid: `head-${number}`,
+    reviewers: [],
     ...overrides,
   }
+}
+
+function pending(
+  login: string,
+  requestedAt: number,
+  kind: PullReviewer['kind'] = 'user',
+): PullReviewer {
+  return { login, kind, pending: true, requestedAt: iso(requestedAt) }
 }
 
 let host: HTMLDivElement
@@ -56,7 +72,10 @@ beforeEach(() => {
     viewer: 'stephanie',
     branch: 'feat/panel',
     branchPulls: [pull(1, { checks: 'failing', openFeedback: 2, author: 'stephanie' })],
-    authored: [pull(1), pull(3, { draft: true })],
+    authored: [
+      pull(1, { checks: 'failing', openFeedback: 2, author: 'stephanie' }),
+      pull(3, { draft: true }),
+    ],
     reviewRequested: [pull(2, { review: 'review-required' })],
     hasMore: false,
   }
@@ -166,8 +185,9 @@ describe('PullsPanel', () => {
     render()
     await flush()
     expect(sectionNumbers('This branch')).toEqual(['1'])
-    expect(sectionNumbers('Needs your review')).toEqual(['2'])
-    expect(sectionNumbers('Yours')).toEqual(['3'])
+    expect(sectionNumbers('Needs you')).toEqual(['2'])
+    expect(sectionNumbers('Waiting')).toEqual([])
+    expect(sectionNumbers('Drafts')).toEqual(['3'])
     const branchRow = host.querySelector('[data-pull-number="1"]')
     expect(branchRow?.textContent).toContain('CI failing')
     expect(branchRow?.textContent).toContain('2 open comments')
@@ -178,6 +198,53 @@ describe('PullsPanel', () => {
     expect(branchRow?.textContent).toContain('No checkout')
     expect(branchRow?.querySelector('a button')).toBeNull()
     expect(host.querySelector('[data-pull-number="2"]')?.textContent).toContain('@ben')
+  })
+
+  it('shows each ask with its reason and business-time age, and whom a wait is on', async () => {
+    vi.setSystemTime(NOW)
+    response = {
+      ...response,
+      available: true,
+      branchPulls: [],
+      reviewRequested: [
+        pull(2, { reviewers: [pending('stephanie', october(9, 17))] }),
+        pull(6, { reviewers: [pending('stephanie', october(6, 9))] }),
+      ],
+      authored: [
+        pull(4, {
+          author: 'stephanie',
+          reviewers: [pending('acme/platform', october(7, 12), 'team')],
+        }),
+        pull(5, {
+          author: 'stephanie',
+          reviewers: [
+            pending('ben', october(8, 12)),
+            pending('acme/platform', october(7, 12), 'team'),
+          ],
+        }),
+      ],
+    } as PullsResponse
+    render()
+    await flush()
+    expect(sectionNumbers('Needs you')).toEqual(['6', '2'])
+    expect(sectionNumbers('Waiting')).toEqual(['4', '5'])
+    const friday = host.querySelector('[data-pull-number="2"]')
+    expect(friday?.querySelector('.pulls-reason')?.textContent).toBe('Requested')
+    const age = friday?.querySelector('.pulls-age')
+    expect(age?.textContent).toBe('1d')
+    expect(age?.classList.contains('pulls-age-amber')).toBe(true)
+    expect(age?.getAttribute('title')).toBe(new Date(october(9, 17)).toLocaleString())
+    const stale = host.querySelector('[data-pull-number="6"] .pulls-age')
+    expect(stale?.textContent).toBe('4d')
+    expect(stale?.classList.contains('pulls-age-red')).toBe(true)
+    const team = host.querySelector('[data-pull-number="4"]')
+    expect(team?.querySelector('.pulls-reason')?.textContent).toBe('via @platform')
+    expect(team?.querySelector('.pulls-waiting-on')?.textContent).toBe(
+      'waiting on @platform',
+    )
+    expect(
+      host.querySelector('[data-pull-number="5"] .pulls-waiting-on')?.textContent,
+    ).toBe('waiting on @ben, @platform')
   })
 
   it('says why and what to do when gh is not signed in', async () => {

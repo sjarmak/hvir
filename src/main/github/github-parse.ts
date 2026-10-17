@@ -6,14 +6,21 @@ import type {
   PullsUnavailable,
 } from '../../shared'
 import {
+  actor,
+  asRecord,
+  asString,
+  laterIso,
+  nodesOf,
+  type JsonRecord,
+} from './github-json'
+import { reviewersOf, timelineOf } from './github-reviewers'
+import {
   openFeedbackCount,
   type FeedbackComment,
   type FeedbackReview,
   type FeedbackThread,
 } from './pr-feedback'
 import type { PullDetail, PullReviewComment, PullReviewThread } from '../../shared'
-
-type JsonRecord = Readonly<Record<string, unknown>>
 
 export interface ParsedPulls {
   readonly viewer: string
@@ -123,34 +130,6 @@ const STATES: Readonly<Record<string, PullState>> = {
   CLOSED: 'closed',
 }
 
-function asRecord(value: unknown): JsonRecord | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? (value as JsonRecord)
-    : undefined
-}
-
-function asString(value: unknown): string | undefined {
-  return typeof value === 'string' ? value : undefined
-}
-
-function nodesOf(connection: unknown): readonly JsonRecord[] {
-  const nodes = asRecord(connection)?.['nodes']
-  if (!Array.isArray(nodes)) return []
-  return nodes.flatMap((node) => {
-    const record = asRecord(node)
-    return record === undefined ? [] : [record]
-  })
-}
-
-function actor(value: unknown): { readonly login?: string; readonly bot: boolean } {
-  const record = asRecord(value)
-  const login = asString(record?.['login'])
-  return {
-    ...(login === undefined ? {} : { login }),
-    bot: record?.['__typename'] === 'Bot',
-  }
-}
-
 function threadsOf(node: JsonRecord): readonly FeedbackThread[] {
   return nodesOf(node['reviewThreads']).map((thread) => ({
     isResolved: thread['isResolved'] === true,
@@ -188,6 +167,32 @@ function headRepositoryOf(node: JsonRecord): string | undefined {
   return asString(asRecord(node['headRepository'])?.['nameWithOwner'])?.toLowerCase()
 }
 
+type PullSize = Pick<PullSummary, 'additions' | 'deletions' | 'changedFiles'>
+
+function sizeOf(node: JsonRecord): PullSize {
+  const additions = node['additions']
+  const deletions = node['deletions']
+  const changedFiles = node['changedFiles']
+  return {
+    ...(typeof additions === 'number' ? { additions } : {}),
+    ...(typeof deletions === 'number' ? { deletions } : {}),
+    ...(typeof changedFiles === 'number' ? { changedFiles } : {}),
+  }
+}
+
+function viewerReviewedAtOf(
+  reviews: readonly FeedbackReview[],
+  viewer: string,
+): string | undefined {
+  return reviews
+    .filter((review) => !review.bot && review.author === viewer)
+    .reduce<string | undefined>(
+      (latest, review) =>
+        review.submittedAt === undefined ? latest : laterIso(latest, review.submittedAt),
+      undefined,
+    )
+}
+
 function parsePull(node: JsonRecord, viewer: string): PullSummary | undefined {
   const number = node['number']
   const title = asString(node['title'])
@@ -200,6 +205,9 @@ function parsePull(node: JsonRecord, viewer: string): PullSummary | undefined {
   const headCommittedAt = asString(headCommit?.['committedDate'])
   const author = actor(node['author']).login ?? ''
   const headRepo = headRepositoryOf(node)
+  const reviews = reviewsOf(node)
+  const viewerReviewedAt = viewerReviewedAtOf(reviews, viewer)
+  const { requestedAt, ...timeline } = timelineOf(node, viewer)
   return {
     number,
     title,
@@ -209,6 +217,7 @@ function parsePull(node: JsonRecord, viewer: string): PullSummary | undefined {
     headRef: asString(node['headRefName']) ?? '',
     ...(headRepo === undefined ? {} : { headRepo }),
     author,
+    createdAt: asString(node['createdAt']) ?? '',
     updatedAt: asString(node['updatedAt']) ?? '',
     checks: CHECKS[rollup ?? ''] ?? 'none',
     review: REVIEWS[asString(node['reviewDecision']) ?? ''] ?? 'none',
@@ -219,12 +228,17 @@ function parsePull(node: JsonRecord, viewer: string): PullSummary | undefined {
             {
               ...(headCommittedAt === undefined ? {} : { headCommittedAt }),
               threads: threadsOf(node),
-              reviews: reviewsOf(node),
+              reviews,
               comments: commentsOf(node),
             },
             viewer,
           ),
     ...(headOid === undefined ? {} : { headOid }),
+    ...(headCommittedAt === undefined ? {} : { headCommittedAt }),
+    ...timeline,
+    ...(viewerReviewedAt === undefined ? {} : { viewerReviewedAt }),
+    ...sizeOf(node),
+    reviewers: reviewersOf(node, requestedAt),
   }
 }
 
@@ -238,6 +252,12 @@ function pullsOf(
     const pull = parsePull(node, viewer)
     return pull === undefined ? [] : [pull]
   })
+}
+
+function uniqueByNumber(pulls: readonly PullSummary[]): readonly PullSummary[] {
+  return pulls.filter(
+    (pull, index) => pulls.findIndex((other) => other.number === pull.number) === index,
+  )
 }
 
 function searchHasMore(connection: unknown): boolean {
@@ -274,8 +294,11 @@ export function parsePullsOutput(
             return head !== undefined && localRepos.has(head)
           }),
     authored: pullsOf(data['mine'], viewer),
-    reviewRequested: pullsOf(data['review'], viewer),
-    hasMore: searchHasMore(data['mine']) || searchHasMore(data['review']),
+    reviewRequested: uniqueByNumber([
+      ...pullsOf(data['review'], viewer),
+      ...pullsOf(data['assigned'], viewer),
+    ]),
+    hasMore: ['mine', 'review', 'assigned'].some((key) => searchHasMore(data[key])),
   }
 }
 

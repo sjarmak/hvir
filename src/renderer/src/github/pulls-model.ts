@@ -1,19 +1,40 @@
-import type {
-  PullChecks,
-  PullReview,
-  PullSummary,
-  PullsSnapshot,
-  PullsUnavailable,
-  PullsUnavailableReason,
+import {
+  businessAgeTone,
+  businessMsBetween,
+  formatBusinessAge,
+  pullWaitRows,
+  type BusinessAgeTone,
+  type PullChecks,
+  type PullReview,
+  type PullSummary,
+  type PullWaitList,
+  type PullWaitRow,
+  type PullsSnapshot,
+  type PullsUnavailable,
+  type PullsUnavailableReason,
 } from '../../../shared'
 
-export type PullSectionKey = 'branch' | 'review' | 'authored'
+export type PullSectionKey = 'branch' | PullWaitList
+
+/** A shared wait row without its list; `since` is absent for a branch pull request nobody is waiting on. */
+export type PullSectionRow = Omit<PullWaitRow, 'list' | 'since'> & {
+  readonly since?: number
+}
 
 export interface PullSection {
   readonly key: PullSectionKey
   readonly label: string
-  readonly pulls: readonly PullSummary[]
+  readonly rows: readonly PullSectionRow[]
 }
+
+const SECTION_LABELS: Readonly<Record<PullSectionKey, string>> = {
+  branch: 'This branch',
+  needs: 'Needs you',
+  waiting: 'Waiting',
+  drafts: 'Drafts',
+}
+
+const WAIT_LISTS: readonly PullWaitList[] = ['needs', 'waiting', 'drafts']
 
 const CHECK_LABELS: Readonly<Record<PullChecks, string>> = {
   passing: 'CI passing',
@@ -46,28 +67,68 @@ function byOpenThenNewest(left: PullSummary, right: PullSummary): number {
   return right.updatedAt.localeCompare(left.updatedAt)
 }
 
-function unseen(
-  pulls: readonly PullSummary[],
-  seen: ReadonlySet<number>,
-): readonly PullSummary[] {
+function uniqueByNumber(pulls: readonly PullSummary[]): readonly PullSummary[] {
   const kept = new Map<number, PullSummary>()
   for (const pull of pulls) {
-    if (!seen.has(pull.number) && !kept.has(pull.number)) kept.set(pull.number, pull)
+    if (!kept.has(pull.number)) kept.set(pull.number, pull)
   }
-  return [...kept.values()].sort(byOpenThenNewest)
+  return [...kept.values()]
 }
 
-export function pullSections(snapshot: PullsSnapshot): readonly PullSection[] {
-  const branch = unseen(snapshot.branchPulls, new Set())
-  const afterBranch = new Set(branch.map((pull) => pull.number))
-  const review = unseen(snapshot.reviewRequested, afterBranch)
-  const afterReview = new Set([...afterBranch, ...review.map((pull) => pull.number)])
-  const authored = unseen(snapshot.authored, afterReview)
+function waitRow({ list: _list, ...row }: PullWaitRow): PullSectionRow {
+  return row
+}
+
+function branchRow(pull: PullSummary, wait: PullWaitRow | undefined): PullSectionRow {
+  return wait === undefined ? { pull, reason: '', waitingOn: [] } : waitRow(wait)
+}
+
+/**
+ * This branch keeps its membership and recency order; the other sections come from the
+ * shared wait derivation (ADR-976), minus the pull requests the branch already shows.
+ */
+export function pullSections(
+  snapshot: PullsSnapshot,
+  now: number,
+): readonly PullSection[] {
+  const waits = pullWaitRows(snapshot, now)
+  const branch = [...uniqueByNumber(snapshot.branchPulls)].sort(byOpenThenNewest)
+  const shown = new Set(branch.map((pull) => pull.number))
+  const section = (
+    key: PullSectionKey,
+    rows: readonly PullSectionRow[],
+  ): PullSection => ({
+    key,
+    label: SECTION_LABELS[key],
+    rows,
+  })
   return [
-    { key: 'branch', label: 'This branch', pulls: branch },
-    { key: 'review', label: 'Needs your review', pulls: review },
-    { key: 'authored', label: 'Yours', pulls: authored },
+    section(
+      'branch',
+      branch.map((pull) =>
+        branchRow(
+          pull,
+          waits.find((wait) => wait.pull.number === pull.number),
+        ),
+      ),
+    ),
+    ...WAIT_LISTS.map((list) =>
+      section(
+        list,
+        waits
+          .filter((wait) => wait.list === list && !shown.has(wait.pull.number))
+          .map(waitRow),
+      ),
+    ),
   ]
+}
+
+export function ageLabel(since: number, now: number): string {
+  return formatBusinessAge(businessMsBetween(since, now))
+}
+
+export function ageTone(since: number, now: number): BusinessAgeTone {
+  return businessAgeTone(businessMsBetween(since, now))
 }
 
 export function checksLabel(checks: PullChecks): string {

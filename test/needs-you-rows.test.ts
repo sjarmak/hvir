@@ -15,6 +15,9 @@ import {
 } from '../src/shared'
 import { needsYouRows } from '../src/renderer/src/needs-you/needs-you-rows'
 
+const CREATED = '2026-10-01T00:00:00Z'
+const NOW = Date.parse(CREATED) + 30 * 60_000
+
 const source = (host: string, path: string, observedAt = 1): NeedsYouSourceSnapshot => ({
   projectId: `${host}-${path}`,
   workspaceId: path,
@@ -63,10 +66,12 @@ const source = (host: string, path: string, observedAt = 1): NeedsYouSourceSnaps
           draft: false,
           headRef: 'feature',
           author: 'them',
+          createdAt: CREATED,
           updatedAt: '2026-10-02',
           checks: 'passing',
           review: 'none',
           openFeedback: 0,
+          reviewers: [],
         },
       ],
     },
@@ -100,7 +105,7 @@ describe('Needs you source identities', () => {
       telemetryFreshness: unsupported,
       usage: unsupported,
     }
-    expect(needsYouRows([active], [])[0]).toMatchObject({
+    expect(needsYouRows([active], [], [], NOW)[0]).toMatchObject({
       reason: 'Prompt',
       target: { kind: 'session', row: active },
     })
@@ -120,6 +125,8 @@ describe('Needs you source identities', () => {
           { ...active, attention: { status: 'available', value: 'none' } },
         ],
         [],
+        [],
+        NOW,
       ),
     ).toEqual([])
   })
@@ -132,7 +139,7 @@ describe('Needs you source identities', () => {
         source(`ssh-${suffix}`, '/repo'),
         source('local', `/work-${suffix}`),
       ]
-      const rows = needsYouRows([], sources)
+      const rows = needsYouRows([], sources, [], NOW)
       const beads = rows.filter((row) => row.target.kind === 'bead')
       expect(new Set(beads.map((row) => row.key)).size).toBe(3)
       expect(
@@ -140,6 +147,17 @@ describe('Needs you source identities', () => {
       ).toEqual(sources.map((value) => value.root))
       expect(rows.filter((row) => row.target.kind === 'pull')).toHaveLength(1)
     }))
+
+  it('puts the business-time age of the ask after the PR reason', () => {
+    const [row] = needsYouRows([], [source('local', '/repo')], [], NOW).filter(
+      (candidate) => candidate.target.kind === 'pull',
+    )
+    expect(row).toMatchObject({
+      title: 'org/repo #1 · Review',
+      reason: 'Requested · 30m',
+      target: { kind: 'pull', url: 'https://github.com/org/repo/pull/1' },
+    })
+  })
 
   it('lists decisions-store asks as unlinked rows ahead of workspace rows', () => {
     const workspace = source('local', '/repo')
@@ -169,6 +187,7 @@ describe('Needs you source identities', () => {
           },
         },
       ],
+      NOW,
     )
     expect(rows[0]).toMatchObject({
       title: 'dec-1 · Pick',
@@ -198,7 +217,9 @@ describe('Needs you source identities', () => {
       },
     }
     expect(
-      needsYouRows([], [earlier, cleared]).filter((row) => row.target.kind === 'pull'),
+      needsYouRows([], [earlier, cleared], [], NOW).filter(
+        (row) => row.target.kind === 'pull',
+      ),
     ).toEqual([])
   })
 
@@ -223,7 +244,7 @@ describe('Needs you source identities', () => {
         },
       },
     }
-    expect(needsYouRows([], [available])).toHaveLength(2)
-    expect(needsYouRows([], [unavailable])).toEqual([])
+    expect(needsYouRows([], [available], [], NOW)).toHaveLength(2)
+    expect(needsYouRows([], [unavailable], [], NOW)).toEqual([])
   })
 })

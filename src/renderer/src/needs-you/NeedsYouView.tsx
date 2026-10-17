@@ -24,6 +24,19 @@ import './needs-you.css'
 export type { NeedsYouBeadTarget } from './needs-you-rows'
 
 const PAGE_SIZE = 50
+const AGE_TICK_MS = 60_000
+
+/** The instant business-time ages count to; it advances once a minute while `running`. */
+function useMinuteClock(running: boolean): number {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    if (!running) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), AGE_TICK_MS)
+    return () => clearInterval(timer)
+  }, [running])
+  return now
+}
 
 export function NeedsYouView({
   projection,
@@ -45,6 +58,7 @@ export function NeedsYouView({
   readonly onError: (message: string) => void
 }): ReactElement {
   const foreground = useSessionsForeground()
+  const now = useMinuteClock(foreground)
   const errorReporter = useRef(onError)
   errorReporter.current = onError
   const [source] = useState(
@@ -94,10 +108,11 @@ export function NeedsYouView({
         ? needsYouRows(
             sessions.status === 'available' ? sessions.rows : [],
             reads.status === 'available' ? reads.snapshot.sources : [],
-            reads.status === 'available' ? reads.snapshot.askStores : [],
+            reads.status === 'available' ? (reads.snapshot.askStores ?? []) : [],
+            now,
           )
         : [],
-    [foreground, reads, sessions],
+    [foreground, now, reads, sessions],
   )
   const problems = useMemo(
     () => (reads.status === 'available' ? needsYouProblems(reads.snapshot) : []),
