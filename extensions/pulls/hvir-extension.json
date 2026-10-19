@@ -1,7 +1,7 @@
 {
   "id": "hvir.pulls",
   "name": "Pull requests",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "contract": "1.0",
   "requiredCapabilities": [
     "presentation.read",
@@ -12,7 +12,7 @@
     "connector.output",
     "contributions.publish"
   ],
-  "optionalCapabilities": ["connector.connect"],
+  "optionalCapabilities": ["connector.connect", "actions.invoke", "terminal.start"],
   "access": [],
   "views": [
     {
@@ -147,6 +147,32 @@
           }
         },
         "required": ["number"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "checkout-terminal",
+      "title": "Check out a pull request in a new terminal",
+      "view": "pulls",
+      "agents": false,
+      "effects": {
+        "delete": false,
+        "replace": false
+      },
+      "timeoutMs": 120000,
+      "description": "Runs gh pr checkout <number> -R <repo> once in a new terminal at the workspace root, after you confirm in hvir. Local workspaces only: hvir's terminal.start admits only connectors approved for the local host.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "number": {
+            "type": "number"
+          }
+        },
+        "required": ["repo", "number"],
         "additionalProperties": false
       }
     }

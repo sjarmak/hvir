@@ -1,19 +1,66 @@
 /* global window, document */
-const { run } = window.host
+const { run, availability, request } = window.host
 const { el } = window
+const {
+  labelLogBatches,
+  parseLabelLog,
+  commitLabelRows,
+  labelChips,
+  labelSummary,
+  isPartialClone,
+  CONFIG_NAMES,
+} = window.commitLabels
 const ui = Object.fromEntries(
   [
-    'title', 'meta', 'url', 'status', 'checks-section', 'checks-heading', 'checks', 'reviews-section', 'reviews',
-    'threads-section', 'threads-heading', 'threads', 'comments-section', 'comments', 'body-section', 'body',
+    'title',
+    'meta',
+    'url',
+    'status',
+    'checkout',
+    'checkout-note',
+    'checkout-status',
+    'commits-section',
+    'commits-heading',
+    'commits-note',
+    'commits',
+    'checks-section',
+    'checks-heading',
+    'checks',
+    'reviews-section',
+    'reviews',
+    'threads-section',
+    'threads-heading',
+    'threads',
+    'comments-section',
+    'comments',
+    'body-section',
+    'body',
   ].map((id) => [id, document.getElementById(id)]),
 )
-const REPO = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/
+const REPO = window.REPO_NAME
 const VIEW_FIELDS = [
-  'number', 'title', 'url', 'state', 'isDraft', 'author', 'headRefName', 'baseRefName', 'body', 'additions',
-  'deletions', 'changedFiles', 'reviewDecision', 'reviewRequests', 'latestReviews', 'comments', 'statusCheckRollup',
+  'number',
+  'title',
+  'url',
+  'state',
+  'isDraft',
+  'author',
+  'headRefName',
+  'baseRefName',
+  'body',
+  'additions',
+  'deletions',
+  'changedFiles',
+  'reviewDecision',
+  'reviewRequests',
+  'latestReviews',
+  'comments',
+  'statusCheckRollup',
+  'commits',
 ].join(',')
 /** Check runs report `conclusion`; legacy status contexts report `state`. */
-const checkResult = (check) => (check.conclusion || check.state || check.status || 'pending').toLowerCase()
+const checkResult = (check) =>
+  (check.conclusion || check.state || check.status || 'pending').toLowerCase()
 /** Same cadence as the list view, so an open detail tab does not go stale. */
 const REFRESH_MS = 60 * 1000
 
@@ -33,25 +80,41 @@ const line = (head, meta, body) =>
 
 function renderChecks(checks) {
   const results = checks.map(checkResult)
-  const counts = [...new Set(results)].map((result) => `${results.filter((r) => r === result).length} ${result}`)
+  const counts = [...new Set(results)].map(
+    (result) => `${results.filter((r) => r === result).length} ${result}`,
+  )
   ui['checks-heading'].textContent = `Checks · ${counts.join(', ')}`
-  const notable = checks.filter((check) => !['success', 'skipped', 'neutral'].includes(checkResult(check)))
-  fill('checks-section', 'checks', notable.map((check) => line(check.name || check.context || 'check', checkResult(check))))
+  const notable = checks.filter(
+    (check) => !['success', 'skipped', 'neutral'].includes(checkResult(check)),
+  )
+  fill(
+    'checks-section',
+    'checks',
+    notable.map((check) =>
+      line(check.name || check.context || 'check', checkResult(check)),
+    ),
+  )
   if (checks.length > 0) ui['checks-section'].hidden = false
 }
 
 function renderReviews(pull) {
   const requested = (pull.reviewRequests ?? []).map((request) =>
-    line(`@${request.login ?? request.slug ?? request.name}`, 'review requested'))
+    line(`@${request.login ?? request.slug ?? request.name}`, 'review requested'),
+  )
   const reviews = (pull.latestReviews ?? []).map((review) =>
-    line(`@${review.author?.login ?? 'unknown'}`, `${review.state.toLowerCase()} · ${window.ago(review.submittedAt)}`))
+    line(
+      `@${review.author?.login ?? 'unknown'}`,
+      `${review.state.toLowerCase()} · ${window.ago(review.submittedAt)}`,
+    ),
+  )
   fill('reviews-section', 'reviews', [...requested, ...reviews])
 }
 
 /** Review threads come from a second, optional query; its failure is a note, not a blank view. */
 function renderThreads(detail) {
   if (detail.error) {
-    ui['threads-heading'].textContent = `Review threads · unavailable: ${detail.error.message}`
+    ui['threads-heading'].textContent =
+      `Review threads · unavailable: ${detail.error.message}`
     fill('threads-section', 'threads', [])
     ui['threads-section'].hidden = false
     return
@@ -60,13 +123,27 @@ function renderThreads(detail) {
   const nodes = threads?.nodes ?? []
   const open = nodes.filter((thread) => !thread.isResolved && !thread.isOutdated).length
   const more = threads?.pageInfo?.hasNextPage ? '+' : ''
-  ui['threads-heading'].textContent = `Review threads · ${open} open of ${nodes.length}${more}`
-  fill('threads-section', 'threads', nodes.map((thread) => {
-    const [first] = thread.comments?.nodes ?? []
-    const state = [thread.isResolved ? 'resolved' : 'open', thread.isOutdated ? 'outdated' : ''].filter(Boolean).join(' · ')
-    const where = `${thread.path ?? 'location unknown'}${thread.line ? `:${thread.line}` : ''}`
-    return line(where, `${state}${first?.author ? ` · @${first.author.login}` : ''}`, first?.body ?? '')
-  }))
+  ui['threads-heading'].textContent =
+    `Review threads · ${open} open of ${nodes.length}${more}`
+  fill(
+    'threads-section',
+    'threads',
+    nodes.map((thread) => {
+      const [first] = thread.comments?.nodes ?? []
+      const state = [
+        thread.isResolved ? 'resolved' : 'open',
+        thread.isOutdated ? 'outdated' : '',
+      ]
+        .filter(Boolean)
+        .join(' · ')
+      const where = `${thread.path ?? 'location unknown'}${thread.line ? `:${thread.line}` : ''}`
+      return line(
+        where,
+        `${state}${first?.author ? ` · @${first.author.login}` : ''}`,
+        first?.body ?? '',
+      )
+    }),
+  )
 }
 
 function render(pull, detail) {
@@ -78,13 +155,24 @@ function render(pull, detail) {
     `${pull.headRefName} → ${pull.baseRefName}`,
     `+${pull.additions} −${pull.deletions} in ${pull.changedFiles} files`,
     pull.reviewDecision ? pull.reviewDecision.toLowerCase().replaceAll('_', ' ') : '',
-  ].filter(Boolean).join(' · ')
+  ]
+    .filter(Boolean)
+    .join(' · ')
   ui.url.textContent = pull.url
   renderChecks(pull.statusCheckRollup ?? [])
   renderReviews(pull)
   renderThreads(detail)
-  fill('comments-section', 'comments', (pull.comments ?? []).map((comment) =>
-    line(`@${comment.author?.login ?? 'unknown'}`, window.ago(comment.createdAt), comment.body)))
+  fill(
+    'comments-section',
+    'comments',
+    (pull.comments ?? []).map((comment) =>
+      line(
+        `@${comment.author?.login ?? 'unknown'}`,
+        window.ago(comment.createdAt),
+        comment.body,
+      ),
+    ),
+  )
   ui.body.textContent = pull.body ?? ''
   ui['body-section'].hidden = !pull.body
 }
@@ -92,8 +180,123 @@ function render(pull, detail) {
 /** Which pull request a context shows; a workspace change is a different view even for the same number. */
 function keyOf(context) {
   const { repo, number } = context?.input ?? {}
-  if (typeof repo !== 'string' || !REPO.test(repo) || !Number.isInteger(number) || number < 1) return undefined
+  if (
+    typeof repo !== 'string' ||
+    !REPO.test(repo) ||
+    !Number.isInteger(number) ||
+    number < 1
+  )
+    return undefined
   return `${context.workspace?.id}|${repo}#${number}`
+}
+
+/**
+ * Labels for the pull request's commits from this checkout. Commits that are not local are
+ * reported, never fetched (a partial clone would fetch them on demand without --no-lazy-fetch).
+ * Failure is a note in the section, not a blank view.
+ */
+async function readLabels(workspace, commits, connectors) {
+  if (commits.length === 0) return { rows: [] }
+  if (connectors.git !== 'supported')
+    return {
+      note: `Change-type labels need git. ${window.hostNote('git', connectors, workspace)}`,
+    }
+  try {
+    const partialClone = isPartialClone(
+      await run('git', workspace, CONFIG_NAMES, { text: true }),
+    )
+    const outputs = []
+    for (const args of labelLogBatches(
+      commits.map((commit) => commit.oid),
+      partialClone,
+    ))
+      outputs.push(await run('git', workspace, args, { text: true }))
+    const found = new Map(outputs.flatMap((output) => [...parseLabelLog(output)]))
+    return { rows: commitLabelRows(commits, found) }
+  } catch (error) {
+    return { error }
+  }
+}
+
+function commitLine(row) {
+  const chips =
+    row.state === 'missing'
+      ? [el('span', {}, 'not in this checkout')]
+      : (row.label ? labelChips(row.label) : []).map((chip) =>
+          el('span', { className: 'chip' }, chip),
+        )
+  return el(
+    'li',
+    { className: 'line' },
+    el('span', {}, `${row.short} ${row.headline}`),
+    chips.length ? el('span', { className: 'hvir-meta chips' }, ...chips) : null,
+  )
+}
+
+function renderCommits(labels) {
+  const quiet = (note) => {
+    ui['commits-heading'].textContent = 'Commits'
+    ui['commits-note'].textContent = note
+    ui['commits-note'].hidden = false
+    fill('commits-section', 'commits', [])
+    ui['commits-section'].hidden = false
+  }
+  if (labels.error)
+    return quiet(`Change-type labels unavailable: ${labels.error.message}`)
+  if (labels.note) return quiet(labels.note)
+  const { rows } = labels
+  if (rows.length === 0) return fill('commits-section', 'commits', [])
+  if (!rows.some((row) => row.state === 'labeled')) return quiet(labelSummary(rows))
+  ui['commits-heading'].textContent = `Commits · ${labelSummary(rows)}`
+  ui['commits-note'].hidden = true
+  fill('commits-section', 'commits', rows.map(commitLine))
+}
+
+function renderCheckout(workspace, repo, number) {
+  const local = workspace.host === 'local'
+  ui.checkout.hidden = !local
+  ui.checkout.dataset.number = String(number)
+  ui.checkout.dataset.repo = repo
+  ui['checkout-note'].hidden = local
+  ui['checkout-note'].textContent = local ? '' : window.TERMINAL_LOCAL_ONLY
+}
+
+/** hvir's terminal.start outcome; a declined confirmation is `not-started`, not an error. */
+function checkoutOutcome(result, repo, number) {
+  if (result?.outcome === 'handed-off')
+    return `Opened a terminal running gh pr checkout ${number} -R ${repo}.`
+  if (result?.outcome === 'not-started') return `Terminal not started: ${result.reason}`
+  if (result?.outcome === 'interrupted-uncertain')
+    return `The terminal may have started (${result.reason}). Check it before trying again.`
+  return `Unexpected terminal result: ${JSON.stringify(result).slice(0, 120)}`
+}
+
+async function checkout() {
+  const number = Number(ui.checkout.dataset.number)
+  const { repo } = ui.checkout.dataset
+  ui.checkout.disabled = true
+  ui['checkout-status'].textContent = 'Waiting for your confirmation…'
+  try {
+    const result = await request('actions.invoke', {
+      action: 'checkout-terminal',
+      input: { repo, number },
+    })
+    ui['checkout-status'].textContent = checkoutOutcome(result, repo, number)
+  } catch (error) {
+    ui['checkout-status'].textContent = error.message
+  } finally {
+    ui.checkout.disabled = false
+  }
+}
+
+/** What a previous pull request left on screen must not read as this one's. */
+let shownKey
+function clearShown(key) {
+  shownKey = key
+  ui.checkout.hidden = true
+  ui['checkout-note'].hidden = true
+  ui['checkout-status'].textContent = ''
+  ui['commits-section'].hidden = true
 }
 
 async function load(context, current) {
@@ -103,8 +306,22 @@ async function load(context, current) {
     return
   }
   const { repo, number } = context.input
+  if (key !== shownKey) clearShown(key)
+  const connectors = await availability({ workspace: context.workspace })
+  if (connectors.gh !== 'supported') {
+    ui.status.textContent = window.hostNote('gh', connectors, context.workspace)
+    return
+  }
   const [pull, detail] = await Promise.all([
-    run('gh', context.workspace, ['pr', 'view', String(number), '-R', repo, '--json', VIEW_FIELDS]),
+    run('gh', context.workspace, [
+      'pr',
+      'view',
+      String(number),
+      '-R',
+      repo,
+      '--json',
+      VIEW_FIELDS,
+    ]),
     run('gh', context.workspace, window.pullQuery.pullDetailQueryArgs(repo, number)).then(
       (value) => ({ value }),
       (error) => ({ error }),
@@ -113,6 +330,15 @@ async function load(context, current) {
   if (keyOf(current()) !== key) return
   ui.status.textContent = ''
   render(pull, detail)
+  renderCheckout(context.workspace, repo, number)
+  const labels = await readLabels(context.workspace, pull.commits ?? [], connectors)
+  if (keyOf(current()) !== key) return
+  renderCommits(labels)
 }
 
-window.startView({ load, refreshMs: REFRESH_MS, onStatus: (text) => (ui.status.textContent = text) })
+window.startView({
+  load,
+  refreshMs: REFRESH_MS,
+  onStatus: (text) => (ui.status.textContent = text),
+})
+ui.checkout.addEventListener('click', () => void checkout())

@@ -141,5 +141,17 @@ window.host = (() => {
     })
   }
 
-  return Object.freeze({ request, run, availability })
+  /**
+   * Ask hvir to run an approved connector once in a new terminal at the workspace root. Only an
+   * action handler can (`actionId` is required), and hvir asks the person to confirm first.
+   * Resolves hvir's outcome: `handed-off`, `not-started` (including a declined confirmation), or
+   * `interrupted-uncertain`.
+   */
+  async function terminal(connector, workspace, args, actionId) {
+    const slot = await slotFor(connector, workspace, actionId)
+    if (!slot) throw new Error(`${connector} is not approved for host ${workspace.host}`)
+    return request('terminal.start', { connector: slot, workspace: workspace.id, args }, actionId)
+  }
+
+  return Object.freeze({ request, run, terminal, availability })
 })()
