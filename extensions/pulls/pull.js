@@ -20,7 +20,6 @@ const ui = Object.fromEntries(
     'checkout',
     'checkout-note',
     'checkout-status',
-    'worktree-terminal',
     'commits-section',
     'commits-heading',
     'commits-note',
@@ -276,42 +275,24 @@ async function checkedOut(workspace, pull, connectors) {
   }
 }
 
-function checkoutNote(local, existing, shell) {
+function checkoutNote(local, existing) {
   if (!local) return window.TERMINAL_LOCAL_ONLY
   if (existing.here) return 'This workspace already has the branch checked out.'
-  if (existing.path) {
-    const name = existing.path.split('/').at(-1)
-    const terminal =
-      shell === 'supported'
-        ? ''
-        : ' Approve the shell connector for local in Settings → Extensions to open a terminal there.'
-    return `Already checked out in ${name} (${existing.path}). Select it in the sidebar.${terminal}`
-  }
+  if (existing.path)
+    return `Already checked out in ${existing.path.split('/').at(-1)} (${existing.path}). Select it in the sidebar, or open a terminal there from the Pull requests list.`
   if (existing.error)
     return `Could not list worktrees, so a checkout may fail: ${existing.error.message}`
   return ''
 }
 
-function renderCheckout(workspace, repo, number, existing, shell) {
+function renderCheckout(workspace, repo, number, existing) {
   const local = workspace.host === 'local'
-  const note = checkoutNote(local, existing, shell)
-  const elsewhere = existing.path !== undefined && !existing.here
+  const note = checkoutNote(local, existing)
   ui.checkout.hidden = !local || existing.path !== undefined
   ui.checkout.dataset.number = String(number)
   ui.checkout.dataset.repo = repo
-  ui['worktree-terminal'].hidden = !local || !elsewhere || shell !== 'supported'
-  ui['worktree-terminal'].dataset.path = existing.path ?? ''
   ui['checkout-note'].hidden = note === ''
   ui['checkout-note'].textContent = note
-}
-
-/** hvir's terminal.start outcome; a declined confirmation is `not-started`, not an error. */
-function terminalOutcome(result, started) {
-  if (result?.outcome === 'handed-off') return started
-  if (result?.outcome === 'not-started') return `Terminal not started: ${result.reason}`
-  if (result?.outcome === 'interrupted-uncertain')
-    return `The terminal may have started (${result.reason}). Check it before trying again.`
-  return `Unexpected terminal result: ${JSON.stringify(result).slice(0, 120)}`
 }
 
 /** Run a terminal action from `button`; hvir asks the person to confirm before anything starts. */
@@ -320,7 +301,7 @@ async function launch(button, action, input, started) {
   ui['checkout-status'].textContent = 'Waiting for your confirmation…'
   try {
     const result = await request('actions.invoke', { action, input })
-    ui['checkout-status'].textContent = terminalOutcome(result, started)
+    ui['checkout-status'].textContent = window.terminalOutcome(result, started)
   } catch (error) {
     ui['checkout-status'].textContent = error.message
   } finally {
@@ -339,22 +320,11 @@ function checkout() {
   )
 }
 
-function worktreeTerminal() {
-  const { path } = ui['worktree-terminal'].dataset
-  return launch(
-    ui['worktree-terminal'],
-    'worktree-terminal',
-    { path },
-    `Opened a terminal in ${path}.`,
-  )
-}
-
 /** What a previous pull request left on screen must not read as this one's. */
 let shownKey
 function clearShown(key) {
   shownKey = key
   ui.checkout.hidden = true
-  ui['worktree-terminal'].hidden = true
   ui['checkout-note'].hidden = true
   ui['checkout-status'].textContent = ''
   ui['commits-section'].hidden = true
@@ -393,7 +363,7 @@ async function load(context, current) {
   render(pull, detail)
   const existing = await checkedOut(context.workspace, pull, connectors)
   if (keyOf(current()) !== key) return
-  renderCheckout(context.workspace, repo, number, existing, connectors.shell)
+  renderCheckout(context.workspace, repo, number, existing)
   const labels = await readLabels(context.workspace, pull.commits ?? [], connectors)
   if (keyOf(current()) !== key) return
   renderCommits(labels)
@@ -405,4 +375,3 @@ window.startView({
   onStatus: (text) => (ui.status.textContent = text),
 })
 ui.checkout.addEventListener('click', () => void checkout())
-ui['worktree-terminal'].addEventListener('click', () => void worktreeTerminal())

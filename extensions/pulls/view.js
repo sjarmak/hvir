@@ -141,3 +141,12 @@ window.REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/
 /** hvir's terminal.start admits only connectors approved for the local host. */
 window.TERMINAL_LOCAL_ONLY =
   'Terminal checkout works for local workspaces in this hvir build.'
+
+/** hvir's terminal.start outcome; a declined confirmation is `not-started`, not an error. */
+window.terminalOutcome = function terminalOutcome(result, started) {
+  if (result?.outcome === 'handed-off') return started
+  if (result?.outcome === 'not-started') return `Terminal not started: ${result.reason}`
+  if (result?.outcome === 'interrupted-uncertain')
+    return `The terminal may have started (${result.reason}). Check it before trying again.`
+  return `Unexpected terminal result: ${JSON.stringify(result).slice(0, 120)}`
+}
