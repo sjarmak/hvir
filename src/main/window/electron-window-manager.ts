@@ -20,6 +20,7 @@ import { developmentApplicationIcon } from './application-icon'
 import { installRendererDocumentLifecycle } from './electron-renderer-document-lifecycle'
 import { ElectronRendererRecovery } from './electron-renderer-recovery'
 import { WindowHealthTracker } from './window-health-tracker'
+import { bindRendererFocus } from './window-focus-binding'
 import {
   ownsRendererReadiness,
   ownsUnresponsiveRecovery,
@@ -268,11 +269,11 @@ export function createElectronWindowManager(
     let hadUsableDocument = false
     const windowHealth = new WindowHealthTracker(dependencies.recordWindowHealth)
 
-    // Seed the owner's focus at creation: the aggregate is away until some
-    // window says otherwise, and a window focused at birth never blurs first.
-    dependencies.setOwnerFocused(rendererOwner, win.isFocused())
-    win.on('focus', () => dependencies.setOwnerFocused(rendererOwner, true))
-    win.on('blur', () => dependencies.setOwnerFocused(rendererOwner, false))
+    const seedRendererFocus = bindRendererFocus(
+      win,
+      () => rendererOwner,
+      dependencies.setOwnerFocused,
+    )
 
     win.on('ready-to-show', () => win.show())
     const rolloverRendererResources = (
@@ -289,6 +290,7 @@ export function createElectronWindowManager(
         .closeOwner(expectedOwner.id, expectedOwner.generation)
         .catch((error) => console.error('[web-pane] renderer cleanup failed', error))
       rendererOwner = dependencies.rolloverRenderer(expectedOwner)
+      seedRendererFocus()
       committedDocument = false
       return rendererOwner
     }

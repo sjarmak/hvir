@@ -4,6 +4,7 @@
 > Supersedes: [ADR-008](ADR-008-project-worktree-workspaces.md) | partial | Periodic Git work refreshing activity for every open workspace.
 > Supersedes: [ADR-023](ADR-023-closed-workspace-lifecycle.md) | partial | Fixed per-worktree periodic status cadence.
 > Superseded by: [ADR-975](ADR-975-bounded-background-workspace-sampling.md) | partial | A full demand-driven refresh sampling status for every present worktree of the project.
+> Superseded by: [ADR-977](ADR-977-focus-gated-workspace-polling.md) | partial | Periodic discovery and closed-workspace sampling running while no hvir window is focused.
 
 ## Context
 

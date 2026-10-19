@@ -26,6 +26,10 @@ export interface ApplicationAttentionOptions {
 export interface ApplicationAttention {
   readonly set: ActionableAttentionSet
   readonly badge: AttentionBadge
+  readonly windowFocus: {
+    isFocused(): boolean
+    observe(listener: () => void): () => void
+  }
   updateAttention(owner: RendererOwner, set: RendererAttentionSet): void
   setOwnerFocused(owner: RendererOwner, focused: boolean): void
   removeOwner(owner: RendererOwner): void
@@ -59,6 +63,10 @@ export function installApplicationAttention(
   return {
     set,
     badge,
+    windowFocus: {
+      isFocused: () => !set.away(),
+      observe: (listener) => set.observe(listener),
+    },
     updateAttention: (owner, next) =>
       set.setRendererEntries(owner, next.entries, next.working),
     setOwnerFocused: (owner, focused) => set.setFocused(owner, focused),

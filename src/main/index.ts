@@ -298,8 +298,8 @@ function createWorkbenchEntry(): void {
         removal,
         emitWatch: (event) => emit('project:watch', event),
         createWatch: (target, callbacks) => new ProjectWatchController(target, callbacks),
-        shouldPoll: () =>
-          !runtime.isShuttingDown && BrowserWindow.getAllWindows().length > 0,
+        shouldPoll: () => !runtime.isShuttingDown,
+        focus: attention.windowFocus,
         onError: (message, error) => console.error(message, error),
       }),
       (coordinator) => coordinator.dispose(),
