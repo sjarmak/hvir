@@ -73,8 +73,8 @@ function render(snapshot, now) {
   if (sections.length === 1 && sections[0].rows.length === 0)
     ui.sections.append(el('p', { className: 'hvir-meta note' }, 'Nothing open that is yours or waiting on you.'))
   ui.repo.textContent = snapshot.repo
-  ui.more.hidden = !snapshot.hasMore || limit >= MAX_LIMIT
   const capped = snapshot.hasMore && limit >= MAX_LIMIT
+  ui.more.hidden = !snapshot.hasMore || capped
   setStatus(capped ? `Showing the first ${MAX_LIMIT} of each list. Open GitHub for the rest.` : '')
 }
 

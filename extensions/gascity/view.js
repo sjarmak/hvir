@@ -51,7 +51,7 @@ window.startView = ({ load, refreshMs = 0, onStatus = () => {} }) => {
   })
   window.addEventListener('pagehide', dispose)
   bridge.send({ kind: 'hello', contract: '1.0' })
-  return { refresh: tick, current: () => context }
+  return { refresh: tick }
 }
 
 /** Small DOM helper: el('span', { className: 'x' }, 'text', child). */
@@ -141,7 +141,7 @@ window.connectHandler = (connector, onStatus, refresh) => async () => {
 /**
  * Incremental city event feed: the first poll reads `--since <window>` and the head seq; later
  * polls replay only events after the last seen seq (`--watch` returns buffered events at once
- * and waits at most two seconds when there are none). Returns new events oldest first.
+ * and waits at most two seconds when there are none). Resolves new events oldest first.
  */
 window.eventFeed = (window_ = '10m') => {
   let lastSeq
@@ -167,7 +167,7 @@ window.eventFeed = (window_ = '10m') => {
         )
       }
       for (const event of fresh) lastSeq = Math.max(lastSeq, event.seq ?? 0)
-      return { fresh }
+      return fresh
     },
     get workspaceId() {
       return workspaceId

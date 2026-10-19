@@ -30,7 +30,7 @@ function bindRows(container, rows, onSelect) {
 
 const reportOpenError = (error) => (ui.status.textContent = error.message)
 
-function renderSessions(sessions, scope) {
+function renderSessions(sessions, active, scope) {
   const rows = [...sessions]
     .sort((a, b) => Date.parse(b.last_active || 0) - Date.parse(a.last_active || 0))
     .map((session) =>
@@ -46,7 +46,6 @@ function renderSessions(sessions, scope) {
       }),
     )
   bindRows(ui.sessions, rows, (row) => window.openOwn('session', { id: row.dataset.id }).catch(reportOpenError))
-  const active = sessions.filter((session) => session.state === 'active').length
   heading('sessions', `${scope ? 'Rig sessions' : 'Sessions'} · ${active} active of ${sessions.length}`)
 }
 
@@ -172,13 +171,13 @@ async function load(context) {
   const scope = wholeCity ? undefined : rig
   const sessions = scope ? all.filter((session) => sessionInRig(session, scope)) : all
   ui.name.textContent = scope ? `${scope.name} · ${status.city_name}` : status.city_name
+  const active = sessions.filter((session) => session.state === 'active').length
   showScope(scope)
-  renderSessions(sessions, scope)
+  renderSessions(sessions, active, scope)
   renderRigs(status.rigs ?? [])
   if (scope)
     renderAgents((status.agents ?? []).filter((agent) => agent.qualified_name?.startsWith(`${scope.name}/`)))
   await loadSlow(context.workspace, scope, changed || previous !== rig?.path)
-  const active = sessions.filter((session) => session.state === 'active').length
   const health = status.health?.degraded ? 'degraded' : status.running ? 'running' : 'stopped'
   const rigState = scope ? ` · rig ${scope.suspended ? 'suspended' : 'live'}` : ''
   const warning = status.summary?.store_health?.warning ? ' · store size warning' : ''

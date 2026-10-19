@@ -82,7 +82,7 @@ async function load(context) {
     renderBeads(assignedBeads(beadEvents))
     slowLoadedAt = Date.now()
   }
-  const { fresh } = await feed.poll(context.workspace)
+  const fresh = await feed.poll(context.workspace)
   const related = fresh.filter((event) => {
     const text = JSON.stringify(event)
     return text.includes(id) || (!!alias && text.includes(`"${alias}"`))

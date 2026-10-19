@@ -86,7 +86,7 @@ async function load(context) {
       scopeLoadedAt = Date.now()
     }
   }
-  const { fresh } = await feed.poll(context.workspace)
+  const fresh = await feed.poll(context.workspace)
   lastFresh = fresh
   events = [...[...fresh].reverse(), ...events].slice(0, RAW_KEEP)
   render()
