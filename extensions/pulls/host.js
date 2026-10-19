@@ -23,7 +23,8 @@ window.host = (() => {
     }
   }
 
-  async function request(capability, input) {
+  /** `actionId` admits a request from a view hvir opened hidden to run an agent action. */
+  async function request(capability, input, actionId) {
     await paced()
     const id = `${prefix}-${++serial}`
     return new Promise((resolve, reject) => {
@@ -33,15 +34,15 @@ window.host = (() => {
         if (message.ok) resolve(message.value)
         else reject(new Error(message.error))
       })
-      bridge.send({ kind: 'request', id, capability, ...(input ? { input } : {}) })
+      bridge.send({ kind: 'request', id, capability, ...(input ? { input } : {}), ...(actionId ? { actionId } : {}) })
     })
   }
 
-  async function readStream(receipt, stream) {
+  async function readStream(receipt, stream, actionId) {
     let text = ''
     let offset = 0
     while (offset !== null) {
-      const page = await request('connector.output', { receipt, stream, offset })
+      const page = await request('connector.output', { receipt, stream, offset }, actionId)
       text += page.data
       offset = page.nextOffset
     }
@@ -60,13 +61,12 @@ window.host = (() => {
    * is set, raw stdout when `text` is set); rejects with the program's last stderr line or the
    * connector's reason.
    */
-  async function run(connector, workspace, args, { lines = false, text = false } = {}) {
-    const result = await request('connector.execute', {
-      connector,
-      host: workspace.host,
-      workspace: workspace.id,
-      args,
-    })
+  async function run(connector, workspace, args, { lines = false, text = false, actionId } = {}) {
+    const result = await request(
+      'connector.execute',
+      { connector, host: workspace.host, workspace: workspace.id, args },
+      actionId,
+    )
     if (result.outcome !== 'completed') {
       const error = new Error(`${connector} did not run: ${result.reason ?? result.outcome}`)
       error.reason = result.reason ?? result.outcome
@@ -74,8 +74,8 @@ window.host = (() => {
     }
     try {
       const [stdout, stderr] = await Promise.all([
-        readStream(result.receipt, 'stdout'),
-        readStream(result.receipt, 'stderr'),
+        readStream(result.receipt, 'stdout', actionId),
+        readStream(result.receipt, 'stderr', actionId),
       ])
       if (result.code !== 0)
         throw new Error(stderr.trim().split('\n').at(-1) || `${connector} exited ${result.code}`)
@@ -83,15 +83,27 @@ window.host = (() => {
       if (text) return stdout
       return lines ? parseLines(stdout) : JSON.parse(stdout)
     } finally {
-      await request('connector.output', { receipt: result.receipt, release: true }).catch(
+      await request('connector.output', { receipt: result.receipt, release: true }, actionId).catch(
         () => {},
       )
     }
   }
 
-  async function availability() {
-    const status = await request('connector.status')
-    return Object.fromEntries(status.map((entry) => [entry.connector, entry.availability]))
+  /**
+   * Connector availability by id. hvir reports an approval as `supported` whatever workspace asks,
+   * but runs it only for workspaces on the approved host; with `workspace`, an approval for another
+   * host reads `other-host` and `hosts` names where each connector is approved.
+   */
+  async function availability({ actionId, workspace } = {}) {
+    const status = await request('connector.status', undefined, actionId)
+    const state = (entry) =>
+      workspace && entry.availability === 'supported' && entry.host && entry.host !== workspace.host
+        ? 'other-host'
+        : entry.availability
+    return Object.freeze({
+      ...Object.fromEntries(status.map((entry) => [entry.connector, state(entry)])),
+      hosts: Object.fromEntries(status.filter((entry) => entry.host).map((entry) => [entry.connector, entry.host])),
+    })
   }
 
   return Object.freeze({ request, run, availability })
