@@ -1,0 +1,143 @@
+process.env.TZ = 'America/New_York'
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const { businessMsBetween, formatBusinessAge, businessAgeTone, BUSINESS_DAY_MS } = require('../business-time.js')
+const { pullWaitRows } = require('../pull-waits.js')
+const { pullSections, needYouCount, age, badges } = require('../pulls-model.js')
+
+const at = (iso) => new Date(iso).getTime()
+const HOUR = 3_600_000
+
+test('business time skips the weekend between a Friday ask and a Monday read', () => {
+  const ms = businessMsBetween(at('2026-10-16T17:00:00'), at('2026-10-19T10:00:00'))
+  assert.equal(ms, 17 * HOUR)
+  assert.equal(formatBusinessAge(ms), '17h')
+  assert.equal(businessAgeTone(ms), 'neutral')
+})
+
+test('Thursday morning to Tuesday afternoon is three business days and red', () => {
+  const ms = businessMsBetween(at('2026-10-15T09:00:00'), at('2026-10-20T15:00:00'))
+  assert.equal(ms, 78 * HOUR)
+  assert.equal(formatBusinessAge(ms), '3d')
+  assert.equal(businessAgeTone(ms), 'red')
+})
+
+test('a span inside one weekend and a reversed span are both zero', () => {
+  assert.equal(businessMsBetween(at('2026-10-17T10:00:00'), at('2026-10-18T20:00:00')), 0)
+  assert.equal(businessMsBetween(at('2026-10-20T10:00:00'), at('2026-10-19T10:00:00')), 0)
+})
+
+test('age labels and tones switch at the named thresholds', () => {
+  assert.equal(formatBusinessAge(59 * 60_000 + 59_000), '59m')
+  assert.equal(formatBusinessAge(HOUR * 5 + 1), '5h')
+  assert.equal(businessAgeTone(BUSINESS_DAY_MS - 1), 'neutral')
+  assert.equal(businessAgeTone(BUSINESS_DAY_MS), 'amber')
+  assert.equal(businessAgeTone(3 * BUSINESS_DAY_MS - 1), 'amber')
+})
+
+const pull = (number, fields = {}) => ({
+  number,
+  title: `Pull ${number}`,
+  url: `https://github.com/acme/widgets/pull/${number}`,
+  state: 'open',
+  draft: false,
+  headRef: `branch-${number}`,
+  author: 'steph',
+  createdAt: '2026-10-05T09:00:00-04:00',
+  updatedAt: '2026-10-14T09:00:00-04:00',
+  checks: 'passing',
+  review: 'none',
+  openFeedback: 0,
+  reviewers: [],
+  ...fields,
+})
+const NOW = at('2026-10-20T15:00:00')
+
+const snapshot = {
+  repo: 'acme/widgets',
+  viewer: 'steph',
+  branch: 'branch-71',
+  branchPulls: [],
+  authored: [
+    pull(71, { reviewers: [{ login: 'kai', kind: 'user', pending: true, requestedAt: '2026-10-13T11:00:00-04:00' }] }),
+    pull(72, {
+      review: 'changes-requested',
+      reviewers: [
+        { login: 'rin', kind: 'user', pending: false, reviewState: 'changes-requested', reviewedAt: '2026-10-09T16:00:00-04:00' },
+      ],
+    }),
+    pull(73, { checks: 'failing', headCommittedAt: '2026-10-19T08:30:00-04:00' }),
+    pull(74, { draft: true, updatedAt: '2026-10-12T09:00:00-04:00' }),
+    pull(75, { draft: true, updatedAt: '2026-10-19T09:00:00-04:00' }),
+    pull(76, { state: 'merged' }),
+  ],
+  reviewRequested: [
+    pull(80, {
+      author: 'kai',
+      readyForReviewAt: '2026-10-14T13:00:00-04:00',
+      reviewers: [{ login: 'steph', kind: 'user', pending: true, requestedAt: '2026-10-08T10:00:00-04:00' }],
+    }),
+    pull(81, {
+      author: 'rin',
+      viewerReviewedAt: '2026-10-16T12:00:00-04:00',
+      reviewers: [{ login: 'acme/core', kind: 'team', pending: true, requestedAt: '2026-10-15T12:00:00-04:00' }],
+    }),
+    pull(82, { author: 'rin', viewerAssignedAt: '2026-10-06T10:00:00-04:00' }),
+  ],
+}
+
+test('rows rank needs then waiting oldest ask first, drafts newest first', () => {
+  const rows = pullWaitRows(snapshot, NOW)
+  assert.deepEqual(
+    rows.map((row) => [row.pull.number, row.list, row.reason]),
+    [
+      [82, 'needs', 'Assigned'],
+      [72, 'needs', 'Changes requested'],
+      [80, 'needs', 'Requested'],
+      [73, 'needs', 'CI failing'],
+      [71, 'waiting', 'Waiting'],
+      [75, 'drafts', 'Draft'],
+      [74, 'drafts', 'Draft'],
+    ],
+  )
+})
+
+test('a request counts from the later of the ask and ready for review; a team ask already answered drops out', () => {
+  const rows = pullWaitRows(snapshot, NOW)
+  const ready = rows.find((row) => row.pull.number === 80)
+  assert.equal(ready.since, at('2026-10-14T13:00:00-04:00'))
+  assert.equal(age(ready.since, NOW).label, '4d')
+  assert.equal(rows.some((row) => row.pull.number === 81), false)
+  assert.deepEqual(rows.find((row) => row.pull.number === 71).waitingOn, ['kai'])
+})
+
+test('This branch keeps its pull request out of the wait sections and badges skip the reason', () => {
+  const sections = pullSections({ ...snapshot, branchPulls: [snapshot.authored[0]] }, NOW)
+  assert.deepEqual(
+    sections.map((section) => [section.key, section.rows.map((row) => row.pull.number)]),
+    [
+      ['branch', [71]],
+      ['needs', [82, 72, 80, 73]],
+      ['waiting', []],
+      ['drafts', [75, 74]],
+    ],
+  )
+  const failing = sections[1].rows.find((row) => row.pull.number === 73)
+  assert.deepEqual(badges(failing), [])
+  assert.deepEqual(badges({ ...failing, reason: 'Assigned' }), ['CI failing'])
+})
+
+test('the header count includes a branch pull request that needs the viewer and dedupes by URL', () => {
+  const onBranch = { ...snapshot, branchPulls: [snapshot.authored[1]] }
+  const needsSection = pullSections(onBranch, NOW).find((section) => section.key === 'needs')
+  assert.equal(needsSection.rows.some((row) => row.pull.number === 72), false)
+  assert.equal(needYouCount([onBranch], NOW), 4)
+  const other = {
+    ...snapshot,
+    repo: 'acme/gadgets',
+    authored: [pull(90, { url: 'https://github.com/acme/gadgets/pull/90', checks: 'failing' })],
+    reviewRequested: [],
+  }
+  assert.equal(needYouCount([onBranch, snapshot, other], NOW), 5)
+  assert.equal(needYouCount([], NOW), 0)
+})

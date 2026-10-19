@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>City activity</title>
+    <link rel="stylesheet" href="presentation.css" />
+    <link rel="stylesheet" href="gascity.css" />
+  </head>
+  <body class="hvir-guest hvir-panel">
+    <main class="hvir-stack">
+      <div class="hvir-toolbar">
+        <strong id="name">City activity</strong>
+        <button id="scope" class="hvir-button" data-variant="regular" type="button" hidden>Whole city</button>
+      </div>
+      <div class="hvir-toolbar">
+        <input id="filter" class="hvir-input" type="search" placeholder="Filter by type or subject" aria-label="Filter events" />
+      </div>
+      <p id="status" class="hvir-meta" role="status">Connecting…</p>
+      <ol id="events" class="event-list hvir-scroll"></ol>
+    </main>
+    <script src="guest-ui.js"></script>
+    <script src="host.js"></script>
+    <script src="view.js"></script>
+    <script src="activity.js"></script>
+  </body>
+</html>
