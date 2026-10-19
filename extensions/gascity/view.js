@@ -15,6 +15,7 @@ window.startView = ({ load, refreshMs = 0, onStatus = () => {} }) => {
   async function tick() {
     if (running || disposed || !context?.visible) return
     running = true
+    const started = context
     try {
       await load(context)
     } catch (error) {
@@ -22,6 +23,8 @@ window.startView = ({ load, refreshMs = 0, onStatus = () => {} }) => {
     } finally {
       running = false
     }
+    // A context change that arrived mid-load was skipped above; load it now, not a refresh later.
+    if (context !== started) void tick()
   }
 
   function apply(next) {
@@ -106,7 +109,7 @@ window.eventItem = (event) => {
 /** True when `path` is `rigPath` or inside it. */
 window.inRig = (path, rigPath) => !!path && (path === rigPath || path.startsWith(`${rigPath}/`))
 
-/** The rig (from `gc status --json` rigs) whose path is the longest prefix of `root`, if any. */
+/** The rig (from crewParse.parseRigList) whose path is the longest prefix of `root`, if any. */
 window.rigFor = (root, rigs) =>
   [...rigs].sort((a, b) => b.path.length - a.path.length).find((entry) => window.inRig(root, entry.path))
 

@@ -1,8 +1,12 @@
 /* global window, document */
 const { run } = window.host
 const ui = Object.fromEntries(
-  ['title', 'meta', 'status', 'beads', 'events'].map((id) => [id, document.getElementById(id)]),
+  ['title', 'meta', 'status', 'beads', 'events', 'peek', 'peek-status', 'peek-refresh'].map((id) => [
+    id,
+    document.getElementById(id),
+  ]),
 )
+const { PEEK_LINES, peekArgs, peekTail } = window.peek
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const MAX_EVENTS = 100
 /** Beads and session state change slowly; events stream incrementally every refresh. */
@@ -51,7 +55,27 @@ function renderBeads(beads) {
   )
 }
 
+/** The agent's pane, read-only (`gc session peek` never attaches or sends input), last PEEK_LINES lines. */
+async function loadPeek(workspace, id) {
+  try {
+    const { text, shown, total } = peekTail(await run('gc', workspace, peekArgs(id), { text: true }))
+    ui.peek.textContent = text
+    ui.peek.hidden = shown === 0
+    ui['peek-status'].textContent =
+      shown === 0
+        ? 'No output captured; the session may be asleep.'
+        : `Last ${shown} of ${total} captured lines (capped at ${PEEK_LINES}) · read-only`
+  } catch (error) {
+    ui.peek.hidden = true
+    ui['peek-status'].textContent = `Output unavailable: ${error.message}`
+  }
+}
+
 async function load(context) {
+  if (!context.workspace) {
+    ui.title.textContent = 'No workspace selected'
+    return
+  }
   const id = context.input?.id
   if (typeof id !== 'string' || !SESSION_ID.test(id)) {
     ui.title.textContent = 'No session selected'
@@ -64,7 +88,7 @@ async function load(context) {
     slowLoadedAt = 0
   }
   if (Date.now() - slowLoadedAt > SLOW_REFRESH_MS) {
-    const { sessions } = await run('gc', context.workspace, ['session', 'list', '--json'])
+    const sessions = window.crewParse.sessionRows(await run('gc', context.workspace, ['session', 'list', '--json']))
     const session = sessions.find((entry) => entry.id === id)
     if (session) renderSession(session)
     else ui.meta.textContent = `${id} is no longer listed`
@@ -82,6 +106,7 @@ async function load(context) {
     renderBeads(assignedBeads(beadEvents))
     slowLoadedAt = Date.now()
   }
+  await loadPeek(context.workspace, id)
   const fresh = await feed.poll(context.workspace)
   const related = fresh.filter((event) => {
     const text = JSON.stringify(event)
@@ -93,4 +118,5 @@ async function load(context) {
   ui.status.textContent = `${mine.length} recent events · updated ${time}`
 }
 
-window.startView({ load, refreshMs: 10000, onStatus: (text) => (ui.status.textContent = text) })
+const view = window.startView({ load, refreshMs: 10000, onStatus: (text) => (ui.status.textContent = text) })
+ui['peek-refresh'].addEventListener('click', () => void view.refresh())

@@ -37,12 +37,13 @@ function inScope(event) {
   return needles.some((needle) => text.includes(needle))
 }
 
+/** City name and rigs from `gc rig list`; never `gc status`, whose runtime probe has taken over 120 s. */
 async function loadScope(workspace) {
-  const status = await run('gc', workspace, ['status', '--json'])
-  cityName = status.city_name ?? ''
-  rig = window.rigFor(workspace.root?.path, status.rigs ?? [])
+  const city = window.crewParse.parseRigList(await run('gc', workspace, ['rig', 'list', '--json']))
+  cityName = city.cityName ?? ''
+  rig = window.rigFor(workspace.root?.path, city.rigs.filter((entry) => !entry.hq))
   if (rig) {
-    const sessions = (await run('gc', workspace, ['session', 'list', '--json'])).sessions ?? []
+    const sessions = window.crewParse.sessionRows(await run('gc', workspace, ['session', 'list', '--json']))
     needles = rigNeedles(rig, sessions.filter((session) => window.sessionInRig(session, rig)))
   } else needles = []
   scopeLoadedAt = Date.now()

@@ -11,12 +11,21 @@
       <h1 id="title">Loading…</h1>
       <p id="meta" class="hvir-meta"></p>
       <p id="status" class="hvir-meta" role="status"></p>
+      <section>
+        <div class="hvir-toolbar">
+          <h2>Recent output</h2>
+          <button id="peek-refresh" class="hvir-button" data-variant="regular" type="button">Refresh</button>
+        </div>
+        <p id="peek-status" class="hvir-meta" role="status"></p>
+        <pre id="peek" class="peek-output" aria-label="Recent agent output" hidden></pre>
+      </section>
       <section><h2>Beads</h2><div id="beads" role="listbox" aria-label="Beads"></div></section>
       <section class="hvir-scroll"><h2>Recent events</h2><ol id="events" class="event-list"></ol></section>
     </main>
     <script src="guest-ui.js"></script>
     <script src="host.js"></script>
     <script src="view.js"></script>
+    <script src="peek.js"></script>
     <script src="session.js"></script>
   </body>
 </html>
