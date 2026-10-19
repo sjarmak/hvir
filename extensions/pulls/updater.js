@@ -1,0 +1,95 @@
+/* global window */
+/**
+ * Sole publisher of the header count: pull requests that need the viewer across the workspaces of
+ * demanded sessions, deduplicated by URL (pullsModel.needYouCount). The pulls view only renders,
+ * so the header keeps one meaning whether or not the view is open.
+ */
+const bridge = window.hvirExtension
+const { request, availability } = window.host
+const { needYouCount } = window.pullsModel
+const REFRESH_MS = 60 * 1000
+const TICK_MS = 1000
+let context = { visible: false, sessions: [] }
+let pending = false
+/** When the last real refresh started; a skipped cycle leaves it alone. */
+let lastRun = 0
+let disposed = false
+
+async function snapshotsAcross(workspaces) {
+  const snapshots = []
+  const failures = []
+  for (const workspace of workspaces) {
+    try {
+      snapshots.push(await window.pullsSource.snapshot(workspace, 30, false))
+    } catch (error) {
+      failures.push(`${workspace.name}: ${error.message}`)
+    }
+  }
+  return { snapshots, failures }
+}
+
+function publish({ snapshots, failures }) {
+  if (snapshots.length === 0)
+    return request('contributions.publish', {
+      item: 'pulls',
+      label: 'gh ?',
+      tooltip: failures[0].slice(0, 160),
+      availability: 'failed',
+    })
+  const count = needYouCount(snapshots, Date.now())
+  const missed = failures.length ? `; ${failures.length} unreadable` : ''
+  return request('contributions.publish', {
+    item: 'pulls',
+    label: `${count} need you`,
+    tooltip: `${count} pull requests need you across ${snapshots.length} workspaces${missed}`.slice(0, 160),
+    availability: 'current',
+    observedAt: Date.now(),
+  })
+}
+
+const sessionWorkspaces = () => [
+  ...new Map((context.sessions ?? []).map((session) => [session.workspace.id, session.workspace])).values(),
+]
+
+async function refresh() {
+  if (disposed || pending || !context.visible || Date.now() - lastRun < REFRESH_MS) return
+  const workspaces = sessionWorkspaces()
+  if (workspaces.length === 0) return
+  pending = true
+  try {
+    if ((await availability()).gh !== 'supported') return
+    lastRun = Date.now()
+    const result = await snapshotsAcross(workspaces)
+    if (context.visible && !disposed) await publish(result)
+  } catch (error) {
+    await request('contributions.publish', {
+      item: 'pulls',
+      label: 'gh ?',
+      tooltip: error.message.slice(0, 160),
+      availability: 'failed',
+    }).catch(() => {})
+  } finally {
+    pending = false
+  }
+}
+
+const timer = window.setInterval(refresh, TICK_MS)
+
+function dispose() {
+  if (disposed) return
+  disposed = true
+  window.clearInterval(timer)
+  unsubscribe()
+  window.removeEventListener('pagehide', dispose)
+}
+
+const unsubscribe = bridge.onMessage((message) => {
+  if (disposed) return
+  if (message.kind === 'revoked') return dispose()
+  if (message.kind !== 'context') return
+  if (message.context.visible && !context.visible) lastRun = 0
+  context = message.context
+  void refresh()
+})
+window.addEventListener('pagehide', dispose)
+bridge.send({ kind: 'hello', contract: '1.0' })

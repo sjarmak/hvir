@@ -1,0 +1,65 @@
+{
+  "id": "hvir.pulls",
+  "name": "Pull requests",
+  "version": "0.1.0",
+  "contract": "1.0",
+  "requiredCapabilities": [
+    "presentation.read",
+    "context.read",
+    "viewer.open-own",
+    "connector.status",
+    "connector.execute",
+    "connector.output",
+    "contributions.publish"
+  ],
+  "optionalCapabilities": ["connector.connect"],
+  "access": [],
+  "views": [
+    {
+      "id": "pulls",
+      "title": "Pull requests",
+      "entry": "pulls.html",
+      "placement": "workspace",
+      "navigation": "left",
+      "representations": ["view"]
+    },
+    {
+      "id": "pull",
+      "title": "Pull request",
+      "entry": "pull.html",
+      "placement": "workspace",
+      "representations": ["view"]
+    }
+  ],
+  "railItems": [
+    {
+      "id": "pulls",
+      "placement": "header",
+      "icon": "⇅",
+      "tooltip": "Pull requests that need you",
+      "kind": "observation",
+      "click": { "view": "pulls", "placement": "viewer" }
+    }
+  ],
+  "updater": "updater.html",
+  "connectors": [
+    {
+      "id": "gh",
+      "description": "Read pull requests, reviews and checks for the workspace repository with the GitHub CLI (gh). Read-only queries.",
+      "context": "workspace",
+      "setup": { "executable": "gh" },
+      "timeoutMs": 30000,
+      "outputBytes": 4194304,
+      "environment": ["GH_HOST", "GH_CONFIG_DIR"]
+    },
+    {
+      "id": "git",
+      "description": "Read the current branch and remotes of the workspace checkout so This branch can list its pull request.",
+      "context": "workspace",
+      "setup": { "executable": "git" },
+      "timeoutMs": 10000,
+      "outputBytes": 65536,
+      "environment": []
+    }
+  ]
+}
