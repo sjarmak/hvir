@@ -39,7 +39,9 @@ async function refresh() {
   pending = true
   lastRun = Date.now()
   try {
-    const sessions = context.sessions ?? []
+    // bd runs only for workspaces on its approved host; sessions elsewhere get no ready count.
+    const { hosts } = await window.host.availability()
+    const sessions = (context.sessions ?? []).filter((session) => session.workspace.host === hosts.bd)
     const workspaces = new Map(sessions.map((session) => [session.workspace.id, session.workspace]))
     const counts = new Map()
     for (const [id, workspace] of workspaces) counts.set(id, await readyCount(workspace))

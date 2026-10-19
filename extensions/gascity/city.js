@@ -136,8 +136,9 @@ async function loadSlow(workspace, scope, force) {
   }
   renderOrders(scope)
   if (!scope || (!force && Date.now() - readyLoadedAt < READY_REFRESH_MS)) return
-  if ((await availability()).bd !== 'supported') {
-    heading('ready', 'Ready · bd is not connected for this host')
+  const connectors = await availability({ workspace })
+  if (connectors.bd !== 'supported') {
+    heading('ready', `Ready · ${window.hostNote('bd', connectors, workspace)}`)
     return
   }
   try {
@@ -158,9 +159,10 @@ async function load(context) {
     workspaceId = context.workspace.id
     wholeCity = false
   }
-  if ((await availability()).gc !== 'supported') {
-    ui.status.textContent = 'gc is not connected for this workspace host.'
-    ui.connect.hidden = false
+  const connectors = await availability({ workspace: context.workspace })
+  if (connectors.gc !== 'supported') {
+    ui.status.textContent = window.hostNote('gc', connectors, context.workspace)
+    ui.connect.hidden = connectors.gc === 'other-host'
     return
   }
   ui.connect.hidden = true

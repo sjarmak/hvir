@@ -208,3 +208,9 @@ window.bdRead = async (workspace, args) => {
 /** Status-line suffix telling the viewer bd ran without --readonly for this workspace. */
 window.bdNote = (workspace) =>
   unguardedBeadStores.has(workspace.id) ? ' · store refuses --readonly' : ''
+
+/** Why a connector can't serve this workspace: never approved, or approved for another host. */
+window.hostNote = (connector, connectors, workspace) =>
+  connectors[connector] === 'other-host'
+    ? `${connector} is approved for ${connectors.hosts[connector]}, not ${workspace.host}. Approve it for ${workspace.host} in Settings → Extensions.`
+    : `${connector} is not connected for this workspace host.`

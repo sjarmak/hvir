@@ -112,9 +112,21 @@ window.host = (() => {
     }
   }
 
-  async function availability() {
+  /**
+   * Connector availability by id. hvir reports an approval as `supported` whatever workspace asks,
+   * but runs it only for workspaces on the approved host; with `workspace`, an approval for another
+   * host reads `other-host` and `hosts` names where each connector is approved.
+   */
+  async function availability({ workspace } = {}) {
     const status = await request('connector.status')
-    return Object.fromEntries(status.map((entry) => [entry.connector, entry.availability]))
+    const state = (entry) =>
+      workspace && entry.availability === 'supported' && entry.host && entry.host !== workspace.host
+        ? 'other-host'
+        : entry.availability
+    return Object.freeze({
+      ...Object.fromEntries(status.map((entry) => [entry.connector, state(entry)])),
+      hosts: Object.fromEntries(status.filter((entry) => entry.host).map((entry) => [entry.connector, entry.host])),
+    })
   }
 
   return Object.freeze({ request, run, availability })
