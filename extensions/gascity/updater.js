@@ -39,13 +39,13 @@ async function refresh() {
   pending = true
   lastRun = Date.now()
   try {
-    // bd runs only for workspaces on its approved host; sessions elsewhere get no ready count.
-    const { hosts } = await availability()
-    const sessions = (context.sessions ?? []).filter((session) => hosts.bd.includes(session.workspace.host))
-    const workspaces = new Map(sessions.map((session) => [session.workspace.id, session.workspace]))
+    // bd runs only for workspaces whose host has it approved; sessions elsewhere get no ready count.
+    const workspaces = new Map((context.sessions ?? []).map((session) => [session.workspace.id, session.workspace]))
     const counts = new Map()
-    for (const [id, workspace] of workspaces) counts.set(id, await readyCount(workspace))
+    for (const [id, workspace] of workspaces)
+      if ((await availability({ workspace })).bd === 'supported') counts.set(id, await readyCount(workspace))
     if (!context.visible) return
+    const sessions = (context.sessions ?? []).filter((session) => counts.has(session.workspace.id))
     // One session's rejected publish (it ended mid-refresh) must not skip the others.
     const results = await Promise.allSettled(
       sessions.map((session) => publish(session, counts.get(session.workspace.id))),

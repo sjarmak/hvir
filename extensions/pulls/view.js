@@ -126,15 +126,9 @@ window.connectHandler = (connector, onStatus, refresh) => async () => {
   }
 }
 
-/** Why a connector can't serve this workspace: never approved, or approved for another host. */
-window.hostNote = (connector, connectors, workspace) =>
-  connectors[connector] === 'other-host'
-    ? `${connector} is approved for ${connectors.hosts[connector].join(', ')}, not ${workspace.host}. ${
-        connectors.freeSlot[connector]
-          ? `Approve ${connectors.freeSlot[connector]} for ${workspace.host}`
-          : `All ${connector} host slots are in use; revoke one and approve it for ${workspace.host}`
-      } in Settings → Extensions.`
-    : `${connector} is not connected for this workspace host.`
+/** Why a connector can't serve this workspace. */
+window.hostNote = (connector, workspace) =>
+  `${connector} is not connected for host ${workspace.host}.`
 
 /** An owner/name GitHub repository, as gh prints and accepts it. */
 window.REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/

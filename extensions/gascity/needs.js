@@ -41,13 +41,7 @@ function render(asks, rig) {
 async function unavailableConnector(workspace) {
   const connectors = await availability({ workspace })
   const connector = ['gc', 'bd'].find((name) => connectors[name] !== 'supported')
-  return (
-    connector && {
-      connector,
-      note: window.hostNote(connector, connectors, workspace),
-      connectors,
-    }
-  )
+  return connector && { connector, note: window.hostNote(connector, workspace) }
 }
 
 async function load(context) {
@@ -56,7 +50,7 @@ async function load(context) {
     return
   }
   missing = await unavailableConnector(context.workspace)
-  ui.connect.hidden = !missing || missing.connectors[missing.connector] === 'other-host'
+  ui.connect.hidden = !missing
   if (missing) {
     ui.connect.textContent = `Connect ${missing.connector}`
     ui.status.textContent = missing.note

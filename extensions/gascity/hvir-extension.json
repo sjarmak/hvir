@@ -1,7 +1,7 @@
 {
   "id": "hvir.gascity",
   "name": "Gas City",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "contract": "1.0",
   "requiredCapabilities": [
     "presentation.read",
@@ -99,44 +99,12 @@
       "environment": ["GC_CITY", "PATH"]
     },
     {
-      "id": "gc-2",
-      "description": "Host slot 2 for gc. hvir allows one host per connector, so approve this for a different host than gc; views pick the slot approved for the workspace's host.",
-      "context": "workspace",
-      "timeoutMs": 60000,
-      "outputBytes": 4194304,
-      "environment": ["GC_CITY", "PATH"]
-    },
-    {
-      "id": "gc-3",
-      "description": "Host slot 3 for gc. hvir allows one host per connector, so approve this for a different host than gc; views pick the slot approved for the workspace's host.",
-      "context": "workspace",
-      "timeoutMs": 60000,
-      "outputBytes": 4194304,
-      "environment": ["GC_CITY", "PATH"]
-    },
-    {
       "id": "bd",
       "description": "Read issues from the beads (bd) CLI in the workspace. Passes --readonly, except on stores that refuse it (dolt proxied-server mode), where only list, ready and show run.",
       "context": "workspace",
       "setup": {
         "executable": "bd"
       },
-      "timeoutMs": 30000,
-      "outputBytes": 4194304,
-      "environment": ["BEADS_DOLT_SERVER_PORT", "BEADS_DIR", "PATH"]
-    },
-    {
-      "id": "bd-2",
-      "description": "Host slot 2 for bd. hvir allows one host per connector, so approve this for a different host than bd; views pick the slot approved for the workspace's host.",
-      "context": "workspace",
-      "timeoutMs": 30000,
-      "outputBytes": 4194304,
-      "environment": ["BEADS_DOLT_SERVER_PORT", "BEADS_DIR", "PATH"]
-    },
-    {
-      "id": "bd-3",
-      "description": "Host slot 3 for bd. hvir allows one host per connector, so approve this for a different host than bd; views pick the slot approved for the workspace's host.",
-      "context": "workspace",
       "timeoutMs": 30000,
       "outputBytes": 4194304,
       "environment": ["BEADS_DOLT_SERVER_PORT", "BEADS_DIR", "PATH"]

@@ -1,7 +1,7 @@
 {
   "id": "hvir.pulls",
   "name": "Pull requests",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "contract": "1.0",
   "requiredCapabilities": [
     "presentation.read",
@@ -58,44 +58,12 @@
       "environment": ["GH_HOST", "GH_CONFIG_DIR"]
     },
     {
-      "id": "gh-2",
-      "description": "Host slot 2 for gh. hvir allows one host per connector, so approve this for a different host than gh; views pick the slot approved for the workspace's host.",
-      "context": "workspace",
-      "timeoutMs": 30000,
-      "outputBytes": 4194304,
-      "environment": ["GH_HOST", "GH_CONFIG_DIR"]
-    },
-    {
-      "id": "gh-3",
-      "description": "Host slot 3 for gh. hvir allows one host per connector, so approve this for a different host than gh; views pick the slot approved for the workspace's host.",
-      "context": "workspace",
-      "timeoutMs": 30000,
-      "outputBytes": 4194304,
-      "environment": ["GH_HOST", "GH_CONFIG_DIR"]
-    },
-    {
       "id": "git",
       "description": "Read the current branch and remotes of the workspace checkout so This branch can list its pull request.",
       "context": "workspace",
       "setup": {
         "executable": "git"
       },
-      "timeoutMs": 10000,
-      "outputBytes": 65536,
-      "environment": []
-    },
-    {
-      "id": "git-2",
-      "description": "Host slot 2 for git. hvir allows one host per connector, so approve this for a different host than git; views pick the slot approved for the workspace's host.",
-      "context": "workspace",
-      "timeoutMs": 10000,
-      "outputBytes": 65536,
-      "environment": []
-    },
-    {
-      "id": "git-3",
-      "description": "Host slot 3 for git. hvir allows one host per connector, so approve this for a different host than git; views pick the slot approved for the workspace's host.",
-      "context": "workspace",
       "timeoutMs": 10000,
       "outputBytes": 65536,
       "environment": []

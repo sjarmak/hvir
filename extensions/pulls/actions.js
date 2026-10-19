@@ -57,9 +57,7 @@
       workspace: context.workspace,
     })
     if (connectors.gh !== 'supported')
-      throw new Error(
-        `gh is not approved for host ${context.workspace.host}${connectors.hosts.gh.length ? ` (approved for ${connectors.hosts.gh.join(', ')})` : ''}`,
-      )
+      throw new Error(`gh is not approved for host ${context.workspace.host}`)
     const useGit = connectors.git === 'supported'
     const snapshot = await window.pullsSource.snapshot(
       context.workspace,
