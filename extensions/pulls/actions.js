@@ -48,7 +48,7 @@
     const limit = input?.limit ?? 30
     const connectors = await window.host.availability({ actionId, workspace: context.workspace })
     if (connectors.gh !== 'supported')
-      throw new Error(`gh is not approved for host ${context.workspace.host}${connectors.hosts.gh ? ` (approved for ${connectors.hosts.gh})` : ''}`)
+      throw new Error(`gh is not approved for host ${context.workspace.host}${connectors.hosts.gh.length ? ` (approved for ${connectors.hosts.gh.join(', ')})` : ''}`)
     const useGit = connectors.git === 'supported'
     const snapshot = await window.pullsSource.snapshot(context.workspace, limit, useGit, actionId)
     const now = Date.now()

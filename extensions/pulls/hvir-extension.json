@@ -1,7 +1,7 @@
 {
   "id": "hvir.pulls",
   "name": "Pull requests",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "contract": "1.0",
   "requiredCapabilities": [
     "presentation.read",
@@ -12,9 +12,7 @@
     "connector.output",
     "contributions.publish"
   ],
-  "optionalCapabilities": [
-    "connector.connect"
-  ],
+  "optionalCapabilities": ["connector.connect"],
   "access": [],
   "views": [
     {
@@ -23,25 +21,21 @@
       "entry": "pulls.html",
       "placement": "workspace",
       "navigation": "left",
-      "representations": [
-        "view"
-      ]
+      "representations": ["view"]
     },
     {
       "id": "pull",
       "title": "Pull request",
       "entry": "pull.html",
       "placement": "workspace",
-      "representations": [
-        "view"
-      ]
+      "representations": ["view"]
     }
   ],
   "railItems": [
     {
       "id": "pulls",
       "placement": "header",
-      "icon": "\u21c5",
+      "icon": "⇅",
       "tooltip": "Pull requests that need you",
       "kind": "observation",
       "click": {
@@ -61,10 +55,23 @@
       },
       "timeoutMs": 30000,
       "outputBytes": 4194304,
-      "environment": [
-        "GH_HOST",
-        "GH_CONFIG_DIR"
-      ]
+      "environment": ["GH_HOST", "GH_CONFIG_DIR"]
+    },
+    {
+      "id": "gh-2",
+      "description": "Host slot 2 for gh. hvir allows one host per connector, so approve this for a different host than gh; views pick the slot approved for the workspace's host.",
+      "context": "workspace",
+      "timeoutMs": 30000,
+      "outputBytes": 4194304,
+      "environment": ["GH_HOST", "GH_CONFIG_DIR"]
+    },
+    {
+      "id": "gh-3",
+      "description": "Host slot 3 for gh. hvir allows one host per connector, so approve this for a different host than gh; views pick the slot approved for the workspace's host.",
+      "context": "workspace",
+      "timeoutMs": 30000,
+      "outputBytes": 4194304,
+      "environment": ["GH_HOST", "GH_CONFIG_DIR"]
     },
     {
       "id": "git",
@@ -73,6 +80,22 @@
       "setup": {
         "executable": "git"
       },
+      "timeoutMs": 10000,
+      "outputBytes": 65536,
+      "environment": []
+    },
+    {
+      "id": "git-2",
+      "description": "Host slot 2 for git. hvir allows one host per connector, so approve this for a different host than git; views pick the slot approved for the workspace's host.",
+      "context": "workspace",
+      "timeoutMs": 10000,
+      "outputBytes": 65536,
+      "environment": []
+    },
+    {
+      "id": "git-3",
+      "description": "Host slot 3 for git. hvir allows one host per connector, so approve this for a different host than git; views pick the slot approved for the workspace's host.",
+      "context": "workspace",
       "timeoutMs": 10000,
       "outputBytes": 65536,
       "environment": []
@@ -95,21 +118,11 @@
         "properties": {
           "section": {
             "type": "string",
-            "enum": [
-              "branch",
-              "needs",
-              "waiting",
-              "drafts"
-            ]
+            "enum": ["branch", "needs", "waiting", "drafts"]
           },
           "limit": {
             "type": "number",
-            "enum": [
-              10,
-              20,
-              30,
-              60
-            ]
+            "enum": [10, 20, 30, 60]
           }
         },
         "additionalProperties": false
@@ -133,9 +146,7 @@
             "type": "number"
           }
         },
-        "required": [
-          "number"
-        ],
+        "required": ["number"],
         "additionalProperties": false
       }
     }
