@@ -151,10 +151,39 @@
     )
   }
 
+  /**
+   * A terminal in another worktree of this repository, standing in for selecting that workspace.
+   * The path must be one `git worktree list` reports, so the input cannot name another directory.
+   */
+  async function worktreeTerminal(input, context, actionId) {
+    const path = input?.path
+    if (typeof path !== 'string' || !path.startsWith('/'))
+      throw new Error('path must be absolute')
+    if (context.workspace.host !== 'local') throw new Error(window.TERMINAL_LOCAL_ONLY)
+    const listing = await window.host.run(
+      'git',
+      context.workspace,
+      window.worktrees.WORKTREE_ARGS,
+      {
+        text: true,
+        actionId,
+      },
+    )
+    if (!window.worktrees.worktreePaths(listing).includes(path))
+      throw new Error(`${path} is not a worktree of this repository`)
+    return window.host.terminal(
+      'shell',
+      context.workspace,
+      window.worktrees.shellArgs(path),
+      actionId,
+    )
+  }
+
   const HANDLERS = {
     'list-pulls': listPulls,
     'pull-status': pullStatus,
     'checkout-terminal': checkoutTerminal,
+    'worktree-terminal': worktreeTerminal,
   }
 
   /** A view or updater read of the same command within a second answers `frequency`; wait it out once. */
