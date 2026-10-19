@@ -92,10 +92,11 @@ describe('GitHubService.pulls', () => {
 
   it.each([
     [undefined, 30],
+    [45, 45],
     [60, 60],
-    [100, 100],
     [0, 30],
-    [101, 30],
+    [61, 30],
+    [100, 30],
     [2.5, 30],
   ])('requests %s pull requests per list as %s', async (limit, expected) => {
     const { host, exec } = fakeHost()

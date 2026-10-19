@@ -317,13 +317,13 @@ describe('PullsPanel', () => {
     render()
     await flush()
     expect(limits()).toEqual([30])
-    for (const expected of [60, 90, 100]) {
+    for (const expected of [60]) {
       act(() => host.querySelector<HTMLButtonElement>('.pulls-more')?.click())
       await flush()
       expect(limits().at(-1)).toBe(expected)
     }
     expect(host.querySelector('.pulls-more')).toBeNull()
-    expect(host.textContent).toContain('Showing the first 100 of each list.')
+    expect(host.textContent).toContain('Showing the first 60 of each list.')
   })
 
   it('offers no more pull requests when GitHub returned every match', async () => {

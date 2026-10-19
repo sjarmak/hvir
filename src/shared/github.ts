@@ -145,7 +145,8 @@ export interface PullWorktreeRequest {
 }
 
 export const PULLS_PAGE_SIZE = 30
-export const PULLS_MAX_LIMIT = 100
+/** Three searches at 100 each time out on GitHub's side for busy repositories (HTTP 502/504). */
+export const PULLS_MAX_LIMIT = 60
 
 export interface PullsRequest {
   readonly root: HostPath
