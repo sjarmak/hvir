@@ -58,9 +58,10 @@ async function load(context) {
     issues = []
     render()
   }
-  if ((await availability()).bd !== 'supported') {
-    ui.status.textContent = 'bd is not connected for this workspace host.'
-    ui.connect.hidden = false
+  const connectors = await availability({ workspace: context.workspace })
+  if (connectors.bd !== 'supported') {
+    ui.status.textContent = window.hostNote('bd', connectors, context.workspace)
+    ui.connect.hidden = connectors.bd === 'other-host'
     return
   }
   ui.connect.hidden = true
