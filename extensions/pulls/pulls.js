@@ -1,7 +1,7 @@
 /* global window, document */
 const { availability } = window.host
 const { el } = window
-const { pullSections, age, badges } = window.pullsModel
+const { pullSections, age, badges, roleLabel } = window.pullsModel
 const { pullHandle } = window.pullWaits
 const ui = Object.fromEntries(
   ['repo', 'refresh', 'status', 'connect-gh', 'connect-git', 'sections', 'more'].map((id) => [id, document.getElementById(id)]),
@@ -21,7 +21,9 @@ const setStatus = (text) => (ui.status.textContent = text)
 
 function pullRow(row, snapshot, now) {
   const { pull, reason, since, waitingOn } = row
+  const role = roleLabel(row)
   const chips = [
+    role ? el('span', { className: 'chip chip-role' }, role) : null,
     reason ? el('span', { className: 'chip chip-reason' }, reason) : null,
     since === undefined ? null : ageChip(since, now),
     ...badges(row).map((label) => el('span', { className: 'chip' }, label)),

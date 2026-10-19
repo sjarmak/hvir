@@ -31,11 +31,12 @@
   }
 
   function compactRow(row, section, now) {
-    const { pull, reason, since, waitingOn } = row
+    const { pull, reason, since, waitingOn, role } = row
     return {
       number: pull.number,
       title: pull.title.slice(0, TITLE_CHARS),
       section,
+      role,
       ...(reason ? { reason } : {}),
       ...(since === undefined
         ? {}
