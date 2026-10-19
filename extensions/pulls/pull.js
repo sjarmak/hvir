@@ -37,7 +37,6 @@ const ui = Object.fromEntries(
     'body',
   ].map((id) => [id, document.getElementById(id)]),
 )
-const REPO = window.REPO_NAME
 const VIEW_FIELDS = [
   'number',
   'title',
@@ -182,7 +181,7 @@ function keyOf(context) {
   const { repo, number } = context?.input ?? {}
   if (
     typeof repo !== 'string' ||
-    !REPO.test(repo) ||
+    !window.REPO_NAME.test(repo) ||
     !Number.isInteger(number) ||
     number < 1
   )

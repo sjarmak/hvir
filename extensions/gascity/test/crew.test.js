@@ -55,17 +55,10 @@ const CONFIG = parseConfig({
   },
 })
 
-const RIGS = [
-  { name: 'hq', path: CITY },
-  { name: 'mem', path: MEM },
-  { name: 'gascity', path: GASCITY },
-]
-
 function crewAt(rigRoot, rigName, { city = false, includeInternals = false, sessions = SESSIONS, config = CONFIG } = {}) {
   return deriveCrew({
     sessions,
     config,
-    rigs: RIGS,
     rigRoot,
     rigName,
     cityRoot: CITY,
@@ -140,7 +133,6 @@ test('gc-projected tier fields are used verbatim when present', () => {
   const crew = deriveCrew({
     sessions,
     config: { agents: [], namedSessions: [] },
-    rigs: RIGS,
     rigRoot: MEM,
     rigName: 'mem',
     cityRoot: CITY,

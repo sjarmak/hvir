@@ -136,8 +136,8 @@ window.hostNote = (connector, connectors, workspace) =>
       } in Settings → Extensions.`
     : `${connector} is not connected for this workspace host.`
 
-/** hvir's terminal.start admits only connectors approved for the local host. */
 /** An owner/name GitHub repository, as gh prints and accepts it. */
 window.REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/
+/** hvir's terminal.start admits only connectors approved for the local host. */
 window.TERMINAL_LOCAL_ONLY =
   'Terminal checkout works for local workspaces in this hvir build.'
