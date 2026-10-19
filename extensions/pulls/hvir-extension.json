@@ -102,7 +102,7 @@
     },
     {
       "id": "shell",
-      "description": "Open a terminal in another worktree of this repository when its branch is already checked out there. Runs zsh -c 'cd <worktree> && exec $SHELL -l' only from the pull request view's button, after you confirm each launch; the worktree must be one git worktree list reports.",
+      "description": "Open a terminal in another worktree of this repository that already has a pull request's branch: zsh cds there and starts your login shell. Only from the pull request view, after you confirm.",
       "context": "workspace",
       "setup": {
         "executable": "zsh"
