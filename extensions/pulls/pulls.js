@@ -62,19 +62,6 @@ function renderSection(section, snapshot, now) {
   return details
 }
 
-/** Why a connector can't serve this workspace: never approved, or approved for another host. */
-function hostNote(connector, connectors, workspace) {
-  return (
-    connectors[connector] === 'other-host'
-      ? `${connector} is approved for ${connectors.hosts[connector].join(', ')}, not ${workspace.host}. ${
-          connectors.freeSlot[connector]
-            ? `Approve ${connectors.freeSlot[connector]} for ${workspace.host}`
-            : `All ${connector} host slots are in use; revoke one and approve it for ${workspace.host}`
-        } in Settings → Extensions.`
-      : `${connector} is not connected for this workspace host.`
-  )
-}
-
 const openPull = (repo) => (option) =>
   window.openOwn('pull', { repo, number: Number(option.dataset.number) }).catch((error) => setStatus(error.message))
 
@@ -103,9 +90,9 @@ async function load(context, current) {
   const connectors = await availability({ workspace: context.workspace })
   ui['connect-gh'].hidden = connectors.gh === 'supported'
   ui['connect-git'].hidden = connectors.git === 'supported'
-  if (connectors.gh !== 'supported') return setStatus(hostNote('gh', connectors, context.workspace))
+  if (connectors.gh !== 'supported') return setStatus(window.hostNote('gh', connectors, context.workspace))
   gitNote = connectors.git === 'other-host'
-    ? hostNote('git', connectors, context.workspace)
+    ? window.hostNote('git', connectors, context.workspace)
     : 'Connect git to show the pull request for this branch.'
   ui.refresh.disabled = true
   try {

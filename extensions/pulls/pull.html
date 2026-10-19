@@ -12,7 +12,13 @@
       <p id="meta" class="hvir-meta"></p>
       <p id="url" class="hvir-meta selectable"></p>
       <p id="status" class="hvir-state" role="status"></p>
+      <div class="checkout">
+        <button id="checkout" class="hvir-button" data-variant="regular" type="button" hidden>Check out in a terminal</button>
+        <p id="checkout-note" class="hvir-meta" hidden></p>
+        <p id="checkout-status" class="hvir-meta" role="status"></p>
+      </div>
       <section id="checks-section" hidden><h2 id="checks-heading">Checks</h2><ul id="checks"></ul></section>
+      <section id="commits-section" hidden><h2 id="commits-heading">Commits</h2><p id="commits-note" class="hvir-meta" hidden></p><ul id="commits"></ul></section>
       <section id="reviews-section" hidden><h2>Reviews</h2><ul id="reviews"></ul></section>
       <section id="threads-section" hidden><h2 id="threads-heading">Review threads</h2><ul id="threads"></ul></section>
       <section id="comments-section" hidden><h2>Conversation</h2><ul id="comments"></ul></section>
@@ -22,6 +28,7 @@
     <script src="host.js"></script>
     <script src="view.js"></script>
     <script src="pull-query.js"></script>
+    <script src="commit-labels.js"></script>
     <script src="pull.js"></script>
   </body>
 </html>
