@@ -5,7 +5,9 @@ const ui = Object.fromEntries(
   ),
 )
 const BEAD_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
-let shownId
+/** An optional absolute rig directory for beads outside the workspace's store (decisions asks). */
+const RIG_PATH = /^\/[^\0\n]{0,1023}$/
+let shownKey
 
 function render(issue) {
   document.title = issue.id
@@ -30,15 +32,17 @@ function render(issue) {
 }
 
 async function load(context) {
-  const id = context.input?.id
-  if (id === shownId) return
-  if (typeof id !== 'string' || !BEAD_ID.test(id)) {
+  const { id, rig } = context.input ?? {}
+  const key = `${rig ?? ''}#${id}`
+  if (key === shownKey) return
+  if (typeof id !== 'string' || !BEAD_ID.test(id) || (rig !== undefined && (typeof rig !== 'string' || !RIG_PATH.test(rig)))) {
     ui.title.textContent = 'No bead selected'
     return
   }
-  const [issue] = await window.bdRead(context.workspace, ['show', id, '--json'])
-  if (!issue) throw new Error(`${id} was not found in this workspace's beads`)
-  shownId = id
+  const scope = rig === undefined ? [] : ['-C', rig]
+  const [issue] = await window.bdRead(context.workspace, [...scope, 'show', id, '--json'])
+  if (!issue) throw new Error(`${id} was not found in ${rig ?? "this workspace's beads"}`)
+  shownKey = key
   ui.status.textContent = ''
   render(issue)
 }

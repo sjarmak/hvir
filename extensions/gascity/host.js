@@ -82,10 +82,11 @@ window.host = (() => {
   }
 
   /**
-   * Run an approved connector in the workspace root. Resolves parsed JSON (or JSON lines when
-   * `lines` is set); rejects with the program's first stderr line or the connector's reason.
+   * Run an approved connector in the workspace root. Resolves parsed JSON (JSON lines when `lines`
+   * is set, raw stdout when `text` is set); rejects with the program's failure report, its first
+   * stderr line, or the connector's reason.
    */
-  async function run(connector, workspace, args, { lines = false } = {}) {
+  async function run(connector, workspace, args, { lines = false, text = false } = {}) {
     const slot = (await slotFor(connector, workspace)) ?? connector
     const result = await request('connector.execute', {
       connector: slot,
@@ -105,6 +106,7 @@ window.host = (() => {
       ])
       if (result.code !== 0) throw failure(connector, result.code, stdout, stderr)
       if (result.truncated) throw new Error(`${connector} output exceeded the connector bound`)
+      if (text) return stdout
       return lines ? parseLines(stdout) : JSON.parse(stdout)
     } finally {
       await request('connector.output', { receipt: result.receipt, release: true }).catch(

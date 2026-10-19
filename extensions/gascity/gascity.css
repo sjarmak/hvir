@@ -92,3 +92,24 @@ h2 {
 .bead-description {
   white-space: pre-wrap;
 }
+.peek-output {
+  margin: 0;
+  padding: 6px 8px;
+  max-height: calc(60 * 1.35em);
+  overflow: auto;
+  font-family: var(--hvir-monospace-font, monospace);
+  font-size: calc(11px * var(--hvir-interface-scale));
+  line-height: 1.35;
+  white-space: pre;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+}
+.crew-group {
+  margin: 6px 8px 0;
+  font-size: calc(10px * var(--hvir-interface-scale));
+  color: var(--text-muted);
+}
+.option-row[aria-disabled='true'] {
+  opacity: 0.6;
+}

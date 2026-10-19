@@ -1,7 +1,7 @@
 {
   "id": "hvir.gascity",
   "name": "Gas City",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "contract": "1.0",
   "requiredCapabilities": [
     "presentation.read",
@@ -27,6 +27,14 @@
       "id": "beads",
       "title": "Beads",
       "entry": "beads.html",
+      "placement": "workspace",
+      "navigation": "left",
+      "representations": ["view"]
+    },
+    {
+      "id": "needs",
+      "title": "Needs you",
+      "entry": "needs.html",
       "placement": "workspace",
       "navigation": "left",
       "representations": ["view"]
