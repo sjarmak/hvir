@@ -118,5 +118,7 @@ async function load(context) {
   ui.status.textContent = `${mine.length} recent events · updated ${time}`
 }
 
-const view = window.startView({ load, refreshMs: 10000, onStatus: (text) => (ui.status.textContent = text) })
+/** Each refresh runs `gc session peek` and an events poll on the city host; Refresh reads now. */
+const REFRESH_MS = 30000
+const view = window.startView({ load, refreshMs: REFRESH_MS, onStatus: (text) => (ui.status.textContent = text) })
 ui['peek-refresh'].addEventListener('click', () => void view.refresh())
