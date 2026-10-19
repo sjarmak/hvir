@@ -110,7 +110,8 @@
     )
 
   /**
-   * One row per open pull request: inbound asks and own pull requests whose ball came back under
+   * One row per open pull request, with `role` saying whose move it is from: `author` for the
+   * viewer's own pull requests, `reviewer` for asks from others. Inbound asks and own pull requests whose ball came back under
    * `needs`, those held by others under `waiting`, drafts under `drafts`. Needs and waiting list
    * the oldest ask first; drafts the newest.
    */
@@ -121,8 +122,8 @@
       (pull) => pull.author !== snapshot.viewer && !own.has(pull.number),
     )
     const rows = [
-      ...inbound.flatMap((pull) => inboundRow(pull, snapshot.viewer, now) ?? []),
-      ...authored.map((pull) => authoredRow(pull, now)),
+      ...inbound.flatMap((pull) => inboundRow(pull, snapshot.viewer, now) ?? []).map((item) => ({ ...item, role: 'reviewer' })),
+      ...authored.map((pull) => ({ ...authoredRow(pull, now), role: 'author' })),
     ]
     const ofList = (list) => rows.filter((item) => item.list === list)
     return [

@@ -25,6 +25,10 @@
     none: '',
   }
 
+  /** Whose pull request a row is; `other` (someone else's branch, no ask) shows the author instead. */
+  const ROLE_LABELS = { author: 'Yours', reviewer: 'Reviewer', other: '' }
+  const roleLabel = (row) => ROLE_LABELS[row.role]
+
   const byOpenThenNewest = (left, right) =>
     Number(right.state === 'open') - Number(left.state === 'open') || right.updatedAt.localeCompare(left.updatedAt)
 
@@ -35,7 +39,13 @@
       .sort(byOpenThenNewest)
     const shown = new Set(branch.map((pull) => pull.number))
     const branchRows = branch.map(
-      (pull) => waits.find((wait) => wait.pull.number === pull.number) ?? { pull, reason: '', waitingOn: [] },
+      (pull) =>
+        waits.find((wait) => wait.pull.number === pull.number) ?? {
+          pull,
+          reason: '',
+          waitingOn: [],
+          role: pull.author === snapshot.viewer ? 'author' : 'other',
+        },
     )
     return SECTIONS.map(([key, label]) => ({
       key,
@@ -75,7 +85,7 @@
     return labels.filter((label) => label !== '' && label.toLowerCase() !== reason.toLowerCase())
   }
 
-  const api = Object.freeze({ pullSections, needYouCount, age, badges })
+  const api = Object.freeze({ pullSections, needYouCount, age, badges, roleLabel })
   if (node) module.exports = api
   else window.pullsModel = api
 })()

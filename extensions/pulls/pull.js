@@ -1,6 +1,7 @@
 /* global window, document */
 const { run, availability, request } = window.host
 const { el } = window
+const { WORKTREE_ARGS, worktreeOf } = window.worktrees
 const {
   labelLogBatches,
   parseLabelLog,
@@ -56,6 +57,7 @@ const VIEW_FIELDS = [
   'comments',
   'statusCheckRollup',
   'commits',
+  'isCrossRepository',
 ].join(',')
 /** Check runs report `conclusion`; legacy status contexts report `state`. */
 const checkResult = (check) =>
@@ -74,7 +76,7 @@ const line = (head, meta, body) =>
     { className: 'line' },
     el('span', {}, head),
     meta ? el('span', { className: 'hvir-meta' }, meta) : null,
-    body ? el('span', { className: 'prose' }, body) : null,
+    body ? window.markdown.render(body) : null,
   )
 
 function renderChecks(checks) {
@@ -172,7 +174,7 @@ function render(pull, detail) {
       ),
     ),
   )
-  ui.body.textContent = pull.body ?? ''
+  ui.body.replaceChildren(...(pull.body ? [window.markdown.render(pull.body)] : []))
   ui['body-section'].hidden = !pull.body
 }
 
@@ -251,13 +253,46 @@ function renderCommits(labels) {
   fill('commits-section', 'commits', rows.map(commitLine))
 }
 
-function renderCheckout(workspace, repo, number) {
+/**
+ * Where the pull request's branch is already checked out. Only same-repository pull requests are
+ * checked: gh names a fork's local branch itself, so a matching name there may be another branch.
+ */
+async function checkedOut(workspace, pull, connectors) {
+  if (
+    workspace.host !== 'local' ||
+    pull.isCrossRepository ||
+    connectors.git !== 'supported'
+  )
+    return {}
+  try {
+    const path = worktreeOf(
+      await run('git', workspace, WORKTREE_ARGS, { text: true }),
+      pull.headRefName,
+    )
+    return { path, here: path !== undefined && path === workspace.root?.path }
+  } catch (error) {
+    return { error }
+  }
+}
+
+function checkoutNote(local, existing) {
+  if (!local) return window.TERMINAL_LOCAL_ONLY
+  if (existing.here) return 'This workspace already has the branch checked out.'
+  if (existing.path)
+    return `Already checked out at ${existing.path}. Open that workspace in hvir instead.`
+  if (existing.error)
+    return `Could not list worktrees, so a checkout may fail: ${existing.error.message}`
+  return ''
+}
+
+function renderCheckout(workspace, repo, number, existing) {
   const local = workspace.host === 'local'
-  ui.checkout.hidden = !local
+  const note = checkoutNote(local, existing)
+  ui.checkout.hidden = !local || existing.path !== undefined
   ui.checkout.dataset.number = String(number)
   ui.checkout.dataset.repo = repo
-  ui['checkout-note'].hidden = local
-  ui['checkout-note'].textContent = local ? '' : window.TERMINAL_LOCAL_ONLY
+  ui['checkout-note'].hidden = note === ''
+  ui['checkout-note'].textContent = note
 }
 
 /** hvir's terminal.start outcome; a declined confirmation is `not-started`, not an error. */
@@ -329,7 +364,9 @@ async function load(context, current) {
   if (keyOf(current()) !== key) return
   ui.status.textContent = ''
   render(pull, detail)
-  renderCheckout(context.workspace, repo, number)
+  const existing = await checkedOut(context.workspace, pull, connectors)
+  if (keyOf(current()) !== key) return
+  renderCheckout(context.workspace, repo, number, existing)
   const labels = await readLabels(context.workspace, pull.commits ?? [], connectors)
   if (keyOf(current()) !== key) return
   renderCommits(labels)

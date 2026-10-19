@@ -3,7 +3,7 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { businessMsBetween, formatBusinessAge, businessAgeTone, BUSINESS_DAY_MS } = require('../business-time.js')
 const { pullWaitRows } = require('../pull-waits.js')
-const { pullSections, needYouCount, age, badges } = require('../pulls-model.js')
+const { pullSections, needYouCount, age, badges, roleLabel } = require('../pulls-model.js')
 
 const at = (iso) => new Date(iso).getTime()
 const HOUR = 3_600_000
@@ -140,4 +140,21 @@ test('the header count includes a branch pull request that needs the viewer and 
   }
   assert.equal(needYouCount([onBranch, snapshot, other], NOW), 5)
   assert.equal(needYouCount([], NOW), 0)
+})
+
+test('rows say whose pull request it is: yours, an ask of you, or someone else on this branch', () => {
+  const rows = pullWaitRows(snapshot, NOW)
+  const roleOf = (number) => rows.find((row) => row.pull.number === number)?.role
+  assert.equal(roleOf(72), 'author')
+  assert.equal(roleOf(80), 'reviewer')
+  const theirs = pull(90, { author: 'kai' })
+  const [branch] = pullSections({ ...snapshot, branchPulls: [theirs, snapshot.authored[1]] }, NOW)
+  assert.deepEqual(
+    branch.rows.map((row) => [row.pull.number, row.role, roleLabel(row)]),
+    [
+      [90, 'other', ''],
+      [72, 'author', 'Yours'],
+    ],
+  )
+  assert.equal(roleLabel(rows.find((row) => row.pull.number === 80)), 'Reviewer')
 })
