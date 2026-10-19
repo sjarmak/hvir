@@ -58,7 +58,7 @@ window.host = (() => {
   /** The JSON report gc and bd print on stdout for some failures (bd --readonly refusals), if any. */
   function failureReport(stdout) {
     const text = stdout.trim()
-    const last = text.split('\n').at(-1) ?? ''
+    const last = text.split('\n').at(-1)
     for (const candidate of [text, last]) {
       if (!candidate.startsWith('{')) continue
       try {

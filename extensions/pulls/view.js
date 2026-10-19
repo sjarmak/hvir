@@ -63,7 +63,7 @@ window.startView = ({ load, refreshMs = 0, onStatus = () => {} }) => {
   })
   window.addEventListener('pagehide', dispose)
   bridge.send({ kind: 'hello', contract: '1.0' })
-  return { refresh: tick, current }
+  return { refresh: tick }
 }
 
 /** Small DOM helper: el('span', { className: 'x' }, 'text', child). */

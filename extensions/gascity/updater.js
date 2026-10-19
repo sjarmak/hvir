@@ -1,7 +1,7 @@
 /* global window */
 /** Publishes each visible session's workspace ready-bead count to the `ready` rail item. */
 const bridge = window.hvirExtension
-const { request, run } = window.host
+const { request } = window.host
 const REFRESH_MS = 30000
 /** bd ready caps at 100 by default; ask for that cap explicitly and label a full page as 100+. */
 const READY_CAP = 100

@@ -28,14 +28,16 @@ async function snapshotsAcross(workspaces) {
   return { snapshots, failures }
 }
 
+const publishFailure = (message) =>
+  request('contributions.publish', {
+    item: 'pulls',
+    label: 'gh ?',
+    tooltip: message.slice(0, 160),
+    availability: 'failed',
+  })
+
 function publish({ snapshots, failures }) {
-  if (snapshots.length === 0)
-    return request('contributions.publish', {
-      item: 'pulls',
-      label: 'gh ?',
-      tooltip: failures[0].slice(0, 160),
-      availability: 'failed',
-    })
+  if (snapshots.length === 0) return publishFailure(failures[0])
   const count = needYouCount(snapshots, Date.now())
   const missed = failures.length ? `; ${failures.length} unreadable` : ''
   return request('contributions.publish', {
@@ -62,12 +64,7 @@ async function refresh() {
     const result = await snapshotsAcross(workspaces)
     if (context.visible && !disposed) await publish(result)
   } catch (error) {
-    await request('contributions.publish', {
-      item: 'pulls',
-      label: 'gh ?',
-      tooltip: error.message.slice(0, 160),
-      availability: 'failed',
-    }).catch(() => {})
+    await publishFailure(error.message).catch(() => {})
   } finally {
     pending = false
   }
