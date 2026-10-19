@@ -12,10 +12,10 @@ window.pullsSource = (() => {
   const REPO = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/
   const repos = new Map()
 
-  async function repoFor(workspace) {
+  async function repoFor(workspace, actionId) {
     const cached = repos.get(workspace.id)
     if (cached && Date.now() - cached.at < REPO_TTL_MS) return cached.repo
-    const { nameWithOwner } = await run('gh', workspace, ['repo', 'view', '--json', 'nameWithOwner'])
+    const { nameWithOwner } = await run('gh', workspace, ['repo', 'view', '--json', 'nameWithOwner'], { actionId })
     if (typeof nameWithOwner !== 'string' || !REPO.test(nameWithOwner))
       throw new Error('gh repo view returned no usable owner/name')
     repos.set(workspace.id, { repo: nameWithOwner, at: Date.now() })
@@ -23,19 +23,22 @@ window.pullsSource = (() => {
   }
 
   /** Current branch and GitHub remotes; undefined branch on a detached HEAD. */
-  async function checkout(workspace) {
-    const head = (await run('git', workspace, ['rev-parse', '--abbrev-ref', 'HEAD'], { text: true })).trim()
-    const remotes = await run('git', workspace, ['remote', '-v'], { text: true })
+  async function checkout(workspace, actionId) {
+    const head = (await run('git', workspace, ['rev-parse', '--abbrev-ref', 'HEAD'], { text: true, actionId })).trim()
+    const remotes = await run('git', workspace, ['remote', '-v'], { text: true, actionId })
     return { branch: head === 'HEAD' || head === '' ? undefined : head, localRepos: githubRemoteRepos(remotes) }
   }
 
-  /** `useGit` false skips This branch: no git approval, or a caller that only counts asks. */
-  async function snapshot(workspace, limit, useGit) {
-    const repo = await repoFor(workspace)
-    const local = useGit ? await checkout(workspace) : { branch: undefined, localRepos: new Set() }
-    const response = await run('gh', workspace, pullsQueryArgs(repo, local.branch, limit))
+  /**
+   * `useGit` false skips This branch: no git approval, or a caller that only counts asks.
+   * `actionId` is set when an agent action runs the read from a hidden view.
+   */
+  async function snapshot(workspace, limit, useGit, actionId) {
+    const repo = await repoFor(workspace, actionId)
+    const local = useGit ? await checkout(workspace, actionId) : { branch: undefined, localRepos: new Set() }
+    const response = await run('gh', workspace, pullsQueryArgs(repo, local.branch, limit), { actionId })
     return { ...parsePulls(response, { repo, ...local }), gitChecked: useGit }
   }
 
-  return Object.freeze({ snapshot })
+  return Object.freeze({ snapshot, repoFor })
 })()

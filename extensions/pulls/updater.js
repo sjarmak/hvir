@@ -59,9 +59,11 @@ async function refresh() {
   if (workspaces.length === 0) return
   pending = true
   try {
-    if ((await availability()).gh !== 'supported') return
+    const connectors = await availability()
+    if (connectors.gh !== 'supported') return
     lastRun = Date.now()
-    const result = await snapshotsAcross(workspaces)
+    // gh runs only for workspaces on its approved host; the rest would answer `unavailable`.
+    const result = await snapshotsAcross(workspaces.filter((workspace) => workspace.host === connectors.hosts.gh))
     if (context.visible && !disposed) await publish(result)
   } catch (error) {
     await publishFailure(error.message).catch(() => {})

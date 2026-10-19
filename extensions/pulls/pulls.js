@@ -12,6 +12,8 @@ const PAGE_SIZE = 30
 const MAX_LIMIT = 60
 let limit = PAGE_SIZE
 let workspaceId
+/** Why This branch is empty when git can't run here; set per load. */
+let gitNote = ''
 /** Collapsed section keys survive re-renders, like the panel's collapsible headers. */
 const collapsed = new Set()
 let lists = []
@@ -42,7 +44,7 @@ function ageChip(since, now) {
 }
 
 function branchNote(snapshot) {
-  if (!snapshot.gitChecked) return 'Connect git to show the pull request for this branch.'
+  if (!snapshot.gitChecked) return gitNote
   return snapshot.branch === undefined
     ? 'Detached HEAD, so no branch pull request.'
     : `No pull request for ${snapshot.branch}.`
@@ -58,6 +60,13 @@ function renderSection(section, snapshot, now) {
   if (section.rows.length === 0) list.append(el('p', { className: 'hvir-meta note' }, branchNote(snapshot)))
   list.append(...section.rows.map((row) => pullRow(row, snapshot, now)))
   return details
+}
+
+/** Why a connector can't serve this workspace: never approved, or approved for another host. */
+function hostNote(connector, connectors, workspace) {
+  return connectors[connector] === 'other-host'
+    ? `${connector} is approved for ${connectors.hosts[connector]}, not ${workspace.host}. Approve it for ${workspace.host} in Settings → Extensions.`
+    : `${connector} is not connected for this workspace host.`
 }
 
 const openPull = (repo) => (option) =>
@@ -85,10 +94,13 @@ async function load(context, current) {
     workspaceId = context.workspace.id
     limit = PAGE_SIZE
   }
-  const connectors = await availability()
+  const connectors = await availability({ workspace: context.workspace })
   ui['connect-gh'].hidden = connectors.gh === 'supported'
   ui['connect-git'].hidden = connectors.git === 'supported'
-  if (connectors.gh !== 'supported') return setStatus('gh is not connected for this workspace host.')
+  if (connectors.gh !== 'supported') return setStatus(hostNote('gh', connectors, context.workspace))
+  gitNote = connectors.git === 'other-host'
+    ? hostNote('git', connectors, context.workspace)
+    : 'Connect git to show the pull request for this branch.'
   ui.refresh.disabled = true
   try {
     const requested = limit
