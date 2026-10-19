@@ -1,6 +1,16 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const { worktreeOf } = require('../worktrees.js')
+const { execFileSync } = require('node:child_process')
+const {
+  mkdtempSync,
+  mkdirSync,
+  realpathSync,
+  writeFileSync,
+  chmodSync,
+} = require('node:fs')
+const { tmpdir } = require('node:os')
+const { join } = require('node:path')
+const { worktreeOf, worktreePaths, shellArgs } = require('../worktrees.js')
 
 const PORCELAIN = [
   'worktree /Users/me/omni',
@@ -29,4 +39,28 @@ test('a branch no worktree holds, or only a prefix of one, is not checked out', 
   assert.equal(worktreeOf(PORCELAIN, 'feature/new'), undefined)
   assert.equal(worktreeOf(PORCELAIN, 'sjarmak/eval-runs'), undefined)
   assert.equal(worktreeOf('', 'main'), undefined)
+})
+
+test('worktreePaths lists every worktree, detached ones included', () => {
+  assert.deepEqual(worktreePaths(PORCELAIN), [
+    '/Users/me/omni',
+    '/Users/me/omni.hvir-worktrees/pr-67953',
+    '/Users/me/omni.hvir-worktrees/detached',
+  ])
+})
+
+test('shellArgs starts the login shell in a path with spaces and quotes, never running it as code', () => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'wt-')))
+  const path = join(base, `it's a "$(touch pwned)" dir`)
+  mkdirSync(path)
+  const fakeShell = join(base, 'fake-shell')
+  writeFileSync(fakeShell, '#!/bin/sh\npwd\n')
+  chmodSync(fakeShell, 0o755)
+  const out = execFileSync('zsh', shellArgs(path), {
+    cwd: base,
+    env: { ...process.env, SHELL: fakeShell },
+    encoding: 'utf8',
+  })
+  assert.equal(out.trim(), path)
+  assert.throws(() => execFileSync('ls', [join(base, 'pwned')], { stdio: 'ignore' }))
 })

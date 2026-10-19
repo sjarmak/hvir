@@ -1,7 +1,7 @@
 {
   "id": "hvir.pulls",
   "name": "Pull requests",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "contract": "1.0",
   "requiredCapabilities": [
     "presentation.read",
@@ -99,6 +99,17 @@
       "timeoutMs": 10000,
       "outputBytes": 65536,
       "environment": []
+    },
+    {
+      "id": "shell",
+      "description": "Open a terminal in another worktree of this repository when its branch is already checked out there. Runs zsh -c 'cd <worktree> && exec $SHELL -l' only from the pull request view's button, after you confirm each launch; the worktree must be one git worktree list reports.",
+      "context": "workspace",
+      "setup": {
+        "executable": "zsh"
+      },
+      "timeoutMs": 10000,
+      "outputBytes": 65536,
+      "environment": []
     }
   ],
   "actions": [
@@ -173,6 +184,29 @@
           }
         },
         "required": ["repo", "number"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "worktree-terminal",
+      "title": "Open a terminal in a worktree of this repository",
+      "view": "pulls",
+      "agents": false,
+      "effects": {
+        "delete": false,
+        "replace": false
+      },
+      "timeoutMs": 120000,
+      "description": "Opens a new terminal in another worktree of this repository, after you confirm in hvir. The path must be listed by git worktree list. Local workspaces only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "required": ["path"],
         "additionalProperties": false
       }
     }
