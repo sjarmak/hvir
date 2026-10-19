@@ -34,7 +34,7 @@
       if (match) {
         entries.push({ key: match[1].toLowerCase(), value: match[2] })
         open = true
-      } else if (open && entries.length && CONTINUATION.test(line)) {
+      } else if (open && CONTINUATION.test(line)) {
         const previous = entries.pop()
         entries.push({ ...previous, value: `${previous.value} ${line.trim()}` })
       } else open = false

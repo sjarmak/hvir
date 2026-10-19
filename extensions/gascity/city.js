@@ -218,7 +218,6 @@ function deriveFor(workspace, sessions, scope) {
   return deriveCrew({
     sessions,
     config: tierSource === 'config' ? cityConfig : EMPTY_CONFIG,
-    rigs: city.rigs,
     rigRoot: scope?.path ?? city.cityRoot ?? workspace.root?.path,
     rigName: scope?.name ?? city.hqRigName,
     cityRoot: city.cityRoot,

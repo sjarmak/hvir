@@ -51,7 +51,6 @@
     })
   }
 
-  /** Sessions from `gc session list --json`, which has emitted both a bare array and an envelope. */
   /** Raw `gc session list --json` rows, from either the bare-array or the envelope shape. */
   const sessionRows = (decoded) => rowsOf(decoded, 'sessions', 'session list')
   const parseSessions = (decoded) => sessionRows(decoded).map(parseSession).filter(Boolean)
