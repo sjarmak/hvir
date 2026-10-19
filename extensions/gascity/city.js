@@ -290,7 +290,8 @@ async function load(context) {
   await publishSummary(cityName, active, scope)
 }
 
-const view = window.startView({ load, refreshMs: 15000, onStatus: (text) => (ui.status.textContent = text) })
+/** Each tick runs `gc session list` on the city host; twice a minute keeps it light on the machine. */
+const view = window.startView({ load, refreshMs: 30000, onStatus: (text) => (ui.status.textContent = text) })
 ui.scope.addEventListener('click', () => {
   wholeCity = !wholeCity
   readyLoadedAt = 0

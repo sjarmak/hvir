@@ -7,7 +7,8 @@
 const bridge = window.hvirExtension
 const { request, availability } = window.host
 const { needYouCount } = window.pullsModel
-const REFRESH_MS = 60 * 1000
+/** One gh snapshot per demanded workspace per cycle; the header count tolerates being minutes old. */
+const REFRESH_MS = 5 * 60 * 1000
 const TICK_MS = 1000
 let context = { visible: false, sessions: [] }
 let pending = false

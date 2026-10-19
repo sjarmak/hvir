@@ -93,7 +93,8 @@ async function load(context) {
   render()
 }
 
-window.startView({ load, refreshMs: 5000, onStatus: (text) => (ui.status.textContent = text) })
+/** Each poll is a `gc events` run on the city host, so keep it to a few a minute. */
+window.startView({ load, refreshMs: 15000, onStatus: (text) => (ui.status.textContent = text) })
 ui.filter.addEventListener('input', render)
 ui.scope.addEventListener('click', () => {
   wholeCity = !wholeCity
