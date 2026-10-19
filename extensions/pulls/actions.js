@@ -60,7 +60,10 @@
 
   function checkSummary(checks) {
     const counts = {}
-    for (const check of checks) counts[checkResult(check)] = (counts[checkResult(check)] ?? 0) + 1
+    for (const check of checks) {
+      const result = checkResult(check)
+      counts[result] = (counts[result] ?? 0) + 1
+    }
     const failing = checks
       .filter((check) => ['failure', 'error', 'timed_out', 'cancelled', 'action_required'].includes(checkResult(check)))
       .map((check) => check.name || check.context)

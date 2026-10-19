@@ -1,7 +1,7 @@
 /* global window */
 /** Publishes each visible session's workspace ready-bead count to the `ready` rail item. */
 const bridge = window.hvirExtension
-const { request } = window.host
+const { request, availability } = window.host
 const REFRESH_MS = 30000
 /** bd ready caps at 100 by default; ask for that cap explicitly and label a full page as 100+. */
 const READY_CAP = 100
@@ -40,7 +40,7 @@ async function refresh() {
   lastRun = Date.now()
   try {
     // bd runs only for workspaces on its approved host; sessions elsewhere get no ready count.
-    const { hosts } = await window.host.availability()
+    const { hosts } = await availability()
     const sessions = (context.sessions ?? []).filter((session) => session.workspace.host === hosts.bd)
     const workspaces = new Map(sessions.map((session) => [session.workspace.id, session.workspace]))
     const counts = new Map()
