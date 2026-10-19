@@ -44,19 +44,28 @@ async function refresh() {
     const counts = new Map()
     for (const [id, workspace] of workspaces) counts.set(id, await readyCount(workspace))
     if (!context.visible) return
-    for (const session of sessions) await publish(session, counts.get(session.workspace.id))
-  } catch {
-    lastRun = 0
+    // One session's rejected publish (it ended mid-refresh) must not skip the others.
+    const results = await Promise.allSettled(
+      sessions.map((session) => publish(session, counts.get(session.workspace.id))),
+    )
+    for (const [index, result] of results.entries())
+      if (result.status === 'rejected')
+        console.error(`gascity updater: publish for session ${sessions[index].id} failed`, result.reason)
   } finally {
     pending = false
   }
 }
 
-bridge.onMessage((message) => {
+const timer = window.setInterval(refresh, 1000)
+const unsubscribe = bridge.onMessage((message) => {
+  if (message.kind === 'revoked') {
+    window.clearInterval(timer)
+    unsubscribe()
+    return
+  }
   if (message.kind !== 'context') return
   if (message.context.visible && !context.visible) lastRun = 0
   context = message.context
   void refresh()
 })
 bridge.send({ kind: 'hello', contract: '1.0' })
-window.setInterval(refresh, 1000)
