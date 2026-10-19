@@ -86,8 +86,9 @@ window.host = (() => {
    * `lines` is set); rejects with the program's first stderr line or the connector's reason.
    */
   async function run(connector, workspace, args, { lines = false } = {}) {
+    const slot = (await slotFor(connector, workspace)) ?? connector
     const result = await request('connector.execute', {
-      connector,
+      connector: slot,
       host: workspace.host,
       workspace: workspace.id,
       args,
@@ -113,19 +114,53 @@ window.host = (() => {
   }
 
   /**
-   * Connector availability by id. hvir reports an approval as `supported` whatever workspace asks,
-   * but runs it only for workspaces on the approved host; with `workspace`, an approval for another
-   * host reads `other-host` and `hosts` names where each connector is approved.
+   * hvir keeps one approval per (extension, connector) with a single host (upstream #991), so each
+   * program is declared in host slots: `gc`, `gc-2`, `gc-3`, each approvable for a different host.
+   * Callers name the base connector; a run uses the slot approved for the workspace's host.
+   */
+  const SLOTS = ['', '-2', '-3']
+  const baseOf = (id) => id.replace(/-[23]$/, '')
+  /** connector.status is one bridge message; reuse it briefly so every run doesn't repeat it. */
+  const STATUS_TTL_MS = 3000
+  let cachedStatus = { at: 0, value: [] }
+
+  async function status() {
+    if (Date.now() - cachedStatus.at < STATUS_TTL_MS) return cachedStatus.value
+    cachedStatus = { at: Date.now(), value: await request('connector.status') }
+    return cachedStatus.value
+  }
+
+  /** The slot of `base` approved for this workspace's host, if any. */
+  async function slotFor(base, workspace) {
+    const entries = await status()
+    return entries.find(
+      (entry) =>
+        baseOf(entry.connector) === base && entry.availability === 'supported' && entry.host === workspace.host,
+    )?.connector
+  }
+
+  /**
+   * Availability by base connector. With `workspace`: `supported` when a slot is approved for its
+   * host, `other-host` when slots are approved only elsewhere. `hosts` lists each base's approved
+   * hosts and `freeSlot` the first unapproved slot, for telling the viewer what to approve.
    */
   async function availability({ workspace } = {}) {
-    const status = await request('connector.status')
-    const state = (entry) =>
-      workspace && entry.availability === 'supported' && entry.host && entry.host !== workspace.host
-        ? 'other-host'
-        : entry.availability
+    const entries = await status()
+    const bases = [...new Set(entries.map((entry) => baseOf(entry.connector)))]
+    const slots = (base) => entries.filter((entry) => baseOf(entry.connector) === base)
+    const approved = (base) => slots(base).filter((entry) => entry.host)
+    const state = (base) => {
+      const supported = slots(base).filter((entry) => entry.availability === 'supported')
+      if (supported.some((entry) => !workspace || entry.host === workspace.host)) return 'supported'
+      if (supported.length) return 'other-host'
+      return slots(base).find((entry) => entry.connector === base)?.availability ?? 'unavailable'
+    }
     return Object.freeze({
-      ...Object.fromEntries(status.map((entry) => [entry.connector, state(entry)])),
-      hosts: Object.fromEntries(status.filter((entry) => entry.host).map((entry) => [entry.connector, entry.host])),
+      ...Object.fromEntries(bases.map((base) => [base, state(base)])),
+      hosts: Object.fromEntries(bases.map((base) => [base, approved(base).map((entry) => entry.host)])),
+      freeSlot: Object.fromEntries(
+        bases.map((base) => [base, SLOTS.map((slot) => base + slot).find((id) => !approved(base).some((entry) => entry.connector === id))]),
+      ),
     })
   }
 

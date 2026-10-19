@@ -1,7 +1,7 @@
 {
   "id": "hvir.gascity",
   "name": "Gas City",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "contract": "1.0",
   "requiredCapabilities": [
     "presentation.read",
@@ -60,7 +60,10 @@
       "icon": "⛭",
       "tooltip": "Gas City sessions",
       "kind": "observation",
-      "click": { "view": "city", "placement": "viewer" }
+      "click": {
+        "view": "city",
+        "placement": "viewer"
+      }
     },
     {
       "id": "ready",
@@ -68,7 +71,10 @@
       "icon": "◉",
       "tooltip": "Ready beads in this session's workspace",
       "kind": "observation",
-      "click": { "view": "beads", "placement": "popup" }
+      "click": {
+        "view": "beads",
+        "placement": "popup"
+      }
     }
   ],
   "updater": "updater.html",
@@ -77,7 +83,25 @@
       "id": "gc",
       "description": "Read city status, sessions, orders, formulas and events from the Gas City (gc) CLI.",
       "context": "workspace",
-      "setup": { "executable": "gc" },
+      "setup": {
+        "executable": "gc"
+      },
+      "timeoutMs": 60000,
+      "outputBytes": 4194304,
+      "environment": ["GC_CITY", "PATH"]
+    },
+    {
+      "id": "gc-2",
+      "description": "Host slot 2 for gc. hvir allows one host per connector, so approve this for a different host than gc; views pick the slot approved for the workspace's host.",
+      "context": "workspace",
+      "timeoutMs": 60000,
+      "outputBytes": 4194304,
+      "environment": ["GC_CITY", "PATH"]
+    },
+    {
+      "id": "gc-3",
+      "description": "Host slot 3 for gc. hvir allows one host per connector, so approve this for a different host than gc; views pick the slot approved for the workspace's host.",
+      "context": "workspace",
       "timeoutMs": 60000,
       "outputBytes": 4194304,
       "environment": ["GC_CITY", "PATH"]
@@ -86,7 +110,25 @@
       "id": "bd",
       "description": "Read issues from the beads (bd) CLI in the workspace. Passes --readonly, except on stores that refuse it (dolt proxied-server mode), where only list, ready and show run.",
       "context": "workspace",
-      "setup": { "executable": "bd" },
+      "setup": {
+        "executable": "bd"
+      },
+      "timeoutMs": 30000,
+      "outputBytes": 4194304,
+      "environment": ["BEADS_DOLT_SERVER_PORT", "BEADS_DIR", "PATH"]
+    },
+    {
+      "id": "bd-2",
+      "description": "Host slot 2 for bd. hvir allows one host per connector, so approve this for a different host than bd; views pick the slot approved for the workspace's host.",
+      "context": "workspace",
+      "timeoutMs": 30000,
+      "outputBytes": 4194304,
+      "environment": ["BEADS_DOLT_SERVER_PORT", "BEADS_DIR", "PATH"]
+    },
+    {
+      "id": "bd-3",
+      "description": "Host slot 3 for bd. hvir allows one host per connector, so approve this for a different host than bd; views pick the slot approved for the workspace's host.",
+      "context": "workspace",
       "timeoutMs": 30000,
       "outputBytes": 4194304,
       "environment": ["BEADS_DOLT_SERVER_PORT", "BEADS_DIR", "PATH"]
