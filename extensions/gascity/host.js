@@ -5,7 +5,7 @@ window.host = (() => {
   const prefix = `h${Math.random().toString(36).slice(2, 8)}`
   let serial = 0
   /**
-   * The bridge throws past 30 messages per second, and every 8 KiB output page is one message.
+   * The bridge throws past 30 messages per second, and every output page is one message.
    * Keep a sliding window under that so large reads slow down instead of failing.
    */
   const MESSAGES_PER_SECOND = 25
@@ -87,9 +87,8 @@ window.host = (() => {
    * stderr line, or the connector's reason.
    */
   async function run(connector, workspace, args, { lines = false, text = false } = {}) {
-    const slot = (await slotFor(connector, workspace)) ?? connector
     const result = await request('connector.execute', {
-      connector: slot,
+      connector,
       host: workspace.host,
       workspace: workspace.id,
       args,
@@ -116,54 +115,25 @@ window.host = (() => {
   }
 
   /**
-   * hvir keeps one approval per (extension, connector) with a single host (upstream #991), so each
-   * program is declared in host slots: `gc`, `gc-2`, `gc-3`, each approvable for a different host.
-   * Callers name the base connector; a run uses the slot approved for the workspace's host.
+   * connector.status answers for one workspace: each workspace connector's row reports whether it
+   * is approved for that workspace's host (upstream ADR-074), and without a workspace those rows
+   * are unavailable. Reuse each answer briefly so every run doesn't repeat it.
    */
-  const SLOTS = ['', '-2', '-3']
-  const baseOf = (id) => id.replace(/-[23]$/, '')
-  /** connector.status is one bridge message; reuse it briefly so every run doesn't repeat it. */
   const STATUS_TTL_MS = 3000
-  let cachedStatus = { at: 0, value: [] }
+  let statusCache = new Map()
 
-  async function status() {
-    if (Date.now() - cachedStatus.at < STATUS_TTL_MS) return cachedStatus.value
-    cachedStatus = { at: Date.now(), value: await request('connector.status') }
-    return cachedStatus.value
+  async function status(workspace) {
+    const cached = statusCache.get(workspace.id)
+    if (cached && Date.now() - cached.at < STATUS_TTL_MS) return cached.value
+    const value = await request('connector.status', { workspace: workspace.id })
+    statusCache = new Map(statusCache).set(workspace.id, { at: Date.now(), value })
+    return value
   }
 
-  /** The slot of `base` approved for this workspace's host, if any. */
-  async function slotFor(base, workspace) {
-    const entries = await status()
-    return entries.find(
-      (entry) =>
-        baseOf(entry.connector) === base && entry.availability === 'supported' && entry.host === workspace.host,
-    )?.connector
-  }
-
-  /**
-   * Availability by base connector. With `workspace`: `supported` when a slot is approved for its
-   * host, `other-host` when slots are approved only elsewhere. `hosts` lists each base's approved
-   * hosts and `freeSlot` the first unapproved slot, for telling the viewer what to approve.
-   */
-  async function availability({ workspace } = {}) {
-    const entries = await status()
-    const bases = [...new Set(entries.map((entry) => baseOf(entry.connector)))]
-    const slots = (base) => entries.filter((entry) => baseOf(entry.connector) === base)
-    const approved = (base) => slots(base).filter((entry) => entry.host)
-    const state = (base) => {
-      const supported = slots(base).filter((entry) => entry.availability === 'supported')
-      if (supported.some((entry) => !workspace || entry.host === workspace.host)) return 'supported'
-      if (supported.length) return 'other-host'
-      return slots(base).find((entry) => entry.connector === base)?.availability ?? 'unavailable'
-    }
-    return Object.freeze({
-      ...Object.fromEntries(bases.map((base) => [base, state(base)])),
-      hosts: Object.fromEntries(bases.map((base) => [base, approved(base).map((entry) => entry.host)])),
-      freeSlot: Object.fromEntries(
-        bases.map((base) => [base, SLOTS.map((slot) => base + slot).find((id) => !approved(base).some((entry) => entry.connector === id))]),
-      ),
-    })
+  /** Availability of each declared connector for `workspace`'s host: `supported` or hvir's reason. */
+  async function availability({ workspace }) {
+    const entries = await status(workspace)
+    return Object.freeze(Object.fromEntries(entries.map((entry) => [entry.connector, entry.availability])))
   }
 
   return Object.freeze({ request, run, availability })

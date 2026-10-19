@@ -200,7 +200,7 @@ async function readLabels(workspace, commits, connectors) {
   if (commits.length === 0) return { rows: [] }
   if (connectors.git !== 'supported')
     return {
-      note: `Change-type labels need git. ${window.hostNote('git', connectors, workspace)}`,
+      note: `Change-type labels need git. ${window.hostNote('git', workspace)}`,
     }
   try {
     const partialClone = isPartialClone(
@@ -340,7 +340,7 @@ async function load(context, current) {
   if (key !== shownKey) clearShown(key)
   const connectors = await availability({ workspace: context.workspace })
   if (connectors.gh !== 'supported') {
-    ui.status.textContent = window.hostNote('gh', connectors, context.workspace)
+    ui.status.textContent = window.hostNote('gh', context.workspace)
     return
   }
   const [pull, detail] = await Promise.all([

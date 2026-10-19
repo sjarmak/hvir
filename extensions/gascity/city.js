@@ -173,7 +173,7 @@ async function loadCityConfig(workspace, force) {
 async function loadBeads(workspace, scope) {
   const connectors = await availability({ workspace })
   if (connectors.bd !== 'supported') {
-    const note = window.hostNote('bd', connectors, workspace)
+    const note = window.hostNote('bd', workspace)
     heading('ready', `Ready · ${note}`)
     inFlight = []
     inFlightNote = ` · beads: ${note}`
@@ -264,8 +264,8 @@ async function load(context) {
   }
   const connectors = await availability({ workspace: context.workspace })
   if (connectors.gc !== 'supported') {
-    ui.status.textContent = window.hostNote('gc', connectors, context.workspace)
-    ui.connect.hidden = connectors.gc === 'other-host'
+    ui.status.textContent = window.hostNote('gc', context.workspace)
+    ui.connect.hidden = false
     return
   }
   ui.connect.hidden = true
