@@ -70,6 +70,7 @@ window.host = (() => {
     if (result.outcome !== 'completed') {
       const error = new Error(`${connector} did not run: ${result.reason ?? result.outcome}`)
       error.reason = result.reason ?? result.outcome
+      if (Number.isSafeInteger(result.retryAfterMs)) error.retryAfterMs = result.retryAfterMs
       throw error
     }
     try {
