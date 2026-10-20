@@ -68,6 +68,9 @@ summary {
 .chip-reason {
   color: var(--text-strong);
 }
+.chip-label {
+  color: var(--text-muted);
+}
 .chip-age[data-tone='amber'] {
   color: var(--warning-text);
   border-color: var(--warning-border);

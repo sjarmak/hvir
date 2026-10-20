@@ -10,7 +10,7 @@
   const { pullHandle } = window.pullWaits
   const RESULT_BYTES = 7 * 1024
   const TITLE_CHARS = 120
-  const SECTIONS = ['branch', 'needs', 'waiting', 'drafts']
+  const SECTIONS = ['branch', 'needs', 'issues', 'waiting', 'drafts']
   const STATUS_FIELDS =
     'number,title,url,state,isDraft,author,headRefName,reviewDecision,reviewRequests,statusCheckRollup'
   /** Check runs report `conclusion`; legacy status contexts report `state`. */
@@ -19,10 +19,9 @@
 
   const bytes = (value) => new TextEncoder().encode(JSON.stringify(value)).byteLength
 
-  /** Drop trailing rows until the result fits, and say how many went. */
   function fit(result, key) {
     const rows = [...result[key]]
-    let omitted = 0
+    let omitted = result.omitted ?? 0
     while (rows.length && bytes({ ...result, [key]: rows, omitted }) > RESULT_BYTES) {
       rows.pop()
       omitted += 1
@@ -47,6 +46,22 @@
     }
   }
 
+  function compactIssue(row, now) {
+    const { issue, since, role } = row
+    return {
+      number: issue.number,
+      title: issue.title.slice(0, TITLE_CHARS),
+      section: 'issues',
+      role,
+      waiting: age(since, now).label,
+      since: new Date(since).toISOString(),
+      ...(issue.author ? { author: issue.author } : {}),
+      ...(issue.labels.length ? { labels: issue.labels } : {}),
+      ...(issue.comments ? { comments: issue.comments } : {}),
+      url: issue.url,
+    }
+  }
+
   async function listPulls(input, context, actionId) {
     const section = input?.section
     if (section !== undefined && !SECTIONS.includes(section))
@@ -66,18 +81,28 @@
       actionId,
     )
     const now = Date.now()
-    const rows = pullSections(snapshot, now)
-      .filter((entry) => section === undefined || entry.key === section)
+    const sections = pullSections(snapshot, now).filter(
+      (entry) => section === undefined || entry.key === section,
+    )
+    const pulls = sections
+      .filter((entry) => entry.key !== 'issues')
       .flatMap((entry) => entry.rows.map((row) => compactRow(row, entry.key, now)))
+    const issues = sections
+      .filter((entry) => entry.key === 'issues')
+      .flatMap((entry) => entry.rows.map((row) => compactIssue(row, now)))
     return fit(
-      {
-        repo: snapshot.repo,
-        viewer: snapshot.viewer,
-        hasMore: snapshot.hasMore,
-        branchChecked: useGit,
-        pulls: rows,
-      },
-      'pulls',
+      fit(
+        {
+          repo: snapshot.repo,
+          viewer: snapshot.viewer,
+          hasMore: snapshot.hasMore,
+          branchChecked: useGit,
+          pulls,
+          issues,
+        },
+        'pulls',
+      ),
+      'issues',
     )
   }
 
@@ -184,13 +209,22 @@
     'worktree-terminal': worktreeTerminal,
   }
 
-  /** A view or updater read of the same command within a second answers `frequency`; wait it out once. */
+  const RETRY_HINT_MAX_MS = 1000
+  const retryHint = (error) =>
+    error.reason === 'frequency' &&
+    Number.isSafeInteger(error.retryAfterMs) &&
+    error.retryAfterMs >= 1 &&
+    error.retryAfterMs <= RETRY_HINT_MAX_MS
+      ? error.retryAfterMs
+      : undefined
+
   async function withFrequencyRetry(operation) {
     try {
       return await operation()
     } catch (error) {
-      if (error.reason !== 'frequency') throw error
-      await new Promise((resolve) => window.setTimeout(resolve, 1100))
+      const delay = retryHint(error)
+      if (delay === undefined) throw error
+      await new Promise((resolve) => window.setTimeout(resolve, delay))
       return operation()
     }
   }

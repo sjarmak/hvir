@@ -40,6 +40,23 @@ function pullRow(row, snapshot, now, here) {
   })
 }
 
+function issueRow(row, snapshot, now) {
+  const { issue, since } = row
+  const chips = [
+    el('span', { className: 'chip chip-role' }, roleLabel(row)),
+    ageChip(since, now),
+    ...issue.labels.map((label) => el('span', { className: 'chip chip-label' }, label)),
+    issue.comments > 0 ? el('span', {}, `${issue.comments} ${issue.comments === 1 ? 'comment' : 'comments'}`) : null,
+    issue.author && issue.author !== snapshot.viewer ? el('span', {}, `@${issue.author}`) : null,
+  ].filter(Boolean)
+  return window.optionRow({
+    title: `#${issue.number} ${issue.title}`,
+    hover: issue.url,
+    meta: chips,
+    data: { number: String(issue.number), kind: 'issue' },
+  })
+}
+
 function ageChip(since, now) {
   const { label, tone } = age(since, now)
   const chip = el('span', { className: 'chip chip-age', title: new Date(since).toLocaleString() }, label)
@@ -62,12 +79,18 @@ function renderSection(section, snapshot, now, here) {
   const details = el('details', { open: !collapsed.has(section.key) }, summary, list)
   details.addEventListener('toggle', () => (details.open ? collapsed.delete(section.key) : collapsed.add(section.key)))
   if (section.rows.length === 0) list.append(el('p', { className: 'hvir-meta note' }, branchNote(snapshot)))
-  list.append(...section.rows.map((row) => pullRow(row, snapshot, now, here)))
+  list.append(
+    ...section.rows.map((row) =>
+      section.key === 'issues' ? issueRow(row, snapshot, now) : pullRow(row, snapshot, now, here),
+    ),
+  )
   return details
 }
 
-const openPull = (repo) => (option) =>
-  window.openOwn('pull', { repo, number: Number(option.dataset.number) }).catch((error) => setStatus(error.message))
+const openRow = (repo) => (option) =>
+  window
+    .openOwn(option.dataset.kind === 'issue' ? 'issue' : 'pull', { repo, number: Number(option.dataset.number) })
+    .catch((error) => setStatus(error.message))
 
 /** `here` is the other worktrees of this checkout and the shell connector's availability. */
 function render(snapshot, now, here) {
@@ -75,16 +98,20 @@ function render(snapshot, now, here) {
   const sections = pullSections(snapshot, now).filter((section) => section.key === 'branch' || section.rows.length > 0)
   ui.sections.replaceChildren(...sections.map((section) => renderSection(section, snapshot, now, here)))
   lists = [...ui.sections.querySelectorAll('[role="listbox"]')].map((list) =>
-    window.hvirUI.bindList(list, openPull(snapshot.repo)),
+    window.hvirUI.bindList(list, openRow(snapshot.repo)),
   )
   if (sections.length === 1 && sections[0].rows.length === 0)
-    ui.sections.append(el('p', { className: 'hvir-meta note' }, 'Nothing open that is yours or waiting on you.'))
+    ui.sections.append(
+      el('p', { className: 'hvir-meta note' }, 'Nothing open that is yours, waiting on you or assigned to you.'),
+    )
   ui.repo.textContent = snapshot.repo
   const capped = snapshot.hasMore && limit >= MAX_LIMIT
   ui.more.hidden = !snapshot.hasMore || capped
-  const elsewhere = sections.some((section) =>
-    section.rows.some((row) => window.worktreeControl.worktreeFor(here.worktrees, row.pull, snapshot.repo)),
-  )
+  const elsewhere = sections
+    .filter((section) => section.key !== 'issues')
+    .some((section) =>
+      section.rows.some((row) => window.worktreeControl.worktreeFor(here.worktrees, row.pull, snapshot.repo)),
+    )
   ui['connect-shell'].hidden = !elsewhere || here.shell === 'supported'
   setStatus(
     [capped ? `Showing the first ${MAX_LIMIT} of each list. Open GitHub for the rest.` : '', here.note]

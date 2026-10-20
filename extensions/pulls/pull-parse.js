@@ -139,7 +139,25 @@
     }
   }
 
+  function parseIssue(node, viewer) {
+    if (typeof node.number !== 'number' || !str(node.title) || !str(node.url)) return undefined
+    const { viewerAssignedAt } = timelineOf(node, viewer)
+    return {
+      number: node.number,
+      title: node.title,
+      url: node.url,
+      state: STATES[node.state] ?? 'open',
+      author: actor(node.author).login ?? '',
+      createdAt: str(node.createdAt) ?? '',
+      updatedAt: str(node.updatedAt) ?? '',
+      labels: nodesOf(node.labels).flatMap((label) => str(label.name) ?? []),
+      comments: typeof node.comments?.totalCount === 'number' ? node.comments.totalCount : 0,
+      viewerAssignedAt,
+    }
+  }
+
   const pullsOf = (connection, viewer) => nodesOf(connection).flatMap((node) => parsePull(node, viewer) ?? [])
+  const issuesOf = (connection, viewer) => nodesOf(connection).flatMap((node) => parseIssue(node, viewer) ?? [])
   const searchHasMore = (connection) =>
     typeof connection?.issueCount === 'number' && connection.issueCount > nodesOf(connection).length
 
@@ -167,7 +185,8 @@
       reviewRequested: reviewRequested.filter(
         (pull, index) => reviewRequested.findIndex((other) => other.number === pull.number) === index,
       ),
-      hasMore: [data.mine, data.review, data.assigned].some(searchHasMore),
+      issues: issuesOf(data.issues, viewer),
+      hasMore: [data.mine, data.review, data.assigned, data.issues].some(searchHasMore),
     }
   }
 

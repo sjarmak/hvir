@@ -34,11 +34,21 @@ fragment reviewer on RequestedReviewer {
   ... on User { login }
   ... on Team { combinedSlug }
   ... on EnterpriseTeam { combinedSlug }
+}
+fragment issue on Issue {
+  number title url state createdAt updatedAt
+  author { __typename login }
+  labels(first: 10) { nodes { name } }
+  assignees(first: 20) { nodes { login } }
+  comments { totalCount }
+  timelineItems(itemTypes: [ASSIGNED_EVENT], last: 50) {
+    nodes { __typename ... on AssignedEvent { createdAt assignee { ... on User { login } } } }
+  }
 }`
 
   const PULLS_QUERY = `query(
   $owner: String!, $name: String!, $branch: String!, $hasBranch: Boolean!,
-  $mine: String!, $review: String!, $assigned: String!, $limit: Int!
+  $mine: String!, $review: String!, $assigned: String!, $issues: String!, $limit: Int!
 ) {
   viewer { login }
   repository(owner: $owner, name: $name) @include(if: $hasBranch) {
@@ -50,6 +60,7 @@ fragment reviewer on RequestedReviewer {
   mine: search(query: $mine, type: ISSUE, first: $limit) { issueCount nodes { ...pull } }
   review: search(query: $review, type: ISSUE, first: $limit) { issueCount nodes { ...pull } }
   assigned: search(query: $assigned, type: ISSUE, first: $limit) { issueCount nodes { ...pull } }
+  issues: search(query: $issues, type: ISSUE, first: $limit) { issueCount nodes { ...issue } }
 }
 ${PULL_FIELDS}`
 
@@ -71,7 +82,6 @@ ${PULL_FIELDS}`
   }
 }`
 
-  /** Viewer-scoped searches (authored, review requested, assigned) plus the branch head lookup. */
   function pullsQueryArgs(repo, branch, limit) {
     const [owner, name] = repo.split('/')
     const search = (qualifier) => `repo:${repo} is:pr is:open ${qualifier}`
@@ -85,6 +95,7 @@ ${PULL_FIELDS}`
       '-f', `mine=${search('author:@me')}`,
       '-f', `review=${search('review-requested:@me')}`,
       '-f', `assigned=${search('assignee:@me')}`,
+      '-f', `issues=repo:${repo} is:issue is:open assignee:@me`,
       '-F', `limit=${limit}`,
     ]
   }
