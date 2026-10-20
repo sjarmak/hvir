@@ -14,6 +14,7 @@
   const SECTIONS = [
     ['branch', 'This branch'],
     ['needs', 'Needs you'],
+    ['issues', 'Assigned issues'],
     ['waiting', 'Waiting'],
     ['drafts', 'Drafts'],
   ]
@@ -26,11 +27,38 @@
   }
 
   /** Whose pull request a row is; `other` (someone else's branch, no ask) shows the author instead. */
-  const ROLE_LABELS = { author: 'Yours', reviewer: 'Reviewer', other: '' }
+  const ROLE_LABELS = { author: 'Yours', reviewer: 'Reviewer', assignee: 'Assigned', other: '' }
   const roleLabel = (row) => ROLE_LABELS[row.role]
+
+  function parseIso(value) {
+    const ms = Date.parse(value ?? '')
+    return Number.isNaN(ms) ? undefined : ms
+  }
+
+  function issueRows(snapshot, now) {
+    const open = (snapshot.issues ?? []).filter(
+      (issue, index, all) =>
+        issue.state === 'open' && all.findIndex((other) => other.number === issue.number) === index,
+    )
+    return open
+      .map((issue) => ({
+        issue,
+        reason: '',
+        since: parseIso(issue.viewerAssignedAt) ?? parseIso(issue.createdAt) ?? now,
+        waitingOn: [],
+        role: 'assignee',
+      }))
+      .sort((a, b) => a.since - b.since)
+  }
 
   const byOpenThenNewest = (left, right) =>
     Number(right.state === 'open') - Number(left.state === 'open') || right.updatedAt.localeCompare(left.updatedAt)
+
+  function sectionRows(key, branchRows, waits, shown, snapshot, now) {
+    if (key === 'branch') return branchRows
+    if (key === 'issues') return issueRows(snapshot, now)
+    return waits.filter((wait) => wait.list === key && !shown.has(wait.pull.number))
+  }
 
   function pullSections(snapshot, now) {
     const waits = pullWaitRows(snapshot, now)
@@ -50,8 +78,7 @@
     return SECTIONS.map(([key, label]) => ({
       key,
       label,
-      rows:
-        key === 'branch' ? branchRows : waits.filter((wait) => wait.list === key && !shown.has(wait.pull.number)),
+      rows: sectionRows(key, branchRows, waits, shown, snapshot, now),
     }))
   }
 
@@ -85,7 +112,7 @@
     return labels.filter((label) => label !== '' && label.toLowerCase() !== reason.toLowerCase())
   }
 
-  const api = Object.freeze({ pullSections, needYouCount, age, badges, roleLabel })
+  const api = Object.freeze({ pullSections, issueRows, needYouCount, age, badges, roleLabel })
   if (node) module.exports = api
   else window.pullsModel = api
 })()

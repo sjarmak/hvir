@@ -1,7 +1,7 @@
 {
   "id": "hvir.pulls",
   "name": "Pull requests",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "contract": "1.0",
   "requiredCapabilities": [
     "presentation.read",
@@ -29,6 +29,13 @@
       "entry": "pull.html",
       "placement": "workspace",
       "representations": ["view"]
+    },
+    {
+      "id": "issue",
+      "title": "Issue",
+      "entry": "issue.html",
+      "placement": "workspace",
+      "representations": ["view"]
     }
   ],
   "railItems": [
@@ -48,7 +55,7 @@
   "connectors": [
     {
       "id": "gh",
-      "description": "Read pull requests, reviews and checks for the workspace repository with the GitHub CLI (gh). Read-only queries.",
+      "description": "Read pull requests, reviews, checks and the issues assigned to you for the workspace repository with the GitHub CLI (gh). Read-only queries.",
       "context": "workspace",
       "setup": {
         "executable": "gh"
@@ -83,7 +90,7 @@
   "actions": [
     {
       "id": "list-pulls",
-      "title": "List pull requests that need attention",
+      "title": "List pull requests and assigned issues that need attention",
       "view": "pulls",
       "agents": true,
       "effects": {
@@ -91,13 +98,13 @@
         "replace": false
       },
       "timeoutMs": 60000,
-      "description": "Read-only. Ranked like the PRs pane (ADR-976 holder wait in business time): sections branch, needs (waiting on you), waiting (yours, waiting on others), drafts. Returns compact rows, each with role author (the viewer's pull request) or reviewer (an ask from someone else); 'omitted' counts rows dropped to fit the 8 KiB result.",
+      "description": "Read-only. Ranked like the PRs pane (ADR-976 holder wait in business time): sections branch, needs (waiting on you), issues (open issues assigned to you, oldest assignment first), waiting (yours, waiting on others), drafts. Pull rows carry role author (the viewer's pull request) or reviewer (an ask from someone else); issue rows are returned under 'issues'. 'omitted' counts rows dropped to fit the 8 KiB result.",
       "inputSchema": {
         "type": "object",
         "properties": {
           "section": {
             "type": "string",
-            "enum": ["branch", "needs", "waiting", "drafts"]
+            "enum": ["branch", "needs", "issues", "waiting", "drafts"]
           },
           "limit": {
             "type": "number",

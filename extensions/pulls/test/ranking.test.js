@@ -3,7 +3,7 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { businessMsBetween, formatBusinessAge, businessAgeTone, BUSINESS_DAY_MS } = require('../business-time.js')
 const { pullWaitRows } = require('../pull-waits.js')
-const { pullSections, needYouCount, age, badges, roleLabel } = require('../pulls-model.js')
+const { pullSections, issueRows, needYouCount, age, badges, roleLabel } = require('../pulls-model.js')
 
 const at = (iso) => new Date(iso).getTime()
 const HOUR = 3_600_000
@@ -51,6 +51,18 @@ const pull = (number, fields = {}) => ({
   reviewers: [],
   ...fields,
 })
+const issue = (number, fields = {}) => ({
+  number,
+  title: `Issue ${number}`,
+  url: `https://github.com/acme/widgets/issues/${number}`,
+  state: 'open',
+  author: 'kai',
+  createdAt: '2026-10-12T09:00:00-04:00',
+  updatedAt: '2026-10-14T09:00:00-04:00',
+  labels: [],
+  comments: 0,
+  ...fields,
+})
 const NOW = at('2026-10-20T15:00:00')
 
 const snapshot = {
@@ -84,6 +96,13 @@ const snapshot = {
     }),
     pull(82, { author: 'rin', viewerAssignedAt: '2026-10-06T10:00:00-04:00' }),
   ],
+  issues: [
+    issue(301, { viewerAssignedAt: '2026-10-15T10:00:00-04:00' }),
+    issue(302, { viewerAssignedAt: '2026-10-07T10:00:00-04:00', labels: ['bug'], comments: 3 }),
+    issue(303, { state: 'closed', viewerAssignedAt: '2026-10-01T10:00:00-04:00' }),
+    issue(304),
+    issue(302, { viewerAssignedAt: '2026-10-07T10:00:00-04:00' }),
+  ],
 }
 
 test('rows rank needs then waiting oldest ask first, drafts newest first', () => {
@@ -114,10 +133,11 @@ test('a request counts from the later of the ask and ready for review; a team as
 test('This branch keeps its pull request out of the wait sections and badges skip the reason', () => {
   const sections = pullSections({ ...snapshot, branchPulls: [snapshot.authored[0]] }, NOW)
   assert.deepEqual(
-    sections.map((section) => [section.key, section.rows.map((row) => row.pull.number)]),
+    sections.map((section) => [section.key, section.rows.map((row) => (row.pull ?? row.issue).number)]),
     [
       ['branch', [71]],
       ['needs', [82, 72, 80, 73]],
+      ['issues', [302, 304, 301]],
       ['waiting', []],
       ['drafts', [75, 74]],
     ],
@@ -157,4 +177,24 @@ test('rows say whose pull request it is: yours, an ask of you, or someone else o
     ],
   )
   assert.equal(roleLabel(rows.find((row) => row.pull.number === 80)), 'Reviewer')
+})
+
+test('assigned issues list open ones once, oldest assignment first, falling back to creation', () => {
+  const rows = issueRows(snapshot, NOW)
+  assert.deepEqual(
+    rows.map((row) => [row.issue.number, row.role, roleLabel(row)]),
+    [
+      [302, 'assignee', 'Assigned'],
+      [304, 'assignee', 'Assigned'],
+      [301, 'assignee', 'Assigned'],
+    ],
+  )
+  assert.equal(rows[0].since, at('2026-10-07T10:00:00-04:00'))
+  assert.equal(rows[1].since, at('2026-10-12T09:00:00-04:00'))
+  assert.equal(age(rows[0].since, NOW).label, '9d')
+  assert.deepEqual(issueRows({ ...snapshot, issues: undefined }, NOW), [])
+})
+
+test('assigned issues never change the header count', () => {
+  assert.equal(needYouCount([snapshot], NOW), needYouCount([{ ...snapshot, issues: [] }], NOW))
 })
