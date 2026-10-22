@@ -25,7 +25,7 @@ night, each costing about a CPU-second on the remote machine.
 The project watch labels each Git refresh it requests as a real change or a pulse, from the
 event's `synthetic` marker. The workspace coordinator drops a pulse refresh while no hvir window
 is focused, reading focus from the same attention-aggregate port its periodic poll uses
-(ADR-949, ADR-977). A focused hvir handles pulses as before, so the active workspace stays
+(`AttentionBadge.windowFocus`, ADR-977). A focused hvir handles pulses as before, so the active workspace stays
 fresh and other workspaces keep ADR-975's thirty-second bound.
 
 Real watch events are unchanged: a change under the active workspace or its Git directory, Git

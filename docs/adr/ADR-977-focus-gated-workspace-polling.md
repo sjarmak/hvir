@@ -28,7 +28,7 @@ gains focus after none was focused, the coordinator runs one periodic refresh at
 the thirty-second cadence. What a periodic refresh does is unchanged: discovery, reconciliation,
 missing-workspace removal, and the passive closed-workspace sample described above.
 
-Focus is read from the main-owned attention aggregate that already decides away-state (ADR-949),
+Focus is read from `AttentionBadge.windowFocus`, the main-process focus state the attention badge keeps,
 through a narrow port, so the coordinator does not depend on Electron. A window seeds its owner's
 focus at creation and again when a renderer reload or crash replaces its owner generation, so
 reloading the only focused window does not leave hvir reported as away.
