@@ -3,6 +3,16 @@ export class AttentionBadge {
   private readonly owners = new Map<string, { count: number; focused: boolean }>()
   private lastRendered = -1
   private failed = false
+  private focused = false
+  private readonly focusListeners = new Set<() => void>()
+
+  readonly windowFocus = {
+    isFocused: (): boolean => this.focused,
+    observe: (listener: () => void): (() => void) => {
+      this.focusListeners.add(listener)
+      return () => this.focusListeners.delete(listener)
+    },
+  }
 
   constructor(private readonly setBadgeCount: (count: number) => boolean | void) {}
 
@@ -38,6 +48,7 @@ export class AttentionBadge {
 
   private render(): void {
     const focused = [...this.owners.values()].some((owner) => owner.focused)
+    this.publishFocus(focused)
     const count = focused
       ? 0
       : Math.min(
@@ -53,6 +64,12 @@ export class AttentionBadge {
       this.failed = true
       console.warn('[attention] OS badge unavailable', error)
     }
+  }
+
+  private publishFocus(focused: boolean): void {
+    if (focused === this.focused) return
+    this.focused = focused
+    for (const listener of [...this.focusListeners]) listener()
   }
 }
 

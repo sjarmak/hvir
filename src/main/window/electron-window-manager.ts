@@ -21,6 +21,7 @@ import { installGuestWorkbenchKeys } from './electron-guest-keybindings'
 import { installRendererDocumentLifecycle } from './electron-renderer-document-lifecycle'
 import { ElectronRendererRecovery } from './electron-renderer-recovery'
 import { WindowHealthTracker } from './window-health-tracker'
+import { bindRendererFocus } from './window-focus-binding'
 import {
   ownsRendererReadiness,
   ownsUnresponsiveRecovery,
@@ -235,8 +236,11 @@ export function createElectronWindowManager(
     const windowHealth = new WindowHealthTracker(dependencies.recordWindowHealth)
 
     dependencies.extensionGuests?.installWindowLifecycle(win, () => rendererOwner)
-    win.on('focus', () => dependencies.setOwnerFocused(rendererOwner, true))
-    win.on('blur', () => dependencies.setOwnerFocused(rendererOwner, false))
+    const seedRendererFocus = bindRendererFocus(
+      win,
+      () => rendererOwner,
+      dependencies.setOwnerFocused,
+    )
 
     win.on('ready-to-show', () => win.show())
     const rolloverRendererResources = (
@@ -253,6 +257,7 @@ export function createElectronWindowManager(
         .closeOwner(expectedOwner.id, expectedOwner.generation)
         .catch((error) => console.error('[web-pane] renderer cleanup failed', error))
       rendererOwner = dependencies.rolloverRenderer(expectedOwner)
+      seedRendererFocus()
       committedDocument = false
       return rendererOwner
     }

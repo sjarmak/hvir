@@ -92,7 +92,14 @@ function createWorkbenchEntry(): void {
   let terminalSessionRegistry: TerminalSessionRegistry | null = null
   let harnessProfileStore: HarnessProfileStore | null = null
   let documentReview: DocumentReviewRuntime | null = null
-  let attentionBadge: AttentionBadge | null = null
+  const attentionBadge = runtime.own(
+    'attention badge',
+    new AttentionBadge((count) => {
+      if (process.platform !== 'darwin' && process.platform !== 'linux') return false
+      return app.setBadgeCount(count)
+    }),
+    (badge) => badge.clear(),
+  )
   let workspaceCoordinator: WorkspaceCoordinator | null = null
   let hostCatalog: ProjectHostCatalog | null = null
   const installRendererPresentation = createRendererPresentationInstaller({
@@ -125,7 +132,7 @@ function createWorkbenchEntry(): void {
       isRendererCurrent: (owner) => rendererScopes.isCurrent(owner),
       resumeRendererIpc: (owner) => rendererScopes.resumeOwnerIpc(owner),
       setOwnerFocused: (owner, focused) =>
-        attentionBadge?.setFocused(owner.id, focused, owner.generation),
+        attentionBadge.setFocused(owner.id, focused, owner.generation),
       startRendererDiagnostics: (owner) => diagnostics.startRenderer(owner),
       rendererReady: (owner) => diagnostics.rendererReady(owner),
       recordWindowHealth: (event) => diagnostics.recordWindowHealth(event),
@@ -291,8 +298,8 @@ function createWorkbenchEntry(): void {
         removal,
         emitWatch: (event) => emit('project:watch', event),
         createWatch: (target, callbacks) => new ProjectWatchController(target, callbacks),
-        shouldPoll: () =>
-          !runtime.isShuttingDown && BrowserWindow.getAllWindows().length > 0,
+        shouldPoll: () => !runtime.isShuttingDown,
+        focus: attentionBadge.windowFocus,
         onError: (message, error) => console.error(message, error),
       }),
       (coordinator) => coordinator.dispose(),
@@ -334,14 +341,6 @@ function createWorkbenchEntry(): void {
       webPanes: webPaneRoutes,
       onError: (message, error) => console.error(message, error),
     })
-    attentionBadge = runtime.own(
-      'attention badge',
-      new AttentionBadge((count) => {
-        if (process.platform !== 'darwin' && process.platform !== 'linux') return false
-        return app.setBadgeCount(count)
-      }),
-      (badge) => badge.clear(),
-    )
     installTerminalIdentityPublication(runtime, ptySupervisor, rendererEvents)
     const withSshPresentation = <T>(owner: RendererOwner, operation: () => T): T => {
       if (!sshPrompter) throw new Error('SSH prompting is unavailable')
@@ -393,7 +392,7 @@ function createWorkbenchEntry(): void {
         harnessProbes: harnessProbeManager,
         remoteImagePaste,
         updateAttention: (owner, count) =>
-          attentionBadge?.update(owner.id, count, owner.generation),
+          attentionBadge.update(owner.id, count, owner.generation),
         updateWebPaneBindings: (owner, bindings) =>
           windowManager.updateWebPaneBindings(owner.id, bindings),
         updateWebPaneFullPage: (owner, paneId) =>

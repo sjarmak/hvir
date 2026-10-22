@@ -13,9 +13,11 @@ export interface ProjectWatchTarget {
   readonly projectId: string
 }
 
+export type ProjectWatchRefreshSource = 'change' | 'pulse'
+
 export interface ProjectWatchCallbacks {
   readonly emit: (event: IpcEventPayload<'project:watch'>) => void
-  readonly refreshGit: () => void
+  readonly refreshGit: (source: ProjectWatchRefreshSource) => void
   readonly repositoryEnabled: () => boolean
 }
 
@@ -165,10 +167,10 @@ export class ProjectWatchController {
   private receiveContent(event: IpcEventPayload<'project:watch'>): void {
     if (this.stopped) return
     if (isRootGitEntry(this.target.root, event.path)) {
-      this.callbacks.refreshGit()
+      this.callbacks.refreshGit(refreshSource(event))
       this.discoverGitMetadata()
     } else if (this.callbacks.repositoryEnabled()) {
-      this.callbacks.refreshGit()
+      this.callbacks.refreshGit(refreshSource(event))
     }
     this.queueEvent(event)
   }
@@ -198,7 +200,7 @@ export class ProjectWatchController {
         this.gitStop = this.target.host.watch(
           hostPath(this.target.root.hostId, gitDirectory),
           (event) => {
-            this.callbacks.refreshGit()
+            this.callbacks.refreshGit(refreshSource(event))
             this.queueEvent(event)
           },
           {
@@ -209,7 +211,7 @@ export class ProjectWatchController {
         )
         // Discovery can happen after switching to a formerly plain project or
         // after `git init`; reconcile repository capability immediately.
-        this.callbacks.refreshGit()
+        this.callbacks.refreshGit('change')
       })
       .catch((error) => console.error('[watch] git metadata discovery failed', error))
       .finally(() => {
@@ -220,6 +222,12 @@ export class ProjectWatchController {
         }
       })
   }
+}
+
+function refreshSource(
+  event: IpcEventPayload<'project:watch'>,
+): ProjectWatchRefreshSource {
+  return event.synthetic === 'refresh' ? 'pulse' : 'change'
 }
 
 function samePaths(left: readonly HostPath[], right: readonly HostPath[]): boolean {

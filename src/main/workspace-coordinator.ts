@@ -51,6 +51,11 @@ export interface WorkspaceWatchPort {
   dispose(): Promise<void>
 }
 
+export interface WindowFocusPort {
+  isFocused(): boolean
+  observe(listener: () => void): () => void
+}
+
 export interface WorkspaceCoordinatorOptions {
   readonly registry: WorkspaceRegistryPort
   readonly discovery: WorkspaceDiscoveryPort
@@ -61,11 +66,13 @@ export interface WorkspaceCoordinatorOptions {
     callbacks: ProjectWatchCallbacks,
   ) => WorkspaceWatchPort
   readonly shouldPoll?: () => boolean
+  readonly focus?: WindowFocusPort
   readonly now?: () => number
   readonly onError?: (message: string, error: unknown) => void
 }
 
 export const BACKGROUND_ACTIVITY_INTERVAL_MS = 30_000
+export const WORKSPACE_POLL_INTERVAL_MS = 30_000
 
 type RefreshMode = 'full' | 'passive'
 
@@ -94,6 +101,10 @@ export class WorkspaceCoordinator {
   private watchGeneration = 0
   private watchInterestCache: ProjectWatchInterestCache = new Map()
   private pollTimer?: ReturnType<typeof setInterval>
+  private pollIntervalMs = WORKSPACE_POLL_INTERVAL_MS
+  private stopObservingFocus?: () => void
+  private polling = false
+  private windowFocused = true
   private operationTail: Promise<void> = Promise.resolve()
   private disposed = false
 
@@ -177,8 +188,12 @@ export class WorkspaceCoordinator {
           this.options.emitWatch(event)
         }
       },
-      refreshGit: () => {
-        if (generation === this.watchGeneration && this.watch === owner.controller) {
+      refreshGit: (source) => {
+        if (
+          generation === this.watchGeneration &&
+          this.watch === owner.controller &&
+          (source === 'change' || this.isWindowFocused())
+        ) {
           this.scheduleRefresh(target.projectId)
         }
       },
@@ -264,14 +279,20 @@ export class WorkspaceCoordinator {
     ])
   }
 
-  startPolling(intervalMs = 5_000): void {
-    if (this.pollTimer || this.disposed) return
-    this.pollTimer = setInterval(() => this.poll(), intervalMs)
+  startPolling(intervalMs = WORKSPACE_POLL_INTERVAL_MS): void {
+    if (this.polling || this.disposed) return
+    this.polling = true
+    this.pollIntervalMs = intervalMs
+    this.windowFocused = this.isWindowFocused()
+    this.stopObservingFocus = this.options.focus?.observe(() => this.syncPollingFocus())
+    if (this.windowFocused) this.armPollTimer()
   }
 
   stopPolling(): void {
-    if (this.pollTimer) clearInterval(this.pollTimer)
-    this.pollTimer = undefined
+    this.polling = false
+    this.stopObservingFocus?.()
+    this.stopObservingFocus = undefined
+    this.clearPollTimer()
   }
 
   async dispose(): Promise<void> {
@@ -404,6 +425,33 @@ export class WorkspaceCoordinator {
     const created = new Map<string, number>()
     this.activitySampledAt.set(projectId, created)
     return created
+  }
+
+  private syncPollingFocus(): void {
+    if (!this.polling || this.disposed) return
+    const focused = this.isWindowFocused()
+    if (focused === this.windowFocused) return
+    this.windowFocused = focused
+    if (!focused) {
+      this.clearPollTimer()
+      return
+    }
+    this.poll()
+    this.armPollTimer()
+  }
+
+  private isWindowFocused(): boolean {
+    return this.options.focus?.isFocused() ?? true
+  }
+
+  private armPollTimer(): void {
+    this.clearPollTimer()
+    this.pollTimer = setInterval(() => this.poll(), this.pollIntervalMs)
+  }
+
+  private clearPollTimer(): void {
+    if (this.pollTimer) clearInterval(this.pollTimer)
+    this.pollTimer = undefined
   }
 
   private poll(): void {
