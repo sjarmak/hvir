@@ -28,10 +28,7 @@ import {
 import type { Disposer } from '../project-host'
 import type { PtyObservationSource } from '../pty/pty-supervisor'
 import { SessionsDemandLeases } from './sessions-demand-lease'
-import {
-  requireRendererOwner,
-  type SessionsDemandOwner,
-} from './sessions-demand-owner'
+import { requireRendererOwner, type SessionsDemandOwner } from './sessions-demand-owner'
 import type { TerminalSessionObservationSource } from '../terminal/session-registry'
 import type { HostCitySessions } from '../gascity/gascity-city-sessions'
 import type { HostCityEvents } from '../gascity/city-event-facts'
@@ -41,6 +38,10 @@ import {
   type SessionsCityAttachedTerminal,
   type SessionsCityWorkspaceTarget,
 } from './sessions-city-projection'
+import {
+  liveSessionMetadataSources,
+  type LiveSessionMetadataSources,
+} from '../terminal/live-session-metadata'
 import {
   createSessionsProjectionIdentityScope,
   sessionsProjectionRootKey,
@@ -70,8 +71,7 @@ export interface SessionsObservationProvider {
   readonly contextPressure?: SessionsProviderProjection['contextPressure']
 }
 
-export interface SessionsObservationPortOptions {
-  readonly projectState: () => ProjectState
+export interface SessionsObservationPortOptions extends LiveSessionMetadataSources {
   readonly hosts: () => readonly ProjectHostOption[]
   readonly providers: () => readonly SessionsObservationProvider[]
   readonly sessions: TerminalSessionObservationSource
@@ -131,6 +131,7 @@ type ObservationBase = Omit<SessionsObservationSnapshot, 'demandGeneration' | 'r
  * Demand-scoped main adapter over existing owners. It owns no session policy or state.
  */
 export class SessionsObservationPort {
+  readonly context: LiveSessionMetadataSources
   private readonly leases = new SessionsDemandLeases<DemandLease>()
   private sourceDisposers: Disposer[] = []
   private current?: ObservationBase
@@ -139,7 +140,9 @@ export class SessionsObservationPort {
   private identities?: SessionsProjectionIdentityScope
   private readonly sourceListeners = new Set<() => void>()
 
-  constructor(private readonly options: SessionsObservationPortOptions) {}
+  constructor(private readonly options: SessionsObservationPortOptions) {
+    this.context = liveSessionMetadataSources(options)
+  }
 
   acquire(
     owner: SessionsDemandOwner,

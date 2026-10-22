@@ -4,6 +4,7 @@ export const SETTINGS_SECTIONS = [
   { id: 'git', label: 'Git' },
   { id: 'keybindings', label: 'Keybindings' },
   { id: 'harnesses', label: 'Harnesses' },
+  { id: 'extensions', label: 'Extensions' },
   { id: 'companion', label: 'Companion' },
 ] as const
 

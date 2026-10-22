@@ -23,7 +23,7 @@ export function ApplicationDestinations({
   onSession,
   onBead,
 }: {
-  readonly destination: 'workspace' | 'sessions' | 'needs-you'
+  readonly destination: 'workspace' | 'sessions' | 'needs-you' | 'extension'
   readonly runtime: SessionsRuntime
   readonly projection: SessionsProjectionCoordinator
   readonly sessionTarget?: SessionsProjectionRow

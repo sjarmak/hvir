@@ -30,6 +30,8 @@ import type { TerminalRuntimeRegistry } from './terminal-runtime-registry'
 import { useTerminalContextMenu } from './use-terminal-context-menu'
 
 interface TerminalViewProps {
+  readonly commandTicket?: string
+  readonly commandWorkspaceId?: string
   readonly sessionId: string
   readonly profileId: HarnessProfileId
   readonly launchRevision: number
@@ -175,7 +177,7 @@ export function TerminalView(props: TerminalViewProps): ReactElement | null {
           {canRecoverHarness ? (
             <button
               type="button"
-              className="terminal-start-fresh"
+              className="terminal-start-fresh hvir-button"
               aria-label={`Start fresh ${title}`}
               onClick={startFresh}
             >
@@ -184,7 +186,7 @@ export function TerminalView(props: TerminalViewProps): ReactElement | null {
           ) : null}
           <button
             type="button"
-            className="terminal-restart"
+            className="terminal-restart hvir-button"
             aria-label={`${canRecoverHarness ? 'Retry recovery' : 'Restart'} ${title}`}
             onClick={restart}
           >
@@ -204,6 +206,7 @@ export function TerminalView(props: TerminalViewProps): ReactElement | null {
             aria-label="Previous transcript region"
             title="Previous transcript region"
             onClick={previousSemanticRegion}
+            className="hvir-button"
           >
             ↑
           </button>
@@ -217,6 +220,7 @@ export function TerminalView(props: TerminalViewProps): ReactElement | null {
             aria-label="Next transcript region"
             title="Next transcript region"
             onClick={nextSemanticRegion}
+            className="hvir-button"
           >
             ↓
           </button>

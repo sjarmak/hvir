@@ -29,11 +29,17 @@ export function terminalStartRequest(
   size: Readonly<{ cols: number; rows: number }>,
   title: string,
   resume: boolean,
-  declareAttach: boolean,
+  firstStart: boolean,
 ): StartPtyRequest {
   const fork = !replacement && !resume ? options.forkRequest : undefined
   return {
     sessionId,
+    ...(firstStart && !replacement && !resume && !fork
+      ? {
+          commandTicket: options.commandTicket,
+          commandWorkspaceId: options.commandWorkspaceId,
+        }
+      : {}),
     replacesSessionId: replacement?.replacesSessionId,
     profileId: options.profileId,
     launchRevision: options.launchRevision,
@@ -48,7 +54,7 @@ export function terminalStartRequest(
     ...(fork ? { launchMode: 'fork' as const } : {}),
     resume,
     harnessSessionId: resume ? options.harnessSessionId : undefined,
-    externalAttach: declareAttach ? options.externalAttach : undefined,
+    externalAttach: firstStart ? options.externalAttach : undefined,
     architectureReview: options.architectureReview,
     forkSourceSessionId: fork?.sourceSessionId,
     parentHarnessSessionId: fork?.parentHarnessSessionId,

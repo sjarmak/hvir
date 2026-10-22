@@ -2,6 +2,7 @@
 
 > Lifecycle: Partially superseded
 > Superseded by: [ADR-019](ADR-019-working-output-is-not-actionable-attention.md) | partial | Classifying ongoing post-submission output as actionable new-output attention.
+> Superseded by: [ADR-053](ADR-053-local-agent-workbench-access.md) | partial | Terminal-only attention vocabulary: add separate quiet report attention, cleared by viewing that report.
 > Superseded by: [ADR-948](ADR-948-exact-external-pending-interaction-attention.md) | partial | Terminal focus as the only rule that clears attention.
 > Superseded by: [ADR-949](ADR-949-companion-observer-and-away-push.md) | partial | The OS badge as the only attention surface while all hvir windows are unfocused.
 > Superseded by: [ADR-951](ADR-951-terminal-notification-prompt-attention.md) | partial | Terminal focus as the only rule that clears a terminal's own attention, for a prompt entry answered through the Companion mirror.

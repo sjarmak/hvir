@@ -1,8 +1,10 @@
 # Contributing to hvir
 
 hvir is deliberately smaller than an IDE. Contributions should reinforce its view-first,
-agent-aware workflow without quietly widening the product into an editor, extension platform,
-task runner, or session orchestrator.
+agent-aware workflow without quietly widening the product into an editor, task runner, or
+session orchestrator. The 0.3.0 extension platform follows
+[ADR-054](docs/adr/ADR-054-isolated-extension-package-and-capability-boundary.md): packages run in isolated guests through scoped public
+capabilities. Third-party harness providers and terminal engines remain excluded.
 
 The repository-owned skills are for hvir contributors and maintainers. People using the hvir
 application do not need an agent skill.
@@ -223,6 +225,21 @@ through `hvir-merge-pr`, which requests GitHub's protected merge and reconciles 
 fields. Optional epic branch and worktree cleanup remains a later coordinator operation and never
 blocks acceptance. Retain uncertain cleanup state for maintainer action.
 
+## Recover contributor evidence
+
+Architecture and release verification use the latest GitHub-created CI run for an equivalent
+candidate and only that run's current complete attempt (ADR-048). A later pending, failed or
+partial run replaces earlier success. Review the diagnostic's PR/base/head/merge/run/attempt
+identities; wait for pending execution or explicitly request a full workflow rerun, then reverify.
+An API-unavailable error requires restoring read access or connectivity before retrying the check.
+
+For cumulative epic verification, architecture can prove non-policy history already integrated
+from a Closed canonical PR without claiming recorded approval. This requires exact Git parents,
+equal tested/integrated trees, native epic-child identity, reachability and complete ordinary CI.
+Policy, checker, verification wiring and decision changes still require a recorded accepted
+merge. Release always requires recorded merged-PR acceptance. Main acceptance remains protected;
+recovery never dispatches CI, merges PRs, closes issues or rewrites history.
+
 ## Develop locally
 
 Development requires Node 24 or newer; release CI uses Node 24.
@@ -303,6 +320,21 @@ reconnect, watcher, and late-completion policy remains in direct Vitest suites a
 real SSH host. `web-pane` starts its own authorized terminal source and proves guest isolation,
 authenticated routing, blocked navigation, ordinary input, full-page controls, workspace
 hide/restore without reload, bounded redacted diagnostics, reserved close, and route cleanup.
+`agent-workbench` proves the actual Node CLI and private socket through ordinary Settings
+controls, protected supervised-shell defaults, connector-free action dispatch, inert reports,
+keyboard focus, confined document presentation and access/endpoint revocation. Installed-package
+acceptance separately runs offline reference commands with no display; signed native release
+requirements remain unchanged.
+
+`HVIR_EXTENSION_OUTPUT_EVIDENCE=1 HVIR_SMOKE_SCENARIO=extensions npm run smoke:scenario`
+runs the focused task-owned connector transfer proof through a scaffolded guest and actual native
+processes. It covers a 650 KiB result, four maximum escaped stdout/stderr receipts, ordinary
+traffic, visible input/paint, hidden finite actions, withdrawal and capacity recovery. Its bounded
+timing/paint observations are environment evidence, not a controlled quantitative performance gate.
+
+`extensions` exercises the ordinary directory-package Settings workflow, captured-byte
+isolation, public guest protocol, reachable HTTP/WebSocket and TCP/UDP WebRTC denial,
+presentation, inactive timer suspension, and trusted lifecycle controls against Electron.
 `renderer-authority` owns real renderer reload/destruction revocation for routes and HTML previews;
 it does not depend on a terminal scenario. Each focused process records a bounded semantic
 snapshot when readiness fails.

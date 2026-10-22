@@ -1,5 +1,6 @@
 import { useArchitectureReviewLaunchListener } from './use-architecture-review-launch-listener'
 import type { RefObject } from 'react'
+import type { TerminalCommandRequest } from '../../../shared/ipc/terminal'
 
 import { hostPathEquals } from '../../../shared'
 import type {
@@ -63,30 +64,45 @@ export function useTerminalSessionCommands({
     initialInput?: string,
     externalAttach?: ExternalSessionAttachRequest,
     architectureReview?: ArchitectureAgentLaunch,
+    command?: TerminalCommandRequest,
   ): string => {
+    const id = command?.terminalId ?? crypto.randomUUID()
     const current = modelRef.current
     const pane = terminalWorkspaceSplit(current) ? current.activePane : 'primary'
-    const session = createTerminalSession(
-      crypto.randomUUID(),
-      profile,
-      provider,
-      workspaceRoot,
-      pane,
-      profileProbe(probes, profile)?.capabilities,
-      initialInput,
-      externalAttach,
-      architectureReview,
-    )
+    const session = {
+      ...createTerminalSession(
+        id,
+        profile,
+        provider,
+        workspaceRoot,
+        pane,
+        profileProbe(probes, profile)?.capabilities,
+        initialInput,
+        externalAttach,
+        architectureReview,
+      ),
+      ...(command
+        ? { commandTicket: command.ticket, commandWorkspaceId: command.workspaceId }
+        : {}),
+    }
     send({ type: 'session-added', session })
     closeLaunchMenu()
-    return session.id
+    return id
   }
 
   const add = (
     profileId: HarnessProfileId,
     expectedLaunchRevision?: number,
+    command?: TerminalCommandRequest,
   ): string | undefined => {
-    if (!available) return
+    if (
+      !available ||
+      (command &&
+        (!hostPathEquals(workspaceRoot, command.root) ||
+          profileId !== 'plain-shell-default' ||
+          modelRef.current.sessions.some((session) => session.id === command.terminalId)))
+    )
+      return
     const profile = profiles.find((candidate) => candidate.id === profileId)
     const provider = profile
       ? providers.find((candidate) => candidate.id === profile.providerId)
@@ -98,7 +114,7 @@ export function useTerminalSessionCommands({
         profile.launchRevision !== expectedLaunchRevision)
     )
       return
-    return launch(profile, provider)
+    return launch(profile, provider, undefined, undefined, undefined, command)
   }
 
   const launchBeadCommand = (command: string): boolean => {

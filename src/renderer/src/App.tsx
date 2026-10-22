@@ -1,39 +1,34 @@
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
-import {
-  GIT_CHANGE_DISPLAY_LIMIT,
-  hostPathEquals,
-  type GitChanges,
-  type HostPath,
-  type ProjectState,
-} from '../../shared'
+import type { GitChanges, HostPath, ProjectState } from '../../shared'
 import { PaneResizer } from './layout/PaneResizer'
 import type { WebViewState } from './dashboards/WebPane'
 import { revealWebSourceTerminal } from './dashboards/reveal-web-source-terminal'
-import { WebPaneStack } from './dashboards/WebPaneStack'
 import { useWebPaneWorkspace } from './dashboards/use-web-pane-workspace'
 import { TerminalWorkspaceCollection } from './terminal/TerminalWorkspaceCollection'
 import { useTerminalWorkspaceRuntime } from './terminal/use-terminal-workspace-runtime'
 import { useTerminalAttention } from './terminal/use-terminal-attention'
 import { useExternalAttention } from './workspaces/use-external-attention'
-import { MissingWorkspaceNotice } from './workspaces/MissingWorkspaceNotice'
 import { useProjectSession } from './workspaces/project-session'
 import { useProjectWatchInterests } from './workspaces/project-watch-interests'
 import { SessionDialog } from './workspaces/SessionDialog'
 import { SshPromptDialog } from './workspaces/SshPromptDialog'
-import { FileTree } from './tree/FileTree'
+import { WorkbenchProjectRail } from './workbench/WorkbenchProjectRail'
+import {
+  ExtensionContributionsProvider,
+  ExtensionTopDestination,
+} from './extensions/ExtensionContributions'
 import { isGitIgnoreRulePath } from './tree/git-ignore-refresh'
 import { RailPanels, RailTabs, useRailExtensions } from './rail/RailExtensions'
 import { useTerminalCommands } from './terminal/use-terminal-commands'
-import { GitPanel } from './git/GitPanel'
 import { workspaceGitEnabled } from './git/git-capability'
-import { GitGraphView } from './git/GitGraphView'
 import { useArchitectureReviewTab } from './architecture-review/use-architecture-review-tab'
 import { useGitWorkspace } from './git/use-git-workspace'
-import { FileViewer } from './viewer/FileViewer'
-import { TabStrip } from './viewer/TabStrip'
+import { WorkbenchViewer } from './viewer/WorkbenchViewer'
+import { useExtensionViews } from './extensions/use-extension-views'
 import { useViewerWorkspace } from './viewer/use-viewer-workspace'
+import { deactivateViewerOverlays } from './viewer/viewer-overlay-activation'
 import { setAppTheme, useAppTheme } from './theme'
-import { SettingsDialog } from './settings/SettingsDialog'
+import { WorkbenchAccessDialogs } from './workbench/WorkbenchAccessDialogs'
 import { setAppSettings, terminalPreferences, useAppSettings } from './settings/settings'
 import { useWorkbenchCommands } from './workbench/use-workbench-commands'
 import { focusVisibleActiveTerminalAfterLayout } from './workbench/active-terminal-focus'
@@ -60,6 +55,10 @@ export function App(): ReactElement {
   const architecture = useArchitectureReviewTab({
     root: rootRef,
     activateViewer: () => {
+      deactivateViewerOverlays({
+        deactivateExtensions: extensions.deactivate,
+        deactivateReport: viewer.deactivateReport,
+      })
       deactivateGitGraphRef.current()
       deactivateWebPaneRef.current()
       viewer.focusPane('primary')
@@ -69,19 +68,35 @@ export function App(): ReactElement {
   const overlays = useWorkbenchOverlays()
   const externalAttention = useExternalAttention()
   const terminalAttention = useTerminalAttention()
+  const extensions = useExtensionViews({
+    onActivate: (focus = true) => {
+      architecture.deactivate()
+      viewer.deactivateReport()
+      deactivateGitGraphRef.current()
+      deactivateWebPaneRef.current()
+      restoreViewerRef.current()
+      setDestination('workspace')
+      if (focus) overlays.closeSettings()
+    },
+    onError: (message) => sessionErrorRef.current(message),
+  })
   const viewer = useViewerWorkspace({
     onActivateFile: () => {
       architecture.deactivate()
+      extensions.deactivate()
       deactivateGitGraphRef.current()
       deactivateWebPaneRef.current()
       restoreViewerRef.current()
     },
   })
-
   const reviewWatch = review.useWatchFanout(viewer.handleWatchEvent)
   const web = useWebPaneWorkspace({
     onActivate: () => {
       architecture.deactivate()
+      deactivateViewerOverlays({
+        deactivateExtensions: extensions.deactivate,
+        deactivateReport: viewer.deactivateReport,
+      })
       viewer.focusPane('primary')
       deactivateGitGraphRef.current()
       restoreViewerRef.current()
@@ -89,10 +104,6 @@ export function App(): ReactElement {
     onError: (message) => sessionErrorRef.current(message),
   })
 
-  const changedCount = gitChanges?.workingTree.length ?? 0
-  const changedCountLabel = gitChanges?.workingTreeLimited
-    ? `${GIT_CHANGE_DISPLAY_LIMIT.toLocaleString()}+`
-    : changedCount.toLocaleString()
   const { switchWorkspace } = viewer
   const { applyProjectState, setWorkspaceRoot } = web
   const { close: closeArchitectureReview } = architecture
@@ -142,9 +153,7 @@ export function App(): ReactElement {
   })
   const {
     workbenchRef,
-    viewerGroupsRef,
     railMode,
-    setRailMode,
     terminalMode,
     setTerminalMode,
     toggleTerminalFocus,
@@ -153,8 +162,6 @@ export function App(): ReactElement {
     setTreeCollapsed,
     setTreeWidth,
     setTerminalHeight,
-    setViewerPrimaryWidth,
-    resetViewerPrimaryWidth,
     focusTerminal: showTerminal,
   } = layout
   const git = useGitWorkspace({
@@ -165,19 +172,19 @@ export function App(): ReactElement {
     refreshGit: session.refreshGit,
     activateViewer: () => {
       architecture.deactivate()
+      viewer.deactivateReport()
       viewer.focusPane('primary')
       restoreViewer()
     },
-    deactivateWebPane: () => web.setActive(false),
+    deactivateWebPane: () => {
+      web.setActive(false)
+      extensions.deactivate()
+    },
   })
   const {
-    graphOpen: gitGraphOpen,
     graphActive: gitGraphActive,
     graphActiveRef: gitGraphActiveRef,
-    graphRequest: gitGraphRequest,
     openGraph: openGitGraph,
-    activateGraph: activateGitGraph,
-    closeGraph: closeGitGraph,
     resetGraph: resetGitGraph,
     deactivateGraph: deactivateGitGraph,
     switchBranch: switchGitBranch,
@@ -221,6 +228,7 @@ export function App(): ReactElement {
     canUseViewerCommands: () =>
       !gitGraphActiveRef.current &&
       !web.activeRef.current &&
+      !extensions.activeRef.current &&
       (!root || !architecture.active(root)),
     cycleViewMode: viewer.cycleActiveMode,
     findFile: layout.focusFilenameSearch,
@@ -245,403 +253,243 @@ export function App(): ReactElement {
     })
   if (rootError) return <div className="startup-error">{rootError}</div>
   if (!root) return <div className="startup-loading">Starting hvir…</div>
-  const rootWebViews = web.views.filter((view) =>
-    hostPathEquals(view.workspaceRoot, root),
-  )
-  const renderViewerPane = (
-    pane: 'primary' | 'secondary',
-    paneTabs: typeof viewer.primaryTabs,
-    paneTab: typeof viewer.primaryActiveTab,
-    graphPane: boolean,
-  ): ReactElement => (
-    <section
-      className={`viewer-group viewer-group-${pane}`}
-      aria-label={`${pane === 'primary' ? 'Primary' : 'Secondary'} file viewer`}
-      data-diagnostic-capture="viewer"
-      data-viewer-pane={pane}
-      tabIndex={-1}
-      onPointerDownCapture={(event) => {
-        if (event.button !== 0 || architecture.handlesPointerActivation(root, pane))
-          return
-        if (
-          paneTab &&
-          !(graphPane && gitGraphActive) &&
-          !(pane === 'primary' && web.active)
-        ) {
-          viewer.focusPane(pane, paneTab.id)
-        } else {
-          viewer.focusPane(pane)
-        }
-      }}
-    >
-      <TabStrip
-        tabs={paneTabs}
-        pathCopyRoot={root}
-        pane={pane}
-        activeId={
-          (graphPane && gitGraphActive) ||
-          (pane === 'primary' && web.active) ||
-          architecture.active(root, pane)
-            ? undefined
-            : paneTab?.id
-        }
-        onActivate={(id) => viewer.activateTab(id, pane)}
-        onClose={viewer.closeTab}
-        onPin={viewer.pinTab}
-        onReorder={viewer.reorderTabs}
-        onMoveToPane={viewer.moveTab}
-        split={viewer.split}
-        onSplit={viewer.openSplit}
-        onClosePane={pane === 'secondary' ? viewer.closeSplit : undefined}
-        graphOpen={graphPane && gitGraphOpen}
-        graphActive={graphPane && gitGraphActive}
-        onActivateGraph={activateGitGraph}
-        onCloseGraph={closeGitGraph}
-        {...architecture.stripProps(root, pane)}
-        webTabs={
-          pane === 'primary'
-            ? rootWebViews.map((view) => ({ id: view.id, title: view.title }))
-            : undefined
-        }
-        activeWebId={pane === 'primary' && web.active ? web.activeId : undefined}
-        onActivateWeb={web.activateView}
-        onCloseWeb={web.closeView}
-      />
-      {graphPane && gitGraphOpen ? (
-        <div className="workspace-view" hidden={!gitGraphActive}>
-          <GitGraphView
-            root={root}
-            refreshVersion={gitVersion}
-            connectionState={connectionState}
-            requestedHash={gitGraphRequest.hash}
-            requestSerial={gitGraphRequest.serial}
-            onOpen={(path, base, revision) =>
-              viewer.openFile(path, true, 'git', base, revision)
-            }
-          />
-        </div>
-      ) : null}
-      {architecture.panel(root, pane, session.switchWorkspace)}
-      {pane === 'primary' ? (
-        <WebPaneStack
-          views={web.views}
-          root={root}
-          active={web.active}
-          activeId={web.activeId}
-          focused={web.focused}
-          onToggleFocus={() => web.setFocused((focused) => !focused)}
-          onTitle={web.setTitle}
-          onBlockedNavigation={web.followBlockedNavigation}
-          onOpenBrowser={web.openBrowser}
-          onRevealTerminal={(view) => void revealSourceTerminal(view)}
-        />
-      ) : null}
-      <div
-        className="workspace-view"
-        hidden={
-          (graphPane && gitGraphActive) ||
-          (pane === 'primary' && web.active) ||
-          architecture.active(root, pane)
-        }
-      >
-        {activeWorkspace?.missing ? (
-          <MissingWorkspaceNotice root={root} />
-        ) : (
-          <FileViewer
-            key={`${pane}:${paneTab?.id ?? 'empty'}`}
-            tab={paneTab}
-            gitRefreshVersion={gitVersion}
-            onMode={(mode, at) => paneTab && viewer.setMode(paneTab.id, mode, at)}
-            onDiffBase={(diffBase) => paneTab && viewer.setDiffBase(paneTab.id, diffBase)}
-            onContent={(content) => paneTab && viewer.setContent(paneTab.id, content)}
-            onSave={() => paneTab && viewer.saveTab(paneTab.id)}
-            onReload={() => paneTab && viewer.reloadTab(paneTab.id)}
-            onPosition={(position) =>
-              paneTab && viewer.schedulePosition(paneTab.id, position)
-            }
-            onNavigationHandled={(serial) =>
-              paneTab && viewer.navigationHandled(paneTab.id, serial)
-            }
-            registerCommands={viewer.viewerCommands.register}
-            onOpenPath={(path) => {
-              viewer.focusPane(pane)
-              if (paneTab) viewer.pinTab(paneTab.id)
-              viewer.openFile(path, true)
-            }}
-            onRenderedDependencies={viewer.setRenderedDependencies}
-            documentReview={documentReview}
-          />
-        )}
-      </div>
-    </section>
-  )
   return (
-    <div className="app-shell">
-      <AppProjectNavigation
-        session={session}
-        terminalAttention={terminalAttention}
-        externalAttention={externalAttention}
-        overlays={overlays}
-        theme={theme}
-        destination={destination}
-        setDestination={setDestination}
-      />
-      <main
-        className={`workbench${connectionState === 'connected' ? '' : ' project-stale'}${terminalMode === 'maximized' ? ' terminal-focused' : ''}${terminalMode === 'collapsed' ? ' terminal-collapsed' : ''}${treeCollapsed ? ' tree-collapsed' : ''}${layout.terminalRailCompact ? ' terminal-rail-compact' : ''}${web.focused && web.active ? ' web-focused' : ''}`}
-        ref={workbenchRef}
-        hidden={destination !== 'workspace'}
-      >
-        <aside
-          className="tree-panel"
-          aria-label="Project rail"
-          data-diagnostic-capture="project-navigation"
-          tabIndex={-1}
+    <ExtensionContributionsProvider
+      topActive={destination === 'extension'}
+      obscured={overlays.settingsOpen}
+      onTop={() => setDestination('extension')}
+      onWorkspace={() => setDestination('workspace')}
+      projectContext={session}
+      placement={extensions}
+      onError={session.reportError}
+    >
+      <div className="app-shell">
+        <AppProjectNavigation
+          session={session}
+          terminalAttention={terminalAttention}
+          externalAttention={externalAttention}
+          overlays={overlays}
+          theme={theme}
+          destination={destination}
+          setDestination={setDestination}
+        />
+        <main
+          className={`workbench hvir-panel${connectionState === 'connected' ? '' : ' project-stale'}${terminalMode === 'maximized' ? ' terminal-focused' : ''}${terminalMode === 'collapsed' ? ' terminal-collapsed' : ''}${treeCollapsed ? ' tree-collapsed' : ''}${layout.terminalRailCompact ? ' terminal-rail-compact' : ''}${web.focused && web.active ? ' web-focused' : ''}`}
+          ref={workbenchRef}
+          hidden={destination !== 'workspace'}
         >
-          <nav className="rail-nav" aria-label="Project views">
-            <button
-              type="button"
-              className={railMode === 'files' ? 'active' : ''}
-              aria-current={railMode === 'files' ? 'page' : undefined}
-              onClick={() => setRailMode('files')}
-            >
-              Files
-            </button>
-            {gitEnabled ? (
+          <WorkbenchProjectRail
+            mode={railMode}
+            onMode={layout.setRailMode}
+            activation={layout.railActivation}
+            gitEnabled={gitEnabled}
+            changedCount={gitChanges?.workingTree.length ?? 0}
+            changesLimited={gitChanges?.workingTreeLimited}
+            visible={destination === 'workspace' && !treeCollapsed}
+            files={{
+              root,
+              refreshVersion: watchVersion,
+              searchRefreshVersion: contentVersion,
+              ignoredRefreshVersion,
+              changedFiles: gitChanges?.workingTree,
+              gitChangesLimited: gitChanges?.workingTreeLimited,
+              selected:
+                terminalPathActivation.revealRequest?.path ?? viewer.activeTab?.path,
+              revealRequest: terminalPathActivation.revealRequest,
+              onOpen: viewer.openFile,
+              onPointerActivate: focusVisibleActiveTerminalAfterLayout,
+              viewerPathRebind: viewer,
+              onWorkspaceContentChanged: session.refreshWorkspaceContent,
+              connected: connectionState === 'connected',
+              missing: activeWorkspace?.missing,
+              hidden: railMode !== 'files',
+              gitEnabled,
+              watchInterestsLimited: watchInterests.limited,
+              onExpandedChange: watchInterests.updateExpandedPath,
+            }}
+            git={
+              gitEnabled
+                ? {
+                    root,
+                    refreshVersion: contentVersion,
+                    historyRefreshVersion: gitVersion,
+                    onChanges: setGitChanges,
+                    onOpenChange: (path, base, untracked) =>
+                      viewer.openFile(
+                        path,
+                        true,
+                        untracked ? 'git-untracked' : 'git',
+                        base,
+                      ),
+                    onOpenHistory: (path, revision) =>
+                      viewer.openFile(path, true, 'git', 'head', revision),
+                    onOpenGraph: openGitGraph,
+                    onOpenArchitectureReview: architecture.open,
+                    connectionState,
+                    hidden: railMode !== 'git',
+                    historyPaused: gitGraphActive,
+                    hasDirtyViewerTabs: viewer.tabs.some((tab) => tab.dirty),
+                    onSwitchBranch: switchGitBranch,
+                    onFetch: fetchGit,
+                    onPull: pullGit,
+                    autoFetchIntervalMs: settings.gitAutoFetchIntervalMs,
+                  }
+                : undefined
+            }
+            tabs={<RailTabs rail={rail} layout={layout} />}
+            panels={
+              <RailPanels
+                rail={rail}
+                session={session}
+                layout={layout}
+                focusBeadId={beadTarget?.beadId}
+                onFocusHandled={needsYou.beadHandled}
+                onFocusUnavailable={needsYou.beadUnavailable}
+              />
+            }
+          />
+          <PaneResizer
+            orientation="vertical"
+            className="tree-resizer"
+            label="Resize file tree"
+            onDragStart={() => {
+              if (treeCollapsed) setTreeCollapsed(false)
+            }}
+            onDrag={(clientX) => {
+              const left = workbenchRef.current?.getBoundingClientRect().left ?? 0
+              setTreeWidth(clientX - left)
+            }}
+            onNudge={(delta) => {
+              if (treeCollapsed) {
+                if (delta > 0) setTreeCollapsed(false)
+                return
+              }
+              const current =
+                workbenchRef.current?.querySelector<HTMLElement>('.tree-panel')
+              if (current) setTreeWidth(current.getBoundingClientRect().width + delta)
+            }}
+            onReset={layout.resetTreeWidth}
+            action={
               <button
                 type="button"
-                className={railMode === 'git' ? 'active' : ''}
-                aria-current={railMode === 'git' ? 'page' : undefined}
-                onClick={() => setRailMode('git')}
+                className="tree-collapse-toggle hvir-button"
+                data-resizer-action
+                aria-label={
+                  treeCollapsed ? 'Restore file explorer' : 'Collapse file explorer'
+                }
+                aria-pressed={treeCollapsed}
+                title={treeCollapsed ? 'Restore file explorer' : 'Collapse file explorer'}
+                onDoubleClick={(event) => event.stopPropagation()}
+                onClick={() => setTreeCollapsed((collapsed) => !collapsed)}
               >
-                Git{changedCount > 0 ? ` ${changedCountLabel}` : ''}
-              </button>
-            ) : null}
-            <RailTabs rail={rail} layout={layout} />
-          </nav>
-          <div className="rail-content">
-            <FileTree
-              key={`files:${root.hostId}:${root.path}`}
-              root={root}
-              refreshVersion={watchVersion}
-              searchRefreshVersion={contentVersion}
-              ignoredRefreshVersion={ignoredRefreshVersion}
-              changedFiles={gitChanges?.workingTree}
-              gitChangesLimited={gitChanges?.workingTreeLimited}
-              selected={
-                terminalPathActivation.revealRequest?.path ?? viewer.activeTab?.path
-              }
-              revealRequest={terminalPathActivation.revealRequest}
-              onOpen={viewer.openFile}
-              onPointerActivate={focusVisibleActiveTerminalAfterLayout}
-              viewerPathRebind={viewer}
-              onWorkspaceContentChanged={session.refreshWorkspaceContent}
-              connected={connectionState === 'connected'}
-              missing={activeWorkspace?.missing}
-              hidden={railMode !== 'files'}
-              gitEnabled={gitEnabled}
-              watchInterestsLimited={watchInterests.limited}
-              onExpandedChange={watchInterests.updateExpandedPath}
-            />
-            {gitEnabled ? (
-              <GitPanel
-                key={`git:${root.hostId}:${root.path}`}
-                root={root}
-                refreshVersion={contentVersion}
-                historyRefreshVersion={gitVersion}
-                onChanges={setGitChanges}
-                onOpenChange={(path, base, untracked) =>
-                  viewer.openFile(path, true, untracked ? 'git-untracked' : 'git', base)
-                }
-                onOpenHistory={(path, revision) =>
-                  viewer.openFile(path, true, 'git', 'head', revision)
-                }
-                onOpenGraph={openGitGraph}
-                onOpenArchitectureReview={architecture.open}
-                connectionState={connectionState}
-                hidden={railMode !== 'git'}
-                historyPaused={gitGraphActive}
-                hasDirtyViewerTabs={viewer.tabs.some((tab) => tab.dirty)}
-                onSwitchBranch={switchGitBranch}
-                onFetch={fetchGit}
-                onPull={pullGit}
-                autoFetchIntervalMs={settings.gitAutoFetchIntervalMs}
-              />
-            ) : null}
-            <RailPanels
-              rail={rail}
-              session={session}
-              layout={layout}
-              focusBeadId={beadTarget?.beadId}
-              onFocusHandled={needsYou.beadHandled}
-              onFocusUnavailable={needsYou.beadUnavailable}
-            />
-          </div>
-        </aside>
-        <PaneResizer
-          orientation="vertical"
-          className="tree-resizer"
-          label="Resize file tree"
-          onDragStart={() => {
-            if (treeCollapsed) setTreeCollapsed(false)
-          }}
-          onDrag={(clientX) => {
-            const left = workbenchRef.current?.getBoundingClientRect().left ?? 0
-            setTreeWidth(clientX - left)
-          }}
-          onNudge={(delta) => {
-            if (treeCollapsed) {
-              if (delta > 0) setTreeCollapsed(false)
-              return
-            }
-            const current =
-              workbenchRef.current?.querySelector<HTMLElement>('.tree-panel')
-            if (current) setTreeWidth(current.getBoundingClientRect().width + delta)
-          }}
-          onReset={layout.resetTreeWidth}
-          action={
-            <button
-              type="button"
-              className="tree-collapse-toggle"
-              data-resizer-action
-              aria-label={
-                treeCollapsed ? 'Restore file explorer' : 'Collapse file explorer'
-              }
-              aria-pressed={treeCollapsed}
-              title={treeCollapsed ? 'Restore file explorer' : 'Collapse file explorer'}
-              onDoubleClick={(event) => event.stopPropagation()}
-              onClick={() => setTreeCollapsed((collapsed) => !collapsed)}
-            >
-              <svg aria-hidden="true" viewBox="0 0 16 16">
-                <path
-                  d={
-                    treeCollapsed
-                      ? 'M4 3 8.5 8 4 13M8 3l4.5 5L8 13'
-                      : 'M12 3 7.5 8l4.5 5M8 3 3.5 8 8 13'
-                  }
-                />
-              </svg>
-            </button>
-          }
-        />
-        <section className="viewer-panel" aria-label="File viewer">
-          <div
-            className={`viewer-groups${viewer.split ? ' split' : ''}`}
-            ref={viewerGroupsRef}
-          >
-            {renderViewerPane(
-              'primary',
-              viewer.primaryTabs,
-              viewer.primaryActiveTab,
-              true,
-            )}
-            {viewer.split ? (
-              <>
-                <PaneResizer
-                  orientation="vertical"
-                  className="viewer-split-resizer"
-                  label="Resize split viewers"
-                  onDrag={(clientX) => {
-                    const left =
-                      viewerGroupsRef.current?.getBoundingClientRect().left ?? 0
-                    setViewerPrimaryWidth(clientX - left)
-                  }}
-                  onNudge={(delta) => {
-                    const current = viewerGroupsRef.current?.querySelector<HTMLElement>(
-                      '.viewer-group-primary',
-                    )
-                    if (current) {
-                      setViewerPrimaryWidth(current.getBoundingClientRect().width + delta)
+                <svg aria-hidden="true" viewBox="0 0 16 16">
+                  <path
+                    d={
+                      treeCollapsed
+                        ? 'M4 3 8.5 8 4 13M8 3l4.5 5L8 13'
+                        : 'M12 3 7.5 8l4.5 5M8 3 3.5 8 8 13'
                     }
-                  }}
-                  onReset={resetViewerPrimaryWidth}
-                />
-                {renderViewerPane(
-                  'secondary',
-                  viewer.secondaryTabs,
-                  viewer.secondaryActiveTab,
-                  false,
-                )}
-              </>
-            ) : null}
-          </div>
-        </section>
-        <PaneResizer
-          orientation="horizontal"
-          className="terminal-resizer"
-          label="Resize terminal"
-          onDragStart={() => {
-            if (terminalMode !== 'restored') setTerminalMode('restored')
-          }}
-          onDrag={(clientY) => {
-            const bottom = workbenchRef.current?.getBoundingClientRect().bottom ?? 0
-            setTerminalHeight(bottom - clientY)
-          }}
-          onNudge={(delta) => {
-            if (terminalMode !== 'restored') {
-              if (
-                (terminalMode === 'maximized' && delta < 0) ||
-                (terminalMode === 'collapsed' && delta > 0)
-              ) {
-                setTerminalMode('restored')
-              }
-              return
+                  />
+                </svg>
+              </button>
             }
-            const current =
-              workbenchRef.current?.querySelector<HTMLElement>('.terminal-panel')
-            if (current) setTerminalHeight(current.getBoundingClientRect().height + delta)
-          }}
-          onReset={layout.resetTerminalHeight}
-          action={<TerminalLayoutControls mode={terminalMode} onMode={setTerminalMode} />}
-        />
-        <TerminalWorkspaceCollection
-          state={projectState}
+          />
+          <WorkbenchViewer
+            root={root}
+            missing={Boolean(activeWorkspace?.missing)}
+            viewer={viewer}
+            web={web}
+            git={git}
+            layout={layout}
+            gitVersion={gitVersion}
+            connectionState={connectionState}
+            documentReview={documentReview}
+            revealSourceTerminal={revealSourceTerminal}
+            extensions={extensions}
+            architecture={architecture}
+            switchWorkspace={session.switchWorkspace}
+            visible={destination === 'workspace' && terminalMode !== 'maximized'}
+          />
+          <PaneResizer
+            orientation="horizontal"
+            className="terminal-resizer"
+            label="Resize terminal"
+            onDragStart={() => {
+              if (terminalMode !== 'restored') setTerminalMode('restored')
+            }}
+            onDrag={(clientY) => {
+              const bottom = workbenchRef.current?.getBoundingClientRect().bottom ?? 0
+              setTerminalHeight(bottom - clientY)
+            }}
+            onNudge={(delta) => {
+              if (terminalMode !== 'restored') {
+                if (
+                  (terminalMode === 'maximized' && delta < 0) ||
+                  (terminalMode === 'collapsed' && delta > 0)
+                ) {
+                  setTerminalMode('restored')
+                }
+                return
+              }
+              const current =
+                workbenchRef.current?.querySelector<HTMLElement>('.terminal-panel')
+              if (current)
+                setTerminalHeight(current.getBoundingClientRect().height + delta)
+            }}
+            onReset={layout.resetTerminalHeight}
+            action={
+              <TerminalLayoutControls mode={terminalMode} onMode={setTerminalMode} />
+            }
+          />
+          <TerminalWorkspaceCollection
+            state={projectState}
+            runtime={terminalWorkspaces}
+            terminalPresented={
+              destination === 'workspace' &&
+              terminalMode !== 'collapsed' &&
+              !(web.focused && web.active)
+            }
+            railCompact={layout.terminalRailCompact}
+            onRailCompact={layout.setTerminalRailCompact}
+            onRollup={terminalAttention.updateRollup}
+            onOpenPath={terminalPathActivation.activate}
+            attachRequestFor={terminalCommands.attachRequestFor}
+            onAttachAvailability={terminalCommands.reportLaunchAvailability}
+            onOpenWebLink={web.openLink}
+            preferences={terminalPreferences(settings)}
+            onOpenTerminalSettings={() => overlays.openSettings('terminal')}
+            onOpenHarnessSettings={() => overlays.openSettings('harnesses')}
+            onAddHarness={overlays.openAddHarnessSettings}
+          />
+        </main>
+        <ExtensionTopDestination />
+        <AppApplicationDestinations
+          destination={destination}
           runtime={terminalWorkspaces}
-          terminalPresented={
-            destination === 'workspace' &&
-            terminalMode !== 'collapsed' &&
-            !(web.focused && web.active)
-          }
-          railCompact={layout.terminalRailCompact}
-          onRailCompact={layout.setTerminalRailCompact}
-          attachRequestFor={terminalCommands.attachRequestFor}
-          onAttachAvailability={terminalCommands.reportLaunchAvailability}
-          onRollup={terminalAttention.updateRollup}
-          onOpenPath={terminalPathActivation.activate}
-          onOpenWebLink={web.openLink}
-          preferences={terminalPreferences(settings)}
-          onOpenSettings={() => overlays.openSettings()}
-          onOpenTerminalSettings={() => overlays.openSettings('terminal')}
-          onOpenHarnessSettings={() => overlays.openSettings('harnesses')}
-          onAddHarness={overlays.openAddHarnessSettings}
+          projection={terminalWorkspaces.sessionsProjection}
+          sessionTarget={needsYou.sessionTarget}
+          needsYou={needsYou}
+          showTerminal={showTerminal}
+          accept={accept}
+          setDestination={setDestination}
+          onError={session.reportError}
+          onAttachExternal={terminalCommands.requestExternalAttach}
         />
-      </main>
-      <AppApplicationDestinations
-        destination={destination}
-        runtime={terminalWorkspaces}
-        projection={terminalWorkspaces.sessionsProjection}
-        sessionTarget={needsYou.sessionTarget}
-        needsYou={needsYou}
-        showTerminal={showTerminal}
-        accept={accept}
-        setDestination={setDestination}
-        onError={session.reportError}
-        onAttachExternal={terminalCommands.requestExternalAttach}
-      />
-      {overlays.projectPickerOpen ? (
-        <SessionDialog
-          currentRoot={root}
-          suspended={session.prompts.length > 0}
-          onCancel={overlays.closeProjectPicker}
-          onConnect={session.connectHost}
-          onBrowse={session.browseHost}
-          folderPicker={session.folderPicker}
-          onDisconnect={session.disconnectHost}
-          onOpen={session.openHost}
-          onOpened={() => (setDestination('workspace'), overlays.closeProjectPicker())}
-        />
-      ) : null}
-      {overlays.settingsOpen ? (
-        <SettingsDialog
+        {overlays.projectPickerOpen ? (
+          <SessionDialog
+            currentRoot={root}
+            suspended={session.prompts.length > 0}
+            onCancel={overlays.closeProjectPicker}
+            onConnect={session.connectHost}
+            onBrowse={session.browseHost}
+            folderPicker={session.folderPicker}
+            onDisconnect={session.disconnectHost}
+            onOpen={session.openHost}
+            onOpened={() => (setDestination('workspace'), overlays.closeProjectPicker())}
+          />
+        ) : null}
+        <WorkbenchAccessDialogs
+          open={overlays.settingsOpen}
           theme={theme}
           settings={settings}
           workspaceRoot={root}
@@ -654,14 +502,14 @@ export function App(): ReactElement {
             overlays.closeSettings()
           }}
         />
-      ) : null}
-      {session.prompts[0] ? (
-        <SshPromptDialog
-          key={session.prompts[0].id}
-          prompt={session.prompts[0]}
-          onAnswer={session.answerPrompt}
-        />
-      ) : null}
-    </div>
+        {session.prompts[0] ? (
+          <SshPromptDialog
+            key={session.prompts[0].id}
+            prompt={session.prompts[0]}
+            onAnswer={session.answerPrompt}
+          />
+        ) : null}
+      </div>
+    </ExtensionContributionsProvider>
   )
 }

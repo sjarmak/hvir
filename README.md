@@ -51,6 +51,11 @@ Want to reach your sessions from a phone while you are away? The
 [Companion operator runbook](docs/runbooks/companion-operator.md) covers publishing the loopback
 port to your tailnet and delivering Push through a self-hosted ntfy server.
 
+In Skillager, right-click a skill or use its **…** menu to save it to your library,
+use a Full copy or Stub, or remove it from the project. Changes are reviewed beside
+the list. Removing a managed copy keeps the library version; removing a local
+original uses hvir’s normal Trash confirmation. **Show in Files** opens its folder.
+
 hvir does expect the system `git` binary. Claude Code and Codex launch options use those CLIs
 from the selected host's login-shell environment; plain shells work without either.
 
@@ -76,17 +81,16 @@ Public contributions happen through discussion. Maintainers author issues and ow
 implementation; outside issues and pull requests aren't accepted. See the
 [contributor guide](CONTRIBUTING.md) for the contribution model and workflow.
 
-## Development
+## Customize hvir with your agent
 
-To run from source, install Node 24 or newer:
+Extensions add views, terminal controls, and actions to hvir. The installed `hvir-agent`
+CLI gives your agent offline guides, a ready-to-run starter, and package validation—no
+hvir checkout or build step needed.
 
-```sh
-npm ci
-npm run dev
-```
+> Add a clock to hvir. Start with `hvir-agent guide authoring`, create and validate an
+> extension, then show me how to add it in Settings.
 
-See the [contributor guide](CONTRIBUTING.md) for verification and development workflows,
-and [design and architecture](docs/design.md) for the product philosophy and decisions.
+[Extension setup](docs/extension-setup.md) · [Authoring guide](build/native/agent-guides/authoring.md)
 
 ## License
 

@@ -18,11 +18,16 @@ const ACTIVE_HANDOFF = 'workspace:local:/repo.hvir-worktrees/review-2'
 let host: HTMLDivElement
 let root: Root
 const invoke = vi.fn()
+const on = vi.fn(() => vi.fn())
 
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-  vi.stubGlobal('hvir', { invoke })
+  vi.stubGlobal('hvir', { invoke, on })
   invoke.mockReset()
+  invoke.mockImplementation((channel: string) =>
+    Promise.resolve(channel === 'agent:reports' ? [] : undefined),
+  )
+  on.mockClear()
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
@@ -56,7 +61,9 @@ describe('unfinished handoff workspaces', () => {
   it('asks nothing of main when no workspace is on an architecture handoff branch', async () => {
     await render(state({ handoffBranches: false }))
 
-    expect(invoke).not.toHaveBeenCalled()
+    expect(
+      invoke.mock.calls.filter(([channel]) => channel !== 'agent:reports'),
+    ).toHaveLength(0)
     expect(host.textContent).not.toContain('unfinished handoff')
   })
 
@@ -112,7 +119,9 @@ function respond({
     Promise.resolve(
       channel === 'workspace:unfinished-handoffs'
         ? { ok: true, value: handoffs }
-        : removal,
+        : channel === 'agent:reports'
+          ? []
+          : removal,
     ),
   )
 }

@@ -18,6 +18,7 @@ import {
 } from '../project-host/project-host'
 import { harnessProviderCapabilities } from '../harness/harness-provider-capabilities'
 import { harnessShellCommandArgs } from '../harness/harness-shell-environment'
+import { AGENT_TERMINAL_ENVIRONMENT } from '../harness/protected-terminal-environment'
 import {
   PtyStartUnavailableError,
   type PtySpawnRequest,
@@ -33,6 +34,7 @@ import {
   type PtyStreamHandlers,
   type PtySupervisorDiagnostic,
   type PtySupervisorOptions,
+  type PtyAgentEnvironmentProvider,
 } from './pty-contract'
 import { PtyLaunchAdmission } from './pty-launch-admission'
 import {
@@ -68,6 +70,14 @@ interface Entry {
 }
 
 export class PtySupervisor {
+  private agentTargetEnvironment?: PtyAgentEnvironmentProvider
+  agentEnvironment(provider: PtyAgentEnvironmentProvider): () => void {
+    this.agentTargetEnvironment = provider
+    return () => {
+      if (this.agentTargetEnvironment === provider)
+        this.agentTargetEnvironment = undefined
+    }
+  }
   private readonly entries = new Map<string, Entry>()
   private readonly globalExitListeners = new Set<
     (info: ManagedPty, exit: PtyExit) => void
@@ -90,6 +100,7 @@ export class PtySupervisor {
   /** Spawn a PTY. The one and only site that calls `host.spawnPty`. */
   async spawn(req: PtySpawnRequest): Promise<ManagedPty> {
     const sessionId = req.sessionId ?? randomUUID()
+    const instanceId = randomUUID()
     const effectiveCapabilities =
       req.effectiveCapabilities ?? harnessProviderCapabilities(req.provider)
     const requestedLaunchMode =
@@ -113,11 +124,15 @@ export class PtySupervisor {
       this.reportDiagnostic({ kind: 'pty-spawn-failed', ...diagnosticContext })
       throw new Error(`PTY session '${sessionId}' is already active`)
     }
-    const pending = this.admission.reserve(sessionId, {
-      ownerId: req.ownerId,
-      ownerGeneration: req.ownerGeneration ?? 0,
-      workspaceRoot: req.workspaceRoot ?? req.cwd,
-    })
+    const pending = this.admission.reserve(
+      sessionId,
+      {
+        ownerId: req.ownerId,
+        ownerGeneration: req.ownerGeneration ?? 0,
+        workspaceRoot: req.workspaceRoot ?? req.cwd,
+      },
+      req.signal,
+    )
     const artifact = req.artifact ?? {
       identity: `${req.host.hostId}:${req.provider.manifest.id}:default`,
       environment: {},
@@ -171,6 +186,7 @@ export class PtySupervisor {
 
       pending.assertCurrent()
       const defaultShell = await req.host.defaultShell()
+      pending.assertCurrent()
       const ctx = {
         sessionId: harnessSessionId ?? sessionId,
         cwd: req.cwd,
@@ -194,7 +210,22 @@ export class PtySupervisor {
             args: harnessShellCommandArgs(spec.file, spec.args),
           }
         : spec
+      const agent = this.agentTargetEnvironment
+        ? await this.agentTargetEnvironment(
+            {
+              instanceId,
+              ownerId: req.ownerId,
+              ownerGeneration: req.ownerGeneration ?? 0,
+              workspaceRoot: req.workspaceRoot ?? req.cwd,
+            },
+            pending.signal,
+          )
+        : undefined
+      pending.assertCurrent()
+      if (req.beforeDispatch) await req.beforeDispatch()
+      pending.assertCurrent()
       launchedAtMs = Date.now()
+      req.onDispatch?.()
       pty = await req.host.spawnPty({
         file: launch.file,
         args: launch.args,
@@ -204,8 +235,13 @@ export class PtySupervisor {
           TERM: 'xterm-256color',
           COLORTERM: 'truecolor',
           TERM_PROGRAM: 'hvir',
+          ...agent?.env,
         },
-        unsetEnv: req.unsetEnvironment,
+        unsetEnv: [
+          ...(req.unsetEnvironment ?? []),
+          ...AGENT_TERMINAL_ENVIRONMENT,
+        ],
+        pathPrefix: agent?.pathPrefix,
         cols: req.cols,
         rows: req.rows,
       })
@@ -230,7 +266,7 @@ export class PtySupervisor {
     }
 
     const info: ManagedPty = {
-      instanceId: randomUUID(),
+      instanceId,
       id: sessionId,
       ownerId: req.ownerId,
       ownerGeneration: req.ownerGeneration ?? 0,

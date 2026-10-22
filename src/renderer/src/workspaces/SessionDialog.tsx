@@ -274,7 +274,7 @@ export function SessionDialog({
                   type="button"
                   role="option"
                   aria-selected={hostId === host.hostId}
-                  className={`session-host-option${hostId === host.hostId ? ' selected' : ''}`}
+                  className={`session-host-option${hostId === host.hostId ? ' selected' : ''} hvir-button hvir-control`}
                   key={host.hostId}
                   onClick={() => setHostId(host.hostId)}
                 >
@@ -298,6 +298,7 @@ export function SessionDialog({
               type="button"
               disabled={busy}
               onClick={() => void chooser.startAdding()}
+              className="hvir-button hvir-control"
             >
               Add SSH host
             </button>
@@ -322,14 +323,16 @@ export function SessionDialog({
                   setSelectedPath(undefined)
                   setRevealRequest(undefined)
                 }}
+                className="hvir-input hvir-control"
               />
-              <button type="submit" disabled={busy}>
+              <button type="submit" disabled={busy} className="hvir-button hvir-control">
                 Show in tree
               </button>
               <button
                 type="button"
                 disabled={busy || !selectedPath}
                 onClick={() => void open()}
+                className="hvir-button hvir-control"
               >
                 Use this folder
               </button>
@@ -342,6 +345,7 @@ export function SessionDialog({
                     key={folder}
                     disabled={busy}
                     onClick={() => void selectPath(folder)}
+                    className="hvir-button hvir-control"
                   >
                     {folder}
                   </button>
@@ -357,6 +361,7 @@ export function SessionDialog({
                     type="button"
                     disabled={busy || !selectedPath}
                     onClick={() => setNewFolderName('')}
+                    className="hvir-button hvir-control"
                   >
                     New folder
                   </button>
@@ -374,14 +379,20 @@ export function SessionDialog({
                       disabled={busy}
                       value={newFolderName}
                       onChange={(event) => setNewFolderName(event.target.value)}
+                      className="hvir-input hvir-control"
                     />
-                    <button type="submit" disabled={busy || newFolderName.length === 0}>
+                    <button
+                      type="submit"
+                      disabled={busy || newFolderName.length === 0}
+                      className="hvir-button hvir-control"
+                    >
                       Create
                     </button>
                     <button
                       type="button"
                       disabled={busy}
                       onClick={() => setNewFolderName(undefined)}
+                      className="hvir-button hvir-control"
                     >
                       Cancel
                     </button>
@@ -420,17 +431,28 @@ export function SessionDialog({
         {!chooser.adding ? (
           <div className="dialog-actions">
             {stage === 'folder' ? (
-              <button type="button" disabled={busy} onClick={() => void back()}>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void back()}
+                className="hvir-button hvir-control"
+              >
                 Back
               </button>
             ) : null}
-            <button type="button" disabled={busy} onClick={() => void cancel()}>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void cancel()}
+              className="hvir-button hvir-control"
+            >
               Cancel
             </button>
             {stage === 'host' ? (
               <button
                 type="button"
                 disabled={busy || !selectedHost}
+                className="hvir-button hvir-control"
                 onClick={() => void connect()}
               >
                 {busy

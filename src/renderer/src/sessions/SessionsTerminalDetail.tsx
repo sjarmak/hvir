@@ -86,6 +86,7 @@ export function SessionsTerminalDetail({
                   type="button"
                   disabled={!foreground || !ready || moving.busy}
                   onClick={moving.open}
+                  className="hvir-button"
                 >
                   Change workspace
                 </button>
@@ -97,18 +98,24 @@ export function SessionsTerminalDetail({
                         role="menuitem"
                         key={target.id}
                         onClick={() => moving.plan(target.id)}
+                        className="hvir-button"
                       >
                         {target.name}
                       </button>
                     ))}
-                    <button type="button" role="menuitem" onClick={moving.cancel}>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={moving.cancel}
+                      className="hvir-button"
+                    >
                       Cancel
                     </button>
                   </div>
                 ) : null}
               </div>
             ) : null}
-            <button type="button" autoFocus onClick={onBack}>
+            <button type="button" autoFocus onClick={onBack} className="hvir-button">
               Close
             </button>
             {onShowTranscript ? (

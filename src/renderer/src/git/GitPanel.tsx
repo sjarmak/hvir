@@ -107,8 +107,8 @@ export function GitPanel({
 
   return (
     <section className="rail-section git-panel" aria-label="Git" hidden={hidden}>
-      <header className="panel-header">
-        <span className="panel-meta">{basenameHostPath(root)}</span>
+      <header className="panel-header hvir-toolbar">
+        <span className="panel-meta hvir-meta">{basenameHostPath(root)}</span>
       </header>
       <GitBranchControls
         root={root}
@@ -121,7 +121,9 @@ export function GitPanel({
       <div className="git-tabs">
         <button
           type="button"
-          className={model.view === 'changes' ? 'active' : ''}
+          className={
+            (model.view === 'changes' ? 'active' : '') + ' hvir-button' + ' hvir-control'
+          }
           disabled={connectionState !== 'connected'}
           onClick={() => controller.selectView('changes')}
         >
@@ -129,7 +131,9 @@ export function GitPanel({
         </button>
         <button
           type="button"
-          className={model.view === 'history' ? 'active' : ''}
+          className={
+            (model.view === 'history' ? 'active' : '') + ' hvir-button' + ' hvir-control'
+          }
           disabled={connectionState !== 'connected'}
           onClick={() => controller.selectView('history')}
         >
@@ -152,10 +156,13 @@ export function GitPanel({
         </button>
       </div>
       <div
-        className={`tree-scroll git-scroll${model.view === 'history' ? ' history-active' : ''}`}
+        className={
+          `tree-scroll git-scroll${model.view === 'history' ? ' history-active' : ''}` +
+          ' hvir-scroll'
+        }
       >
         {connectionState !== 'connected' ? (
-          <div className="git-empty">Reconnect to inspect Git.</div>
+          <div className="git-empty hvir-state">Reconnect to inspect Git.</div>
         ) : model.view === 'changes' ? (
           <GitChangesView
             root={root}

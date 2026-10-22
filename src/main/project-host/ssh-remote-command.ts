@@ -1,4 +1,9 @@
+import type { HostPath } from '../../shared/host-path'
 import type { ExecOptions } from './project-host'
+
+type RemoteCommandOptions = Pick<ExecOptions, 'cwd' | 'env' | 'unsetEnv'> & {
+  readonly pathPrefix?: HostPath
+}
 
 /**
  * Builds the POSIX shell command lines the SshHost sends over an exec channel.
@@ -10,15 +15,22 @@ import type { ExecOptions } from './project-host'
 export function remoteCommand(
   command: string,
   args: readonly string[],
-  opts: Pick<ExecOptions, 'cwd' | 'env' | 'unsetEnv'>,
+  opts: RemoteCommandOptions,
   loginShell?: string,
 ): string {
   const executable = [command, ...args].map(quote).join(' ')
   const unset = (opts.unsetEnv ?? []).map((key) => `-u ${quote(key)}`).join(' ')
+  const prefix = opts.pathPrefix
+  if (prefix && prefix.hostId !== opts.cwd?.hostId)
+    throw new Error('Command directory belongs to another host')
   const env = Object.entries(opts.env ?? {})
+    .filter(([key]) => !prefix || key !== 'PATH')
     .map(([k, v]) => `${k}=${quote(v)}`)
     .join(' ')
-  const environment = [unset, env].filter(Boolean).join(' ')
+  const path = prefix
+    ? `PATH=${quote(prefix.path)}:${opts.env?.['PATH'] !== undefined ? quote(opts.env['PATH']) : '"$PATH"'}`
+    : ''
+  const environment = [unset, env, path].filter(Boolean).join(' ')
   const invocation = environment ? `env ${environment} ${executable}` : executable
   const withCwd = opts.cwd ? `cd -- ${quote(opts.cwd.path)} && ${invocation}` : invocation
   // Route through the login shell so a profile-configured PATH (~/.local/bin,
@@ -31,7 +43,7 @@ export function remoteCommand(
 export function remoteBufferedCommand(
   command: string,
   args: readonly string[],
-  opts: Pick<ExecOptions, 'cwd' | 'env' | 'unsetEnv'>,
+  opts: RemoteCommandOptions,
   statusMarker: string,
   loginShell?: string,
 ): string {

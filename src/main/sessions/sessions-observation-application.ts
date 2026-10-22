@@ -9,6 +9,7 @@ import type {
 import type { RuntimeDiagnostics } from '../diagnostics/runtime-diagnostics'
 import type { RendererEventPublisher } from '../renderer-event-publisher'
 import type { TerminalSessionObservationSource } from '../terminal/session-registry'
+import type { LiveSessionMetadataSources } from '../terminal/live-session-metadata'
 import type { WorkbenchRuntime } from '../workbench-runtime'
 import {
   SessionsObservationPort,
@@ -35,6 +36,7 @@ export interface SessionsCityEventsPort extends CityEventsObservationSource {
 }
 
 export interface ApplicationSessionsObservation {
+  readonly context: LiveSessionMetadataSources
   readonly observation: SessionsObservationPort
   readonly usage: SessionsUsageObservationPort
   readonly transcripts: SessionsTranscriptPort
@@ -158,5 +160,12 @@ export function installApplicationSessionsObservation(
       registry.clear()
     },
   )
-  return { observation, usage, transcripts, attachTickets, companionSinks }
+  return {
+    context: observation.context,
+    observation,
+    usage,
+    transcripts,
+    attachTickets,
+    companionSinks,
+  }
 }

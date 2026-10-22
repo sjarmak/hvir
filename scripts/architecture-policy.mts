@@ -65,6 +65,7 @@ const TOOL_OWNED_ROLES: Readonly<Record<string, string>> = {
   '.beads': 'beads issue tracker configuration and runtime state',
   '.gc': 'Gas City seat configuration and runtime state',
 }
+const RUST_ARCHITECTURE_FIXTURE_ROOT = 'test/fixtures/architecture-rust'
 
 export interface BudgetMetadata {
   path: string
@@ -88,6 +89,7 @@ export interface ArchitecturePolicy {
   defaultMaximum: number
   roots: string[]
   extensions: string[]
+  rustClient?: { root: string; cargoOutput: string }
   budgets: ArchitectureBudget[]
   generated: GeneratedBudget[]
 }
@@ -109,10 +111,13 @@ export interface ArchitectureRow {
   exception?: Exclude<ArchitectureRule, { kind: 'ordinary' }>
 }
 
-export function disposableDirectory(path: string): boolean {
+export function disposableDirectory(path: string, policy: ArchitecturePolicy): boolean {
   return (
     path.split('/').some((part) => Object.hasOwn(DISPOSABLE_ROLES, part)) ||
-    /^packages\/[^/]+\/build(?:\/|$)/.test(path)
+    /^packages\/[^/]+\/build(?:\/|$)/.test(path) ||
+    (policy.rustClient !== undefined &&
+      (path === policy.rustClient.cargoOutput ||
+        path.startsWith(`${policy.rustClient.cargoOutput}/`)))
   )
 }
 export function toolOwnedDirectory(path: string): boolean {
@@ -131,6 +136,8 @@ export function sourceDisposition(
   const extension = extname(path)
   if (policy.extensions.includes(extension)) return 'source'
   if (
+    // Cargo.lock is dependency metadata, not generated Rust or executable source.
+    basename(path) === 'Cargo.lock' ||
     DATA_EXTENSIONS.has(extension) ||
     ['.lock', '.log', '.tsbuildinfo'].includes(extension) ||
     /^\.env(?:\.[a-zA-Z0-9_-]+)*$/.test(basename(path))
@@ -157,6 +164,13 @@ export function isSource(
   return false
 }
 export function inScope(path: string, policy: ArchitecturePolicy): boolean {
+  // Recognizing the suffix reports Rust elsewhere as a coverage error, not an exemption.
+  if (
+    extname(path) === '.rs' &&
+    (!policy.rustClient || !path.startsWith(`${policy.rustClient.root}/`)) &&
+    !path.startsWith(`${RUST_ARCHITECTURE_FIXTURE_ROOT}/`)
+  )
+    return false
   return !path.includes('/') || policy.roots.some((root) => path.startsWith(`${root}/`))
 }
 
@@ -228,6 +242,7 @@ export function validatePolicy(value: unknown): ArchitecturePolicy {
       'defaultMaximum',
       'roots',
       'extensions',
+      'rustClient',
       'budgets',
       'generated',
     ],
@@ -250,6 +265,22 @@ export function validatePolicy(value: unknown): ArchitecturePolicy {
     throw new Error('Malformed source extension')
   if (!Array.isArray(value.budgets) || !Array.isArray(value.generated))
     throw new Error('Missing classifications')
+  let rustClient: ArchitecturePolicy['rustClient']
+  if (extensions.includes('.rs')) {
+    closed(value.rustClient, ['root', 'cargoOutput'], 'Rust client policy')
+    const root = repositoryPath(value.rustClient.root),
+      cargoOutput = repositoryPath(value.rustClient.cargoOutput)
+    if (
+      !roots.some((entry) => root === entry || root.startsWith(`${entry}/`)) ||
+      cargoOutput !== `${root}/target`
+    )
+      throw new Error(
+        'Rust client policy requires a maintained root and its exact Cargo target',
+      )
+    rustClient = { root, cargoOutput }
+  } else if (value.rustClient !== undefined) {
+    throw new Error('Rust client policy requires .rs source coverage')
+  }
   const defaultMaximum = value.defaultMaximum
   const budgets = value.budgets.map((entry: unknown): ArchitectureBudget => {
     closed(
@@ -331,6 +362,7 @@ export function validatePolicy(value: unknown): ArchitecturePolicy {
     defaultMaximum,
     roots,
     extensions,
+    ...(rustClient ? { rustClient } : {}),
     budgets,
     generated,
   }

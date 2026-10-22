@@ -787,12 +787,13 @@ function registrationBlock(
   method: 'handle' | 'handleSend',
   channel: string,
 ): string {
-  const marker = `ipc.${method}('${channel}'`
-  const start = source.indexOf(marker)
+  const marker = new RegExp(`ipc\\.${method}\\(\\s*'${channel}'`)
+  const found = marker.exec(source)
+  const start = found?.index ?? -1
   if (start < 0) throw new Error(`Missing ${method} registration for ${channel}`)
   const candidates = [
-    source.indexOf('\n  ipc.handle(', start + marker.length),
-    source.indexOf('\n  ipc.handleSend(', start + marker.length),
+    source.indexOf('\n  ipc.handle(', start + found![0].length),
+    source.indexOf('\n  ipc.handleSend(', start + found![0].length),
   ].filter((index) => index >= 0)
   const end = candidates.length > 0 ? Math.min(...candidates) : source.length
   return source.slice(start, end)

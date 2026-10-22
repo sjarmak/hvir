@@ -13,7 +13,17 @@ import type {
 } from '../external-session'
 import type { ArchitectureAgentLaunch } from '../architecture-handoff'
 
+export interface TerminalCommandRequest {
+  readonly ticket: string
+  readonly terminalId: string
+  readonly workspaceId: string
+  readonly root: HostPath
+}
+
 export interface StartPtyRequest {
+  /** Main-issued one-use command admission; transient and absent during recovery. */
+  readonly commandTicket?: string
+  readonly commandWorkspaceId?: string
   readonly sessionId: string
   /**
    * Retained recovery record retired only after this fresh session starts and
@@ -240,6 +250,8 @@ export const terminalIpc = {
     'terminal:clipboard-write': payload<{ readonly text: string }>(),
   },
   event: {
+    'terminal:command-requested': payload<TerminalCommandRequest>(),
+    'terminal:command-revoked': payload<{ readonly ticket: string }>(),
     'pty:data': payload<{ readonly id: string; readonly data: string }>(),
     'pty:exit': payload<{
       readonly id: string

@@ -21,7 +21,6 @@ interface TerminalWorkspaceCollectionProps {
   readonly onOpenPath: WorkspaceProps['onOpenPath']
   readonly onOpenWebLink: WorkspaceProps['onOpenWebLink']
   readonly preferences: WorkspaceProps['preferences']
-  readonly onOpenSettings: WorkspaceProps['onOpenSettings']
   readonly onOpenTerminalSettings: WorkspaceProps['onOpenTerminalSettings']
   readonly onOpenHarnessSettings: WorkspaceProps['onOpenHarnessSettings']
   readonly onAddHarness: WorkspaceProps['onAddHarness']
@@ -40,7 +39,6 @@ export function TerminalWorkspaceCollection({
   onOpenPath,
   onOpenWebLink,
   preferences,
-  onOpenSettings,
   onOpenTerminalSettings,
   onOpenHarnessSettings,
   onAddHarness,
@@ -81,7 +79,6 @@ export function TerminalWorkspaceCollection({
                   onOpenPath={onOpenPath}
                   onOpenWebLink={onOpenWebLink}
                   preferences={preferences}
-                  onOpenSettings={onOpenSettings}
                   onOpenTerminalSettings={onOpenTerminalSettings}
                   onOpenHarnessSettings={onOpenHarnessSettings}
                   onAddHarness={onAddHarness}

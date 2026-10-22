@@ -70,7 +70,6 @@ interface TerminalWorkspaceProps {
     readonly url: string
   }) => void
   readonly preferences: TerminalPreferences
-  readonly onOpenSettings: () => void
   readonly onOpenTerminalSettings: () => void
   readonly onOpenHarnessSettings: () => void
   readonly onAddHarness: () => void
@@ -120,7 +119,6 @@ export function TerminalWorkspace({
   onOpenPath,
   onOpenWebLink,
   preferences,
-  onOpenSettings,
   onOpenTerminalSettings,
   onOpenHarnessSettings,
   onAddHarness,
@@ -393,7 +391,6 @@ export function TerminalWorkspace({
           commands={commands}
           moving={moving}
           preferences={preferences}
-          onOpenSettings={onOpenSettings}
           onOpenHarnessSettings={onOpenHarnessSettings}
           onAddHarness={onAddHarness}
         />

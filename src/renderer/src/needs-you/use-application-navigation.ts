@@ -22,7 +22,7 @@ export function useApplicationNavigation({
   readonly setRailMode: (mode: WorkbenchRailMode) => void
 }) {
   const [destination, setDestinationState] = useState<
-    'workspace' | 'sessions' | 'needs-you'
+    'workspace' | 'sessions' | 'needs-you' | 'extension'
   >('workspace')
   const needsYou = useNeedsYouNavigation({
     projectState,
@@ -32,7 +32,7 @@ export function useApplicationNavigation({
   })
   const { cancelPending } = needsYou
   const setDestination = useCallback(
-    (next: 'workspace' | 'sessions' | 'needs-you'): void => {
+    (next: 'workspace' | 'sessions' | 'needs-you' | 'extension'): void => {
       cancelPending()
       setDestinationState(next)
     },

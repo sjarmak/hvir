@@ -9,7 +9,7 @@ export function useNeedsYouRailTarget({
   beadsEnabled,
   setRailMode,
 }: {
-  readonly destination: 'workspace' | 'sessions' | 'needs-you'
+  readonly destination: 'workspace' | 'sessions' | 'needs-you' | 'extension'
   readonly beadTarget?: NeedsYouBeadTarget
   readonly beadsEnabled: boolean
   readonly setRailMode: (mode: WorkbenchRailMode) => void

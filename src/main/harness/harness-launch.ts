@@ -20,8 +20,7 @@ import type {
 } from './harness-provider-contract'
 
 import { composeArchitectureReviewLaunch } from './architecture-review-launch'
-
-const PROTECTED_ENVIRONMENT = new Set(['TERM', 'COLORTERM', 'TERM_PROGRAM'])
+import { PROTECTED_TERMINAL_ENVIRONMENT } from './protected-terminal-environment'
 
 export interface ResolvedHarnessLaunch {
   readonly profile: HarnessProfile
@@ -251,7 +250,7 @@ function resolveEnvironment(bindings: readonly HarnessEnvironmentBinding[]): {
   const unset: string[] = []
   const preview: HarnessCommandPreviewEnvironment[] = []
   for (const binding of bindings) {
-    if (PROTECTED_ENVIRONMENT.has(binding.name)) {
+    if (PROTECTED_TERMINAL_ENVIRONMENT.has(binding.name)) {
       throw new Error(`Environment '${binding.name}' is owned by hvir`)
     }
     if (binding.kind === 'unset') {

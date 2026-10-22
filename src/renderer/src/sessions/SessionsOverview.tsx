@@ -572,6 +572,7 @@ export function SessionsOverview({
               setPageIndex(0)
               setFeedback(undefined)
             }}
+            className="hvir-button"
           >
             Reset filters
           </button>
@@ -582,7 +583,9 @@ export function SessionsOverview({
   return (
     <>
       <main
-        className={`sessions-overview${detailActive ? ' detail-active' : ''}`}
+        className={
+          `sessions-overview${detailActive ? ' detail-active' : ''}` + ' hvir-panel'
+        }
         aria-label={detailActive ? undefined : 'Sessions'}
         aria-hidden={detailActive || undefined}
         inert={detailActive || undefined}
@@ -620,7 +623,11 @@ export function SessionsOverview({
             title="Sessions unavailable"
             detail="The current projection could not be read."
             action={
-              <button type="button" onClick={() => source.retry()}>
+              <button
+                type="button"
+                onClick={() => source.retry()}
+                className="hvir-button"
+              >
                 Retry
               </button>
             }
@@ -644,6 +651,7 @@ export function SessionsOverview({
                     type="button"
                     disabled={page.pageIndex === 0}
                     onClick={() => showPage(page.pageIndex - 1)}
+                    className="hvir-button"
                   >
                     Previous page
                   </button>
@@ -654,6 +662,7 @@ export function SessionsOverview({
                     type="button"
                     disabled={page.pageIndex + 1 >= page.pageCount}
                     onClick={() => showPage(page.pageIndex + 1)}
+                    className="hvir-button"
                   >
                     Next page
                   </button>
@@ -698,6 +707,7 @@ export function SessionsOverview({
                                 group.project!.projectName,
                               )
                             }
+                            className="hvir-button"
                           >
                             New session
                           </button>
@@ -735,7 +745,10 @@ export function SessionsOverview({
                             return (
                               <article
                                 key={row.handle}
-                                className={`session-card${isSelected ? ' selected' : ''}`}
+                                className={
+                                  `session-card${isSelected ? ' selected' : ''}` +
+                                  ' hvir-row'
+                                }
                                 role="listitem"
                                 aria-current={isSelected ? 'true' : undefined}
                                 aria-label={cardIdentity.accessibleName}

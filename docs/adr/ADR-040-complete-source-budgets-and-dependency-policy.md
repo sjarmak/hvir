@@ -2,7 +2,9 @@
 
 > Lifecycle: Partially superseded
 > Superseded by: [ADR-962](ADR-962-maintained-branch-local-verification.md) | partial | Local architecture provenance on the Beads-governed feat/beads-panel branch; upstream delivery and all structural checks remain unchanged.
+> Superseded by: [ADR-069](ADR-069-rust-client-source-policy.md) | partial | Maintained-source language list: add Rust and Cargo dispositions; all existing budget, provenance, and TypeScript/JavaScript dependency rules remain authoritative.
 > Supersedes: [ADR-014](ADR-014-modular-monolith-ownership.md) | partial | Architecture hotspot budgets paragraph: complete source budgets and extended dependency enforcement; authority/seam checks stay blocking.
+> Superseded by: [ADR-048](ADR-048-equivalent-ci-runs-and-epic-history-recovery.md) | partial | Recorded merged-PR requirement for tested non-policy epic history only; policy authorization remains unchanged.
 
 ## Context
 

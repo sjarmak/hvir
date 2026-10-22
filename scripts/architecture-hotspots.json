@@ -34,6 +34,10 @@
     ".kt",
     ".kts"
   ],
+  "rustClient": {
+    "root": "packages/hvir-agent",
+    "cargoOutput": "packages/hvir-agent/target"
+  },
   "budgets": [
     {
       "path": "src/main/git/git-engine.ts",

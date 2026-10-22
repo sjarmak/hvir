@@ -11,6 +11,8 @@ import {
   type PreloadOnlyChannel,
 } from './ipc-contract'
 import { appIpc } from './ipc/app'
+import { agentIpc } from './ipc/agent'
+import { extensionsIpc } from './ipc/extensions'
 import { diagnosticsIpc } from './ipc/diagnostics'
 import { projectIpc } from './ipc/project'
 import { filesystemIpc } from './ipc/filesystem'
@@ -113,7 +115,9 @@ export {
 } from './terminal-attention'
 
 const contract = composeIpcContracts(
+  agentIpc,
   appIpc,
+  extensionsIpc,
   diagnosticsIpc,
   projectIpc,
   filesystemIpc,

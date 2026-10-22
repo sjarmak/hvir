@@ -1,3 +1,4 @@
+import { managedTransfer } from './managed-transfer'
 /**
  * `LocalHost` — the default `ProjectHost` (ADR-010).
  *
@@ -20,6 +21,8 @@ import { connect } from 'node:net'
 import { basename, dirname, join, relative, sep } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import chokidar from 'chokidar'
+import { LocalExtensionStorage } from './local-extension-storage'
+import { FiniteExecAdmission } from './finite-exec-admission'
 
 import {
   assertProjectHostTextPrefixByteLimit,
@@ -77,6 +80,8 @@ import {
 
 const DEFAULT_MAX_BUFFER = 10 * 1024 * 1024 // 10 MiB
 export class LocalHost implements ProjectHost {
+  readonly extensionStorage = new LocalExtensionStorage()
+  readonly finiteExec = new FiniteExecAdmission(this.exec.bind(this))
   readonly hostId: HostId = LOCAL_HOST_ID
   readonly connectionState: HostConnectionState = 'connected'
   readonly watchTier: HostWatchTier = 'native'
@@ -89,6 +94,16 @@ export class LocalHost implements ProjectHost {
       this.renameProjectFileNoReplace(source, destination, opts),
     removeDirectory: (path, opts) => this.removeDirectory(path, opts),
   }
+  readonly managedTransfer = managedTransfer(
+    this,
+    (path, chunks, options) => this.writeFileChunksExclusive(path, chunks, options),
+    (path, options) => this.setProjectFileMetadata(path, options),
+    async (path) => {
+      const value = await fsp.lstat(this.resolve(path), { bigint: true })
+      if (!value.isDirectory()) throw new Error('Managed directory changed')
+      return `${value.dev}:${value.ino}:${value.birthtimeNs}`
+    },
+  )
   readonly fileDeletion: ProjectFileDeletionPort
 
   /** Live watcher lifecycles, including any native-to-polling fallback. */
@@ -627,7 +642,7 @@ export class LocalHost implements ProjectHost {
   private async writeFileChunksExclusive(
     path: HostPath,
     chunks: AsyncIterable<Uint8Array>,
-    opts: ProjectFileWriteStreamOptions,
+    opts: Omit<ProjectFileWriteStreamOptions, 'mode'> & { readonly mode: number },
   ): Promise<void> {
     opts.signal?.throwIfAborted()
     const destination = this.resolve(path)
@@ -662,7 +677,8 @@ export class LocalHost implements ProjectHost {
       handle = undefined
     } catch (reason) {
       await handle?.close().catch(() => undefined)
-      if (created) await fsp.unlink(destination).catch(() => undefined)
+      if (created && !opts.preserveOnFailure)
+        await fsp.unlink(destination).catch(() => undefined)
       if ((reason as NodeJS.ErrnoException).code === 'EEXIST') {
         throw new ProjectPathExistsError()
       }
@@ -672,7 +688,7 @@ export class LocalHost implements ProjectHost {
 
   private async setProjectFileMetadata(
     path: HostPath,
-    opts: ProjectFileMetadataOptions,
+    opts: Omit<ProjectFileMetadataOptions, 'mode'> & { readonly mode: number },
   ): Promise<void> {
     opts.signal?.throwIfAborted()
     const target = this.resolve(path)

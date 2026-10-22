@@ -25,8 +25,10 @@ export function AppProjectNavigation({
     readonly openSettings: (section?: SettingsSection) => void
   }
   readonly theme: AppTheme
-  readonly destination: 'workspace' | 'sessions' | 'needs-you'
-  readonly setDestination: (destination: 'workspace' | 'sessions' | 'needs-you') => void
+  readonly destination: 'workspace' | 'sessions' | 'needs-you' | 'extension'
+  readonly setDestination: (
+    destination: 'workspace' | 'sessions' | 'needs-you' | 'extension',
+  ) => void
 }): ReactElement | null {
   if (!session.projectState) return null
   return (

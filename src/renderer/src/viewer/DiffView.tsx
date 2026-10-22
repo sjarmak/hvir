@@ -110,7 +110,7 @@ function ResolvedDiffView({
       : undefined
   if (!resolvedInputs || !currentInput || !workload) {
     return (
-      <div className={`viewer-empty${error ? ' error' : ''}`}>
+      <div className={`viewer-empty${error ? ' error' : ''}` + ' hvir-state'}>
         {error ?? 'Preparing diff…'}
       </div>
     )
@@ -311,7 +311,9 @@ function InteractiveDiff({
     const { merge } = editors
     for (const view of [merge.a, merge.b]) {
       view.dispatch({
-        effects: wrapCompartment.current.reconfigure(wrapLines ? EditorView.lineWrapping : []),
+        effects: wrapCompartment.current.reconfigure(
+          wrapLines ? EditorView.lineWrapping : [],
+        ),
       })
     }
   }, [editors, wrapLines])
@@ -319,14 +321,7 @@ function InteractiveDiff({
   useEffect(() => {
     if (!editors?.active) return
     const view = editors.merge.a
-    return highlightSource(
-      view,
-      path,
-      baseContent,
-      baseSize,
-      theme,
-      setBaseStatus,
-    )
+    return highlightSource(view, path, baseContent, baseSize, theme, setBaseStatus)
     // Equivalent host-qualified path objects do not restart the request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editors, pathKey, baseContent, baseSize, theme])
@@ -374,6 +369,7 @@ function InteractiveDiff({
           type="button"
           aria-pressed={wrapLines}
           onClick={() => setWrapLines(!wrapLines)}
+          className="hvir-button"
         >
           Wrap lines
         </button>

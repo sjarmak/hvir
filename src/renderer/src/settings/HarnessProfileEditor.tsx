@@ -152,6 +152,7 @@ function ProfileIdentityFields({
             const displayName = event.currentTarget.value
             onUpdateInput((input) => ({ ...input, displayName }))
           }}
+          className="hvir-input"
         />
       </label>
       <label>
@@ -172,6 +173,7 @@ function ProfileIdentityFields({
                 : { kind: 'command', command: '' },
             }))
           }}
+          className="hvir-input"
         >
           {providers.map((candidate) => (
             <option key={candidate.id} value={candidate.id}>
@@ -210,6 +212,7 @@ function ProfileIdentityFields({
                 : ({ kind: 'global' } as const)
             onUpdateInput((input) => ({ ...input, scope }))
           }}
+          className="hvir-input"
         >
           <option value="global">All projects</option>
           <option value="project">This registered project</option>
@@ -223,6 +226,7 @@ function ProfileIdentityFields({
             const description = event.currentTarget.value || undefined
             onUpdateInput((input) => ({ ...input, description }))
           }}
+          className="hvir-input"
         />
       </label>
     </div>
@@ -286,6 +290,7 @@ function ProfileActions({
         aria-label="Move profile earlier"
         title="Move earlier"
         onClick={() => onUpdateInput((input) => ({ ...input, order: input.order - 1 }))}
+        className="hvir-button"
       >
         ↑
       </button>
@@ -295,18 +300,29 @@ function ProfileActions({
         aria-label="Move profile later"
         title="Move later"
         onClick={() => onUpdateInput((input) => ({ ...input, order: input.order + 1 }))}
+        className="hvir-button"
       >
         ↓
       </button>
-      <button type="button" disabled={busy || !draft.id} onClick={onDuplicate}>
+      <button
+        type="button"
+        disabled={busy || !draft.id}
+        onClick={onDuplicate}
+        className="hvir-button"
+      >
         Duplicate
       </button>
-      <button type="button" disabled={busy || !draft.id} onClick={onRemove}>
+      <button
+        type="button"
+        disabled={busy || !draft.id}
+        onClick={onRemove}
+        className="hvir-button"
+      >
         {deleteArmed ? 'Confirm delete' : 'Delete'}
       </button>
       <button
         type="button"
-        className="primary"
+        className="primary hvir-button"
         disabled={busy || !dirty}
         onClick={onSave}
       >

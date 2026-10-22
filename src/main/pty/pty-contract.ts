@@ -17,6 +17,11 @@ import type {
 } from '../harness/harness-provider-contract'
 
 export interface PtySpawnRequest {
+  readonly signal?: AbortSignal
+  /** Async final inspection, followed by the supervisor's cancellation fence. */
+  readonly beforeDispatch?: () => void | Promise<void>
+  /** Synchronous irreversible boundary immediately before ProjectHost.spawnPty. */
+  readonly onDispatch?: () => void
   readonly host: ProjectHost
   readonly provider: HarnessProvider
   /** Precomposed profile launch; tests/legacy callers may omit it. */
@@ -244,6 +249,11 @@ export interface PtySupervisorOptions {
   readonly cancelSessionIdentityRegistration?: (terminalId: string) => void
 }
 
+export type PtyAgentTarget = Pick<
+  ManagedPty,
+  'instanceId' | 'ownerId' | 'ownerGeneration' | 'workspaceRoot'
+>
+
 export type PtyStartUnavailableReason = 'identity-baseline-unavailable'
 
 export class PtyStartUnavailableError extends Error {
@@ -256,3 +266,12 @@ export class PtyStartUnavailableError extends Error {
     super('Harness launch identity baseline is unavailable', { cause })
   }
 }
+
+export interface PtyAgentEnvironment {
+  readonly env: Readonly<Record<string, string>>
+  readonly pathPrefix?: HostPath
+}
+export type PtyAgentEnvironmentProvider = (
+  target: PtyAgentTarget,
+  signal: AbortSignal,
+) => PtyAgentEnvironment | undefined | Promise<PtyAgentEnvironment | undefined>

@@ -18,6 +18,7 @@ import type {
   WorkbenchHealthSnapshot,
 } from '../../shared'
 import type { ArchitectureReviewCoordinator } from '../architecture-review/coordinator'
+import type { AgentApplicationRuntime } from '../agent/agent-application'
 import type { BeadsService } from '../beads/beads-service'
 import type { CompanionSettingsPort } from '../companion/companion-settings'
 import type { GasCityService } from '../gascity/gascity-service'
@@ -30,6 +31,7 @@ import type { HtmlPreviewProtocol } from '../html-preview-protocol'
 import type { ProjectHost } from '../project-host'
 import type { PtySupervisor } from '../pty/pty-supervisor'
 import type { RendererOwner } from '../renderer-resource-scopes'
+import type { TerminalCommandHandoffOwner } from '../terminal/command-handoff-owner'
 import type { TerminalSessionStore } from '../terminal/session-registry'
 import type { TerminalWorkspaceMoveCoordinator } from '../terminal/terminal-workspace-move-coordinator'
 import type { WebPaneRouteRegistry } from '../web-pane/web-pane-route-registry'
@@ -50,6 +52,7 @@ import type { SessionsTranscriptPort } from '../sessions/sessions-transcript-por
 import type { SessionsAttachTicketRegistry } from '../sessions/sessions-attach-tickets'
 import type { NeedsYouService } from '../needs-you/needs-you-service'
 import type { ReviewCheckpointCoordinator } from '../git/review-checkpoint-coordinator'
+import type { ExtensionApplicationRuntime } from '../extensions/extension-application'
 
 export type EmitRendererEvent = <E extends IpcEventChannel>(
   channel: E,
@@ -62,6 +65,8 @@ export interface SystemClipboardPort {
 }
 
 export interface IpcDeps extends IpcRouterAuthorityPort {
+  readonly agents?: AgentApplicationRuntime
+  readonly extensions?: ExtensionApplicationRuntime
   readonly architectureReview: Pick<
     ArchitectureReviewCoordinator,
     | 'scan'
@@ -190,6 +195,7 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
     batch: RenderContainmentDiagnosticBatch,
   ) => void
   readonly ptySupervisor: PtySupervisor
+  readonly terminalHandoffs?: TerminalCommandHandoffOwner
   readonly terminalSessions: TerminalSessionStore
   readonly sessionsObservation: Pick<
     SessionsObservationPort,

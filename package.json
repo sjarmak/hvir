@@ -28,7 +28,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "postinstall": "npm run install:runtime",
-    "install:runtime": "install-electron --no && node-gyp rebuild --directory node_modules/@hvir/rename-noreplace && electron-rebuild -f -o node-pty",
+    "install:runtime": "install-electron --no && node-gyp rebuild --directory node_modules/@hvir/rename-noreplace && node-gyp rebuild --directory node_modules/@hvir/extension-storage && electron-rebuild -f -o node-pty",
     "prebuild": "node scripts/check-terminal-runtime.mts",
     "predev": "node scripts/check-terminal-runtime.mts",
     "dev": "electron-vite dev",
@@ -39,6 +39,7 @@
     "pack:mac:arm64:signed": "npm run build && electron-builder --mac pkg --arm64 --publish never --config.forceCodeSigning=true",
     "build:macos:ssh-acceptance": "bash scripts/run-macos-ssh-acceptance.sh --build-only",
     "acceptance:ssh:macos": "bash scripts/run-macos-ssh-acceptance.sh",
+    "probe:agent:ssh": "esbuild scripts/probe-agent-ssh-client.mts --bundle --packages=external --platform=node --format=cjs --outfile=out/agent-ssh-probe.cjs && node out/agent-ssh-probe.cjs",
     "acceptance:ssh:macos:identity": "bash scripts/record-macos-ssh-identity.sh",
     "pack:linux:x64": "npm run build && electron-builder --linux deb --x64 --publish never",
     "pack:linux:arm64": "npm run build && electron-builder --linux deb --arm64 --publish never",
@@ -72,8 +73,8 @@
     "issue:start": "node scripts/project-management/start-issue.ts",
     "verify": "npm run check-seams && npm run check-adrs && npm run architecture:check && npm run lint && npm run typecheck && npm test",
     "smoke": "npm run build:smoke && node scripts/run-smoke-scenarios.mts pty-native viewer-position viewer-content git-workflow architecture-review workspace-remote web-pane renderer-authority renderer-recovery sessions-projection document-review terminal-presentation terminal-lifecycle native-host-worker workbench-health platform-contracts terminal-theme terminal-move workbench-layout terminal-split app-settings harness-profiles attention-away-throttling companion companion-mirror-away companion-prompt-away",
-    "smoke:macos": "npm run build:smoke && node scripts/run-smoke-scenarios.mts pty-native viewer-position viewer-content git-workflow workspace-remote web-pane renderer-authority platform-contracts renderer-recovery sessions-projection document-review terminal-presentation terminal-lifecycle",
-    "smoke:macos:ci": "npm run build:smoke && node scripts/run-smoke-scenarios.mts pty-native viewer-position viewer-content git-workflow workspace-remote web-pane renderer-authority platform-contracts renderer-recovery sessions-projection document-review",
+    "smoke:macos": "npm run build:smoke && node scripts/run-smoke-scenarios.mts pty-native viewer-position viewer-content git-workflow workspace-remote web-pane extensions agent-workbench renderer-authority platform-contracts renderer-recovery sessions-projection document-review terminal-presentation terminal-lifecycle",
+    "smoke:macos:ci": "npm run build:smoke && node scripts/run-smoke-scenarios.mts pty-native viewer-position viewer-content git-workflow workspace-remote web-pane extensions agent-workbench renderer-authority platform-contracts renderer-recovery sessions-projection document-review",
     "smoke:scenario": "npm run build:smoke && node scripts/run-smoke-scenarios.mts",
     "ux:walkthrough": "npm run build:smoke && node scripts/run-ux-walkthrough.mts",
     "smoke:isolation": "npm run build:smoke && node scripts/run-smoke-interruption.mts",
@@ -84,13 +85,18 @@
     "smoke:capacity": "npm run build:smoke && cross-env HVIR_SMOKE_SCENARIO=capacity node scripts/run-smoke-scenarios.mts",
     "smoke:development-performance": "node scripts/run-smoke-scenarios.mts development-performance",
     "performance:capacity": "npm run build:smoke && cross-env HVIR_SMOKE_SCENARIO=capacity HVIR_CAPACITY_PERFORMANCE_GATE=controlled node scripts/run-smoke-scenarios.mts",
-    "gauntlet": "bash scripts/phase8-gauntlet.sh"
+    "gauntlet": "bash scripts/phase8-gauntlet.sh",
+    "extension:transport": "node scripts/prepare-extension-transport.mts",
+    "extension:ui": "node scripts/prepare-extension-ui.mts",
+    "extension:ui:tokens": "node scripts/prepare-extension-ui.mts --tokens",
+    "extension:skillager": "node scripts/prepare-skillager-extension.mts",
+    "probe:extension:skillager": "npm run build:smoke && node scripts/probe-skillager-extension.mts"
   },
   "dependencies": {
     "@codemirror/merge": "^6.12.2",
     "@codemirror/search": "^6.7.2",
     "@codemirror/state": "^6.7.6",
-    "@codemirror/view": "^6.43.13",
+    "@codemirror/view": "^6.43.14",
     "@xyflow/react": "^12.12.0",
     "bplist-parser": "^0.5.0",
     "chokidar": "^5.0.0",
@@ -105,32 +111,36 @@
     "smol-toml": "^1.7.0",
     "ssh-config": "^5.3.0",
     "ssh2": "^1.17.0",
-    "yaml": "^2.9.1"
+    "yaml": "^2.9.1",
+    "yauzl": "3.4.0",
+    "yazl": "^3.3.1"
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.2.0",
+    "@electron/rebuild": "^4.2.1",
     "@eslint/js": "^10.0.1",
     "@hegeldev/hegel": "0.4.7",
     "@stryker-mutator/core": "^10.0.0",
     "@stryker-mutator/vitest-runner": "^10.0.0",
     "@tree-sitter-grammars/tree-sitter-kotlin": "^1.1.0",
-    "@types/node": "^24.19.1",
+    "@types/node": "^24.19.2",
     "@types/plist": "^3.0.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/ssh2": "^1.15.6",
+    "@types/yauzl": "^3.4.0",
+    "@types/yazl": "^3.3.1",
     "@vitejs/plugin-react": "^5.2.0",
     "cross-env": "^10.0.0",
     "electron": "^43.5.0",
     "electron-builder": "^26.0.0",
     "electron-vite": "^5.0.0",
-    "eslint": "^10.11.0",
+    "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.0",
     "eslint-plugin-react-hooks": "^7.1.0",
     "eslint-plugin-react-refresh": "^0.5.7",
-    "happy-dom": "^20.14.5",
+    "happy-dom": "^20.14.6",
     "node-gyp": "^13.0.1",
-    "prettier": "^3.9.9",
+    "prettier": "^3.9.10",
     "proper-lockfile": "^4.1.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
@@ -138,10 +148,11 @@
     "tree-sitter-python": "0.25.0",
     "tree-sitter-rust": "0.24.0",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.71.0",
-    "vite": "^7.3.0",
+    "typescript-eslint": "^8.71.1",
+    "vite": "^7.3.7",
     "vitest": "^5.0.3",
-    "web-tree-sitter": "0.27.0"
+    "web-tree-sitter": "0.27.0",
+    "yazl": "^3.3.1"
   },
   "overrides": {
     "typed-rest-client": {
@@ -149,6 +160,7 @@
     }
   },
   "optionalDependencies": {
-    "@hvir/rename-noreplace": "file:packages/rename-noreplace"
+    "@hvir/rename-noreplace": "file:packages/rename-noreplace",
+    "@hvir/extension-storage": "file:packages/extension-storage"
   }
 }

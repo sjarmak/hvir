@@ -1,6 +1,8 @@
 # Architecture budgets
 
-ADR-040 owns the policy. `scripts/architecture-hotspots.json` records exact budgets.
+ADR-040 owns the policy; [ADR-069](adr/ADR-069-rust-client-source-policy.md) adds Rust client
+coverage. `scripts/architecture-hotspots.json` records exact budgets and the closed Rust client
+root/Cargo-output disposition.
 The companion [dependency guide](architecture-dependencies.md) describes the same commands'
 complete module graph, resolution/loading limits, and reused direction checks.
 
@@ -46,7 +48,7 @@ changed target, then reverify; supplied or cached SHAs cannot establish authorit
 its PR merge-ref checkout and proves its two parents, candidate tree, live PR metadata, and
 event base/head before using the same evaluator. Credentials are never policy-file inputs.
 
-All maintained TypeScript/declarations, JavaScript, CSS, shell scripts and shell-shebang hooks
+All maintained TypeScript/declarations, JavaScript, CSS, Rust, shell scripts and shell-shebang hooks
 are included across the ADR's roots and repository root. Existing native package C/header
 source is explicitly governed by the same ordinary 1,000-line ceiling, as are the Python,
 Go and Rust architecture-scanner fixtures under `test/fixtures`. An unknown extension
@@ -84,9 +86,14 @@ ordinary ceiling is a true tightening; retain a stricter named budget if removin
 reopen a ratcheted ceiling below 1,000. Durable reservations may precede a new source path,
 but the reserving policy PR cannot add that source itself.
 
-A relaxation requires a separate policy-only PR. Its complete diff may touch only architecture
-policy/checker modules, dedicated architecture tests/fixtures, this usage guide, and the exact
-package/CI/lint verification wiring. Whole-file eligibility does not authorize arbitrary changes:
+A relaxation or newly adopted source language/root requires a separate policy-only PR.
+Its complete diff may touch only architecture
+policy/checker modules, dedicated architecture tests/fixtures, the exact architecture guides,
+ADR-040/069 and design-index records, and the exact package/CI/lint verification wiring.
+The additional ADR/index/dependency records are eligible only for actual coverage adoption;
+ADR-040 permits lifecycle edits, the design document only its ADR-040/069 index entries, and
+the dependency guide only its Rust boundary section. An accepted ADR-069 cannot be rewritten.
+Ordinary budget relaxation retains the original budget guide without these extra records. Whole-file eligibility does not authorize arbitrary changes:
 dependency/product-script changes, unrelated jobs, weakened CI, and invented checker/fixture
 names are rejected. Normal Vitest discovery remains unchanged. Newly authorized consuming files must be
 byte-identical to the comparison base. Changed checker and fixture source must obey prior
@@ -114,3 +121,24 @@ separate acceptance. Generator source always retains ordinary maintained-source 
 Focused policy, real temporary Git-history, and immediate GitHub-boundary fixtures run through
 `npx vitest run test/architecture-*.test.ts`; they need no network credentials. Normal
 `npm run verify` retains its blocking architecture gate.
+
+ADR-048 permits architecture to recover tested non-policy epic history from a Closed canonical
+PR without recorded merge acceptance. Bounded merge/head association reads identify one
+PR whose exact base/head match a two-parent integration reachable from the same native epic.
+If both association sources omit the candidate, discovery also reads the canonical Closed PR
+list for that exact epic target, consuming all pages within the existing 1,000-record bound.
+Incomplete discovery or multiple matching PRs reject recovery. Listing results only discover
+the PR; its refreshed canonical record supplies the same required identities.
+Its integrated tree must equal the tested head tree and shared CI evidence must pass. The
+complete PR diff must exclude policy, enforcing checkers, verification wiring and decision
+records. Recovery proves integrated tested code; it grants no recorded approval or release
+authority. Policy changes still need separately recorded merged-PR acceptance.
+
+Both architecture and release select the latest equivalent CI workflow run by GitHub creation
+sequence (`run_number`), then evaluate only its complete current attempt. Newer pending,
+failed or incomplete evidence cannot fall back to an older pass. Another recorded CI base is
+equivalent only when ancestry proves the same tested head tree. Empty redundant PR-association
+metadata is permitted when canonical identity and ancestry proofs remain complete. On failure,
+inspect the reported PR/base/head/merge/run/attempt identities and requirement. Restore API
+access for unavailable reads; wait for pending work or explicitly request a full workflow rerun
+for incomplete CI, then reverify. These commands do not dispatch, retry or merge anything.
