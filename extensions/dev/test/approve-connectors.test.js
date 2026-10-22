@@ -160,12 +160,11 @@ test('an unchanged approval is reported unchanged and other hosts are retained',
   assert.deepEqual(
     plan.approvals.map((entry) => [entry.installationId, entry.connector, entry.host]),
     [
-      ['inst-1', 'git', 'ssh:box'],
       ['inst-9', 'gh', 'local'],
       ['inst-1', 'gh', 'local'],
     ],
   )
-  assert.equal(plan.dropped, 1)
+  assert.equal(plan.dropped, 2)
 })
 
 test('stamp writes the store and check mode leaves it alone', async () => {

@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   defaultProfile,
   hostRunning,
+  printReport,
   stamp,
   writeJsonFile,
 } from './approve-connectors.mjs'
@@ -42,7 +43,10 @@ export async function readConfig(path) {
       agentAccess: entry.agentAccess === true,
     }
   })
-  return { packages, agentAccess }
+  const hosts = config.hosts ?? []
+  if (!Array.isArray(hosts) || hosts.some((host) => typeof host !== 'string' || !host))
+    throw new Error(`${path} hosts must be a list of hvir SSH host names`)
+  return { packages, agentAccess, hosts }
 }
 
 export async function ensureAgentAccess(profile, agentAccess) {
@@ -169,8 +173,15 @@ export async function installPackages({
   return { installations, report }
 }
 
-export async function provision({ profile, host, config, lookup, validate }) {
-  const { packages, agentAccess } = await readConfig(config)
+export async function provision({
+  profile,
+  host,
+  config,
+  lookup,
+  validate,
+  remoteLookup,
+}) {
+  const { packages, agentAccess, hosts } = await readConfig(config)
   if (hostRunning(profile))
     throw new Error(
       `hvir is running on ${profile}; quit it first, the state is only read at launch`,
@@ -178,7 +189,7 @@ export async function provision({ profile, host, config, lookup, validate }) {
   await fs.mkdir(profile, { recursive: true })
   const agentAccessWritten = await ensureAgentAccess(profile, agentAccess)
   const installed = await installPackages({ profile, host, packages, validate })
-  const approvals = await stamp({ profile, lookup })
+  const approvals = await stamp({ profile, lookup, hosts, remoteLookup })
   return { ...installed, approvals, agentAccessWritten }
 }
 
@@ -207,10 +218,7 @@ async function main() {
     console.log(
       `${row.change.padEnd(12)} ${row.source} (${row.packageId}) ${row.revision.slice(0, 12)}${row.retained ? ' retained' : ''}`,
     )
-  for (const row of result.approvals.report)
-    console.log(
-      `${row.change.padEnd(20)} ${row.package}/${row.connector} -> ${row.executable}`,
-    )
+  printReport(result.approvals)
   if (result.agentAccessWritten) console.log('agent access enabled for hvir-agent')
   console.log(`provisioned ${options.profile}`)
 }

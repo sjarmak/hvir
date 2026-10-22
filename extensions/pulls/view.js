@@ -128,7 +128,9 @@ window.connectHandler = (connector, onStatus, refresh) => async () => {
 
 /** Why a connector can't serve this workspace. */
 window.hostNote = (connector, workspace) =>
-  `${connector} is not connected for host ${workspace.host}.`
+  workspace.host === 'local'
+    ? `${connector} is not connected for this computer.`
+    : `${connector} is not approved for host ${workspace.host}. Restart hvir through the launcher, or approve it under Settings → Extensions.`
 
 /** An owner/name GitHub repository, as gh prints and accepts it. */
 window.REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/

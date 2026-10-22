@@ -40,6 +40,22 @@ After `git pull`: run `npm run build` if anything outside `extensions/` changed,
 through `host.sh`. A change inside a package only needs Reload in Settings → Extensions,
 unless it touched a connector declaration, in which case restart through `host.sh`.
 
+## SSH workspaces
+
+hvir approves tools per host, so a workspace reached over SSH needs gh, git, gc and bd
+approved for that host with the paths they have there. The launcher does this too: for every
+SSH host that appears in the profile's registered projects, plus every name in the `hosts`
+list in `install.json`, it runs one non-interactive `ssh <host>` (the host name is the alias
+from your `~/.ssh/config`, which is also hvir's host id) to find each tool on that machine's
+login PATH and resolve its real path, then stamps approvals for them. A host that cannot be
+reached keeps whatever approvals it already had. A tool missing on a host is skipped, so the
+Pull requests terminal connector (`zsh`) is not approved on a Linux host, which is fine
+because terminals only open locally anyway.
+
+The SSH key for `ssh <host>` must work without a prompt from the machine running the
+launcher. Put a host in `hosts` when you want it approved before any project on it is
+registered.
+
 ## Overrides
 
 - `HVIR_DEV_PROFILE` picks another profile directory.

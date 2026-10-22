@@ -128,8 +128,9 @@ async function load(context, current) {
     limit = PAGE_SIZE
   }
   const connectors = await availability({ workspace: context.workspace })
-  ui['connect-gh'].hidden = connectors.gh === 'supported'
-  ui['connect-git'].hidden = connectors.git === 'supported'
+  const local = context.workspace.host === 'local'
+  ui['connect-gh'].hidden = connectors.gh === 'supported' || !local
+  ui['connect-git'].hidden = connectors.git === 'supported' || !local
   if (connectors.gh !== 'supported') return setStatus(window.hostNote('gh', context.workspace))
   gitNote = 'Connect git to show the pull request for this branch.'
   ui.refresh.disabled = true

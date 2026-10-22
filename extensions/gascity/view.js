@@ -213,4 +213,7 @@ window.bdNote = (workspace) =>
   unguardedBeadStores.has(workspace.id) ? ' · store refuses --readonly' : ''
 
 /** Why a connector can't serve this workspace. */
-window.hostNote = (connector, workspace) => `${connector} is not connected for host ${workspace.host}.`
+window.hostNote = (connector, workspace) =>
+  workspace.host === 'local'
+    ? `${connector} is not connected for this computer.`
+    : `${connector} is not approved for host ${workspace.host}. Restart hvir through the launcher, or approve it under Settings → Extensions.`

@@ -110,10 +110,113 @@ export async function developmentInstallations(profile) {
   return installations
 }
 
+const REMOTE_SCRIPT = `for a in "$@"; do
+  case "$a" in /*) p=$a;; *) p=$("$SHELL" -lc "command -v -- $a" 2>/dev/null | tail -n 1);; esac
+  [ -n "$p" ] && [ -f "$p" ] && [ -x "$p" ] || continue
+  c=$(readlink -f -- "$p" 2>/dev/null || perl -MCwd=realpath -e 'print realpath(shift)' "$p")
+  printf '%s\\t%s\\t%s\\n' "$a" "$p" "$c"
+done
+`
+
+export function lookupOnRemoteHost(host, requests) {
+  const names = [...new Set(requests)]
+  for (const name of names)
+    if (!/^[A-Za-z0-9][A-Za-z0-9._/+-]*$/u.test(name))
+      throw new Error(`Refusing to look up ${JSON.stringify(name)} on ${host}`)
+  if (names.length === 0) return new Map()
+  const output = execFileSync(
+    'ssh',
+    [
+      '-o',
+      'BatchMode=yes',
+      '-o',
+      'ConnectTimeout=8',
+      '--',
+      host,
+      'sh',
+      '-s',
+      '--',
+      ...names,
+    ],
+    { encoding: 'utf8', input: REMOTE_SCRIPT, stdio: ['pipe', 'pipe', 'pipe'] },
+  )
+  const found = new Map()
+  for (const line of output.split('\n')) {
+    const [request, executable, canonical] = line.split('\t')
+    if (request && executable?.startsWith('/') && canonical?.startsWith('/'))
+      found.set(request, { executable, canonical })
+  }
+  return found
+}
+
+export async function remoteHostsFromProjects(profile) {
+  const state = await readJson(join(profile, 'projects.json'), { projects: [] })
+  return [
+    ...new Set(
+      (state.projects ?? [])
+        .map((project) => project.hostId)
+        .filter((hostId) => typeof hostId === 'string' && hostId !== LOCAL_HOST),
+    ),
+  ]
+}
+
+function remoteRequests(saved, installations, host) {
+  const requests = new Set()
+  for (const installation of installations)
+    for (const declaration of installation.connectors) {
+      if (declaration.setup) requests.add(declaration.setup.executable)
+      const prior = saved.find((entry) =>
+        sameKey(entry, installation.installationId, declaration.id, host),
+      )
+      if (prior) requests.add(prior.executable)
+    }
+  return [...requests]
+}
+
+export function resolveRemotes({ saved, installations, hosts, remoteLookup }) {
+  const remotes = {}
+  for (const host of hosts) {
+    try {
+      remotes[host] = remoteLookup(host, remoteRequests(saved, installations, host))
+    } catch (reason) {
+      remotes[host] = {
+        unreachable: reason instanceof Error ? reason.message : String(reason),
+      }
+    }
+  }
+  return remotes
+}
+
+function remoteApproval(installation, declaration, host, prior, found) {
+  if (declaration.context === 'application') return undefined
+  const selected = prior && found.get(prior.executable)
+  const discovered = declaration.setup && found.get(declaration.setup.executable)
+  const target = selected ?? discovered
+  if (!target) return undefined
+  return {
+    installationId: installation.installationId,
+    connector: declaration.id,
+    host,
+    executable: target.executable,
+    canonicalExecutable: target.canonical,
+    configuration: retainConfiguration(prior, declaration),
+    declaration,
+  }
+}
+
+function describeChange(prior, approval) {
+  if (!prior) return 'added'
+  if (JSON.stringify(prior) === JSON.stringify(approval)) return 'unchanged'
+  if (JSON.stringify(prior.declaration) !== JSON.stringify(approval.declaration))
+    return 'declaration-updated'
+  return 'executable-updated'
+}
+
 export async function planApprovals({
   saved,
   installations,
   lookup = lookupOnLoginPath,
+  remotes = {},
 }) {
   const managed = new Set()
   const next = []
@@ -137,23 +240,63 @@ export async function planApprovals({
       report.push({
         package: installation.packageId,
         connector: declaration.id,
+        host: LOCAL_HOST,
         executable: canonical,
-        change: !prior
-          ? 'added'
-          : JSON.stringify(prior) === JSON.stringify(approval)
-            ? 'unchanged'
-            : JSON.stringify(prior.declaration) !== JSON.stringify(declaration)
-              ? 'declaration-updated'
-              : 'executable-updated',
+        change: describeChange(prior, approval),
       })
+      for (const [host, found] of Object.entries(remotes)) {
+        const remoteKey = [installation.installationId, declaration.id, host]
+        const remotePrior = saved.find((entry) => sameKey(entry, ...remoteKey))
+        const approval =
+          found instanceof Map
+            ? remoteApproval(installation, declaration, host, remotePrior, found)
+            : undefined
+        const row = { package: installation.packageId, connector: declaration.id, host }
+        if (approval) {
+          managed.add(JSON.stringify(remoteKey))
+          next.push(approval)
+          report.push({
+            ...row,
+            executable: approval.canonicalExecutable,
+            change: describeChange(remotePrior, approval),
+          })
+        } else if (remotePrior) {
+          managed.add(JSON.stringify(remoteKey))
+          next.push({ ...remotePrior, declaration })
+          report.push({
+            ...row,
+            executable: remotePrior.canonicalExecutable,
+            change: found instanceof Map ? 'kept-missing' : 'kept-unreachable',
+          })
+        } else {
+          report.push({
+            ...row,
+            executable: '',
+            change: found instanceof Map ? 'missing' : 'unreachable',
+          })
+        }
+      }
     }
   }
-  const retained = saved.filter(
-    (entry) =>
-      !managed.has(JSON.stringify([entry.installationId, entry.connector, entry.host])) &&
-      (entry.host !== LOCAL_HOST ||
-        !installations.some((item) => item.installationId === entry.installationId)),
-  )
+  const declarationFor = (entry) =>
+    installations
+      .find((item) => item.installationId === entry.installationId)
+      ?.connectors.find((declaration) => declaration.id === entry.connector)
+  const retained = saved
+    .filter(
+      (entry) =>
+        !managed.has(
+          JSON.stringify([entry.installationId, entry.connector, entry.host]),
+        ) &&
+        (entry.host !== LOCAL_HOST ||
+          !installations.some((item) => item.installationId === entry.installationId)),
+    )
+    .flatMap((entry) => {
+      if (!installations.some((item) => item.installationId === entry.installationId))
+        return [entry]
+      const declaration = declarationFor(entry)
+      return declaration ? [{ ...entry, declaration }] : []
+    })
   const approvals = [...retained, ...next]
   const bytes = Buffer.byteLength(JSON.stringify(approvals))
   if (approvals.length > LIMITS.approvals || bytes > LIMITS.stateBytes)
@@ -188,11 +331,29 @@ export function writeApprovals(profile, approvals) {
   return writeJsonFile(join(profile, 'extension-state', 'connectors.json'), approvals)
 }
 
-export async function stamp({ profile, check = false, lookup }) {
+export async function stamp({
+  profile,
+  check = false,
+  lookup,
+  hosts = [],
+  remoteLookup = lookupOnRemoteHost,
+}) {
   const saved = await readJson(join(profile, 'extension-state', 'connectors.json'), [])
   if (!Array.isArray(saved)) throw new Error('connectors.json is not an approval list')
   const installations = await developmentInstallations(profile)
-  const plan = await planApprovals({ saved, installations, lookup })
+  const remoteHosts = [
+    ...new Set([...hosts, ...(await remoteHostsFromProjects(profile))]),
+  ]
+  const remotes = resolveRemotes({
+    saved,
+    installations,
+    hosts: remoteHosts,
+    remoteLookup,
+  })
+  const plan = await planApprovals({ saved, installations, lookup, remotes })
+  plan.unreachable = Object.entries(remotes)
+    .filter(([, found]) => !(found instanceof Map))
+    .map(([host, found]) => `${host}: ${found.unreachable}`)
   if (!check) {
     if (hostRunning(profile))
       throw new Error(
@@ -203,12 +364,21 @@ export async function stamp({ profile, check = false, lookup }) {
   return plan
 }
 
+export function printReport(plan) {
+  for (const row of plan.report)
+    console.log(
+      `${row.change.padEnd(20)} ${row.package}/${row.connector} @${row.host} -> ${row.executable}`,
+    )
+  for (const line of plan.unreachable ?? []) console.log(`unreachable          ${line}`)
+}
+
 function parseArguments(argv) {
-  const options = { profile: defaultProfile(), check: false }
+  const options = { profile: defaultProfile(), check: false, hosts: [] }
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
     if (argument === '--check') options.check = true
     else if (argument === '--profile') options.profile = argv[++index]
+    else if (argument === '--remote') options.hosts.push(argv[++index])
     else throw new Error(`Unknown argument ${argument}`)
   }
   if (!options.profile) throw new Error('--profile needs a directory')
@@ -218,10 +388,7 @@ function parseArguments(argv) {
 async function main() {
   const options = parseArguments(process.argv.slice(2))
   const plan = await stamp(options)
-  for (const row of plan.report)
-    console.log(
-      `${row.change.padEnd(20)} ${row.package}/${row.connector} -> ${row.executable}`,
-    )
+  printReport(plan)
   console.log(
     options.check
       ? `check only: ${plan.approvals.length} approvals would be written`

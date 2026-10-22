@@ -265,7 +265,7 @@ async function load(context) {
   const connectors = await availability({ workspace: context.workspace })
   if (connectors.gc !== 'supported') {
     ui.status.textContent = window.hostNote('gc', context.workspace)
-    ui.connect.hidden = false
+    ui.connect.hidden = context.workspace.host !== 'local'
     return
   }
   ui.connect.hidden = true
