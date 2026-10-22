@@ -56,7 +56,7 @@ test('shellArgs starts the login shell in a path with spaces and quotes, never r
   const fakeShell = join(base, 'fake-shell')
   writeFileSync(fakeShell, '#!/bin/sh\npwd\n')
   chmodSync(fakeShell, 0o755)
-  const out = execFileSync('zsh', shellArgs(path), {
+  const out = execFileSync('sh', shellArgs(path), {
     cwd: base,
     env: { ...process.env, SHELL: fakeShell },
     encoding: 'utf8',

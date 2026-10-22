@@ -12,7 +12,11 @@
     "connector.output",
     "contributions.publish"
   ],
-  "optionalCapabilities": ["connector.connect", "actions.invoke", "terminal.start"],
+  "optionalCapabilities": [
+    "connector.connect",
+    "actions.invoke",
+    "terminal.start"
+  ],
   "access": [],
   "views": [
     {
@@ -21,21 +25,27 @@
       "entry": "pulls.html",
       "placement": "workspace",
       "navigation": "left",
-      "representations": ["view"]
+      "representations": [
+        "view"
+      ]
     },
     {
       "id": "pull",
       "title": "Pull request",
       "entry": "pull.html",
       "placement": "workspace",
-      "representations": ["view"]
+      "representations": [
+        "view"
+      ]
     },
     {
       "id": "issue",
       "title": "Issue",
       "entry": "issue.html",
       "placement": "workspace",
-      "representations": ["view"]
+      "representations": [
+        "view"
+      ]
     }
   ],
   "railItems": [
@@ -62,7 +72,10 @@
       },
       "timeoutMs": 30000,
       "outputBytes": 4194304,
-      "environment": ["GH_HOST", "GH_CONFIG_DIR"]
+      "environment": [
+        "GH_HOST",
+        "GH_CONFIG_DIR"
+      ]
     },
     {
       "id": "git",
@@ -77,10 +90,10 @@
     },
     {
       "id": "shell",
-      "description": "Open a terminal in another worktree of this repository that already has a pull request's branch: zsh cds there and starts your login shell. Only from the pull request view, after you confirm.",
+      "description": "Open a terminal in another worktree of this repository that already has a pull request's branch: sh cds there and starts your login shell on the workspace's host. Only from the pull request view, after you confirm.",
       "context": "workspace",
       "setup": {
-        "executable": "zsh"
+        "executable": "sh"
       },
       "timeoutMs": 10000,
       "outputBytes": 65536,
@@ -104,11 +117,22 @@
         "properties": {
           "section": {
             "type": "string",
-            "enum": ["branch", "needs", "issues", "waiting", "drafts"]
+            "enum": [
+              "branch",
+              "needs",
+              "issues",
+              "waiting",
+              "drafts"
+            ]
           },
           "limit": {
             "type": "number",
-            "enum": [10, 20, 30, 60]
+            "enum": [
+              10,
+              20,
+              30,
+              60
+            ]
           }
         },
         "additionalProperties": false
@@ -132,7 +156,9 @@
             "type": "number"
           }
         },
-        "required": ["number"],
+        "required": [
+          "number"
+        ],
         "additionalProperties": false
       }
     },
@@ -146,7 +172,7 @@
         "replace": false
       },
       "timeoutMs": 120000,
-      "description": "Runs gh pr checkout <number> -R <repo> once in a new terminal at the workspace root, after you confirm in hvir. Local workspaces only: hvir's terminal.start admits only connectors approved for the local host.",
+      "description": "Runs gh pr checkout <number> -R <repo> once in a new terminal at the workspace root, after you confirm in hvir. Works on the workspace's host, local or SSH, with gh approved for that host.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -158,7 +184,10 @@
             "type": "number"
           }
         },
-        "required": ["repo", "number"],
+        "required": [
+          "repo",
+          "number"
+        ],
         "additionalProperties": false
       }
     },
@@ -172,7 +201,7 @@
         "replace": false
       },
       "timeoutMs": 120000,
-      "description": "Opens a new terminal in another worktree of this repository, after you confirm in hvir. The path must be listed by git worktree list. Local workspaces only.",
+      "description": "Opens a new terminal in another worktree of this repository, after you confirm in hvir. The path must be listed by git worktree list on the workspace's host.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -181,7 +210,9 @@
             "maxLength": 1024
           }
         },
-        "required": ["path"],
+        "required": [
+          "path"
+        ],
         "additionalProperties": false
       }
     }

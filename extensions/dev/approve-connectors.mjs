@@ -65,8 +65,15 @@ async function stillExecutable(path) {
   }
 }
 
+function sameDeclaredTool(saved, declaration) {
+  return saved?.declaration?.setup?.executable === declaration.setup?.executable
+}
+
 async function selectExecutable(saved, declaration, lookup) {
-  const retained = saved && (await stillExecutable(saved.executable))
+  const retained =
+    saved &&
+    sameDeclaredTool(saved, declaration) &&
+    (await stillExecutable(saved.executable))
   if (retained) return { executable: saved.executable, canonical: retained }
   if (!declaration.setup)
     throw new Error(`${declaration.id} declares no executable to look up`)
@@ -189,7 +196,8 @@ export function resolveRemotes({ saved, installations, hosts, remoteLookup }) {
 
 function remoteApproval(installation, declaration, host, prior, found) {
   if (declaration.context === 'application') return undefined
-  const selected = prior && found.get(prior.executable)
+  const selected =
+    prior && sameDeclaredTool(prior, declaration) && found.get(prior.executable)
   const discovered = declaration.setup && found.get(declaration.setup.executable)
   const target = selected ?? discovered
   if (!target) return undefined

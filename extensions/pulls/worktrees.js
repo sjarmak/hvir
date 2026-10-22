@@ -35,12 +35,12 @@
       .map((line) => line.slice('worktree '.length))
 
   /**
-   * zsh arguments that start the person's login shell inside `path`. The path is a positional
+   * sh arguments that start the person's login shell inside `path`. The path is a positional
    * argument, never part of the script, so no quoting of it is needed.
    */
   const shellArgs = (path) => [
     '-c',
-    'cd -- "$1" && exec "${SHELL:-/bin/zsh}" -l',
+    'cd -- "$1" && exec "${SHELL:-/bin/sh}" -l',
     'hvir-worktree',
     path,
   ]

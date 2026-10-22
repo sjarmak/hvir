@@ -48,9 +48,9 @@ SSH host that appears in the profile's registered projects, plus every name in t
 list in `install.json`, it runs one non-interactive `ssh <host>` (the host name is the alias
 from your `~/.ssh/config`, which is also hvir's host id) to find each tool on that machine's
 login PATH and resolve its real path, then stamps approvals for them. A host that cannot be
-reached keeps whatever approvals it already had. A tool missing on a host is skipped, so the
-Pull requests terminal connector (`zsh`) is not approved on a Linux host, which is fine
-because terminals only open locally anyway.
+reached keeps whatever approvals it already had. A tool missing on a host is skipped. The Pull
+requests terminal connector is plain `sh`, so it exists everywhere and the one-click worktree
+terminal and PR checkout terminal open on the workspace's host, local or SSH.
 
 The SSH key for `ssh <host>` must work without a prompt from the machine running the
 launcher. Put a host in `hosts` when you want it approved before any project on it is

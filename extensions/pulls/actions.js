@@ -156,8 +156,8 @@
   }
 
   /**
-   * hvir's terminal.start admits only a connector approved for the local host
-   * (src/main/extensions/terminal-handoff.ts), so SSH workspaces are refused before asking.
+   * hvir confirms each launch and runs it on the workspace's host, so gh must be approved for
+   * that host (src/main/extensions/terminal-handoff.ts).
    */
   async function checkoutTerminal(input, context, actionId) {
     const { repo, number } = input ?? {}
@@ -165,7 +165,6 @@
       throw new Error('repo must be owner/name')
     if (!Number.isSafeInteger(number) || number < 1)
       throw new Error('number must be a positive integer')
-    if (context.workspace.host !== 'local') throw new Error(window.TERMINAL_LOCAL_ONLY)
     return window.host.terminal(
       'gh',
       context.workspace,
@@ -182,7 +181,6 @@
     const path = input?.path
     if (typeof path !== 'string' || !path.startsWith('/'))
       throw new Error('path must be absolute')
-    if (context.workspace.host !== 'local') throw new Error(window.TERMINAL_LOCAL_ONLY)
     const listing = await window.host.run(
       'git',
       context.workspace,

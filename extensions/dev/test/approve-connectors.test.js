@@ -197,3 +197,26 @@ test('hostRunning sees a process launched with the profile argument', async () =
     child.kill()
   }
 })
+
+test('a changed declared tool looks the executable up again instead of keeping the old one', async () => {
+  const { bin, profile } = await fixture()
+  await fs.writeFile(join(bin, 'other'), '#!/bin/sh\n', { mode: 0o755 })
+  const installations = await developmentInstallations(profile)
+  const saved = [
+    savedApproval({
+      executable: join(bin, 'other'),
+      canonicalExecutable: join(bin, 'other'),
+      declaration: {
+        ...normalizeDeclaration(declaration),
+        setup: { executable: 'other' },
+      },
+    }),
+  ]
+  const plan = await planApprovals({
+    saved,
+    installations,
+    lookup: (name) => join(bin, name),
+  })
+  assert.equal(plan.approvals[0].canonicalExecutable, join(bin, 'gh'))
+  assert.equal(plan.report[0].change, 'declaration-updated')
+})

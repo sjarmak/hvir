@@ -11,7 +11,7 @@ import {
   type TerminalCommandRequest,
 } from '../src/main/terminal/command-handoff-owner'
 import type { ExtensionInvocation } from '../src/shared/extensions/contract'
-import { asHostId, localPath } from '../src/shared/host-path'
+import { asHostId, hostPath, localPath } from '../src/shared/host-path'
 import { connectorFixture } from './fixtures/extension-connector'
 
 const disposers: Array<() => void> = []
@@ -222,6 +222,53 @@ describe('extension terminal handoff authority', () => {
     expect(await result).toMatchObject({ outcome: 'handed-off' })
     expect(f.f.approvals.get(f.f.activation, 'tool', 'remote')).toBe(prepared.approval)
   })
+  it('hands a command to a terminal on the SSH host that owns the workspace', async () => {
+    const f = await fixture()
+    const hosts = f.f.hosts,
+      local = hosts.hostById('local')!
+    const remote = { ...local, hostId: asHostId('remote') }
+    vi.spyOn(hosts, 'listHosts').mockReturnValue([
+      ...hosts.listHosts(),
+      {
+        hostId: remote.hostId,
+        label: 'Remote',
+        kind: 'ssh',
+        connectionState: 'connected',
+        watchTier: 'polling',
+      },
+    ])
+    vi.spyOn(hosts, 'hostById').mockImplementation((id) =>
+      id === 'local' ? local : remote,
+    )
+    vi.spyOn(hosts, 'materializeHost').mockResolvedValue(remote)
+    f.f.host.realpath.mockImplementation((path) =>
+      Promise.resolve({ ...path, path: '/remote/installed/tool' }),
+    )
+    const prepared = await f.f.approvals.prepare(
+      {
+        installationId: 'installation',
+        connector: 'tool',
+        host: 'remote',
+        executable: '/remote/tool',
+        configuration: { args: [], env: {} },
+      },
+      () => undefined,
+    )
+    await f.f.approvals.approve(prepared.token)
+    Object.assign(f.context, { root: hostPath(asHostId('remote'), '/srv/workspace') })
+    Object.assign(f.context.value.workspace, { host: 'remote' })
+    const result = f.start()
+    await vi.waitFor(() => expect(f.published).toHaveBeenCalledOnce())
+    expect(f.confirm.mock.calls[0]?.[0]).toMatchObject({
+      destination: 'remote: /srv/workspace',
+    })
+    const lease = f.consume()
+    expect(lease.command.executable).toBe('/remote/installed/tool')
+    await lease.prepareDispatch()
+    lease.dispatched()
+    lease.finish(true)
+    expect(await result).toMatchObject({ outcome: 'handed-off' })
+  })
   it('asks once for the exact command and destination, then freezes the approved prefix/config', async () => {
     const f = await fixture(),
       result = f.start()
@@ -317,7 +364,7 @@ describe('extension terminal handoff authority', () => {
     await expect(f.start()).rejects.toThrow('current explicit action')
     await expect(
       f.start({ connector: 'tool', workspace: 'alias', args: [] }),
-    ).rejects.toThrow('exact local workspace')
+    ).rejects.toThrow('exact workspace')
     expect(f.confirm).not.toHaveBeenCalled()
     expect(f.published).not.toHaveBeenCalled()
   })

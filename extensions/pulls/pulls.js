@@ -143,6 +143,7 @@ async function load(context, current) {
     )
     if (current().workspace?.id !== context.workspace.id || requested !== limit) return
     render(snapshot, Date.now(), here)
+    if (!local) ui['connect-shell'].hidden = true
   } finally {
     ui.refresh.disabled = false
   }

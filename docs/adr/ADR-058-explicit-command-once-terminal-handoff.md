@@ -28,6 +28,10 @@ the originating action lifetime, with current authority throughout; ordinary gue
 connector deadlines do not change. After approval, the terminal owner issues one new terminal
 identity and one one-use, short-lived handoff ticket. Decision and ticket expiry provide an
 actionable refusal to invoke the action again.
+The workspace may live on any connected host: the connector approval must be the one saved for
+that exact host, the command resolves to the executable's canonical path on that host, and the
+launch decision names the host beside the destination folder. The same bootstrap, provider and
+PTY supervisor paths serve local and SSH terminals; no remote-specific handoff is introduced.
 Renderer data cannot substitute an existing terminal, another workspace, profile, command, or
 configuration. Revalidate caller, activation, grants, executable, workspace, and cancellation at
 each asynchronous admission boundary. Before physical dispatch, revocation prevents spawning.

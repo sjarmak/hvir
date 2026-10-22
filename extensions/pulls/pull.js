@@ -258,12 +258,7 @@ function renderCommits(labels) {
  * checked: gh names a fork's local branch itself, so a matching name there may be another branch.
  */
 async function checkedOut(workspace, pull, connectors) {
-  if (
-    workspace.host !== 'local' ||
-    pull.isCrossRepository ||
-    connectors.git !== 'supported'
-  )
-    return {}
+  if (pull.isCrossRepository || connectors.git !== 'supported') return {}
   try {
     const path = worktreeOf(
       await run('git', workspace, WORKTREE_ARGS, { text: true }),
@@ -275,8 +270,7 @@ async function checkedOut(workspace, pull, connectors) {
   }
 }
 
-function checkoutNote(local, existing) {
-  if (!local) return window.TERMINAL_LOCAL_ONLY
+function checkoutNote(existing) {
   if (existing.here) return 'This workspace already has the branch checked out.'
   if (existing.path)
     return `Already checked out in ${existing.path.split('/').at(-1)} (${existing.path}). Select it in the sidebar, or open a terminal there from the Pull requests list.`
@@ -285,10 +279,9 @@ function checkoutNote(local, existing) {
   return ''
 }
 
-function renderCheckout(workspace, repo, number, existing) {
-  const local = workspace.host === 'local'
-  const note = checkoutNote(local, existing)
-  ui.checkout.hidden = !local || existing.path !== undefined
+function renderCheckout(repo, number, existing) {
+  const note = checkoutNote(existing)
+  ui.checkout.hidden = existing.path !== undefined
   ui.checkout.dataset.number = String(number)
   ui.checkout.dataset.repo = repo
   ui['checkout-note'].hidden = note === ''
@@ -363,7 +356,7 @@ async function load(context, current) {
   render(pull, detail)
   const existing = await checkedOut(context.workspace, pull, connectors)
   if (keyOf(current()) !== key) return
-  renderCheckout(context.workspace, repo, number, existing)
+  renderCheckout(repo, number, existing)
   const labels = await readLabels(context.workspace, pull.commits ?? [], connectors)
   if (keyOf(current()) !== key) return
   renderCommits(labels)

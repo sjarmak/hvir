@@ -134,9 +134,6 @@ window.hostNote = (connector, workspace) =>
 
 /** An owner/name GitHub repository, as gh prints and accepts it. */
 window.REPO_NAME = /^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9._-]+$/
-/** hvir's terminal.start admits only connectors approved for the local host. */
-window.TERMINAL_LOCAL_ONLY =
-  'Terminal checkout works for local workspaces in this hvir build.'
 
 /** hvir's terminal.start outcome; a declined confirmation is `not-started`, not an error. */
 window.terminalOutcome = function terminalOutcome(result, started) {

@@ -10,7 +10,7 @@ window.worktreeControl = (() => {
 
   /** Branch to worktree path for this checkout, minus the workspace itself; empty without git. */
   async function readWorktrees(workspace, connectors) {
-    if (workspace.host !== 'local' || connectors.git !== 'supported') return new Map()
+    if (connectors.git !== 'supported') return new Map()
     const listing = await window.host.run('git', workspace, WORKTREE_ARGS, { text: true })
     return new Map(
       [...worktreesByBranch(listing)].filter(([, path]) => path !== workspace.root?.path),
