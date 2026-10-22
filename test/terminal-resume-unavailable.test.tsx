@@ -160,6 +160,7 @@ describe('terminal resume unavailable state', () => {
     })
     const runtimeOptions = {
       ...options(),
+      externalAttach: { ticket: 'external-ticket' },
       harnessSessionId: undefined,
       resumeOnStart: false,
     }
@@ -180,7 +181,11 @@ describe('terminal resume unavailable state', () => {
     await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(2))
     expect(invoke).toHaveBeenLastCalledWith(
       'pty:start',
-      expect.objectContaining({ resume: false, harnessSessionId: undefined }),
+      expect.objectContaining({
+        externalAttach: { ticket: 'external-ticket' },
+        resume: false,
+        harnessSessionId: undefined,
+      }),
     )
   })
 
