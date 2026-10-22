@@ -34,7 +34,13 @@ window.host = (() => {
         if (message.ok) resolve(message.value)
         else reject(new Error(message.error))
       })
-      bridge.send({ kind: 'request', id, capability, ...(input ? { input } : {}), ...(actionId ? { actionId } : {}) })
+      bridge.send({
+        kind: 'request',
+        id,
+        capability,
+        ...(input ? { input } : {}),
+        ...(actionId ? { actionId } : {}),
+      })
     })
   }
 
@@ -42,7 +48,11 @@ window.host = (() => {
     let text = ''
     let offset = 0
     while (offset !== null) {
-      const page = await request('connector.output', { receipt, stream, offset }, actionId)
+      const page = await request(
+        'connector.output',
+        { receipt, stream, offset },
+        actionId,
+      )
       text += page.data
       offset = page.nextOffset
     }
@@ -56,21 +66,76 @@ window.host = (() => {
       .map((line) => JSON.parse(line))
   }
 
+  const IN_FLIGHT = 3
+  const CAPACITY_RETRIES = 6
+  const RETRY_BASE_MS = 200
+  const RETRY_MAX_MS = 2000
+  let inFlight = 0
+  const waiting = []
+
+  async function admitted() {
+    if (inFlight >= IN_FLIGHT) await new Promise((resolve) => waiting.push(resolve))
+    inFlight += 1
+  }
+
+  function released() {
+    inFlight -= 1
+    const next = waiting.shift()
+    if (next) next()
+  }
+
+  function retryDelay(result, attempt) {
+    return Number.isSafeInteger(result.retryAfterMs)
+      ? result.retryAfterMs
+      : Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_MAX_MS)
+  }
+
+  async function execute(input, actionId) {
+    for (let attempt = 0; ; attempt += 1) {
+      const result = await request('connector.execute', input, actionId)
+      if (
+        result.outcome === 'completed' ||
+        result.reason !== 'capacity' ||
+        attempt >= CAPACITY_RETRIES
+      )
+        return result
+      await new Promise((resolve) =>
+        window.setTimeout(resolve, retryDelay(result, attempt)),
+      )
+    }
+  }
+
   /**
    * Run an approved connector in the workspace root. Resolves parsed JSON (JSON lines when `lines`
    * is set, raw stdout when `text` is set); rejects with the program's last stderr line or the
    * connector's reason.
    */
-  async function run(connector, workspace, args, { lines = false, text = false, actionId } = {}) {
-    const result = await request(
-      'connector.execute',
+  async function run(
+    connector,
+    workspace,
+    args,
+    { lines = false, text = false, actionId } = {},
+  ) {
+    await admitted()
+    try {
+      return await runAdmitted(connector, workspace, args, { lines, text, actionId })
+    } finally {
+      released()
+    }
+  }
+
+  async function runAdmitted(connector, workspace, args, { lines, text, actionId }) {
+    const result = await execute(
       { connector, host: workspace.host, workspace: workspace.id, args },
       actionId,
     )
     if (result.outcome !== 'completed') {
-      const error = new Error(`${connector} did not run: ${result.reason ?? result.outcome}`)
+      const error = new Error(
+        `${connector} did not run: ${result.reason ?? result.outcome}`,
+      )
       error.reason = result.reason ?? result.outcome
-      if (Number.isSafeInteger(result.retryAfterMs)) error.retryAfterMs = result.retryAfterMs
+      if (Number.isSafeInteger(result.retryAfterMs))
+        error.retryAfterMs = result.retryAfterMs
       throw error
     }
     try {
@@ -79,14 +144,19 @@ window.host = (() => {
         readStream(result.receipt, 'stderr', actionId),
       ])
       if (result.code !== 0)
-        throw new Error(stderr.trim().split('\n').at(-1) || `${connector} exited ${result.code}`)
-      if (result.truncated) throw new Error(`${connector} output exceeded the connector bound`)
+        throw new Error(
+          stderr.trim().split('\n').at(-1) || `${connector} exited ${result.code}`,
+        )
+      if (result.truncated)
+        throw new Error(`${connector} output exceeded the connector bound`)
       if (text) return stdout
       return lines ? parseLines(stdout) : JSON.parse(stdout)
     } finally {
-      await request('connector.output', { receipt: result.receipt, release: true }, actionId).catch(
-        () => {},
-      )
+      await request(
+        'connector.output',
+        { receipt: result.receipt, release: true },
+        actionId,
+      ).catch(() => {})
     }
   }
 
@@ -109,7 +179,9 @@ window.host = (() => {
   /** Availability of each declared connector for `workspace`'s host: `supported` or hvir's reason. */
   async function availability({ actionId, workspace }) {
     const entries = await status(workspace, actionId)
-    return Object.freeze(Object.fromEntries(entries.map((entry) => [entry.connector, entry.availability])))
+    return Object.freeze(
+      Object.fromEntries(entries.map((entry) => [entry.connector, entry.availability])),
+    )
   }
 
   /**
@@ -119,7 +191,11 @@ window.host = (() => {
    * `interrupted-uncertain`.
    */
   async function terminal(connector, workspace, args, actionId) {
-    return request('terminal.start', { connector, workspace: workspace.id, args }, actionId)
+    return request(
+      'terminal.start',
+      { connector, workspace: workspace.id, args },
+      actionId,
+    )
   }
 
   return Object.freeze({ request, run, terminal, availability })

@@ -75,10 +75,51 @@ window.host = (() => {
     const report = failureReport(stdout)
     const message = report?.error?.message ?? report?.error ?? report?.message
     const error = new Error(
-      typeof message === 'string' ? message : stderr.trim().split('\n')[0] || `${connector} exited ${exitCode}`,
+      typeof message === 'string'
+        ? message
+        : stderr.trim().split('\n')[0] || `${connector} exited ${exitCode}`,
     )
     if (typeof report?.code === 'string') error.code = report.code
     return error
+  }
+
+  const IN_FLIGHT = 3
+  const CAPACITY_RETRIES = 6
+  const RETRY_BASE_MS = 200
+  const RETRY_MAX_MS = 2000
+  let inFlight = 0
+  const waiting = []
+
+  async function admitted() {
+    if (inFlight >= IN_FLIGHT) await new Promise((resolve) => waiting.push(resolve))
+    inFlight += 1
+  }
+
+  function released() {
+    inFlight -= 1
+    const next = waiting.shift()
+    if (next) next()
+  }
+
+  function retryDelay(result, attempt) {
+    return Number.isSafeInteger(result.retryAfterMs)
+      ? result.retryAfterMs
+      : Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_MAX_MS)
+  }
+
+  async function execute(input, actionId) {
+    for (let attempt = 0; ; attempt += 1) {
+      const result = await request('connector.execute', input, actionId)
+      if (
+        result.outcome === 'completed' ||
+        result.reason !== 'capacity' ||
+        attempt >= CAPACITY_RETRIES
+      )
+        return result
+      await new Promise((resolve) =>
+        window.setTimeout(resolve, retryDelay(result, attempt)),
+      )
+    }
   }
 
   /**
@@ -87,16 +128,28 @@ window.host = (() => {
    * stderr line, or the connector's reason.
    */
   async function run(connector, workspace, args, { lines = false, text = false } = {}) {
-    const result = await request('connector.execute', {
+    await admitted()
+    try {
+      return await runAdmitted(connector, workspace, args, { lines, text })
+    } finally {
+      released()
+    }
+  }
+
+  async function runAdmitted(connector, workspace, args, { lines, text }) {
+    const result = await execute({
       connector,
       host: workspace.host,
       workspace: workspace.id,
       args,
     })
     if (result.outcome !== 'completed') {
-      const error = new Error(`${connector} did not run: ${result.reason ?? result.outcome}`)
+      const error = new Error(
+        `${connector} did not run: ${result.reason ?? result.outcome}`,
+      )
       error.reason = result.reason ?? result.outcome
-      if (Number.isSafeInteger(result.retryAfterMs)) error.retryAfterMs = result.retryAfterMs
+      if (Number.isSafeInteger(result.retryAfterMs))
+        error.retryAfterMs = result.retryAfterMs
       throw error
     }
     try {
@@ -105,7 +158,8 @@ window.host = (() => {
         readStream(result.receipt, 'stderr'),
       ])
       if (result.code !== 0) throw failure(connector, result.code, stdout, stderr)
-      if (result.truncated) throw new Error(`${connector} output exceeded the connector bound`)
+      if (result.truncated)
+        throw new Error(`${connector} output exceeded the connector bound`)
       if (text) return stdout
       return lines ? parseLines(stdout) : JSON.parse(stdout)
     } finally {
@@ -134,7 +188,9 @@ window.host = (() => {
   /** Availability of each declared connector for `workspace`'s host: `supported` or hvir's reason. */
   async function availability({ workspace }) {
     const entries = await status(workspace)
-    return Object.freeze(Object.fromEntries(entries.map((entry) => [entry.connector, entry.availability])))
+    return Object.freeze(
+      Object.fromEntries(entries.map((entry) => [entry.connector, entry.availability])),
+    )
   }
 
   return Object.freeze({ request, run, availability })
