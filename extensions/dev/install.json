@@ -1,0 +1,7 @@
+{
+  "agentAccess": { "enabled": true, "confirmDestructive": false },
+  "packages": [
+    { "source": "gascity", "path": "../gascity", "agentAccess": false },
+    { "source": "pulls", "path": "../pulls", "agentAccess": true }
+  ]
+}

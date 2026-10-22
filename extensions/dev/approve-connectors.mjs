@@ -4,14 +4,14 @@ import console from 'node:console'
 import { promises as fs } from 'node:fs'
 import process from 'node:process'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 export const LOCAL_HOST = 'local'
 export const LIMITS = Object.freeze({ approvals: 256, stateBytes: 256 * 1024 })
 
 export function defaultProfile() {
-  return join(homedir(), 'Library', 'Application Support', 'hvir-extensions-test')
+  return join(homedir(), 'Library', 'Application Support', 'hvir')
 }
 
 export function normalizeDeclaration(declaration) {
@@ -177,12 +177,15 @@ export function hostRunning(profile) {
   }
 }
 
-export async function writeApprovals(profile, approvals) {
-  const target = join(profile, 'extension-state', 'connectors.json')
-  const temp = join(dirname(target), `.connectors.${process.pid}.tmp`)
-  await fs.writeFile(temp, JSON.stringify(approvals), { mode: 0o644 })
+export async function writeJsonFile(target, value) {
+  const temp = join(dirname(target), `.${basename(target)}.${process.pid}.tmp`)
+  await fs.writeFile(temp, JSON.stringify(value), { mode: 0o644 })
   await fs.rename(temp, target)
   return target
+}
+
+export function writeApprovals(profile, approvals) {
+  return writeJsonFile(join(profile, 'extension-state', 'connectors.json'), approvals)
 }
 
 export async function stamp({ profile, check = false, lookup }) {
