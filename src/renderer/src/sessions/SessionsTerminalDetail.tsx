@@ -123,7 +123,7 @@ export function SessionsTerminalDetail({
                 Show transcript
               </button>
             ) : null}
-            <button type="button" onClick={onOpenWorkspace}>
+            <button type="button" onClick={onOpenWorkspace} className="hvir-button">
               Go to workspace
             </button>
           </div>

@@ -90,6 +90,7 @@ afterEach(() => {
 
 it('marks each row with its architecture change, its date and a secondary hash', () => {
   render(false)
+  expect(host.querySelector('.git-open-graph')?.classList).toContain('hvir-button')
   expect(rowText()).toEqual(['Merge side', 'Rewire modules', 'Fix a body', 'Add modules'])
   const markers = rows().map(
     (row) => row.querySelector('.git-rail-commit-change')?.textContent ?? '',

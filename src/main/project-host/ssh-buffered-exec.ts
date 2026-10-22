@@ -4,15 +4,13 @@ import type { Client, ClientChannel } from 'ssh2'
 import type { ExecResult } from '../../shared/fs-types'
 import type { ExecOptions } from './project-host'
 import type { SshTransportPool } from './ssh-transport-pool'
-import { remoteCommand, quoteSshArgument } from './ssh-command'
+import { recoverBufferedExecStatus, remoteBufferedCommand } from './ssh-remote-command'
 
-/** Buffered SSH channel effects; the host/pool own ordinary and finite admission respectively. */
 export function startBufferedSshExec(
   pool: SshTransportPool,
   command: string,
   args: readonly string[],
   opts: ExecOptions,
-  finite = false,
 ): Promise<ExecResult> | undefined {
   const statusMarker = `__hvir_exec_status_${randomUUID()}__`
   const open = (client: Client) =>
@@ -26,25 +24,18 @@ export function startBufferedSshExec(
         reject(error instanceof Error ? error : new Error(String(error)))
       }
     })
-  const channel = finite
-    ? pool.tryOpenFiniteChannel(open, opts.signal)
-    : pool.openChannel('control', open, opts.signal)
-  return channel?.then((stream) =>
-    collectBufferedSshExec(stream, opts, statusMarker, finite),
-  )
+  const channel = pool.tryOpenFiniteChannel(open, opts.signal)
+  return channel?.then((stream) => collectBufferedSshExec(stream, opts, statusMarker))
 }
 
 function collectBufferedSshExec(
   stream: ClientChannel,
   opts: ExecOptions,
   statusMarker: string,
-  drain: boolean,
 ): Promise<ExecResult> {
   return new Promise<ExecResult>((resolve, reject) => {
-    // The private status trailer is transport metadata, never part of finite tool-output authority.
     const maximum =
-      (opts.maxBuffer ?? 10 * 1024 * 1024) +
-      (drain ? Buffer.byteLength(statusMarker) + 3 : 0)
+      (opts.maxBuffer ?? 10 * 1024 * 1024) + Buffer.byteLength(statusMarker) + 3
     let stdout = '',
       stderr = '',
       bytes = 0,
@@ -74,10 +65,6 @@ function collectBufferedSshExec(
           return stream.close()
         }
         terminalError = new Error('SSH exec output exceeded maxBuffer')
-        if (!drain) {
-          reject(terminalError)
-          settled = true
-        }
         return stream.close()
       }
     }
@@ -89,10 +76,7 @@ function collectBufferedSshExec(
     })
     stream.on('error', (reason: Error) => {
       terminalError = reason
-      if (!drain) {
-        reject(reason)
-        settled = true
-      } else stream.close()
+      stream.close()
     })
     stream.on('close', () => {
       if (!settled && terminalError) reject(terminalError)
@@ -113,10 +97,6 @@ function collectBufferedSshExec(
     if (opts.signal) {
       const abort = (): void => {
         terminalError = new DOMException('The operation was aborted', 'AbortError')
-        if (!drain) {
-          reject(terminalError)
-          settled = true
-        }
         stream.close()
       }
       stream.once('close', () => opts.signal?.removeEventListener('abort', abort))
@@ -128,26 +108,4 @@ function collectBufferedSshExec(
     }
     stream.end(opts.input)
   })
-}
-
-function remoteBufferedCommand(
-  command: string,
-  args: readonly string[],
-  opts: Pick<ExecOptions, 'cwd' | 'env' | 'unsetEnv'>,
-  statusMarker: string,
-): string {
-  const invocation = remoteCommand(command, args, opts)
-  return `( ${invocation} ); hvir_status=$?; printf '%s%s' ${quoteSshArgument(statusMarker)} "$hvir_status" >&2; exit "$hvir_status"`
-}
-function recoverBufferedExecStatus(
-  stderr: string,
-  statusMarker: string,
-): { readonly code?: number; readonly stderr: string } {
-  const markerAt = stderr.lastIndexOf(statusMarker)
-  if (markerAt < 0) return { stderr }
-  const rawCode = stderr.slice(markerAt + statusMarker.length)
-  if (!/^\d{1,3}$/.test(rawCode)) return { stderr }
-  const code = Number(rawCode)
-  if (!Number.isSafeInteger(code) || code > 255) return { stderr }
-  return { code, stderr: stderr.slice(0, markerAt) }
 }

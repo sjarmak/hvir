@@ -14,22 +14,33 @@ interface TerminalLaunchStatusContext {
   readonly reconnect: boolean
 }
 
-/**
- * The start request for one launch.
- *
- * `declareAttach` is false for every launch after the first that started: main
- * records the foreign session at the launch that performs the attach and keeps
- * it from then on, so a restart naming nothing keeps the join, and a ticket
- * (which is spent when redeemed) is never replayed.
- */
+type TerminalLaunchOptions = Pick<
+  TerminalRuntimeOptions,
+  | 'active'
+  | 'architectureReview'
+  | 'commandTicket'
+  | 'commandWorkspaceId'
+  | 'composerSubmitMode'
+  | 'cwd'
+  | 'externalAttach'
+  | 'forkRequest'
+  | 'harnessSessionId'
+  | 'launchRevision'
+  | 'position'
+  | 'profileId'
+  | 'startMode'
+  | 'workspaceRoot'
+>
+
 export function terminalStartRequest(
-  options: TerminalRuntimeOptions,
+  options: TerminalLaunchOptions,
   sessionId: string,
   replacement: TerminalReplacement | undefined,
   size: Readonly<{ cols: number; rows: number }>,
   title: string,
   resume: boolean,
   firstStart: boolean,
+  declareAttach: boolean,
 ): StartPtyRequest {
   const fork = !replacement && !resume ? options.forkRequest : undefined
   return {
@@ -54,7 +65,7 @@ export function terminalStartRequest(
     ...(fork ? { launchMode: 'fork' as const } : {}),
     resume,
     harnessSessionId: resume ? options.harnessSessionId : undefined,
-    externalAttach: firstStart ? options.externalAttach : undefined,
+    externalAttach: declareAttach ? options.externalAttach : undefined,
     architectureReview: options.architectureReview,
     forkSourceSessionId: fork?.sourceSessionId,
     parentHarnessSessionId: fork?.parentHarnessSessionId,

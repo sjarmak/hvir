@@ -82,6 +82,7 @@ describe('Sessions title privacy', () => {
     expect(
       host.querySelector('.sessions-detail-terminal')?.getAttribute('aria-label'),
     ).toBe('Codex · main terminal')
+    expect(button('Go to workspace').classList).toContain('hvir-button')
     expect(host.innerHTML).not.toContain(privateHandle)
     expect(host.innerHTML).not.toContain(livePty.handle)
     expect(host.innerHTML).not.toContain(privatePath)

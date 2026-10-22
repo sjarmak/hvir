@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { remoteCommand } from '../src/main/project-host/ssh-command'
+import { remoteCommand } from '../src/main/project-host/ssh-remote-command'
 import { asHostId, hostPath } from '../src/shared/host-path'
 
 it('gates the entire trusted PATH launch on cwd and prepends to a profile PATH', () => {

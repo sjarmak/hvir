@@ -26,7 +26,7 @@ import { useGitWorkspace } from './git/use-git-workspace'
 import { WorkbenchViewer } from './viewer/WorkbenchViewer'
 import { useExtensionViews } from './extensions/use-extension-views'
 import { useViewerWorkspace } from './viewer/use-viewer-workspace'
-import { deactivateViewerOverlays } from './viewer/viewer-overlay-activation'
+import { activateViewerOverlay } from './viewer/viewer-overlay-activation'
 import { setAppTheme, useAppTheme } from './theme'
 import { WorkbenchAccessDialogs } from './workbench/WorkbenchAccessDialogs'
 import { setAppSettings, terminalPreferences, useAppSettings } from './settings/settings'
@@ -55,7 +55,7 @@ export function App(): ReactElement {
   const architecture = useArchitectureReviewTab({
     root: rootRef,
     activateViewer: () => {
-      deactivateViewerOverlays({
+      activateViewerOverlay('architecture', {
         deactivateExtensions: extensions.deactivate,
         deactivateReport: viewer.deactivateReport,
       })
@@ -93,7 +93,7 @@ export function App(): ReactElement {
   const web = useWebPaneWorkspace({
     onActivate: () => {
       architecture.deactivate()
-      deactivateViewerOverlays({
+      activateViewerOverlay('web', {
         deactivateExtensions: extensions.deactivate,
         deactivateReport: viewer.deactivateReport,
       })
@@ -103,7 +103,6 @@ export function App(): ReactElement {
     },
     onError: (message) => sessionErrorRef.current(message),
   })
-
   const { switchWorkspace } = viewer
   const { applyProjectState, setWorkspaceRoot } = web
   const { close: closeArchitectureReview } = architecture
@@ -229,6 +228,7 @@ export function App(): ReactElement {
       !gitGraphActiveRef.current &&
       !web.activeRef.current &&
       !extensions.activeRef.current &&
+      !viewer.isReportActive() &&
       (!root || !architecture.active(root)),
     cycleViewMode: viewer.cycleActiveMode,
     findFile: layout.focusFilenameSearch,

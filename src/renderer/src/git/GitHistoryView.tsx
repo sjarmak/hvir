@@ -122,7 +122,11 @@ export function GitHistoryView(props: GitHistoryViewProps): ReactElement {
   return (
     <div className="git-history">
       <div className="git-history-tools">
-        <button type="button" className="git-open-graph" onClick={() => onOpenGraph()}>
+        <button
+          type="button"
+          className="git-open-graph hvir-button"
+          onClick={() => onOpenGraph()}
+        >
           Open full graph <span aria-hidden="true">→</span>
         </button>
         <label className="git-history-filter">

@@ -476,7 +476,7 @@ export function TerminalRail({
               </button>
               <button
                 type="button"
-                className="terminal-close-button"
+                className="terminal-close-button hvir-button"
                 aria-label={`Close ${session.title}`}
                 title="Close terminal"
                 onClick={() => onCloseSession(session.id)}

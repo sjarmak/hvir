@@ -22,6 +22,7 @@ import { basename, dirname, join, relative, sep } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import chokidar from 'chokidar'
 import { LocalExtensionStorage } from './local-extension-storage'
+import { loadAtomicRenameBinding } from './local-atomic-rename-binding'
 import { FiniteExecAdmission } from './finite-exec-admission'
 
 import {
@@ -66,11 +67,7 @@ import type {
   WatchOptions,
   WriteFileOptions,
 } from './project-host'
-import {
-  atomicRenameError,
-  loadAtomicRenameBinding,
-  watchCapacityError,
-} from './local-host-helpers'
+import { atomicRenameError, watchCapacityError } from './local-host-helpers'
 import {
   assertLoopbackEndpoint,
   MAX_EXEC_STREAM_WRITE_BYTES,

@@ -76,7 +76,7 @@ export class SshHost implements ProjectHost {
   readonly hostId: HostId
   readonly finiteExec = {
     tryExec: (command: string, args: readonly string[], opts: ExecOptions = {}) =>
-      startBufferedSshExec(this.transportPool, command, args, opts, true),
+      startBufferedSshExec(this.transportPool, command, args, opts),
   }
   readonly fileDeletion = { capability: 'permanent' } as const
   readonly managedTransfer = managedTransfer(

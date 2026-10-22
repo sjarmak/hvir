@@ -52,6 +52,7 @@ describe('compact terminal rail', () => {
     expect(host.querySelector('.terminal-list [aria-label="Working"]')?.textContent).toBe(
       'working',
     )
+    expect(button('Close terminal-ready').classList).toContain('hvir-button')
   })
 
   it('closes both menus and exposes labelled native transition controls', () => {

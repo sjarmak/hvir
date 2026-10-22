@@ -31,7 +31,6 @@ import { TerminalSessionsSurfaceOwner } from './terminal-sessions-surface-owner'
 import { terminalStartedStatus, terminalStartRequest } from './terminal-runtime-launch'
 
 const PTY_RESIZE_DEBOUNCE_MS = 75
-
 export class TerminalRuntime {
   private options: TerminalRuntimeOptions
   private currentSnapshot: TerminalRuntimeSnapshot
@@ -343,6 +342,7 @@ export class TerminalRuntime {
           this.terminalSize,
           this.currentSnapshot.title,
           resume,
+          !manualRestart && !reconnect && !this.hasStarted,
           !this.attachDeclared,
         ),
       )
