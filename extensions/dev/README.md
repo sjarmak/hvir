@@ -7,12 +7,13 @@ be clicked through.
 
 ## First time on a machine
 
-1. Install the tools the extensions run: `git`, `gh` (then `gh auth login`), `gc` and `bd`
-   on the login shell PATH. Node 22 and the Xcode command line tools for the native build.
-2. Clone and build:
+1. Install the tools the extensions run: `git`, `gh`, `gc` and `bd` on the login shell PATH.
+   Node 22 and the Xcode command line tools for the native build. Run `gh auth login`, choose
+   HTTPS as the git protocol and let it authenticate git, so pushes work without an SSH key.
+2. Clone and build (the fork is public, so the clone itself needs no credentials):
 
    ```sh
-   git clone -b feat/extensions-on-main git@github.com:sjarmak/hvir.git ~/hvir-worktrees/extensions
+   git clone -b feat/extensions-on-main https://github.com/sjarmak/hvir.git ~/hvir-worktrees/extensions
    ~/hvir-worktrees/extensions/extensions/dev/bootstrap.sh
    ```
 
