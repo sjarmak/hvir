@@ -108,7 +108,7 @@ export class ExtensionTerminalHandoff {
       root.hostId !== approval.host
     )
       throw new Error(
-        'Select the exact workspace and approve its installed workspace connector for that host',
+        'Select the exact workspace and approve its installed workspace connector',
       )
     const authority = this.actions.authority(caller.view, invocation.id)
     const assert = () => {
