@@ -148,6 +148,8 @@ window.host = (() => {
         `${connector} did not run: ${result.reason ?? result.outcome}`,
       )
       error.reason = result.reason ?? result.outcome
+      // hvir's own pacing and admission budget: the next refresh can run, so views keep their last render.
+      error.transient = error.reason === 'frequency' || error.reason === 'capacity'
       if (Number.isSafeInteger(result.retryAfterMs))
         error.retryAfterMs = result.retryAfterMs
       throw error

@@ -4,8 +4,8 @@ const { readFileSync } = require('node:fs')
 const { join } = require('node:path')
 const vm = require('node:vm')
 
-/** Load host.js against a fake bridge that answers connector.status per workspace. */
-function loadHost(statusByWorkspace) {
+/** Load host.js against a fake bridge that answers connector.status per workspace and connector.execute with `executed`. */
+function loadHost(statusByWorkspace, executed) {
   const listeners = new Set()
   const sent = []
   const bridge = {
@@ -15,7 +15,9 @@ function loadHost(statusByWorkspace) {
       const value =
         message.capability === 'connector.status'
           ? statusByWorkspace[message.input?.workspace]
-          : undefined
+          : message.capability === 'connector.execute'
+            ? executed
+            : undefined
       queueMicrotask(() =>
         listeners.forEach((listener) =>
           listener(
@@ -171,3 +173,21 @@ test('other refusals are not retried', async () => {
   await assert.rejects(host.run('gh', LOCAL, ['pr']), /did not run: disconnected/)
   assert.equal(executes(sent).length, 1)
 })
+
+for (const [reason, transient] of [
+  ['frequency', true],
+  ['capacity', true],
+  ['unapproved', false],
+]) {
+  test(`a run hvir did not start for ${reason} is ${transient ? '' : 'not '}transient`, async () => {
+    const { host } = loadHost(
+      {},
+      { outcome: 'not-started', reason, host: 'local', retryAfterMs: 1 },
+    )
+    await assert.rejects(host.run('gh', LOCAL, ['--version']), (error) => {
+      assert.equal(error.reason, reason)
+      assert.equal(error.transient, transient)
+      return true
+    })
+  })
+}

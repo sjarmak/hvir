@@ -163,7 +163,7 @@ async function loadCityConfig(workspace, force) {
     cityConfigLoadedAt = Date.now()
     cityConfigError = ''
   } catch (error) {
-    if (error.reason === 'frequency') throw error
+    if (error.transient) throw error
     cityConfigError = /unknown flag: --json/.test(error.message)
       ? 'this gc has no `config show --json` (needs a newer gc build); tiers come from session fields only'
       : error.message

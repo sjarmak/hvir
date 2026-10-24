@@ -19,7 +19,7 @@ window.startView = ({ load, refreshMs = 0, onStatus = () => {} }) => {
     try {
       await load(context)
     } catch (error) {
-      if (error.reason !== 'frequency') onStatus(error.message)
+      if (!error.transient) onStatus(error.message)
     } finally {
       running = false
     }

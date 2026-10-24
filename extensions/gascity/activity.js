@@ -82,7 +82,7 @@ async function load(context) {
       await loadScope(context.workspace)
       scopeError = ''
     } catch (error) {
-      if (error.reason === 'frequency') throw error
+      if (error.transient) throw error
       scopeError = error.message
       scopeLoadedAt = Date.now()
     }
