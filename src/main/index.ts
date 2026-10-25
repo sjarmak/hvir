@@ -386,7 +386,6 @@ function createWorkbenchEntry(): void {
         ptySupervisor,
         terminalSessions: terminalSessionRegistry,
         sessionsObservation: sessionsPorts.observation,
-        sessionsUsage: sessionsPorts.usage,
         terminalMoves,
         harnessProfiles: harnessProfileStore,
         harnessProbes: harnessProbeManager,

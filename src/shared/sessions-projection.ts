@@ -1,3 +1,4 @@
+import type { TerminalName } from './terminal-title'
 import type { HostConnectionState } from './fs-types'
 import type { HarnessProfileId } from './harness-profile'
 import type { HarnessContextPressurePolicy, HarnessProviderId } from './harness-provider'
@@ -9,7 +10,6 @@ export const SESSIONS_PROJECTION_VERSION = 1
 export const MAX_SESSIONS_PROJECTION_ROWS = 500
 export const MAX_SESSIONS_PROJECTION_WORKSPACES = 1_000
 export const MAX_SESSIONS_PROJECTION_PROVIDERS = 128
-export const MAX_SESSIONS_USAGE_ROWS = MAX_SESSIONS_PROJECTION_ROWS
 
 declare const sessionsTerminalHandleBrand: unique symbol
 declare const sessionsPtyHandleBrand: unique symbol
@@ -237,7 +237,7 @@ export interface SessionsLivePtyQualifier {
 }
 
 /** Main-safe facts before renderer runtime/attention state is joined. */
-export interface SessionsObservedSession {
+export interface SessionsObservedSession extends TerminalName {
   readonly handle: SessionsTerminalHandle
   readonly workspaceId: SessionsWorkspaceHandle
   readonly providerId: HarnessProviderId
@@ -268,36 +268,6 @@ export interface SessionsProjectionChange {
 
 export interface SessionsDemandRequest {
   readonly demandGeneration: number
-}
-
-export interface SessionsUsageDemandTarget {
-  readonly handle: SessionsTerminalHandle
-  readonly livePty?: SessionsLivePtyQualifier
-}
-
-export interface SessionsUsageDemandRequest {
-  readonly demandGeneration: number
-  readonly projectionDemandGeneration: number
-  readonly sourceRevision: number
-  readonly targets: readonly SessionsUsageDemandTarget[]
-}
-
-export interface SessionsUsageSnapshotRow {
-  readonly handle: SessionsTerminalHandle
-  readonly usage: SessionsUsageFact
-}
-
-export interface SessionsUsageSnapshot {
-  readonly version: typeof SESSIONS_PROJECTION_VERSION
-  readonly demandGeneration: number
-  readonly revision: number
-  readonly sampledAt: number
-  readonly rows: readonly SessionsUsageSnapshotRow[]
-}
-
-export interface SessionsUsageChange {
-  readonly demandGeneration: number
-  readonly revision: number
 }
 
 export interface SessionsOpenRequest extends SessionsDemandRequest {
@@ -346,7 +316,8 @@ export type SessionsTerminalResolutionResponse =
 export type SessionsLifecycle =
   'retained' | 'starting' | 'resuming' | 'live' | 'stopped' | 'unavailable'
 
-export interface SessionsProjectionRow {
+export interface SessionsProjectionRow extends TerminalName {
+  readonly automaticTitle?: string
   readonly handle: SessionsTerminalHandle
   readonly project: { readonly id: SessionsProjectHandle; readonly name: string }
   readonly workspace: {

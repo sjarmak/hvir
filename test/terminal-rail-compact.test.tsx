@@ -7,7 +7,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TerminalRail } from '../src/renderer/src/terminal/TerminalRail'
 import type { TerminalSession } from '../src/renderer/src/terminal/terminal-workspace-model'
 import { asHarnessProfileId, asHarnessProviderId, localPath } from '../src/shared'
-import { sessionsProjectionFixture } from './sessions-projection-fixture'
 
 let host: HTMLDivElement
 let root: Root
@@ -33,6 +32,23 @@ afterEach(() => {
 })
 
 describe('compact terminal rail', () => {
+  it('keeps the custom name and state visible in compact hover text alongside the automatic title', () => {
+    renderRail({
+      compact: true,
+      sessions: [
+        {
+          ...session('named', 'idle'),
+          title: 'Automatic title',
+          customName: 'Named work',
+        },
+      ],
+      activeId: 'named',
+    })
+    const marker = markerButtons()[0]!
+    expect(marker.getAttribute('aria-label')).toBe('Named work, Ready, active terminal')
+    expect(marker.title).toBe('Named work, Ready, active terminal · Automatic title')
+  })
+
   it('shows a labelled bell icon in the expanded rail and keeps Ready and Working text', () => {
     renderRail({
       sessions: [
@@ -197,7 +213,6 @@ function renderRail(overrides: Partial<ComponentProps<typeof TerminalRail>> = {}
     recoveryReady: true,
     available: true,
     menuOpen: false,
-    sessionsProjection: sessionsProjectionFixture(),
     moveMenuOpen: false,
     moveTargets: [],
     launchMenuEntries: [],

@@ -29,6 +29,11 @@ import {
 import { isMissingProjectPathError } from './project-file-path-errors'
 
 export { PROJECT_FILE_COPY_LIMITS, type ProjectFileCopyLimits }
+export type VerifiedProjectCopyDestination = Pick<
+  ProjectHost,
+  'stat' | 'readdir' | 'createDirectoryExclusive' | 'fileTransfer'
+>
+
 export interface VerifiedProjectCopySource extends TreeReadPort {
   readonly root: HostPath
 }
@@ -36,7 +41,6 @@ export interface VerifiedProjectCopySource extends TreeReadPort {
 export interface VerifiedProjectCopyOutcome {
   readonly result: ProjectFileItemResult
   readonly entryCount: number
-  readonly totalBytes: number
   readonly receipt?: VerifiedProjectCopyReceipt
 }
 
@@ -52,18 +56,18 @@ export async function copyVerifiedProjectEntry(options: {
   readonly sourceType: 'file' | 'directory'
   readonly visibleDestinationDirectory: HostPath
   readonly canonicalDestinationDirectory: HostPath
-  readonly destinationHost: ProjectHost
+  readonly destinationHost: VerifiedProjectCopyDestination
   readonly signal: AbortSignal
   readonly assertCurrent: () => void
   readonly revalidateDestinationDirectory: () => Promise<HostPath>
   readonly limits?: ProjectFileCopyLimits
   readonly createStagingId?: () => string
-  readonly cleanupStaging: (host: ProjectHost, path: HostPath) => Promise<void>
+  readonly cleanupStaging: (path: HostPath) => Promise<void>
 }): Promise<VerifiedProjectCopyOutcome> {
   const limits = options.limits ?? PROJECT_FILE_COPY_LIMITS
   const destination = joinHostPath(options.visibleDestinationDirectory, options.name)
   if (options.signal.aborted) {
-    return { result: cancelledItem(options), entryCount: 0, totalBytes: 0 }
+    return { result: cancelledItem(options), entryCount: 0 }
   }
   try {
     options.assertCurrent()
@@ -75,7 +79,6 @@ export async function copyVerifiedProjectEntry(options: {
       return {
         result: conflict(options.itemId, destination),
         entryCount: 0,
-        totalBytes: 0,
       }
     }
     const plan = await preflight(
@@ -93,7 +96,6 @@ export async function copyVerifiedProjectEntry(options: {
     return {
       ...copied,
       entryCount: plan.entries.length,
-      totalBytes: plan.totalBytes,
     }
   } catch (reason) {
     return {
@@ -108,7 +110,6 @@ export async function copyVerifiedProjectEntry(options: {
               reason: boundedReason(reason, 'The source could not be inspected'),
             },
       entryCount: 0,
-      totalBytes: 0,
     }
   }
 }
@@ -196,9 +197,7 @@ async function copyOne(
     }
   } catch (reason) {
     if (stagingCreated) {
-      await options
-        .cleanupStaging(options.destinationHost, staging)
-        .catch(() => undefined)
+      await options.cleanupStaging(staging).catch(() => undefined)
     }
     if (isProjectPathExistsError(reason)) {
       return { result: conflict(options.itemId, destination) }
@@ -353,13 +352,15 @@ async function stageTree(
   return rows
 }
 
-function requireTransfer(host: ProjectHost): ProjectFileTransferPort {
+function requireTransfer(
+  host: Pick<ProjectHost, 'fileTransfer'>,
+): ProjectFileTransferPort {
   if (!host.fileTransfer)
     throw new Error('This project host cannot stream file transfers')
   return host.fileTransfer
 }
 
-function destinationReadPort(host: ProjectHost): TreeReadPort {
+function destinationReadPort(host: VerifiedProjectCopyDestination): TreeReadPort {
   const transfer = requireTransfer(host)
   return {
     stat: (path) => host.stat(path),
@@ -368,7 +369,10 @@ function destinationReadPort(host: ProjectHost): TreeReadPort {
   }
 }
 
-async function pathExists(host: ProjectHost, path: HostPath): Promise<boolean> {
+async function pathExists(
+  host: Pick<ProjectHost, 'stat'>,
+  path: HostPath,
+): Promise<boolean> {
   try {
     await host.stat(path)
     return true
