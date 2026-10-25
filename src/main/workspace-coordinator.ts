@@ -188,8 +188,12 @@ export class WorkspaceCoordinator {
           this.options.emitWatch(event)
         }
       },
-      refreshGit: () => {
-        if (generation === this.watchGeneration && this.watch === owner.controller) {
+      refreshGit: (source) => {
+        if (
+          generation === this.watchGeneration &&
+          this.watch === owner.controller &&
+          (source === 'change' || (this.options.focus?.isFocused() ?? true))
+        ) {
           this.scheduleRefresh(target.projectId)
         }
       },
