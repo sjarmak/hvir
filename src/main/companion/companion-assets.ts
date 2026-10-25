@@ -23,7 +23,8 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.wasm': 'application/wasm',
 }
 
-const ASSET_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+// Rollup names shared chunks after their module, so a helper chunk can lead with `_`.
+const ASSET_NAME = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/
 const MISSING_CODES = new Set(['ENOENT', 'ENOTDIR', 'EISDIR'])
 
 export type CompanionAssetHost = Pick<ProjectHost, 'readFile'>
