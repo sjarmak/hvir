@@ -245,6 +245,7 @@ export function createElectronWindowManager(
     let hadUsableDocument = false
     const windowHealth = new WindowHealthTracker(dependencies.recordWindowHealth)
 
+    dependencies.extensionGuests?.installWindowLifecycle(win, () => rendererOwner)
     const seedRendererFocus = bindRendererFocus(
       win,
       () => rendererOwner,

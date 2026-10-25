@@ -1199,6 +1199,34 @@ refreshes immediately on focus gain; demand-driven refreshes are unchanged and t
 
 ---
 
+### [ADR-975 — Bounded background workspace sampling](adr/ADR-975-bounded-background-workspace-sampling.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-027](adr/ADR-027-demand-driven-workspace-activity.md) | partial | A full demand-driven refresh sampling status for every present worktree of the project.
+
+A full refresh always samples the active workspace; a background worktree is re-sampled when its
+HEAD or branch moves and otherwise at most once per thirty seconds, so shared `.git` bursts from
+agent-driven worktrees no longer run status across the whole project on every event.
+
+### [ADR-977 — Focus-gated workspace polling](adr/ADR-977-focus-gated-workspace-polling.md)
+
+> Lifecycle: Partially superseded
+> Supersedes: [ADR-027](adr/ADR-027-demand-driven-workspace-activity.md) | partial | Periodic discovery and closed-workspace sampling running while no hvir window is focused.
+> Superseded by: [ADR-978](adr/ADR-978-focus-gated-ssh-refresh-pulses.md) | partial | Synthetic SSH refresh pulses on the active-workspace and Git-metadata watches refreshing workspace Git state while no hvir window is focused.
+
+Periodic workspace refresh runs every thirty seconds only while an hvir window is focused and
+refreshes immediately on focus gain; demand-driven refreshes are unchanged and the broker keeps
+`core.fsmonitor=false`.
+
+### [ADR-978 — Focus-gated SSH refresh pulses](adr/ADR-978-focus-gated-ssh-refresh-pulses.md)
+
+> Lifecycle: Active
+> Supersedes: [ADR-977](adr/ADR-977-focus-gated-workspace-polling.md) | partial | Synthetic SSH refresh pulses on the active-workspace and Git-metadata watches refreshing workspace Git state while no hvir window is focused.
+
+An SSH watch's synthetic two-second refresh pulse runs no workspace Git refresh while no hvir
+window is focused; real watch events still refresh at once, and a focused hvir handles pulses
+as before.
+
 ## 5. Architecture
 
 ### Process model

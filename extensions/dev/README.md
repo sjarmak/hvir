@@ -1,0 +1,64 @@
+# Running hvir with the Gas City and Pull requests extensions
+
+This branch is upstream `main` plus the two extension packages and these scripts. One
+checkout hosts both the app and the extensions, and the whole profile setup (installed
+packages, agent access, tool approvals) comes from `install.json`, so Settings never has to
+be clicked through.
+
+## First time on a machine
+
+1. Install the tools the extensions run: `git`, `gh`, `gc` and `bd` on the login shell PATH.
+   Node 22 and the Xcode command line tools for the native build. Run `gh auth login`, choose
+   HTTPS as the git protocol and let it authenticate git, so pushes work without an SSH key.
+2. Clone and build (the fork is public, so the clone itself needs no credentials):
+
+   ```sh
+   git clone -b feat/extensions-on-main https://github.com/sjarmak/hvir.git ~/hvir-worktrees/extensions
+   ~/hvir-worktrees/extensions/extensions/dev/bootstrap.sh
+   ```
+
+   `bootstrap.sh` runs `npm ci`, retries the native modules against the macOS 26 SDK when
+   the default SDK's linker stubs are rejected, and runs `npm run build`.
+
+3. Start the app:
+
+   ```sh
+   ~/hvir-worktrees/extensions/extensions/dev/host.sh
+   ```
+
+   It provisions the profile at `~/Library/Application Support/hvir` from `install.json`
+   and starts Electron from this checkout's build. Projects are added in the app as usual;
+   copying `projects.json` from another machine's profile works too.
+
+## Every later start
+
+Run `host.sh`. It re-reads `install.json`, re-validates the packages, keeps existing
+installation ids, re-stamps the approvals against the current connector declarations, and
+refuses to run while hvir is already up on that profile (the state is only read at launch).
+
+After `git pull`: run `npm run build` if anything outside `extensions/` changed, then restart
+through `host.sh`. A change inside a package only needs Reload in Settings → Extensions,
+unless it touched a connector declaration, in which case restart through `host.sh`.
+
+## SSH workspaces
+
+hvir approves tools per host, so a workspace reached over SSH needs gh, git, gc and bd
+approved for that host with the paths they have there. The launcher does this too: for every
+SSH host that appears in the profile's registered projects, plus every name in the `hosts`
+list in `install.json`, it runs one non-interactive `ssh <host>` (the host name is the alias
+from your `~/.ssh/config`, which is also hvir's host id) to find each tool on that machine's
+login PATH and resolve its real path, then stamps approvals for them. A host that cannot be
+reached keeps whatever approvals it already had. A tool missing on a host is skipped. The Pull
+requests terminal connector is plain `sh`, so it exists everywhere and the one-click worktree
+terminal and PR checkout terminal open on the workspace's host, local or SSH.
+
+The SSH key for `ssh <host>` must work without a prompt from the machine running the
+launcher. Put a host in `hosts` when you want it approved before any project on it is
+registered.
+
+## Overrides
+
+- `HVIR_DEV_PROFILE` picks another profile directory.
+- `HVIR_DEV_HOST` runs a different built checkout (for example a plain `upstream/main`
+  worktree) against the same packages.
+- `node extensions/dev/approve-connectors.mjs --check` prints approval drift without writing.

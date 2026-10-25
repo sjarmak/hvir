@@ -1,0 +1,220 @@
+{
+  "id": "hvir.pulls",
+  "name": "Pull requests",
+  "version": "0.9.0",
+  "contract": "1.0",
+  "requiredCapabilities": [
+    "presentation.read",
+    "context.read",
+    "viewer.open-own",
+    "connector.status",
+    "connector.execute",
+    "connector.output",
+    "contributions.publish"
+  ],
+  "optionalCapabilities": [
+    "connector.connect",
+    "actions.invoke",
+    "terminal.start"
+  ],
+  "access": [],
+  "views": [
+    {
+      "id": "pulls",
+      "title": "Pull requests",
+      "entry": "pulls.html",
+      "placement": "workspace",
+      "navigation": "left",
+      "representations": [
+        "view"
+      ]
+    },
+    {
+      "id": "pull",
+      "title": "Pull request",
+      "entry": "pull.html",
+      "placement": "workspace",
+      "representations": [
+        "view"
+      ]
+    },
+    {
+      "id": "issue",
+      "title": "Issue",
+      "entry": "issue.html",
+      "placement": "workspace",
+      "representations": [
+        "view"
+      ]
+    }
+  ],
+  "railItems": [
+    {
+      "id": "pulls",
+      "placement": "header",
+      "icon": "⇅",
+      "tooltip": "Pull requests that need you",
+      "kind": "observation",
+      "click": {
+        "view": "pulls",
+        "placement": "viewer"
+      }
+    }
+  ],
+  "updater": "updater.html",
+  "connectors": [
+    {
+      "id": "gh",
+      "description": "Read pull requests, reviews, checks and the issues assigned to you for the workspace repository with the GitHub CLI (gh). Read-only queries.",
+      "context": "workspace",
+      "setup": {
+        "executable": "gh"
+      },
+      "timeoutMs": 30000,
+      "outputBytes": 4194304,
+      "environment": [
+        "GH_HOST",
+        "GH_CONFIG_DIR"
+      ]
+    },
+    {
+      "id": "git",
+      "description": "Read the current branch and remotes of the workspace checkout so This branch can list its pull request.",
+      "context": "workspace",
+      "setup": {
+        "executable": "git"
+      },
+      "timeoutMs": 10000,
+      "outputBytes": 65536,
+      "environment": []
+    },
+    {
+      "id": "shell",
+      "description": "Open a terminal in another worktree of this repository that already has a pull request's branch: sh cds there and starts your login shell on the workspace's host. Only from the pull request view, after you confirm.",
+      "context": "workspace",
+      "setup": {
+        "executable": "sh"
+      },
+      "timeoutMs": 10000,
+      "outputBytes": 65536,
+      "environment": []
+    }
+  ],
+  "actions": [
+    {
+      "id": "list-pulls",
+      "title": "List pull requests and assigned issues that need attention",
+      "view": "pulls",
+      "agents": true,
+      "effects": {
+        "delete": false,
+        "replace": false
+      },
+      "timeoutMs": 60000,
+      "description": "Read-only. Ranked like the PRs pane (ADR-976 holder wait in business time): sections branch, needs (waiting on you), issues (open issues assigned to you, oldest assignment first), waiting (yours, waiting on others), drafts. Pull rows carry role author (the viewer's pull request) or reviewer (an ask from someone else); issue rows are returned under 'issues'. 'omitted' counts rows dropped to fit the 8 KiB result.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "section": {
+            "type": "string",
+            "enum": [
+              "branch",
+              "needs",
+              "issues",
+              "waiting",
+              "drafts"
+            ]
+          },
+          "limit": {
+            "type": "number",
+            "enum": [
+              10,
+              20,
+              30,
+              60
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "pull-status",
+      "title": "Read one pull request's review and check status",
+      "view": "pulls",
+      "agents": true,
+      "effects": {
+        "delete": false,
+        "replace": false
+      },
+      "timeoutMs": 60000,
+      "description": "Read-only. For a pull request number in the workspace's repository: state, draft, review decision, requested reviewers, and check counts with up to 10 failing check names.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "number"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "checkout-terminal",
+      "title": "Check out a pull request in a new terminal",
+      "view": "pulls",
+      "agents": false,
+      "effects": {
+        "delete": false,
+        "replace": false
+      },
+      "timeoutMs": 120000,
+      "description": "Runs gh pr checkout <number> -R <repo> once in a new terminal at the workspace root, after you confirm in hvir. Works on the workspace's host, local or SSH, with gh approved for that host.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "number": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "repo",
+          "number"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "worktree-terminal",
+      "title": "Open a terminal in a worktree of this repository",
+      "view": "pulls",
+      "agents": false,
+      "effects": {
+        "delete": false,
+        "replace": false
+      },
+      "timeoutMs": 120000,
+      "description": "Opens a new terminal in another worktree of this repository, after you confirm in hvir. The path must be listed by git worktree list on the workspace's host.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

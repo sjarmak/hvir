@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>City</title>
+    <link rel="stylesheet" href="presentation.css" />
+    <link rel="stylesheet" href="gascity.css" />
+  </head>
+  <body class="hvir-guest hvir-panel">
+    <main class="hvir-stack">
+      <div class="hvir-toolbar">
+        <strong id="name">City</strong>
+        <button id="scope" class="hvir-button" data-variant="regular" type="button" hidden>Whole city</button>
+        <button id="activity" class="hvir-button" data-variant="regular" type="button">Activity</button>
+      </div>
+      <p id="status" class="hvir-meta" role="status">Connecting…</p>
+      <button id="connect" class="hvir-button" data-variant="regular" type="button" hidden>Connect gc</button>
+      <div class="hvir-scroll">
+        <details open><summary id="crew-heading">Crew</summary><div id="crew" role="listbox" aria-label="Crew"></div></details>
+        <details><summary id="internals-heading">Internal</summary><div id="internals" role="listbox" aria-label="Internal sessions"></div></details>
+        <details open data-rig-only hidden><summary id="ready-heading">Ready</summary><div id="ready" role="listbox" aria-label="Ready beads"></div></details>
+        <details><summary id="orders-heading">Orders</summary><div id="orders"></div></details>
+        <details><summary id="formulas-heading">Formulas</summary><div id="formulas"></div></details>
+        <details data-city-only><summary id="rigs-heading">Rigs</summary><div id="rigs"></div></details>
+      </div>
+    </main>
+    <script src="guest-ui.js"></script>
+    <script src="host.js"></script>
+    <script src="view.js"></script>
+    <script src="crew-parse.js"></script>
+    <script src="crew.js"></script>
+    <script src="city.js"></script>
+  </body>
+</html>

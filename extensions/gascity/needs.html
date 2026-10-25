@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Needs you</title>
+    <link rel="stylesheet" href="presentation.css" />
+    <link rel="stylesheet" href="gascity.css" />
+  </head>
+  <body class="hvir-guest hvir-panel">
+    <main class="hvir-stack">
+      <div class="hvir-toolbar">
+        <h1>Needs you</h1>
+        <button id="refresh" class="hvir-button" data-variant="regular" type="button">Refresh</button>
+      </div>
+      <p class="hvir-meta">
+        Open asks labelled for you in this city's decisions rig, not yet answered. Opening one does not answer it.
+      </p>
+      <p id="status" class="hvir-meta" role="status">Connecting…</p>
+      <button id="connect" class="hvir-button" data-variant="regular" type="button" hidden>Connect</button>
+      <div id="asks" class="hvir-scroll" role="listbox" aria-label="Asks needing you"></div>
+    </main>
+    <script src="guest-ui.js"></script>
+    <script src="host.js"></script>
+    <script src="view.js"></script>
+    <script src="crew-parse.js"></script>
+    <script src="needs-model.js"></script>
+    <script src="needs.js"></script>
+  </body>
+</html>

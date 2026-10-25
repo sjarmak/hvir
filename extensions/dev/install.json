@@ -1,0 +1,8 @@
+{
+  "agentAccess": { "enabled": true, "confirmDestructive": false },
+  "hosts": ["work"],
+  "packages": [
+    { "source": "gascity", "path": "../gascity", "agentAccess": false },
+    { "source": "pulls", "path": "../pulls", "agentAccess": true }
+  ]
+}

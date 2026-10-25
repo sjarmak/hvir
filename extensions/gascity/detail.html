@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Bead</title>
+    <link rel="stylesheet" href="presentation.css" />
+    <link rel="stylesheet" href="gascity.css" />
+  </head>
+  <body class="hvir-guest hvir-panel">
+    <main class="hvir-stack hvir-scroll">
+      <h1 id="title">Loading…</h1>
+      <p id="meta" class="hvir-meta"></p>
+      <p id="status" class="hvir-state" role="status"></p>
+      <section id="description" class="bead-description"></section>
+      <section id="acceptance-section" hidden>
+        <h2>Acceptance</h2>
+        <div id="acceptance" class="bead-description"></div>
+      </section>
+      <section id="dependencies-section" hidden>
+        <h2>Dependencies</h2>
+        <ul id="dependencies"></ul>
+      </section>
+    </main>
+    <script src="guest-ui.js"></script>
+    <script src="host.js"></script>
+    <script src="view.js"></script>
+    <script src="detail.js"></script>
+  </body>
+</html>

@@ -67,6 +67,28 @@ describe('AttentionBadge', () => {
     expect(counts()).toEqual([0])
   })
 
+  it('reports whether any hvir window is focused and notifies on change only', () => {
+    const badge = new AttentionBadge(() => true)
+    const listener = vi.fn()
+    const stop = badge.windowFocus.observe(listener)
+
+    expect(badge.windowFocus.isFocused()).toBe(false)
+    badge.setFocused(1, true)
+    badge.setFocused(2, true)
+    expect(badge.windowFocus.isFocused()).toBe(true)
+    expect(listener).toHaveBeenCalledOnce()
+
+    badge.setFocused(1, false)
+    expect(listener).toHaveBeenCalledOnce()
+    badge.remove(2)
+    expect(badge.windowFocus.isFocused()).toBe(false)
+    expect(listener).toHaveBeenCalledTimes(2)
+
+    stop()
+    badge.setFocused(3, true)
+    expect(listener).toHaveBeenCalledTimes(2)
+  })
+
   it('caps the badge and avoids redundant platform calls', () => {
     const { set, counts } = harness()
     const entries = Array.from({ length: 150 }, (_, index) => entry(`t${index}`))

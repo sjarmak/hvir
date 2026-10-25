@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Issue</title>
+    <link rel="stylesheet" href="presentation.css" />
+    <link rel="stylesheet" href="pulls.css" />
+  </head>
+  <body class="hvir-guest hvir-panel">
+    <main class="hvir-stack hvir-scroll">
+      <h1 id="title">Loading…</h1>
+      <p id="meta" class="hvir-meta"></p>
+      <p id="labels" class="hvir-meta chips" hidden></p>
+      <p id="url" class="hvir-meta selectable"></p>
+      <p id="status" class="hvir-state" role="status"></p>
+      <section id="body-section" hidden><h2>Description</h2><div id="body" class="prose"></div></section>
+      <section id="comments-section" hidden><h2 id="comments-heading">Conversation</h2><ul id="comments"></ul></section>
+    </main>
+    <script src="guest-ui.js"></script>
+    <script src="host.js"></script>
+    <script src="view.js"></script>
+    <script src="vendor/markdown-it.min.js"></script>
+    <script src="vendor/purify.min.js"></script>
+    <script src="markdown.js"></script>
+    <script src="issue.js"></script>
+  </body>
+</html>

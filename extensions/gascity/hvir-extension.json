@@ -1,0 +1,113 @@
+{
+  "id": "hvir.gascity",
+  "name": "Gas City",
+  "version": "0.5.0",
+  "contract": "1.0",
+  "requiredCapabilities": [
+    "presentation.read",
+    "context.read",
+    "viewer.open-own",
+    "connector.status",
+    "connector.execute",
+    "connector.output",
+    "contributions.publish"
+  ],
+  "optionalCapabilities": ["connector.connect"],
+  "access": [],
+  "views": [
+    {
+      "id": "city",
+      "title": "City",
+      "entry": "city.html",
+      "placement": "workspace",
+      "navigation": "left",
+      "representations": ["view"]
+    },
+    {
+      "id": "beads",
+      "title": "Beads",
+      "entry": "beads.html",
+      "placement": "workspace",
+      "navigation": "left",
+      "representations": ["view"]
+    },
+    {
+      "id": "needs",
+      "title": "Needs you",
+      "entry": "needs.html",
+      "placement": "workspace",
+      "navigation": "left",
+      "representations": ["view"]
+    },
+    {
+      "id": "session",
+      "title": "Gas City session",
+      "entry": "session.html",
+      "placement": "workspace",
+      "representations": ["view"]
+    },
+    {
+      "id": "activity",
+      "title": "City activity",
+      "entry": "activity.html",
+      "placement": "workspace",
+      "representations": ["view"]
+    },
+    {
+      "id": "bead",
+      "title": "Bead",
+      "entry": "detail.html",
+      "placement": "workspace",
+      "representations": ["view"]
+    }
+  ],
+  "railItems": [
+    {
+      "id": "city",
+      "placement": "header",
+      "icon": "⛭",
+      "tooltip": "Gas City sessions",
+      "kind": "observation",
+      "click": {
+        "view": "city",
+        "placement": "viewer"
+      }
+    },
+    {
+      "id": "ready",
+      "placement": "session",
+      "icon": "◉",
+      "tooltip": "Ready beads in this session's workspace",
+      "kind": "observation",
+      "click": {
+        "view": "beads",
+        "placement": "popup"
+      }
+    }
+  ],
+  "updater": "updater.html",
+  "connectors": [
+    {
+      "id": "gc",
+      "description": "Read city status, sessions, orders, formulas and events from the Gas City (gc) CLI.",
+      "context": "workspace",
+      "setup": {
+        "executable": "gc"
+      },
+      "timeoutMs": 60000,
+      "outputBytes": 4194304,
+      "environment": ["GC_CITY", "PATH"]
+    },
+    {
+      "id": "bd",
+      "description": "Read issues from the beads (bd) CLI in the workspace. Passes --readonly, except on stores that refuse it (dolt proxied-server mode), where only list, ready and show run.",
+      "context": "workspace",
+      "setup": {
+        "executable": "bd"
+      },
+      "timeoutMs": 30000,
+      "outputBytes": 4194304,
+      "environment": ["BEADS_DOLT_SERVER_PORT", "BEADS_DIR", "PATH"]
+    }
+  ]
+}
