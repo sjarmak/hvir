@@ -2,7 +2,6 @@ import type {
   IpcEventChannel,
   SessionsProjectionChange,
   SessionsTranscriptChange,
-  SessionsUsageChange,
 } from '../../shared'
 import type { Disposer } from '../project-host/project-host'
 import type { SessionsCompanionDemandOwner } from './sessions-demand-owner'
@@ -10,7 +9,7 @@ import type { SessionsCompanionDemandOwner } from './sessions-demand-owner'
 /** The Sessions change channels a companion page can be told about. */
 export type SessionsCompanionChannel = Extract<
   IpcEventChannel,
-  'sessions:changed' | 'sessions:usage-changed' | 'sessions:transcript-changed'
+  'sessions:changed' | 'sessions:transcript-changed'
 >
 
 /**
@@ -25,7 +24,6 @@ export interface SessionsCompanionSink {
     owner: SessionsCompanionDemandOwner,
     change: SessionsProjectionChange,
   ): void
-  onUsageChange(owner: SessionsCompanionDemandOwner, change: SessionsUsageChange): void
   onTranscriptChange(
     owner: SessionsCompanionDemandOwner,
     change: SessionsTranscriptChange,
@@ -59,11 +57,6 @@ export class SessionsCompanionSinkRegistry {
   ): void {
     const sink = this.current('sessions:changed')
     sink?.onProjectionChange(owner, change)
-  }
-
-  usage(owner: SessionsCompanionDemandOwner, change: SessionsUsageChange): void {
-    const sink = this.current('sessions:usage-changed')
-    sink?.onUsageChange(owner, change)
   }
 
   transcript(

@@ -6,10 +6,7 @@ import type {
   TerminalRecoverySession,
 } from '../../../shared'
 import type { TerminalRecoveryMode } from '../settings/settings'
-import {
-  probeAllowsAutoRestore,
-  recoverableProfile,
-} from './terminal-profile-recovery'
+import { probeAllowsAutoRestore, recoverableProfile } from './terminal-profile-recovery'
 import {
   probeLaunchUnavailable,
   profileProbe,
@@ -199,7 +196,8 @@ export function restoreTerminalSessions(
       capabilities,
       fallbackTitle: record.title,
       title: record.title,
-      titlePinned: record.titlePinned === true ? true : undefined,
+      customName: record.customName,
+      nameRevision: record.nameRevision,
       status: !hasHarnessIdentity
         ? 'Ready to start'
         : resumable

@@ -65,7 +65,7 @@ import { verifyWorkbenchHealthScenario } from './workbench-health-scenario'
 import { verifyRendererRecoveryScenario } from './renderer-recovery-scenario'
 import { verifySessionsProjectionScenario } from './sessions-projection-scenario'
 import { createQolRailServices } from './qol-rail-services'
-import { sessionsUsageSmokeProvider } from './sessions-usage-provider'
+import { sessionsPresentationSmokeProvider } from './sessions-presentation-provider'
 import { createTerminalMoveSmokeHarness } from './terminal-move'
 import { createSmokeTerminalSessionStore } from './terminal-session-store'
 import { verifyTerminalPresentationLifecycle } from './terminal-presentation'
@@ -219,7 +219,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     const smokeTerminalSessions = smokeTerminalSessionHarness.store
     const smokeSessionsProviders = new HarnessProviderRegistry([
       ...harnessProviders.all(),
-      sessionsUsageSmokeProvider,
+      sessionsPresentationSmokeProvider,
     ])
     const smokeHarnessProfiles = await HarnessProfileStore.load(host, harnessProfilesPath)
     await host.removeFile(documentReviewPath, { ignoreMissing: true })
@@ -251,7 +251,6 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     })
     const {
       observation: sessionsObservation,
-      usage: sessionsUsage,
       transcripts: sessionsTranscripts,
       attachTickets: sessionsAttachTickets,
       hostOptions: smokeHostOptions,
@@ -380,7 +379,6 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       ...extensionPtyPorts(supervisor, smokeTerminalSessions, projectFixture),
       terminalHandoffs: dependencies.extensions.terminalHandoffs,
       sessionsObservation,
-      sessionsUsage,
       sessionsTranscripts,
       sessionsAttachTickets,
       terminalMoves: terminalMoveSmoke.coordinator,
@@ -482,8 +480,8 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
         roots: [smokeWebSwitchRoot, smokeCloseableRoot, smokeRemoteRoot],
         addRetained: smokeTerminalSessionHarness.add,
         supervisor,
-        usageHost: host,
-        usageProvider: sessionsUsageSmokeProvider,
+        host,
+        provider: sessionsPresentationSmokeProvider,
         needsYouSnapshotCount: smokeNeedsYou.snapshotCount,
         captureDirectory: process.env.HVIR_SESSIONS_CAPTURE_DIR
           ? localPath(process.env.HVIR_SESSIONS_CAPTURE_DIR)

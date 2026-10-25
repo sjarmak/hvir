@@ -1,7 +1,8 @@
 # ADR-977: Focus-gated workspace polling
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
 > Supersedes: [ADR-027](ADR-027-demand-driven-workspace-activity.md) | partial | Periodic discovery and closed-workspace sampling running while no hvir window is focused.
+> Superseded by: [ADR-978](ADR-978-focus-gated-ssh-refresh-pulses.md) | partial | Synthetic SSH refresh pulses on the active-workspace and Git-metadata watches refreshing workspace Git state while no hvir window is focused.
 
 ## Context
 

@@ -24,6 +24,31 @@ const providerId = asHarnessProviderId('codex')
 const profileId = asHarnessProfileId('codex-default')
 
 describe('SessionsProjectionCoordinator', () => {
+  it('joins main-owned names over live automatic titles and reveals latest automatic title when cleared', () => {
+    const session = {
+      ...observed('named', 'workspace-a', 'live'),
+      customName: 'My work',
+      nameRevision: 2,
+    }
+    const snapshot = observation(1, [session])
+    const live = [renderer('named', 'workspace-a', { title: 'Latest program title' })]
+    expect(joinSessionsProjection(snapshot, live)[0]).toMatchObject({
+      title: 'My work',
+      automaticTitle: 'Latest program title',
+      customName: 'My work',
+      nameRevision: 2,
+    })
+    expect(
+      joinSessionsProjection(
+        {
+          ...snapshot,
+          sessions: [{ ...session, customName: undefined, nameRevision: 3 }],
+        },
+        live,
+      )[0],
+    ).toMatchObject({ title: 'Latest program title', nameRevision: 3 })
+  })
+
   it('joins lifecycle, connection, attention, Working, and telemetry as independent axes', () => {
     const snapshot = observation(1, [
       observed('live', 'workspace-a', 'live'),
@@ -68,7 +93,10 @@ describe('SessionsProjectionCoordinator', () => {
 
   it('projects a prompt with its body from the renderer session (ADR-951)', () => {
     const rows = joinSessionsProjection(
-      observation(1, [observed('asked', 'workspace-a', 'live'), observed('bare', 'workspace-a')]),
+      observation(1, [
+        observed('asked', 'workspace-a', 'live'),
+        observed('bare', 'workspace-a'),
+      ]),
       [
         renderer('asked', 'workspace-a', {
           attention: 'prompt',
@@ -266,13 +294,19 @@ describe('SessionsProjectionCoordinator', () => {
     coordinator.subscribe(changed)
     const release = coordinator.acquire()
     await settle()
-    expect(coordinator.snapshot()).toMatchObject({ status: 'available', sourceRevision: 1 })
+    expect(coordinator.snapshot()).toMatchObject({
+      status: 'available',
+      sourceRevision: 1,
+    })
 
     main.nextSnapshot = observation(2, [observed('worker', 'workspace-a')])
     main.publish({ demandGeneration: 1, revision: 2 })
     await settle()
 
-    expect(coordinator.snapshot()).toMatchObject({ status: 'available', sourceRevision: 2 })
+    expect(coordinator.snapshot()).toMatchObject({
+      status: 'available',
+      sourceRevision: 2,
+    })
     expect(coordinator.snapshot().rows).toHaveLength(1)
     release()
   })

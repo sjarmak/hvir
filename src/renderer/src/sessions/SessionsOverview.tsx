@@ -10,6 +10,7 @@ import {
   type ReactElement,
 } from 'react'
 
+import { SessionRenameTarget } from '../terminal/SessionRenameTarget'
 import type {
   ProjectState,
   SessionsAttachExternalTarget,
@@ -20,10 +21,6 @@ import type {
   SessionsTerminalHandle,
   SessionsWorkspaceQualifier,
 } from '../../../shared'
-import { SessionDetailsPopover } from '../harness/SessionDetailsPopover'
-import { sessionDetailsModel } from '../harness/session-details-model'
-import { useSessionDetailsPopover } from '../harness/use-session-details-popover'
-import { useSessionsDetailsUsage } from '../harness/use-session-details-usage'
 import type { SessionsCommandPort } from './sessions-command-port'
 import { sameSessionTarget } from './sessions-overview-target'
 import { requestSessionOpen } from './sessions-open-request'
@@ -147,10 +144,6 @@ export function SessionsOverview({
   const collectionControl = useRef<HTMLButtonElement>(null)
   const openGeneration = useRef(0)
   const detailActive = detailState.status !== 'inactive' || transcript !== undefined
-  const details = useSessionDetailsPopover('sessions-overview', () => {
-    collectionControl.current?.focus()
-  })
-  const dismissDetails = details.dismiss
 
   useEffect(() => {
     if (!foreground) return
@@ -167,8 +160,7 @@ export function SessionsOverview({
     detailOrigin.current = undefined
     setFeedback(undefined)
     pendingFocus.current = undefined
-    dismissDetails(false)
-  }, [dismissDetails, foreground])
+  }, [foreground])
   useEffect(
     () => () => {
       openGeneration.current += 1
@@ -467,31 +459,6 @@ export function SessionsOverview({
     [source],
   )
 
-  const rename = useCallback(
-    async (row: SessionsProjectionRow, title: string): Promise<void> => {
-      const cleaned = title.trim()
-      if (!cleaned) return
-      const captured = source.snapshot()
-      try {
-        const result = await window.hvir.invoke('sessions:rename', {
-          demandGeneration: captured.demandGeneration,
-          sourceRevision: captured.sourceRevision,
-          handle: row.handle,
-          projectId: row.project.id,
-          workspaceId: row.workspace.id,
-          workspaceQualifier: row.workspace.qualifier,
-          title: cleaned,
-        })
-        if (result.outcome === 'unavailable') {
-          setFeedback(openUnavailableMessage(result.reason))
-        }
-      } catch {
-        setFeedback('The session could not be renamed')
-      }
-    },
-    [source],
-  )
-
   const moveFocus = (
     event: ReactKeyboardEvent<HTMLElement>,
     row: SessionsProjectionRow,
@@ -539,19 +506,6 @@ export function SessionsOverview({
       : undefined
     return row?.origin.kind === 'external-agent'
   }, [detail, detailState, snapshot.rows])
-  const detailsRow = details.request
-    ? page.rows.find((row) => String(row.handle) === details.request?.target)
-    : undefined
-  const detailsUsage = useSessionsDetailsUsage(
-    detailsRow,
-    snapshot,
-    foreground && details.request !== undefined,
-  )
-  useEffect(() => {
-    if (details.request && snapshot.status === 'available' && !detailsRow) {
-      dismissDetails(false)
-    }
-  }, [details.request, detailsRow, dismissDetails, snapshot.status])
   const emptyNotice = (
     <SessionsOverviewNotice
       title={snapshot.rows.length === 0 ? 'No hvir sessions' : 'No sessions match'}
@@ -743,74 +697,73 @@ export function SessionsOverview({
                               policy.group,
                             )
                             return (
-                              <article
+                              <SessionRenameTarget
                                 key={row.handle}
-                                className={
-                                  `session-card${isSelected ? ' selected' : ''}` +
-                                  ' hvir-row'
-                                }
-                                role="listitem"
-                                aria-current={isSelected ? 'true' : undefined}
-                                aria-label={cardIdentity.accessibleName}
-                                tabIndex={isSelected ? 0 : -1}
-                                ref={(element) => {
-                                  if (element)
-                                    rowElements.current.set(row.handle, element)
-                                  else rowElements.current.delete(row.handle)
-                                }}
-                                onFocus={() => setSelected(row.handle)}
-                                onClick={() => setSelected(row.handle)}
-                                onContextMenu={(event) =>
-                                  details.openFromPointer(event, String(row.handle))
-                                }
-                                onKeyDown={(event) => {
-                                  if (
-                                    details.openFromKeyboard(event, String(row.handle))
-                                  ) {
-                                    return
-                                  }
-                                  if (
-                                    event.key === 'Enter' &&
-                                    event.target === event.currentTarget
-                                  ) {
-                                    event.preventDefault()
-                                    if (liveTerminal) void open(row)
-                                    else if (external) openTranscript(row)
-                                    return
-                                  }
-                                  moveFocus(event, row)
-                                }}
+                                id={row.handle}
+                                customName={row.customName}
+                                nameRevision={row.nameRevision}
                               >
-                                <SessionsOverviewCard
-                                  row={row}
-                                  group={policy.group}
-                                  opening={opening === row.handle}
-                                  onOpen={liveTerminal ? () => void open(row) : undefined}
-                                  onInteract={
-                                    liveTerminal
-                                      ? () => {
-                                          detailOrigin.current =
-                                            sessionsTerminalOverlayOrigin(
-                                              rowElements.current.get(row.handle),
+                                <article
+                                  className={
+                                    `session-card${isSelected ? ' selected' : ''}` +
+                                    ' hvir-row'
+                                  }
+                                  role="listitem"
+                                  aria-current={isSelected ? 'true' : undefined}
+                                  aria-label={cardIdentity.accessibleName}
+                                  tabIndex={isSelected ? 0 : -1}
+                                  ref={(element) => {
+                                    if (element)
+                                      rowElements.current.set(row.handle, element)
+                                    else rowElements.current.delete(row.handle)
+                                  }}
+                                  onFocus={() => setSelected(row.handle)}
+                                  onClick={() => setSelected(row.handle)}
+                                  onKeyDown={(event) => {
+                                    if (
+                                      event.key === 'Enter' &&
+                                      event.target === event.currentTarget
+                                    ) {
+                                      event.preventDefault()
+                                      if (liveTerminal) void open(row)
+                                      else if (external) openTranscript(row)
+                                      return
+                                    }
+                                    moveFocus(event, row)
+                                  }}
+                                >
+                                  <SessionsOverviewCard
+                                    row={row}
+                                    group={policy.group}
+                                    opening={opening === row.handle}
+                                    onOpen={
+                                      liveTerminal ? () => void open(row) : undefined
+                                    }
+                                    onInteract={
+                                      liveTerminal
+                                        ? () => {
+                                            detailOrigin.current =
+                                              sessionsTerminalOverlayOrigin(
+                                                rowElements.current.get(row.handle),
+                                              )
+                                            detail.open(
+                                              row,
+                                              source.snapshot(),
+                                              foreground,
                                             )
-                                          detail.open(row, source.snapshot(), foreground)
-                                        }
-                                      : external
-                                        ? () => openTranscript(row)
+                                          }
+                                        : external
+                                          ? () => openTranscript(row)
+                                          : undefined
+                                    }
+                                    onForget={
+                                      row.lifecycle === 'retained'
+                                        ? () => void forget(row)
                                         : undefined
-                                  }
-                                  onForget={
-                                    row.lifecycle === 'retained'
-                                      ? () => void forget(row)
-                                      : undefined
-                                  }
-                                  onRename={
-                                    row.lifecycle === 'retained'
-                                      ? (title: string) => void rename(row, title)
-                                      : undefined
-                                  }
-                                />
-                              </article>
+                                    }
+                                  />
+                                </article>
+                              </SessionRenameTarget>
                             )
                           })}
                         </div>
@@ -867,16 +820,6 @@ export function SessionsOverview({
           onCancel={launch.cancel}
         />
       ) : null}
-      <SessionDetailsPopover
-        controller={details}
-        details={
-          detailsRow
-            ? sessionDetailsModel(detailsRow, detailsUsage)
-            : details.request && snapshot.status === 'available'
-              ? null
-              : undefined
-        }
-      />
     </>
   )
 }

@@ -1,6 +1,11 @@
+import { terminalTitle, terminalTitleTooltip } from '../../../shared'
+import { SessionRenameTarget } from './SessionRenameTarget'
 import type { ReactElement } from 'react'
 
-import { terminalAttentionDescription, type TerminalAttention } from './terminal-attention'
+import {
+  terminalAttentionDescription,
+  type TerminalAttention,
+} from './terminal-attention'
 import {
   compactAttentionRollups,
   compactAttentionSummary,
@@ -67,29 +72,34 @@ export function TerminalRailCompact({
           const active = session.id === activeId
           const label = markerLabel(session, state, active)
           return (
-            <div
+            <SessionRenameTarget
               key={session.id}
-              className="terminal-rail-compact-marker-item"
-              role="listitem"
+              id={session.id}
+              customName={session.customName}
+              nameRevision={session.nameRevision}
             >
-              <button
-                type="button"
-                className={
-                  `terminal-rail-compact-marker ${state}${active ? ' active' : ''}` +
-                  ' hvir-button'
-                }
-                data-terminal-session={session.id}
-                data-terminal-state={state}
-                aria-current={active ? 'true' : undefined}
-                aria-label={label}
-                title={label}
-                onClick={() => onFocusSession(session.id)}
-              >
-                <span aria-hidden="true">
-                  {state === 'bell' ? <TerminalBellIcon /> : MARKER_TEXT[state]}
-                </span>
-              </button>
-            </div>
+              <div className="terminal-rail-compact-marker-item" role="listitem">
+                <button
+                  type="button"
+                  className={
+                    `terminal-rail-compact-marker ${state}${active ? ' active' : ''}` +
+                    ' hvir-button'
+                  }
+                  data-terminal-session={session.id}
+                  data-terminal-state={state}
+                  aria-current={active ? 'true' : undefined}
+                  aria-label={label}
+                  title={[label, terminalTitleTooltip(session.title, session.customName)]
+                    .filter(Boolean)
+                    .join(' · ')}
+                  onClick={() => onFocusSession(session.id)}
+                >
+                  <span aria-hidden="true">
+                    {state === 'bell' ? <TerminalBellIcon /> : MARKER_TEXT[state]}
+                  </span>
+                </button>
+              </div>
+            </SessionRenameTarget>
           )
         })}
       </div>
@@ -116,5 +126,5 @@ function markerLabel(
     state === 'neutral'
       ? 'Neutral'
       : terminalAttentionDescription(state, session.promptBody)
-  return `${session.title}, ${stateLabel}${active ? ', active terminal' : ''}`
+  return `${terminalTitle(session.title, session.customName)}, ${stateLabel}${active ? ', active terminal' : ''}`
 }

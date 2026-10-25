@@ -344,6 +344,47 @@ describe('TerminalSessionRegistry', () => {
     await migrated.flush()
   })
 
+  it('carries a v7 pinned title forward as the custom name', async () => {
+    const root = localPath('/tmp/project')
+    const record = {
+      providerId: 'plain-shell',
+      profileId: 'plain-shell-default',
+      launchRevision: 1,
+      recoverySkipCount: 0,
+      hostId: root.hostId,
+      workspaceRoot: root,
+      cwd: root,
+      active: false,
+      updatedAt: 42,
+    }
+    await host.writeFile(
+      file,
+      JSON.stringify({
+        version: 7,
+        sessions: [
+          {
+            ...record,
+            id: 'terminal-pinned',
+            title: 'Beads Dolt server unreachable',
+            titlePinned: true,
+            position: 0,
+          },
+          { ...record, id: 'terminal-unpinned', title: 'Shell · project', position: 1 },
+        ],
+      }),
+    )
+
+    const loaded = await TerminalSessionRegistry.load(host, file)
+    expect(loaded.list(root)).toEqual([
+      expect.objectContaining({
+        id: 'terminal-pinned',
+        customName: 'Beads Dolt server unreachable',
+      }),
+      expect.objectContaining({ id: 'terminal-unpinned', customName: undefined }),
+    ])
+    await loaded.flush()
+  })
+
   it('drops a stored record whose attachment is not a digest this build wrote', async () => {
     const root = localPath('/tmp/project')
     await host.writeFile(

@@ -7,11 +7,7 @@ import {
   type SessionsOpenResponse,
   type SessionsObservationSnapshot,
   type SessionsProjectionChange,
-  type SessionsRenameRequest,
   type SessionsTerminalResolutionResponse,
-  type SessionsUsageChange,
-  type SessionsUsageDemandRequest,
-  type SessionsUsageSnapshot,
 } from '../sessions-projection'
 import {
   type SessionsAttachExternalRequest,
@@ -29,9 +25,6 @@ export const sessionsIpc = {
     'sessions:observe': invoke<SessionsDemandRequest, SessionsObservationSnapshot>(),
     'sessions:snapshot': invoke<SessionsDemandRequest, SessionsObservationSnapshot>(),
     'sessions:release': invoke<SessionsDemandRequest, void>(),
-    'sessions:usage-observe': invoke<SessionsUsageDemandRequest, SessionsUsageSnapshot>(),
-    'sessions:usage-snapshot': invoke<SessionsDemandRequest, SessionsUsageSnapshot>(),
-    'sessions:usage-release': invoke<SessionsDemandRequest, void>(),
     'sessions:open': invoke<SessionsOpenRequest, SessionsOpenResponse>(),
     'sessions:resolve-terminal': invoke<
       SessionsOpenRequest,
@@ -57,8 +50,14 @@ export const sessionsIpc = {
      * everything else in a session's lifecycle stays with the view that owns
      * the city (ADR-948).
      */
-    'sessions:respond': invoke<SessionsTranscriptRespondRequest, SessionsMutationResponse>(),
-    'sessions:submit': invoke<SessionsTranscriptSubmitRequest, SessionsMutationResponse>(),
+    'sessions:respond': invoke<
+      SessionsTranscriptRespondRequest,
+      SessionsMutationResponse
+    >(),
+    'sessions:submit': invoke<
+      SessionsTranscriptSubmitRequest,
+      SessionsMutationResponse
+    >(),
     /**
      * The escape hatch for a row hvir owns no terminal for. The answer carries
      * the command to run and a ticket that stands for the session, never the
@@ -72,15 +71,10 @@ export const sessionsIpc = {
       SessionsMutationRequest,
       SessionsProjectionMutationResponse
     >(),
-    'sessions:rename': invoke<
-      SessionsRenameRequest,
-      SessionsProjectionMutationResponse
-    >(),
   },
   send: {},
   event: {
     'sessions:changed': payload<SessionsProjectionChange>(),
-    'sessions:usage-changed': payload<SessionsUsageChange>(),
     'sessions:transcript-changed': payload<SessionsTranscriptChange>(),
   },
 } satisfies IpcFeatureContract

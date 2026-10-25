@@ -2,13 +2,11 @@ import type { IpcRegistrar } from '../authority-router'
 import type { IpcDeps } from '../deps'
 import { asSessionsWorkspaceRuntimeId, gasCityAttachCommand } from '../../../shared'
 import { rendererDemandOwner } from '../../sessions/sessions-demand-owner'
-import { isTerminalTitle } from './terminal'
 
 type SessionsIpcDeps = Pick<
   IpcDeps,
   | 'rendererResources'
   | 'sessionsObservation'
-  | 'sessionsUsage'
   | 'sessionsTranscripts'
   | 'sessionsAttachTickets'
   | 'switchWorkspace'
@@ -54,41 +52,6 @@ export function registerSessionsIpc(ipc: IpcRegistrar, deps: SessionsIpcDeps): v
     // resource. A duplicate from an older demand must not revoke a newer lease.
     if (!deps.sessionsObservation.release(demandOwner, request.demandGeneration)) return
     await deps.rendererResources.disposeResource(owner, 'sessions-observation')
-  })
-
-  ipc.handle('sessions:usage-observe', (request, context) => {
-    const owner = context.owner()
-    const demandOwner = rendererDemandOwner(owner)
-    deps.rendererResources.assertCurrent(owner)
-    const snapshot = deps.sessionsUsage.acquire(demandOwner, request)
-    try {
-      deps.rendererResources.register(
-        owner,
-        { lifetime: 'renderer', type: 'sessions-usage-observation' },
-        () => {
-          deps.sessionsUsage.release(demandOwner, request.demandGeneration)
-        },
-        { duplicate: 'reuse' },
-      )
-      return snapshot
-    } catch (error) {
-      deps.sessionsUsage.release(demandOwner, request.demandGeneration)
-      throw error
-    }
-  })
-
-  ipc.handle('sessions:usage-snapshot', (request, context) =>
-    deps.sessionsUsage.snapshot(
-      rendererDemandOwner(context.owner()),
-      request.demandGeneration,
-    ),
-  )
-
-  ipc.handle('sessions:usage-release', async (request, context) => {
-    const owner = context.owner()
-    const demandOwner = rendererDemandOwner(owner)
-    if (!deps.sessionsUsage.release(demandOwner, request.demandGeneration)) return
-    await deps.rendererResources.disposeResource(owner, 'sessions-usage-observation')
   })
 
   ipc.handle('sessions:open', async (request, context) => {
@@ -208,15 +171,6 @@ export function registerSessionsIpc(ipc: IpcRegistrar, deps: SessionsIpcDeps): v
     const target = deps.sessionsObservation.resolveMutation(demandOwner, request)
     if (target.outcome === 'unavailable') return target
     await deps.terminalSessions.forget(target.root, target.id)
-    return { outcome: 'applied' as const }
-  })
-
-  ipc.handle('sessions:rename', async (request, context) => {
-    if (!isTerminalTitle(request.title)) throw new Error('Invalid terminal title')
-    const demandOwner = rendererDemandOwner(context.owner())
-    const target = deps.sessionsObservation.resolveMutation(demandOwner, request)
-    if (target.outcome === 'unavailable') return target
-    await deps.terminalSessions.rename(target.root, target.id, request.title)
     return { outcome: 'applied' as const }
   })
 }

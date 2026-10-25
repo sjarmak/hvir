@@ -16,6 +16,20 @@ import { asHarnessProfileId, asHarnessProviderId, localPath } from '../src/share
 import { decodeTerminalSplitLayout } from '../src/renderer/src/terminal/terminal-split-persistence'
 
 describe('terminal workspace model', () => {
+  it('starts a fork unnamed instead of copying its source naming revision', () => {
+    const source = {
+      ...session('source', 'primary'),
+      harnessSessionId: 'conversation',
+      identityStatus: 'identified' as const,
+      customName: 'Named source',
+      nameRevision: 4,
+    }
+    const fork = createTerminalForkSession('fork', source)!
+    expect(fork.customName).toBeUndefined()
+    expect(fork.nameRevision).toBeUndefined()
+    expect(source.customName).toBe('Named source')
+  })
+
   it('adds, selects, splits, moves, and closes sessions deterministically', () => {
     let model = reduce(initialTerminalWorkspaceModel, {
       type: 'session-added',
@@ -306,10 +320,9 @@ describe('terminal workspace model', () => {
     const fork = createTerminalForkSession('pending-fork', source)
     if (!fork) throw new Error('fork fixture unavailable')
 
-    expect(settledTerminalSessions([source, fork, session('settled', 'secondary')])).toEqual([
-      source,
-      session('settled', 'secondary'),
-    ])
+    expect(
+      settledTerminalSessions([source, fork, session('settled', 'secondary')]),
+    ).toEqual([source, session('settled', 'secondary')])
   })
 })
 
@@ -348,7 +361,10 @@ describe('focus-or-attach', () => {
   it('prefers the terminal recorded against the session over the key map', () => {
     // The key is a crew identity, which two sessions can wear over time. The
     // recorded attach names the session itself, so it decides.
-    const both = reduce(model, { type: 'session-added', session: session('exact', 'secondary') })
+    const both = reduce(model, {
+      type: 'session-added',
+      session: session('exact', 'secondary'),
+    })
     const outcome = resolveTerminalAttach(
       {
         command: "gc session attach 'mayor'",

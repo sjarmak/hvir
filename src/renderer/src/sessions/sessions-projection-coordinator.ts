@@ -1,3 +1,4 @@
+import { terminalTitle } from '../../../shared'
 import {
   MAX_SESSIONS_PROJECTION_ROWS,
   SESSIONS_HVIR_ORIGIN,
@@ -315,7 +316,9 @@ export function joinSessionsProjection(
       session.handle,
       projectRow(
         workspace,
-        providerById.get(rendererIdentity(session, renderer)?.providerId ?? session.providerId),
+        providerById.get(
+          rendererIdentity(session, renderer)?.providerId ?? session.providerId,
+        ),
         session,
         renderer,
       ),
@@ -384,6 +387,11 @@ function projectRow(
   const origin = main?.origin ?? SESSIONS_HVIR_ORIGIN
   const providerName =
     provider?.displayName ?? String(identity?.providerId ?? main!.providerId)
+  const automaticTitle = sessionsProjectionDisplayTitle(
+    identity?.title ?? main?.title,
+    handle,
+    `${providerName} · ${workspace.workspaceName}`,
+  )
   return {
     handle,
     origin,
@@ -416,11 +424,10 @@ function projectRow(
           },
         }
       : main!.profile,
-    title: sessionsProjectionDisplayTitle(
-      identity?.title ?? main?.title,
-      handle,
-      `${providerName} · ${workspace.workspaceName}`,
-    ),
+    customName: main?.customName,
+    nameRevision: main?.nameRevision,
+    automaticTitle,
+    title: terminalTitle(automaticTitle, main?.customName),
     ...lifecycle,
     connectionState: workspace.host.connectionState,
     ...attention,

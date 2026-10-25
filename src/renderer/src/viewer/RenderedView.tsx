@@ -2,6 +2,7 @@ import { ExternalDocumentWorkspace } from './external-document-context'
 import {
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactElement,
@@ -15,6 +16,12 @@ import {
   type HostPath,
 } from '../../../shared'
 import { renderMarkdown, resetMarkdownRenderer } from './markdown-client'
+import {
+  assertRenderedMarkup,
+  admitRenderedDiagram,
+  assertRenderedDiagramIndex,
+} from './rendered-workload-policy'
+import { renderMermaid } from './mermaid-client'
 import { DomFindTarget } from './dom-find-target'
 import { handleRenderedLinkClick } from './rendered-link-handler'
 import type {
@@ -34,7 +41,6 @@ import { MarkdownRepositoryImages } from './markdown-repository-images'
 import { bindRenderedDocumentReview } from '../document-review/document-review-rendered'
 import { useDocumentReviewInlineHostRegistration } from '../document-review/document-review-inline'
 import type { DocumentReviewDocumentProjection } from '../document-review/use-document-review-interaction'
-import { renderMermaid, resetMermaidRenderer } from './mermaid-renderer'
 
 let jsonWorker: Worker | undefined
 let jsonRequestId = 0
@@ -113,7 +119,7 @@ export function RenderedView({
       <HtmlPreview path={path} content={content} renderGeneration={renderGeneration} />
     )
   }
-  if (type === 'json' || type === 'yaml') {
+  if (type === 'json' || type === 'jsonl' || type === 'yaml') {
     return (
       <StructuredDataView
         content={content}
@@ -210,7 +216,10 @@ function CsvView({
   const columnIndexes = Array.from({ length: visibleColumns }, (_, index) => index)
   const notes = [
     table.truncated
-      ? `Showing ${table.rows.length.toLocaleString()} of ${table.totalRows.toLocaleString()} rows`
+      ? `Showing ${table.rows.length.toLocaleString()} of ${table.totalRows.toLocaleString()} rows; use Source for complete data`
+      : undefined,
+    table.contentTruncated
+      ? 'Cell text omitted to keep the preview responsive; use Source for complete data'
       : undefined,
     table.columnsTruncated
       ? `first ${visibleColumns.toLocaleString()} of ${table.totalColumns.toLocaleString()} columns`
@@ -331,9 +340,15 @@ function MarkdownView({
     let cancelled = false
     setHtml('')
     setError(undefined)
-    void renderMarkdown(content, theme).then(
+    void renderMarkdown(content, theme, undefined, true).then(
       (rendered) => {
         if (cancelled) return
+        try {
+          assertRenderedMarkup(rendered)
+        } catch (reason) {
+          setError(reason instanceof Error ? reason.message : String(reason))
+          return
+        }
         setHtml(rendered)
         setError(undefined)
       },
@@ -352,14 +367,14 @@ function MarkdownView({
     const root = container.current
     if (!root || !html) return
     appliedRefreshVersion.current = refreshRef.current?.version ?? 0
-    let cancelled = false
+    const diagrams = new AbortController()
     const images = new MarkdownRepositoryImages(path, workspaceRoot)
     images.mount(root, html)
     repositoryImages.current = images
     onDependencies(images.hydrate(root))
-    void renderMermaidNodes(root, () => cancelled, theme)
+    void renderMermaidNodes(root, diagrams.signal, theme)
     return () => {
-      cancelled = true
+      diagrams.abort()
       onDependencies([])
       images.dispose()
       if (repositoryImages.current === images) repositoryImages.current = undefined
@@ -432,19 +447,19 @@ function StandaloneMermaid({
   useEffect(() => {
     const root = ref.current
     if (!root) return
-    let cancelled = false
+    const controller = new AbortController()
     root.textContent = 'Rendering diagram…'
-    void renderMermaid(content, theme).then(
+    void renderMermaid(content, theme, controller.signal).then(
       (svg) => {
-        if (!cancelled) root.innerHTML = svg
+        if (!controller.signal.aborted) root.innerHTML = svg
       },
       (error: unknown) => {
-        if (!cancelled)
+        if (!controller.signal.aborted)
           root.textContent = error instanceof Error ? error.message : String(error)
       },
     )
     return () => {
-      cancelled = true
+      controller.abort()
     }
   }, [content, renderGeneration, theme])
   useRenderedFindTarget(
@@ -457,17 +472,23 @@ function StandaloneMermaid({
 
 async function renderMermaidNodes(
   root: HTMLElement,
-  cancelled: () => boolean,
+  signal: AbortSignal,
   theme: 'dark' | 'light',
 ): Promise<void> {
   const nodes = [...root.querySelectorAll<HTMLElement>('.mermaid-diagram')]
-  for (const node of nodes) {
-    if (cancelled()) return
+  let budget = { elements: root.querySelectorAll('*').length, characters: 0 }
+  for (const [index, node] of nodes.entries()) {
+    if (signal.aborted) return
     const source = node.querySelector('pre')?.textContent
     if (source === undefined) continue
     try {
-      node.innerHTML = await renderMermaid(source, theme)
+      assertRenderedDiagramIndex(index)
+      const svg = await renderMermaid(source, theme, signal)
+      if (signal.aborted) return
+      budget = admitRenderedDiagram(budget, svg, node.querySelectorAll('*').length)
+      node.innerHTML = svg
     } catch (error) {
+      if (signal.aborted) return
       node.textContent = error instanceof Error ? error.message : String(error)
       node.classList.add('render-error')
     }
@@ -485,7 +506,7 @@ function StructuredDataView({
   registerFindTarget,
 }: {
   readonly content: string
-  readonly format: 'json' | 'yaml'
+  readonly format: 'json' | 'jsonl' | 'yaml'
   readonly renderGeneration: number
   readonly position: ViewerDocumentPosition
   readonly onPosition: (position: ViewerDocumentPosition) => void
@@ -521,7 +542,14 @@ function StructuredDataView({
     }
   }, [content, format, renderGeneration])
 
-  useRenderedPosition(container, content, position, onPosition, positionCapture, document)
+  useRenderedPosition(
+    container,
+    format === 'jsonl' ? '' : content,
+    position,
+    onPosition,
+    positionCapture,
+    document,
+  )
   useRenderedFindTarget(container, document, registerFindTarget)
 
   if (error)
@@ -532,9 +560,132 @@ function StructuredDataView({
     )
   if (!document)
     return <div className="viewer-empty hvir-state">Parsing {format.toUpperCase()}…</div>
+  if (format === 'jsonl')
+    return (
+      <JsonRecords
+        key={document.id}
+        documentId={document.id}
+        total={document.root.count ?? 0}
+        content={content}
+        position={position}
+        onPosition={onPosition}
+        positionCapture={positionCapture}
+        registerFindTarget={registerFindTarget}
+      />
+    )
   return (
     <div className="rendered-scroll json-tree hvir-scroll" ref={container}>
       <JsonNode node={document.root} documentId={document.id} initiallyOpen />
+    </div>
+  )
+}
+
+/** Replace pages rather than accumulating record nodes for a large log. */
+function JsonRecords({
+  documentId,
+  total,
+  content,
+  position,
+  onPosition,
+  positionCapture,
+  registerFindTarget,
+}: {
+  readonly documentId: number
+  readonly total: number
+  readonly content: string
+  readonly position: ViewerDocumentPosition
+  readonly onPosition: (position: ViewerDocumentPosition) => void
+  readonly positionCapture: ViewerPositionCapture
+  readonly registerFindTarget: RegisterViewerFindTarget
+}): ReactElement {
+  const pageSize = 100
+  const container = useRef<HTMLDivElement>(null)
+  const [offset, setOffset] = useState(() =>
+    Math.min(
+      Math.floor(Math.max(0, position.line - 1) / pageSize) * pageSize,
+      Math.max(0, Math.floor((total - 1) / pageSize) * pageSize),
+    ),
+  )
+  const [records, setRecords] = useState<readonly JsonNodeDescriptor[]>()
+  const [error, setError] = useState<string>()
+  useEffect(() => {
+    let cancelled = false
+    setRecords(undefined)
+    setError(undefined)
+    void requestJson({
+      type: 'children',
+      documentId,
+      path: [],
+      offset,
+      limit: pageSize,
+    }).then(
+      (response) => {
+        if (!cancelled && response.type === 'children') setRecords(response.children)
+      },
+      () => {
+        if (!cancelled) setError('Unable to load records')
+      },
+    )
+    return () => {
+      cancelled = true
+    }
+  }, [documentId, offset])
+  useRenderedPosition(container, content, position, onPosition, positionCapture, records)
+  useRenderedFindTarget(container, records, registerFindTarget)
+  const changePage = (nextOffset: number): void => {
+    setOffset(nextOffset)
+    onPosition({ mode: 'rendered', line: nextOffset + 1, scrollTop: 0 })
+  }
+  return (
+    <div className="rendered-scroll json-tree jsonl-tree hvir-scroll" ref={container}>
+      <nav
+        className="jsonl-pages"
+        aria-label="JSONL records"
+        data-source-line={offset + 1}
+      >
+        <button
+          type="button"
+          className="json-more hvir-button"
+          disabled={offset === 0}
+          onClick={() => changePage(offset - pageSize)}
+        >
+          Previous records
+        </button>
+        <span>
+          {total === 0
+            ? 'No records'
+            : `Records ${offset + 1}–${Math.min(total, offset + pageSize)} of ${total}`}
+        </span>
+        <button
+          type="button"
+          className="json-more hvir-button"
+          disabled={offset + pageSize >= total}
+          onClick={() => changePage(offset + pageSize)}
+        >
+          Next records
+        </button>
+      </nav>
+      {!records && !error ? <div role="status">Loading records…</div> : null}
+      {error ? (
+        <div className="json-error" role="alert">
+          {error}
+        </div>
+      ) : null}
+      {records?.map((node) => (
+        <section
+          className="jsonl-record"
+          key={node.sourceLine}
+          data-source-line={node.sourceLine}
+        >
+          {node.error ? (
+            <div className="json-error">
+              Line {node.sourceLine}: {node.error}
+            </div>
+          ) : (
+            <JsonNode node={node} documentId={documentId} />
+          )}
+        </section>
+      ))}
     </div>
   )
 }
@@ -549,7 +700,7 @@ function useRenderedPosition(
 ): void {
   const positionRef = useRef(position)
   const onPositionRef = useRef(onPosition)
-  const lines = documentLineCount(content)
+  const lines = useMemo(() => documentLineCount(content), [content])
   positionRef.current = position
   onPositionRef.current = onPosition
 
@@ -595,7 +746,6 @@ function useDevRendererGeneration(): number {
       resetMarkdownRenderer()
       jsonWorker?.terminate()
       jsonWorker = undefined
-      resetMermaidRenderer()
       setGeneration((current) => current + 1)
     }
     hot.on('vite:afterUpdate', refresh)
@@ -669,7 +819,7 @@ function JsonNode({
         <div className="json-children">
           {children.map((child) => (
             <JsonNode
-              key={`${child.path.length}:${child.label}`}
+              key={`${child.path.length}:${child.path.at(-1)}`}
               node={child}
               documentId={documentId}
             />
@@ -688,7 +838,12 @@ function JsonNode({
 
 function JsonScalar({ node }: { readonly node: JsonNodeDescriptor }): ReactElement {
   const text = node.kind === 'string' ? JSON.stringify(node.value) : String(node.value)
-  return <span className={`json-${node.kind}`}>{text}</span>
+  return (
+    <span className={`json-${node.kind}`}>
+      {text}
+      {node.truncated ? '… (value preview; full value in source)' : null}
+    </span>
+  )
 }
 
 function requestJson(input: JsonWorkerRequestInput): Promise<JsonWorkerResponse> {

@@ -10,6 +10,7 @@ import {
   type TerminalIdentityStatus,
   type ExternalSessionAttachRequest,
   type ArchitectureAgentLaunch,
+  type TerminalName,
 } from '../../../shared'
 import type { TerminalAttention } from './terminal-attention'
 
@@ -49,7 +50,7 @@ export interface TerminalForkRequest {
   readonly parentHarnessSessionId: string
 }
 
-export interface TerminalSession {
+export interface TerminalSession extends TerminalName {
   readonly commandTicket?: string
   readonly commandWorkspaceId?: string
   readonly id: string
@@ -59,8 +60,6 @@ export interface TerminalSession {
   readonly capabilities: HarnessProviderCapabilities
   readonly fallbackTitle: string
   readonly title: string
-  /** User-set name; once set, live OSC title updates no longer override it. */
-  readonly titlePinned?: true
   readonly status: string
   readonly attention?: TerminalAttention
   /** The notification's message; present only while `attention` is `prompt` (ADR-951). */
@@ -148,18 +147,6 @@ export function settledTerminalSessions(
   sessions: readonly TerminalSession[],
 ): readonly TerminalSession[] {
   return sessions.filter((session) => !session.forkRequest)
-}
-
-const MAX_TERMINAL_TITLE_LENGTH = 512
-
-/** Mirrors main's terminal title validation; returns undefined for a blank rename. */
-export function cleanTerminalTitle(value: string): string | undefined {
-  const cleaned = [...value]
-    .map((character) => (character.charCodeAt(0) <= 31 ? ' ' : character))
-    .join('')
-    .trim()
-    .slice(0, MAX_TERMINAL_TITLE_LENGTH)
-  return cleaned.length > 0 ? cleaned : undefined
 }
 
 export const initialTerminalWorkspaceModel: TerminalWorkspaceModel = {
@@ -250,6 +237,8 @@ export function createTerminalForkSession(
     ...source,
     id,
     title: source.fallbackTitle,
+    customName: undefined,
+    nameRevision: undefined,
     status: 'Forking conversation…',
     attention: undefined,
     promptBody: undefined,
@@ -301,8 +290,7 @@ export function createTerminalSession(
 }
 
 export type TerminalAttachOutcome =
-  | { readonly type: 'focus'; readonly id: string }
-  | { readonly type: 'launch' }
+  { readonly type: 'focus'; readonly id: string } | { readonly type: 'launch' }
 
 /**
  * Focus an existing terminal or open one — never both.
@@ -325,7 +313,10 @@ export function resolveTerminalAttach(
   )
   if (attached !== undefined) return { type: 'focus', id: attached }
   const existing = request.key === undefined ? undefined : launchedByKey.get(request.key)
-  if (existing !== undefined && model.sessions.some((session) => session.id === existing)) {
+  if (
+    existing !== undefined &&
+    model.sessions.some((session) => session.id === existing)
+  ) {
     return { type: 'focus', id: existing }
   }
   return { type: 'launch' }

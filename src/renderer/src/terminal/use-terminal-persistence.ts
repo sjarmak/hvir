@@ -25,7 +25,6 @@ export function useTerminalPersistence({
     settledTerminalSessions(model.sessions).map((session, position) => ({
       id: session.id,
       title: session.title,
-      titlePinned: session.titlePinned === true,
       position,
       active: session.id === model.activeId,
       pane: session.pane,
@@ -40,7 +39,6 @@ export function useTerminalPersistence({
       (session, position) => ({
         id: session.id,
         title: session.title,
-        titlePinned: session.titlePinned === true,
         position,
         active: session.id === current.activeId,
         attention: session.attention,

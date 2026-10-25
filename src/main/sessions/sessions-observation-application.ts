@@ -1,11 +1,7 @@
 import { harnessProviders } from '../harness/harness-provider'
-import { HarnessUsageDemandController } from '../harness/harness-usage-demand-controller'
 import type { HostId, ProjectState, ProjectHostOption } from '../../shared'
 import type { Disposer } from '../project-host/project-host'
-import type {
-  PtyObservationSource,
-  PtyUsageObservationSource,
-} from '../pty/pty-supervisor'
+import type { PtyObservationSource } from '../pty/pty-supervisor'
 import type { RuntimeDiagnostics } from '../diagnostics/runtime-diagnostics'
 import type { RendererEventPublisher } from '../renderer-event-publisher'
 import type { TerminalSessionObservationSource } from '../terminal/session-registry'
@@ -16,7 +12,6 @@ import {
   type CityEventsObservationSource,
   type CitySessionsObservationSource,
 } from './sessions-observation-port'
-import { SessionsUsageObservationPort } from './sessions-usage-observation-port'
 import { SessionsTranscriptPort } from './sessions-transcript-port'
 import { SessionsAttachTicketRegistry } from './sessions-attach-tickets'
 import { SessionsCompanionSinkRegistry } from './sessions-companion-sinks'
@@ -38,7 +33,6 @@ export interface SessionsCityEventsPort extends CityEventsObservationSource {
 export interface ApplicationSessionsObservation {
   readonly context: LiveSessionMetadataSources
   readonly observation: SessionsObservationPort
-  readonly usage: SessionsUsageObservationPort
   readonly transcripts: SessionsTranscriptPort
   readonly attachTickets: SessionsAttachTicketRegistry
   /** Where companion-kind leases are told about changes (ADR-949). */
@@ -61,7 +55,7 @@ export function installApplicationSessionsObservation(
   projects: { state(): ProjectState; observe(listener: () => void): Disposer },
   hosts: { listHosts(): readonly ProjectHostOption[] },
   sessions: TerminalSessionObservationSource,
-  ptys: PtyObservationSource & PtyUsageObservationSource,
+  ptys: PtyObservationSource,
   delivery: SessionsChangeDelivery,
   /** The shared Gas City access; one client per host for every consumer. */
   supervisor: SupervisorAccess,
@@ -104,30 +98,6 @@ export function installApplicationSessionsObservation(
     }),
     (observation) => observation.dispose(),
   )
-  const demand = runtime.own(
-    'Harness usage demand controller',
-    new HarnessUsageDemandController(harnessProviders),
-    (controller) => controller.dispose(),
-  )
-  const usage = runtime.own(
-    'Sessions usage observation port',
-    new SessionsUsageObservationPort({
-      sessions: observation,
-      ptys,
-      usage: demand,
-      emit: (owner, change) =>
-        dispatchDemandOwner(owner, {
-          renderer: (renderer) =>
-            events.toRenderer(
-              rendererOwnerOf(renderer),
-              'sessions:usage-changed',
-              change,
-            ),
-          companion: (companion) => companionSinks.usage(companion, change),
-        }),
-    }),
-    (port) => port.dispose(),
-  )
   const transcripts = runtime.own(
     'Sessions transcript port',
     new SessionsTranscriptPort({
@@ -163,7 +133,6 @@ export function installApplicationSessionsObservation(
   return {
     context: observation.context,
     observation,
-    usage,
     transcripts,
     attachTickets,
     companionSinks,

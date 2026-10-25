@@ -1,3 +1,4 @@
+import { terminalTitle } from '../../../shared'
 import type { ReactElement } from 'react'
 
 import type {
@@ -110,6 +111,7 @@ export function TerminalSessionRuntimes({
             commandTicket={session.commandTicket}
             commandWorkspaceId={session.commandWorkspaceId}
             sessionId={session.id}
+            displayTitle={terminalTitle(session.title, session.customName)}
             profileId={session.profileId}
             launchRevision={session.launchRevision}
             supportsResume={session.capabilities.exactResume}
@@ -150,9 +152,7 @@ export function TerminalSessionRuntimes({
             runtimes={runtimes}
             connectionState={connectionState}
             onTitle={(title) =>
-              onUpdateSession(session.id, (current) =>
-                current.titlePinned ? current : { ...current, title },
-              )
+              onUpdateSession(session.id, (current) => ({ ...current, title }))
             }
             onStatus={(status) =>
               onUpdateSession(session.id, (current) => ({ ...current, status }))

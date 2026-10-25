@@ -141,6 +141,7 @@ const baseConfig: UserConfig = {
           // listener serves from out/renderer/companion, sharing the assets
           // directory with the desktop renderer.
           companion: resolve('src/renderer/companion/index.html'),
+          mermaid: resolve('src/renderer/mermaid.html'),
         },
       },
     },

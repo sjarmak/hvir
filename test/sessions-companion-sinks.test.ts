@@ -22,16 +22,11 @@ describe('SessionsCompanionSinkRegistry', () => {
     const unregister = registry.register(sink)
 
     registry.projection(OWNER, { demandGeneration: 1, revision: 2 })
-    registry.usage(OWNER, { demandGeneration: 1, revision: 3 })
     registry.transcript(OWNER, { demandGeneration: 1, revision: 4, handle: HANDLE })
 
     expect(sink.onProjectionChange).toHaveBeenCalledExactlyOnceWith(OWNER, {
       demandGeneration: 1,
       revision: 2,
-    })
-    expect(sink.onUsageChange).toHaveBeenCalledExactlyOnceWith(OWNER, {
-      demandGeneration: 1,
-      revision: 3,
     })
     expect(sink.onTranscriptChange).toHaveBeenCalledExactlyOnceWith(OWNER, {
       demandGeneration: 1,
@@ -48,12 +43,10 @@ describe('SessionsCompanionSinkRegistry', () => {
 
     expect(() => {
       registry.projection(OWNER, { demandGeneration: 1, revision: 1 })
-      registry.usage(OWNER, { demandGeneration: 1, revision: 1 })
       registry.transcript(OWNER, { demandGeneration: 1, revision: 1, handle: HANDLE })
     }).not.toThrow()
     expect(missing.mock.calls).toEqual([
       ['sessions:changed'],
-      ['sessions:usage-changed'],
       ['sessions:transcript-changed'],
     ])
   })
@@ -88,12 +81,10 @@ describe('SessionsCompanionSinkRegistry', () => {
 
 function fakeSink(): {
   readonly onProjectionChange: Mock<SessionsCompanionSink['onProjectionChange']>
-  readonly onUsageChange: Mock<SessionsCompanionSink['onUsageChange']>
   readonly onTranscriptChange: Mock<SessionsCompanionSink['onTranscriptChange']>
 } {
   return {
     onProjectionChange: vi.fn(),
-    onUsageChange: vi.fn(),
     onTranscriptChange: vi.fn(),
   }
 }

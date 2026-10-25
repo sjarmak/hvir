@@ -134,7 +134,6 @@ function install() {
     sessions,
     {
       ...observationSource([]),
-      resolveUsageObservation: () => ({ status: 'pending' as const }),
     },
     {
       events: { toRenderer },
@@ -147,12 +146,10 @@ function install() {
 
 function fakeSink(): {
   readonly onProjectionChange: Mock<SessionsCompanionSink['onProjectionChange']>
-  readonly onUsageChange: Mock<SessionsCompanionSink['onUsageChange']>
   readonly onTranscriptChange: Mock<SessionsCompanionSink['onTranscriptChange']>
 } {
   return {
     onProjectionChange: vi.fn(),
-    onUsageChange: vi.fn(),
     onTranscriptChange: vi.fn(),
   }
 }

@@ -1188,25 +1188,22 @@ The pull request query carries per-reviewer state and request events; shared pur
 derive who holds each pull request and for how long in business time, and the GitHub rail
 and Needs you list the oldest ask first with no poller, store, or GitHub write.
 
-### [ADR-977 — Focus-gated workspace polling](adr/ADR-977-focus-gated-workspace-polling.md)
+### [ADR-084 — Isolated Mermaid rendering](adr/ADR-084-isolated-mermaid-rendering.md)
 
 > Lifecycle: Active
-> Supersedes: [ADR-027](adr/ADR-027-demand-driven-workspace-activity.md) | partial | Periodic discovery and closed-workspace sampling running while no hvir window is focused.
 
-Periodic workspace refresh runs every thirty seconds only while an hvir window is focused and
-refreshes immediately on focus gain; demand-driven refreshes are unchanged and the broker keeps
-`core.fsmonitor=false`.
+Mermaid layout runs in a separate sandboxed browser renderer behind a finite viewer-owned
+port; bounded passive SVG returns to the workbench without granting the computation page
+filesystem or application IPC authority.
+
+### [ADR-085 — Picker-scoped local destinations for SSH downloads](adr/ADR-085-picker-scoped-ssh-downloads.md)
+
+> Lifecycle: Active
+
+A native folder selection authorizes one verified SSH download to that exact local directory,
+with operation-scoped authority and no additional confirmation.
 
 ---
-
-### [ADR-975 — Bounded background workspace sampling](adr/ADR-975-bounded-background-workspace-sampling.md)
-
-> Lifecycle: Active
-> Supersedes: [ADR-027](adr/ADR-027-demand-driven-workspace-activity.md) | partial | A full demand-driven refresh sampling status for every present worktree of the project.
-
-A full refresh always samples the active workspace; a background worktree is re-sampled when its
-HEAD or branch moves and otherwise at most once per thirty seconds, so shared `.git` bursts from
-agent-driven worktrees no longer run status across the whole project on every event.
 
 ### [ADR-977 — Focus-gated workspace polling](adr/ADR-977-focus-gated-workspace-polling.md)
 
