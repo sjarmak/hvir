@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAppTheme } from '../theme'
-import { renderMermaid } from './mermaid-renderer'
+import { renderMermaid } from './mermaid-client'
 
 const MIN_ZOOM = 50
 const MAX_ZOOM = 200
@@ -21,22 +21,22 @@ export function MermaidDiagram({
   useEffect(() => {
     const element = root.current
     if (!element) return
-    let cancelled = false
+    const controller = new AbortController()
     element.textContent = 'Rendering diagram…'
-    void renderMermaid(source, theme).then(
+    void renderMermaid(source, theme, controller.signal).then(
       (svg) => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           element.innerHTML = svg
           applyDiagramZoom(element, zoomRef.current)
         }
       },
       (error: unknown) => {
-        if (!cancelled)
+        if (!controller.signal.aborted)
           element.textContent = error instanceof Error ? error.message : String(error)
       },
     )
     return () => {
-      cancelled = true
+      controller.abort()
     }
   }, [source, theme])
   useEffect(() => {

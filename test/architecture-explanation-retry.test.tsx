@@ -1,4 +1,4 @@
-// @vitest-environment happy-dom
+// @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
@@ -7,18 +7,10 @@ import type { ArchitectureReviewSnapshot } from '../src/shared/architecture-revi
 import { ArchitectureExplanation } from '../src/renderer/src/architecture-review/ArchitectureExplanation'
 import { MermaidDiagram } from '../src/renderer/src/viewer/MermaidDiagram'
 
-const mermaid = vi.hoisted(() => ({
-  initialize: vi.fn(),
-  render: vi.fn(() =>
-    Promise.resolve({ svg: '<svg aria-label="Rendered sequence"></svg>' }),
-  ),
-}))
-
-vi.mock('mermaid', () => ({ default: mermaid }))
-
 const root = localPath('/repo')
 const snapshot = { id: 'snapshot' } as ArchitectureReviewSnapshot
-const invoke = vi.fn<(channel: string) => Promise<unknown>>()
+const invoke = vi.fn<(channel: string, request?: unknown) => Promise<unknown>>()
+const send = vi.fn()
 let progress: ((payload: unknown) => void) | undefined
 let host: HTMLDivElement
 let app: ReturnType<typeof createRoot>
@@ -55,10 +47,15 @@ beforeEach(() => {
           names: { systems: [], subsystems: [], modules: [] },
         },
       })
+    if (channel === 'mermaid:render')
+      return Promise.resolve(
+        '<svg xmlns="http://www.w3.org/2000/svg" aria-label="Rendered sequence"></svg>',
+      )
     return Promise.reject(new Error('Model unavailable'))
   })
   vi.stubGlobal('hvir', {
     invoke,
+    send,
     on: vi.fn((channel: string, handler: (payload: unknown) => void) => {
       if (channel === 'architecture-review:explanation-progress') progress = handler
       return () => undefined
@@ -171,9 +168,12 @@ it('renders the sequence claim as a Mermaid diagram', async () => {
     expect(host.querySelector('.architecture-explanation-diagram svg')).not.toBeNull()
   })
   expect(host.querySelector('.architecture-explanation-claim pre')).toBeNull()
-  expect(mermaid.render).toHaveBeenCalledWith(
-    expect.stringMatching(/^mermaid-/),
-    'sequenceDiagram\n  User->>hvir: Explain',
+  expect(invoke).toHaveBeenCalledWith(
+    'mermaid:render',
+    expect.objectContaining({
+      source: 'sequenceDiagram\n  User->>hvir: Explain',
+      theme: 'dark',
+    }),
   )
   const diagram = host.querySelector<HTMLElement>('.architecture-explanation-diagram')!
   const svg = diagram.querySelector<SVGElement>('svg')!
@@ -213,4 +213,50 @@ it('keeps the selected zoom when the diagram source changes', async () => {
   await vi.waitFor(() => {
     expect(host.querySelector<SVGElement>('.diagram svg')?.style.width).toBe('125%')
   })
+})
+
+it('shows Mermaid rendering errors', async () => {
+  invoke.mockRejectedValue(new Error('Invalid diagram'))
+
+  await act(async () => {
+    app.render(<MermaidDiagram source="invalid" className="diagram" />)
+    await Promise.resolve()
+  })
+
+  await vi.waitFor(() => expect(host.textContent).toContain('Invalid diagram'))
+})
+
+it('cancels a replaced diagram without mounting its late result', async () => {
+  let finishFirst!: (svg: string) => void
+  let finishSecond!: (svg: string) => void
+  invoke.mockImplementation((channel) => {
+    if (channel !== 'mermaid:render') return Promise.reject(new Error('Unexpected call'))
+    return new Promise<string>((resolve) => {
+      if (!finishFirst) finishFirst = resolve
+      else finishSecond = resolve
+    })
+  })
+
+  await act(async () => {
+    app.render(
+      <MermaidDiagram source="sequenceDiagram\n  A->>B: First" className="diagram" />,
+    )
+    await Promise.resolve()
+  })
+  const firstRequest = invoke.mock.calls[0]![1] as { id: string }
+  await act(async () => {
+    app.render(
+      <MermaidDiagram source="sequenceDiagram\n  A->>B: Second" className="diagram" />,
+    )
+    await Promise.resolve()
+  })
+  expect(send).toHaveBeenCalledWith('mermaid:cancel', { id: firstRequest.id })
+
+  await act(async () => {
+    finishFirst('<svg xmlns="http://www.w3.org/2000/svg"><text>stale</text></svg>')
+    finishSecond('<svg xmlns="http://www.w3.org/2000/svg"><text>latest</text></svg>')
+    await Promise.resolve()
+  })
+  await vi.waitFor(() => expect(host.textContent).toContain('latest'))
+  expect(host.textContent).not.toContain('stale')
 })
