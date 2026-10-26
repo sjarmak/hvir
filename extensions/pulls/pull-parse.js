@@ -9,6 +9,7 @@
   const STATES = { OPEN: 'open', MERGED: 'merged', CLOSED: 'closed' }
   const REVIEWER_STATES = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes-requested' }
   const ACTIONABLE_REVIEW_STATES = new Set(['COMMENTED', 'CHANGES_REQUESTED'])
+  const ACTIVITY_KINDS = { APPROVED: 'approved', CHANGES_REQUESTED: 'changes', COMMENTED: 'commented' }
   const TEAM_TYPES = new Set(['Team', 'EnterpriseTeam'])
 
   const nodesOf = (connection) => (Array.isArray(connection?.nodes) ? connection.nodes.filter(Boolean) : [])
@@ -108,6 +109,45 @@
       .reduce((latest, review) => laterIso(latest, review.submittedAt), undefined)
   }
 
+  const isoMs = (value) => {
+    const ms = Date.parse(value ?? '')
+    return Number.isNaN(ms) ? undefined : ms
+  }
+
+  function humanEvents(node) {
+    const reviews = nodesOf(node.reviews).flatMap((review) => {
+      const { login, bot } = actor(review.author)
+      const kind = ACTIVITY_KINDS[review.state]
+      const at = str(review.submittedAt)
+      return bot || !login || !kind || isoMs(at) === undefined ? [] : [{ kind, by: login, at, review: true }]
+    })
+    const comments = nodesOf(node.comments).flatMap((comment) => {
+      const { login, bot } = actor(comment.author)
+      const at = str(comment.createdAt)
+      return bot || !login || isoMs(at) === undefined ? [] : [{ kind: 'commented', by: login, at }]
+    })
+    return [...reviews, ...comments]
+  }
+
+  function activityOf(node, viewer, author, headCommittedAt) {
+    const events = humanEvents(node)
+    const others = events.filter((event) => event.by !== viewer)
+    const latest = others.reduce(
+      (best, event) => (best === undefined || isoMs(event.at) > isoMs(best.at) ? event : best),
+      undefined,
+    )
+    const viewerTimes = [
+      ...events.filter((event) => event.by === viewer).map((event) => isoMs(event.at)),
+      ...(author === viewer ? [isoMs(headCommittedAt), isoMs(node.createdAt)] : []),
+    ].filter((ms) => ms !== undefined)
+    const reviewedByOthers = others.some((event) => event.review)
+    const activity = latest && { kind: latest.kind, by: latest.by, at: latest.at }
+    if (viewerTimes.length === 0) return { activity, reviewedByOthers }
+    const actedAt = Math.max(...viewerTimes)
+    const newSinceViewer = others.filter((event) => isoMs(event.at) > actedAt).length
+    return { activity, reviewedByOthers, newSinceViewer }
+  }
+
   function parsePull(node, viewer) {
     if (typeof node.number !== 'number' || !str(node.title) || !str(node.url)) return undefined
     const head = nodesOf(node.commits)[0]?.commit
@@ -121,6 +161,7 @@
       state: STATES[node.state] ?? 'open',
       draft: node.isDraft === true,
       headRef: str(node.headRefName) ?? '',
+      baseRef: str(node.baseRefName) ?? '',
       headRepo: str(node.headRepository?.nameWithOwner)?.toLowerCase(),
       author,
       createdAt: str(node.createdAt) ?? '',
@@ -136,6 +177,7 @@
       deletions: node.deletions,
       changedFiles: node.changedFiles,
       reviewers: reviewersOf(node, requestedAt),
+      ...activityOf(node, viewer, author, headCommittedAt),
     }
   }
 

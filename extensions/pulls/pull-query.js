@@ -3,7 +3,7 @@
 ;(() => {
   const PULL_FIELDS = `
 fragment pull on PullRequest {
-  number title url state isDraft headRefName createdAt updatedAt reviewDecision
+  number title url state isDraft headRefName baseRefName createdAt updatedAt reviewDecision
   additions deletions changedFiles
   headRepository { nameWithOwner }
   author { login }

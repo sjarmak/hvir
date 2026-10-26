@@ -1,7 +1,7 @@
 /* global window, document */
 const { availability } = window.host
 const { el } = window
-const { pullSections, age, badges, roleLabel } = window.pullsModel
+const { pullSections, age, badges, reasonTone, activitySignal, stackSummary, roleLabel } = window.pullsModel
 const { pullHandle } = window.pullWaits
 const ui = Object.fromEntries(
   ['repo', 'refresh', 'status', 'connect-gh', 'connect-git', 'connect-shell', 'sections', 'more'].map((id) => [id, document.getElementById(id)]),
@@ -19,32 +19,71 @@ const collapsed = new Set()
 let lists = []
 const setStatus = (text) => (ui.status.textContent = text)
 
+const STACK_HUES = 4
+
+function tonedChip(label, tone, className = 'chip') {
+  const chip = el('span', { className }, label)
+  chip.dataset.tone = tone
+  return chip
+}
+
+function stackChip(stack) {
+  const summary = stackSummary(stack)
+  if (summary === undefined) return null
+  const chip = el(
+    'span',
+    { className: 'chip chip-stack', title: `Stack order: ${summary.order.map((number) => `#${number}`).join(' → ')}` },
+    summary.label,
+  )
+  chip.dataset.hue = String(summary.id % STACK_HUES)
+  return chip
+}
+
+function activityChips(pull, now) {
+  const signal = activitySignal(pull, now)
+  if (signal === undefined)
+    return [el('span', { className: 'chip-updated', title: new Date(pull.updatedAt).toLocaleString() }, `updated ${window.ago(pull.updatedAt)}`)]
+  const chip = tonedChip(`${signal.label} · ${window.ago(pull.activity.at)}`, signal.tone, 'chip chip-activity')
+  chip.title = new Date(signal.at).toLocaleString()
+  chip.dataset.fresh = String(signal.fresh)
+  const unseen = signal.newCount > 0 ? el('span', { className: 'chip chip-new', title: 'Reviews and comments since you last acted' }, `${signal.newCount} new`) : null
+  return [chip, unseen]
+}
+
 function pullRow(row, snapshot, now, here) {
-  const { pull, reason, since, waitingOn } = row
+  const { pull, reason, since, waitingOn, stack } = row
   const worktree = window.worktreeControl.worktreeFor(here.worktrees, pull, snapshot.repo)
   const role = roleLabel(row)
   const chips = [
+    stackChip(stack),
     role ? el('span', { className: 'chip chip-role' }, role) : null,
-    reason ? el('span', { className: 'chip chip-reason' }, reason) : null,
+    reason ? tonedChip(reason, reasonTone(reason), 'chip chip-reason') : null,
+    ...activityChips(pull, now),
+    ...badges(row).map((badge) => tonedChip(badge.label, badge.tone)),
     since === undefined ? null : ageChip(since, now),
-    ...badges(row).map((label) => el('span', { className: 'chip' }, label)),
     pull.author && pull.author !== snapshot.viewer ? el('span', {}, `@${pull.author}`) : null,
     waitingOn.length ? el('span', {}, `waiting on ${waitingOn.map(pullHandle).join(', ')}`) : null,
     worktree ? window.worktreeControl.chip(worktree, here.shell, setStatus) : null,
   ].filter(Boolean)
-  return window.optionRow({
+  const option = window.optionRow({
     title: `#${pull.number} ${pull.title}`,
-    hover: `${pull.headRef} · ${pull.url}`,
+    hover: `${pull.headRef} → ${pull.baseRef} · ${pull.url}`,
     meta: chips,
     data: { number: String(pull.number) },
   })
+  if (stack !== undefined) {
+    option.dataset.hue = String(stack.id % STACK_HUES)
+    option.style.setProperty('--stack-depth', String(stack.depth))
+    option.classList.add('stacked')
+  }
+  return option
 }
 
-function issueRow(row, snapshot, now) {
-  const { issue, since } = row
+function issueRow(row, snapshot) {
+  const { issue } = row
   const chips = [
     el('span', { className: 'chip chip-role' }, roleLabel(row)),
-    ageChip(since, now),
+    el('span', { className: 'chip-updated', title: new Date(issue.updatedAt).toLocaleString() }, `updated ${window.ago(issue.updatedAt)}`),
     ...issue.labels.map((label) => el('span', { className: 'chip chip-label' }, label)),
     issue.comments > 0 ? el('span', {}, `${issue.comments} ${issue.comments === 1 ? 'comment' : 'comments'}`) : null,
     issue.author && issue.author !== snapshot.viewer ? el('span', {}, `@${issue.author}`) : null,
@@ -59,7 +98,7 @@ function issueRow(row, snapshot, now) {
 
 function ageChip(since, now) {
   const { label, tone } = age(since, now)
-  const chip = el('span', { className: 'chip chip-age', title: new Date(since).toLocaleString() }, label)
+  const chip = el('span', { className: 'chip chip-age', title: `Waiting since ${new Date(since).toLocaleString()}` }, label)
   chip.dataset.tone = tone
   return chip
 }
@@ -81,7 +120,7 @@ function renderSection(section, snapshot, now, here) {
   if (section.rows.length === 0) list.append(el('p', { className: 'hvir-meta note' }, branchNote(snapshot)))
   list.append(
     ...section.rows.map((row) =>
-      section.key === 'issues' ? issueRow(row, snapshot, now) : pullRow(row, snapshot, now, here),
+      section.key === 'issues' ? issueRow(row, snapshot) : pullRow(row, snapshot, now, here),
     ),
   )
   return details
@@ -102,7 +141,7 @@ function render(snapshot, now, here) {
   )
   if (sections.length === 1 && sections[0].rows.length === 0)
     ui.sections.append(
-      el('p', { className: 'hvir-meta note' }, 'Nothing open that is yours, waiting on you or assigned to you.'),
+      el('p', { className: 'hvir-meta note' }, 'No open pull requests of yours, review requests or assigned issues.'),
     )
   ui.repo.textContent = snapshot.repo
   const capped = snapshot.hasMore && limit >= MAX_LIMIT
