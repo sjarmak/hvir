@@ -24,7 +24,6 @@ import {
   type PtySpawnRequest,
   type ManagedPty,
   type ObservedManagedPty,
-  type PtyUsageObservationResolution,
   type HarnessSessionIdentityStatus,
   type PtyGeometry,
   type PtyGeometrySource,
@@ -55,16 +54,9 @@ interface Entry {
   readonly lifetime: PtySessionLifetime
   readonly stream: PtyStreamAttachment
   readonly observation: PtySessionObservation
-  readonly usage: Pick<PtySpawnRequest, 'host'> & {
-    readonly artifact: NonNullable<PtySpawnRequest['artifact']>
-  }
-  /** The last size applied to the PTY; replaced, never mutated. */
   geometry: PtyGeometry
-  /** Who holds that size (ADR-958); `mirror` for exactly as long as a page's hold lasts. */
   geometrySource: PtyGeometrySource
-  /** The lease holding the size, so only that holder's release gives it back. */
   geometryHolder?: object
-  /** The owner's own fit, kept while a phone holds the size and applied again on release. */
   rendererGeometry: PtyGeometry
   rendererReattachPending: boolean
 }
@@ -237,10 +229,7 @@ export class PtySupervisor {
           TERM_PROGRAM: 'hvir',
           ...agent?.env,
         },
-        unsetEnv: [
-          ...(req.unsetEnvironment ?? []),
-          ...AGENT_TERMINAL_ENVIRONMENT,
-        ],
+        unsetEnv: [...(req.unsetEnvironment ?? []), ...AGENT_TERMINAL_ENVIRONMENT],
         pathPrefix: agent?.pathPrefix,
         cols: req.cols,
         rows: req.rows,
@@ -350,8 +339,6 @@ export class PtySupervisor {
       lifetime,
       stream,
       observation,
-      usage: { host: req.host, artifact },
-      // Both hosts spawn at 80x24 when the request carries no size.
       geometry: { cols: req.cols ?? 80, rows: req.rows ?? 24 },
       geometrySource: 'renderer',
       rendererGeometry: { cols: req.cols ?? 80, rows: req.rows ?? 24 },
@@ -416,7 +403,6 @@ export class PtySupervisor {
     return detach
   }
 
-  /** A second reader bound to one exact PTY instance, never a renderer owner (ADR-950). */
   attachMirror(
     id: string,
     instanceId: string,
@@ -444,7 +430,6 @@ export class PtySupervisor {
     )
   }
 
-  /** Subscribe to a phone holding a PTY's size, or giving it back (ADR-958). */
   onMirrorGeometry(cb: (event: PtyMirrorGeometryEvent) => void): Disposer {
     this.mirrorGeometryListeners.add(cb)
     return () => {
@@ -452,36 +437,10 @@ export class PtySupervisor {
     }
   }
 
-  /** Subscribe after a mirror write landed; `info` carries the current renderer owner. */
   onMirrorInput(cb: (info: ManagedPty, data: string) => void): Disposer {
     this.mirrorInputListeners.add(cb)
     return () => {
       this.mirrorInputListeners.delete(cb)
-    }
-  }
-
-  resolveUsageObservation(id: string, instanceId: string): PtyUsageObservationResolution {
-    const entry = this.entries.get(id)
-    if (!entry || !entry.lifetime.current || entry.info.instanceId !== instanceId) {
-      return { status: 'unavailable' }
-    }
-    if (entry.info.identityStatus === 'discovering') {
-      return { status: 'pending' }
-    }
-    if (entry.info.identityStatus !== 'identified' || !entry.info.harnessSessionId) {
-      return { status: 'unavailable' }
-    }
-    return {
-      status: 'available',
-      target: {
-        instanceId: entry.info.instanceId,
-        providerId: entry.info.providerId,
-        host: entry.usage.host,
-        sessionId: entry.info.harnessSessionId,
-        cwd: entry.info.cwd,
-        sessionData: entry.observation.sessionData,
-        artifact: entry.usage.artifact,
-      },
     }
   }
 

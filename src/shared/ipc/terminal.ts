@@ -6,6 +6,7 @@ import { type HarnessProviderId } from '../harness-provider'
 import { type HarnessProfileId } from '../harness-profile'
 import { type ProjectState } from '../workspace-types'
 import { type OperationResult } from '../operation-result'
+import type { TerminalName } from '../terminal-title'
 import type { TerminalAttentionState } from '../terminal-attention'
 import type {
   ExternalSessionAttachRequest,
@@ -94,7 +95,7 @@ export type StartPtyResponse =
 export type TerminalIdentityStatus =
   'none' | 'discovering' | 'identified' | 'ambiguous' | 'unavailable'
 
-export interface TerminalRecoverySession {
+export interface TerminalRecoverySession extends TerminalName {
   readonly id: string
   readonly providerId: HarnessProviderId
   readonly profileId: HarnessProfileId
@@ -152,12 +153,6 @@ export interface ForgetTerminalRequest {
   readonly id: string
 }
 
-export interface RenameTerminalRequest {
-  readonly root: HostPath
-  readonly id: string
-  readonly title: string
-}
-
 export interface PlanTerminalMoveRequest {
   /** Optional exact live process qualifier for commands originating in Sessions. */
   readonly expectedInstanceId?: string
@@ -203,8 +198,23 @@ export interface RebindTerminalProfileRequest {
  */
 export const MAX_CLIPBOARD_WRITE_BYTES = 64 * 1024
 
+export interface RenameTerminalRequest {
+  readonly id: string
+  readonly expectedNameRevision: number
+  readonly customName: string
+}
+
+export interface TerminalNameChanged extends TerminalName {
+  readonly id: string
+  readonly root: HostPath
+}
+
 export const terminalIpc = {
   invoke: {
+    'terminal:rename': invoke<
+      RenameTerminalRequest,
+      OperationResult<TerminalNameChanged>
+    >(),
     'terminal:recovery': invoke<
       TerminalRecoveryRequest,
       readonly TerminalRecoverySession[]
@@ -219,7 +229,6 @@ export const terminalIpc = {
     >(),
     'terminal:update-layout': invoke<TerminalLayoutRequest, void>(),
     'terminal:forget': invoke<ForgetTerminalRequest, void>(),
-    'terminal:rename': invoke<RenameTerminalRequest, void>(),
     'terminal:plan-move': invoke<
       PlanTerminalMoveRequest,
       OperationResult<TerminalMovePlan>
@@ -250,6 +259,7 @@ export const terminalIpc = {
     'terminal:clipboard-write': payload<{ readonly text: string }>(),
   },
   event: {
+    'terminal:name-changed': payload<TerminalNameChanged>(),
     'terminal:command-requested': payload<TerminalCommandRequest>(),
     'terminal:command-revoked': payload<{ readonly ticket: string }>(),
     'pty:data': payload<{ readonly id: string; readonly data: string }>(),

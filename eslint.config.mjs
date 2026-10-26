@@ -87,7 +87,7 @@ const HARNESS_DIRECTION_MESSAGE =
   'Harness contracts and neutral policy depend inward, never on bundled assembly, concrete providers, or their observation implementations.'
 
 const VIEWER_PRESENTATION_IMPORT_BAN =
-  '(^|/)[A-Z][^/]*$|(^|/)(highlight-worker|highlight-request|source-highlighting|source-blame-gutter|use-[^/]+)(\\.[cm]?[jt]sx?)?$|^react(/|$)|^electron$'
+  '(^|/)[A-Z][^/]*$|(^|/)(highlight-worker|highlight-request|source-highlighting|source-blame-gutter|find-worker|find-decorations|codemirror-find-target|use-[^/]+)(\\.[cm]?[jt]sx?)?$|^react(/|$)|^electron$'
 
 function dependencyDirectionRules(
   pattern,
@@ -141,7 +141,7 @@ export default tseslint.config(
 
   js.configs.recommended,
   {
-    files: ['src/**/*.{ts,tsx,mts,cts}'],
+    files: ['src/**/*.{ts,tsx,mts,cts}', 'packages/**/*.{ts,tsx,mts,cts}'],
     plugins: { 'smoke-ownership': { rules: { inward: smokeImportBoundary } } },
     rules: { 'smoke-ownership/inward': 'error' },
   },
@@ -381,6 +381,23 @@ export default tseslint.config(
     ),
   },
 
+  {
+    files: ['src/main/viewer/mermaid-render-owner.ts'],
+    rules: dependencyDirectionRules(
+      '^electron$|^react$|(^|/)(preload|renderer)(/|$)|(^|/)electron-mermaid-computation(\\.[cm]?[jt]sx?)?$',
+      'Finite Mermaid job policy consumes content contracts and a computation port, never concrete browser or presentation adapters.',
+      true,
+    ),
+  },
+  {
+    files: ['src/renderer/src/mermaid-computation.ts'],
+    rules: dependencyDirectionRules(
+      '^node:|^electron$|^react$|(^|/)(main|preload)(/|$)|(^|/)renderer/src/(?!mermaid-computation)',
+      'Diagram computation imports only browser-safe presentation contracts and libraries, never workbench or native authority.',
+      true,
+    ),
+  },
+
   // Viewer presentation and effects depend inward, including erased imports.
   {
     files: ['src/renderer/src/viewer/**/*.{ts,tsx}'],
@@ -397,12 +414,17 @@ export default tseslint.config(
   {
     files: [
       'src/renderer/src/viewer/highlight-protocol.ts',
+      'src/renderer/src/viewer/find-worker-protocol.ts',
+      'src/renderer/src/viewer/find-match-index.ts',
+      'src/renderer/src/viewer/viewer-find.ts',
       'src/renderer/src/viewer/viewer-workload-policy.ts',
+      'src/renderer/src/viewer/rendered-workload-policy.ts',
       'src/renderer/src/viewer/source-coordinate.ts',
       'src/renderer/src/viewer/viewer-position.ts',
     ],
     rules: dependencyDirectionRules(
-      '(^|/)(main|preload|workers)(/|$)|' + VIEWER_PRESENTATION_IMPORT_BAN,
+      '(^|/)(main|preload|workers)(/|$)|(^|/)mermaid-client(\\.[cm]?[jt]sx?)?$|' +
+        VIEWER_PRESENTATION_IMPORT_BAN,
       'Pure viewer policy and highlight contracts cannot import presentation, effect, or process implementations.',
       true,
     ),
@@ -653,6 +675,7 @@ export default tseslint.config(
   {
     files: [
       'scripts/run-smoke-scenarios.mts',
+      'scripts/smoke-run-lock.mts',
       'scripts/architecture-hotspots.mts',
       'scripts/architecture-policy.mts',
       'scripts/architecture-inventory.mts',

@@ -44,6 +44,7 @@ export async function createSmokeTerminalSessionStore(
     // so nothing in a smoke run is attached to a foreign session.
     attachedTerminals: () => [],
     recordRecoveryDecision: () => Promise.resolve(),
+    rename: () => Promise.reject(new Error('Smoke recovery is read-only')),
     recordSpawn: () => Promise.resolve(),
     recordReplacement: () => Promise.resolve(),
     recordIdentity: () => Promise.resolve(true),
@@ -55,16 +56,6 @@ export async function createSmokeTerminalSessionStore(
         roots.delete(id)
         publish()
       }
-      return Promise.resolve()
-    },
-    rename: (root, id, title) => {
-      if (!hostPathEquals(sessionRoot(id), root)) {
-        return Promise.reject(new Error('Terminal no longer belongs to the workspace'))
-      }
-      sessions = sessions.map((session) =>
-        session.id === id ? { ...session, title, titlePinned: true } : session,
-      )
-      publish()
       return Promise.resolve()
     },
     rebindProfile: () => Promise.reject(new Error('Smoke recovery is read-only')),
@@ -86,7 +77,8 @@ export async function createSmokeTerminalSessionStore(
     flush: () => Promise.resolve(),
   }
   const selected =
-    process.env['HVIR_EXTENSION_TERMINAL_PROBE'] === '1'
+    process.env['HVIR_EXTENSION_TERMINAL_PROBE'] === '1' ||
+    process.env['HVIR_SMOKE_SCENARIO'] === 'terminal-presentation'
       ? await TerminalSessionRegistry.load(
           resources.host,
           joinHostPath(defaultRoot, '.terminal-command-recovery.json'),

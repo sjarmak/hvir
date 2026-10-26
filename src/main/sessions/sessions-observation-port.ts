@@ -21,8 +21,6 @@ import {
   type SessionsProviderProjection,
   type SessionsTerminalHandle,
   type SessionsTranscriptRequest,
-  type SessionsUsageDemandRequest,
-  type SessionsUsageDemandTarget,
   type SessionsWorkspaceProjection,
 } from '../../shared'
 import type { Disposer } from '../project-host'
@@ -108,12 +106,6 @@ export interface CityEventsObservationSource {
 interface DemandLease {
   readonly owner: SessionsDemandOwner
   readonly demandGeneration: number
-}
-
-export interface SessionsResolvedUsageTarget extends SessionsUsageDemandTarget {
-  readonly providerId: SessionsProviderProjection['id']
-  readonly usageSupported: boolean
-  readonly connectionState: SessionsWorkspaceProjection['host']['connectionState']
 }
 
 export type {
@@ -274,64 +266,6 @@ export class SessionsObservationPort {
       observation: this.current,
       identities: this.identities,
       projectState: this.options.projectState(),
-    })
-  }
-
-  resolveUsageTargets(
-    owner: SessionsDemandOwner,
-    request: SessionsUsageDemandRequest,
-  ): readonly SessionsResolvedUsageTarget[] {
-    if (
-      request.sourceRevision !== this.revision ||
-      request.targets.length > MAX_SESSIONS_PROJECTION_ROWS
-    ) {
-      throw new Error('Sessions usage projection is no longer current')
-    }
-    return this.currentUsageTargets(
-      owner,
-      request.projectionDemandGeneration,
-      request.targets,
-    )
-  }
-
-  currentUsageTargets(
-    owner: SessionsDemandOwner,
-    projectionDemandGeneration: number,
-    targets: readonly SessionsUsageDemandTarget[],
-  ): readonly SessionsResolvedUsageTarget[] {
-    if (
-      !this.leases.at(owner, projectionDemandGeneration) ||
-      !this.current ||
-      targets.length > MAX_SESSIONS_PROJECTION_ROWS
-    ) {
-      throw new Error('Sessions usage projection is no longer current')
-    }
-    const requested = new Set<SessionsTerminalHandle>()
-    const sessions = new Map(
-      this.current.sessions.map((session) => [session.handle, session]),
-    )
-    const workspaces = new Map(
-      this.current.workspaces.map((workspace) => [workspace.workspaceId, workspace]),
-    )
-    const providers = new Map(
-      this.current.providers.map((provider) => [provider.id, provider]),
-    )
-    return targets.map((target) => {
-      if (requested.has(target.handle)) throw new Error('Duplicate Sessions usage target')
-      requested.add(target.handle)
-      const session = sessions.get(target.handle)
-      if (!session) throw new Error('Sessions usage target is unavailable')
-      if (!sameLivePty(target.livePty, session.livePty)) {
-        throw new Error('Sessions usage PTY qualifier is no longer current')
-      }
-      const workspace = workspaces.get(session.workspaceId)
-      if (!workspace) throw new Error('Sessions usage workspace is unavailable')
-      return {
-        ...target,
-        providerId: session.providerId,
-        usageSupported: providers.get(session.providerId)?.usageSupported === true,
-        connectionState: workspace.host.connectionState,
-      }
     })
   }
 
@@ -519,6 +453,8 @@ export function assembleSessionsObservation({
       origin: SESSIONS_HVIR_ORIGIN,
       providerId: retained.providerId,
       profile: { status: 'available', value: { id: retained.profileId } },
+      customName: retained.customName,
+      nameRevision: retained.nameRevision,
       title: sessionsProjectionDisplayTitle(
         retained.title,
         handle,
@@ -624,16 +560,4 @@ export function assembleSessionsObservation({
       String(left.handle).localeCompare(String(right.handle)),
     ),
   }
-}
-
-function sameLivePty(
-  left: SessionsUsageDemandTarget['livePty'],
-  right: SessionsUsageDemandTarget['livePty'],
-): boolean {
-  if (!left || !right) return left === right
-  return (
-    left.handle === right.handle &&
-    left.rendererOwnerId === right.rendererOwnerId &&
-    left.rendererGeneration === right.rendererGeneration
-  )
 }

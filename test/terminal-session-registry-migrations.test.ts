@@ -326,6 +326,7 @@ describe('TerminalSessionRegistry', () => {
             workspaceRoot: root,
             cwd: root,
             title: 'Shell · project',
+            titlePinned: true,
             position: 0,
             active: true,
             updatedAt: 42,
@@ -336,12 +337,28 @@ describe('TerminalSessionRegistry', () => {
 
     const migrated = await TerminalSessionRegistry.load(host, file)
     expect(migrated.list(root)).toEqual([
-      expect.objectContaining({ id: SESSION_ID, title: 'Shell · project' }),
+      expect.objectContaining({
+        id: SESSION_ID,
+        title: 'Shell · project',
+        customName: 'Shell · project',
+        nameRevision: 1,
+      }),
     ])
     expect(
       migrated.attachedTerminals(root, { sourceId: 'gas-city', key: 'gc-mem-worker-1' }),
     ).toEqual([])
     await migrated.flush()
+    expect(JSON.parse(await host.readTextFile(file))).toEqual(
+      expect.objectContaining({
+        version: 7,
+        sessions: [
+          expect.objectContaining({
+            customName: 'Shell · project',
+            nameRevision: 1,
+          }),
+        ],
+      }),
+    )
   })
 
   it('drops a stored record whose attachment is not a digest this build wrote', async () => {

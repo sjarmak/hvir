@@ -194,29 +194,23 @@ describe('Sessions IPC', () => {
     expect(switchWorkspace).toHaveBeenCalledOnce()
     await scopes.dispose()
   })
-
-  it('forgets and renames only a resolved retained record, never a live one', async () => {
+  it('forgets only a resolved retained record, never a live one', async () => {
     const scopes = new RendererResourceScopes()
     const owner = scopes.activateOwner(31)
     const qualifier = sessionsWorkspaceQualifier(3, 0, 0)
     const root = hostPath(asHostId('work'), '/home/dev/projects/mem')
-    const resolveMutation = vi.fn(
-      (): SessionsResolvedMutationTarget => ({
-        outcome: 'resolved',
-        root,
-        id: 'terminal-retained',
-      }),
-    )
+    const resolveMutation = vi.fn((): SessionsResolvedMutationTarget => ({
+      outcome: 'resolved',
+      root,
+      id: 'terminal-retained',
+    }))
     const observation = {
       acquire: vi.fn(),
       snapshot: vi.fn(),
       release: vi.fn(),
       resolveMutation,
     }
-    const terminalSessions = {
-      forget: vi.fn(() => Promise.resolve()),
-      rename: vi.fn(() => Promise.resolve()),
-    }
+    const terminalSessions = { forget: vi.fn(() => Promise.resolve()) }
     const { invoke } = fixture(scopes, observation, vi.fn(), terminalSessions)
     const request = {
       demandGeneration: 4,
@@ -235,24 +229,6 @@ describe('Sessions IPC', () => {
       'terminal-retained',
     )
 
-    await expect(
-      invoke(
-        'sessions:rename',
-        { ...request, title: 'Beads Dolt server unreachable' },
-        { owner: () => owner },
-      ),
-    ).resolves.toEqual({ outcome: 'applied' })
-    expect(terminalSessions.rename).toHaveBeenCalledExactlyOnceWith(
-      root,
-      'terminal-retained',
-      'Beads Dolt server unreachable',
-    )
-
-    await expect(
-      invoke('sessions:rename', { ...request, title: '' }, { owner: () => owner }),
-    ).rejects.toThrow('Invalid terminal title')
-    expect(terminalSessions.rename).toHaveBeenCalledOnce()
-
     resolveMutation.mockReturnValueOnce({
       outcome: 'unavailable' as const,
       reason: 'session-unavailable' as const,
@@ -261,51 +237,6 @@ describe('Sessions IPC', () => {
       invoke('sessions:forget', request, { owner: () => owner }),
     ).resolves.toEqual({ outcome: 'unavailable', reason: 'session-unavailable' })
     expect(terminalSessions.forget).toHaveBeenCalledOnce()
-    await scopes.dispose()
-  })
-
-  it('routes the exact production Usage demand shape and revokes it with the renderer owner', async () => {
-    const scopes = new RendererResourceScopes()
-    const owner = scopes.activateOwner(23)
-    const observation = {
-      acquire: vi.fn(),
-      snapshot: vi.fn(),
-      release: vi.fn(),
-    }
-    const { invoke, sessionsUsage } = fixture(scopes, observation)
-    const request = {
-      demandGeneration: 6,
-      projectionDemandGeneration: 4,
-      sourceRevision: 9,
-      targets: [
-        {
-          handle: asSessionsTerminalHandle('terminal-usage'),
-          livePty: {
-            handle: asSessionsPtyHandle('instance-usage'),
-            rendererOwnerId: owner.id,
-            rendererGeneration: owner.generation,
-          },
-        },
-      ],
-    }
-
-    await expect(
-      invoke('sessions:usage-observe', request, { owner: () => owner }),
-    ).resolves.toMatchObject({ demandGeneration: 6, sampledAt: 100 })
-    expect(sessionsUsage.acquire).toHaveBeenCalledExactlyOnceWith(
-      rendererDemandOwner(owner),
-      request,
-    )
-    await expect(
-      invoke('sessions:usage-snapshot', { demandGeneration: 6 }, { owner: () => owner }),
-    ).resolves.toMatchObject({ demandGeneration: 6, revision: 2 })
-
-    const rollover = scopes.rolloverOwner(owner.id)
-    await rollover.cleanup
-    expect(sessionsUsage.release).toHaveBeenCalledExactlyOnceWith(
-      rendererDemandOwner(owner),
-      6,
-    )
     await scopes.dispose()
   })
 
@@ -400,7 +331,6 @@ describe('Sessions IPC', () => {
       'sessions:observe',
       'sessions:open',
       'sessions:release',
-      'sessions:rename',
       'sessions:resolve-terminal',
       'sessions:respond',
       'sessions:snapshot',
@@ -409,9 +339,6 @@ describe('Sessions IPC', () => {
       'sessions:transcript-release',
       'sessions:transcript-resume',
       'sessions:transcript-snapshot',
-      'sessions:usage-observe',
-      'sessions:usage-release',
-      'sessions:usage-snapshot',
     ])
     expect(Object.keys(sessionsIpc.send)).toEqual([])
   })
@@ -505,9 +432,8 @@ function fixture(
     resolveMutation?: ReturnType<typeof vi.fn>
   },
   switchWorkspace = vi.fn(),
-  terminalSessions: { forget: ReturnType<typeof vi.fn>; rename: ReturnType<typeof vi.fn> } = {
+  terminalSessions: { forget: ReturnType<typeof vi.fn> } = {
     forget: vi.fn(() => Promise.resolve()),
-    rename: vi.fn(() => Promise.resolve()),
   },
 ) {
   const handlers = new Map<string, (request: never, context: never) => unknown>()
@@ -516,23 +442,6 @@ function fixture(
       handlers.set(channel, handler)
     },
   } as unknown as IpcRegistrar
-  const sessionsUsage = {
-    acquire: vi.fn((_owner, request: { demandGeneration: number }) => ({
-      version: SESSIONS_PROJECTION_VERSION,
-      demandGeneration: request.demandGeneration,
-      revision: 1,
-      sampledAt: 100,
-      rows: [],
-    })),
-    snapshot: vi.fn((_owner, demandGeneration: number) => ({
-      version: SESSIONS_PROJECTION_VERSION,
-      demandGeneration,
-      revision: 2,
-      sampledAt: 200,
-      rows: [],
-    })),
-    release: vi.fn(() => true),
-  }
   const sessionsTranscripts = {
     acquire: vi.fn((_owner, request: { demandGeneration: number }) =>
       transcriptSnapshot(request.demandGeneration, 1),
@@ -562,14 +471,12 @@ function fixture(
         sessionsObservation.resolveMutation ??
         vi.fn(() => ({ outcome: 'unavailable', reason: 'stale-projection' })),
     },
-    sessionsUsage,
     sessionsTranscripts,
     sessionsAttachTickets,
     switchWorkspace,
     terminalSessions,
   } as never)
   return {
-    sessionsUsage,
     sessionsTranscripts,
     sessionsAttachTickets,
     terminalSessions,

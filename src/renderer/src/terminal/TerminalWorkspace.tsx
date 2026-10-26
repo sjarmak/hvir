@@ -10,7 +10,6 @@ import {
   type WorkspaceState,
 } from '../../../shared'
 import type { SessionsRendererSession } from '../sessions/sessions-renderer-observation'
-import type { SessionsProjectionCoordinator } from '../sessions/sessions-projection-coordinator'
 import { fitSplitPrimaryWidth } from '../layout/split-layout-policy'
 import type { TerminalPreferences } from '../settings/settings'
 import {
@@ -78,7 +77,6 @@ interface TerminalWorkspaceProps {
   /** Told whether an attach request could currently launch a shell here. */
   readonly onAttachAvailability?: (canLaunch: boolean) => void
   readonly runtimes: TerminalRuntimeRegistry
-  readonly sessionsProjection: SessionsProjectionCoordinator
   readonly moveTargets: readonly WorkspaceState[]
   readonly onMaterializationChange: (workspaceId: string, retained: boolean) => void
   readonly onSessionsSource: (
@@ -125,7 +123,6 @@ export function TerminalWorkspace({
   attachRequest,
   onAttachAvailability,
   runtimes,
-  sessionsProjection,
   moveTargets,
   onMaterializationChange,
   onSessionsSource,
@@ -382,7 +379,6 @@ export function TerminalWorkspace({
           railCompact={railCompact}
           onRailCompact={onRailCompact}
           menuOpen={menuOpen}
-          sessionsProjection={sessionsProjection}
           connectionState={connectionState}
           setMenuOpen={setMenuOpen}
           model={model}

@@ -380,7 +380,6 @@ function createWorkbenchEntry(): void {
         terminalHandoffs: surfaces.terminalHandoffs,
         terminalSessions: terminalSessionRegistry,
         sessionsObservation: sessionsPorts.observation,
-        sessionsUsage: sessionsPorts.usage,
         sessionsTranscripts: sessionsPorts.transcripts,
         sessionsAttachTickets: sessionsPorts.attachTickets,
         terminalMoves,

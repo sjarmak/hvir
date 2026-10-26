@@ -67,6 +67,21 @@ async function originalMessages(owner: string, source: string) {
 describe('resolved adapter for existing dependency direction policy', () => {
   it.each([
     [
+      'src/main/viewer/mermaid-render-owner.ts',
+      'src/main/viewer/electron-mermaid-computation.ts',
+      './electron-mermaid-computation',
+    ],
+    [
+      'src/renderer/src/mermaid-computation.ts',
+      'src/preload/index.ts',
+      '../../preload/index',
+    ],
+    [
+      'src/renderer/src/viewer/rendered-workload-policy.ts',
+      'src/renderer/src/viewer/mermaid-client.ts',
+      './mermaid-client',
+    ],
+    [
       'src/shared/extensions/guest-client.mjs',
       'src/main/extensions/guest-owner.ts',
       '../../main/extensions/guest-owner',
@@ -171,6 +186,21 @@ describe('resolved adapter for existing dependency direction policy', () => {
       'src/main/pty/pty-stream-attachment.ts',
       'src/main/pty/pty-supervisor.ts',
       './pty-supervisor',
+    ],
+    [
+      'src/renderer/src/viewer/find-worker-protocol.ts',
+      'src/renderer/src/viewer/find-worker.ts',
+      './find-worker',
+    ],
+    [
+      'src/renderer/src/viewer/find-match-index.ts',
+      'src/renderer/src/viewer/find-decorations.ts',
+      './find-decorations',
+    ],
+    [
+      'src/renderer/src/viewer/find.worker.ts',
+      'src/renderer/src/viewer/codemirror-find-target.ts',
+      './codemirror-find-target',
     ],
     [
       'src/renderer/src/viewer/highlight-protocol.ts',

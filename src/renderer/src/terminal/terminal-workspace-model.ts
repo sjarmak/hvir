@@ -10,6 +10,7 @@ import {
   type TerminalIdentityStatus,
   type ExternalSessionAttachRequest,
   type ArchitectureAgentLaunch,
+  type TerminalName,
 } from '../../../shared'
 import type { TerminalAttention } from './terminal-attention'
 
@@ -49,7 +50,7 @@ export interface TerminalForkRequest {
   readonly parentHarnessSessionId: string
 }
 
-export interface TerminalSession {
+export interface TerminalSession extends TerminalName {
   readonly commandTicket?: string
   readonly commandWorkspaceId?: string
   readonly id: string
@@ -250,6 +251,8 @@ export function createTerminalForkSession(
     ...source,
     id,
     title: source.fallbackTitle,
+    customName: undefined,
+    nameRevision: undefined,
     status: 'Forking conversation…',
     attention: undefined,
     promptBody: undefined,
@@ -301,8 +304,7 @@ export function createTerminalSession(
 }
 
 export type TerminalAttachOutcome =
-  | { readonly type: 'focus'; readonly id: string }
-  | { readonly type: 'launch' }
+  { readonly type: 'focus'; readonly id: string } | { readonly type: 'launch' }
 
 /**
  * Focus an existing terminal or open one — never both.
@@ -325,7 +327,10 @@ export function resolveTerminalAttach(
   )
   if (attached !== undefined) return { type: 'focus', id: attached }
   const existing = request.key === undefined ? undefined : launchedByKey.get(request.key)
-  if (existing !== undefined && model.sessions.some((session) => session.id === existing)) {
+  if (
+    existing !== undefined &&
+    model.sessions.some((session) => session.id === existing)
+  ) {
     return { type: 'focus', id: existing }
   }
   return { type: 'launch' }

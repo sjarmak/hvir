@@ -9,7 +9,6 @@ import type { BrowserWindow } from 'electron'
 
 import type { IpcEventChannel, IpcEventPayload, ProjectHostOption } from '../../shared'
 import type { HarnessProviderRegistry } from '../harness/harness-provider'
-import { HarnessUsageDemandController } from '../harness/harness-usage-demand-controller'
 import type { ProjectHost } from '../project-host'
 import type { PtySupervisor } from '../pty/pty-supervisor'
 import { sendRendererEvent } from '../renderer-event-delivery'
@@ -24,7 +23,6 @@ import {
 } from '../sessions/sessions-demand-owner'
 import { SessionsObservationPort } from '../sessions/sessions-observation-port'
 import { SessionsTranscriptPort } from '../sessions/sessions-transcript-port'
-import { SessionsUsageObservationPort } from '../sessions/sessions-usage-observation-port'
 import type { TerminalSessionObservationSource } from '../terminal/session-registry'
 import type { SmokeCleanup } from './cleanup'
 import type { createRemoteProjectFileSmokeHost } from './project-file-operations'
@@ -48,7 +46,6 @@ export interface SmokeSessionsPortsOptions {
 export interface SmokeSessionsPorts {
   readonly createSibling: () => SmokeSessionsPorts
   readonly observation: SessionsObservationPort
-  readonly usage: SessionsUsageObservationPort
   readonly transcripts: SessionsTranscriptPort
   readonly attachTickets: SessionsAttachTicketRegistry
   readonly companionSinks: SessionsCompanionSinkRegistry
@@ -117,18 +114,6 @@ export function createSmokeSessionsPorts(
       ),
   })
   cleanup.defer('Sessions observation', () => observation.dispose())
-  const usageDemand = new HarnessUsageDemandController(options.providers)
-  cleanup.defer('Sessions usage demand', () => usageDemand.dispose())
-  const usage = new SessionsUsageObservationPort({
-    sessions: observation,
-    ptys: options.ptys,
-    usage: usageDemand,
-    emit: (owner, change) =>
-      toRenderer(owner, 'sessions:usage-changed', change, (companion) =>
-        companionSinks.usage(companion, change),
-      ),
-  })
-  cleanup.defer('Sessions usage observation', () => usage.dispose())
   const transcripts = new SessionsTranscriptPort({
     sessions: observation,
     // The smoke build runs no supervisor, so a detail reports that rather
@@ -148,7 +133,6 @@ export function createSmokeSessionsPorts(
   })
   return {
     observation,
-    usage,
     transcripts,
     attachTickets,
     companionSinks,

@@ -15,6 +15,8 @@ import {
 } from '../src/renderer/src/terminal/terminal-workspace-model'
 import { useTerminalSessionCommands } from '../src/renderer/src/terminal/use-terminal-session-commands'
 import {
+  terminalTitle,
+  type TerminalNameChanged,
   asHostId,
   asHarnessProfileId,
   asHarnessProviderId,
@@ -25,6 +27,7 @@ import {
   type HostPath,
 } from '../src/shared'
 
+const nameListeners = new Set<(name: TerminalNameChanged) => void>()
 let host: HTMLDivElement
 let root: Root
 let invoke: ReturnType<typeof vi.fn>
@@ -32,6 +35,7 @@ let reportError: ReturnType<typeof vi.fn<(message: string) => void>>
 let disposeSession: ReturnType<typeof vi.fn<(id: string) => string | undefined>>
 
 beforeEach(() => {
+  nameListeners.clear()
   host = document.createElement('div')
   document.body.append(host)
   root = createRoot(host)
@@ -40,7 +44,16 @@ beforeEach(() => {
   disposeSession = vi.fn<(id: string) => string | undefined>(() => undefined)
   Object.defineProperty(window, 'hvir', {
     configurable: true,
-    value: { invoke, on: vi.fn(), send: vi.fn() },
+    value: {
+      invoke,
+      on: vi.fn((_channel: string, listener: (name: TerminalNameChanged) => void) => {
+        nameListeners.add(listener)
+        return () => {
+          nameListeners.delete(listener)
+        }
+      }),
+      send: vi.fn(),
+    },
   })
 })
 
@@ -51,6 +64,71 @@ afterEach(() => {
 })
 
 describe('terminal session commands', () => {
+  it('resets the name and revision when Start fresh replaces a retained terminal id', () => {
+    renderHarness({ fork: true })
+    act(() => {
+      for (const listener of nameListeners)
+        listener({
+          id: 'source',
+          root: localPath('/repo'),
+          customName: 'Old name',
+          nameRevision: 4,
+        })
+    })
+    expect(text('names')).toBe('Old name')
+    act(() => button('accept-fresh').click())
+    expect(text('ids')).toBe('fresh')
+    expect(text('names')).not.toBe('Old name')
+    expect(text('name-revisions')).toBe('0')
+    act(() => {
+      for (const listener of nameListeners)
+        listener({
+          id: 'fresh',
+          root: localPath('/repo'),
+          customName: 'Fresh name',
+          nameRevision: 1,
+        })
+    })
+    expect(text('names')).toBe('Fresh name')
+  })
+
+  it('reconciles only newer names for an exact existing session/root and releases its subscription', () => {
+    renderHarness({ fork: true })
+    const automatic = text('names')
+    const emit = (name: TerminalNameChanged) =>
+      act(() => {
+        for (const listener of nameListeners) listener(name)
+      })
+    emit({
+      id: 'source',
+      root: localPath('/repo'),
+      customName: 'Named work',
+      nameRevision: 2,
+    })
+    expect(text('names')).toBe('Named work')
+    emit({ id: 'source', root: localPath('/repo'), customName: 'Older', nameRevision: 1 })
+    emit({
+      id: 'source',
+      root: localPath('/elsewhere'),
+      customName: 'Wrong root',
+      nameRevision: 3,
+    })
+    emit({
+      id: 'missing',
+      root: localPath('/repo'),
+      customName: 'Wrong target',
+      nameRevision: 3,
+    })
+    expect(text('names')).toBe('Named work')
+    emit({ id: 'source', root: localPath('/repo'), nameRevision: 3 })
+    expect(text('names')).toBe(automatic)
+    expect(text('active')).toBe('source')
+    expect(invoke).not.toHaveBeenCalled()
+    expect(nameListeners.size).toBe(1)
+    act(() => root.render(<div />))
+    expect(nameListeners.size).toBe(0)
+  })
+
   it('admits one Bare Shell for a repeated empty-state launch gesture', () => {
     renderHarness()
 
@@ -78,20 +156,6 @@ describe('terminal session commands', () => {
     expect(text('profiles')).toBe('')
     expect(invoke).toHaveBeenCalledOnce()
     expect(invoke.mock.calls[0]?.[0]).toBe('terminal:forget')
-  })
-
-  it('renames the active session, trimming input and pinning against later OSC titles', () => {
-    renderHarness()
-    act(() => button('start-default').click())
-
-    act(() => button('rename-active-blank').click())
-    expect(text('titles')).toBe('Shell · repo')
-    expect(text('pinned')).toBe('false')
-
-    act(() => button('rename-active').click())
-
-    expect(text('titles')).toBe('Deploy preview shell')
-    expect(text('pinned')).toBe('true')
   })
 
   it('turns an empty split request into one primary Bare Shell', () => {
@@ -238,14 +302,21 @@ function CommandsHarness({
   const source = model.sessions.find((session) => session.id === 'source')
   return (
     <>
+      <span data-testid="names">
+        {model.sessions
+          .map((session) => terminalTitle(session.title, session.customName))
+          .join(',')}
+      </span>
+      <span data-testid="name-revisions">
+        {model.sessions.map((session) => session.nameRevision ?? 0).join(',')}
+      </span>
       <span data-testid="profiles">
         {model.sessions.map(({ profileId }) => profileId).join(',')}
       </span>
       <span data-testid="panes">{model.sessions.map(({ pane }) => pane).join(',')}</span>
       <span data-testid="ids">{model.sessions.map(({ id }) => id).join(',')}</span>
-      <span data-testid="titles">{model.sessions.map(({ title }) => title).join(',')}</span>
-      <span data-testid="pinned">
-        {model.sessions.map(({ titlePinned }) => String(titlePinned === true)).join(',')}
+      <span data-testid="titles">
+        {model.sessions.map(({ title }) => title).join(',')}
       </span>
       <span data-testid="active">{model.activeId}</span>
       <span data-testid="source-pending">{String(source?.forkPending === true)}</span>
@@ -276,6 +347,19 @@ function CommandsHarness({
         onClick={() => commands.add(chosen.id)}
       />
       <button type="button" data-testid="split" onClick={commands.split} />
+      <button
+        type="button"
+        data-testid="accept-fresh"
+        onClick={() => {
+          if (source)
+            commands.acceptFreshStart(source.id, {
+              sessionId: 'fresh',
+              status: 'New session',
+              identityStatus: 'none',
+              capabilities: source.capabilities,
+            })
+        }}
+      />
       <button
         type="button"
         data-testid="fork-source-twice"
@@ -322,20 +406,6 @@ function CommandsHarness({
         data-testid="close-active"
         onClick={() => {
           if (model.activeId) commands.close(model.activeId)
-        }}
-      />
-      <button
-        type="button"
-        data-testid="rename-active"
-        onClick={() => {
-          if (model.activeId) commands.rename(model.activeId, '  Deploy preview shell  ')
-        }}
-      />
-      <button
-        type="button"
-        data-testid="rename-active-blank"
-        onClick={() => {
-          if (model.activeId) commands.rename(model.activeId, '   ')
         }}
       />
     </>

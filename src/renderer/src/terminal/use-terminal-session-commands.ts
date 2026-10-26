@@ -1,5 +1,5 @@
 import { useArchitectureReviewLaunchListener } from './use-architecture-review-launch-listener'
-import type { RefObject } from 'react'
+import { useEffect, type RefObject } from 'react'
 import type { TerminalCommandRequest } from '../../../shared/ipc/terminal'
 
 import { hostPathEquals } from '../../../shared'
@@ -18,7 +18,6 @@ import { terminalForkAvailability } from './terminal-fork-policy'
 import type { FreshTerminalStart } from './terminal-runtime-options'
 import type { TerminalRuntimeRegistry } from './terminal-runtime-registry'
 import {
-  cleanTerminalTitle,
   createTerminalSession,
   createTerminalForkSession,
   nextTerminalSplitPane,
@@ -58,6 +57,24 @@ export function useTerminalSessionCommands({
   readonly runtimes: TerminalRuntimeRegistry
   readonly onError: (message: string) => void
 }) {
+  useEffect(() => {
+    const dispose = window.hvir.on('terminal:name-changed', (name) => {
+      if (!hostPathEquals(name.root, workspaceRoot)) return
+      const current = modelRef.current.sessions.find((session) => session.id === name.id)
+      if (!current || (name.nameRevision ?? 0) <= (current.nameRevision ?? 0)) return
+      send({
+        type: 'session-updated',
+        session: {
+          ...current,
+          customName: name.customName,
+          nameRevision: name.nameRevision,
+        },
+      })
+    })
+    return () => {
+      void dispose()
+    }
+  }, [modelRef, send, workspaceRoot])
   const launch = (
     profile: HarnessProfile,
     provider: HarnessProviderDescriptor,
@@ -313,6 +330,8 @@ export function useTerminalSessionCommands({
         session: {
           ...session,
           id: started.sessionId,
+          customName: undefined,
+          nameRevision: undefined,
           status: started.status,
           telemetry: undefined,
           attention: undefined,
@@ -343,15 +362,6 @@ export function useTerminalSessionCommands({
       })
     },
     moveToOtherPane: (id: string) => send({ type: 'session-moved', id }),
-    rename: (id: string, title: string) => {
-      const session = modelRef.current.sessions.find((candidate) => candidate.id === id)
-      const cleaned = cleanTerminalTitle(title)
-      if (!session || !cleaned) return
-      send({
-        type: 'session-updated',
-        session: { ...session, title: cleaned, titlePinned: true },
-      })
-    },
     close: (id: string) => {
       forgetAttention(id)
       const session = modelRef.current.sessions.find((candidate) => candidate.id === id)

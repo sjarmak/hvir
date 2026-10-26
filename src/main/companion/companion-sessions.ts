@@ -290,8 +290,6 @@ export class CompanionSessionsService {
 
   private readonly sink: SessionsCompanionSink = {
     onProjectionChange: (owner, change) => this.projectionChanged(owner, change),
-    // The Companion never leases usage (ADR-949), so nothing can arrive here.
-    onUsageChange: () => undefined,
     onTranscriptChange: (owner, change) => this.transcriptChanged(owner, change),
   }
 

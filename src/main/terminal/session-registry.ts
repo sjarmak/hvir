@@ -1,25 +1,32 @@
-import { createHash } from 'node:crypto'
 import {
-  asHostId,
-  asHarnessProfileId,
-  hostPath,
-  isHarnessProviderId,
-  isTerminalAttentionState,
+  parseStoredSession,
+  parsePreSkipStoredSession,
+  parseAttentionOrSkipStoredSession,
+  parseLegacyStoredSession,
+  cleanPosition,
+  isHarnessSessionId,
+  isRecord,
+  type StoredTerminalSession,
+  TERMINAL_ID,
+  MAX_SESSIONS,
+} from './session-record-format'
+
+import {
+  isTerminalTitleText,
+  hostPathEquals,
+  type TerminalName,
   type HarnessProviderId,
   type HarnessProfileId,
   type HostPath,
-  type TerminalAttentionState,
   type TerminalLayoutEntry,
   type TerminalRecoverySession,
-  isExternalSessionAttachment,
   sameExternalSessionAttachment,
   type ExternalSessionAttachment,
   type ExternalSessionAttachTarget,
 } from '../../shared'
-import { cleanTerminalTitle, hasTerminalControlCharacter, isHarnessSessionId } from './session-registry-text'
+import { cleanTerminalTitle } from './session-registry-text'
 import type { Disposer, ProjectHost } from '../project-host'
 import { externalSessionAttachment } from './external-session-attachment'
-import { harnessProvider } from '../harness/harness-provider'
 import type { HarnessRecoveryProfileReference } from '../harness/harness-profile-store'
 
 const FILE_VERSION = 7
@@ -29,34 +36,6 @@ const LEGACY_PROFILE_FILE_VERSION = 4
 const LEGACY_WORKSPACE_FILE_VERSION = 3
 const LEGACY_PROVIDER_FILE_VERSION = 2
 const LEGACY_ADAPTER_FILE_VERSION = 1
-const TERMINAL_ID = /^[a-zA-Z0-9-]{1,80}$/
-const MAX_SESSIONS = 500
-const MAX_TITLE_LENGTH = 512
-
-interface StoredTerminalSession {
-  readonly id: string
-  readonly providerId: HarnessProviderId
-  readonly profileId: HarnessProfileId
-  readonly launchRevision: number
-  readonly recoverySkipCount: 0 | 1
-  readonly artifactIdentity?: string
-  readonly harnessSessionId?: string
-  /**
-   * The foreign session this terminal attached to, as a digest. Recorded from
-   * the launch that performed the attach and kept across restarts, so the join
-   * outlives the renderer that requested it.
-   */
-  readonly attachedExternalSession?: ExternalSessionAttachment
-  readonly hostId: string
-  readonly workspaceRoot: HostPath
-  readonly cwd: HostPath
-  readonly title: string
-  readonly titlePinned?: boolean
-  readonly position: number
-  readonly active: boolean
-  readonly attention?: TerminalAttentionState
-  readonly updatedAt: number
-}
 
 interface StoredFile {
   readonly version: typeof FILE_VERSION
@@ -163,7 +142,10 @@ export interface TerminalSessionStore {
     },
   ): Promise<void>
   /** Terminals in one workspace attached to `target`, in presentation order. */
-  attachedTerminals(workspaceRoot: HostPath, target: ExternalSessionAttachTarget): readonly string[]
+  attachedTerminals(
+    workspaceRoot: HostPath,
+    target: ExternalSessionAttachTarget,
+  ): readonly string[]
   recordSpawn(spawn: RecordTerminalSpawn): Promise<void>
   recordReplacement(replacement: RecordTerminalReplacement): Promise<void>
   recordIdentity(id: string, harnessSessionId: string): Promise<boolean>
@@ -173,12 +155,18 @@ export interface TerminalSessionStore {
     layout: readonly TerminalLayoutEntry[],
   ): Promise<void>
   forget(workspaceRoot: HostPath, id: string): Promise<void>
-  rename(workspaceRoot: HostPath, id: string, title: string): Promise<void>
   rebindProfile(request: RebindTerminalProfile): Promise<TerminalRecoverySession>
   authorizeReattach(request: AuthorizeTerminalReattach): boolean
   authorizeResume(request: AuthorizeTerminalResume): boolean
   authorizeFork(request: AuthorizeTerminalFork): boolean
   authorizeReplacement(request: AuthorizeTerminalReplacement): boolean
+  rename(
+    id: string,
+    root: HostPath,
+    expectedRevision: number,
+    customName: string,
+    assertCurrent: () => void,
+  ): Promise<OwnedTerminalSession>
   flush(): Promise<void>
 }
 
@@ -202,6 +190,7 @@ export type TerminalSessionRegistryDiagnostic =
 
 export class TerminalSessionRegistry implements TerminalSessionStore {
   private readonly sessions = new Map<string, StoredTerminalSession>()
+  private readonly pendingNames = new Map<string, TerminalName>()
   private readonly forgotten = new Set<string>()
   private readonly pendingIdentities = new Map<string, PendingIdentityRegistration>()
   private pendingWrite: Promise<void> = Promise.resolve()
@@ -309,12 +298,14 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
         (left, right) =>
           left.position - right.position || left.updatedAt - right.updatedAt,
       )
-      .map(recoverySession)
+      .map((stored) => {
+        return recoverySession(this.publishedSession(stored))
+      })
   }
 
   get(id: string): OwnedTerminalSession | undefined {
     const session = this.sessions.get(id)
-    return session ? { ...session } : undefined
+    return session ? this.publishedSession(session) : undefined
   }
 
   attachedTerminals(
@@ -336,7 +327,7 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
   }
 
   observationSnapshot(): readonly OwnedTerminalSession[] {
-    return [...this.sessions.values()].map((session) => ({ ...session }))
+    return [...this.sessions.values()].map((session) => this.publishedSession(session))
   }
 
   observe(listener: () => void): Disposer {
@@ -459,6 +450,9 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
       position: cleanPosition(spawn.position),
       active: spawn.active,
       attention: retainedAttention,
+      customName: previous?.customName,
+      nameRevision: previous?.nameRevision,
+      titlePinned: previous?.titlePinned,
       updatedAt: now,
     }
     this.sessions.set(spawn.id, recorded)
@@ -644,21 +638,6 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
     return this.persist().then(() => this.publishObservation())
   }
 
-  async rename(workspaceRoot: HostPath, id: string, title: string): Promise<void> {
-    const current = this.sessions.get(id)
-    if (!current || !hostPathEquals(current.workspaceRoot, workspaceRoot)) {
-      throw new Error('Terminal no longer belongs to the workspace')
-    }
-    this.sessions.set(id, {
-      ...current,
-      title: cleanTerminalTitle(title),
-      titlePinned: true,
-      updatedAt: Date.now(),
-    })
-    await this.persist()
-    this.publishObservation()
-  }
-
   async move(request: MoveTerminalSession): Promise<TerminalRecoverySession> {
     const current = this.sessions.get(request.id)
     if (!current || !hostPathEquals(current.workspaceRoot, request.sourceRoot)) {
@@ -681,7 +660,9 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
         this.sessions.set(request.id, current)
       throw error
     }
-    return recoverySession(updated)
+    return recoverySession(
+      this.publishedSession(this.sessions.get(request.id) ?? updated),
+    )
   }
 
   async rebindProfile(request: RebindTerminalProfile): Promise<TerminalRecoverySession> {
@@ -709,7 +690,9 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
       }
       throw error
     }
-    return recoverySession(updated)
+    return recoverySession(
+      this.publishedSession(this.sessions.get(request.id) ?? updated),
+    )
   }
 
   authorizeResume(request: AuthorizeTerminalResume): boolean {
@@ -769,24 +752,112 @@ export class TerminalSessionRegistry implements TerminalSessionStore {
     )
   }
 
+  async rename(
+    id: string,
+    root: HostPath,
+    expectedRevision: number,
+    customName: string,
+    assertCurrent: () => void,
+  ): Promise<OwnedTerminalSession> {
+    assertCurrent()
+    const prior = this.sessions.get(id)
+    if (
+      !prior ||
+      !hostPathEquals(prior.workspaceRoot, root) ||
+      (prior.nameRevision ?? 0) !== expectedRevision
+    ) {
+      throw new Error('The session or its name changed. Reopen Rename and try again.')
+    }
+    if (!isTerminalTitleText(customName, true)) throw new Error('Invalid session name')
+    if (this.pendingNames.has(id))
+      throw new Error('A name is already being saved. Try again shortly.')
+    this.pendingNames.set(id, {
+      customName: prior.customName,
+      nameRevision: prior.nameRevision,
+    })
+    const nameRevision = expectedRevision + 1
+    this.sessions.set(id, {
+      ...prior,
+      customName: customName.trim() || undefined,
+      nameRevision,
+    })
+    try {
+      await this.persist(() => {
+        assertCurrent()
+        const current = this.sessions.get(id)
+        if (
+          !current ||
+          !hostPathEquals(current.workspaceRoot, root) ||
+          current.nameRevision !== nameRevision
+        ) {
+          throw new Error('The session changed before its name could be saved.')
+        }
+      })
+    } catch (error) {
+      const current = this.sessions.get(id)
+      if (current?.nameRevision === nameRevision) {
+        this.sessions.set(id, {
+          ...current,
+          customName: prior.customName,
+          nameRevision: prior.nameRevision,
+        })
+        try {
+          await this.persist()
+        } catch (rollbackError) {
+          throw new AggregateError(
+            [error, rollbackError],
+            'The session name could not be saved or restored on disk. Check storage and try again.',
+            { cause: rollbackError },
+          )
+        } finally {
+          this.pendingNames.delete(id)
+          this.publishObservation()
+        }
+      } else {
+        this.pendingNames.delete(id)
+        this.publishObservation()
+      }
+      throw error
+    }
+    // A completed write is authoritative. Renderer revocation rejects its reply in
+    // IPC, but cannot undo the committed metadata with another fallible disk write.
+    this.pendingNames.delete(id)
+    this.publishObservation()
+    const current = this.sessions.get(id)
+    if (!current || current.nameRevision !== nameRevision)
+      throw new Error('The session changed before Rename completed.')
+    return this.publishedSession(current)
+  }
+
   flush(): Promise<void> {
     return this.pendingWrite
   }
 
-  private persist(): Promise<void> {
+  private persist(beforeWrite?: () => void): Promise<void> {
     const snapshot: StoredFile = {
       version: FILE_VERSION,
       sessions: [...this.sessions.values()].slice(-MAX_SESSIONS),
     }
     const write = this.pendingWrite
       .catch(() => undefined)
-      .then(() => this.host.writeFile(this.file, JSON.stringify(snapshot, null, 2)))
-      .catch((error: unknown) => {
-        reportDiagnostic(this.onDiagnostic, { kind: 'persist-failed' })
-        throw error
+      .then(() => {
+        beforeWrite?.()
+        return this.host
+          .writeFile(this.file, JSON.stringify(snapshot, null, 2))
+          .catch((error: unknown) => {
+            reportDiagnostic(this.onDiagnostic, { kind: 'persist-failed' })
+            throw error
+          })
       })
     this.pendingWrite = write
     return write
+  }
+
+  private publishedSession(session: StoredTerminalSession): OwnedTerminalSession {
+    const pending = this.pendingNames.get(session.id)
+    return pending
+      ? { ...session, customName: pending.customName, nameRevision: pending.nameRevision }
+      : { ...session }
   }
 
   private publishObservation(): void {
@@ -839,162 +910,4 @@ function isMissingFile(value: unknown): boolean {
     'code' in value &&
     value.code === 'ENOENT'
   )
-}
-
-function parseStoredSession(value: unknown): StoredTerminalSession | undefined {
-  if (!isRecord(value)) return undefined
-  const id = value['id']
-  const providerId = value['providerId']
-  const profileId = value['profileId']
-  const launchRevision = value['launchRevision']
-  const recoverySkipCount = value['recoverySkipCount']
-  const artifactIdentity = value['artifactIdentity']
-  const harnessSessionId = value['harnessSessionId']
-  const attachedExternalSession = value['attachedExternalSession']
-  const hostId = value['hostId']
-  const workspaceRoot =
-    parsePath(value['workspaceRoot']) ?? parsePath(value['projectRoot'])
-  const cwd = parsePath(value['cwd'])
-  const title = value['title']
-  const titlePinned = value['titlePinned']
-  const position = value['position']
-  const active = value['active']
-  const attention = value['attention']
-  const updatedAt = value['updatedAt']
-  if (
-    typeof id !== 'string' ||
-    !TERMINAL_ID.test(id) ||
-    !isHarnessProviderId(providerId) ||
-    typeof profileId !== 'string' ||
-    !/^[a-z0-9](?:[a-z0-9._-]{0,78}[a-z0-9])?$/.test(profileId) ||
-    typeof launchRevision !== 'number' ||
-    !Number.isSafeInteger(launchRevision) ||
-    launchRevision <= 0 ||
-    (recoverySkipCount !== 0 && recoverySkipCount !== 1) ||
-    (artifactIdentity !== undefined &&
-      (typeof artifactIdentity !== 'string' ||
-        !/^[a-f0-9]{24}$/.test(artifactIdentity))) ||
-    (harnessSessionId !== undefined &&
-      (typeof harnessSessionId !== 'string' || !isHarnessSessionId(harnessSessionId))) ||
-    (attachedExternalSession !== undefined &&
-      !isExternalSessionAttachment(attachedExternalSession)) ||
-    typeof hostId !== 'string' ||
-    !workspaceRoot ||
-    !cwd ||
-    workspaceRoot.hostId !== hostId ||
-    cwd.hostId !== hostId ||
-    typeof title !== 'string' ||
-    title.length > MAX_TITLE_LENGTH ||
-    (titlePinned !== undefined && typeof titlePinned !== 'boolean') ||
-    typeof position !== 'number' ||
-    !Number.isSafeInteger(position) ||
-    position < 0 ||
-    position >= MAX_SESSIONS ||
-    typeof active !== 'boolean' ||
-    (attention !== undefined && !isTerminalAttentionState(attention)) ||
-    typeof updatedAt !== 'number' ||
-    !Number.isFinite(updatedAt) ||
-    updatedAt < 0
-  ) {
-    return undefined
-  }
-  return {
-    id,
-    providerId,
-    profileId: asHarnessProfileId(profileId),
-    launchRevision,
-    recoverySkipCount,
-    artifactIdentity,
-    harnessSessionId,
-    attachedExternalSession,
-    hostId,
-    workspaceRoot,
-    cwd,
-    title,
-    titlePinned,
-    position,
-    active,
-    attention,
-    updatedAt,
-  }
-}
-
-function parsePreSkipStoredSession(value: unknown): StoredTerminalSession | undefined {
-  if (!isRecord(value)) return undefined
-  return parseStoredSession({ ...value, recoverySkipCount: 0 })
-}
-
-function parseAttentionOrSkipStoredSession(
-  value: unknown,
-): StoredTerminalSession | undefined {
-  if (!isRecord(value)) return undefined
-  const normalized =
-    value['attention'] === 'output' ? { ...value, attention: 'working' } : value
-  return normalized['recoverySkipCount'] === undefined
-    ? parsePreSkipStoredSession(normalized)
-    : parseStoredSession(normalized)
-}
-
-function parsePath(value: unknown): HostPath | undefined {
-  if (!isRecord(value)) return undefined
-  const hostId = value['hostId']
-  const path = value['path']
-  if (
-    typeof hostId !== 'string' ||
-    hostId.length === 0 ||
-    hostId.length > 255 ||
-    /\s/.test(hostId) ||
-    hasTerminalControlCharacter(hostId) ||
-    typeof path !== 'string' ||
-    !path.startsWith('/')
-  ) {
-    return undefined
-  }
-  return hostPath(asHostId(hostId), path)
-}
-
-function parseLegacyStoredSession(
-  value: unknown,
-  usesAdapterId: boolean,
-): StoredTerminalSession | undefined {
-  if (!isRecord(value)) return undefined
-  const providerId = value[usesAdapterId ? 'adapterId' : 'providerId']
-  if (!isHarnessProviderId(providerId)) return undefined
-  return parseStoredSession({
-    ...value,
-    providerId,
-    profileId: legacyProfileId(providerId),
-    launchRevision: 1,
-    recoverySkipCount: 0,
-  })
-}
-
-function legacyProfileId(providerId: HarnessProviderId): HarnessProfileId {
-  try {
-    const id = harnessProvider(providerId).profile.defaultProfile?.id
-    if (id) return id
-  } catch {
-    // Missing providers remain as unavailable records with a stable synthetic profile id.
-  }
-  const candidate = `legacy-${providerId}`
-  if (candidate.length <= 80) return asHarnessProfileId(candidate)
-
-  const digest = createHash('sha256').update(providerId).digest('hex').slice(0, 16)
-  const providerPrefixLength = 80 - 'legacy-'.length - 1 - digest.length
-  return asHarnessProfileId(
-    `legacy-${providerId.slice(0, providerPrefixLength)}-${digest}`,
-  )
-}
-
-function cleanPosition(value: number): number {
-  if (!Number.isFinite(value)) return 0
-  return Math.max(0, Math.min(MAX_SESSIONS - 1, Math.floor(value)))
-}
-
-function hostPathEquals(left: HostPath, right: HostPath): boolean {
-  return left.hostId === right.hostId && left.path === right.path
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }

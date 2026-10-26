@@ -24,8 +24,6 @@ import {
   type SessionsOpenResponse,
   type SessionsProjectionRow,
   type SessionsTerminalResolutionResponse,
-  type SessionsUsageDemandTarget,
-  type SessionsUsageSnapshot,
 } from '../src/shared'
 import type { SessionsTerminalSurfacePort } from '../src/renderer/src/sessions/sessions-terminal-surface'
 let host: HTMLDivElement
@@ -118,7 +116,10 @@ describe('SessionsOverview', () => {
     } as unknown as SessionsProjectionRow
     const refreshed = {
       ...original,
-      workspace: { ...original.workspace, qualifier: sessionsWorkspaceQualifier(11, 0, 0) },
+      workspace: {
+        ...original.workspace,
+        qualifier: sessionsWorkspaceQualifier(11, 0, 0),
+      },
       livePty: original.livePty === undefined ? undefined : { ...original.livePty },
     }
     expect(sameSessionTarget(original, refreshed)).toBe(true)
@@ -312,17 +313,13 @@ function installApi(
     readonly resolveTerminal?: (
       request: unknown,
     ) => Promise<SessionsTerminalResolutionResponse>
-    readonly usageSnapshot?: (
-      demandGeneration: number,
-      targets: readonly SessionsUsageDemandTarget[],
-    ) => SessionsUsageSnapshot
   } = {},
 ) {
   const listeners = new Set<(payload: unknown) => void>()
-  const usageListeners = new Set<(payload: unknown) => void>()
   const readSnapshot = options.snapshot ?? snapshot
   const observe = vi.fn(
-    options.observe ?? ((generation: number) => Promise.resolve(readSnapshot(generation))),
+    options.observe ??
+      ((generation: number) => Promise.resolve(readSnapshot(generation))),
   )
   const release = vi.fn((_generation: number) => Promise.resolve())
   const open = vi.fn(
@@ -341,32 +338,6 @@ function installApi(
         })
       }),
   )
-  let usageTargets: readonly SessionsUsageDemandTarget[] = []
-  const readUsageSnapshot =
-    options.usageSnapshot ??
-    ((demandGeneration: number, targets: readonly SessionsUsageDemandTarget[]) => ({
-      version: SESSIONS_PROJECTION_VERSION,
-      demandGeneration,
-      revision: 1,
-      sampledAt: 10_000,
-      rows: targets.map((target) => ({
-        handle: target.handle,
-        usage: { status: 'pending' as const, reason: 'observation-pending' as const },
-      })),
-    }))
-  const usageObserve = vi.fn(
-    (request: {
-      demandGeneration: number
-      targets: readonly SessionsUsageDemandTarget[]
-    }) => {
-      usageTargets = request.targets
-      return Promise.resolve(readUsageSnapshot(request.demandGeneration, usageTargets))
-    },
-  )
-  const usageSnapshot = vi.fn((demandGeneration: number) =>
-    Promise.resolve(readUsageSnapshot(demandGeneration, usageTargets)),
-  )
-  const usageRelease = vi.fn((_demandGeneration: number) => Promise.resolve())
   const api = {
     observe,
     release,
@@ -375,35 +346,18 @@ function installApi(
     emit: (payload: unknown) => {
       for (const listener of listeners) listener(payload)
     },
-    usageEmit: (payload: unknown) => {
-      for (const listener of usageListeners) listener(payload)
-    },
-    usageObserve,
-    usageSnapshot,
-    usageRelease,
-    usageListenerCount: () => usageListeners.size,
     listenerCount: () => listeners.size,
     invoke: vi.fn((channel: string, request: { demandGeneration: number }) => {
       if (channel === 'sessions:observe') return observe(request.demandGeneration)
       if (channel === 'sessions:snapshot')
         return Promise.resolve(readSnapshot(request.demandGeneration))
       if (channel === 'sessions:release') return release(request.demandGeneration)
-      if (channel === 'sessions:usage-observe') return usageObserve(request as never)
-      if (channel === 'sessions:usage-snapshot')
-        return usageSnapshot(request.demandGeneration)
-      if (channel === 'sessions:usage-release')
-        return usageRelease(request.demandGeneration)
       if (channel === 'sessions:open') return open(request)
       if (channel === 'sessions:resolve-terminal') return resolveTerminal(request)
       return Promise.reject(new Error(`Unexpected channel ${channel}`))
     }),
     on: vi.fn((channel: string, listener: (payload: unknown) => void) => {
-      const selected =
-        channel === 'sessions:changed'
-          ? listeners
-          : channel === 'sessions:usage-changed'
-            ? usageListeners
-            : undefined
+      const selected = channel === 'sessions:changed' ? listeners : undefined
       selected?.add(listener)
       return () => selected?.delete(listener)
     }),

@@ -47,7 +47,6 @@ import type {
   DocumentReviewDeliveryCoordinator,
 } from '../document-review'
 import type { SessionsObservationPort } from '../sessions/sessions-observation-port'
-import type { SessionsUsageObservationPort } from '../sessions/sessions-usage-observation-port'
 import type { SessionsTranscriptPort } from '../sessions/sessions-transcript-port'
 import type { SessionsAttachTicketRegistry } from '../sessions/sessions-attach-tickets'
 import type { NeedsYouService } from '../needs-you/needs-you-service'
@@ -90,6 +89,7 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly projectFiles: Pick<
     ProjectFileOperationCoordinator,
     | 'create'
+    | 'download'
     | 'acquireClipboard'
     | 'acquireDropped'
     | 'copyExternal'
@@ -210,12 +210,7 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
     SessionsTranscriptPort,
     'acquire' | 'snapshot' | 'resume' | 'release' | 'respond' | 'submit'
   >
-  /** Mints what stands in for a foreign session identifier across the boundary. */
   readonly sessionsAttachTickets: Pick<SessionsAttachTicketRegistry, 'mint' | 'redeem'>
-  readonly sessionsUsage: Pick<
-    SessionsUsageObservationPort,
-    'acquire' | 'snapshot' | 'release'
-  >
   readonly terminalMoves: Pick<TerminalWorkspaceMoveCoordinator, 'plan' | 'move'>
   readonly harnessProfiles: HarnessProfileStoreContract
   readonly harnessProbes: HarnessProbeManager

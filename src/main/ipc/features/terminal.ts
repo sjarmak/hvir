@@ -4,6 +4,7 @@ import {
   isExternalSessionAttachTarget,
   isExternalSessionAttachTicketRequest,
   isTerminalAttentionState,
+  isTerminalTitleText,
   type ExternalSessionAttachRequest,
   type ExternalSessionAttachTarget,
 } from '../../../shared'
@@ -34,6 +35,7 @@ type TerminalIpcDeps = Pick<
   | 'architectureReview'
   | 'terminalHandoffs'
   | 'getHost'
+  | 'emit'
   | 'terminalSessions'
   | 'harnessProfiles'
   | 'harnessProbes'
@@ -44,6 +46,44 @@ type TerminalIpcDeps = Pick<
 >
 
 export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): void {
+  ipc.handle('terminal:rename', (req, context) =>
+    operationResult(async () => {
+      const owner = context.owner()
+      if (
+        !isTerminalId(req.id) ||
+        !isTerminalTitleText(req.customName, true) ||
+        !Number.isSafeInteger(req.expectedNameRevision) ||
+        req.expectedNameRevision < 0 ||
+        req.expectedNameRevision >= Number.MAX_SAFE_INTEGER
+      ) {
+        throw new Error('Use a plain-text session name of at most 512 characters.')
+      }
+      const retained = deps.terminalSessions.get(req.id)
+      if (!retained) throw new Error('This retained session is no longer available.')
+      const root = ipc.authority.workspaceRoot(retained.workspaceRoot)
+      const assertCurrent = () => {
+        deps.rendererResources.assertCurrent(owner)
+        ipc.authority.workspaceRoot(root)
+      }
+      const renamed = await deps.terminalSessions.rename(
+        req.id,
+        root,
+        req.expectedNameRevision,
+        req.customName,
+        assertCurrent,
+      )
+      const changed = {
+        id: renamed.id,
+        root,
+        customName: renamed.customName,
+        nameRevision: renamed.nameRevision,
+      }
+      deps.emit('terminal:name-changed', changed)
+      assertCurrent()
+      return changed
+    }),
+  )
+
   ipc.handle('terminal:recovery', (req) => {
     const root = ipc.authority.workspaceRoot(req.root)
     return deps.terminalSessions.list(root)
@@ -119,12 +159,6 @@ export function registerTerminalIpc(ipc: IpcRegistrar, deps: TerminalIpcDeps): v
     const root = ipc.authority.workspaceRoot(req.root)
     if (!isTerminalId(req.id)) throw new Error('Invalid terminal session id')
     await deps.terminalSessions.forget(root, req.id)
-  })
-  ipc.handle('terminal:rename', async (req) => {
-    const root = ipc.authority.workspaceRoot(req.root)
-    if (!isTerminalId(req.id)) throw new Error('Invalid terminal session id')
-    if (!isTerminalTitle(req.title)) throw new Error('Invalid terminal title')
-    await deps.terminalSessions.rename(root, req.id, req.title)
   })
   ipc.handle('terminal:plan-move', (req, context) =>
     operationResult(() => Promise.resolve(deps.terminalMoves.plan(req, context.owner()))),
@@ -576,19 +610,7 @@ function recoveryDecisionIds(value: unknown): readonly string[] {
 }
 
 export function isTerminalTitle(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length > 0 &&
-    value.length <= 512 &&
-    !hasControlCharacter(value)
-  )
-}
-
-function hasControlCharacter(value: string): boolean {
-  return [...value].some((character) => {
-    const code = character.charCodeAt(0)
-    return code <= 31 || code === 127
-  })
+  return isTerminalTitleText(value)
 }
 
 function isClassifiedHarnessLaunchFailure(reason: unknown): boolean {
