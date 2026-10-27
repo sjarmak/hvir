@@ -130,7 +130,6 @@
   }
 
   const api = Object.freeze({
-    EVENTS,
     fromListing,
     isRead,
     withRead,

@@ -91,11 +91,7 @@
 
   const api = Object.freeze({
     validate,
-    startArgs,
-    threadArgs,
-    submitArgs,
     submitReview,
-    graphqlError,
   })
   if (typeof module === 'object') module.exports = api
   else window.reviewSubmit = api

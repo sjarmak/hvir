@@ -404,6 +404,5 @@ window.reviewPage = (() => {
     target,
     forgetDraft,
     finishSubmit,
-    renderAll,
   })
 })()

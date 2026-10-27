@@ -140,7 +140,7 @@
     return undefined
   }
 
-  const api = Object.freeze({ parseDiff, commentTarget, fnv1a })
+  const api = Object.freeze({ parseDiff, commentTarget })
   if (typeof module === 'object') module.exports = api
   else window.diffParse = api
 })()
