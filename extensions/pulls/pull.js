@@ -359,6 +359,18 @@ function clearShown(key) {
   explainerShown = undefined
 }
 
+let citySignature
+
+async function loadCity(workspace, repo, pull, connectors, key) {
+  const found = await window.citySource.runs(workspace, repo, { number: pull.number, headRef: pull.headRefName }, connectors)
+  const packages = new Map()
+  for (const run of found.runs) packages.set(run.id, await window.citySource.reviewPackage(workspace, run, connectors))
+  const signature = JSON.stringify([key, found, [...packages.keys()], [...packages.values()].map((entry) => Boolean(entry.pkg))])
+  if (signature === citySignature) return
+  citySignature = signature
+  window.reviewPage.setCity(key, { ...found, packages })
+}
+
 let diffShown
 
 async function readDiff(workspace, repo, number, head, key) {
@@ -427,6 +439,7 @@ async function load(context, current) {
   const diff = await readDiff(context.workspace, repo, number, pull.headRefOid, key)
   if (keyOf(current()) !== key) return
   window.reviewPage.show({ key, pull, detail: detail.value, ...diff })
+  void loadCity(context.workspace, repo, pull, connectors, key)
   void renderExplainer(context.workspace, pull.body, key)
   const existing = await checkedOut(context.workspace, pull, connectors)
   if (keyOf(current()) !== key) return

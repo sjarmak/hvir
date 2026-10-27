@@ -79,6 +79,16 @@ function asideChip(pull, snapshot) {
   return control
 }
 
+let cityRuns = () => []
+
+function cityChip(pull) {
+  const summary = window.cityReviews.chip(cityRuns(pull))
+  if (!summary) return null
+  const chip = tonedChip(summary.label, summary.tone)
+  chip.title = 'Latest Gas City pipeline run or review for this pull request'
+  return chip
+}
+
 function progressChip(pull) {
   const label = reviewProgressLabel(marks.progress.get(pull.number), pull)
   return label ? el('span', { className: 'chip chip-progress' }, label) : null
@@ -98,6 +108,7 @@ function pullRow(row, snapshot, now, here) {
     pull.author && pull.author !== snapshot.viewer ? el('span', {}, `@${pull.author}`) : null,
     waitingOn.length ? el('span', {}, `waiting on ${waitingOn.map(pullHandle).join(', ')}`) : null,
     progressChip(pull),
+    cityChip(pull),
     worktree ? window.worktreeControl.chip(worktree, here.shell, setStatus) : null,
     row.role === 'reviewer' ? asideChip(pull, snapshot) : null,
     window.githubLink(pull.url, setStatus),
@@ -198,6 +209,18 @@ function render(snapshot, now, here) {
   )
 }
 
+async function readCity(workspace, snapshot, connectors) {
+  const found = new Map()
+  const pulls = [...snapshot.branchPulls, ...snapshot.authored, ...snapshot.reviewRequested]
+  for (const pull of pulls) {
+    if (found.has(pull.number)) continue
+    const result = await window.citySource.runs(workspace, snapshot.repo, pull, connectors)
+    if (result.error || result.unavailable) break
+    found.set(pull.number, result.runs)
+  }
+  cityRuns = (pull) => found.get(pull.number) ?? []
+}
+
 async function readMarks(workspace, snapshot, connectors) {
   if (connectors[store.CONNECTOR] !== 'supported') {
     marks = { client: undefined, aside: {}, progress: new Map() }
@@ -238,6 +261,7 @@ async function load(context, current) {
       (error) => ({ worktrees: new Map(), shell: connectors.shell, note: `Worktrees unavailable: ${error.message}` }),
     )
     const note = await readMarks(context.workspace, snapshot, connectors)
+    await readCity(context.workspace, snapshot, connectors)
     if (current().workspace?.id !== context.workspace.id || requested !== limit) return
     render(snapshot, Date.now(), { ...here, note: [here.note, note].filter(Boolean).join(' ') })
     if (!local) ui['connect-shell'].hidden = true

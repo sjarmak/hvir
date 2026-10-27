@@ -126,6 +126,7 @@ window.diffView = (() => {
       el('td', { className: 'code' }, add, el('span', { className: 'text' }, line.text)),
     )
     row.dataset.kind = line.kind
+    if (line.kind !== 'del') row.dataset.newLine = String(line.newLine)
     return row
   }
 
@@ -143,8 +144,13 @@ window.diffView = (() => {
     return { anchored, loose }
   }
 
-  function render(file, { threads, drafts, editing, headOid, showLarge, handlers }) {
+  function render(file, { threads, drafts, findings = [], editing, headOid, showLarge, handlers }) {
     const { anchored, loose } = anchoredThreads(threads)
+    const findingsAt = new Map()
+    for (const finding of findings) {
+      const key = targetKey('RIGHT', finding.line)
+      findingsAt.set(key, [...(findingsAt.get(key) ?? []), finding])
+    }
     const draftsAt = new Map()
     for (const draft of drafts) {
       const key = targetKey(draft.side, draft.line)
@@ -156,6 +162,7 @@ window.diffView = (() => {
       return {
         table: el('p', { className: 'hvir-meta' }, 'Binary file, no text diff.'),
         loose,
+        unplacedFindings: findings,
       }
     if (file.hunks.length === 0)
       return {
@@ -165,6 +172,7 @@ window.diffView = (() => {
           'No changed lines (mode change or rename only).',
         ),
         loose,
+        unplacedFindings: findings,
       }
     if (lineCount > LARGE_LINES && !showLarge) {
       const button = el(
@@ -182,6 +190,7 @@ window.diffView = (() => {
           button,
         ),
         loose,
+        unplacedFindings: findings,
       }
     }
     const body = el('tbody')
@@ -199,6 +208,7 @@ window.diffView = (() => {
         const blocks = [
           ...(anchored.get(key) ?? []).map(threadBlock),
           ...(leftKey ? (anchored.get(leftKey) ?? []).map(threadBlock) : []),
+          ...(findingsAt.get(key) ?? []).map(handlers.findingBlock),
           ...(draftsAt.get(key) ?? [])
             .filter((draft) => draft.id !== editing?.draftId)
             .map((draft) => draftBlock(draft, { headOid, ...handlers })),
@@ -223,6 +233,7 @@ window.diffView = (() => {
         body,
       ),
       loose: [...loose, ...unplacedThreads],
+      unplacedFindings: findings.filter((finding) => !placed.has(targetKey('RIGHT', finding.line))),
       unplaced: unplaced.map((draft) => draftBlock(draft, { headOid, ...handlers })),
     }
   }

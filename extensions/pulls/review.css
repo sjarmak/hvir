@@ -223,3 +223,69 @@
     border-bottom: 1px solid var(--border-subtle);
   }
 }
+.city {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 980px;
+}
+.city h2,
+.city h3,
+.city h4 {
+  margin: 4px 0 0;
+}
+.city-run {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+}
+.city-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 0;
+}
+.city-facts dt {
+  color: var(--text-muted);
+}
+.city-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.city-link {
+  display: block;
+}
+.city-lanes {
+  width: 100%;
+  border-collapse: collapse;
+}
+.city-lanes th,
+.city-lanes td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+}
+.city-findings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.city-finding {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.city-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: var(--panel-surface);
+}

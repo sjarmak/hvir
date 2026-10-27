@@ -14,6 +14,7 @@ window.reviewPage = (() => {
       'file-head',
       'file-loose',
       'file-diff',
+      'city',
       'submit',
     ].map((id) => [id, document.getElementById(id)]),
   )
@@ -26,6 +27,12 @@ window.reviewPage = (() => {
   let listBinding
   const listeners = new Set()
   let setStatus = () => {}
+  let cityData = { key: undefined, runs: [], packages: new Map() }
+
+  const cityFindings = () => {
+    const [latest] = cityData.runs
+    return (latest && cityData.packages.get(latest.id)?.pkg?.findings) || []
+  }
 
   const files = () => shown?.files ?? []
   const threadsTruncated = () =>
@@ -93,6 +100,7 @@ window.reviewPage = (() => {
   }
 
   const handlers = {
+    findingBlock: (finding) => window.cityView.findingBlock(finding),
     onComment(target) {
       editing = { path: selected, ...target, text: '' }
       renderFile()
@@ -165,6 +173,7 @@ window.reviewPage = (() => {
       checklistRow('overview', 'Overview', 'checks, reviews, conversation', {
         mark: '◆',
       }),
+      ...cityRow(),
       ...files().map((file) => {
         const drafts = state.drafts.filter((draft) => draft.path === file.path).length
         const row = checklistRow(
@@ -242,6 +251,7 @@ window.reviewPage = (() => {
     const rendered = window.diffView.render(file, {
       threads: fileThreads,
       drafts: fileDrafts,
+      findings: cityFindings().filter((finding) => finding.file === file.path && finding.line),
       editing: editing?.path === file.path ? editing : undefined,
       headOid: headOid(),
       showLarge: largeShown.has(file.path),
@@ -268,6 +278,15 @@ window.reviewPage = (() => {
             ...rendered.loose.map(window.diffView.threadBlock),
           ]
         : []),
+      ...(rendered.unplacedFindings.length
+        ? [
+            el('p', { className: 'hvir-meta' }, 'City findings not on a changed line'),
+            ...rendered.unplacedFindings.map(window.cityView.findingBlock),
+          ]
+        : []),
+      ...cityFindings()
+        .filter((finding) => finding.file === file.path && !finding.line)
+        .map(window.cityView.findingBlock),
       ...(rendered.unplaced?.length
         ? [
             el(
@@ -284,14 +303,42 @@ window.reviewPage = (() => {
     ui['file-diff'].replaceChildren(rendered.table)
   }
 
+  function jump(path, line) {
+    select(path)
+    const row = line ? ui['file-diff'].querySelector(`.line-row[data-new-line="${line}"]`) : undefined
+    row?.scrollIntoView({ block: 'center' })
+  }
+
+  function renderCity() {
+    window.cityView.render(ui.city, cityData, { headOid: headOid(), onJump: jump, onStatus: setStatus })
+  }
+
+  const PANES = new Set(['overview', 'submit', 'city'])
+
   function renderAll() {
     renderChecklist()
-    const isFile = selected !== 'overview' && selected !== 'submit'
+    const isFile = !PANES.has(selected)
     ui.brief.hidden = selected !== 'overview'
     ui.file.hidden = !isFile
     ui.submit.hidden = selected !== 'submit'
+    ui.city.hidden = selected !== 'city'
     if (isFile) renderFile()
     if (selected === 'submit') window.submitView.render()
+    if (selected === 'city') renderCity()
+  }
+
+  function setCity(key, data) {
+    if (shown?.key !== key) return
+    cityData = { key, ...data }
+    if (document.activeElement?.tagName === 'TEXTAREA') renderChecklist()
+    else renderAll()
+  }
+
+  function cityRow() {
+    if (cityData.key !== shown?.key || (!cityData.runs.length && !cityData.error)) return []
+    const [latest] = cityData.runs
+    const summary = latest ? window.cityReviews.chip([latest]).label : 'unavailable'
+    return [checklistRow('city', 'City reviews', summary, { mark: '◎' })]
   }
 
   function storeNote(available, workspace) {
@@ -382,8 +429,7 @@ window.reviewPage = (() => {
       diffHead,
     }
     if (
-      selected !== 'overview' &&
-      selected !== 'submit' &&
+      !PANES.has(selected) &&
       !files().some((file) => file.path === selected)
     )
       selected = 'overview'
@@ -404,5 +450,6 @@ window.reviewPage = (() => {
     target,
     forgetDraft,
     finishSubmit,
+    setCity,
   })
 })()

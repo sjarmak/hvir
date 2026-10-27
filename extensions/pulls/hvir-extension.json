@@ -1,7 +1,7 @@
 {
   "id": "hvir.pulls",
   "name": "Pull requests",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "contract": "1.0",
   "requiredCapabilities": [
     "presentation.read",
@@ -92,6 +92,32 @@
     {
       "id": "shell",
       "description": "Runs sh for two things: a terminal in another worktree of this repository (after you confirm), and reading or writing your review progress as small JSON files under ~/.hvir/pulls.",
+      "context": "workspace",
+      "setup": {
+        "executable": "sh"
+      },
+      "timeoutMs": 10000,
+      "outputBytes": 4194304,
+      "environment": []
+    },
+    {
+      "id": "bd",
+      "description": "Read the Gas City pipeline's pr-review and pr-pipeline beads in the workspace with bd list, to show which city reviews and runs touched each pull request. Runs bd list only.",
+      "context": "workspace",
+      "setup": {
+        "executable": "bd"
+      },
+      "timeoutMs": 30000,
+      "outputBytes": 4194304,
+      "environment": [
+        "BEADS_DOLT_SERVER_PORT",
+        "BEADS_DIR",
+        "PATH"
+      ]
+    },
+    {
+      "id": "city",
+      "description": "Read a city review package: sh prints the JSON files (lane results, findings, gate, posted) from one directory under ~/*/.gc/pr-pipeline/ named by a bead. Refuses any other path.",
       "context": "workspace",
       "setup": {
         "executable": "sh"
