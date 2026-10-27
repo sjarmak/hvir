@@ -289,3 +289,17 @@
   border-radius: 6px;
   background: var(--panel-surface);
 }
+.feedback {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.feedback h3 {
+  margin: 0;
+}
+.feedback-text {
+  width: 100%;
+  font-family: var(--hvir-monospace-font);
+  resize: vertical;
+}

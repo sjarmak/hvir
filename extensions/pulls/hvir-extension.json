@@ -1,7 +1,7 @@
 {
   "id": "hvir.pulls",
   "name": "Pull requests",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "contract": "1.0",
   "requiredCapabilities": [
     "presentation.read",
@@ -91,7 +91,7 @@
     },
     {
       "id": "shell",
-      "description": "Runs sh to open a terminal in another worktree (after you confirm), keep review progress as JSON under ~/.hvir/pulls, and read city review packages under ~/*/.gc/pr-pipeline.",
+      "description": "Runs sh to open a terminal in a worktree, creating <repo>.hvir-worktrees/pr-N for a pull request first (after you confirm); keep review progress under ~/.hvir/pulls; read city review packages.",
       "context": "workspace",
       "setup": {
         "executable": "sh"
@@ -229,6 +229,35 @@
         },
         "required": [
           "path"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "pull-worktree-terminal",
+      "title": "Open a pull request's branch in a new worktree",
+      "view": "pulls",
+      "agents": false,
+      "effects": {
+        "delete": false,
+        "replace": false
+      },
+      "timeoutMs": 120000,
+      "description": "Creates <repo>.hvir-worktrees/pr-<number> beside the workspace on the pull request's branch (git fetch, then git worktree add), or reuses it, and opens a terminal there after you confirm in hvir. Same-repository pull requests only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "number"
+          },
+          "branch": {
+            "type": "string",
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "number",
+          "branch"
         ],
         "additionalProperties": false
       }
