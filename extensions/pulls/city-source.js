@@ -1,9 +1,11 @@
 /* global window */
 window.citySource = (() => {
   const city = window.cityReviews
+  const follow = window.cityFollowups
   const INDEX_TTL_MS = 2 * 60 * 1000
   let indexes = new Map()
   let packages = new Map()
+  let followupIndexes = new Map()
 
   async function index(workspace, repo, connectors) {
     if (connectors[city.BEADS] !== 'supported')
@@ -54,5 +56,32 @@ window.citySource = (() => {
     }
   }
 
-  return Object.freeze({ runs, reviewPackage })
+  async function followupIndex(workspace, repo, connectors) {
+    if (connectors[follow.BEADS] !== 'supported' || connectors[follow.LOCATOR] !== 'supported')
+      return { unavailable: 'Connect bd and shell to read city follow-ups.' }
+    const key = `${workspace.id}|${repo.toLowerCase()}`
+    const cached = followupIndexes.get(key)
+    if (cached && Date.now() - cached.at < INDEX_TTL_MS) return cached.value
+    const stores = follow.parseStores(
+      await window.host.run(follow.LOCATOR, workspace, follow.locateArgs(), { text: true }),
+    )
+    const lists = await Promise.all(
+      stores.map((dir) => window.host.run(follow.BEADS, workspace, follow.listArgs(dir))),
+    )
+    const value = { index: follow.indexFollowups(lists.flat(), repo) }
+    followupIndexes = new Map(followupIndexes).set(key, { at: Date.now(), value })
+    return value
+  }
+
+  async function followups(workspace, repo, number, connectors) {
+    try {
+      const result = await followupIndex(workspace, repo, connectors)
+      if (result.unavailable) return { followups: [], unavailable: result.unavailable }
+      return { followups: result.index.get(number) ?? [] }
+    } catch (error) {
+      return { followups: [], error: error.message }
+    }
+  }
+
+  return Object.freeze({ runs, reviewPackage, followups })
 })()

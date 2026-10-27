@@ -335,10 +335,15 @@ window.reviewPage = (() => {
   }
 
   function cityRow() {
-    if (cityData.key !== shown?.key || (!cityData.runs.length && !cityData.error)) return []
+    if (cityData.key !== shown?.key) return []
+    const followups = cityData.followups?.followups ?? []
+    if (!cityData.runs.length && !cityData.error && !followups.length) return []
     const [latest] = cityData.runs
-    const summary = latest ? window.cityReviews.chip([latest]).label : 'unavailable'
-    return [checklistRow('city', 'City reviews', summary, { mark: '◎' })]
+    const parts = [
+      latest ? window.cityReviews.chip([latest]).label : cityData.error ? 'unavailable' : '',
+      window.cityFollowups.chip(followups)?.label ?? '',
+    ].filter(Boolean)
+    return [checklistRow('city', 'City reviews', parts.join(' · ') || 'no review', { mark: '◎' })]
   }
 
   function storeNote(available, workspace) {

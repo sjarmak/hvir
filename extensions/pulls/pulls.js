@@ -80,13 +80,21 @@ function asideChip(pull, snapshot) {
 }
 
 let cityRuns = () => []
+let cityFollowups = () => []
 
-function cityChip(pull) {
-  const summary = window.cityReviews.chip(cityRuns(pull))
-  if (!summary) return null
-  const chip = tonedChip(summary.label, summary.tone)
-  chip.title = 'Latest Gas City pipeline run or review for this pull request'
-  return chip
+function cityChips(pull) {
+  const review = window.cityReviews.chip(cityRuns(pull))
+  const followups = window.cityFollowups.chip(cityFollowups(pull))
+  return [
+    review && { ...review, title: 'Latest Gas City pipeline run or review for this pull request' },
+    followups && { ...followups, title: 'Open Gas City follow-ups for this pull request: review comments to answer, CI failures' },
+  ]
+    .filter(Boolean)
+    .map((summary) => {
+      const chip = tonedChip(summary.label, summary.tone)
+      chip.title = summary.title
+      return chip
+    })
 }
 
 function progressChip(pull) {
@@ -108,7 +116,7 @@ function pullRow(row, snapshot, now, here) {
     pull.author && pull.author !== snapshot.viewer ? el('span', {}, `@${pull.author}`) : null,
     waitingOn.length ? el('span', {}, `waiting on ${waitingOn.map(pullHandle).join(', ')}`) : null,
     progressChip(pull),
-    cityChip(pull),
+    ...cityChips(pull),
     worktree ? window.worktreeControl.chip(worktree, here.shell, setStatus) : null,
     row.role === 'reviewer' ? asideChip(pull, snapshot) : null,
     window.githubLink(pull.url, setStatus),
@@ -211,14 +219,27 @@ function render(snapshot, now, here) {
 
 async function readCity(workspace, snapshot, connectors) {
   const found = new Map()
+  const followups = new Map()
   const pulls = [...snapshot.branchPulls, ...snapshot.authored, ...snapshot.reviewRequested]
+  let runsReadable = true
+  let followupsReadable = true
+  const seen = new Set()
   for (const pull of pulls) {
-    if (found.has(pull.number)) continue
-    const result = await window.citySource.runs(workspace, snapshot.repo, pull, connectors)
-    if (result.error || result.unavailable) break
-    found.set(pull.number, result.runs)
+    if (seen.has(pull.number)) continue
+    seen.add(pull.number)
+    if (runsReadable) {
+      const result = await window.citySource.runs(workspace, snapshot.repo, pull, connectors)
+      runsReadable = !result.error && !result.unavailable
+      if (runsReadable) found.set(pull.number, result.runs)
+    }
+    if (followupsReadable) {
+      const result = await window.citySource.followups(workspace, snapshot.repo, pull.number, connectors)
+      followupsReadable = !result.error && !result.unavailable
+      if (followupsReadable) followups.set(pull.number, result.followups)
+    }
   }
   cityRuns = (pull) => found.get(pull.number) ?? []
+  cityFollowups = (pull) => followups.get(pull.number) ?? []
 }
 
 async function readMarks(workspace, snapshot, connectors) {

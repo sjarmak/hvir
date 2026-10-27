@@ -2,6 +2,7 @@
 window.cityView = (() => {
   const { el } = window
   const city = window.cityReviews
+  const follow = window.cityFollowups
   const UNKNOWN = 'not recorded'
   const SEVERITY_TONES = { blocking: 'danger', important: 'warning', major: 'warning' }
 
@@ -242,39 +243,87 @@ window.cityView = (() => {
     )
   }
 
-  function render(root, data, handlers) {
+  function runsSection(data, handlers) {
     if (data.error)
-      return root.replaceChildren(
-        el('h2', {}, 'City reviews'),
-        el('p', { className: 'hvir-meta' }, `City reviews unavailable: ${data.error}`),
-      )
-    if (data.unavailable)
-      return root.replaceChildren(
-        el('h2', {}, 'City reviews'),
-        el('p', { className: 'hvir-meta' }, data.unavailable),
-      )
+      return [el('p', { className: 'hvir-meta' }, `City reviews unavailable: ${data.error}`)]
+    if (data.unavailable) return [el('p', { className: 'hvir-meta' }, data.unavailable)]
     if (data.runs.length === 0)
-      return root.replaceChildren(
-        el('h2', {}, 'City reviews'),
+      return [
         el(
           'p',
           { className: 'hvir-meta' },
           'No city pipeline run or review is recorded for this pull request.',
         ),
-      )
+      ]
+    return data.runs.map((run, index) => {
+      const article = runArticle(run, data.packages.get(run.id), handlers)
+      return index === 0
+        ? article
+        : el(
+            'details',
+            { className: 'city-older' },
+            el('summary', {}, `Earlier: ${run.title}`),
+            article,
+          )
+    })
+  }
+
+  function followupItem(followup, headOid) {
+    const detail =
+      followup.kind === 'ci'
+        ? `at ${headNote({ reviewedHead: followup.head }, headOid) || UNKNOWN}`
+        : followup.kind === 'comments'
+          ? `${followup.comments} comment${followup.comments === 1 ? '' : 's'}`
+          : ''
+    return el(
+      'li',
+      { className: 'city-finding' },
+      el(
+        'div',
+        { className: 'chips' },
+        toned(follow.kindLabel(followup.kind), follow.isOpen(followup) ? 'warning' : 'neutral'),
+        el('span', { className: 'chip' }, followup.status),
+        el('strong', {}, followup.title),
+      ),
+      el(
+        'div',
+        { className: 'hvir-meta chips' },
+        el('span', { className: 'selectable' }, followup.id),
+        detail ? el('span', {}, detail) : null,
+        followup.updatedAt ? el('span', {}, `updated ${window.ago(followup.updatedAt)}`) : null,
+      ),
+    )
+  }
+
+  function followupsSection(data, headOid) {
+    const found = data.followups
+    if (!found) return []
+    if (found.error)
+      return [el('h3', {}, 'City follow-ups'), el('p', { className: 'hvir-meta' }, `City follow-ups unavailable: ${found.error}`)]
+    if (found.unavailable || found.followups.length === 0) return []
+    const open = found.followups.filter(follow.isOpen)
+    const closed = found.followups.filter((item) => !follow.isOpen(item))
+    return [
+      el('h3', {}, `City follow-ups · ${open.length} open`),
+      open.length
+        ? el('ul', { className: 'city-findings' }, ...open.map((item) => followupItem(item, headOid)))
+        : el('p', { className: 'hvir-meta' }, 'Nothing open.'),
+      closed.length
+        ? el(
+            'details',
+            {},
+            el('summary', {}, `${closed.length} closed`),
+            el('ul', { className: 'city-findings' }, ...closed.map((item) => followupItem(item, headOid))),
+          )
+        : null,
+    ].filter(Boolean)
+  }
+
+  function render(root, data, handlers) {
     root.replaceChildren(
       el('h2', {}, 'City reviews'),
-      ...data.runs.map((run, index) => {
-        const article = runArticle(run, data.packages.get(run.id), handlers)
-        return index === 0
-          ? article
-          : el(
-              'details',
-              { className: 'city-older' },
-              el('summary', {}, `Earlier: ${run.title}`),
-              article,
-            )
-      }),
+      ...runsSection(data, handlers),
+      ...followupsSection(data, handlers.headOid),
     )
   }
 

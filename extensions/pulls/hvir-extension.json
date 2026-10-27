@@ -1,7 +1,7 @@
 {
   "id": "hvir.pulls",
   "name": "Pull requests",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "contract": "1.0",
   "requiredCapabilities": [
     "presentation.read",
@@ -91,7 +91,7 @@
     },
     {
       "id": "shell",
-      "description": "Runs sh to open a terminal in a worktree, creating <repo>.hvir-worktrees/pr-N for a pull request first (after you confirm); keep review progress under ~/.hvir/pulls; read city review packages.",
+      "description": "Runs sh to open a terminal in a worktree, creating <repo>.hvir-worktrees/pr-N for a pull request first (after you confirm); keep review progress under ~/.hvir/pulls; find the city store and read city review packages.",
       "context": "workspace",
       "setup": {
         "executable": "sh"
@@ -102,7 +102,7 @@
     },
     {
       "id": "bd",
-      "description": "Read the Gas City pipeline's pr-review and pr-pipeline beads in the workspace with bd list, to show which city reviews and runs touched each pull request. Runs bd list only.",
+      "description": "Read Gas City beads with bd list only: pr-review and pr-pipeline beads in the workspace, and PR follow-ups (review comments, CI failures) in the city store the workspace routes to, to show city work on each pull request.",
       "context": "workspace",
       "setup": {
         "executable": "bd"

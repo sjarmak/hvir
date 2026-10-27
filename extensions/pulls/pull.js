@@ -377,13 +377,16 @@ function clearShown(key) {
 let citySignature
 
 async function loadCity(workspace, repo, pull, connectors, key) {
-  const found = await window.citySource.runs(workspace, repo, { number: pull.number, headRef: pull.headRefName }, connectors)
+  const [found, followups] = await Promise.all([
+    window.citySource.runs(workspace, repo, { number: pull.number, headRef: pull.headRefName }, connectors),
+    window.citySource.followups(workspace, repo, pull.number, connectors),
+  ])
   const packages = new Map()
   for (const run of found.runs) packages.set(run.id, await window.citySource.reviewPackage(workspace, run, connectors))
-  const signature = JSON.stringify([key, found, [...packages.keys()], [...packages.values()].map((entry) => Boolean(entry.pkg))])
+  const signature = JSON.stringify([key, found, followups, [...packages.keys()], [...packages.values()].map((entry) => Boolean(entry.pkg))])
   if (signature === citySignature) return
   citySignature = signature
-  window.reviewPage.setCity(key, { ...found, packages })
+  window.reviewPage.setCity(key, { ...found, followups, packages })
 }
 
 let diffShown
