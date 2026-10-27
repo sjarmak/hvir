@@ -25,10 +25,8 @@ export function AppProjectNavigation({
     readonly openSettings: (section?: SettingsSection) => void
   }
   readonly theme: AppTheme
-  readonly destination: 'workspace' | 'sessions' | 'needs-you' | 'extension'
-  readonly setDestination: (
-    destination: 'workspace' | 'sessions' | 'needs-you' | 'extension',
-  ) => void
+  readonly destination: 'workspace' | 'sessions' | 'extension'
+  readonly setDestination: (destination: 'workspace' | 'sessions' | 'extension') => void
 }): ReactElement | null {
   if (!session.projectState) return null
   return (
@@ -65,8 +63,6 @@ export function AppProjectNavigation({
       onSettings={() => overlays.openSettings()}
       sessionsActive={destination === 'sessions'}
       onSessions={() => setDestination('sessions')}
-      needsYouActive={destination === 'needs-you'}
-      onNeedsYou={() => setDestination('needs-you')}
     />
   )
 }

@@ -16,9 +16,6 @@ import type { RendererOwner, RendererResourceScopes } from '../renderer-resource
 import type { PtySupervisor } from '../pty/pty-supervisor'
 import { captureSessionsVisuals } from './sessions-visual'
 import { verifySessionsProjectPickerReturn } from './sessions-project-picker'
-import { verifyNeedsYouSessionOpen } from './needs-you-session-open'
-import { verifyNeedsYouView } from './needs-you-view'
-import { verifyQolRailView } from './qol-rail-view'
 import { verifyReviewCheckpointView } from './review-checkpoint-view'
 
 const PRESENTATION_SESSION_ID = '00000000-0000-4000-8000-000000006511'
@@ -39,7 +36,6 @@ export async function verifySessionsProjectionSmoke(options: {
   readonly supervisor: PtySupervisor
   readonly host: ProjectHost
   readonly provider: HarnessProvider
-  readonly needsYouSnapshotCount: () => number
   readonly captureDirectory?: HostPath
 }): Promise<string> {
   const {
@@ -55,7 +51,6 @@ export async function verifySessionsProjectionSmoke(options: {
     supervisor,
     host,
     provider,
-    needsYouSnapshotCount,
     captureDirectory,
   } = options
   publishState(state)
@@ -263,13 +258,6 @@ export async function verifySessionsProjectionSmoke(options: {
     throw new Error('Sessions overview retained observation demand after Open returned')
   }
   const pickerStatus = await verifySessionsProjectPickerReturn(win)
-  const needsYouStatus = await verifyNeedsYouView(
-    win,
-    host,
-    needsYouSnapshotCount,
-    captureDirectory,
-  )
-  const qolRailStatus = await verifyQolRailView(win)
   const checkpointStatus = await verifyReviewCheckpointView({
     win,
     host,
@@ -277,11 +265,10 @@ export async function verifySessionsProjectionSmoke(options: {
     publishState,
   })
   const hiddenTerminalStatus = await ensureSessionsLiveTerminal(win, supervisor)
-  const needsYouSessionStatus = await verifyNeedsYouSessionOpen(win, supervisor)
   const secondHiddenTerminalStatus = await ensureSessionsLiveTerminal(win, supervisor, 2)
   const hiddenStatus = await verifySessionsHiddenRelease(win)
   const captureStatus = captures.length > 0 ? ` + ${captures.length} visual captures` : ''
-  return `cross-project/worktree + renderer rollover + stale Open + quiet release + ${terminalStatus}${captureStatus} + ${overviewStatus} + ${pickerStatus} + ${needsYouStatus} + ${qolRailStatus} + ${checkpointStatus} + hidden ${hiddenTerminalStatus} + ${needsYouSessionStatus} + ${secondHiddenTerminalStatus} + ${hiddenStatus}`
+  return `cross-project/worktree + renderer rollover + stale Open + quiet release + ${terminalStatus}${captureStatus} + ${overviewStatus} + ${pickerStatus} + ${checkpointStatus} + hidden ${hiddenTerminalStatus} + ${secondHiddenTerminalStatus} + ${hiddenStatus}`
 }
 
 async function verifySessionsHiddenRelease(win: BrowserWindow): Promise<string> {

@@ -26,8 +26,6 @@ import { createFilenameSearchCoordinator } from '../filename-search'
 import { createProjectFileOperationCoordinator } from '../project-file-operations'
 import { ProjectFolderPickerCoordinator } from '../project-folder-picker'
 import { createDocumentReviewRuntime } from '../document-review'
-import { GasCityService } from '../gascity/gascity-service'
-import { createSmokeNeedsYou } from './needs-you'
 import { memoryOnlyHealth } from './health'
 import { HarnessProfileStore } from '../harness/harness-profile-store'
 import {
@@ -64,7 +62,6 @@ import { verifyViewerContent } from './viewer-content'
 import { verifyWorkbenchHealthScenario } from './workbench-health-scenario'
 import { verifyRendererRecoveryScenario } from './renderer-recovery-scenario'
 import { verifySessionsProjectionScenario } from './sessions-projection-scenario'
-import { createQolRailServices } from './qol-rail-services'
 import { sessionsPresentationSmokeProvider } from './sessions-presentation-provider'
 import { createTerminalMoveSmokeHarness } from './terminal-move'
 import { createSmokeTerminalSessionStore } from './terminal-session-store'
@@ -261,23 +258,6 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       smokeHostOptions,
       cleanup,
     )
-    const qolRailServices = createQolRailServices({
-      host,
-      root: smokeRoot,
-      synthetic: mode === 'sessions-projection',
-    })
-    const smokeBeads = qolRailServices.beads
-    const smokeGasCity = new GasCityService({
-      getProject: () => ({ host, root: smokeRoot }),
-    })
-    const smokeGitHub = qolRailServices.github
-    const smokeNeedsYou = createSmokeNeedsYou({
-      host: qolRailServices.host,
-      projectFixture,
-      beads: smokeBeads,
-      github: smokeGitHub,
-      emit,
-    })
     const smokeCompanion = await installSmokeCompanion({
       host,
       rendererRoot,
@@ -389,10 +369,6 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       remoteImagePaste: createSmokeImagePasteFallback(supervisor),
       // A scenario must not overwrite the clipboard of the machine running it.
       systemClipboard: { writeText: () => undefined },
-      beads: smokeBeads,
-      gascity: smokeGasCity,
-      github: smokeGitHub,
-      needsYou: smokeNeedsYou,
       updateAttention: smokeAttention.updateAttention,
       companion: smokeCompanion.settings,
       updateWebPaneBindings: (owner, bindings) =>
@@ -484,7 +460,6 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
         supervisor,
         host,
         provider: sessionsPresentationSmokeProvider,
-        needsYouSnapshotCount: smokeNeedsYou.snapshotCount,
         captureDirectory: process.env.HVIR_SESSIONS_CAPTURE_DIR
           ? localPath(process.env.HVIR_SESSIONS_CAPTURE_DIR)
           : undefined,

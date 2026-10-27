@@ -19,11 +19,7 @@ import type {
 } from '../../shared'
 import type { ArchitectureReviewCoordinator } from '../architecture-review/coordinator'
 import type { AgentApplicationRuntime } from '../agent/agent-application'
-import type { BeadsService } from '../beads/beads-service'
 import type { CompanionSettingsPort } from '../companion/companion-settings'
-import type { GasCityService } from '../gascity/gascity-service'
-import type { GitHubService } from '../github/github-service'
-import type { PullWorktreeSource } from '../git/pull-worktrees'
 import type { HarnessProfileStoreContract } from '../harness/harness-profile-store'
 import type { HarnessProbeManager } from '../harness/harness-probe'
 import type { RemoteImagePasteCoordinator } from '../harness/remote-image-paste'
@@ -49,7 +45,6 @@ import type {
 import type { SessionsObservationPort } from '../sessions/sessions-observation-port'
 import type { SessionsTranscriptPort } from '../sessions/sessions-transcript-port'
 import type { SessionsAttachTicketRegistry } from '../sessions/sessions-attach-tickets'
-import type { NeedsYouService } from '../needs-you/needs-you-service'
 import type { ReviewCheckpointCoordinator } from '../git/review-checkpoint-coordinator'
 import type { ExtensionApplicationRuntime } from '../extensions/extension-application'
 
@@ -171,10 +166,6 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly switchGitBranch: (root: HostPath, branch: string) => Promise<ProjectState>
   readonly fetchGit: (root: HostPath) => Promise<ProjectState>
   readonly pullGit: (root: HostPath) => Promise<ProjectState>
-  readonly createPullWorktree: (
-    root: HostPath,
-    source: PullWorktreeSource,
-  ) => Promise<ProjectState>
   readonly respondSshPrompt: (
     owner: RendererOwner,
     id: number,
@@ -218,13 +209,6 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly remoteImagePaste: Pick<RemoteImagePasteCoordinator, 'pasteOrForward'>
   /** Defaults to the Electron clipboard; scenarios override it to stay inert. */
   readonly systemClipboard?: SystemClipboardPort
-  readonly beads: Pick<BeadsService, 'list' | 'probe'>
-  readonly gascity: Pick<GasCityService, 'crew' | 'probe' | 'analyticsConfig'>
-  readonly github: Pick<
-    GitHubService,
-    'pulls' | 'probe' | 'checkouts' | 'detail' | 'pullWorktreeSource'
-  >
-  readonly needsYou: Pick<NeedsYouService, 'acquire' | 'snapshot' | 'release'>
   readonly reviewCheckpoint: Pick<ReviewCheckpointCoordinator, 'request' | 'cancel'>
   /** Companion settings (ADR-949); the view it answers with carries no secret. */
   readonly companion: Pick<

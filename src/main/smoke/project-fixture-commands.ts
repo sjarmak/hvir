@@ -85,7 +85,6 @@ export function createProjectFixtureCommands(options: {
     | 'switchGitBranch'
     | 'fetchGit'
     | 'pullGit'
-    | 'createPullWorktree'
     | 'respondSshPrompt'
   > = {
     getProject: () => {
@@ -214,8 +213,6 @@ export function createProjectFixtureCommands(options: {
     },
     fetchGit: () => Promise.resolve(setSmokeProjectState(smokeProjectState())),
     pullGit: () => Promise.resolve(setSmokeProjectState(smokeProjectState())),
-    createPullWorktree: () =>
-      Promise.reject(new Error('The smoke fixture has no pull request worktrees')),
     respondSshPrompt: () => undefined,
   }
   return { ports, browseHost: browseSmokeHost, openedFolderSelections, revealedEntries }

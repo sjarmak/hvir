@@ -18,7 +18,6 @@ import {
   ExtensionTopDestination,
 } from './extensions/ExtensionContributions'
 import { isGitIgnoreRulePath } from './tree/git-ignore-refresh'
-import { RailPanels, RailTabs, useRailExtensions } from './rail/RailExtensions'
 import { useTerminalCommands } from './terminal/use-terminal-commands'
 import { workspaceGitEnabled } from './git/git-capability'
 import { useArchitectureReviewTab } from './architecture-review/use-architecture-review-tab'
@@ -38,10 +37,12 @@ import { TerminalLayoutControls } from './workbench/TerminalLayoutControls'
 import { useRendererReady } from './workbench/use-renderer-ready'
 import { useTerminalPathActivation } from './workbench/use-terminal-path-activation'
 import * as review from './document-review/use-document-review-workspace'
-import { AppApplicationDestinations } from './needs-you/AppApplicationDestinations'
-import { useApplicationNavigation } from './needs-you/use-application-navigation'
+import { SessionsApplicationDestination } from './sessions/SessionsApplicationDestination'
 import { AppProjectNavigation } from './workspaces/AppProjectNavigation'
 export function App(): ReactElement {
+  const [destination, setDestination] = useState<'workspace' | 'sessions' | 'extension'>(
+    'workspace',
+  )
   const theme = useAppTheme()
   const settings = useAppSettings()
   const rootRef = useRef<HostPath | undefined>(undefined)
@@ -205,15 +206,6 @@ export function App(): ReactElement {
   deactivateGitGraphRef.current = deactivateGitGraph
   deactivateWebPaneRef.current = () => web.setActive(false)
   const terminalCommands = useTerminalCommands(session.activeWorkspace?.id)
-  const rail = useRailExtensions(session, layout, terminalCommands)
-  const { destination, setDestination, needsYou, beadTarget } = useApplicationNavigation({
-    projectState,
-    root,
-    switchWorkspace: session.switchWorkspace,
-    onError: session.reportError,
-    beadsEnabled: rail.beads.beadsEnabled,
-    setRailMode: layout.setRailMode,
-  })
   useEffect(() => {
     if (root) setWorkspaceRoot(root)
   }, [root, setWorkspaceRoot])
@@ -336,17 +328,6 @@ export function App(): ReactElement {
                   }
                 : undefined
             }
-            tabs={<RailTabs rail={rail} layout={layout} />}
-            panels={
-              <RailPanels
-                rail={rail}
-                session={session}
-                layout={layout}
-                focusBeadId={beadTarget?.beadId}
-                onFocusHandled={needsYou.beadHandled}
-                onFocusUnavailable={needsYou.beadUnavailable}
-              />
-            }
           />
           <PaneResizer
             orientation="vertical"
@@ -463,15 +444,14 @@ export function App(): ReactElement {
           />
         </main>
         <ExtensionTopDestination />
-        <AppApplicationDestinations
-          destination={destination}
+        <SessionsApplicationDestination
+          active={destination === 'sessions'}
           runtime={terminalWorkspaces}
-          projection={terminalWorkspaces.sessionsProjection}
-          sessionTarget={needsYou.sessionTarget}
-          needsYou={needsYou}
-          showTerminal={showTerminal}
-          accept={accept}
-          setDestination={setDestination}
+          onOpened={(state) => {
+            showTerminal()
+            accept(state)
+            setDestination('workspace')
+          }}
           onError={session.reportError}
           onAttachExternal={terminalCommands.requestExternalAttach}
         />

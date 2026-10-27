@@ -20,7 +20,6 @@ import { installApplicationAttention } from './attention/attention-owner'
 import { createCompanionAssetReader } from './companion/companion-assets'
 import { installApplicationCompanion } from './companion/companion-owner'
 import { ownGasCityRuntime } from './gascity/gascity-owner'
-import { ownRailServices } from './rail-services'
 import { HarnessProfileStore } from './harness/harness-profile-store'
 import { HarnessProbeManager } from './harness/harness-probe'
 import { harnessProviders } from './harness/harness-provider'
@@ -386,13 +385,6 @@ function createWorkbenchEntry(): void {
         harnessProfiles: harnessProfileStore,
         harnessProbes: harnessProbeManager,
         remoteImagePaste,
-        ...ownRailServices(
-          () => registry.active,
-          gasCity.reader,
-          registry,
-          hostCatalog,
-          emit,
-        ),
         companion: companion.settings,
         updateAttention: (owner, set) => attention?.updateAttention(owner, set),
         updateWebPaneBindings: (owner, bindings) =>

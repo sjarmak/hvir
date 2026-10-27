@@ -1,4 +1,4 @@
-import type { ExternalAttentionSnapshot, HostPath, ProjectState } from '../../shared'
+import type { ExternalAttentionSnapshot, ProjectState } from '../../shared'
 import type { Disposer, ProjectHost } from '../project-host'
 import type { WorkbenchRuntime } from '../workbench-runtime'
 import {
@@ -8,7 +8,6 @@ import {
 } from './city-attention'
 import { GasCityEventStreams, type CityEventStreamHost } from './city-event-streams'
 import { GasCityReader, type GasCityTarget } from './gascity-reader'
-import { GasCityService } from './gascity-service'
 import { GasCitySessionsSource } from './gascity-sessions-source'
 import { GascitySupervisorAccess, type SupervisorAccess } from './supervisor-access'
 import { gascitySupervisorConnect } from './supervisor-client'
@@ -33,18 +32,6 @@ export interface GasCityHostDeps {
  */
 export function ownGasCityReader(): GasCityReader {
   return new GasCityReader()
-}
-
-/**
- * Construct the GasCityService. It holds no watches or timers — the crew view
- * polls while visible — so there is nothing to dispose, and the composition
- * root's Gas City footprint stays a single call.
- */
-export function ownGasCityService(
-  getProject: () => { readonly host: ProjectHost; readonly root: HostPath },
-  reader: GasCityReader,
-): GasCityService {
-  return new GasCityService({ getProject, env: process.env, reader })
 }
 
 /**

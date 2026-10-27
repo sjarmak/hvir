@@ -10,8 +10,7 @@
  * finish. The panel collects the title inline and builds the full command.
  */
 
-import { isBeadId } from '../../../shared'
-import { shellQuoteArg } from './gascity-commands'
+import { isBeadId, shellQuoteArg } from '../../../shared'
 
 export const BEAD_ACTIONS = ['claim', 'close', 'create'] as const
 

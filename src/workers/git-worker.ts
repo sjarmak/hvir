@@ -9,7 +9,6 @@ import {
   GIT_WORKTREES_TYPE,
   GIT_PRUNE_WORKTREES_TYPE,
   GIT_HVIR_WORKTREE_TYPE,
-  GIT_PULL_WORKTREE_TYPE,
   GIT_WORKSPACE_ACTIVITY_TYPE,
   GIT_BRANCHES_TYPE,
   GIT_FETCH_TYPE,
@@ -98,8 +97,6 @@ async function handle(request: WorkerRequest): Promise<void> {
       result = await engine.pruneWorktrees(root)
     } else if (request.type === GIT_HVIR_WORKTREE_TYPE) {
       result = await engine.hvirWorktree(root, worktreeChange(raw))
-    } else if (request.type === GIT_PULL_WORKTREE_TYPE) {
-      result = await engine.pullWorktree(root, pullWorktree(raw))
     } else if (request.type === GIT_WORKSPACE_ACTIVITY_TYPE) {
       result = await engine.workspaceActivity(root, relatedWorktreeRoots)
     } else if (request.type === GIT_DIFF_INPUTS_TYPE && isPayload(request.payload)) {
@@ -304,15 +301,4 @@ function worktreeChange(raw: Record<string, unknown>) {
   )
     throw new Error('invalid git worktree target')
   return { operation, target: { branch, path, commit } } as const
-}
-
-function pullWorktree(raw: Record<string, unknown>) {
-  const { branch, path, remote } = raw
-  if (
-    typeof branch !== 'string' ||
-    typeof path !== 'string' ||
-    typeof remote !== 'string'
-  )
-    throw new Error('invalid git pull worktree target')
-  return { branch, path, remote } as const
 }

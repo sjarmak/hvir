@@ -2,7 +2,6 @@ import type { HostPath, WorktreeDiscovery } from '../../shared'
 import { gitError, type GitCommandContext } from './git-command-context'
 import { parseLegacyWorktreeList, parseWorktreeList } from './git-parsers'
 import type { HvirWorktreeTarget } from './hvir-worktrees'
-import { pullWorktreeArgs, type PullWorktreeTarget } from './pull-worktrees'
 
 export type { HvirWorktreeTarget }
 
@@ -61,17 +60,6 @@ export class GitWorktreeCapability {
   ): Promise<WorktreeDiscovery> {
     this.context.assertHost(projectRoot)
     const args = hvirWorktreeArgs(change)
-    const result = await this.context.mutate(projectRoot, args)
-    if (result.code !== 0) throw gitError(args, result.stderr, result.code)
-    return this.discover(projectRoot)
-  }
-
-  async addPull(
-    projectRoot: HostPath,
-    target: PullWorktreeTarget,
-  ): Promise<WorktreeDiscovery> {
-    this.context.assertHost(projectRoot)
-    const args = pullWorktreeArgs(target)
     const result = await this.context.mutate(projectRoot, args)
     if (result.code !== 0) throw gitError(args, result.stderr, result.code)
     return this.discover(projectRoot)
