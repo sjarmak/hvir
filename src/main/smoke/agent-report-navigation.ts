@@ -51,13 +51,13 @@ export async function verifyAgentReportNavigation(
     const mod = navigator.platform.includes('Mac') ? {metaKey: true} : {ctrlKey: true};
     for (const options of [{key: 'm', shiftKey: true, ...mod}, {key: 'f', ...mod}, {key: 'g', ctrlKey: true}])
       window.dispatchEvent(new KeyboardEvent('keydown', {...options, bubbles: true, cancelable: true}));
-    return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    return new Promise(resolve => setTimeout(resolve, 50));
   })()`)
   if ((await win.webContents.executeJavaScript(fileState)) !== before)
     throw new Error('Report shortcuts changed the hidden file viewer')
 
   await win.webContents.executeJavaScript(
-    `document.querySelector('nav[aria-label="Project views"] button:last-child').click()`,
+    `[...document.querySelectorAll('nav[aria-label="Project views"] button')].find((button) => /^Git\\b/.test(button.textContent.trim())).click()`,
   )
   await ports.click('History')
   await ports.wait(
