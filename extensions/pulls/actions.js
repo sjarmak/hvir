@@ -10,7 +10,7 @@
   const { pullHandle } = window.pullWaits
   const RESULT_BYTES = 7 * 1024
   const TITLE_CHARS = 120
-  const SECTIONS = ['branch', 'needs', 'issues', 'waiting', 'drafts']
+  const SECTIONS = ['branch', 'ready', 'review', 'drafts', 'requested', 'issues']
   const STATUS_FIELDS =
     'number,title,url,state,isDraft,author,headRefName,reviewDecision,reviewRequests,statusCheckRollup'
   /** Check runs report `conclusion`; legacy status contexts report `state`. */
@@ -30,7 +30,7 @@
   }
 
   function compactRow(row, section, now) {
-    const { pull, reason, since, waitingOn, role } = row
+    const { pull, reason, since, waitingOn, role, stack } = row
     return {
       number: pull.number,
       title: pull.title.slice(0, TITLE_CHARS),
@@ -42,6 +42,10 @@
         : { waiting: age(since, now).label, since: new Date(since).toISOString() }),
       ...(pull.author ? { author: pull.author } : {}),
       ...(waitingOn.length ? { waitingOn: waitingOn.map(pullHandle) } : {}),
+      updatedAt: pull.updatedAt,
+      ...(pull.activity ? { lastActivity: pull.activity } : {}),
+      ...(pull.newSinceViewer ? { newSinceViewer: pull.newSinceViewer } : {}),
+      ...(stack ? { stack: stack.order, stackParent: stack.parent } : {}),
       url: pull.url,
     }
   }

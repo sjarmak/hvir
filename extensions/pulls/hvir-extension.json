@@ -1,7 +1,7 @@
 {
   "id": "hvir.pulls",
   "name": "Pull requests",
-  "version": "0.9.0",
+  "version": "0.12.1",
   "contract": "1.0",
   "requiredCapabilities": [
     "presentation.read",
@@ -15,7 +15,8 @@
   "optionalCapabilities": [
     "connector.connect",
     "actions.invoke",
-    "terminal.start"
+    "terminal.start",
+    "viewer.open-external"
   ],
   "access": [],
   "views": [
@@ -52,7 +53,7 @@
     {
       "id": "pulls",
       "placement": "header",
-      "icon": "⇅",
+      "icon": "\u21c5",
       "tooltip": "Pull requests that need you",
       "kind": "observation",
       "click": {
@@ -111,7 +112,7 @@
         "replace": false
       },
       "timeoutMs": 60000,
-      "description": "Read-only. Ranked like the PRs pane (ADR-976 holder wait in business time): sections branch, needs (waiting on you), issues (open issues assigned to you, oldest assignment first), waiting (yours, waiting on others), drafts. Pull rows carry role author (the viewer's pull request) or reviewer (an ask from someone else); issue rows are returned under 'issues'. 'omitted' counts rows dropped to fit the 8 KiB result.",
+      "description": "Read-only. Sections: branch, ready (yours, no reviewer or review yet), review (yours, in review), drafts, requested (reviews asked of you), issues (assigned to you). Rows are newest activity first, stacked pull requests kept together; pull rows carry lastActivity (latest review or comment by others), newSinceViewer, and stack (base-first numbers). 'omitted' counts rows dropped to fit the 8 KiB result.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -119,10 +120,11 @@
             "type": "string",
             "enum": [
               "branch",
-              "needs",
-              "issues",
-              "waiting",
-              "drafts"
+              "ready",
+              "review",
+              "drafts",
+              "requested",
+              "issues"
             ]
           },
           "limit": {

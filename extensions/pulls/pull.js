@@ -36,6 +36,9 @@ const ui = Object.fromEntries(
     'comments',
     'body-section',
     'body',
+    'explainer-section',
+    'explainer-note',
+    'explainer',
   ].map((id) => [id, document.getElementById(id)]),
 )
 const VIEW_FIELDS = [
@@ -159,7 +162,7 @@ function render(pull, detail) {
   ]
     .filter(Boolean)
     .join(' · ')
-  ui.url.textContent = pull.url
+  ui.url.replaceChildren(pull.url, ' ', window.githubLink(pull.url, (text) => (ui.status.textContent = text)) ?? '')
   renderChecks(pull.statusCheckRollup ?? [])
   renderReviews(pull)
   renderThreads(detail)
@@ -313,6 +316,31 @@ function checkout() {
   )
 }
 
+let explainerShown
+
+async function renderExplainer(workspace, body, key) {
+  const url = window.explainer.explainerUrl(body)
+  if (url === undefined) {
+    explainerShown = undefined
+    ui['explainer-section'].hidden = true
+    return
+  }
+  if (explainerShown === url) return
+  explainerShown = url
+  ui['explainer-section'].hidden = false
+  ui['explainer-note'].hidden = false
+  ui['explainer-note'].textContent = 'Loading the explainer…'
+  try {
+    const html = await run('gh', workspace, ['api', url], { text: true })
+    if (shownKey !== key) return
+    window.explainer.mount(ui.explainer, html)
+    ui['explainer-note'].hidden = true
+  } catch (error) {
+    if (shownKey !== key) return
+    ui['explainer-note'].textContent = `Explainer unavailable (${error.message}): ${url}`
+  }
+}
+
 /** What a previous pull request left on screen must not read as this one's. */
 let shownKey
 function clearShown(key) {
@@ -321,6 +349,9 @@ function clearShown(key) {
   ui['checkout-note'].hidden = true
   ui['checkout-status'].textContent = ''
   ui['commits-section'].hidden = true
+  ui['explainer-section'].hidden = true
+  ui.explainer.shadowRoot?.replaceChildren()
+  explainerShown = undefined
 }
 
 async function load(context, current) {
@@ -354,6 +385,7 @@ async function load(context, current) {
   if (keyOf(current()) !== key) return
   ui.status.textContent = ''
   render(pull, detail)
+  void renderExplainer(context.workspace, pull.body, key)
   const existing = await checkedOut(context.workspace, pull, connectors)
   if (keyOf(current()) !== key) return
   renderCheckout(repo, number, existing)

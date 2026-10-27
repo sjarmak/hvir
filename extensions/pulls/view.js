@@ -56,8 +56,10 @@ window.startView = ({ load, refreshMs = 0, onStatus = () => {} }) => {
 
   const unsubscribe = bridge.onMessage((message) => {
     if (disposed) return
-    if (message.kind === 'hello')
+    if (message.kind === 'hello') {
+      window.grantedCapabilities = new Set(message.capabilities ?? [])
       window.host.request('context.read').then(apply, (error) => onStatus(error.message))
+    }
     else if (message.kind === 'context') apply(message.context)
     else if (message.kind === 'revoked') dispose()
   })
@@ -104,6 +106,29 @@ window.optionRow = ({ title, meta, hover, data = {} }) => {
   option.setAttribute('role', 'option')
   Object.assign(option.dataset, data)
   return option
+}
+
+window.grantedCapabilities = new Set()
+
+const openOnGitHub = (url, onStatus) =>
+  window.host.request('viewer.open-external', { url }).catch((error) => onStatus(error.message))
+
+window.githubLink = (url, onStatus) => {
+  if (!window.grantedCapabilities.has('viewer.open-external')) return null
+  const control = window.el('span', { className: 'chip chip-link', title: `Open ${url} in your browser` }, '↗ GitHub')
+  control.setAttribute('role', 'button')
+  control.tabIndex = 0
+  const activate = (event) => {
+    event.stopPropagation()
+    event.preventDefault()
+    void openOnGitHub(url, onStatus)
+  }
+  control.addEventListener('click', activate)
+  control.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') activate(event)
+    else event.stopPropagation()
+  })
+  return control
 }
 
 /** Open one of this package's own detail tabs. */

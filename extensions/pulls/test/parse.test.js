@@ -59,7 +59,98 @@ test('a response without the issues search yields no issues and no extra paging'
 
 test('the list query searches open issues assigned to the viewer in the repository', () => {
   const args = pullsQueryArgs('acme/widgets', 'main', 30)
-  assert.ok(args.includes('issues=repo:acme/widgets is:issue is:open assignee:@me'))
+  assert.ok(args.includes('issues=repo:acme/widgets is:issue is:open assignee:@me sort:updated-desc'))
   assert.match(args[3], /issues: search\(query: \$issues, type: ISSUE, first: \$limit\) \{ issueCount nodes \{ \.\.\.issue \} \}/)
   assert.match(args[3], /fragment issue on Issue/)
+})
+
+const user = (login) => ({ __typename: 'User', login })
+const pullNode = (number, fields = {}) => ({
+  number,
+  title: `Pull ${number}`,
+  url: `https://github.com/acme/widgets/pull/${number}`,
+  state: 'OPEN',
+  isDraft: false,
+  headRefName: 'feat-b',
+  baseRefName: 'feat-a',
+  createdAt: '2026-10-10T13:00:00Z',
+  updatedAt: '2026-10-14T13:00:00Z',
+  author: user('steph'),
+  commits: { nodes: [{ commit: { oid: 'abc', committedDate: '2026-10-12T13:00:00Z' } }] },
+  ...fields,
+})
+const withPulls = (nodes) => ({
+  data: { ...response.data, mine: { issueCount: nodes.length, nodes }, issues: empty },
+})
+const parseOne = (node) =>
+  parsePulls(withPulls([node]), { repo: 'acme/widgets', branch: undefined, localRepos: new Set() }).authored[0]
+
+test('a pull carries its base branch and the latest review or comment by someone else', () => {
+  const parsed = parseOne(
+    pullNode(71, {
+      reviews: {
+        nodes: [
+          { state: 'APPROVED', body: '', submittedAt: '2026-10-13T13:00:00Z', author: user('rin') },
+          { state: 'COMMENTED', body: 'ok', submittedAt: '2026-10-14T09:00:00Z', author: { __typename: 'Bot', login: 'ci' } },
+        ],
+      },
+      comments: {
+        nodes: [
+          { createdAt: '2026-10-11T13:00:00Z', author: user('kai') },
+          { createdAt: '2026-10-14T10:00:00Z', author: user('steph') },
+        ],
+      },
+    }),
+  )
+  assert.equal(parsed.baseRef, 'feat-a')
+  assert.deepEqual(parsed.activity, { kind: 'approved', by: 'rin', at: '2026-10-13T13:00:00Z' })
+  assert.equal(parsed.reviewedByOthers, true)
+  assert.equal(parsed.newSinceViewer, 0)
+})
+
+test('reviews and comments after the author last pushed count as new', () => {
+  const parsed = parseOne(
+    pullNode(72, {
+      reviews: { nodes: [{ state: 'CHANGES_REQUESTED', body: 'fix', submittedAt: '2026-10-13T13:00:00Z', author: user('rin') }] },
+      comments: { nodes: [{ createdAt: '2026-10-11T13:00:00Z', author: user('kai') }, { createdAt: '2026-10-14T13:00:00Z', author: user('kai') }] },
+    }),
+  )
+  assert.deepEqual(parsed.activity, { kind: 'commented', by: 'kai', at: '2026-10-14T13:00:00Z' })
+  assert.equal(parsed.newSinceViewer, 2)
+})
+
+test('a pull with no human activity has no activity and is not reviewed', () => {
+  const parsed = parseOne(pullNode(73, { comments: { nodes: [{ createdAt: '2026-10-14T13:00:00Z', author: { __typename: 'Bot', login: 'ci' } }] } }))
+  assert.equal(parsed.activity, undefined)
+  assert.equal(parsed.reviewedByOthers, false)
+})
+
+test('the list query reads each pull request base branch', () => {
+  assert.match(pullsQueryArgs('acme/widgets', 'main', 30)[3], /headRefName baseRefName/)
+})
+
+test('drafts have their own smaller search so they never displace a ready or in-review pull request', () => {
+  const args = pullsQueryArgs('acme/widgets', 'main', 30)
+  assert.ok(args.includes('limit=30'))
+  assert.ok(args.includes('draftLimit=15'))
+  assert.match(args[3], /drafts: search\(query: \$drafts, type: ISSUE, first: \$draftLimit\)/)
+  const { data } = withPulls([pullNode(71)])
+  const drafts = { issueCount: 3, nodes: [pullNode(72, { isDraft: true })] }
+  const snapshot = parsePulls(
+    { data: { ...data, mine: { ...data.mine, issueCount: 1 }, drafts } },
+    { repo: 'acme/widgets', branch: undefined, localRepos: new Set() },
+  )
+  assert.deepEqual(snapshot.authored.map((pull) => [pull.number, pull.draft]), [[71, false], [72, true]])
+  assert.equal(snapshot.hasMore, true)
+})
+
+test('every search returns the most recently updated results first so the page holds the latest activity', () => {
+  const args = pullsQueryArgs('acme/widgets', 'main', 30)
+  for (const [name, qualifier] of [
+    ['mine', 'author:@me draft:false'],
+    ['drafts', 'author:@me draft:true'],
+    ['review', 'review-requested:@me draft:false'],
+    ['assigned', 'assignee:@me draft:false'],
+  ])
+    assert.ok(args.includes(`${name}=repo:acme/widgets is:pr is:open ${qualifier} sort:updated-desc`))
 })

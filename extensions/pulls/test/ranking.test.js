@@ -3,7 +3,7 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { businessMsBetween, formatBusinessAge, businessAgeTone, BUSINESS_DAY_MS } = require('../business-time.js')
 const { pullWaitRows } = require('../pull-waits.js')
-const { pullSections, issueRows, needYouCount, age, badges, roleLabel } = require('../pulls-model.js')
+const { pullSections, issueRows, needYouCount, age, badges, activitySignal, stackSummary, roleLabel } = require('../pulls-model.js')
 
 const at = (iso) => new Date(iso).getTime()
 const HOUR = 3_600_000
@@ -97,10 +97,10 @@ const snapshot = {
     pull(82, { author: 'rin', viewerAssignedAt: '2026-10-06T10:00:00-04:00' }),
   ],
   issues: [
-    issue(301, { viewerAssignedAt: '2026-10-15T10:00:00-04:00' }),
+    issue(301, { viewerAssignedAt: '2026-10-15T10:00:00-04:00', updatedAt: '2026-10-16T09:00:00-04:00' }),
     issue(302, { viewerAssignedAt: '2026-10-07T10:00:00-04:00', labels: ['bug'], comments: 3 }),
     issue(303, { state: 'closed', viewerAssignedAt: '2026-10-01T10:00:00-04:00' }),
-    issue(304),
+    issue(304, { updatedAt: '2026-10-19T09:00:00-04:00' }),
     issue(302, { viewerAssignedAt: '2026-10-07T10:00:00-04:00' }),
   ],
 }
@@ -130,27 +130,89 @@ test('a request counts from the later of the ask and ready for review; a team as
   assert.deepEqual(rows.find((row) => row.pull.number === 71).waitingOn, ['kai'])
 })
 
-test('This branch keeps its pull request out of the wait sections and badges skip the reason', () => {
+test('sections split your pull requests by review state and list newest activity first', () => {
   const sections = pullSections({ ...snapshot, branchPulls: [snapshot.authored[0]] }, NOW)
   assert.deepEqual(
     sections.map((section) => [section.key, section.rows.map((row) => (row.pull ?? row.issue).number)]),
     [
       ['branch', [71]],
-      ['needs', [82, 72, 80, 73]],
-      ['issues', [302, 304, 301]],
-      ['waiting', []],
+      ['ready', [73]],
+      ['review', [72]],
       ['drafts', [75, 74]],
+      ['requested', [82, 80]],
+      ['issues', [304, 301, 302]],
     ],
   )
   const failing = sections[1].rows.find((row) => row.pull.number === 73)
   assert.deepEqual(badges(failing), [])
-  assert.deepEqual(badges({ ...failing, reason: 'Assigned' }), ['CI failing'])
+  assert.deepEqual(badges({ ...failing, reason: 'Assigned' }), [{ label: 'CI failing', tone: 'danger' }])
+})
+
+test('a pull request with only a comment review counts as in review and ready rows drop the redundant reason', () => {
+  const commented = pull(77, { reviewedByOthers: true, updatedAt: '2026-10-19T09:00:00-04:00' })
+  const fresh = pull(78, { updatedAt: '2026-10-20T09:00:00-04:00' })
+  const sections = pullSections({ ...snapshot, authored: [commented, fresh] }, NOW)
+  const keyed = Object.fromEntries(sections.map((section) => [section.key, section.rows]))
+  assert.deepEqual(keyed.review.map((row) => row.pull.number), [77])
+  assert.deepEqual(keyed.ready.map((row) => [row.pull.number, row.reason]), [[78, '']])
+})
+
+test('approval and passing CI badges are green, changes requested is red', () => {
+  const approved = pull(90, {
+    reviewers: [{ login: 'rin', kind: 'user', pending: false, reviewState: 'approved', reviewedAt: '2026-10-19T09:00:00-04:00' }],
+  })
+  assert.deepEqual(badges({ pull: approved, reason: '' }), [
+    { label: 'CI passing', tone: 'success' },
+    { label: 'Approved', tone: 'success' },
+  ])
+  assert.deepEqual(badges({ pull: approved, reason: 'Ready to merge' }), [{ label: 'CI passing', tone: 'success' }])
+  assert.deepEqual(badges({ pull: pull(91, { checks: 'none', review: 'changes-requested' }), reason: '' }), [
+    { label: 'Changes requested', tone: 'danger' },
+  ])
+})
+
+test('the activity signal names the latest reviewer or commenter and is fresh within one business day', () => {
+  const approved = pull(92, { activity: { kind: 'approved', by: 'rin', at: '2026-10-20T10:00:00-04:00' }, newSinceViewer: 2 })
+  assert.deepEqual(activitySignal(approved, NOW), {
+    label: '@rin approved',
+    at: at('2026-10-20T10:00:00-04:00'),
+    tone: 'success',
+    fresh: true,
+    newCount: 2,
+  })
+  const old = pull(93, { activity: { kind: 'commented', by: 'kai', at: '2026-10-16T10:00:00-04:00' } })
+  assert.equal(activitySignal(old, NOW).fresh, false)
+  assert.equal(activitySignal(old, NOW).newCount, 0)
+  assert.equal(activitySignal(pull(94), NOW), undefined)
+})
+
+test('stacked pull requests stay together base first and sort by their newest member', () => {
+  const stackPull = (number, headRef, baseRef, updatedAt, fields = {}) =>
+    pull(number, { headRef, baseRef, headRepo: 'acme/widgets', updatedAt, reviewedByOthers: true, ...fields })
+  const authored = [
+    stackPull(60, 'feat-a', 'main', '2026-10-13T09:00:00-04:00'),
+    stackPull(61, 'feat-b', 'feat-a', '2026-10-20T09:00:00-04:00'),
+    stackPull(62, 'feat-c', 'feat-b', '2026-10-14T09:00:00-04:00'),
+    stackPull(63, 'solo', 'main', '2026-10-19T09:00:00-04:00'),
+    stackPull(64, 'feat-d', 'feat-c', '2026-10-18T09:00:00-04:00', { draft: true }),
+  ]
+  const sections = pullSections({ ...snapshot, authored, reviewRequested: [] }, NOW)
+  const review = sections.find((section) => section.key === 'review').rows
+  assert.deepEqual(review.map((row) => row.pull.number), [60, 61, 62, 63])
+  assert.deepEqual(review.map((row) => stackSummary(row.stack)?.label), [
+    'Stack base · 4 PRs',
+    'Stack 2/4 · on #60',
+    'Stack 3/4 · on #61',
+    undefined,
+  ])
+  const draft = sections.find((section) => section.key === 'drafts').rows[0]
+  assert.deepEqual(stackSummary(draft.stack), { label: 'Stack 4/4 · on #62', order: [60, 61, 62, 64], id: 0, depth: 3 })
 })
 
 test('the header count includes a branch pull request that needs the viewer and dedupes by URL', () => {
   const onBranch = { ...snapshot, branchPulls: [snapshot.authored[1]] }
-  const needsSection = pullSections(onBranch, NOW).find((section) => section.key === 'needs')
-  assert.equal(needsSection.rows.some((row) => row.pull.number === 72), false)
+  const sections = pullSections(onBranch, NOW).filter((section) => section.key !== 'branch' && section.key !== 'issues')
+  assert.equal(sections.some((section) => section.rows.some((row) => row.pull.number === 72)), false)
   assert.equal(needYouCount([onBranch], NOW), 4)
   const other = {
     ...snapshot,
@@ -179,19 +241,19 @@ test('rows say whose pull request it is: yours, an ask of you, or someone else o
   assert.equal(roleLabel(rows.find((row) => row.pull.number === 80)), 'Reviewer')
 })
 
-test('assigned issues list open ones once, oldest assignment first, falling back to creation', () => {
+test('assigned issues list open ones once, newest activity first, aged from assignment or creation', () => {
   const rows = issueRows(snapshot, NOW)
   assert.deepEqual(
     rows.map((row) => [row.issue.number, row.role, roleLabel(row)]),
     [
-      [302, 'assignee', 'Assigned'],
       [304, 'assignee', 'Assigned'],
       [301, 'assignee', 'Assigned'],
+      [302, 'assignee', 'Assigned'],
     ],
   )
-  assert.equal(rows[0].since, at('2026-10-07T10:00:00-04:00'))
-  assert.equal(rows[1].since, at('2026-10-12T09:00:00-04:00'))
-  assert.equal(age(rows[0].since, NOW).label, '9d')
+  assert.equal(rows[2].since, at('2026-10-07T10:00:00-04:00'))
+  assert.equal(rows[0].since, at('2026-10-12T09:00:00-04:00'))
+  assert.equal(age(rows[2].since, NOW).label, '9d')
   assert.deepEqual(issueRows({ ...snapshot, issues: undefined }, NOW), [])
 })
 

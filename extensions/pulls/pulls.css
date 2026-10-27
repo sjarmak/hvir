@@ -60,6 +60,7 @@ summary {
   color: var(--text-strong);
   font-weight: 600;
 }
+.chip-link,
 .chip-terminal {
   cursor: pointer;
   color: var(--accent);
@@ -200,4 +201,54 @@ ul {
 .markdown a {
   color: var(--accent);
   cursor: default;
+}
+.chip[data-tone='success'] {
+  color: var(--success-text);
+  border-color: var(--success-border);
+  background: var(--success-surface);
+}
+.chip[data-tone='danger'] {
+  color: var(--danger-text);
+  border-color: var(--danger-border);
+  background: var(--danger-surface);
+}
+.chip[data-tone='warning'] {
+  color: var(--warning-text);
+  border-color: var(--warning-border);
+  background: var(--warning-surface);
+}
+.chip-activity[data-fresh='true'] {
+  font-weight: 600;
+}
+.chip-activity[data-fresh='true']::before {
+  content: '● ';
+  color: var(--accent-text);
+}
+.chip-new {
+  color: var(--on-accent-text);
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.chip-updated {
+  color: var(--text-muted);
+}
+.option-row.stacked {
+  border-left: 2px solid var(--stack-hue);
+  padding-left: calc(8px + var(--stack-depth, 0) * 10px);
+}
+.chip-stack {
+  color: var(--stack-hue);
+  border-color: var(--stack-hue);
+}
+[data-hue='0'] {
+  --stack-hue: var(--accent-text);
+}
+[data-hue='1'] {
+  --stack-hue: var(--inactive-border);
+}
+[data-hue='2'] {
+  --stack-hue: var(--syntax-string);
+}
+[data-hue='3'] {
+  --stack-hue: var(--syntax-key);
 }

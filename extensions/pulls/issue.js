@@ -49,7 +49,7 @@ function render(issue) {
   const labels = (issue.labels ?? []).map((label) => el('span', { className: 'chip chip-label' }, label.name))
   ui.labels.replaceChildren(...labels)
   ui.labels.hidden = labels.length === 0
-  ui.url.textContent = issue.url
+  ui.url.replaceChildren(issue.url, ' ', window.githubLink(issue.url, (text) => (ui.status.textContent = text)) ?? '')
   ui.body.replaceChildren(...(issue.body ? [window.markdown.render(issue.body)] : []))
   ui['body-section'].hidden = !issue.body
   const comments = issue.comments ?? []
