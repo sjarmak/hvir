@@ -162,7 +162,7 @@ function render(pull, detail) {
   ]
     .filter(Boolean)
     .join(' · ')
-  ui.url.textContent = pull.url
+  ui.url.replaceChildren(pull.url, ' ', window.githubLink(pull.url, (text) => (ui.status.textContent = text)) ?? '')
   renderChecks(pull.statusCheckRollup ?? [])
   renderReviews(pull)
   renderThreads(detail)

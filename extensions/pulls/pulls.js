@@ -64,6 +64,7 @@ function pullRow(row, snapshot, now, here) {
     pull.author && pull.author !== snapshot.viewer ? el('span', {}, `@${pull.author}`) : null,
     waitingOn.length ? el('span', {}, `waiting on ${waitingOn.map(pullHandle).join(', ')}`) : null,
     worktree ? window.worktreeControl.chip(worktree, here.shell, setStatus) : null,
+    window.githubLink(pull.url, setStatus),
   ].filter(Boolean)
   const option = window.optionRow({
     title: `#${pull.number} ${pull.title}`,
@@ -87,6 +88,7 @@ function issueRow(row, snapshot) {
     ...issue.labels.map((label) => el('span', { className: 'chip chip-label' }, label)),
     issue.comments > 0 ? el('span', {}, `${issue.comments} ${issue.comments === 1 ? 'comment' : 'comments'}`) : null,
     issue.author && issue.author !== snapshot.viewer ? el('span', {}, `@${issue.author}`) : null,
+    window.githubLink(issue.url, setStatus),
   ].filter(Boolean)
   return window.optionRow({
     title: `#${issue.number} ${issue.title}`,

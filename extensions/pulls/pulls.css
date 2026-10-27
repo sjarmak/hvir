@@ -60,6 +60,7 @@ summary {
   color: var(--text-strong);
   font-weight: 600;
 }
+.chip-link,
 .chip-terminal {
   cursor: pointer;
   color: var(--accent);
