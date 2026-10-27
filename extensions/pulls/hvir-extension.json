@@ -91,24 +91,13 @@
     },
     {
       "id": "shell",
-      "description": "Open a terminal in another worktree of this repository that already has a pull request's branch: sh cds there and starts your login shell on the workspace's host. Only from the pull request view, after you confirm.",
+      "description": "Runs sh for two things: a terminal in another worktree of this repository (after you confirm), and reading or writing your review progress as small JSON files under ~/.hvir/pulls.",
       "context": "workspace",
       "setup": {
         "executable": "sh"
       },
       "timeoutMs": 10000,
-      "outputBytes": 65536,
-      "environment": []
-    },
-    {
-      "id": "store",
-      "description": "Keep your review progress on this host: sh reads and writes small JSON files under ~/.hvir/pulls (files you marked reviewed, draft line comments, review summary, pull requests set aside). Nothing else.",
-      "context": "workspace",
-      "setup": {
-        "executable": "sh"
-      },
-      "timeoutMs": 10000,
-      "outputBytes": 1048576,
+      "outputBytes": 4194304,
       "environment": []
     }
   ],

@@ -1,6 +1,6 @@
 /* global window, module */
 ;(() => {
-  const CONNECTOR = 'store'
+  const CONNECTOR = 'shell'
   const NAME = /^[A-Za-z0-9][A-Za-z0-9._+-]*$/
   const MAX_VALUE_BYTES = 12 * 1024
   const SCRIPT = [

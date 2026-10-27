@@ -18,3 +18,7 @@ test('connector and action descriptions fit hvir manifest limits', () => {
       `${action.id}: ${action.description.length} chars`,
     )
 })
+
+test('at most four connectors name a program, as hvir allows', () => {
+  assert.ok((manifest.connectors ?? []).filter((connector) => connector.setup).length <= 4)
+})
