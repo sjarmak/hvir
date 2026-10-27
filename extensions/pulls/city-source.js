@@ -33,7 +33,7 @@ window.citySource = (() => {
   async function reviewPackage(workspace, run, connectors) {
     if (!run.packageDir) return { unavailable: 'This run recorded no review package.' }
     if (connectors[city.PACKAGES] !== 'supported')
-      return { unavailable: 'Connect the city connector to read review findings.' }
+      return { unavailable: 'Connect shell to read city review findings.' }
     const key = `${workspace.id}|${run.id}|${run.updatedAt}`
     if (packages.has(key)) return packages.get(key)
     try {

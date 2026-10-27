@@ -1,7 +1,7 @@
 /* global window, module */
 ;(() => {
   const BEADS = 'bd'
-  const PACKAGES = 'city'
+  const PACKAGES = 'shell'
   const LABELS = { review: 'pr-review', authored: 'pr-pipeline' }
   const LIST_LIMIT = 500
   const PACKAGE_SCRIPT = [
