@@ -84,7 +84,7 @@ ${PULL_FIELDS}`
 
   function pullsQueryArgs(repo, branch, limit) {
     const [owner, name] = repo.split('/')
-    const search = (qualifier) => `repo:${repo} is:pr is:open ${qualifier}`
+    const search = (qualifier) => `repo:${repo} is:pr is:open ${qualifier} sort:updated-desc`
     return [
       'api', 'graphql',
       '-f', `query=${PULLS_QUERY}`,
@@ -95,7 +95,7 @@ ${PULL_FIELDS}`
       '-f', `mine=${search('author:@me')}`,
       '-f', `review=${search('review-requested:@me')}`,
       '-f', `assigned=${search('assignee:@me')}`,
-      '-f', `issues=repo:${repo} is:issue is:open assignee:@me`,
+      '-f', `issues=repo:${repo} is:issue is:open assignee:@me sort:updated-desc`,
       '-F', `limit=${limit}`,
     ]
   }

@@ -59,7 +59,7 @@ test('a response without the issues search yields no issues and no extra paging'
 
 test('the list query searches open issues assigned to the viewer in the repository', () => {
   const args = pullsQueryArgs('acme/widgets', 'main', 30)
-  assert.ok(args.includes('issues=repo:acme/widgets is:issue is:open assignee:@me'))
+  assert.ok(args.includes('issues=repo:acme/widgets is:issue is:open assignee:@me sort:updated-desc'))
   assert.match(args[3], /issues: search\(query: \$issues, type: ISSUE, first: \$limit\) \{ issueCount nodes \{ \.\.\.issue \} \}/)
   assert.match(args[3], /fragment issue on Issue/)
 })
@@ -127,4 +127,14 @@ test('a pull with no human activity has no activity and is not reviewed', () => 
 
 test('the list query reads each pull request base branch', () => {
   assert.match(pullsQueryArgs('acme/widgets', 'main', 30)[3], /headRefName baseRefName/)
+})
+
+test('every search returns the most recently updated results first so the page holds the latest activity', () => {
+  const args = pullsQueryArgs('acme/widgets', 'main', 30)
+  for (const [name, qualifier] of [
+    ['mine', 'author:@me'],
+    ['review', 'review-requested:@me'],
+    ['assigned', 'assignee:@me'],
+  ])
+    assert.ok(args.includes(`${name}=repo:acme/widgets is:pr is:open ${qualifier} sort:updated-desc`))
 })
