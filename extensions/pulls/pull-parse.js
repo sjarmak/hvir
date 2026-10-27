@@ -223,12 +223,12 @@
       branch,
       viewer,
       branchPulls,
-      authored: pullsOf(data.mine, viewer),
+      authored: [...pullsOf(data.mine, viewer), ...pullsOf(data.drafts, viewer)],
       reviewRequested: reviewRequested.filter(
         (pull, index) => reviewRequested.findIndex((other) => other.number === pull.number) === index,
       ),
       issues: issuesOf(data.issues, viewer),
-      hasMore: [data.mine, data.review, data.assigned, data.issues].some(searchHasMore),
+      hasMore: [data.mine, data.drafts, data.review, data.assigned, data.issues].some(searchHasMore),
     }
   }
 

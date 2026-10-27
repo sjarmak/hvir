@@ -1,7 +1,7 @@
 {
   "id": "hvir.pulls",
   "name": "Pull requests",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "contract": "1.0",
   "requiredCapabilities": [
     "presentation.read",

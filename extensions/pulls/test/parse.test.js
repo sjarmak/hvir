@@ -129,12 +129,28 @@ test('the list query reads each pull request base branch', () => {
   assert.match(pullsQueryArgs('acme/widgets', 'main', 30)[3], /headRefName baseRefName/)
 })
 
+test('drafts have their own smaller search so they never displace a ready or in-review pull request', () => {
+  const args = pullsQueryArgs('acme/widgets', 'main', 30)
+  assert.ok(args.includes('limit=30'))
+  assert.ok(args.includes('draftLimit=15'))
+  assert.match(args[3], /drafts: search\(query: \$drafts, type: ISSUE, first: \$draftLimit\)/)
+  const { data } = withPulls([pullNode(71)])
+  const drafts = { issueCount: 3, nodes: [pullNode(72, { isDraft: true })] }
+  const snapshot = parsePulls(
+    { data: { ...data, mine: { ...data.mine, issueCount: 1 }, drafts } },
+    { repo: 'acme/widgets', branch: undefined, localRepos: new Set() },
+  )
+  assert.deepEqual(snapshot.authored.map((pull) => [pull.number, pull.draft]), [[71, false], [72, true]])
+  assert.equal(snapshot.hasMore, true)
+})
+
 test('every search returns the most recently updated results first so the page holds the latest activity', () => {
   const args = pullsQueryArgs('acme/widgets', 'main', 30)
   for (const [name, qualifier] of [
-    ['mine', 'author:@me'],
-    ['review', 'review-requested:@me'],
-    ['assigned', 'assignee:@me'],
+    ['mine', 'author:@me draft:false'],
+    ['drafts', 'author:@me draft:true'],
+    ['review', 'review-requested:@me draft:false'],
+    ['assigned', 'assignee:@me draft:false'],
   ])
     assert.ok(args.includes(`${name}=repo:acme/widgets is:pr is:open ${qualifier} sort:updated-desc`))
 })
