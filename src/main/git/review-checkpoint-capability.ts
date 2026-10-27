@@ -37,7 +37,7 @@ export class ReviewCheckpointCapability {
 
   async status(): Promise<ReviewCheckpointStatus> {
     const inspection = await this.inspect()
-    if (!inspection.oid) return { root: inspection.root, oid: null, changes: [] }
+    if (!inspection.oid) return { root: this.root, oid: null, changes: [] }
     const baseline = parseCheckpointTree(
       expectString(await this.call({ action: 'tree', oid: inspection.oid })),
     )
@@ -45,9 +45,9 @@ export class ReviewCheckpointCapability {
     if ((await this.inspect()).oid !== inspection.oid)
       throw new Error('Checkpoint baseline changed; refresh changes since review')
     return {
-      root: inspection.root,
+      root: this.root,
       oid: inspection.oid,
-      changes: changesFor(inspection.root, baseline, live),
+      changes: changesFor(this.root, baseline, live),
     }
   }
 
@@ -62,7 +62,7 @@ export class ReviewCheckpointCapability {
       throw new Error('Checkpoint baseline changed during capture')
     await this.call({ action: 'update-ref', oid: tree, previous: initial.oid })
     return {
-      root: finalInspection.root,
+      root: this.root,
       oid: tree,
       changes: [],
     }
