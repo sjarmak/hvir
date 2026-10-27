@@ -93,6 +93,8 @@ const baseConfig: UserConfig = {
           'echo-worker': resolve('src/workers/echo-worker.ts'),
           'git-worker': resolve('src/workers/git-worker.ts'),
           'architecture-worker': resolve('src/workers/architecture-worker.ts'),
+          'document-worker': resolve('src/workers/document-worker.ts'),
+          'agent-cli': resolve('src/agent-cli/index.ts'),
         },
       },
     },

@@ -349,6 +349,8 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     )
     const readiness = new SmokeRendererReadiness()
     const ipcRouter = registerIpcHandlers({
+      agents: dependencies.agents,
+      extensions: dependencies.extensions,
       architectureReview: architectureReview.createSmokeArchitectureReview(
         rendererResources,
         cleanup,
