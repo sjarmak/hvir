@@ -252,3 +252,6 @@ ul {
 [data-hue='3'] {
   --stack-hue: var(--syntax-key);
 }
+.chip-progress {
+  color: var(--accent-text);
+}

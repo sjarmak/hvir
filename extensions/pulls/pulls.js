@@ -1,7 +1,9 @@
 /* global window, document */
 const { availability } = window.host
 const { el } = window
-const { pullSections, age, badges, reasonTone, activitySignal, stackSummary, roleLabel } = window.pullsModel
+const { pullSections, age, badges, reasonTone, activitySignal, stackSummary, roleLabel, isAside, withAside, pruneAside, reviewProgressLabel } =
+  window.pullsModel
+const store = window.reviewStore
 const { pullHandle } = window.pullWaits
 const ui = Object.fromEntries(
   ['repo', 'refresh', 'status', 'connect-gh', 'connect-git', 'connect-shell', 'sections', 'more'].map((id) => [id, document.getElementById(id)]),
@@ -15,8 +17,10 @@ let workspaceId
 /** Why This branch is empty when git can't run here; set per load. */
 let gitNote = ''
 /** Collapsed section keys survive re-renders, like the panel's collapsible headers. */
-const collapsed = new Set()
+const collapsed = new Set(['aside'])
 let lists = []
+let marks = { client: undefined, aside: {}, progress: new Map() }
+let lastRender
 const setStatus = (text) => (ui.status.textContent = text)
 
 const STACK_HUES = 4
@@ -50,6 +54,36 @@ function activityChips(pull, now) {
   return [chip, unseen]
 }
 
+function asideChip(pull, snapshot) {
+  if (!marks.client || pull.updatedAt === '') return null
+  const aside = isAside(pull, marks.aside)
+  const control = el(
+    'span',
+    { className: 'chip chip-link', title: aside ? 'Move back to Reviews requested' : 'Hide until the pull request changes' },
+    aside ? 'Bring back' : 'Set aside',
+  )
+  control.setAttribute('role', 'button')
+  control.tabIndex = 0
+  const activate = (event) => {
+    event.stopPropagation()
+    event.preventDefault()
+    marks = { ...marks, aside: withAside(marks.aside, pull, !aside) }
+    marks.client.write(store.asideName(snapshot.repo), marks.aside).catch((error) => setStatus(`Not saved: ${error.message}`))
+    if (lastRender) render(...lastRender)
+  }
+  control.addEventListener('click', activate)
+  control.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' || event.key === ' ') activate(event)
+    else event.stopPropagation()
+  })
+  return control
+}
+
+function progressChip(pull) {
+  const label = reviewProgressLabel(marks.progress.get(pull.number), pull)
+  return label ? el('span', { className: 'chip chip-progress' }, label) : null
+}
+
 function pullRow(row, snapshot, now, here) {
   const { pull, reason, since, waitingOn, stack } = row
   const worktree = window.worktreeControl.worktreeFor(here.worktrees, pull, snapshot.repo)
@@ -63,7 +97,9 @@ function pullRow(row, snapshot, now, here) {
     since === undefined ? null : ageChip(since, now),
     pull.author && pull.author !== snapshot.viewer ? el('span', {}, `@${pull.author}`) : null,
     waitingOn.length ? el('span', {}, `waiting on ${waitingOn.map(pullHandle).join(', ')}`) : null,
+    progressChip(pull),
     worktree ? window.worktreeControl.chip(worktree, here.shell, setStatus) : null,
+    row.role === 'reviewer' ? asideChip(pull, snapshot) : null,
     window.githubLink(pull.url, setStatus),
   ].filter(Boolean)
   const option = window.optionRow({
@@ -135,8 +171,9 @@ const openRow = (repo) => (option) =>
 
 /** `here` is the other worktrees of this checkout and the shell connector's availability. */
 function render(snapshot, now, here) {
+  lastRender = [snapshot, now, here]
   for (const binding of lists) binding.dispose()
-  const sections = pullSections(snapshot, now).filter((section) => section.key === 'branch' || section.rows.length > 0)
+  const sections = pullSections(snapshot, now, marks.aside).filter((section) => section.key === 'branch' || section.rows.length > 0)
   ui.sections.replaceChildren(...sections.map((section) => renderSection(section, snapshot, now, here)))
   lists = [...ui.sections.querySelectorAll('[role="listbox"]')].map((list) =>
     window.hvirUI.bindList(list, openRow(snapshot.repo)),
@@ -161,6 +198,24 @@ function render(snapshot, now, here) {
   )
 }
 
+async function readMarks(workspace, snapshot, connectors) {
+  if (connectors[store.CONNECTOR] !== 'supported') {
+    marks = { client: undefined, aside: {}, progress: new Map() }
+    return ''
+  }
+  const client = store.client(window.host.run, workspace)
+  try {
+    const entries = await client.list(store.repoPrefix(snapshot.repo))
+    const saved = entries.get(store.asideName(snapshot.repo))
+    const aside = pruneAside(saved && typeof saved === 'object' ? saved : {}, snapshot.reviewRequested)
+    marks = { client, aside, progress: window.reviewState.repoProgress(entries, snapshot.repo) }
+    return ''
+  } catch (error) {
+    marks = { client: undefined, aside: {}, progress: new Map() }
+    return `Review progress unavailable: ${error.message}`
+  }
+}
+
 /** The header count belongs to the updater (cross-workspace); this view only renders. */
 async function load(context, current) {
   if (!context.workspace) return setStatus('No workspace selected')
@@ -182,8 +237,9 @@ async function load(context, current) {
       (worktrees) => ({ worktrees, shell: connectors.shell, note: '' }),
       (error) => ({ worktrees: new Map(), shell: connectors.shell, note: `Worktrees unavailable: ${error.message}` }),
     )
+    const note = await readMarks(context.workspace, snapshot, connectors)
     if (current().workspace?.id !== context.workspace.id || requested !== limit) return
-    render(snapshot, Date.now(), here)
+    render(snapshot, Date.now(), { ...here, note: [here.note, note].filter(Boolean).join(' ') })
     if (!local) ui['connect-shell'].hidden = true
   } finally {
     ui.refresh.disabled = false

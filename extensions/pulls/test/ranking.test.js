@@ -3,7 +3,19 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { businessMsBetween, formatBusinessAge, businessAgeTone, BUSINESS_DAY_MS } = require('../business-time.js')
 const { pullWaitRows } = require('../pull-waits.js')
-const { pullSections, issueRows, needYouCount, age, badges, activitySignal, stackSummary, roleLabel } = require('../pulls-model.js')
+const {
+  pullSections,
+  issueRows,
+  needYouCount,
+  age,
+  badges,
+  activitySignal,
+  stackSummary,
+  roleLabel,
+  withAside,
+  pruneAside,
+  reviewProgressLabel,
+} = require('../pulls-model.js')
 
 const at = (iso) => new Date(iso).getTime()
 const HOUR = 3_600_000
@@ -140,12 +152,32 @@ test('sections split your pull requests by review state and list newest activity
       ['review', [72]],
       ['drafts', [75, 74]],
       ['requested', [82, 80]],
+      ['aside', []],
       ['issues', [304, 301, 302]],
     ],
   )
   const failing = sections[1].rows.find((row) => row.pull.number === 73)
   assert.deepEqual(badges(failing), [])
   assert.deepEqual(badges({ ...failing, reason: 'Assigned' }), [{ label: 'CI failing', tone: 'danger' }])
+})
+
+test('a review request set aside stays in Set aside only until the pull request changes', () => {
+  const asked = snapshot.reviewRequested.find((candidate) => candidate.number === 82)
+  const aside = withAside({}, asked, true)
+  const keyed = (shot) => Object.fromEntries(pullSections(shot, NOW, aside).map((section) => [section.key, section.rows.map((row) => row.pull?.number)]))
+  assert.deepEqual([keyed(snapshot).requested, keyed(snapshot).aside], [[80], [82]])
+  const changed = { ...snapshot, reviewRequested: snapshot.reviewRequested.map((candidate) => (candidate.number === 82 ? { ...candidate, updatedAt: '2026-10-21T08:00:00-04:00' } : candidate)) }
+  assert.deepEqual([keyed(changed).requested, keyed(changed).aside], [[82, 80], []])
+  assert.deepEqual(pruneAside(aside, changed.reviewRequested), {})
+  assert.deepEqual(pruneAside(aside, []), aside)
+  assert.deepEqual(withAside(aside, asked, false), {})
+})
+
+test('review progress reads files reviewed against changed files and counts drafts', () => {
+  const progress = { read: { 'a.js': 'h1', 'b.js': 'h2' }, drafts: 1 }
+  assert.equal(reviewProgressLabel(progress, { changedFiles: 5 }), 'reviewed 2/5 files · 1 draft comment')
+  assert.equal(reviewProgressLabel({ read: {}, drafts: 0 }, { changedFiles: 5 }), undefined)
+  assert.equal(reviewProgressLabel(undefined, { changedFiles: 5 }), undefined)
 })
 
 test('a pull request with only a comment review counts as in review and ready rows drop the redundant reason', () => {

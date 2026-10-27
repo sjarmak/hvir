@@ -13,6 +13,7 @@
     ['review', 'PRs in review'],
     ['drafts', 'Draft PRs'],
     ['requested', 'Reviews requested'],
+    ['aside', 'Set aside until they change'],
     ['issues', 'Assigned issues'],
   ]
   const CHECK_BADGES = {
@@ -82,15 +83,18 @@
     return inReview(row.pull) ? 'review' : 'ready'
   }
 
-  function sectionOf(row) {
-    return row.role === 'reviewer' ? 'requested' : authoredSection(row)
+  const isAside = (pull, aside) => aside[pull.number] !== undefined && aside[pull.number] === pull.updatedAt
+
+  function sectionOf(row, aside) {
+    if (row.role !== 'reviewer') return authoredSection(row)
+    return isAside(row.pull, aside) ? 'aside' : 'requested'
   }
 
   function withoutSectionReason(row, key) {
     return (SECTION_REASONS[key] ?? []).includes(row.reason) ? { ...row, reason: '' } : row
   }
 
-  function pullSections(snapshot, now) {
+  function pullSections(snapshot, now, aside = {}) {
     const stacks = pullStacks([...snapshot.branchPulls, ...snapshot.authored, ...snapshot.reviewRequested], snapshot.repo)
     const withStack = (row) => ({ ...row, stack: stacks.get(row.pull.number) })
     const waits = pullWaitRows(snapshot, now).map(withStack)
@@ -112,7 +116,7 @@
       if (key === 'branch') return branchRows
       if (key === 'issues') return issueRows(snapshot, now)
       const rows = waits
-        .filter((row) => !shown.has(row.pull.number) && sectionOf(row) === key)
+        .filter((row) => !shown.has(row.pull.number) && sectionOf(row, aside) === key)
         .map((row) => withoutSectionReason(row, key))
       return byActivityKeepingStacks(rows)
     }
@@ -182,8 +186,32 @@
     return { label, order: stack.order, id: stack.id, depth: stack.depth }
   }
 
+  function withAside(aside, pull, setAside) {
+    const rest = Object.fromEntries(Object.entries(aside).filter(([number]) => number !== String(pull.number)))
+    return setAside ? { ...rest, [pull.number]: pull.updatedAt } : rest
+  }
+
+  function pruneAside(aside, pulls) {
+    const current = new Map(pulls.map((pull) => [String(pull.number), pull.updatedAt]))
+    return Object.fromEntries(Object.entries(aside).filter(([number, at]) => !current.has(number) || current.get(number) === at))
+  }
+
+  function reviewProgressLabel(progress, pull) {
+    if (progress === undefined) return undefined
+    const read = Object.keys(progress.read).length
+    const parts = [
+      read > 0 ? `reviewed ${Math.min(read, pull.changedFiles ?? read)}/${pull.changedFiles ?? '?'} files` : '',
+      progress.drafts > 0 ? `${progress.drafts} draft ${progress.drafts === 1 ? 'comment' : 'comments'}` : '',
+    ].filter(Boolean)
+    return parts.length ? parts.join(' · ') : undefined
+  }
+
   const api = Object.freeze({
     pullSections,
+    isAside,
+    withAside,
+    pruneAside,
+    reviewProgressLabel,
     issueRows,
     needYouCount,
     age,

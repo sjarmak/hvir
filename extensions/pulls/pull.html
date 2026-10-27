@@ -5,26 +5,45 @@
     <title>Pull request</title>
     <link rel="stylesheet" href="presentation.css" />
     <link rel="stylesheet" href="pulls.css" />
+    <link rel="stylesheet" href="review.css" />
   </head>
-  <body class="hvir-guest hvir-panel">
-    <main class="hvir-stack hvir-scroll">
+  <body class="hvir-guest hvir-panel review-body">
+    <header class="review-header">
       <h1 id="title">Loading…</h1>
       <p id="meta" class="hvir-meta"></p>
       <p id="url" class="hvir-meta selectable"></p>
       <p id="status" class="hvir-state" role="status"></p>
-      <div class="checkout">
-        <button id="checkout" class="hvir-button" data-variant="regular" type="button" hidden>Check out in a terminal</button>
-        <p id="checkout-note" class="hvir-meta" hidden></p>
-        <p id="checkout-status" class="hvir-meta" role="status"></p>
-      </div>
-      <section id="explainer-section" hidden><h2 id="explainer-heading">Explainer</h2><p id="explainer-note" class="hvir-meta selectable" hidden></p><div id="explainer"></div></section>
-      <section id="checks-section" hidden><h2 id="checks-heading">Checks</h2><ul id="checks"></ul></section>
-      <section id="commits-section" hidden><h2 id="commits-heading">Commits</h2><p id="commits-note" class="hvir-meta" hidden></p><ul id="commits"></ul></section>
-      <section id="reviews-section" hidden><h2>Reviews</h2><ul id="reviews"></ul></section>
-      <section id="threads-section" hidden><h2 id="threads-heading">Review threads</h2><ul id="threads"></ul></section>
-      <section id="comments-section" hidden><h2>Conversation</h2><ul id="comments"></ul></section>
-      <section id="body-section" hidden><h2>Description</h2><div id="body" class="prose"></div></section>
-    </main>
+    </header>
+    <div class="review">
+      <nav class="checklist hvir-scroll" aria-label="Review checklist">
+        <p id="progress" class="hvir-meta"></p>
+        <p id="store-note" class="hvir-meta" hidden></p>
+        <button id="connect-store" class="hvir-button" data-variant="regular" type="button" hidden>Connect review store</button>
+        <div id="checklist" role="listbox" aria-label="Files to review"></div>
+      </nav>
+      <main id="pane" class="hvir-scroll">
+        <section id="brief" class="hvir-stack">
+          <div class="checkout">
+            <button id="checkout" class="hvir-button" data-variant="regular" type="button" hidden>Check out in a terminal</button>
+            <p id="checkout-note" class="hvir-meta" hidden></p>
+            <p id="checkout-status" class="hvir-meta" role="status"></p>
+          </div>
+          <section id="explainer-section" hidden><h2 id="explainer-heading">Explainer</h2><p id="explainer-note" class="hvir-meta selectable" hidden></p><div id="explainer"></div></section>
+          <section id="checks-section" hidden><h2 id="checks-heading">Checks</h2><ul id="checks"></ul></section>
+          <section id="commits-section" hidden><h2 id="commits-heading">Commits</h2><p id="commits-note" class="hvir-meta" hidden></p><ul id="commits"></ul></section>
+          <section id="reviews-section" hidden><h2>Reviews</h2><ul id="reviews"></ul></section>
+          <section id="threads-section" hidden><h2 id="threads-heading">Review threads</h2><ul id="threads"></ul></section>
+          <section id="comments-section" hidden><h2>Conversation</h2><ul id="comments"></ul></section>
+          <section id="body-section" hidden><h2>Description</h2><div id="body" class="prose"></div></section>
+        </section>
+        <section id="file" hidden>
+          <div id="file-head" class="file-head"></div>
+          <div id="file-loose" class="file-loose" hidden></div>
+          <div id="file-diff"></div>
+        </section>
+        <section id="submit" class="submit" hidden></section>
+      </main>
+    </div>
     <script src="guest-ui.js"></script>
     <script src="host.js"></script>
     <script src="view.js"></script>
@@ -35,6 +54,13 @@
     <script src="vendor/purify.min.js"></script>
     <script src="markdown.js"></script>
     <script src="explainer.js"></script>
+    <script src="diff-parse.js"></script>
+    <script src="diff-view.js"></script>
+    <script src="review-store.js"></script>
+    <script src="review-state.js"></script>
+    <script src="review-submit.js"></script>
+    <script src="review-page.js"></script>
+    <script src="submit-view.js"></script>
     <script src="pull.js"></script>
   </body>
 </html>

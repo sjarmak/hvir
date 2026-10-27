@@ -61,6 +61,7 @@ const VIEW_FIELDS = [
   'statusCheckRollup',
   'commits',
   'isCrossRepository',
+  'headRefOid',
 ].join(',')
 /** Check runs report `conclusion`; legacy status contexts report `state`. */
 const checkResult = (check) =>
@@ -162,7 +163,11 @@ function render(pull, detail) {
   ]
     .filter(Boolean)
     .join(' · ')
-  ui.url.replaceChildren(pull.url, ' ', window.githubLink(pull.url, (text) => (ui.status.textContent = text)) ?? '')
+  ui.url.replaceChildren(
+    pull.url,
+    ' ',
+    window.githubLink(pull.url, (text) => (ui.status.textContent = text)) ?? '',
+  )
   renderChecks(pull.statusCheckRollup ?? [])
   renderReviews(pull)
   renderThreads(detail)
@@ -354,6 +359,33 @@ function clearShown(key) {
   explainerShown = undefined
 }
 
+let diffShown
+
+async function readDiff(workspace, repo, number, head, key) {
+  if (diffShown?.key === key && diffShown.head === head) return diffShown.result
+  try {
+    const text = await run('gh', workspace, ['pr', 'diff', String(number), '-R', repo], {
+      text: true,
+    })
+    diffShown = {
+      key,
+      head,
+      result: {
+        files: window.diffParse.parseDiff(text),
+        diffError: undefined,
+        diffHead: head,
+      },
+    }
+  } catch (error) {
+    diffShown = {
+      key,
+      head,
+      result: { files: [], diffError: error.message, diffHead: undefined },
+    }
+  }
+  return diffShown.result
+}
+
 async function load(context, current) {
   const key = keyOf(context)
   if (key === undefined) {
@@ -367,6 +399,13 @@ async function load(context, current) {
     ui.status.textContent = window.hostNote('gh', context.workspace)
     return
   }
+  await window.reviewPage.load({
+    key,
+    repo,
+    number,
+    workspace: context.workspace,
+    connectors,
+  })
   const [pull, detail] = await Promise.all([
     run('gh', context.workspace, [
       'pr',
@@ -385,6 +424,9 @@ async function load(context, current) {
   if (keyOf(current()) !== key) return
   ui.status.textContent = ''
   render(pull, detail)
+  const diff = await readDiff(context.workspace, repo, number, pull.headRefOid, key)
+  if (keyOf(current()) !== key) return
+  window.reviewPage.show({ key, pull, detail: detail.value, ...diff })
   void renderExplainer(context.workspace, pull.body, key)
   const existing = await checkedOut(context.workspace, pull, connectors)
   if (keyOf(current()) !== key) return
@@ -394,9 +436,17 @@ async function load(context, current) {
   renderCommits(labels)
 }
 
-window.startView({
-  load,
-  refreshMs: REFRESH_MS,
-  onStatus: (text) => (ui.status.textContent = text),
-})
+const setStatus = (text) => (ui.status.textContent = text)
+window.reviewPage.setStatusHandler(setStatus)
+window.pullView = window.startView({ load, refreshMs: REFRESH_MS, onStatus: setStatus })
+document
+  .getElementById('connect-store')
+  .addEventListener(
+    'click',
+    window.connectHandler(
+      window.reviewStore.CONNECTOR,
+      setStatus,
+      window.pullView.refresh,
+    ),
+  )
 ui.checkout.addEventListener('click', () => void checkout())

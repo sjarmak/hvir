@@ -1,7 +1,7 @@
 {
   "id": "hvir.pulls",
   "name": "Pull requests",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "contract": "1.0",
   "requiredCapabilities": [
     "presentation.read",
@@ -66,7 +66,7 @@
   "connectors": [
     {
       "id": "gh",
-      "description": "Read pull requests, reviews, checks and the issues assigned to you for the workspace repository with the GitHub CLI (gh). Read-only queries.",
+      "description": "Read pull requests, diffs, reviews, checks and your assigned issues with the GitHub CLI (gh). The one write: submitting your review and its line comments, only when you click Submit review.",
       "context": "workspace",
       "setup": {
         "executable": "gh"
@@ -98,6 +98,17 @@
       },
       "timeoutMs": 10000,
       "outputBytes": 65536,
+      "environment": []
+    },
+    {
+      "id": "store",
+      "description": "Keep your review progress on this host: sh reads and writes small JSON files under ~/.hvir/pulls (files you marked reviewed, draft line comments, review summary, pull requests set aside). Nothing else.",
+      "context": "workspace",
+      "setup": {
+        "executable": "sh"
+      },
+      "timeoutMs": 10000,
+      "outputBytes": 1048576,
       "environment": []
     }
   ],
