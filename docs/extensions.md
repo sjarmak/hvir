@@ -106,7 +106,7 @@ the package's semantic `version`. Views declare `application` or `workspace` pla
 `view` representation. Optional `navigation: 'top'` creates an independent application
 destination; `navigation: 'left'` creates a workspace rail view. `access` declares at most four scoped sources, or is empty. Read-only sources and the explicit delivery modes below confer separate authority. Source roots require separate trusted grants; no ambient project files, PTYs or direct guest network are exposed. Optional `connectors` declare finite native operations and require separate approval.
 
-Contract 1.0 provides `presentation.read`, `viewer.open-own`, `context.read`,
+Contract 1.0 provides `presentation.read`, `viewer.open-own`, `viewer.open-external`, `context.read`,
 `contributions.read`, `contributions.publish`, `actions.invoke`, `connector.status`,
 `connector.execute`, `connector.output`, `connector.connect`, `terminal.start`, `source.status`, `source.request`, `source.select`,
 `source.read`, `source.asset`, `source.render`, `source.reveal`, `source.request-trash`, `delivery.capture`, `delivery.manifest`, `delivery.preview`, `delivery.apply`, `delivery.status`, `delivery.domain`, `delivery.reconcile`, and `delivery.cleanup`. List required and
@@ -139,6 +139,11 @@ interface and monospace font stacks, interface scale, and available
 width/height. `kind: 'presentation'` updates these values when theme, typography, or
 geometry changes. Colors are resolved bounded browser color values; they convey no
 host authority. The workbench keeps theme and typography preferences in Settings.
+
+`viewer.open-external` takes `{ url }` and opens an https://github.com address in the
+system browser. hvir refuses other hosts, ports and credentials, requests from updaters,
+agent-restricted views or action invocations, and more than one link per second per
+installation.
 
 `viewer.open-own` takes `{ contributionId: 'detail' }` and opens only the caller's
 declared contribution. hvir selects and identifies the tab. Guest identity, approval,

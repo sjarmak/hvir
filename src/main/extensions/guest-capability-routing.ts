@@ -166,5 +166,12 @@ export async function routeGuestCapability(
   }
   if (capability === 'viewer.open-own')
     return openOwnView(input, assertOrigin, invocation)
+  if (capability === 'viewer.open-external') {
+    if (invocation || record.authority.restricted)
+      throw new Error('Only a person in a visible extension view can open an external link')
+    assertOrigin()
+    await ports.externalLinks.open(record.activation.installationId, input)
+    return null
+  }
   throw new Error('Unknown extension capability')
 }

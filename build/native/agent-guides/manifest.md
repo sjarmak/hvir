@@ -9,7 +9,7 @@ Same-major compatible contracts retain their supported meanings. A newer minor c
 The complete installed capability reference is split into focused topics. Each named operation below has inputs, results and admission/failure guidance in that topic:
 
 - `guide bridge`: presentation.read, context.read; message envelopes, actionId and deadlines.
-- `guide surfaces`: viewer.open-own, contributions.read, contributions.publish.
+- `guide surfaces`: viewer.open-own, viewer.open-external, contributions.read, contributions.publish.
 - `guide actions`: actions.invoke and finite action delivery/cancellation.
 - `guide connectors`: connector.status, connector.connect, connector.execute, connector.output, terminal.start.
 - `guide sources`: source.status, source.request, source.select, source.read, source.asset, source.render, source.reveal, source.request-trash.

@@ -20,11 +20,15 @@ Placement and execution context are separate:
 
 An application view receives no ambient project target. Use the context returned after trusted selection, not the desktop's current project. A workspace connector does not become application-local because its view is placed at the top. See `guide connectors` for configuration.
 
-A header value is shared per installation/item. Session values use exact current session IDs and the updater's demanded sessions, not every workspace. There is no per-workspace header key. Put longer lists in your own popup/view; `viewer.open-own` below opens only this installation's declarations. Selectable text can present a URL or command, but there is no public URL-opening, clipboard, existing-PTY-input or workspace-management capability.
+A header value is shared per installation/item. Session values use exact current session IDs and the updater's demanded sessions, not every workspace. There is no per-workspace header key. Put longer lists in your own popup/view; `viewer.open-own` below opens only this installation's declarations. Selectable text can present a URL or command. `viewer.open-external` below opens only https://github.com addresses; there is no general URL-opening, clipboard, existing-PTY-input or workspace-management capability.
 
 ### viewer.open-own
 
 Input: `{contributionId:'detail',input?,context?:'application'}`. Returns `{viewId}` for the hvir-owned tab. The contribution must exist in this package. Input is JSON bounded to 6144 encoded bytes; context:'application' applies only to an application contribution. Neither grants access or changes caller origin. Hidden ordinary requests and updaters cannot open further views; a current finite action must carry actionId as described in `guide bridge`.
+
+### viewer.open-external
+
+Input: `{url}`. Returns `null` after hvir hands the address to the system browser. The url must be https on github.com with no port or credentials, at most 2048 characters. A person must request it from a visible view: updaters, agent-restricted views and action invocations refuse. Each installation opens at most one link per second.
 
 ### contributions.read
 

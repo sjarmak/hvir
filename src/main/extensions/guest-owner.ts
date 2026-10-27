@@ -894,6 +894,7 @@ export class ExtensionGuestOwner {
             ![
               'actions.invoke',
               'viewer.open-own',
+              'viewer.open-external',
               'source.request',
               'source.select',
               'source.read',

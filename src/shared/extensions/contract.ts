@@ -5,6 +5,7 @@ export const EXTENSION_CONTRACT = '1.0'
 export const EXTENSION_CAPABILITIES = [
   'presentation.read',
   'viewer.open-own',
+  'viewer.open-external',
   'context.read',
   'contributions.read',
   'contributions.publish',
