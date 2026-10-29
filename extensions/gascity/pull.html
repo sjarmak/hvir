@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Pull request</title>
+    <link rel="stylesheet" href="presentation.css" />
+    <link rel="stylesheet" href="gascity.css" />
+  </head>
+  <body class="hvir-guest hvir-panel">
+    <main class="hvir-stack hvir-scroll">
+      <h1 id="title">Loading…</h1>
+      <p id="meta" class="hvir-meta"></p>
+      <p id="status" class="hvir-state" role="status"></p>
+      <button id="connect" class="hvir-button" data-variant="regular" type="button" hidden>Connect city-pr</button>
+      <section id="body" hidden>
+        <h2>Checks</h2>
+        <p id="checks"></p>
+        <ul id="failing"></ul>
+        <h2>City review</h2>
+        <p id="record"></p>
+        <h2>On GitHub</h2>
+        <p id="url" class="hvir-meta"></p>
+        <p class="hvir-meta">Diffs, line comments and Submit review are in Pull requests.</p>
+      </section>
+    </main>
+    <script src="guest-ui.js"></script>
+    <script src="host.js"></script>
+    <script src="view.js"></script>
+    <script src="pull-model.js"></script>
+    <script src="pull.js"></script>
+  </body>
+</html>

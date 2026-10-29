@@ -58,6 +58,13 @@
       "entry": "detail.html",
       "placement": "workspace",
       "representations": ["view"]
+    },
+    {
+      "id": "pull",
+      "title": "Pull request",
+      "entry": "pull.html",
+      "placement": "workspace",
+      "representations": ["view"]
     }
   ],
   "railItems": [
@@ -106,6 +113,17 @@
       "timeoutMs": 15000,
       "outputBytes": 1048576,
       "environment": ["GC_CITY"]
+    },
+    {
+      "id": "city-pr",
+      "description": "Read one pull request and the city's review record for it. city-pr-view accepts only --repo, --number and --json, and runs only gh pr view and a read-only bead list.",
+      "context": "workspace",
+      "setup": {
+        "executable": "city-pr-view"
+      },
+      "timeoutMs": 60000,
+      "outputBytes": 1048576,
+      "environment": ["GC_CITY", "GH_HOST", "GH_CONFIG_DIR", "PATH"]
     }
   ]
 }

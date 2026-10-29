@@ -57,3 +57,16 @@ test('Gas City has one left-nav entry, shown as a city icon, and no Beads, Needs
   assert.ok(fs.existsSync(path.join(__dirname, '..', nav[0].navigationIcon)))
   assert.equal((manifest.views ?? []).some((item) => ['beads', 'needs'].includes(item.id)), false)
 })
+
+test('a PR opens in Gas City\'s own pull view, read through the city-pr connector only', () => {
+  const fs = require('node:fs')
+  const path = require('node:path')
+  const view = (manifest.views ?? []).find((item) => item.id === 'pull')
+  assert.equal(view?.navigation, undefined)
+  assert.ok(fs.existsSync(path.join(__dirname, '..', view.entry)), `${view.entry} is missing`)
+  const connector = (manifest.connectors ?? []).find((item) => item.id === 'city-pr')
+  assert.equal(connector?.setup.executable, 'city-pr-view')
+  assert.equal(manifest.connectors.some((item) => item.setup?.executable === 'gh'), false)
+  const data = fs.readFileSync(path.join(__dirname, '..', 'projects-data.js'), 'utf8')
+  assert.match(data, /window\.openOwn\('pull', \{ repo: `\$\{ref\.owner\}\/\$\{ref\.repo\}`, number: ref\.number \}\)/)
+})

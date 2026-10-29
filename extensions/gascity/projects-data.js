@@ -65,7 +65,10 @@
     const actions = {
       onOpenBead: (id, store) => window.openOwn('bead', { id, rig: store })
         .catch((error) => setStatus(`Could not open ${id}: ${error.message}`)),
-      onOpenRef: (ref) => setStatus(`${ref.key}: open it from Pull requests; hvir does not let one extension open another's pages`),
+      onOpenRef: (ref) => ref.kind === 'pr'
+        ? window.openOwn('pull', { repo: `${ref.owner}/${ref.repo}`, number: ref.number })
+          .catch((error) => setStatus(`Could not open ${ref.key}: ${error.message}`))
+        : setStatus(`${ref.key}: open it from Pull requests; hvir does not let one extension open another's pages`),
       onOpenProject: (id, store) => window.openOwn('project', { id, store })
         .catch((error) => setStatus(`Could not open ${id}: ${error.message}`)),
       onOpenOverview: () => window.openOwn('project', {})
