@@ -1,13 +1,14 @@
 /* global window, module */
 ;(() => {
   const REPO = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/
+  const MAX_NUMBER = 999999999
   const FAILED = new Set(['FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE'])
   const SKIPPED = new Set(['SKIPPED', 'NEUTRAL', 'STALE'])
 
   const target = (input) => {
     const repo = input?.repo
     const number = input?.number
-    if (typeof repo !== 'string' || !REPO.test(repo) || !Number.isSafeInteger(number) || number < 1) return null
+    if (typeof repo !== 'string' || !REPO.test(repo) || !Number.isInteger(number) || number < 1 || number > MAX_NUMBER) return null
     return { repo, number }
   }
 

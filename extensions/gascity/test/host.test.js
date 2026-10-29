@@ -17,7 +17,9 @@ function loadHost(statusByWorkspace, executed) {
           ? statusByWorkspace[message.input?.workspace]
           : message.capability === 'connector.execute'
             ? executed
-            : undefined
+            : message.capability === 'connector.connect'
+              ? { connections: [{ connector: message.input.connector, outcome: 'approved' }] }
+              : undefined
       queueMicrotask(() =>
         listeners.forEach((listener) =>
           listener(
@@ -109,6 +111,16 @@ test('status is cached per workspace, not shared across workspaces', async () =>
     sent.filter((message) => message.capability === 'connector.status').length,
     2,
   )
+})
+
+test('connecting drops the cached status so the next availability asks again', async () => {
+  const statuses = { 'ws-local': [{ connector: 'gc', availability: 'unavailable', host: 'local' }] }
+  const { host, sent } = loadHost(statuses)
+  assert.equal((await host.availability({ workspace: LOCAL })).gc, 'unavailable')
+  statuses['ws-local'] = [{ connector: 'gc', availability: 'supported', host: 'local' }]
+  await host.connect('gc')
+  assert.equal((await host.availability({ workspace: LOCAL })).gc, 'supported')
+  assert.equal(sent.filter((message) => message.capability === 'connector.status').length, 2)
 })
 
 test('runs at most three connector executions at once and queues the rest', async () => {

@@ -5,7 +5,7 @@ const { target, prArgs, checks, checksLine, metaLine, recordLine } = require('..
 test('a PR target needs owner/name and a positive whole number', () => {
   assert.deepEqual(target({ repo: 'exploreomni/omni', number: 71339 }), { repo: 'exploreomni/omni', number: 71339 })
   for (const input of [undefined, {}, { repo: 'a/b', number: 0 }, { repo: 'a/b', number: '7' }, { repo: 'a/b;x', number: 7 },
-    { repo: 'a/b/c', number: 7 }, { repo: 'a/b', number: 1.5 }])
+    { repo: 'a/b/c', number: 7 }, { repo: 'a/b', number: 1.5 }, { repo: 'a/b', number: 1e9 }])
     assert.equal(target(input), null, JSON.stringify(input))
 })
 

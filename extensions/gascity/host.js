@@ -195,5 +195,11 @@ window.host = (() => {
     )
   }
 
-  return Object.freeze({ request, run, availability })
+  async function connect(connector) {
+    const value = await request('connector.connect', { connector })
+    statusCache = new Map()
+    return value
+  }
+
+  return Object.freeze({ request, run, availability, connect })
 })()

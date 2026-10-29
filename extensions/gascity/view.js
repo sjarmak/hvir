@@ -128,7 +128,7 @@ window.knownTime = (iso) => Date.parse(iso) > 0
 /** Shared connect-button handler for a connector that is not yet approved. */
 window.connectHandler = (connector, onStatus, refresh) => async () => {
   try {
-    const { connections } = await window.host.request('connector.connect', { connector })
+    const { connections } = await window.host.connect(connector)
     const outcome = connections.find((entry) => entry.connector === connector)
     onStatus(
       outcome
