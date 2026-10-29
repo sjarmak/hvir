@@ -143,11 +143,14 @@
         const source = meta(bead, `art.${name}_source`)
         const checkedAt = meta(bead, `art.${name}_checked_at`)
         const claimed = Boolean(at || source || checkedAt)
+        const age = Date.parse(now) - Date.parse(checkedAt)
         return { name, claimed, at, source, checkedAt,
-          stale: claimed && !closed && !freshnessEnds && !(Date.parse(now) - Date.parse(checkedAt) <= DAY_MS) }
+          stale: claimed && !closed && !freshnessEnds && age > DAY_MS }
       }),
     }
   }
+
+  const childOf = (project) => (bead) => parents(bead).includes(project.id) && bead.store === project.store
 
   const projectWorkflows = (input, index, projects, project, active) =>
     (input.workflowRoots ?? [])
@@ -161,7 +164,7 @@
 
   const buildCard = (project, context) => {
     const { input, index, projects, needsYou, openDecisions, entries, states } = context
-    const list = (input.milestones ?? []).filter((bead) => parents(bead).includes(project.id))
+    const list = (input.milestones ?? []).filter(childOf(project))
       .map((bead) => milestone(bead, states))
       .sort((a, b) => a.target.localeCompare(b.target) || a.id.localeCompare(b.id))
     const next = list.find((entry) => entry.id === meta(project, 'proj.next_milestone'))
@@ -180,7 +183,7 @@
       nextAction: meta(project, 'proj.next_action'),
       updatedAt,
       stale: state !== 'done' && !(Date.parse(input.now) - Date.parse(updatedAt) <= DAY_MS),
-      artifacts: (input.artifacts ?? []).filter((bead) => parents(bead).includes(project.id))
+      artifacts: (input.artifacts ?? []).filter(childOf(project))
         .map((bead) => artifact(bead, input.now, state === 'done')),
       milestones: {
         done: list.filter((entry) => entry.state === 'done').length,
@@ -189,8 +192,7 @@
       },
       milestoneList: list,
       needsCount: needsYou.filter((ask) => ask.project?.id === project.id).length,
-      refs: references([project, ...(input.milestones ?? []).filter((bead) =>
-        parents(bead).includes(project.id)), ...decisions], states),
+      refs: references([project, ...(input.milestones ?? []).filter(childOf(project)), ...decisions], states),
       active,
       inProgress: (input.inProgress ?? [])
         .filter((bead) => bead.status === 'in_progress' && resolveProject(bead, index, projects)?.id === project.id)

@@ -353,3 +353,37 @@ test('artifact freshness ends when the project is done and other projects get no
   assert.equal(cards(model).filter((entry) => entry.id !== 'fx-project-1')
     .every((entry) => entry.artifacts.length === 0 && entry.blocker === '' && entry.nextAction === ''), true)
 })
+
+test('artifacts and milestones join only to a project in their own store', () => {
+  const input = fresh()
+  for (const key of ['projects', 'milestones', 'artifacts']) for (const bead of input[key]) bead.store = '/rigs/a'
+  input.artifacts.push({ ...structuredClone(input.artifacts[0]), id: 'fx-art-other', store: '/rigs/b' })
+  input.milestones.push({ ...structuredClone(input.milestones[0]), id: 'fx-ms-other', store: '/rigs/b' })
+  const project = card(buildDashboard(input))
+  assert.deepEqual(project.artifacts.map((entry) => entry.id), ['fx-art-1', 'fx-art-2'])
+  assert.equal(project.milestoneList.some((entry) => entry.id === 'fx-ms-other'), false)
+})
+
+test('artifact freshness: exactly 24h is fresh, a minute more is stale, a missing check time is unknown, not stale', () => {
+  const input = fresh()
+  const meta = input.artifacts[0].metadata
+  const stateOf = (name) => card(buildDashboard(input)).artifacts[0].states.find((state) => state.name === name)
+  meta['art.tested_checked_at'] = '2026-10-28T12:00Z'
+  assert.equal(stateOf('tested').stale, false)
+  meta['art.tested_checked_at'] = '2026-10-28T11:59Z'
+  assert.equal(stateOf('tested').stale, true)
+  meta['art.tested_checked_at'] = '2026-10-30T12:00Z'
+  assert.equal(stateOf('tested').stale, false)
+  input.artifacts[0].metadata = { 'art.live_source': 'hvir reload' }
+  assert.deepEqual(stateOf('live'), { name: 'live', claimed: true, at: '', source: 'hvir reload', checkedAt: '', stale: false })
+})
+
+test('an artifact joined through a parent-child dependency attaches in either dependency shape', () => {
+  for (const edge of [{ type: 'parent-child', depends_on_id: 'fx-project-1' },
+    { dependency_type: 'parent-child', id: 'fx-project-1' }]) {
+    const input = fresh()
+    delete input.artifacts[0].parent
+    input.artifacts[0].dependencies = [edge]
+    assert.equal(card(buildDashboard(input)).artifacts.some((entry) => entry.id === 'fx-art-1'), true)
+  }
+})

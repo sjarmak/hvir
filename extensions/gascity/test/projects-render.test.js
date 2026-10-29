@@ -259,3 +259,21 @@ test('a project without stored blocker, next step or artifacts shows no empty la
   assert.doesNotMatch(root.textContent, /Blocker:|Next step:/)
   assert.match(root.textContent, /Artifacts.*No artifacts recorded/s)
 })
+
+test('an artifact with only some fields shows unknowns as words, never null, false or undefined', (t) => {
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  const { window } = dom
+  window.Date.now = () => Date.parse(fixture.now)
+  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const input = structuredClone(fixture)
+  input.artifacts[0].metadata = { 'art.ref': 'fixture-lab/lantern@abc1234', 'art.tested_at': '2026-10-29T09:00Z' }
+  const project = buildDashboard(input).cards.flatMap((group) => group.cards).find((entry) => entry.id === 'fx-project-1')
+  const root = window.document.querySelector('main')
+  window.projectsRender.renderProject(project, root, {})
+  const row = root.querySelector('.projects-artifact')
+  assert.match(row.textContent, /unknown kind/)
+  assert.match(row.textContent, /Tested · since 2026-10-29T09:00Z · checked unknown · no source recorded/)
+  assert.equal(row.querySelectorAll('.projects-warning').length, 0)
+  assert.doesNotMatch(root.textContent, /null|false|undefined/)
+})
