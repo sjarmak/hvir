@@ -30,3 +30,11 @@ test('the only rail item is the header city item, with no per-session updater', 
   for (const file of ['updater.html', 'updater.js'])
     assert.equal(fs.existsSync(path.join(__dirname, '..', file)), false, `${file} still exists`)
 })
+
+test('the Projects view is in the left navigation and its entry exists', () => {
+  const fs = require('node:fs')
+  const path = require('node:path')
+  const view = (manifest.views ?? []).find((item) => item.id === 'projects')
+  assert.equal(view?.navigation, 'left')
+  assert.ok(fs.existsSync(path.join(__dirname, '..', view.entry)), `${view.entry} is missing`)
+})
