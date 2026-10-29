@@ -172,6 +172,7 @@
         .map((bead) => ({ ...identity(bead), assignee: bead.assignee ?? '' })),
       decisions,
       workflows: projectWorkflows(input, index, projects, project, active),
+      outcomes: (input.outcomes ?? []).filter((entry) => entry.projects.includes(project.id)),
     }
   }
 
@@ -203,7 +204,8 @@
       if (!groups.has(card.lead)) groups.set(card.lead, { lead: card.lead, cards: [] })
       groups.get(card.lead).cards.push(card)
     }
-    return { now: input.now, needsYou, cards: [...groups.values()], activeNow: groupActivity(entries) }
+    return { now: input.now, needsYou, cards: [...groups.values()], activeNow: groupActivity(entries),
+      outcomesShown: Array.isArray(input.outcomes) }
   }
 
   const duplicateProjects = (projects = []) => {

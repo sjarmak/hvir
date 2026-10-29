@@ -214,3 +214,12 @@ test('a failed ancestor read is not retried in later rounds, and cycles plan not
   const cycle = [read('inProgress', [{ id: 'a', parent: 'b' }]), read('ancestors', [{ id: 'b', parent: 'a' }])]
   assert.deepEqual(loader.ancestorRequests(cycle), [])
 })
+
+test('outcome entries are shape-checked and keep only the contract fields', () => {
+  const entry = { time: '2026-10-29T03:00Z', title: 'T', outcome: 'O', projects: ['fx-project-1'], extra: 'x' }
+  assert.deepEqual(loader.parseOutcomes({ entries: [entry] }),
+    [{ time: '2026-10-29T03:00Z', title: 'T', outcome: 'O', projects: ['fx-project-1'] }])
+  for (const bad of [null, {}, { entries: {} }, { entries: [{ ...entry, projects: 'fx' }] }, { entries: [{ ...entry, title: 1 }] }])
+    assert.throws(() => loader.parseOutcomes(bad), /unexpected JSON shape/)
+  assert.deepEqual(loader.OUTCOME_ARGS, ['outcomes', '--json'])
+})

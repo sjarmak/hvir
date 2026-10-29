@@ -305,3 +305,18 @@ test('a card lists its in-progress beads, joined by the same rules as Active now
   }
   assert.ok(cards(model).some((entry) => entry.inProgress.length > 0))
 })
+
+test('outcome history joins by listed project id and is off until outcomes are supplied', () => {
+  const input = fresh()
+  assert.equal(buildDashboard(input).outcomesShown, false)
+  assert.deepEqual(card(buildDashboard(input)).outcomes, [])
+  input.outcomes = [
+    { time: '2026-10-29T03:00Z', title: 'Both', outcome: 'o1', projects: ['fx-project-1', 'fx-project-2'] },
+    { time: '2026-10-28T03:00Z', title: 'Other', outcome: '', projects: ['fx-project-3'] },
+  ]
+  const model = buildDashboard(input)
+  assert.equal(model.outcomesShown, true)
+  assert.deepEqual(card(model, 'fx-project-1').outcomes.map((entry) => entry.title), ['Both'])
+  assert.deepEqual(card(model, 'fx-project-2').outcomes.map((entry) => entry.title), ['Both'])
+  assert.deepEqual(card(model, 'fx-project-3').outcomes.map((entry) => entry.title), ['Other'])
+})

@@ -44,6 +44,10 @@
       text([formula, item.model, item.account, age && `Running ${age.replace(/ ago$/, '')}`].filter(Boolean).join(' · '), 'hvir-meta'))
   }
 
+  const renderOutcome = (entry) => el('li', {},
+    text(entry.title), entry.outcome && paragraph(entry.outcome, 'hvir-meta'),
+    text(`${entry.time} · ${window.ago(entry.time.replace(/Z$/, ':00Z'))}`, 'hvir-meta'))
+
   const renderMilestone = (entry, options) => el('li', { title: entry.id },
     text(entry.target || 'No target', 'hvir-meta'),
     text(entry.title), chip(entry.state),
@@ -59,6 +63,7 @@
     section('Milestones', list(card.milestoneList.map((entry) => renderMilestone(entry, options)), 'No milestones')),
     section('Open decisions', list(card.decisions.map((ask) => renderAsk(ask, options)), 'No open decisions')),
     section('Workflows', list(card.workflows.map(renderWorkflow), 'No workflows')),
+    options.outcomesShown && section('Asks and outcomes', list(card.outcomes.map(renderOutcome), 'No outcomes yet')),
     el('details', {}, el('summary', {}, `In progress (${card.inProgress.length})`),
       list(card.inProgress.map((bead) => el('li', {},
         button(bead.title, bead.id, () => options.onOpenBead?.(bead.id, bead.store)),
@@ -87,6 +92,7 @@
       paragraph(card.now || 'No current update'),
       card.stuckWhy && paragraph(card.stuckWhy, 'projects-warning'),
       renderProgress(card.milestones),
+      options.outcomesShown && section('Recent outcomes', list(card.outcomes.slice(0, 3).map(renderOutcome), 'No outcomes yet')),
       paragraph(`${card.needsCount} ${card.needsCount === 1 ? 'decision needs' : 'decisions need'} you`),
       renderRefs(card.refs, options),
       section('Active now', list(card.active.map(renderActivity), 'No active agents')),
@@ -99,7 +105,8 @@
     return el('article', { className: 'projects-card' }, face, detail)
   }
 
-  const renderDashboard = (model, root, options = {}) => {
+  const renderDashboard = (model, root, given = {}) => {
+    const options = { ...given, outcomesShown: model.outcomesShown }
     root.classList.add('projects-dashboard')
     const activeGroups = model.activeNow.map((group) => el('div', { className: 'projects-active-group' },
       el('h3', {}, group.project?.title ?? 'No project'), list(group.items.map(renderActivity), 'No active agents')))

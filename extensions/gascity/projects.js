@@ -24,12 +24,12 @@
     }
   }))
 
-  const readCity = async (workspace, args, parse, errors) => {
+  const readCity = async (workspace, args, parse, errors, connector = 'gc') => {
     try {
-      return parse(await run('gc', workspace, args))
+      return parse(await run(connector, workspace, args))
     } catch (error) {
-      errors.push(`gc ${args.slice(0, 2).join(' ')}: ${error.message}`)
-      return []
+      errors.push(`${connector} ${args.slice(0, 2).join(' ')}: ${error.message}`)
+      return connector === 'gc' ? [] : undefined
     }
   }
 
@@ -42,6 +42,7 @@
     }
     const connectors = await availability({ workspace })
     missing = ['gc', 'bd'].find((name) => connectors[name] !== 'supported')
+    const outcomesReady = connectors['city-projects'] === 'supported'
     ui.connect.hidden = !missing
     if (missing) {
       ui.connect.textContent = `Connect ${missing}`
@@ -64,7 +65,11 @@
     }
     if (loader.ancestorRequests(reads).length)
       errors.push(`parent chains deeper than ${loader.ANCESTOR_ROUNDS} unread levels were not followed`)
+    const outcomes = outcomesReady
+      ? await readCity(workspace, [...loader.OUTCOME_ARGS], loader.parseOutcomes, errors, 'city-projects')
+      : undefined
     const result = loader.assemblePayload({ now: new Date().toISOString(), reads, sessions, errors })
+    if (outcomes) result.payload.outcomes = outcomes
     render(result.payload)
     const time = new Date(result.payload.now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     const conflicts = window.projectsModel.duplicateProjects(result.payload.projects)

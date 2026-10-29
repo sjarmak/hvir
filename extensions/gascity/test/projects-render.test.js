@@ -122,3 +122,17 @@ test('an invalid reference shows her a plain link-missing note, never the raw va
   assert.ok(warnings.includes('link missing'))
   assert.equal(root.textContent.includes('bad reference'), false)
 })
+
+test('recent outcomes appear only when the outcome reader supplied them, at most three per card', (t) => {
+  const { dom, root } = preview()
+  t.after(() => dom.window.close())
+  assert.equal(root.textContent.includes('Recent outcomes'), false)
+  const input = structuredClone(fixture)
+  input.outcomes = Array.from({ length: 5 }, (_, index) => ({
+    time: `2026-10-2${index}T03:00Z`, title: `Outcome ${index}`, outcome: '', projects: ['fx-project-1'] }))
+  dom.window.projectsRender.renderDashboard(buildDashboard(input), root, {})
+  const face = [...root.querySelectorAll('.projects-card-face')].find((node) => node.textContent.includes('Outcome 0'))
+  const recent = [...face.querySelectorAll('section')].find((node) => node.querySelector('h2')?.textContent === 'Recent outcomes')
+  assert.equal(recent.querySelectorAll('li').length, 3)
+  assert.equal(face.parentElement.querySelector('.projects-detail').textContent.includes('Outcome 4'), true)
+})
