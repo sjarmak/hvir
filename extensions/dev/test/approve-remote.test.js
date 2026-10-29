@@ -7,6 +7,7 @@ import {
   normalizeDeclaration,
   planApprovals,
   remoteHostsFromProjects,
+  remoteLookupNames,
   resolveRemotes,
   stamp,
 } from '../approve-connectors.mjs'
@@ -197,4 +198,13 @@ test('remote hosts come from the registered projects and the configured list', a
     ],
   )
   assert.deepEqual(plan.unreachable, [])
+})
+
+test('remote lookup accepts a saved absolute executable and refuses shell syntax', () => {
+  assert.deepEqual(remoteLookupNames('mac-omni', ['bd', '/Users/me/.local/bin/gc', 'bd']), [
+    'bd',
+    '/Users/me/.local/bin/gc',
+  ])
+  for (const name of ['-oProxyCommand=x', 'gc; rm -rf ~', '$(id)', 'a b'])
+    assert.throws(() => remoteLookupNames('mac-omni', [name]), /Refusing to look up/)
 })

@@ -125,11 +125,16 @@ const REMOTE_SCRIPT = `for a in "$@"; do
 done
 `
 
-export function lookupOnRemoteHost(host, requests) {
+export function remoteLookupNames(host, requests) {
   const names = [...new Set(requests)]
   for (const name of names)
-    if (!/^[A-Za-z0-9][A-Za-z0-9._/+-]*$/u.test(name))
+    if (!/^[A-Za-z0-9/][A-Za-z0-9._/+-]*$/u.test(name))
       throw new Error(`Refusing to look up ${JSON.stringify(name)} on ${host}`)
+  return names
+}
+
+export function lookupOnRemoteHost(host, requests) {
+  const names = remoteLookupNames(host, requests)
   if (names.length === 0) return new Map()
   const output = execFileSync(
     'ssh',
