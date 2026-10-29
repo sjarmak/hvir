@@ -42,7 +42,7 @@
     }
     const connectors = await availability({ workspace })
     missing = ['gc', 'bd'].find((name) => connectors[name] !== 'supported')
-    const outcomesReady = connectors['city-projects'] === 'supported'
+    const outcomesReady = connectors[loader.OUTCOME_CONNECTOR] === 'supported'
     ui.connect.hidden = !missing
     if (missing) {
       ui.connect.textContent = `Connect ${missing}`
@@ -66,7 +66,7 @@
     if (loader.ancestorRequests(reads).length)
       errors.push(`parent chains deeper than ${loader.ANCESTOR_ROUNDS} unread levels were not followed`)
     const outcomes = outcomesReady
-      ? await readCity(workspace, [...loader.OUTCOME_ARGS], loader.parseOutcomes, errors, 'city-projects')
+      ? await readCity(workspace, [...loader.OUTCOME_ARGS], loader.parseOutcomes, errors, loader.OUTCOME_CONNECTOR)
       : undefined
     const result = loader.assemblePayload({ now: new Date().toISOString(), reads, sessions, errors })
     if (outcomes) result.payload.outcomes = outcomes

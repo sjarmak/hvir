@@ -96,7 +96,8 @@
     })
   }
 
-  const OUTCOME_ARGS = Object.freeze(['outcomes', '--json'])
+  const OUTCOME_CONNECTOR = 'city-outcomes'
+  const OUTCOME_ARGS = Object.freeze(['--json'])
 
   const parseOutcomes = (decoded) => {
     const entries = decoded?.entries
@@ -104,7 +105,7 @@
       typeof entry.outcome === 'string' && Array.isArray(entry.projects) &&
       entry.projects.every((id) => typeof id === 'string')
     if (!Array.isArray(entries) || !entries.every(valid))
-      throw new Error('city-projects outcomes returned an unexpected JSON shape')
+      throw new Error('city-projects-outcomes returned an unexpected JSON shape')
     return entries.map(({ time, title, outcome, projects }) => ({ time, title, outcome, projects }))
   }
 
@@ -142,7 +143,7 @@
 
   const api = Object.freeze({
     projectArgs, milestoneArgs, inProgressArgs, showArgs, stepArgs, decisionArgs,
-    ANCESTOR_ROUNDS, OUTCOME_ARGS, parseOutcomes, storesFor, storeRequests, workflowRequests, ancestorRequests, liveSessions, assemblePayload,
+    ANCESTOR_ROUNDS, OUTCOME_CONNECTOR, OUTCOME_ARGS, parseOutcomes, storesFor, storeRequests, workflowRequests, ancestorRequests, liveSessions, assemblePayload,
   })
   if (node) module.exports = api
   else window.projectsLoad = api

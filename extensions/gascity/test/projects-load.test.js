@@ -221,5 +221,5 @@ test('outcome entries are shape-checked and keep only the contract fields', () =
     [{ time: '2026-10-29T03:00Z', title: 'T', outcome: 'O', projects: ['fx-project-1'] }])
   for (const bad of [null, {}, { entries: {} }, { entries: [{ ...entry, projects: 'fx' }] }, { entries: [{ ...entry, title: 1 }] }])
     assert.throws(() => loader.parseOutcomes(bad), /unexpected JSON shape/)
-  assert.deepEqual(loader.OUTCOME_ARGS, ['outcomes', '--json'])
+  assert.deepEqual([loader.OUTCOME_CONNECTOR, ...loader.OUTCOME_ARGS], ['city-outcomes', '--json'])
 })
