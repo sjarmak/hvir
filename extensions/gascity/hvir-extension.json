@@ -72,20 +72,8 @@
         "view": "city",
         "placement": "viewer"
       }
-    },
-    {
-      "id": "ready",
-      "placement": "session",
-      "icon": "◉",
-      "tooltip": "Ready beads in this session's workspace",
-      "kind": "observation",
-      "click": {
-        "view": "beads",
-        "placement": "popup"
-      }
     }
   ],
-  "updater": "updater.html",
   "connectors": [
     {
       "id": "gc",

@@ -18,3 +18,15 @@ test('connector and action descriptions fit hvir manifest limits', () => {
       `${action.id}: ${action.description.length} chars`,
     )
 })
+
+test('the only rail item is the header city item, with no per-session updater', () => {
+  assert.deepEqual(
+    (manifest.railItems ?? []).map((item) => item.id),
+    ['city'],
+  )
+  assert.equal(manifest.updater, undefined)
+  const fs = require('node:fs')
+  const path = require('node:path')
+  for (const file of ['updater.html', 'updater.js'])
+    assert.equal(fs.existsSync(path.join(__dirname, '..', file)), false, `${file} still exists`)
+})
