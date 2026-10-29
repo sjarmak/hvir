@@ -3,7 +3,7 @@
  * The Gas City half of hvir's built-in Needs you (src/shared/beads-human.ts isOpenLabelledAsk,
  * src/main/needs-you/needs-you-service.ts readAskStore): open beads labelled for the user, with no
  * `gc.answered` metadata, from the city rig named `decisions`. The built-in hardcodes the label
- * (HUMAN_ASK_LABEL) rather than deriving the user, so this does too. Loaded by needs.js and node --test.
+ * (HUMAN_ASK_LABEL) rather than deriving the user, so this does too. Loaded by projects-load.js and node --test.
  */
 ;(() => {
   const NEEDS_LABEL = 'needs/stephanie'
