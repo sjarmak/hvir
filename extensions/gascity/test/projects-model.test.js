@@ -328,3 +328,28 @@ test('answered open asks are counted as in delivery and each card decision says 
   assert.deepEqual(card(model).decisions.map((ask) => [ask.id, ask.needsYou]), [['fx-ask-answered', false]])
   assert.deepEqual(card(model, 'fx-project-3').decisions.map((ask) => [ask.id, ask.needsYou]), [['fx-ask-retention', true]])
 })
+
+test('a card carries the stored blocker, next action and each artifact state with its source and freshness', () => {
+  const project = card(buildDashboard(fresh()))
+  assert.equal(project.blocker, 'Waiting on the catalog index rebuild.')
+  assert.equal(project.nextAction, 'omni-pl reruns the import once the index is back.')
+  assert.deepEqual(project.artifacts.map((entry) => entry.id), ['fx-art-1', 'fx-art-2'])
+  const [current, old] = project.artifacts
+  assert.equal(current.kind, 'repo-head')
+  assert.equal(current.ref, 'fixture-lab/lantern@abc1234')
+  assert.deepEqual(current.states.map((state) => [state.name, state.claimed, state.stale]),
+    [['tested', true, false], ['installed', true, true], ['live', false, false]])
+  assert.deepEqual(current.states[0], { name: 'tested', claimed: true, at: '2026-10-29T09:00Z',
+    source: 'node --test test/*.test.js', checkedAt: '2026-10-29T11:00Z', stale: false })
+  assert.equal(old.closed, true)
+  assert.equal(old.states.find((state) => state.name === 'live').stale, false)
+})
+
+test('artifact freshness ends when the project is done and other projects get none of its artifacts', () => {
+  const input = fresh()
+  input.projects[0].metadata['proj.state'] = 'done'
+  const model = buildDashboard(input)
+  assert.equal(card(model).artifacts[0].states.some((state) => state.stale), false)
+  assert.equal(cards(model).filter((entry) => entry.id !== 'fx-project-1')
+    .every((entry) => entry.artifacts.length === 0 && entry.blocker === '' && entry.nextAction === ''), true)
+})

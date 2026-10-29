@@ -2,7 +2,7 @@
   const node = typeof module === 'object'
   const crew = node ? require('./crew-parse.js') : window.crewParse
   const needs = node ? require('./needs-model.js') : window.needsModel
-  const fields = ['projects', 'milestones', 'decisions', 'inProgress', 'workflowRoots', 'workflowSteps', 'ancestors']
+  const fields = ['projects', 'milestones', 'artifacts', 'decisions', 'inProgress', 'workflowRoots', 'workflowSteps', 'ancestors']
   const ROOT_CAP = 30
   const ANCESTOR_CAP = 30
   const ANCESTOR_ROUNDS = 3
@@ -11,6 +11,7 @@
   ]
   const projectArgs = (path) => listArgs(path, ['--all', '--label', 'city-project'])
   const milestoneArgs = (path) => listArgs(path, ['--all', '--label', 'city-milestone'])
+  const artifactArgs = (path) => listArgs(path, ['--all', '--label', 'city-artifact'])
   const inProgressArgs = (path) => listArgs(path, ['--all', '--status', 'in_progress'])
   const showArgs = (path, ids) => ['-C', path, 'show', ...ids, '--json']
   const stepArgs = (path, id) => listArgs(path,
@@ -31,6 +32,7 @@
     const requests = stores.flatMap((store) => [
       { store, key: 'projects', args: projectArgs(store.path) },
       { store, key: 'milestones', args: milestoneArgs(store.path) },
+      { store, key: 'artifacts', args: artifactArgs(store.path) },
       { store, key: 'inProgress', args: inProgressArgs(store.path) },
     ])
     const decisions = needs.decisionsRig(stores)
@@ -142,7 +144,7 @@
   }
 
   const api = Object.freeze({
-    projectArgs, milestoneArgs, inProgressArgs, showArgs, stepArgs, decisionArgs,
+    projectArgs, milestoneArgs, artifactArgs, inProgressArgs, showArgs, stepArgs, decisionArgs,
     ANCESTOR_ROUNDS, OUTCOME_CONNECTOR, OUTCOME_ARGS, parseOutcomes, storesFor, storeRequests, workflowRequests, ancestorRequests, liveSessions, assemblePayload,
   })
   if (node) module.exports = api

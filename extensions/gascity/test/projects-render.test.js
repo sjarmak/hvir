@@ -232,3 +232,30 @@ test('a reference without a known state shows its key only, not "state unknown"'
   const { root } = pageFor(t, 'fx-project-1')
   assert.doesNotMatch(root.textContent, /state unknown/)
 })
+
+test('a project page shows the stored blocker, next step and artifacts as tested, installed and live', (t) => {
+  const { root } = pageFor(t, 'fx-project-1')
+  const sections = Object.fromEntries([...root.querySelectorAll('.projects-page-grid section')]
+    .map((node) => [node.querySelector('h2').textContent, node]))
+  assert.match(sections.Now.textContent, /Blocker: Waiting on the catalog index rebuild\./)
+  assert.match(sections.Now.textContent, /Next step: omni-pl reruns the import once the index is back\./)
+  const artifacts = sections.Artifacts
+  assert.ok(artifacts)
+  const rows = [...artifacts.querySelectorAll('.projects-artifact')]
+  assert.equal(rows.length, 2)
+  assert.match(rows[0].textContent, /fixture-lab\/lantern@abc1234/)
+  const states = [...rows[0].querySelectorAll('.projects-artifact-state')].map((node) => node.textContent)
+  assert.equal(states.length, 3)
+  assert.match(states[0], /^Tested.*2026-10-29T09:00Z.*checked 2026-10-29T11:00Z.*node --test test\/\*\.test\.js/)
+  assert.match(states[1], /^Installed.*not checked in 24h/)
+  assert.match(states[2], /^Live.*not claimed/)
+  assert.equal(rows[0].querySelectorAll('.projects-warning').length, 1)
+  assert.match(rows[1].textContent, /closed/)
+  assert.doesNotMatch(root.textContent, /false|undefined/)
+})
+
+test('a project without stored blocker, next step or artifacts shows no empty labels', (t) => {
+  const { root } = pageFor(t, 'fx-project-2')
+  assert.doesNotMatch(root.textContent, /Blocker:|Next step:/)
+  assert.match(root.textContent, /Artifacts.*No artifacts recorded/s)
+})

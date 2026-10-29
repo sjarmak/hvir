@@ -1,7 +1,7 @@
 {
   "now": "2026-10-29T12:00:00Z",
   "projects": [
-    {"id": "fx-project-1", "title": "Lantern catalog", "status": "open", "labels": ["city-project"], "metadata": {"proj.lead": "omni-pl", "proj.state": "moving", "proj.now": "Building the first searchable collection.", "proj.stuck_why": "", "proj.next_milestone": "fx-ms-1", "proj.updated_at": "2026-10-29T10:00Z", "ref.prs": "fixture-lab/lantern#12", "ref.issues": "fixture-lab/lantern#24,bad reference"}},
+    {"id": "fx-project-1", "title": "Lantern catalog", "status": "open", "labels": ["city-project"], "metadata": {"proj.lead": "omni-pl", "proj.state": "moving", "proj.now": "Building the first searchable collection.", "proj.stuck_why": "", "proj.next_milestone": "fx-ms-1", "proj.updated_at": "2026-10-29T10:00Z", "ref.prs": "fixture-lab/lantern#12", "ref.issues": "fixture-lab/lantern#24,bad reference", "proj.blocker": "Waiting on the catalog index rebuild.", "proj.next_action": "omni-pl reruns the import once the index is back."}},
     {"id": "fx-project-2", "title": "Harbor replay", "status": "open", "labels": ["city-project"], "metadata": {"proj.lead": "omni-evals-pl", "proj.state": "stuck", "proj.now": "Replay coverage is waiting on a sample bundle.", "proj.stuck_why": "The synthetic sample bundle has not arrived.", "proj.next_milestone": "fx-ms-2", "proj.updated_at": "2026-10-29T10:00Z"}},
     {"id": "fx-project-3", "title": "Shared signal board", "status": "open", "labels": ["city-project"], "metadata": {"proj.lead": "city-infra-pl", "proj.state": "needs-you", "proj.now": "The shared board is ready for a retention choice.", "proj.stuck_why": "Choose how long to retain the fake traces.", "proj.next_milestone": "fx-ms-3", "proj.updated_at": "2026-10-29T10:00Z", "proj.contributors": "omni-pl,omni-evals-pl"}},
     {"id": "fx-project-4", "title": "Orchard queue", "status": "open", "labels": ["city-project"], "metadata": {"proj.lead": "omni-pl", "proj.state": "paused", "proj.now": "Paused until the next planning window.", "proj.stuck_why": "", "proj.next_milestone": "fx-ms-4", "proj.updated_at": "2026-10-27T09:00Z"}},
@@ -49,6 +49,10 @@
   "seatJobs": [
     {"seat": "city-infra-pl", "label": "fx-retention", "alive": true, "job": {"seat": "city-infra-pl", "label": "fx-retention", "bead": "fx-seat-work", "started_at": "2026-10-29T10:00Z", "account": "fx-review-account", "argv": ["codex", "--model", "gpt-fixture"]}},
     {"seat": "omni-pl", "label": "fx-old-trial", "alive": false, "job": {"seat": "omni-pl", "label": "fx-old-trial", "bead": "fx-lead-work", "started_at": "2026-10-28T10:00Z", "account": "fx-old-account", "argv": ["codex"]}}
+  ],
+  "artifacts": [
+    {"id": "fx-art-1", "title": "repo-head fixture-lab/lantern@abc1234", "status": "open", "labels": ["city-artifact"], "parent": "fx-project-1", "metadata": {"art.kind": "repo-head", "art.ref": "fixture-lab/lantern@abc1234", "art.tested_at": "2026-10-29T09:00Z", "art.tested_source": "node --test test/*.test.js", "art.tested_checked_at": "2026-10-29T11:00Z", "art.installed_at": "2026-10-27T10:00Z", "art.installed_source": "ls -l /fixture/install", "art.installed_checked_at": "2026-10-28T10:00Z"}},
+    {"id": "fx-art-2", "title": "path /fixture/old", "status": "closed", "labels": ["city-artifact"], "parent": "fx-project-1", "metadata": {"art.kind": "path", "art.ref": "/fixture/old", "art.live_at": "2026-10-20T10:00Z", "art.live_source": "hvir reload", "art.live_checked_at": "2026-10-20T10:00Z"}}
   ],
   "refStates": {"fixture-lab/lantern#12": {"state": "draft", "review": "pending", "checks": "passing", "title": "Add synthetic catalog search"}, "fixture-lab/lantern#24": {"state": "open", "review": "", "checks": "", "title": "Track the synthetic catalog"}, "fixture-lab/signals#8": {"state": "open", "review": "", "checks": "", "title": "Choose trace retention"}}
 }

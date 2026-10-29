@@ -53,6 +53,20 @@
     text(entry.title), chip(entry.state),
     entry.outcome && paragraph(entry.outcome), renderRefs(entry.refs, options))
 
+  const STATE_LABELS = { tested: 'Tested', installed: 'Installed', live: 'Live' }
+
+  const renderArtifactState = (state) => el('li', { className: 'projects-artifact-state' },
+    text(STATE_LABELS[state.name]),
+    state.claimed
+      ? text(` · since ${state.at || 'unknown'} · checked ${state.checkedAt || 'unknown'} · ${state.source || 'no source recorded'}`, 'hvir-meta')
+      : text(' · not claimed', 'hvir-meta'),
+    state.stale && text(' · not checked in 24h', 'projects-warning'))
+
+  const renderArtifact = (entry) => el('li', { className: 'projects-artifact', title: entry.id },
+    text(entry.ref || 'No reference', 'projects-session'),
+    text(` · ${[entry.kind || 'unknown kind', entry.closed && 'closed'].filter(Boolean).join(' · ')}`, 'hvir-meta'),
+    el('ul', {}, ...entry.states.map(renderArtifactState)))
+
   const renderWorkflow = (flow) => el('li', { title: flow.rootId },
     text(flow.formula || 'Unnamed workflow', 'projects-session'),
     text(` · ${flow.stepsDone}/${flow.stepsTotal} steps done`),
@@ -162,10 +176,13 @@
         el('div', {},
           section('Now', paragraph(card.now || 'No current update'),
             card.stuckWhy && paragraph(card.stuckWhy, 'projects-warning'),
+            card.blocker && paragraph(`Blocker: ${card.blocker}`, 'projects-warning'),
+            card.nextAction && paragraph(`Next step: ${card.nextAction}`),
             card.contributors.length > 0 && paragraph(`With ${card.contributors.join(', ')}`, 'hvir-meta'),
             card.stale && paragraph('not updated in 24h', 'projects-warning')),
           section('Milestones', renderProgress(card.milestones),
             list(card.milestoneList.map((entry) => renderMilestone(entry, options)), 'No milestones')),
+          section('Artifacts', list(card.artifacts.map(renderArtifact), 'No artifacts recorded')),
           section('Workflows', list(card.workflows.map(renderWorkflow), 'No workflows')),
           options.outcomesShown && section('Asks and outcomes', list(card.outcomes.map(renderOutcome), 'No outcomes yet'))),
         el('div', {},

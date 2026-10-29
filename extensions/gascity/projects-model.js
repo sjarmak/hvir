@@ -128,6 +128,27 @@
     refs: references([bead], states),
   })
 
+  const ARTIFACT_STATES = ['tested', 'installed', 'live']
+  const DAY_MS = 86400000
+
+  const artifact = (bead, now, freshnessEnds) => {
+    const closed = bead.status === 'closed'
+    return {
+      ...identity(bead),
+      kind: meta(bead, 'art.kind'),
+      ref: meta(bead, 'art.ref'),
+      closed,
+      states: ARTIFACT_STATES.map((name) => {
+        const at = meta(bead, `art.${name}_at`)
+        const source = meta(bead, `art.${name}_source`)
+        const checkedAt = meta(bead, `art.${name}_checked_at`)
+        const claimed = Boolean(at || source || checkedAt)
+        return { name, claimed, at, source, checkedAt,
+          stale: claimed && !closed && !freshnessEnds && !(Date.parse(now) - Date.parse(checkedAt) <= DAY_MS) }
+      }),
+    }
+  }
+
   const projectWorkflows = (input, index, projects, project, active) =>
     (input.workflowRoots ?? [])
       .filter((root) => meta(root, 'gc.kind') === 'workflow' &&
@@ -155,8 +176,12 @@
       state,
       now: meta(project, 'proj.now'),
       stuckWhy: meta(project, 'proj.stuck_why'),
+      blocker: meta(project, 'proj.blocker'),
+      nextAction: meta(project, 'proj.next_action'),
       updatedAt,
-      stale: state !== 'done' && !(Date.parse(input.now) - Date.parse(updatedAt) <= 86400000),
+      stale: state !== 'done' && !(Date.parse(input.now) - Date.parse(updatedAt) <= DAY_MS),
+      artifacts: (input.artifacts ?? []).filter((bead) => parents(bead).includes(project.id))
+        .map((bead) => artifact(bead, input.now, state === 'done')),
       milestones: {
         done: list.filter((entry) => entry.state === 'done').length,
         total: list.filter((entry) => entry.state !== 'dropped').length,
@@ -187,7 +212,7 @@
   }
 
   const buildDashboard = (input) => {
-    const beads = ['ancestors', 'workflowSteps', 'workflowRoots', 'inProgress', 'decisions', 'milestones', 'projects']
+    const beads = ['ancestors', 'workflowSteps', 'workflowRoots', 'inProgress', 'decisions', 'artifacts', 'milestones', 'projects']
       .flatMap((key) => input[key] ?? [])
     const index = new Map(beads.map((bead) => [bead.id, bead]))
     const projects = new Map((input.projects ?? []).map((bead) => [bead.id, bead]))
