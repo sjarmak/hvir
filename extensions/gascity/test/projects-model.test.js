@@ -287,3 +287,9 @@ test('workflow totals count every linked step but only closed steps are done', (
   missing.refStates = {}
   assert.equal(card(buildDashboard(missing)).refs.prs[0].key, 'fixture-lab/lantern#12')
 })
+
+test('duplicate project ids across stores are reported, not silently merged', () => {
+  const { duplicateProjects } = require('../projects-model.js')
+  assert.deepEqual(duplicateProjects([{ id: 'a', store: '/x' }, { id: 'a', store: '/y' }, { id: 'b', store: '/x' }, { id: 'b', store: '/x' }]), ['a'])
+  assert.deepEqual(duplicateProjects(), [])
+})

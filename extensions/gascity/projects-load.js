@@ -2,7 +2,10 @@
   const node = typeof module === 'object'
   const crew = node ? require('./crew-parse.js') : window.crewParse
   const needs = node ? require('./needs-model.js') : window.needsModel
-  const fields = ['projects', 'milestones', 'decisions', 'inProgress', 'workflowRoots', 'workflowSteps']
+  const fields = ['projects', 'milestones', 'decisions', 'inProgress', 'workflowRoots', 'workflowSteps', 'ancestors']
+  const ROOT_CAP = 30
+  const ANCESTOR_CAP = 30
+  const ANCESTOR_ROUNDS = 3
   const listArgs = (path, filter) => [
     '-C', path, 'list', '--json', '--flat', '--no-pager', ...filter, '-n', '0',
   ]
@@ -15,9 +18,9 @@
   const decisionArgs = (path) => listArgs(path,
     ['--status', 'open', '--has-metadata-key', 'gc.project'])
 
-  const storesFor = (workspace, rigs) => {
-    const stores = [{ name: 'HQ', path: workspace.root.path }]
-    for (const rig of rigs) {
+  const storesFor = (workspace, city) => {
+    const stores = [{ name: city.hqRigName ?? 'HQ', path: city.cityRoot ?? workspace.root.path }]
+    for (const rig of city.rigs ?? []) {
       if (rig.hq || rig.suspended || stores.some((store) => store.path === rig.path)) continue
       stores.push({ ...rig })
     }
@@ -47,10 +50,34 @@
         if (id) byStore.get(store.path).ids.add(id)
       }
     }
-    return [...byStore.values()].flatMap(({ store, ids }) => [...ids].slice(0, 30).flatMap((id) => [
+    return [...byStore.values()].flatMap(({ store, ids }) => [...ids].slice(0, ROOT_CAP).flatMap((id) => [
       { store, key: 'workflowRoots', args: showArgs(store.path, [id]) },
       { store, key: 'workflowSteps', args: stepArgs(store.path, id) },
     ]))
+  }
+
+  const parentIds = (bead) => [bead.parent, ...(bead.dependencies ?? [])
+    .filter((dependency) => (dependency.type ?? dependency.dependency_type) === 'parent-child')
+    .map((dependency) => dependency.depends_on_id ?? dependency.id)].filter(Boolean)
+
+  const ancestorRequests = (reads) => {
+    const byStore = new Map()
+    const entry = (store) => {
+      if (!byStore.has(store.path)) byStore.set(store.path, { store, known: new Set(), wanted: new Set() })
+      return byStore.get(store.path)
+    }
+    for (const { store, value, error } of reads) {
+      if (error) continue
+      for (const bead of value) entry(store).known.add(bead.id)
+    }
+    for (const { store, key, value, error } of reads) {
+      if (error || !['inProgress', 'workflowRoots', 'ancestors'].includes(key)) continue
+      for (const bead of value) for (const id of parentIds(bead)) entry(store).wanted.add(id)
+    }
+    return [...byStore.values()].flatMap(({ store, known, wanted }) => {
+      const ids = [...wanted].filter((id) => !known.has(id)).slice(0, ANCESTOR_CAP)
+      return ids.length ? [{ store, key: 'ancestors', args: showArgs(store.path, ids) }] : []
+    })
   }
 
   const liveSessions = (decoded) => {
@@ -80,14 +107,14 @@
     }
     for (const read of reads.filter((entry) => entry.key === 'inProgress' && !entry.error)) {
       const roots = new Set(read.value.map((bead) => bead.metadata?.['gc.root_bead_id']).filter(Boolean))
-      if (roots.size > 30) failures.push(`${read.store.name}: workflow reads limited to 30 roots`)
+      if (roots.size > ROOT_CAP) failures.push(`${read.store.name}: workflow reads limited to ${ROOT_CAP} roots`)
     }
     return { payload, errors: failures }
   }
 
   const api = Object.freeze({
     projectArgs, milestoneArgs, inProgressArgs, showArgs, stepArgs, decisionArgs,
-    storesFor, storeRequests, workflowRequests, liveSessions, assemblePayload,
+    ANCESTOR_ROUNDS, storesFor, storeRequests, workflowRequests, ancestorRequests, liveSessions, assemblePayload,
   })
   if (node) module.exports = api
   else window.projectsLoad = api

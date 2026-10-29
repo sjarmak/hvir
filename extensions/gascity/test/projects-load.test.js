@@ -11,7 +11,8 @@ const rigs = [
   { name: 'paused', path: '/rigs/paused', suspended: true },
   { name: 'broken', path: '/rigs/broken' },
 ]
-const stores = loader.storesFor(workspace, rigs)
+const city = { cityName: 'city', cityRoot: '/city', hqRigName: 'city', rigs }
+const stores = loader.storesFor(workspace, city)
 const read = (key, value, store = stores[1]) => ({ key, value, store })
 
 test('argument builders use explicit store scope and unlimited flat JSON lists', () => {
@@ -157,4 +158,42 @@ test('live page wires bead store, unknown refs, partial errors and connector con
   await view.load({ workspace })
   document.getElementById('connect').click()
   assert.deepEqual(connected, ['bd'])
+})
+
+test('HQ comes from the parsed city, not the open workspace folder', () => {
+  const inRig = { ...workspace, root: { host: 'ssh-test', path: '/rigs/lead' } }
+  assert.deepEqual(loader.storesFor(inRig, city).map((store) => store.path),
+    ['/city', '/rigs/lead', '/rigs/decisions', '/rigs/broken'])
+  assert.deepEqual(loader.storesFor(inRig, {}).map((store) => store.path), ['/rigs/lead'])
+})
+
+test('ancestor plans read unknown parents per store, both dependency shapes, capped and deduplicated', () => {
+  const work = [
+    { id: 'w1', parent: 'p1' },
+    { id: 'w2', dependencies: [{ type: 'parent-child', depends_on_id: 'p2' }, { type: 'blocks', depends_on_id: 'b1' }] },
+    { id: 'w3', dependencies: [{ dependency_type: 'parent-child', id: 'p1' }] },
+    { id: 'w4', parent: 'known' },
+  ]
+  const reads = [read('inProgress', work), read('projects', [{ id: 'known' }])]
+  assert.deepEqual(loader.ancestorRequests(reads), [
+    { store: stores[1], key: 'ancestors', args: loader.showArgs(stores[1].path, ['p1', 'p2']) }])
+  const many = Array.from({ length: 40 }, (_, index) => ({ id: `w${index}`, parent: `p${index}` }))
+  assert.equal(loader.ancestorRequests([read('inProgress', many)])[0].args.length, 34)
+  assert.deepEqual(loader.ancestorRequests([read('inProgress', work), { ...read('inProgress', []), error: 'down' }])
+    .map((request) => request.store.path), [stores[1].path])
+})
+
+test('fetched ancestors join work to its project through an intermediate parent', () => {
+  const project = { id: 'proj', title: 'Project', labels: ['city-project'],
+    metadata: { 'proj.state': 'moving', 'proj.lead': 'omni-pl', 'proj.updated_at': fixture.now } }
+  const reads = [
+    read('projects', [project]),
+    read('inProgress', [{ id: 'work', title: 'Work', status: 'in_progress', assignee: 's1', parent: 'epic' }]),
+  ]
+  assert.deepEqual(loader.ancestorRequests(reads)[0].args, loader.showArgs(stores[1].path, ['epic']))
+  reads.push(read('ancestors', [{ id: 'epic', title: 'Epic', parent: 'proj' }]))
+  assert.deepEqual(loader.ancestorRequests(reads), [])
+  const { payload } = loader.assemblePayload({ now: fixture.now, reads, sessions: [{ id: 's1', name: 's1' }] })
+  const group = buildDashboard(payload).activeNow.find((entry) => entry.project?.id === 'proj')
+  assert.equal(group.items[0].bead.title, 'Work')
 })

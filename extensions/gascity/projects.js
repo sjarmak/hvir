@@ -50,17 +50,23 @@
       return
     }
     const errors = []
-    const [rigs, sessions] = await Promise.all([
-      readCity(workspace, ['rig', 'list', '--json'],
-        (value) => window.crewParse.parseRigList(value).rigs, errors),
+    const [city, sessions] = await Promise.all([
+      readCity(workspace, ['rig', 'list', '--json'], window.crewParse.parseRigList, errors),
       readCity(workspace, ['session', 'list', '--json'], loader.liveSessions, errors),
     ])
-    const stores = loader.storesFor(workspace, rigs)
+    const stores = loader.storesFor(workspace, Array.isArray(city) ? {} : city)
     const reads = await readStores(workspace, loader.storeRequests(stores))
     reads.push(...await readStores(workspace, loader.workflowRequests(reads)))
+    for (let round = 0; round < loader.ANCESTOR_ROUNDS; round += 1) {
+      const requests = loader.ancestorRequests(reads)
+      if (!requests.length) break
+      reads.push(...await readStores(workspace, requests))
+    }
     const result = loader.assemblePayload({ now: new Date().toISOString(), reads, sessions, errors })
     render(result.payload)
     const time = new Date(result.payload.now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    const conflicts = window.projectsModel.duplicateProjects(result.payload.projects)
+    if (conflicts.length) result.errors.push(`project id in several stores: ${conflicts.join(', ')}`)
     const counts = `${result.payload.projects.length} projects · ${result.payload.decisions.length} open decisions · ${sessions.length} active sessions`
     setStatus(`${counts} · updated ${time}${window.bdNote(workspace)}${result.errors.length ? ` · ${result.errors.join(' · ')}` : ''}`)
   }

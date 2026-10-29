@@ -183,7 +183,7 @@
   }
 
   const buildDashboard = (input) => {
-    const beads = ['projects', 'milestones', 'decisions', 'inProgress', 'workflowRoots', 'workflowSteps']
+    const beads = ['ancestors', 'workflowSteps', 'workflowRoots', 'inProgress', 'decisions', 'milestones', 'projects']
       .flatMap((key) => input[key] ?? [])
     const index = new Map(beads.map((bead) => [bead.id, bead]))
     const projects = new Map((input.projects ?? []).map((bead) => [bead.id, bead]))
@@ -203,7 +203,13 @@
     return { now: input.now, needsYou, cards: [...groups.values()], activeNow: groupActivity(entries) }
   }
 
-  const api = Object.freeze({ parseRefs, buildDashboard })
+  const duplicateProjects = (projects = []) => {
+    const stores = new Map()
+    for (const bead of projects) stores.set(bead.id, new Set([...(stores.get(bead.id) ?? []), bead.store]))
+    return [...stores].filter(([, found]) => found.size > 1).map(([id]) => id)
+  }
+
+  const api = Object.freeze({ parseRefs, buildDashboard, duplicateProjects })
   if (typeof module === 'object') module.exports = api
   else window.projectsModel = api
 })()
