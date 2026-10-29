@@ -1,6 +1,7 @@
 ;(() => {
   const meta = (bead, key) => bead?.metadata?.[key] ?? ''
-  const identity = (bead) => bead ? { id: bead.id, title: bead.title } : null
+  const identity = (bead) => bead ? { id: bead.id, title: bead.title,
+    ...(bead.store === undefined ? {} : { store: bead.store }) } : null
   const tokens = (value) => value ? value.split(',') : []
 
   const parseRefs = (value) => {
@@ -159,7 +160,7 @@
       milestones: {
         done: list.filter((entry) => entry.state === 'done').length,
         total: list.filter((entry) => entry.state !== 'dropped').length,
-        next: next ? { id: next.id, title: next.title, target: next.target, state: next.state } : null,
+        next: next ? { ...identity(next), target: next.target, state: next.state } : null,
       },
       milestoneList: list,
       needsCount: needsYou.filter((ask) => ask.project?.id === project.id).length,

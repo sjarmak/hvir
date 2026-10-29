@@ -30,7 +30,7 @@
 
   const renderAsk = (ask, options, tagged = false) => el('li', {},
     tagged && text(ask.project?.title ?? 'No project', 'projects-tag'),
-    button(ask.title, ask.id, () => options.onOpenBead?.(ask.id)),
+    button(ask.title, ask.id, () => options.onOpenBead?.(ask.id, ask.store)),
     renderRefs(ask.refs, options))
 
   const renderActivity = (item) => {
@@ -102,7 +102,8 @@
     root.replaceChildren(
       section('Needs you', list(model.needsYou.map((ask) => renderAsk(ask, options, true)), 'Nothing needs you')),
       section('Active now', el('div', { className: 'projects-active-grid' }, ...activeGroups),
-        !activeGroups.length && paragraph('No active agents', 'hvir-meta')),
+        !activeGroups.length && paragraph('No active agents', 'hvir-meta'),
+        options.seatJobsUnavailable && paragraph('Seat jobs not shown yet', 'hvir-meta')),
       ...model.cards.map((group) => section(group.lead,
         el('div', { className: 'projects-grid' }, ...group.cards.map((card) => renderCard(card, options))))))
   }

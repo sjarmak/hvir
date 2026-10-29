@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Projects</title>
+    <link rel="stylesheet" href="presentation.css" />
+    <link rel="stylesheet" href="gascity.css" />
+    <link rel="stylesheet" href="projects.css" />
+  </head>
+  <body class="hvir-guest hvir-panel">
+    <main class="hvir-stack">
+      <div class="hvir-toolbar">
+        <h1>Projects</h1>
+        <button id="refresh" class="hvir-button" data-variant="regular" type="button">Refresh</button>
+      </div>
+      <p id="status" class="hvir-meta" role="status">Connecting…</p>
+      <button id="connect" class="hvir-button" data-variant="regular" type="button" hidden>Connect</button>
+      <div id="projects" class="hvir-scroll"></div>
+    </main>
+    <script src="guest-ui.js"></script>
+    <script src="host.js"></script>
+    <script src="view.js"></script>
+    <script src="crew-parse.js"></script>
+    <script src="needs-model.js"></script>
+    <script src="projects-load.js"></script>
+    <script src="projects-model.js"></script>
+    <script src="projects-render.js"></script>
+    <script src="projects.js"></script>
+  </body>
+</html>
