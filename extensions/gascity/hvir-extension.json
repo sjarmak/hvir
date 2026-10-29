@@ -33,7 +33,7 @@
     },
     {
       "id": "project",
-      "title": "Project",
+      "title": "Projects",
       "entry": "project.html",
       "placement": "workspace",
       "representations": ["view"]

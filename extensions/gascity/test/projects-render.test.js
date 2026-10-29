@@ -183,3 +183,20 @@ test('a project page shows the whole project with decisions split by who acts ne
   assert.match(root.textContent, /Needs you.*Nothing needs you/s)
   assert.equal(root.querySelectorAll('[aria-expanded]').length, 0)
 })
+
+test('an unanswered decision without her label is listed as other open, never as answered', (t) => {
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  const { window } = dom
+  window.Date.now = () => Date.parse(fixture.now)
+  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const input = structuredClone(fixture)
+  input.decisions.push({ id: 'fx-plain', title: 'Plain open record', status: 'open', metadata: { 'gc.project': 'fx-project-1' } })
+  const project = buildDashboard(input).cards.flatMap((group) => group.cards).find((entry) => entry.id === 'fx-project-1')
+  const root = window.document.querySelector('main')
+  window.projectsRender.renderProject(project, root, {})
+  const sections = Object.fromEntries([...root.querySelectorAll('.projects-detail section')]
+    .map((node) => [node.querySelector('h2').textContent, node.textContent]))
+  assert.doesNotMatch(sections['Answered, waiting on agents'], /Plain open record/)
+  assert.match(sections['Other open decisions'], /Plain open record/)
+})

@@ -196,9 +196,10 @@
     const answered = (bead) => meta(bead, 'gc.answered')?.length > 0
     const openDecisions = (input.decisions ?? []).filter((bead) => bead.status === 'open')
       .map((bead) => ({ ...bead, project: identity(projects.get(meta(bead, 'gc.project'))),
-        refs: references([bead], states), needsYou: asksHer(bead) && !answered(bead) }))
+        refs: references([bead], states), needsYou: asksHer(bead) && !answered(bead),
+        inDelivery: asksHer(bead) && answered(bead) }))
     const needsYou = openDecisions.filter((bead) => bead.needsYou)
-    const inDelivery = openDecisions.filter((bead) => asksHer(bead) && answered(bead))
+    const inDelivery = openDecisions.filter((bead) => bead.inDelivery)
     const entries = collectActivity(input, index, projects)
     const groups = new Map()
     for (const project of projects.values()) {

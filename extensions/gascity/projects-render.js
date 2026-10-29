@@ -63,8 +63,10 @@
     section('Milestones', list(card.milestoneList.map((entry) => renderMilestone(entry, options)), 'No milestones')),
     section('Needs you', list(card.decisions.filter((ask) => ask.needsYou)
       .map((ask) => renderAsk(ask, options)), 'Nothing needs you')),
-    section('Answered, waiting on agents', list(card.decisions.filter((ask) => !ask.needsYou)
+    section('Answered, waiting on agents', list(card.decisions.filter((ask) => ask.inDelivery)
       .map((ask) => renderAsk(ask, options)), 'Nothing waiting')),
+    card.decisions.some((ask) => !ask.needsYou && !ask.inDelivery) && section('Other open decisions',
+      list(card.decisions.filter((ask) => !ask.needsYou && !ask.inDelivery).map((ask) => renderAsk(ask, options)), '')),
     section('Workflows', list(card.workflows.map(renderWorkflow), 'No workflows')),
     options.outcomesShown && section('Asks and outcomes', list(card.outcomes.map(renderOutcome), 'No outcomes yet')),
     el('details', {}, el('summary', {}, `In progress (${card.inProgress.length})`),
