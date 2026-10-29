@@ -104,6 +104,17 @@
       "timeoutMs": 30000,
       "outputBytes": 4194304,
       "environment": ["BEADS_DOLT_SERVER_PORT", "BEADS_DIR", "PATH"]
+    },
+    {
+      "id": "city-outcomes",
+      "description": "Read the city's asks-and-outcomes entries that name a project. city-projects-outcomes accepts only --json and --project, reads one file and runs no other program.",
+      "context": "workspace",
+      "setup": {
+        "executable": "city-projects-outcomes"
+      },
+      "timeoutMs": 15000,
+      "outputBytes": 1048576,
+      "environment": ["GC_CITY"]
     }
   ]
 }
