@@ -25,7 +25,7 @@
       return node
     }))
     return el('div', { className: 'projects-refs' }, ...chips,
-      ...refs.invalid.map((value) => text(`Invalid reference: ${String(value)}`, 'projects-warning')))
+      refs.invalid.length > 0 && text(refs.invalid.length === 1 ? 'link missing' : `${refs.invalid.length} links missing`, 'projects-warning'))
   }
 
   const renderAsk = (ask, options, tagged = false) => el('li', {},

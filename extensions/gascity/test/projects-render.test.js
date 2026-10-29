@@ -114,3 +114,11 @@ test('project detail lists in-progress beads collapsed by default, each opening 
   drill.querySelector('li button').click()
   assert.equal(beads.length, 1)
 })
+
+test('an invalid reference shows her a plain link-missing note, never the raw value', (t) => {
+  const { dom, root } = preview()
+  t.after(() => dom.window.close())
+  const warnings = [...root.querySelectorAll('.projects-refs .projects-warning')].map((node) => node.textContent)
+  assert.ok(warnings.includes('link missing'))
+  assert.equal(root.textContent.includes('bad reference'), false)
+})
