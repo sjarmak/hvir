@@ -135,3 +135,62 @@
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+.projects-nav {
+  display: grid;
+  gap: 14px;
+  padding: 12px;
+  overflow-wrap: anywhere;
+}
+.projects-nav h2 {
+  margin: 0 0 6px;
+  font-size: calc(13px * var(--hvir-interface-scale));
+  color: var(--text-strong);
+}
+.projects-nav p {
+  margin: 0;
+}
+.projects-nav ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.projects-nav li + li {
+  margin-top: 4px;
+}
+.projects-nav-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.projects-nav-row:hover,
+.projects-nav-row:focus-visible {
+  background: var(--surface-2);
+  border-color: var(--border-subtle);
+}
+.projects-nav-row .hvir-meta {
+  grid-column: 1 / -1;
+}
+.projects-nav-title {
+  color: var(--text-strong);
+}
+.projects-page header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.projects-page h1 {
+  margin: 0;
+}
+.projects-card-actions {
+  display: flex;
+  gap: 8px;
+}

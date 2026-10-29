@@ -32,6 +32,13 @@
       "representations": ["view"]
     },
     {
+      "id": "project",
+      "title": "Project",
+      "entry": "project.html",
+      "placement": "workspace",
+      "representations": ["view"]
+    },
+    {
       "id": "beads",
       "title": "Beads",
       "entry": "beads.html",

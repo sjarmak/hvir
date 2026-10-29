@@ -136,3 +136,50 @@ test('recent outcomes appear only when the outcome reader supplied them, at most
   assert.equal(recent.querySelectorAll('li').length, 3)
   assert.equal(face.parentElement.querySelector('.projects-detail').textContent.includes('Outcome 4'), true)
 })
+
+const navPreview = () => {
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  const { window } = dom
+  window.Date.now = () => Date.parse(fixture.now)
+  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const root = window.document.querySelector('main')
+  const opened = []
+  const model = buildDashboard(structuredClone(fixture))
+  window.projectsRender.renderNav(model, root, {
+    onOpenBead: (id) => opened.push(['bead', id]),
+    onOpenProject: (id, store) => opened.push(['project', id, store]),
+    onOpenOverview: () => opened.push(['overview']),
+  })
+  return { dom, root, opened, model }
+}
+
+test('the rail is a compact navigation list: counts, asks, one row per project, no cards', (t) => {
+  const { dom, root, opened, model } = navPreview()
+  t.after(() => dom.window.close())
+  assert.equal(root.querySelectorAll('.projects-card').length, 0)
+  assert.equal(root.querySelectorAll('.projects-nav-row').length, 6)
+  assert.match(root.textContent, /2 need you · 1 answered, waiting on agents/)
+  root.querySelector('.projects-nav-overview').click()
+  const row = [...root.querySelectorAll('.projects-nav-row')].find((node) => /Shared signal board/.test(node.textContent))
+  row.click()
+  const shared = model.cards.flatMap((group) => group.cards).find((entry) => entry.title === 'Shared signal board')
+  assert.deepEqual(opened, [['overview'], ['project', shared.id, shared.store]])
+  assert.match(row.textContent, /1 needs you/)
+})
+
+test('a project page shows the whole project with decisions split by who acts next', (t) => {
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  const { window } = dom
+  window.Date.now = () => Date.parse(fixture.now)
+  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const root = window.document.querySelector('main')
+  const model = buildDashboard(structuredClone(fixture))
+  const project = model.cards.flatMap((group) => group.cards).find((entry) => entry.id === 'fx-project-1')
+  window.projectsRender.renderProject(project, root, {})
+  assert.equal(root.querySelector('h1').textContent, project.title)
+  assert.equal(root.querySelector('.projects-detail').hidden, false)
+  assert.match(root.textContent, /Answered, waiting on agents/)
+  assert.match(root.textContent, /Needs you.*Nothing needs you/s)
+  assert.equal(root.querySelectorAll('[aria-expanded]').length, 0)
+})

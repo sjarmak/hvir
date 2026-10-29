@@ -61,7 +61,10 @@
 
   const renderDetail = (card, options) => el('div', { className: 'projects-detail' },
     section('Milestones', list(card.milestoneList.map((entry) => renderMilestone(entry, options)), 'No milestones')),
-    section('Open decisions', list(card.decisions.map((ask) => renderAsk(ask, options)), 'No open decisions')),
+    section('Needs you', list(card.decisions.filter((ask) => ask.needsYou)
+      .map((ask) => renderAsk(ask, options)), 'Nothing needs you')),
+    section('Answered, waiting on agents', list(card.decisions.filter((ask) => !ask.needsYou)
+      .map((ask) => renderAsk(ask, options)), 'Nothing waiting')),
     section('Workflows', list(card.workflows.map(renderWorkflow), 'No workflows')),
     options.outcomesShown && section('Asks and outcomes', list(card.outcomes.map(renderOutcome), 'No outcomes yet')),
     el('details', {}, el('summary', {}, `In progress (${card.inProgress.length})`),
@@ -77,6 +80,18 @@
       paragraph(next ? `Next: ${next.title} · ${next.target || 'No target'}` : 'No next milestone', 'hvir-meta'))
   }
 
+  const summary = (card, options) => [
+      card.contributors.length > 0 && paragraph(`With ${card.contributors.join(', ')}`, 'hvir-meta'),
+      paragraph(card.now || 'No current update'),
+      card.stuckWhy && paragraph(card.stuckWhy, 'projects-warning'),
+      renderProgress(card.milestones),
+      options.outcomesShown && section('Recent outcomes', list(card.outcomes.slice(0, 3).map(renderOutcome), 'No outcomes yet')),
+      paragraph(`${card.needsCount} ${card.needsCount === 1 ? 'decision needs' : 'decisions need'} you`),
+      renderRefs(card.refs, options),
+      section('Active now', list(card.active.map(renderActivity), 'No active agents')),
+      card.stale && paragraph('not updated in 24h', 'projects-warning'),
+      paragraph(card.updatedAt ? `Updated ${card.updatedAt} · ${window.ago(card.updatedAt)}` : 'Update time unknown', 'hvir-meta')]
+
   const renderCard = (card, options) => {
     const detail = renderDetail(card, options)
     detail.hidden = true
@@ -88,17 +103,9 @@
     toggle.setAttribute('aria-expanded', 'false')
     const face = el('div', { className: 'projects-card-face' },
       el('header', {}, el('h3', { title: card.id }, card.title), chip(card.state)),
-      card.contributors.length > 0 && paragraph(`With ${card.contributors.join(', ')}`, 'hvir-meta'),
-      paragraph(card.now || 'No current update'),
-      card.stuckWhy && paragraph(card.stuckWhy, 'projects-warning'),
-      renderProgress(card.milestones),
-      options.outcomesShown && section('Recent outcomes', list(card.outcomes.slice(0, 3).map(renderOutcome), 'No outcomes yet')),
-      paragraph(`${card.needsCount} ${card.needsCount === 1 ? 'decision needs' : 'decisions need'} you`),
-      renderRefs(card.refs, options),
-      section('Active now', list(card.active.map(renderActivity), 'No active agents')),
-      card.stale && paragraph('not updated in 24h', 'projects-warning'),
-      paragraph(card.updatedAt ? `Updated ${card.updatedAt} · ${window.ago(card.updatedAt)}` : 'Update time unknown', 'hvir-meta'),
-      toggle)
+      ...summary(card, options),
+      el('div', { className: 'projects-card-actions' }, toggle,
+        options.onOpenProject && button('Open page', card.id, () => options.onOpenProject(card.id, card.store))))
     face.addEventListener('click', (event) => {
       if (!event.target.closest('button, a')) toggle.click()
     })
@@ -119,5 +126,35 @@
         el('div', { className: 'projects-grid' }, ...group.cards.map((card) => renderCard(card, options))))))
   }
 
-  window.projectsRender = Object.freeze({ renderDashboard })
+  const renderProject = (card, root, options = {}) => {
+    root.classList.add('projects-dashboard', 'projects-page')
+    root.replaceChildren(
+      el('header', {}, el('h1', { title: card.id }, card.title), chip(card.state)),
+      paragraph(`Lead ${card.lead}`, 'hvir-meta'),
+      ...summary(card, options),
+      renderDetail(card, options))
+  }
+
+  const navRow = (card, options) => {
+    const needs = card.needsCount === 1 ? '1 needs you' : card.needsCount > 1 ? `${card.needsCount} need you` : ''
+    const meta = [needs, `${card.milestones.done}/${card.milestones.total} milestones`,
+      card.stale && 'not updated in 24h'].filter(Boolean).join(' · ')
+    const row = el('button', { type: 'button', className: 'projects-nav-row', title: card.id },
+      el('span', { className: 'projects-nav-title' }, card.title), chip(card.state), text(meta, 'hvir-meta'))
+    row.addEventListener('click', () => options.onOpenProject?.(card.id, card.store))
+    return el('li', {}, row)
+  }
+
+  const renderNav = (model, root, options = {}) => {
+    root.classList.add('projects-nav')
+    const overview = button('Open overview', 'All projects on one page', () => options.onOpenOverview?.())
+    overview.classList.add('projects-nav-overview')
+    root.replaceChildren(
+      paragraph(`${model.needsYou.length} need you · ${model.inDelivery.length} answered, waiting on agents`, 'projects-nav-counts'),
+      overview,
+      section('Needs you', list(model.needsYou.map((ask) => renderAsk(ask, options, true)), 'Nothing needs you')),
+      ...model.cards.map((group) => section(group.lead, el('ul', {}, ...group.cards.map((card) => navRow(card, options))))))
+  }
+
+  window.projectsRender = Object.freeze({ renderDashboard, renderNav, renderProject })
 })()

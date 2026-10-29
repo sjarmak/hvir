@@ -38,3 +38,12 @@ test('the Projects view is in the left navigation and its entry exists', () => {
   assert.equal(view?.navigation, 'left')
   assert.ok(fs.existsSync(path.join(__dirname, '..', view.entry)), `${view.entry} is missing`)
 })
+
+test('the project page is a tab view outside the rail, its entry present, within the eight-view limit', () => {
+  const fs = require('node:fs')
+  const path = require('node:path')
+  const view = (manifest.views ?? []).find((item) => item.id === 'project')
+  assert.equal(view?.navigation, undefined)
+  assert.ok(fs.existsSync(path.join(__dirname, '..', view.entry)), `${view.entry} is missing`)
+  assert.ok(manifest.views.length <= 8, `${manifest.views.length} views; hvir accepts at most eight`)
+})

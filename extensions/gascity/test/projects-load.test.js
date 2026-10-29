@@ -113,22 +113,19 @@ test('assembly retains identical ids in different stores and reports city read f
   assert.doesNotThrow(() => buildDashboard(result.payload))
 })
 
-test('live page wires bead store, unknown refs, partial errors and connector controls', async (t) => {
+const livePage = (t, page, script) => {
   const { JSDOM } = require('jsdom')
   const { readFileSync } = require('node:fs')
-  const dom = new JSDOM(readFileSync(`${__dirname}/../projects.html`, 'utf8'), { runScripts: 'outside-only' })
+  const dom = new JSDOM(readFileSync(`${__dirname}/../${page}`, 'utf8'), { runScripts: 'outside-only' })
   t.after(() => dom.window.close())
   const { window } = dom
-  for (const file of ['view', 'crew-parse', 'needs-model', 'projects-load', 'projects-model', 'projects-render']) {
+  for (const file of ['view', 'crew-parse', 'needs-model', 'projects-load', 'projects-model', 'projects-render', 'projects-data']) {
     window.eval(readFileSync(`${__dirname}/../${file}.js`, 'utf8'))
   }
-  let view
-  const opened = []
-  const connected = []
-  let bd = 'supported'
-  window.startView = (options) => { view = options; return { refresh: async () => {} } }
+  const page_ = { view: undefined, opened: [], connected: [], bd: 'supported', document: window.document }
+  window.startView = (options) => { page_.view = options; return { refresh: async () => {} } }
   window.host = {
-    availability: async () => ({ gc: 'supported', bd }),
+    availability: async () => ({ gc: 'supported', bd: page_.bd }),
     run: async (connector, scope, args) => {
       assert.equal(connector, 'gc')
       assert.equal(scope.host, workspace.host)
@@ -137,27 +134,54 @@ test('live page wires bead store, unknown refs, partial errors and connector con
   }
   window.bdRead = async (scope, args) => {
     if (args[1] === '/rigs/broken') throw new Error('offline')
+    if (args.includes('city-project')) return [{ ...fixture.projects[0], store: undefined }]
     return args.includes('--status') && args.includes('open') ? [fixture.decisions[0]] : []
   }
   window.bdNote = () => ' · store refuses --readonly'
-  window.openOwn = async (view, input) => { opened.push({ view, input }) }
-  window.connectHandler = (name) => async () => { connected.push(name) }
-  window.eval(readFileSync(`${__dirname}/../projects.js`, 'utf8'))
+  window.openOwn = async (view, input) => { page_.opened.push({ view, input }) }
+  window.connectHandler = (name) => async () => { page_.connected.push(name) }
+  window.eval(readFileSync(`${__dirname}/../${script}`, 'utf8'))
+  return page_
+}
+
+test('overview page wires bead store, unknown refs, partial errors and connector controls', async (t) => {
+  const page = livePage(t, 'project.html', 'project.js')
+  const { view, opened, connected, document } = page
   assert.equal(view.refreshMs, 60000)
   await view.load({ workspace })
-  const document = window.document
   assert.match(document.getElementById('status').textContent, /broken.*offline/)
   assert.match(document.getElementById('status').textContent, /store refuses --readonly/)
+  assert.match(document.getElementById('status').textContent, /need you · \d+ answered, waiting on agents/)
   assert.equal(document.body.textContent.split('Seat jobs not shown yet').length - 1, 1)
   document.querySelector('#projects li button').click()
   assert.equal(opened[0].view, 'bead')
   assert.equal(opened[0].input.rig, '/rigs/decisions')
   document.querySelector('.projects-refs button').click()
   assert.equal(document.getElementById('status').textContent, 'fixture-lab/signals#8')
-  bd = 'unsupported'
+  page.bd = 'unsupported'
   await view.load({ workspace })
   document.getElementById('connect').click()
   assert.deepEqual(connected, ['bd'])
+})
+
+test('rail rows open the project page and the overview opens as its own tab', async (t) => {
+  const { view, opened, document } = livePage(t, 'projects.html', 'projects.js')
+  await view.load({ workspace })
+  document.querySelector('.projects-nav-overview').click()
+  document.querySelector('.projects-nav-row').click()
+  await Promise.resolve()
+  assert.deepEqual(opened.map((entry) => entry.view), ['project', 'project'])
+  assert.deepEqual(Object.keys(opened[0].input), [])
+  assert.equal(opened[1].input.id, fixture.projects[0].id)
+  assert.equal(typeof opened[1].input.store, 'string')
+})
+
+test('project page renders the project named in its input, and says so when it is gone', async (t) => {
+  const { view, document } = livePage(t, 'project.html', 'project.js')
+  await view.load({ workspace, input: { id: fixture.projects[0].id } })
+  assert.equal(document.querySelector('#projects h1').textContent, fixture.projects[0].title)
+  await view.load({ workspace, input: { id: 'gone' } })
+  assert.match(document.getElementById('projects').textContent, /Project gone not found/)
 })
 
 test('HQ comes from the parsed city, not the open workspace folder', () => {

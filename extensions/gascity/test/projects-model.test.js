@@ -320,3 +320,11 @@ test('outcome history joins by listed project id and is off until outcomes are s
   assert.deepEqual(card(model, 'fx-project-2').outcomes.map((entry) => entry.title), ['Both'])
   assert.deepEqual(card(model, 'fx-project-3').outcomes.map((entry) => entry.title), ['Other'])
 })
+
+test('answered open asks are counted as in delivery and each card decision says whether it needs her', () => {
+  const model = buildDashboard(fresh())
+  assert.equal(model.inDelivery.length, 1)
+  assert.equal(model.inDelivery[0].id, 'fx-ask-answered')
+  assert.deepEqual(card(model).decisions.map((ask) => [ask.id, ask.needsYou]), [['fx-ask-answered', false]])
+  assert.deepEqual(card(model, 'fx-project-3').decisions.map((ask) => [ask.id, ask.needsYou]), [['fx-ask-retention', true]])
+})

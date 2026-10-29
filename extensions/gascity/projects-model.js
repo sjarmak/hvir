@@ -192,11 +192,13 @@
     const index = new Map(beads.map((bead) => [bead.id, bead]))
     const projects = new Map((input.projects ?? []).map((bead) => [bead.id, bead]))
     const states = input.refStates ?? {}
+    const asksHer = (bead) => (bead.labels ?? []).some((label) => label.toLowerCase() === 'needs/stephanie')
+    const answered = (bead) => meta(bead, 'gc.answered')?.length > 0
     const openDecisions = (input.decisions ?? []).filter((bead) => bead.status === 'open')
       .map((bead) => ({ ...bead, project: identity(projects.get(meta(bead, 'gc.project'))),
-        refs: references([bead], states) }))
-    const needsYou = openDecisions.filter((bead) => (bead.labels ?? []).some((label) =>
-      label.toLowerCase() === 'needs/stephanie') && !(meta(bead, 'gc.answered')?.length > 0))
+        refs: references([bead], states), needsYou: asksHer(bead) && !answered(bead) }))
+    const needsYou = openDecisions.filter((bead) => bead.needsYou)
+    const inDelivery = openDecisions.filter((bead) => asksHer(bead) && answered(bead))
     const entries = collectActivity(input, index, projects)
     const groups = new Map()
     for (const project of projects.values()) {
@@ -204,7 +206,7 @@
       if (!groups.has(card.lead)) groups.set(card.lead, { lead: card.lead, cards: [] })
       groups.get(card.lead).cards.push(card)
     }
-    return { now: input.now, needsYou, cards: [...groups.values()], activeNow: groupActivity(entries),
+    return { now: input.now, needsYou, inDelivery, cards: [...groups.values()], activeNow: groupActivity(entries),
       outcomesShown: Array.isArray(input.outcomes) }
   }
 
