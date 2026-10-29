@@ -47,3 +47,13 @@ test('the project page is a tab view outside the rail, its entry present, within
   assert.ok(fs.existsSync(path.join(__dirname, '..', view.entry)), `${view.entry} is missing`)
   assert.ok(manifest.views.length <= 8, `${manifest.views.length} views; hvir accepts at most eight`)
 })
+
+test('Gas City has one left-nav entry, shown as a city icon, and no Beads, Needs you or City tabs', () => {
+  const fs = require('node:fs')
+  const path = require('node:path')
+  const nav = (manifest.views ?? []).filter((item) => item.navigation)
+  assert.deepEqual(nav.map((item) => item.id), ['projects'])
+  assert.equal(nav[0].title, 'Gas City')
+  assert.ok(fs.existsSync(path.join(__dirname, '..', nav[0].navigationIcon)))
+  assert.equal((manifest.views ?? []).some((item) => ['beads', 'needs'].includes(item.id)), false)
+})

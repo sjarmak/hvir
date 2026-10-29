@@ -49,15 +49,15 @@
     return { model: window.projectsModel.buildDashboard(result.payload), payload: result.payload, errors: result.errors, sessions }
   }
 
-  const statusLine = (data, workspace) => {
+  const statusLine = (data, workspace, withCounts = true) => {
     const { model, payload, errors, sessions } = data
     const time = new Date(payload.now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-    const counts = [`${model.needsYou.length} need you`, `${model.inDelivery.length} answered, waiting on agents`,
-      `${payload.projects.length} projects`, `${sessions.length} active sessions`].join(' · ')
-    return `${counts} · updated ${time}${window.bdNote(workspace)}${errors.length ? ` · ${errors.join(' · ')}` : ''}`
+    const counts = withCounts ? [`${model.needsYou.length} need you`, `${model.inDelivery.length} answered, waiting on agents`,
+      `${payload.projects.length} projects`, `${sessions.length} active sessions`, ''].join(' · ') : ''
+    return `${counts}updated ${time}${window.bdNote(workspace)}${errors.length ? ` · ${errors.join(' · ')}` : ''}`
   }
 
-  const startProjectsView = (render) => {
+  const startProjectsView = (render, { counts = true } = {}) => {
     const ui = Object.fromEntries(['refresh', 'status', 'connect', 'projects']
       .map((id) => [id, document.getElementById(id)]))
     let missing
@@ -65,7 +65,7 @@
     const actions = {
       onOpenBead: (id, store) => window.openOwn('bead', { id, rig: store })
         .catch((error) => setStatus(`Could not open ${id}: ${error.message}`)),
-      onOpenRef: (ref) => setStatus(ref.key),
+      onOpenRef: (ref) => setStatus(`${ref.key}: open it from Pull requests; hvir does not let one extension open another's pages`),
       onOpenProject: (id, store) => window.openOwn('project', { id, store })
         .catch((error) => setStatus(`Could not open ${id}: ${error.message}`)),
       onOpenOverview: () => window.openOwn('project', {})
@@ -89,7 +89,7 @@
         return
       }
       const note = render(data, ui.projects, actions, context)
-      setStatus([note, statusLine(data, workspace)].filter(Boolean).join(' · '))
+      setStatus([note, statusLine(data, workspace, counts)].filter(Boolean).join(' · '))
     }
     const view = window.startView({ load, refreshMs: 60000, onStatus: setStatus })
     ui.refresh.addEventListener('click', () => void view.refresh())

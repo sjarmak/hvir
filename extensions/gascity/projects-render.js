@@ -18,8 +18,8 @@
 
   const renderRefs = (refs, options) => {
     const chips = ['prs', 'issues'].flatMap((field) => refs[field].map((ref) => {
-      const status = [ref.state || 'state unknown', ref.review, ref.checks].filter(Boolean).join(' · ')
-      const node = button(`${field === 'prs' ? 'PR' : 'Issue'} ${ref.key} · ${status}`,
+      const label = [`${field === 'prs' ? 'PR' : 'Issue'} ${ref.key}`, ref.state, ref.review, ref.checks].filter(Boolean).join(' · ')
+      const node = button(label,
         ref.title || ref.key, () => options.onOpenRef?.({ ...ref, kind: field === 'prs' ? 'pr' : 'issue' }))
       node.dataset.state = ref.state || 'unknown'
       return node
@@ -93,6 +93,7 @@
       section('Active now', list(card.active.map(renderActivity), 'No active agents')),
       card.stale && paragraph('not updated in 24h', 'projects-warning'),
       paragraph(card.updatedAt ? `Updated ${card.updatedAt} · ${window.ago(card.updatedAt)}` : 'Update time unknown', 'hvir-meta')]
+    .filter(Boolean)
 
   const renderCard = (card, options) => {
     const detail = renderDetail(card, options)
@@ -128,13 +129,52 @@
         el('div', { className: 'projects-grid' }, ...group.cards.map((card) => renderCard(card, options))))))
   }
 
+  const tile = (label, value) => el('div', { className: 'projects-tile' }, text(label, 'hvir-meta'), el('strong', {}, value))
+
+  const glance = (card) => el('div', { className: 'projects-glance' },
+    tile('State', chip(card.state)),
+    tile('Lead', card.lead),
+    tile('Milestones', `${card.milestones.done}/${card.milestones.total}`),
+    tile('Needs you', String(card.needsCount)),
+    tile('Agents active', String(card.active.length)),
+    tile('Updated', card.updatedAt ? window.ago(card.updatedAt) : 'unknown'))
+
+  const decisionSections = (card, options) => {
+    const pick = (test) => card.decisions.filter(test).map((ask) => renderAsk(ask, options))
+    const other = pick((ask) => !ask.needsYou && !ask.inDelivery)
+    return [
+      section('Needs you', list(pick((ask) => ask.needsYou), 'Nothing needs you')),
+      section('Answered, waiting on agents', list(pick((ask) => ask.inDelivery), 'Nothing waiting')),
+      other.length > 0 && section('Other open decisions', list(other, '')),
+    ].filter(Boolean)
+  }
+
   const renderProject = (card, root, options = {}) => {
     root.classList.add('projects-dashboard', 'projects-page')
+    const back = button('← All projects', 'Back to the overview', () => options.onOpenOverview?.())
+    back.classList.add('projects-back')
+    const refs = card.refs.prs.length + card.refs.issues.length + card.refs.invalid.length
     root.replaceChildren(
-      el('header', {}, el('h1', { title: card.id }, card.title), chip(card.state)),
-      paragraph(`Lead ${card.lead}`, 'hvir-meta'),
-      ...summary(card, options),
-      renderDetail(card, options))
+      back,
+      el('header', {}, el('h1', { title: card.id }, card.title)),
+      glance(card),
+      el('div', { className: 'projects-page-grid' },
+        el('div', {},
+          section('Now', paragraph(card.now || 'No current update'),
+            card.stuckWhy && paragraph(card.stuckWhy, 'projects-warning'),
+            card.contributors.length > 0 && paragraph(`With ${card.contributors.join(', ')}`, 'hvir-meta'),
+            card.stale && paragraph('not updated in 24h', 'projects-warning')),
+          section('Milestones', renderProgress(card.milestones),
+            list(card.milestoneList.map((entry) => renderMilestone(entry, options)), 'No milestones')),
+          section('Workflows', list(card.workflows.map(renderWorkflow), 'No workflows')),
+          options.outcomesShown && section('Asks and outcomes', list(card.outcomes.map(renderOutcome), 'No outcomes yet'))),
+        el('div', {},
+          ...decisionSections(card, options),
+          refs > 0 && section('Pull requests and issues', renderRefs(card.refs, options)),
+          section('Active now', list(card.active.map(renderActivity), 'No active agents')),
+          section(`In progress (${card.inProgress.length})`, list(card.inProgress.map((bead) => el('li', {},
+            button(bead.title, bead.id, () => options.onOpenBead?.(bead.id, bead.store)),
+            text(bead.assignee && ` · ${bead.assignee}`, 'hvir-meta'))), 'Nothing in progress')))))
   }
 
   const navRow = (card, options) => {

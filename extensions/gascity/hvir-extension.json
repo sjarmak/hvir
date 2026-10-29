@@ -20,15 +20,15 @@
       "title": "City",
       "entry": "city.html",
       "placement": "workspace",
-      "navigation": "left",
       "representations": ["view"]
     },
     {
       "id": "projects",
-      "title": "Projects",
+      "title": "Gas City",
       "entry": "projects.html",
       "placement": "workspace",
       "navigation": "left",
+      "navigationIcon": "city-icon.svg",
       "representations": ["view"]
     },
     {
@@ -36,22 +36,6 @@
       "title": "Projects",
       "entry": "project.html",
       "placement": "workspace",
-      "representations": ["view"]
-    },
-    {
-      "id": "beads",
-      "title": "Beads",
-      "entry": "beads.html",
-      "placement": "workspace",
-      "navigation": "left",
-      "representations": ["view"]
-    },
-    {
-      "id": "needs",
-      "title": "Needs you",
-      "entry": "needs.html",
-      "placement": "workspace",
-      "navigation": "left",
       "representations": ["view"]
     },
     {

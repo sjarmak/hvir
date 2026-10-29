@@ -157,7 +157,7 @@ test('overview page wires bead store, unknown refs, partial errors and connector
   assert.equal(opened[0].view, 'bead')
   assert.equal(opened[0].input.rig, '/rigs/decisions')
   document.querySelector('.projects-refs button').click()
-  assert.equal(document.getElementById('status').textContent, 'fixture-lab/signals#8')
+  assert.match(document.getElementById('status').textContent, /^fixture-lab\/signals#8: open it from Pull requests/)
   page.bd = 'unsupported'
   await view.load({ workspace })
   document.getElementById('connect').click()
@@ -167,6 +167,7 @@ test('overview page wires bead store, unknown refs, partial errors and connector
 test('rail rows open the project page and the overview opens as its own tab', async (t) => {
   const { view, opened, document } = livePage(t, 'projects.html', 'projects.js')
   await view.load({ workspace })
+  assert.doesNotMatch(document.getElementById('status').textContent, /need you/)
   document.querySelector('.projects-nav-overview').click()
   document.querySelector('.projects-nav-row').click()
   await Promise.resolve()

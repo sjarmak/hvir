@@ -178,7 +178,7 @@ test('a project page shows the whole project with decisions split by who acts ne
   const project = model.cards.flatMap((group) => group.cards).find((entry) => entry.id === 'fx-project-1')
   window.projectsRender.renderProject(project, root, {})
   assert.equal(root.querySelector('h1').textContent, project.title)
-  assert.equal(root.querySelector('.projects-detail').hidden, false)
+  assert.ok(root.querySelector('.projects-page-grid'))
   assert.match(root.textContent, /Answered, waiting on agents/)
   assert.match(root.textContent, /Needs you.*Nothing needs you/s)
   assert.equal(root.querySelectorAll('[aria-expanded]').length, 0)
@@ -195,8 +195,40 @@ test('an unanswered decision without her label is listed as other open, never as
   const project = buildDashboard(input).cards.flatMap((group) => group.cards).find((entry) => entry.id === 'fx-project-1')
   const root = window.document.querySelector('main')
   window.projectsRender.renderProject(project, root, {})
-  const sections = Object.fromEntries([...root.querySelectorAll('.projects-detail section')]
+  const sections = Object.fromEntries([...root.querySelectorAll('.projects-page-grid section')]
     .map((node) => [node.querySelector('h2').textContent, node.textContent]))
   assert.doesNotMatch(sections['Answered, waiting on agents'], /Plain open record/)
   assert.match(sections['Other open decisions'], /Plain open record/)
+})
+
+const pageFor = (t, id, options = {}) => {
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  const { window } = dom
+  window.Date.now = () => Date.parse(fixture.now)
+  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const project = buildDashboard(structuredClone(fixture)).cards.flatMap((group) => group.cards).find((entry) => entry.id === id)
+  const root = window.document.querySelector('main')
+  window.projectsRender.renderProject(project, root, options)
+  return { root, project }
+}
+
+test('a project page never prints false or undefined for absent optional fields', (t) => {
+  const { root } = pageFor(t, 'fx-project-1')
+  assert.doesNotMatch(root.textContent, /false|undefined/)
+})
+
+test('a project page leads with an at-a-glance strip and offers a way back to the overview', (t) => {
+  const back = []
+  const { root, project } = pageFor(t, 'fx-project-1', { onOpenOverview: () => back.push('overview') })
+  const tiles = [...root.querySelectorAll('.projects-glance .projects-tile')].map((node) => node.textContent)
+  assert.ok(tiles.some((text) => /Milestones/.test(text) && text.includes(`${project.milestones.done}/${project.milestones.total}`)))
+  assert.ok(tiles.some((text) => /Needs you/.test(text)))
+  root.querySelector('.projects-back').click()
+  assert.deepEqual(back, ['overview'])
+})
+
+test('a reference without a known state shows its key only, not "state unknown"', (t) => {
+  const { root } = pageFor(t, 'fx-project-1')
+  assert.doesNotMatch(root.textContent, /state unknown/)
 })

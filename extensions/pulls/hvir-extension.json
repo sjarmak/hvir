@@ -26,6 +26,7 @@
       "entry": "pulls.html",
       "placement": "workspace",
       "navigation": "left",
+      "navigationIcon": "merge-icon.svg",
       "representations": [
         "view"
       ]

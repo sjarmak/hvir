@@ -57,6 +57,10 @@
 .projects-chip,
 .projects-tag {
   display: inline-block;
+  flex-shrink: 0;
+  align-self: start;
+  height: fit-content;
+  white-space: nowrap;
   padding: 2px 7px;
   border-radius: 4px;
   background: var(--surface-raised);
@@ -182,13 +186,52 @@
 .projects-nav-title {
   color: var(--text-strong);
 }
-.projects-page header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.projects-page {
+  max-width: 1200px;
+  font-size: calc(14px * var(--hvir-interface-scale));
 }
 .projects-page h1 {
   margin: 0;
+  font-size: calc(22px * var(--hvir-interface-scale));
+  color: var(--text-strong);
+}
+.projects-page h2 {
+  font-size: calc(15px * var(--hvir-interface-scale));
+}
+.projects-back {
+  justify-self: start;
+}
+.projects-glance {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+.projects-tile {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+}
+.projects-tile strong {
+  font-size: calc(16px * var(--hvir-interface-scale));
+  color: var(--text-strong);
+}
+.projects-page-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 20px 28px;
+  align-items: start;
+}
+.projects-page-grid > div {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.projects-nav li .hvir-button {
+  width: 100%;
+  text-align: left;
 }
 .projects-card-actions {
   display: flex;
