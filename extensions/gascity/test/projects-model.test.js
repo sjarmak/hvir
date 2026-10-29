@@ -358,10 +358,12 @@ test('artifacts and milestones join only to a project in their own store', () =>
   const input = fresh()
   for (const key of ['projects', 'milestones', 'artifacts']) for (const bead of input[key]) bead.store = '/rigs/a'
   input.artifacts.push({ ...structuredClone(input.artifacts[0]), id: 'fx-art-other', store: '/rigs/b' })
-  input.milestones.push({ ...structuredClone(input.milestones[0]), id: 'fx-ms-other', store: '/rigs/b' })
+  input.milestones.push({ ...structuredClone(input.milestones[0]), id: 'fx-ms-other', store: '/rigs/b',
+    metadata: { ...input.milestones[0].metadata, 'ref.prs': 'fixture-lab/foreign#99' } })
   const project = card(buildDashboard(input))
   assert.deepEqual(project.artifacts.map((entry) => entry.id), ['fx-art-1', 'fx-art-2'])
   assert.equal(project.milestoneList.some((entry) => entry.id === 'fx-ms-other'), false)
+  assert.equal(project.refs.prs.some((ref) => ref.key === 'fixture-lab/foreign#99'), false)
 })
 
 test('artifact freshness: exactly 24h is fresh, a minute more is stale, a missing check time is unknown, not stale', () => {

@@ -277,3 +277,19 @@ test('an artifact with only some fields shows unknowns as words, never null, fal
   assert.equal(row.querySelectorAll('.projects-warning').length, 0)
   assert.doesNotMatch(root.textContent, /null|false|undefined/)
 })
+
+test('a claimed state with no first-claim time says since unknown', (t) => {
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  const { window } = dom
+  window.Date.now = () => Date.parse(fixture.now)
+  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const input = structuredClone(fixture)
+  input.artifacts[0].metadata = { 'art.kind': 'path', 'art.ref': '/fixture/x', 'art.live_source': 'hvir reload' }
+  const project = buildDashboard(input).cards.flatMap((group) => group.cards).find((entry) => entry.id === 'fx-project-1')
+  const root = window.document.querySelector('main')
+  window.projectsRender.renderProject(project, root, {})
+  const live = [...root.querySelector('.projects-artifact').querySelectorAll('.projects-artifact-state')][2]
+  assert.match(live.textContent, /^Live · since unknown · checked unknown · hvir reload$/)
+  assert.doesNotMatch(root.textContent, /null|false|undefined/)
+})
