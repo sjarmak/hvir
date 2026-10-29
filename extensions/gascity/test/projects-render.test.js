@@ -102,3 +102,15 @@ test('standalone file preview loads its local scripts with fixed time and theme 
   document.querySelector('#projects section li button').click()
   assert.equal(document.getElementById('preview-action').textContent, 'Bead target: fx-ask-retention')
 })
+
+test('project detail lists in-progress beads collapsed by default, each opening its bead', (t) => {
+  const { dom, root, beads, model } = preview()
+  t.after(() => dom.window.close())
+  const index = model.cards.flatMap((group) => group.cards).findIndex((entry) => entry.inProgress.length > 0)
+  const detail = root.querySelectorAll('.projects-detail')[index]
+  const drill = detail.querySelector('details')
+  assert.equal(drill.open, false)
+  assert.match(drill.querySelector('summary').textContent, /^In progress \([1-9]\d*\)$/)
+  drill.querySelector('li button').click()
+  assert.equal(beads.length, 1)
+})

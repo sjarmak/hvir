@@ -58,7 +58,11 @@
   const renderDetail = (card, options) => el('div', { className: 'projects-detail' },
     section('Milestones', list(card.milestoneList.map((entry) => renderMilestone(entry, options)), 'No milestones')),
     section('Open decisions', list(card.decisions.map((ask) => renderAsk(ask, options)), 'No open decisions')),
-    section('Workflows', list(card.workflows.map(renderWorkflow), 'No workflows')))
+    section('Workflows', list(card.workflows.map(renderWorkflow), 'No workflows')),
+    el('details', {}, el('summary', {}, `In progress (${card.inProgress.length})`),
+      list(card.inProgress.map((bead) => el('li', {},
+        button(bead.title, bead.id, () => options.onOpenBead?.(bead.id, bead.store)),
+        text(bead.assignee && ` · ${bead.assignee}`, 'hvir-meta'))), 'Nothing in progress')))
 
   const renderProgress = (milestones) => {
     const { done, total, next } = milestones

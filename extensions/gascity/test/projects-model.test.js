@@ -293,3 +293,15 @@ test('duplicate project ids across stores are reported, not silently merged', ()
   assert.deepEqual(duplicateProjects([{ id: 'a', store: '/x' }, { id: 'a', store: '/y' }, { id: 'b', store: '/x' }, { id: 'b', store: '/x' }]), ['a'])
   assert.deepEqual(duplicateProjects(), [])
 })
+
+test('a card lists its in-progress beads, joined by the same rules as Active now', () => {
+  const model = buildDashboard(fresh())
+  for (const entry of cards(model)) {
+    const titles = entry.inProgress.map((bead) => bead.title).sort()
+    const active = entry.active.map((item) => item.bead?.title).filter(Boolean)
+    for (const title of active.filter((name) => !titles.includes(name))) {
+      assert.ok(entry.active.find((item) => item.bead?.title === title).kind === 'seat-job', title)
+    }
+  }
+  assert.ok(cards(model).some((entry) => entry.inProgress.length > 0))
+})

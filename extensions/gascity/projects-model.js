@@ -167,6 +167,9 @@
       refs: references([project, ...(input.milestones ?? []).filter((bead) =>
         parents(bead).includes(project.id)), ...decisions], states),
       active,
+      inProgress: (input.inProgress ?? [])
+        .filter((bead) => bead.status === 'in_progress' && resolveProject(bead, index, projects)?.id === project.id)
+        .map((bead) => ({ ...identity(bead), assignee: bead.assignee ?? '' })),
       decisions,
       workflows: projectWorkflows(input, index, projects, project, active),
     }
