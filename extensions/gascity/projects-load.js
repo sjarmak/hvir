@@ -60,22 +60,38 @@
     .filter((dependency) => (dependency.type ?? dependency.dependency_type) === 'parent-child')
     .map((dependency) => dependency.depends_on_id ?? dependency.id)].filter(Boolean)
 
+  const missingParents = (beads, starts) => {
+    const wanted = new Set()
+    const seen = new Set()
+    const pending = [...starts]
+    while (pending.length) {
+      const bead = pending.pop()
+      if (seen.has(bead.id)) continue
+      seen.add(bead.id)
+      for (const id of parentIds(bead)) {
+        if (beads.has(id)) pending.push(beads.get(id))
+        else wanted.add(id)
+      }
+    }
+    return wanted
+  }
+
   const ancestorRequests = (reads) => {
     const byStore = new Map()
     const entry = (store) => {
-      if (!byStore.has(store.path)) byStore.set(store.path, { store, known: new Set(), wanted: new Set() })
+      if (!byStore.has(store.path)) byStore.set(store.path, { store, beads: new Map(), failed: new Set(), starts: [] })
       return byStore.get(store.path)
     }
-    for (const { store, value, error } of reads) {
-      if (error) continue
-      for (const bead of value) entry(store).known.add(bead.id)
+    for (const { store, key, value, error, args } of reads) {
+      if (error) {
+        if (key === 'ancestors') for (const id of args.slice(3, -1)) entry(store).failed.add(id)
+        continue
+      }
+      for (const bead of value) entry(store).beads.set(bead.id, bead)
+      if (['inProgress', 'workflowRoots'].includes(key)) entry(store).starts.push(...value)
     }
-    for (const { store, key, value, error } of reads) {
-      if (error || !['inProgress', 'workflowRoots', 'ancestors'].includes(key)) continue
-      for (const bead of value) for (const id of parentIds(bead)) entry(store).wanted.add(id)
-    }
-    return [...byStore.values()].flatMap(({ store, known, wanted }) => {
-      const ids = [...wanted].filter((id) => !known.has(id)).slice(0, ANCESTOR_CAP)
+    return [...byStore.values()].flatMap(({ store, beads, failed, starts }) => {
+      const ids = [...missingParents(beads, starts)].filter((id) => !failed.has(id)).slice(0, ANCESTOR_CAP)
       return ids.length ? [{ store, key: 'ancestors', args: showArgs(store.path, ids) }] : []
     })
   }

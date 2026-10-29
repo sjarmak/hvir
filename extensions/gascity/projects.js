@@ -62,6 +62,8 @@
       if (!requests.length) break
       reads.push(...await readStores(workspace, requests))
     }
+    if (loader.ancestorRequests(reads).length)
+      errors.push(`parent chains deeper than ${loader.ANCESTOR_ROUNDS} unread levels were not followed`)
     const result = loader.assemblePayload({ now: new Date().toISOString(), reads, sessions, errors })
     render(result.payload)
     const time = new Date(result.payload.now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })

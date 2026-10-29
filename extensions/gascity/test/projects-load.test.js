@@ -197,3 +197,20 @@ test('fetched ancestors join work to its project through an intermediate parent'
   const group = buildDashboard(payload).activeNow.find((entry) => entry.project?.id === 'proj')
   assert.equal(group.items[0].bead.title, 'Work')
 })
+
+test('ancestor plans walk through already-loaded parents to reach unknown ones', () => {
+  const reads = [
+    read('inProgress', [{ id: 'work', status: 'in_progress', parent: 'ms' }]),
+    read('milestones', [{ id: 'ms', parent: 'epic' }]),
+  ]
+  assert.deepEqual(loader.ancestorRequests(reads)[0].args, loader.showArgs(stores[1].path, ['epic']))
+})
+
+test('a failed ancestor read is not retried in later rounds, and cycles plan nothing', () => {
+  const reads = [read('inProgress', [{ id: 'work', parent: 'epic' }])]
+  const [request] = loader.ancestorRequests(reads)
+  reads.push({ ...request, error: 'down' })
+  assert.deepEqual(loader.ancestorRequests(reads), [])
+  const cycle = [read('inProgress', [{ id: 'a', parent: 'b' }]), read('ancestors', [{ id: 'b', parent: 'a' }])]
+  assert.deepEqual(loader.ancestorRequests(cycle), [])
+})
