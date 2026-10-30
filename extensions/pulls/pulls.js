@@ -19,8 +19,10 @@ let gitNote = ''
 /** Collapsed section keys survive re-renders, like the panel's collapsible headers. */
 const collapsed = new Set(['aside'])
 let lists = []
-let marks = { client: undefined, aside: {}, progress: new Map() }
-let lastRender
+const NO_MARKS = Object.freeze({ client: undefined, aside: {}, progress: new Map() })
+const NO_CITY = Object.freeze({ runs: new Map(), followups: new Map() })
+const shownBy = new Map()
+let shown
 const setStatus = (text) => (ui.status.textContent = text)
 
 const STACK_HUES = 4
@@ -55,6 +57,7 @@ function activityChips(pull, now) {
 }
 
 function asideChip(pull, snapshot) {
+  const { marks } = shown
   if (!marks.client || pull.updatedAt === '') return null
   const aside = isAside(pull, marks.aside)
   const control = el(
@@ -67,9 +70,9 @@ function asideChip(pull, snapshot) {
   const activate = (event) => {
     event.stopPropagation()
     event.preventDefault()
-    marks = { ...marks, aside: withAside(marks.aside, pull, !aside) }
-    marks.client.write(store.asideName(snapshot.repo), marks.aside).catch((error) => setStatus(`Not saved: ${error.message}`))
-    if (lastRender) render(...lastRender)
+    const next = { ...marks, aside: withAside(marks.aside, pull, !aside) }
+    next.client.write(store.asideName(snapshot.repo), next.aside).catch((error) => setStatus(`Not saved: ${error.message}`))
+    render({ ...shown, marks: next }, Date.now())
   }
   control.addEventListener('click', activate)
   control.addEventListener('keydown', (event) => {
@@ -79,12 +82,9 @@ function asideChip(pull, snapshot) {
   return control
 }
 
-let cityRuns = () => []
-let cityFollowups = () => []
-
 function cityChips(pull) {
-  const review = window.cityReviews.chip(cityRuns(pull))
-  const followups = window.cityFollowups.chip(cityFollowups(pull))
+  const review = window.cityReviews.chip(shown.city.runs.get(pull.number) ?? [])
+  const followups = window.cityFollowups.chip(shown.city.followups.get(pull.number) ?? [])
   return [
     review && { ...review, title: 'Latest Gas City pipeline run or review for this pull request' },
     followups && { ...followups, title: 'Open Gas City follow-ups for this pull request: review comments to answer, CI failures' },
@@ -98,7 +98,7 @@ function cityChips(pull) {
 }
 
 function progressChip(pull) {
-  const label = reviewProgressLabel(marks.progress.get(pull.number), pull)
+  const label = reviewProgressLabel(shown.marks.progress.get(pull.number), pull)
   return label ? el('span', { className: 'chip chip-progress' }, label) : null
 }
 
@@ -188,9 +188,10 @@ const openRow = (repo) => (option) =>
     .openOwn(option.dataset.kind === 'issue' ? 'issue' : 'pull', { repo, number: Number(option.dataset.number) })
     .catch((error) => setStatus(error.message))
 
-/** `here` is the other worktrees of this checkout and the shell connector's availability. */
-function render(snapshot, now, here) {
-  lastRender = [snapshot, now, here]
+function render(entry, now) {
+  const { snapshot, here, marks } = entry
+  shown = entry
+  shownBy.set(entry.workspaceId, entry)
   for (const binding of lists) binding.dispose()
   const sections = pullSections(snapshot, now, marks.aside).filter((section) => section.key === 'branch' || section.rows.length > 0)
   ui.sections.replaceChildren(...sections.map((section) => renderSection(section, snapshot, now, here)))
@@ -217,74 +218,88 @@ function render(snapshot, now, here) {
   )
 }
 
-async function readCity(workspace, snapshot, connectors) {
+async function cityLookups(pulls, lookup, field) {
   const found = new Map()
-  const followups = new Map()
-  const pulls = [...snapshot.branchPulls, ...snapshot.authored, ...snapshot.reviewRequested]
-  let runsReadable = true
-  let followupsReadable = true
-  const seen = new Set()
   for (const pull of pulls) {
-    if (seen.has(pull.number)) continue
-    seen.add(pull.number)
-    if (runsReadable) {
-      const result = await window.citySource.runs(workspace, snapshot.repo, pull, connectors)
-      runsReadable = !result.error && !result.unavailable
-      if (runsReadable) found.set(pull.number, result.runs)
-    }
-    if (followupsReadable) {
-      const result = await window.citySource.followups(workspace, snapshot.repo, pull.number, connectors)
-      followupsReadable = !result.error && !result.unavailable
-      if (followupsReadable) followups.set(pull.number, result.followups)
-    }
+    const result = await lookup(pull)
+    if (result.error || result.unavailable) break
+    found.set(pull.number, result[field])
   }
-  cityRuns = (pull) => found.get(pull.number) ?? []
-  cityFollowups = (pull) => followups.get(pull.number) ?? []
+  return found
+}
+
+async function readCity(workspace, snapshot, connectors) {
+  const pulls = [
+    ...new Map(
+      [...snapshot.branchPulls, ...snapshot.authored, ...snapshot.reviewRequested].map((pull) => [pull.number, pull]),
+    ).values(),
+  ]
+  const [runs, followups] = await Promise.all([
+    cityLookups(pulls, (pull) => window.citySource.runs(workspace, snapshot.repo, pull, connectors), 'runs'),
+    cityLookups(pulls, (pull) => window.citySource.followups(workspace, snapshot.repo, pull.number, connectors), 'followups'),
+  ])
+  return { runs, followups }
 }
 
 async function readMarks(workspace, snapshot, connectors) {
-  if (connectors[store.CONNECTOR] !== 'supported') {
-    marks = { client: undefined, aside: {}, progress: new Map() }
-    return ''
-  }
+  if (connectors[store.CONNECTOR] !== 'supported') return { marks: NO_MARKS, note: '' }
   const client = store.client(window.host.run, workspace)
   try {
     const entries = await client.list(store.repoPrefix(snapshot.repo))
     const saved = entries.get(store.asideName(snapshot.repo))
     const aside = pruneAside(saved && typeof saved === 'object' ? saved : {}, snapshot.reviewRequested)
-    marks = { client, aside, progress: window.reviewState.repoProgress(entries, snapshot.repo) }
-    return ''
+    return { marks: { client, aside, progress: window.reviewState.repoProgress(entries, snapshot.repo) }, note: '' }
   } catch (error) {
-    marks = { client: undefined, aside: {}, progress: new Map() }
-    return `Review progress unavailable: ${error.message}`
+    return { marks: NO_MARKS, note: `Review progress unavailable: ${error.message}` }
   }
 }
 
-/** The header count belongs to the updater (cross-workspace); this view only renders. */
+function readHere(workspace, connectors) {
+  return window.worktreeControl.readWorktrees(workspace, connectors).then(
+    (worktrees) => ({ worktrees, shell: connectors.shell, note: '' }),
+    (error) => ({ worktrees: new Map(), shell: connectors.shell, note: `Worktrees unavailable: ${error.message}` }),
+  )
+}
+
+function switchTo(workspace) {
+  workspaceId = workspace.id
+  limit = PAGE_SIZE
+  const cached = shownBy.get(workspace.id)
+  if (cached) return render(cached, Date.now())
+  for (const binding of lists) binding.dispose()
+  lists = []
+  ui.sections.replaceChildren()
+  ui.repo.textContent = ''
+  ui.more.hidden = true
+  setStatus('Loading…')
+}
+
 async function load(context, current) {
-  if (!context.workspace) return setStatus('No workspace selected')
-  if (context.workspace.id !== workspaceId) {
-    workspaceId = context.workspace.id
-    limit = PAGE_SIZE
-  }
-  const connectors = await availability({ workspace: context.workspace })
-  const local = context.workspace.host === 'local'
+  const { workspace } = context
+  if (!workspace) return setStatus('No workspace selected')
+  if (workspace.id !== workspaceId) switchTo(workspace)
+  const connectors = await availability({ workspace })
+  const local = workspace.host === 'local'
   ui['connect-gh'].hidden = connectors.gh === 'supported' || !local
   ui['connect-git'].hidden = connectors.git === 'supported' || !local
-  if (connectors.gh !== 'supported') return setStatus(window.hostNote('gh', context.workspace))
+  if (connectors.gh !== 'supported') return setStatus(window.hostNote('gh', workspace))
   gitNote = 'Connect git to show the pull request for this branch.'
   ui.refresh.disabled = true
   try {
     const requested = limit
-    const snapshot = await window.pullsSource.snapshot(context.workspace, requested, connectors.git === 'supported')
-    const here = await window.worktreeControl.readWorktrees(context.workspace, connectors).then(
-      (worktrees) => ({ worktrees, shell: connectors.shell, note: '' }),
-      (error) => ({ worktrees: new Map(), shell: connectors.shell, note: `Worktrees unavailable: ${error.message}` }),
-    )
-    const note = await readMarks(context.workspace, snapshot, connectors)
-    await readCity(context.workspace, snapshot, connectors)
-    if (current().workspace?.id !== context.workspace.id || requested !== limit) return
-    render(snapshot, Date.now(), { ...here, note: [here.note, note].filter(Boolean).join(' ') })
+    const moved = () => current().workspace?.id !== workspace.id || requested !== limit
+    const hereRead = readHere(workspace, connectors)
+    const snapshot = await window.pullsSource.snapshot(workspace, requested, connectors.git === 'supported')
+    if (moved()) return
+    const marksRead = readMarks(workspace, snapshot, connectors)
+    const cityRead = readCity(workspace, snapshot, connectors)
+    if (!shownBy.has(workspace.id)) {
+      render({ workspaceId: workspace.id, snapshot, here: { worktrees: new Map(), shell: connectors.shell, note: '' }, marks: NO_MARKS, city: NO_CITY }, Date.now())
+      if (!local) ui['connect-shell'].hidden = true
+    }
+    const [here, { marks, note }, city] = await Promise.all([hereRead, marksRead, cityRead])
+    if (moved()) return
+    render({ workspaceId: workspace.id, snapshot, here: { ...here, note: [here.note, note].filter(Boolean).join(' ') }, marks, city }, Date.now())
     if (!local) ui['connect-shell'].hidden = true
   } finally {
     ui.refresh.disabled = false

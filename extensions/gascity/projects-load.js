@@ -9,9 +9,8 @@
   const listArgs = (path, filter) => [
     '-C', path, 'list', '--json', '--flat', '--no-pager', ...filter, '-n', '0',
   ]
-  const projectArgs = (path) => listArgs(path, ['--all', '--label', 'city-project'])
-  const milestoneArgs = (path) => listArgs(path, ['--all', '--label', 'city-milestone'])
-  const artifactArgs = (path) => listArgs(path, ['--all', '--label', 'city-artifact'])
+  const LABEL_FIELDS = Object.freeze({ 'city-project': 'projects', 'city-milestone': 'milestones', 'city-artifact': 'artifacts' })
+  const labeledArgs = (path) => listArgs(path, ['--all', '--label-any', Object.keys(LABEL_FIELDS).join(',')])
   const inProgressArgs = (path) => listArgs(path, ['--all', '--status', 'in_progress'])
   const showArgs = (path, ids) => ['-C', path, 'show', ...ids, '--json']
   const stepArgs = (path, id) => listArgs(path,
@@ -30,9 +29,7 @@
 
   const storeRequests = (stores) => {
     const requests = stores.flatMap((store) => [
-      { store, key: 'projects', args: projectArgs(store.path) },
-      { store, key: 'milestones', args: milestoneArgs(store.path) },
-      { store, key: 'artifacts', args: artifactArgs(store.path) },
+      { store, key: 'labeled', args: labeledArgs(store.path) },
       { store, key: 'inProgress', args: inProgressArgs(store.path) },
     ])
     const decisions = needs.decisionsRig(stores)
@@ -41,6 +38,13 @@
       { store: decisions, key: 'decisions', args: decisionArgs(decisions.path) })
     return requests
   }
+
+  const splitLabeled = (reads) => reads.flatMap((read) => {
+    if (read.key !== 'labeled') return [read]
+    if (read.error) return [{ ...read, key: 'projects' }]
+    return Object.entries(LABEL_FIELDS).map(([label, key]) =>
+      ({ ...read, key, value: read.value.filter((bead) => (bead.labels ?? []).includes(label)) }))
+  })
 
   const workflowRequests = (reads) => {
     const byStore = new Map()
@@ -144,7 +148,7 @@
   }
 
   const api = Object.freeze({
-    projectArgs, milestoneArgs, artifactArgs, inProgressArgs, showArgs, stepArgs, decisionArgs,
+    labeledArgs, splitLabeled, inProgressArgs, showArgs, stepArgs, decisionArgs,
     ANCESTOR_ROUNDS, OUTCOME_CONNECTOR, OUTCOME_ARGS, parseOutcomes, storesFor, storeRequests, workflowRequests, ancestorRequests, liveSessions, assemblePayload,
   })
   if (node) module.exports = api

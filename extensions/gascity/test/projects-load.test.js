@@ -17,10 +17,9 @@ const read = (key, value, store = stores[1]) => ({ key, value, store })
 
 test('argument builders use explicit store scope and unlimited flat JSON lists', () => {
   const base = ['-C', '/rig', 'list', '--json', '--flat', '--no-pager']
-  assert.deepEqual(loader.projectArgs('/rig'), [...base, '--all', '--label', 'city-project', '-n', '0'])
-  assert.deepEqual(loader.milestoneArgs('/rig'), [...base, '--all', '--label', 'city-milestone', '-n', '0'])
+  assert.deepEqual(loader.labeledArgs('/rig'),
+    [...base, '--all', '--label-any', 'city-project,city-milestone,city-artifact', '-n', '0'])
   assert.deepEqual(loader.inProgressArgs('/rig'), [...base, '--all', '--status', 'in_progress', '-n', '0'])
-  assert.deepEqual(loader.artifactArgs('/rig'), [...base, '--all', '--label', 'city-artifact', '-n', '0'])
   assert.deepEqual(loader.stepArgs('/rig', 'root'),
     [...base, '--all', '--metadata-field', 'gc.root_bead_id=root', '-n', '0'])
   assert.deepEqual(loader.showArgs('/rig', ['a', 'b']), ['-C', '/rig', 'show', 'a', 'b', '--json'])
@@ -31,13 +30,24 @@ test('argument builders use explicit store scope and unlimited flat JSON lists',
 test('store plan reads workspace HQ once, skips suspended rigs, and uses both decision queries', () => {
   assert.deepEqual(stores.map((store) => store.path), ['/city', '/rigs/lead', '/rigs/decisions', '/rigs/broken'])
   const requests = loader.storeRequests(stores)
-  assert.equal(requests.length, 18)
-  assert.equal(requests.filter((request) => request.key === 'artifacts').length, 4)
+  assert.equal(requests.length, 10)
+  assert.equal(requests.filter((request) => request.key === 'labeled').length, 4)
   assert.equal(requests.some((request) => request.args.includes('/rigs/paused')), false)
   const decisions = requests.filter((request) => request.key === 'decisions')
   assert.deepEqual(decisions[0].args, require('../needs-model.js').askArgs('/rigs/decisions'))
   assert.deepEqual(decisions[1].args, loader.decisionArgs('/rigs/decisions'))
-  assert.equal(loader.storeRequests([stores[0]]).length, 4)
+  assert.equal(loader.storeRequests([stores[0]]).length, 2)
+})
+
+test('one labeled read splits into projects, milestones and artifacts; a failed one reports once', () => {
+  const both = { id: 'b', labels: ['city-project', 'city-milestone'] }
+  const value = [{ id: 'p', labels: ['city-project'] }, { id: 'a', labels: ['city-artifact'] }, both, { id: 'x' }]
+  const split = loader.splitLabeled([read('labeled', value), read('inProgress', [])])
+  assert.deepEqual(split.map((entry) => [entry.key, entry.value.map((bead) => bead.id)]), [
+    ['projects', ['p', 'b']], ['milestones', ['b']], ['artifacts', ['a']], ['inProgress', []]])
+  const failed = loader.splitLabeled([{ ...read('labeled', undefined), error: 'down', notRun: true }])
+  assert.deepEqual(failed.map(({ key, error, notRun }) => ({ key, error, notRun })),
+    [{ key: 'projects', error: 'down', notRun: true }])
 })
 
 test('workflow plans deduplicate roots within each store and cap single-root reads at 30', () => {
@@ -80,8 +90,9 @@ test('fake connector outputs assemble a tagged dashboard despite a failed store'
     const value = request.store.name === 'lead' || request.key === 'decisions' ? outputs[request.key] : []
     return { ...request, value: structuredClone(value) }
   }
+  outputs.labeled = [...fixture.projects, ...fixture.milestones, ...fixture.artifacts]
   const requests = loader.storeRequests(stores)
-  const reads = await Promise.all(requests.map(execute))
+  const reads = loader.splitLabeled(await Promise.all(requests.map(execute)))
   reads.push(...await Promise.all(loader.workflowRequests(reads).map(execute)))
   const result = loader.assemblePayload({ now: fixture.now, reads,
     sessions: loader.liveSessions(fixture.sessions.map((session) => ({ ...session, state: 'active' }))) })
@@ -90,10 +101,10 @@ test('fake connector outputs assemble a tagged dashboard despite a failed store'
   assert.equal(result.payload.workflowRoots.length, fixture.workflowRoots.length)
   assert.deepEqual(result.payload.seatJobs, [])
   assert.deepEqual(result.payload.refStates, {})
-  assert.equal(result.errors.length, 4)
+  assert.equal(result.errors.length, 2)
   assert.equal(result.payload.artifacts.length, fixture.artifacts.length)
   assert.equal(result.errors.every((error) => /broken.*store unavailable/.test(error)), true)
-  for (const field of Object.keys(outputs)) {
+  for (const field of Object.keys(outputs).filter((key) => key !== 'labeled')) {
     assert.equal(result.payload[field].every((bead) => bead.store ===
       (field === 'decisions' ? '/rigs/decisions' : '/rigs/lead')), true)
   }
@@ -136,8 +147,9 @@ const livePage = (t, page, script) => {
     },
   }
   window.bdRead = async (scope, args) => {
+    if (page_.bdError) throw page_.bdError
     if (args[1] === '/rigs/broken') throw new Error('offline')
-    if (args.includes('city-project')) return [{ ...fixture.projects[0], store: undefined }]
+    if (args.includes('--label-any')) return [{ ...fixture.projects[0], store: undefined }]
     return args.includes('--status') && args.includes('open') ? [fixture.decisions[0]] : []
   }
   window.bdNote = () => ' · store refuses --readonly'
@@ -178,6 +190,34 @@ test('rail rows open the project page and the overview opens as its own tab', as
   assert.deepEqual(Object.keys(opened[0].input), [])
   assert.equal(opened[1].input.id, fixture.projects[0].id)
   assert.equal(typeof opened[1].input.store, 'string')
+})
+
+test('a refresh whose reads did not run keeps the last render, and a revisited workspace shows it at once', async (t) => {
+  const page = livePage(t, 'projects.html', 'projects.js')
+  const { view, document } = page
+  const rows = () => document.querySelectorAll('.projects-nav-row').length
+  await view.load({ workspace })
+  assert.equal(rows(), 1)
+  page.bdError = Object.assign(new Error('bd did not run: capacity'), { reason: 'capacity', transient: true })
+  await view.load({ workspace })
+  assert.equal(rows(), 1)
+  assert.match(document.getElementById('status').textContent, /refresh deferred: .*did not run: capacity/)
+  page.bdError = undefined
+  const other = { ...workspace, id: 'other' }
+  let release
+  const gate = new Promise((resolve) => (release = resolve))
+  const run = page.document.defaultView.host.run
+  page.document.defaultView.host.run = async (...args) => (await gate, run(...args))
+  const pending = view.load({ workspace: other })
+  assert.equal(rows(), 0)
+  assert.equal(document.getElementById('status').textContent, 'Loading…')
+  release()
+  await pending
+  page.document.defaultView.host.run = run
+  const back = view.load({ workspace })
+  assert.equal(rows(), 1)
+  assert.match(document.getElementById('status').textContent, /refreshing…/)
+  await back
 })
 
 test('project page renders the project named in its input, and says so when it is gone', async (t) => {
