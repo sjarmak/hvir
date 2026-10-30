@@ -67,3 +67,12 @@ test('follow-ups group by pull request for this repository, newest first, with t
   assert.deepEqual(follow.chip(seven), { label: 'City: 1 open follow-up', tone: 'warning' })
   assert.equal(follow.chip([seven[0]]), undefined)
 })
+
+test('a follow-up lookup that failed shows on the pull request checklist instead of vanishing', () => {
+  const open = { id: 'om-1', kind: 'ci', status: 'open' }
+  assert.equal(follow.rowPart({ followups: [], error: 'bd did not run: frequency' }), 'follow-ups unavailable')
+  assert.equal(follow.rowPart({ followups: [open] }), 'City: 1 open follow-up')
+  assert.equal(follow.rowPart({ followups: [{ ...open, status: 'closed' }] }), undefined)
+  assert.equal(follow.rowPart({ followups: [], unavailable: 'Connect bd and shell to read city follow-ups.' }), undefined)
+  assert.equal(follow.rowPart(undefined), undefined)
+})

@@ -93,6 +93,9 @@
     }
   }
 
+  const rowPart = (found) =>
+    found?.error ? 'follow-ups unavailable' : chip(found?.followups ?? [])?.label
+
   const api = Object.freeze({
     BEADS,
     LOCATOR,
@@ -103,6 +106,7 @@
     isOpen,
     kindLabel,
     chip,
+    rowPart,
   })
   if (typeof module === 'object') module.exports = api
   else window.cityFollowups = api

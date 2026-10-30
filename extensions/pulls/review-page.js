@@ -336,12 +336,12 @@ window.reviewPage = (() => {
 
   function cityRow() {
     if (cityData.key !== shown?.key) return []
-    const followups = cityData.followups?.followups ?? []
-    if (!cityData.runs.length && !cityData.error && !followups.length) return []
+    const found = cityData.followups
+    if (!cityData.runs.length && !cityData.error && !found?.followups?.length && !found?.error) return []
     const [latest] = cityData.runs
     const parts = [
       latest ? window.cityReviews.chip([latest]).label : cityData.error ? 'unavailable' : '',
-      window.cityFollowups.chip(followups)?.label ?? '',
+      window.cityFollowups.rowPart(found) ?? '',
     ].filter(Boolean)
     return [checklistRow('city', 'City reviews', parts.join(' · ') || 'no review', { mark: '◎' })]
   }
