@@ -58,15 +58,42 @@ test('Gas City has one left-nav entry, shown as a city icon, and no Beads, Needs
   assert.equal((manifest.views ?? []).some((item) => ['beads', 'needs'].includes(item.id)), false)
 })
 
-test('a PR opens in Gas City\'s own pull view, read through the city-pr connector only', () => {
+test('a PR opens a copy of the Pull requests pull view, with the actions it launches', () => {
   const fs = require('node:fs')
   const path = require('node:path')
-  const view = (manifest.views ?? []).find((item) => item.id === 'pull')
-  assert.equal(view?.navigation, undefined)
-  assert.ok(fs.existsSync(path.join(__dirname, '..', view.entry)), `${view.entry} is missing`)
-  const connector = (manifest.connectors ?? []).find((item) => item.id === 'city-pr')
-  assert.equal(connector?.setup.executable, 'city-pr-view')
-  assert.equal(manifest.connectors.some((item) => item.setup?.executable === 'gh'), false)
+  const views = Object.fromEntries((manifest.views ?? []).map((item) => [item.id, item]))
+  assert.equal(views.pull?.entry, 'pr/pull.html')
+  assert.equal(views['pr-actions']?.entry, 'pr/pulls.html')
+  for (const view of [views.pull, views['pr-actions']]) assert.equal(view.navigation, undefined)
+  assert.deepEqual((manifest.actions ?? []).map((item) => [item.id, item.view, item.agents]), [
+    ['checkout-terminal', 'pr-actions', false],
+    ['worktree-terminal', 'pr-actions', false],
+    ['pull-worktree-terminal', 'pr-actions', false],
+  ])
+  assert.equal((manifest.connectors ?? []).some((item) => item.id === 'city-pr'), false)
   const data = fs.readFileSync(path.join(__dirname, '..', 'projects-data.js'), 'utf8')
   assert.match(data, /window\.openOwn\('pull', \{ repo: `\$\{ref\.owner\}\/\$\{ref\.repo\}`, number: ref\.number \}\)/)
+})
+
+test('the copied pull view and its connectors match the Pull requests extension', () => {
+  const fs = require('node:fs')
+  const path = require('node:path')
+  const copy = path.join(__dirname, '..', 'pr')
+  const original = path.join(__dirname, '..', '..', 'pulls')
+  const files = (dir) => fs.readdirSync(dir, { recursive: true }).filter((file) => fs.statSync(path.join(dir, file)).isFile())
+  for (const file of files(copy))
+    assert.ok(fs.readFileSync(path.join(copy, file)).equals(fs.readFileSync(path.join(original, file))), `pr/${file} differs from pulls/${file}`)
+  const references = [
+    [/(?:src|href)="([^"]+)"/g, (file) => file.endsWith('.html')],
+    [/@import\s+['"]([^'"]+)['"]/g, (file) => file.endsWith('.css')],
+  ]
+  for (const [pattern, applies] of references)
+    for (const file of files(copy).filter(applies))
+      for (const [, asset] of fs.readFileSync(path.join(copy, file), 'utf8').matchAll(pattern))
+        assert.ok(fs.existsSync(path.join(copy, path.dirname(file), asset)), `pr/${file} needs ${asset}`)
+  const pulls = require('../../pulls/hvir-extension.json')
+  const withoutSetup = ({ setup, ...rest }) => rest
+  for (const id of ['gh', 'git', 'shell'])
+    assert.deepEqual(withoutSetup(manifest.connectors.find((item) => item.id === id)), withoutSetup(pulls.connectors.find((item) => item.id === id)))
+  assert.ok(manifest.connectors.filter((item) => item.setup).length <= 4, 'hvir allows at most four setup hints')
 })

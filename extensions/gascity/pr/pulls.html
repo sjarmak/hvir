@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Pull requests</title>
+    <link rel="stylesheet" href="presentation.css" />
+    <link rel="stylesheet" href="pulls.css" />
+  </head>
+  <body class="hvir-guest hvir-panel">
+    <main class="hvir-stack">
+      <div class="hvir-toolbar">
+        <strong id="repo">Pull requests</strong>
+        <button id="refresh" class="hvir-button" data-variant="regular" type="button" title="Refresh pull requests">⟳</button>
+      </div>
+      <p id="status" class="hvir-meta" role="status">Connecting…</p>
+      <button id="connect-gh" class="hvir-button" data-variant="regular" type="button" hidden>Connect gh</button>
+      <button id="connect-git" class="hvir-button" data-variant="regular" type="button" hidden>Connect git for This branch</button>
+      <button id="connect-shell" class="hvir-button" data-variant="regular" type="button" hidden>Connect shell to open terminals in worktrees</button>
+      <div id="sections" class="hvir-scroll"></div>
+      <button id="more" class="hvir-button" data-variant="regular" type="button" hidden>Show more pull requests</button>
+    </main>
+    <script src="guest-ui.js"></script>
+    <script src="host.js"></script>
+    <script src="view.js"></script>
+    <script src="business-time.js"></script>
+    <script src="pull-waits.js"></script>
+    <script src="pull-query.js"></script>
+    <script src="pull-parse.js"></script>
+    <script src="pull-stacks.js"></script>
+    <script src="review-store.js"></script>
+    <script src="review-state.js"></script>
+    <script src="city-reviews.js"></script>
+    <script src="city-followups.js"></script>
+    <script src="city-source.js"></script>
+    <script src="pulls-model.js"></script>
+    <script src="pulls-source.js"></script>
+    <script src="pulls.js"></script>
+    <script src="worktrees.js"></script>
+    <script src="worktree-control.js"></script>
+    <script src="actions.js"></script>
+  </body>
+</html>

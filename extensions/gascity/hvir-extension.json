@@ -12,7 +12,12 @@
     "connector.output",
     "contributions.publish"
   ],
-  "optionalCapabilities": ["connector.connect"],
+  "optionalCapabilities": [
+    "connector.connect",
+    "actions.invoke",
+    "terminal.start",
+    "viewer.open-external"
+  ],
   "access": [],
   "views": [
     {
@@ -62,7 +67,14 @@
     {
       "id": "pull",
       "title": "Pull request",
-      "entry": "pull.html",
+      "entry": "pr/pull.html",
+      "placement": "workspace",
+      "representations": ["view"]
+    },
+    {
+      "id": "pr-actions",
+      "title": "Pull request actions",
+      "entry": "pr/pulls.html",
       "placement": "workspace",
       "representations": ["view"]
     }
@@ -115,15 +127,108 @@
       "environment": ["GC_CITY"]
     },
     {
-      "id": "city-pr",
-      "description": "Read one pull request and the city's review record for it. city-pr-view accepts only --repo, --number and --json, and runs only gh pr view and a read-only bead list.",
+      "id": "gh",
+      "description": "Read pull requests, diffs, reviews, checks and your assigned issues with the GitHub CLI (gh). The one write: submitting your review and its line comments, only when you click Submit review.",
       "context": "workspace",
       "setup": {
-        "executable": "city-pr-view"
+        "executable": "gh"
       },
-      "timeoutMs": 60000,
-      "outputBytes": 1048576,
-      "environment": ["GC_CITY", "GH_HOST", "GH_CONFIG_DIR", "PATH"]
+      "timeoutMs": 30000,
+      "outputBytes": 4194304,
+      "environment": ["GH_HOST", "GH_CONFIG_DIR"]
+    },
+    {
+      "id": "git",
+      "description": "Read the current branch and remotes of the workspace checkout so This branch can list its pull request.",
+      "context": "workspace",
+      "timeoutMs": 10000,
+      "outputBytes": 65536,
+      "environment": []
+    },
+    {
+      "id": "shell",
+      "description": "Runs sh to open a terminal in a worktree, creating <repo>.hvir-worktrees/pr-N for a pull request first (after you confirm); keep review progress under ~/.hvir/pulls; find the city store and read city review packages.",
+      "context": "workspace",
+      "timeoutMs": 10000,
+      "outputBytes": 4194304,
+      "environment": []
+    }
+  ],
+  "actions": [
+    {
+      "id": "checkout-terminal",
+      "title": "Check out a pull request in a new terminal",
+      "view": "pr-actions",
+      "agents": false,
+      "effects": {
+        "delete": false,
+        "replace": false
+      },
+      "timeoutMs": 120000,
+      "description": "Runs gh pr checkout <number> -R <repo> once in a new terminal at the workspace root, after you confirm in hvir. Works on the workspace's host, local or SSH, with gh approved for that host.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "repo": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "number": {
+            "type": "number"
+          }
+        },
+        "required": ["repo", "number"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "worktree-terminal",
+      "title": "Open a terminal in a worktree of this repository",
+      "view": "pr-actions",
+      "agents": false,
+      "effects": {
+        "delete": false,
+        "replace": false
+      },
+      "timeoutMs": 120000,
+      "description": "Opens a new terminal in another worktree of this repository, after you confirm in hvir. The path must be listed by git worktree list on the workspace's host.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "required": ["path"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "pull-worktree-terminal",
+      "title": "Open a pull request's branch in a new worktree",
+      "view": "pr-actions",
+      "agents": false,
+      "effects": {
+        "delete": false,
+        "replace": false
+      },
+      "timeoutMs": 120000,
+      "description": "Creates <repo>.hvir-worktrees/pr-<number> beside the workspace on the pull request's branch (git fetch, then git worktree add), or reuses it, and opens a terminal there after you confirm in hvir. Same-repository pull requests only.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "number"
+          },
+          "branch": {
+            "type": "string",
+            "maxLength": 255
+          }
+        },
+        "required": ["number", "branch"],
+        "additionalProperties": false
+      }
     }
   ]
 }
