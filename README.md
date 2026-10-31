@@ -72,6 +72,14 @@ side by side.
 | [![hvir with a Codex terminal maximized across the workbench](docs/screenshots/terminal-focus.png)](docs/screenshots/terminal-focus.png) | [![hvir rendering an interactive HTML page above its originating agent terminal](docs/screenshots/live-html-viewer.png)](docs/screenshots/live-html-viewer.png) |
 | **Terminal focus** | **Live HTML beside the harness** |
 
+## Customize hvir with your agent
+
+Extensions can add views, terminal controls, and actions to hvir. The installed `hvir-agent`
+CLI gives your agent offline guides, a ready-to-run starter, and package validation. No
+hvir checkout or build step needed.
+
+[Extension setup](docs/extension-setup.md) · [Authoring guide](build/native/agent-guides/authoring.md)
+
 ## Feedback and contributions
 
 Found a bug, have an idea, or want to share how you use hvir? Start in
@@ -80,17 +88,6 @@ Found a bug, have an idea, or want to share how you use hvir? Start in
 Public contributions happen through discussion. Maintainers author issues and own
 implementation; outside issues and pull requests aren't accepted. See the
 [contributor guide](CONTRIBUTING.md) for the contribution model and workflow.
-
-## Customize hvir with your agent
-
-Extensions add views, terminal controls, and actions to hvir. The installed `hvir-agent`
-CLI gives your agent offline guides, a ready-to-run starter, and package validation—no
-hvir checkout or build step needed.
-
-> Add a clock to hvir. Start with `hvir-agent guide authoring`, create and validate an
-> extension, then show me how to add it in Settings.
-
-[Extension setup](docs/extension-setup.md) · [Authoring guide](build/native/agent-guides/authoring.md)
 
 ## License
 
