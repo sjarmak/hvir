@@ -172,7 +172,8 @@
     const decisions = openDecisions.filter((ask) => ask.project?.id === project.id)
     const state = meta(project, 'proj.state') || 'unknown'
     const updatedAt = meta(project, 'proj.updated_at') || null
-    const truth = truthApi.truth({ project, milestones: list, running: active.length > 0, now: input.now,
+    const complete = !(input.unread ?? []).some((field) => ['linked', 'decisions'].includes(field))
+    const truth = truthApi.truth({ project, milestones: list, running: active.length > 0, now: input.now, complete,
       linkedBeads: [...(input.linked ?? []), ...(input.decisions ?? []), ...(input.inProgress ?? [])] })
     return {
       ...identity(project),

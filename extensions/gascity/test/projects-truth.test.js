@@ -1,7 +1,7 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { buildDashboard } = require('../projects-model.js')
-const { undated, REMOVED } = require('../projects-truth.js')
+const { undated, REMOVED, UNREAD } = require('../projects-truth.js')
 
 const NOW = '2026-10-31T16:30:00.000Z'
 const project = (meta) => ({ id: 'p', title: 'Project', status: 'open', labels: ['city-project'], store: '/hq',
@@ -69,11 +69,14 @@ test('new task types: an unnamed open decision of hers and a named wait that alr
   const open = ask('dec-q')
   const result = card({ decisions: [open], linked: [work('w-done', 'closed')],
     projects: [project({ 'proj.waiting_on': 'w-done' })] })
+  const undeclared = card({ decisions: [open], projects: [project({})] })
+  assert.deepEqual(undeclared.checks, [])
+  assert.equal(undeclared.needsCount, 1)
   assert.equal(result.needsCount, 1)
   assert.deepEqual(result.checks, ['dec-q waits on Stephanie but the card does not name it',
     'w-done is named as a wait but is closed'])
   const foreign = card({ projects: [project({ 'proj.waiting_on': 'om-elsewhere' })] })
-  assert.deepEqual(foreign.checks, ['om-elsewhere is named as a wait but is not linked to this project'])
+  assert.deepEqual(foreign.checks, ['om-elsewhere is named as a wait but is closed or not linked to this project'])
 })
 
 test('every date on a card carries a reason, and the record write time is not one of them', () => {
@@ -111,4 +114,43 @@ test('fetched time and last verified progress are separate, and a refreshed reco
   assert.equal(touched.verifiedAt, base.verifiedAt)
   assert.equal(touched.fetchedAt, NOW)
   assert.equal(card({ projects: [project({})] }).verifiedAt, null)
+})
+
+test('a needs-you record that does not declare its waits is flagged only when nothing of hers is open', () => {
+  assert.deepEqual(card({ projects: [project({ 'proj.state': 'needs-you' })] }).checks,
+    ['Says it needs you but no decision of hers is open'])
+  assert.deepEqual(card({ decisions: [ask('dec-o')], projects: [project({ 'proj.state': 'needs-you' })] }).checks, [])
+})
+
+test('when linked work or decisions could not be read, waits are not judged and the state says unread', () => {
+  const result = card({ unread: ['linked'], projects: [project({ 'proj.state': 'paused', 'proj.waiting_on': 'w1',
+    'proj.next_milestone': 'p.1' })], milestones: [milestone('p.1', '2026-10-30')] })
+  assert.equal(result.derivedState, 'unread')
+  assert.deepEqual(result.checks, ['Milestone p.1 is active and its due date 2026-10-30 has passed', UNREAD])
+  assert.equal(card({ unread: ['artifacts'], projects: [project({})] }).derivedState, 'no-linked-work')
+})
+
+test('open linked work with nothing running is queued, not moving', () => {
+  assert.equal(card({ linked: [work('w1', 'open')], projects: [project({})] }).derivedState, 'queued')
+  assert.equal(card({ linked: [work('w1', 'blocked')], projects: [project({})] }).derivedState, 'waiting')
+})
+
+test('a stated wait on her with no decision of hers is not an open wait', () => {
+  const result = card({ linked: [work('w1', 'open')], projects: [project({ 'proj.waiting_on': 'stephanie' })] })
+  assert.equal(result.derivedState, 'queued')
+  assert.equal(result.waitingOn[0].open, false)
+})
+
+test('non-string metadata does not break the card', () => {
+  const result = card({ projects: [project({ 'proj.waiting_on': 42, 'proj.now': 7 })] })
+  assert.deepEqual(result.checks, ['42 is named as a wait but is closed or not linked to this project'])
+  assert.equal(result.now, '7')
+})
+
+test('the date filter covers zone words and month names but leaves ids, versions and ratios', () => {
+  assert.equal(undated('17:38 UTC, 2026-10-31 16:30 UTC, Oct 31, by Nov 3rd, October 30, 2026'),
+    Array(5).fill(REMOVED).join(', ').replace(`${REMOVED}, ${REMOVED}, ${REMOVED}, ${REMOVED}, ${REMOVED}`,
+      `${REMOVED}, ${REMOVED}, ${REMOVED}, by ${REMOVED}, ${REMOVED}`))
+  assert.equal(undated('run-2026-10-31-abc, om-2026-10-31, sha 2026abc, 3/5 tests, 10:30 ok'),
+    'run-2026-10-31-abc, om-2026-10-31, sha 2026abc, 3/5 tests, 10:30 ok')
 })

@@ -124,13 +124,14 @@
   }
 
   const assemblePayload = ({ now, reads, sessions = [], errors = [] }) => {
-    const payload = { now, sessions, seatJobs: [], refStates: {} }
+    const payload = { now, sessions, seatJobs: [], refStates: {}, unread: [] }
     const failures = [...errors]
     for (const field of fields) {
       const beads = new Map()
       for (const read of reads.filter((entry) => entry.key === field)) {
         if (read.error) {
           failures.push(`${read.store.name} (${read.store.path}) ${field}: ${read.error}`)
+          if (!payload.unread.includes(field)) payload.unread.push(field)
           continue
         }
         for (const bead of read.value) {
