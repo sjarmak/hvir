@@ -166,3 +166,24 @@ test('a record that does not declare its waits, or whose links failed to read, i
   assert.equal(card({ unread: ['decisions'], projects: [project({ 'proj.waiting_on': '' })] }).waitsVerified, false)
   assert.equal(card({ projects: [project({ 'proj.waiting_on': '' })] }).waitsVerified, true)
 })
+
+test('none declares that the project waits on nothing, the same as the city writer stores it', () => {
+  const result = card({ linked: [work('w1', 'open')], projects: [project({ 'proj.waiting_on': 'none' })] })
+  assert.equal(result.waitsVerified, true)
+  assert.deepEqual(result.waitingOn, [])
+  assert.deepEqual(result.checks, [])
+  const paused = card({ projects: [project({ 'proj.state': 'paused', 'proj.waiting_on': 'None' })], linked: [] })
+  assert.deepEqual(paused.checks, ['Says paused but names nothing it waits on'])
+  const mixed = card({ linked: [work('w1', 'blocked')], projects: [project({ 'proj.waiting_on': 'none w1' })] })
+  assert.deepEqual(mixed.checks, ['Names none together with other waits'])
+  const asked = card({ decisions: [ask('dec-q')], projects: [project({ 'proj.waiting_on': 'none' })] })
+  assert.deepEqual(asked.checks, ['dec-q waits on Stephanie but the card does not name it'])
+})
+
+test('her name and bead ids in a wait match in any case, as the city reads them', () => {
+  const herStep = ask('dec-d', { 'gc.answered': '2026-10-31', 'gc.waiting_on': 'stephanie', 'gc.her_step': 'Click Connect.' })
+  const result = card({ decisions: [herStep], linked: [work('w1', 'blocked')],
+    projects: [project({ 'proj.state': 'needs-you', 'proj.waiting_on': 'Stephanie DEC-D W1' })] })
+  assert.deepEqual(result.checks, [])
+  assert.deepEqual(result.waitingOn.map((entry) => entry.id), ['stephanie', 'dec-d', 'w1'])
+})

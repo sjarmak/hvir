@@ -1,5 +1,6 @@
 ;(() => {
   const HER = 'stephanie'
+  const NO_WAITS = 'none'
   const DOT = 'pip'
   const NEEDS_LABEL = 'needs/stephanie'
   const LINK_KEYS = ['proj.id', 'gc.project']
@@ -27,7 +28,9 @@
     (!answered(bead) || meta(bead, 'gc.waiting_on') === HER)
   const inDelivery = (bead) => bead.status === 'open' && isAsk(bead) && answered(bead) && !waitsOnHer(bead)
   const undated = (value) => String(value ?? '').replace(DATE, REMOVED)
-  const named = (project) => meta(project, 'proj.waiting_on').split(SPLIT).filter(Boolean)
+  const tokens = (project) => meta(project, 'proj.waiting_on').toLowerCase().split(SPLIT).filter(Boolean)
+  const named = (project) => tokens(project).filter((token) => token !== NO_WAITS)
+  const mixesNone = (project) => tokens(project).includes(NO_WAITS) && tokens(project).length > 1
   const owner = (bead) => bead.assignee || meta(bead, 'gc.waiting_on') || meta(bead, 'gc.owner') ||
     meta(bead, 'gc.routed_to') || ''
 
@@ -41,7 +44,7 @@
   }
 
   const wait = (token, linked) => {
-    if (token.toLowerCase() === HER) return { id: HER, kind: 'her', open: true, owner: HER, until: '' }
+    if (token === HER) return { id: HER, kind: 'her', open: true, owner: HER, until: '' }
     const bead = linked.find((entry) => entry.id === token)
     if (!bead) return { id: token, kind: 'not-linked', open: false, owner: '', until: '' }
     const until = meta(bead, 'gc.paused_until') || bead.defer_until || ''
@@ -85,7 +88,7 @@
     ]
   }
 
-  const checks = ({ claimed, pending, waits, milestones, declared, complete }) => {
+  const checks = ({ claimed, pending, waits, milestones, declared, mixed, complete }) => {
     if (claimed === 'done') return []
     const overdue = milestones.filter((entry) => entry.overdue)
       .map((entry) => `Milestone ${entry.id} is ${entry.state} and its due date ${entry.target} has passed`)
@@ -93,6 +96,7 @@
     return [
       ...overdue,
       declared && ['paused', 'stuck'].includes(claimed) && !waits.length && `Says ${claimed} but names nothing it waits on`,
+      declared && mixed && 'Names none together with other waits',
       waits.some((entry) => entry.kind === 'her') && !pending.length && 'Says it waits on Stephanie but no decision of hers is linked',
       !declared && claimed === 'needs-you' && !pending.length && 'Says it needs you but no decision of hers is open',
       ...(declared ? waitsNamed({ claimed, pending, waits }) : []),
@@ -129,7 +133,7 @@
       actionOwner: actionOwner(pending, waits, meta(project, 'proj.lead') || 'Unknown lead'),
       milestoneList: dated,
       next: next ?? null,
-      checks: checks({ claimed, pending, waits, milestones: dated, declared, complete }),
+      checks: checks({ claimed, pending, waits, milestones: dated, declared, mixed: mixesNone(project), complete }),
       fetchedAt: now,
       verifiedAt,
       dates: dates({ next, waits, verifiedAt, fetchedAt: now }),
