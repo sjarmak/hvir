@@ -188,6 +188,7 @@
       actionOwner: truth.actionOwner,
       waitingOn: truth.waitingOn,
       waitsVerified: truth.waitsVerified,
+      waitsUnread: truth.waitsUnread,
       checks: truth.checks,
       fetchedAt: truth.fetchedAt,
       verifiedAt: truth.verifiedAt,

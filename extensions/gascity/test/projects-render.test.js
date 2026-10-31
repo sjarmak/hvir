@@ -295,3 +295,32 @@ test('a claimed state with no first-claim time says since unknown', (t) => {
   assert.match(live.textContent, /^Live · since unknown · checked unknown · hvir reload$/)
   assert.doesNotMatch(root.textContent, /null|false|undefined/)
 })
+
+test('the unverified waits marker shows on face, page, glance and nav until the record declares its waits', (t) => {
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  const { window } = dom
+  window.Date.now = () => Date.parse(fixture.now)
+  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const root = window.document.querySelector('main')
+  const build = (meta, extra = {}) => {
+    const input = structuredClone(fixture)
+    const target = input.projects.find((entry) => entry.id === 'fx-project-1')
+    target.metadata = { ...target.metadata, ...meta }
+    return buildDashboard({ ...input, ...extra }).cards.flatMap((group) => group.cards).find((entry) => entry.id === 'fx-project-1')
+  }
+  const undeclared = build({})
+  window.projectsRender.renderProject(undeclared, root, {})
+  assert.match(root.querySelector('.projects-unverified').textContent, /does not declare what it waits on/)
+  assert.ok([...root.querySelectorAll('.projects-tile')].some((node) => /Waits\s*unverified/.test(node.textContent)))
+  window.projectsRender.renderProject(build({ 'proj.waiting_on': '' }, { unread: ['linked'] }), root, {})
+  assert.match(root.querySelector('.projects-unverified').textContent, /could not be read/)
+  const declared = build({ 'proj.waiting_on': '' })
+  window.projectsRender.renderProject(declared, root, {})
+  assert.equal(root.querySelector('.projects-unverified'), null)
+  window.projectsRender.renderDashboard({ ...buildDashboard(structuredClone(fixture)), cards: [{ name: 'g', cards: [declared] }] }, root, {})
+  assert.equal(root.querySelector('.projects-unverified'), null)
+  window.projectsRender.renderNav({ ...buildDashboard(structuredClone(fixture)), cards: [{ name: 'g', cards: [undeclared, declared] }] }, root, {})
+  const rows = [...root.querySelectorAll('.projects-nav-row')].map((node) => node.textContent)
+  assert.equal(rows.filter((text) => /waits unverified/.test(text)).length, 1)
+})

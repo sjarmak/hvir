@@ -112,11 +112,16 @@
     return node
   }
 
-  const renderWaits = (card) => !card.waitsVerified
-    ? paragraph('Waits: unverified, the record does not declare what it waits on', 'projects-warning projects-unverified')
-    : card.waitingOn.length > 0 && paragraph(`Waits on: ${card.waitingOn.map((entry) =>
-    `${entry.id} (${[WAIT_LABELS[entry.kind], entry.status, entry.owner && entry.kind === 'work' && entry.owner]
-      .filter(Boolean).join(', ')})`).join('; ')}`, 'hvir-meta')
+  const unverified = (card) => card.waitsUnread
+    ? 'Waits: unverified, linked work or decisions could not be read'
+    : 'Waits: unverified, the record does not declare what it waits on'
+
+  const renderWaits = (card) => {
+    if (!card.waitsVerified) return paragraph(unverified(card), 'projects-warning projects-unverified')
+    return card.waitingOn.length > 0 && paragraph(`Waits on: ${card.waitingOn.map((entry) =>
+      `${entry.id} (${[WAIT_LABELS[entry.kind], entry.status, entry.owner && entry.kind === 'work' && entry.owner]
+        .filter(Boolean).join(', ')})`).join('; ')}`, 'hvir-meta')
+  }
 
   const renderChecks = (card) => card.checks.map((check) => paragraph(check, 'projects-warning projects-check'))
 
@@ -183,6 +188,7 @@
   const glance = (card) => el('div', { className: 'projects-glance' },
     tile('State', chip(card.derivedState)),
     tile('Action', card.actionOwner.name),
+    tile('Waits', card.waitsVerified ? card.waitingOn.map((entry) => entry.id).join(', ') || 'none' : 'unverified'),
     tile('Lead', card.lead),
     tile('Milestones', `${card.milestones.done}/${card.milestones.total}`),
     tile('Needs you', String(card.needsCount)),
@@ -236,7 +242,7 @@
   const navRow = (card, options) => {
     const needs = card.needsCount === 1 ? '1 needs you' : card.needsCount > 1 ? `${card.needsCount} need you` : ''
     const meta = [needs, `${card.milestones.done}/${card.milestones.total} milestones`,
-      card.checks.length > 0 && 'record needs a fix'].filter(Boolean).join(' · ')
+      card.checks.length > 0 && 'record needs a fix', !card.waitsVerified && 'waits unverified'].filter(Boolean).join(' · ')
     const row = el('button', { type: 'button', className: 'projects-nav-row', title: card.id },
       el('span', { className: 'projects-nav-title' }, card.title), chip(card.derivedState), text(meta, 'hvir-meta'))
     row.addEventListener('click', () => options.onOpenProject?.(card.id, card.store))

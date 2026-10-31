@@ -125,6 +125,7 @@
       needsCount: pending.length,
       waitingOn: waits,
       waitsVerified: declared && complete,
+      waitsUnread: !complete,
       actionOwner: actionOwner(pending, waits, meta(project, 'proj.lead') || 'Unknown lead'),
       milestoneList: dated,
       next: next ?? null,
