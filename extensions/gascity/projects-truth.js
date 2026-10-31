@@ -124,6 +124,7 @@
       derivedState: derivedState(claimed, pending, waits, linked, running, complete),
       needsCount: pending.length,
       waitingOn: waits,
+      waitsVerified: declared && complete,
       actionOwner: actionOwner(pending, waits, meta(project, 'proj.lead') || 'Unknown lead'),
       milestoneList: dated,
       next: next ?? null,

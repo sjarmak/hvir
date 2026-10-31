@@ -187,6 +187,7 @@
       derivedState: truth.derivedState,
       actionOwner: truth.actionOwner,
       waitingOn: truth.waitingOn,
+      waitsVerified: truth.waitsVerified,
       checks: truth.checks,
       fetchedAt: truth.fetchedAt,
       verifiedAt: truth.verifiedAt,

@@ -158,3 +158,11 @@ test('the date filter covers zone words, offsets and month names but leaves ids,
   assert.equal(undated('Decision 2 is blocked, Marketplace 3, Mayor 1, Janet 3'),
     'Decision 2 is blocked, Marketplace 3, Mayor 1, Janet 3')
 })
+
+test('a record that does not declare its waits, or whose links failed to read, is never shown as verified clean', () => {
+  const undeclared = card({ projects: [project({})] })
+  assert.deepEqual(undeclared.checks, [])
+  assert.equal(undeclared.waitsVerified, false)
+  assert.equal(card({ unread: ['decisions'], projects: [project({ 'proj.waiting_on': '' })] }).waitsVerified, false)
+  assert.equal(card({ projects: [project({ 'proj.waiting_on': '' })] }).waitsVerified, true)
+})

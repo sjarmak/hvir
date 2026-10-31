@@ -41,6 +41,7 @@ test('renderer shows fixture cards, needs, unlinked activity and readable work t
   assert.equal(face.querySelector('progress').max, 2)
   assert.doesNotMatch(root.textContent, /not updated in 24h|Updated 2026/)
   assert.match(face.querySelector('.projects-times').textContent, /^Fetched \S+ ago · /)
+  assert.match(face.querySelector('.projects-unverified').textContent, /^Waits: unverified/)
   assert.match(root.textContent, /fx-review-account/)
 })
 

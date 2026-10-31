@@ -112,7 +112,9 @@
     return node
   }
 
-  const renderWaits = (card) => card.waitingOn.length > 0 && paragraph(`Waits on: ${card.waitingOn.map((entry) =>
+  const renderWaits = (card) => !card.waitsVerified
+    ? paragraph('Waits: unverified, the record does not declare what it waits on', 'projects-warning projects-unverified')
+    : card.waitingOn.length > 0 && paragraph(`Waits on: ${card.waitingOn.map((entry) =>
     `${entry.id} (${[WAIT_LABELS[entry.kind], entry.status, entry.owner && entry.kind === 'work' && entry.owner]
       .filter(Boolean).join(', ')})`).join('; ')}`, 'hvir-meta')
 
