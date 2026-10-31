@@ -31,13 +31,14 @@ test('argument builders use explicit store scope and unlimited flat JSON lists',
 test('store plan reads workspace HQ once, skips suspended rigs, and uses both decision queries', () => {
   assert.deepEqual(stores.map((store) => store.path), ['/city', '/rigs/lead', '/rigs/decisions', '/rigs/broken'])
   const requests = loader.storeRequests(stores)
-  assert.equal(requests.length, 18)
+  assert.equal(requests.length, 26)
+  assert.equal(requests.filter((request) => request.key === 'linked').length, 8)
   assert.equal(requests.filter((request) => request.key === 'artifacts').length, 4)
   assert.equal(requests.some((request) => request.args.includes('/rigs/paused')), false)
   const decisions = requests.filter((request) => request.key === 'decisions')
   assert.deepEqual(decisions[0].args, require('../needs-model.js').askArgs('/rigs/decisions'))
   assert.deepEqual(decisions[1].args, loader.decisionArgs('/rigs/decisions'))
-  assert.equal(loader.storeRequests([stores[0]]).length, 4)
+  assert.equal(loader.storeRequests([stores[0]]).length, 6)
 })
 
 test('workflow plans deduplicate roots within each store and cap single-root reads at 30', () => {
@@ -73,7 +74,7 @@ test('live sessions preserve model, account, start and agent fields across gc sh
 test('fake connector outputs assemble a tagged dashboard despite a failed store', async () => {
   const outputs = {
     projects: fixture.projects, milestones: fixture.milestones, artifacts: fixture.artifacts, inProgress: fixture.inProgress,
-    decisions: fixture.decisions, workflowRoots: fixture.workflowRoots, workflowSteps: fixture.workflowSteps,
+    decisions: fixture.decisions, workflowRoots: fixture.workflowRoots, workflowSteps: fixture.workflowSteps, linked: [],
   }
   const execute = async (request) => {
     if (request.store.name === 'broken') return { ...request, error: 'store unavailable' }
@@ -90,7 +91,7 @@ test('fake connector outputs assemble a tagged dashboard despite a failed store'
   assert.equal(result.payload.workflowRoots.length, fixture.workflowRoots.length)
   assert.deepEqual(result.payload.seatJobs, [])
   assert.deepEqual(result.payload.refStates, {})
-  assert.equal(result.errors.length, 4)
+  assert.equal(result.errors.length, 6)
   assert.equal(result.payload.artifacts.length, fixture.artifacts.length)
   assert.equal(result.errors.every((error) => /broken.*store unavailable/.test(error)), true)
   for (const field of Object.keys(outputs)) {
@@ -122,7 +123,7 @@ const livePage = (t, page, script) => {
   const dom = new JSDOM(readFileSync(`${__dirname}/../${page}`, 'utf8'), { runScripts: 'outside-only' })
   t.after(() => dom.window.close())
   const { window } = dom
-  for (const file of ['view', 'crew-parse', 'needs-model', 'projects-load', 'projects-model', 'projects-render', 'projects-data']) {
+  for (const file of ['view', 'crew-parse', 'needs-model', 'projects-load', 'projects-truth', 'projects-model', 'projects-render', 'projects-data']) {
     window.eval(readFileSync(`${__dirname}/../${file}.js`, 'utf8'))
   }
   const page_ = { view: undefined, opened: [], connected: [], bd: 'supported', document: window.document }

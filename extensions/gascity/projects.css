@@ -88,6 +88,8 @@
   background: var(--success-surface);
 }
 .projects-chip[data-state='paused'],
+.projects-chip[data-state='waiting'],
+.projects-chip[data-state='no-linked-work'],
 .projects-chip[data-state='dropped'] {
   color: var(--inactive-text);
   background: var(--inactive-surface);

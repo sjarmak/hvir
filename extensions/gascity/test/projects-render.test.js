@@ -39,7 +39,8 @@ test('renderer shows fixture cards, needs, unlinked activity and readable work t
   assert.equal(face.querySelector('.projects-chip').dataset.state, 'moving')
   assert.equal(face.querySelector('progress').value, 1)
   assert.equal(face.querySelector('progress').max, 2)
-  assert.equal(root.textContent.match(/not updated in 24h/g).length, 1)
+  assert.doesNotMatch(root.textContent, /not updated in 24h|Updated 2026/)
+  assert.match(face.querySelector('.projects-times').textContent, /^Fetched \S+ ago · /)
   assert.match(root.textContent, /fx-review-account/)
 })
 
