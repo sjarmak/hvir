@@ -53,6 +53,21 @@ test('workflow plans deduplicate roots within each store and cap single-root rea
   const result = loader.assemblePayload({ now: fixture.now, reads })
   assert.match(result.errors.join(' '), /lead: workflow reads limited to 30 roots/)
   assert.match(result.errors.join(' '), /broken.*offline/)
+  assert.deepEqual(result.payload.unread, ['inProgress'])
+})
+
+test('a failed linked or decisions read is listed once in unread and the cards stop judging waits', () => {
+  const reads = [{ key: 'linked', store: stores[0], error: 'down' }, { key: 'linked', store: stores[1], error: 'down' },
+    { key: 'decisions', store: stores[2], error: 'down' }, read('projects', [])]
+  const { payload } = loader.assemblePayload({ now: fixture.now, reads })
+  assert.deepEqual(payload.unread, ['decisions', 'linked'])
+  for (const field of ['linked', 'decisions']) {
+    const model = buildDashboard({ now: fixture.now, sessions: [], unread: [field],
+      projects: [{ id: 'p', title: 'P', status: 'open', labels: ['city-project'], store: '/city',
+        metadata: { 'proj.lead': 'lead', 'proj.state': 'paused', 'proj.waiting_on': '' } }] })
+    const card = model.cards.flatMap((group) => group.cards)[0]
+    assert.equal(card.derivedState, 'unread', field)
+  }
 })
 
 test('live sessions preserve model, account, start and agent fields across gc shapes', () => {

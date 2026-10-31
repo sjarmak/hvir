@@ -5,11 +5,13 @@
   const LINK_KEYS = ['proj.id', 'gc.project']
   const SPLIT = /[\s,;+()]+/
   const ZONE = '(?:Z|\\s?(?:UTC|GMT))'
-  const MONTH = '(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\\.?'
+  const MONTH = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|' +
+    'Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\.?'
   const DATE = new RegExp([
-    `(?<![\\w-])\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d+)?)?${ZONE}?)?(?![\\w-])`,
+    `(?<![\\w-])\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d+)?)?(?:${ZONE}|[+-]\\d{2}:?\\d{2})?)?(?:\\s(?:UTC|GMT))?(?![\\w-])`,
     `(?<![\\w:-])\\d{1,2}:\\d{2}(?::\\d{2})?${ZONE}(?![\\w-])`,
     `\\b${MONTH}\\s+\\d{1,2}(?:st|nd|rd|th)?\\b(?:,?\\s+\\d{4}\\b)?`,
+    `\\b${MONTH}\\s+\\d{4}\\b`,
   ].join('|'), 'g')
   const REMOVED = '[date removed]'
   const OPEN = new Set(['open', 'in_progress', 'blocked', 'deferred', 'hooked'])
@@ -90,7 +92,7 @@
     if (!complete) return [...overdue, UNREAD]
     return [
       ...overdue,
-      ['paused', 'stuck'].includes(claimed) && !waits.length && `Says ${claimed} but names nothing it waits on`,
+      declared && ['paused', 'stuck'].includes(claimed) && !waits.length && `Says ${claimed} but names nothing it waits on`,
       waits.some((entry) => entry.kind === 'her') && !pending.length && 'Says it waits on Stephanie but no decision of hers is linked',
       !declared && claimed === 'needs-you' && !pending.length && 'Says it needs you but no decision of hers is open',
       ...(declared ? waitsNamed({ claimed, pending, waits }) : []),

@@ -15,7 +15,7 @@ const ask = (id, meta = {}) => ({ id, title: id, status: 'open', store: '/decisi
 const card = (input) => buildDashboard({ now: NOW, sessions: [], ...input }).cards.flatMap((group) => group.cards)[0]
 
 test('other-city faults: open milestones past their due date are flagged and the wait must be named', () => {
-  const result = card({ projects: [project({ 'proj.state': 'stuck', 'proj.next_milestone': 'p.1' })],
+  const result = card({ projects: [project({ 'proj.state': 'stuck', 'proj.next_milestone': 'p.1', 'proj.waiting_on': '' })],
     milestones: [milestone('p.1', '2026-10-30'), milestone('p.2', '2026-10-31')],
     linked: [work('w1', 'deferred'), work('w2', 'deferred')] })
   assert.deepEqual(result.checks, ['Milestone p.1 is active and its due date 2026-10-30 has passed',
@@ -26,8 +26,9 @@ test('other-city faults: open milestones past their due date are flagged and the
 })
 
 test('review pipeline: a paused record with only closed work derives no linked work, not paused', () => {
-  const result = card({ projects: [project({ 'proj.state': 'paused', 'proj.next_milestone': 'p.3' })],
+  const result = card({ projects: [project({ 'proj.state': 'paused', 'proj.next_milestone': 'p.3', 'proj.waiting_on': '' })],
     milestones: [milestone('p.3', '2026-10-30', 'planned')], linked: [] })
+  assert.deepEqual(card({ projects: [project({ 'proj.state': 'paused' })] }).checks, [])
   assert.equal(result.derivedState, 'no-linked-work')
   assert.equal(result.state, 'paused')
   assert.deepEqual(result.checks, ['Milestone p.3 is planned and its due date 2026-10-30 has passed',
@@ -147,10 +148,13 @@ test('non-string metadata does not break the card', () => {
   assert.equal(result.now, '7')
 })
 
-test('the date filter covers zone words and month names but leaves ids, versions and ratios', () => {
-  assert.equal(undated('17:38 UTC, 2026-10-31 16:30 UTC, Oct 31, by Nov 3rd, October 30, 2026'),
-    Array(5).fill(REMOVED).join(', ').replace(`${REMOVED}, ${REMOVED}, ${REMOVED}, ${REMOVED}, ${REMOVED}`,
-      `${REMOVED}, ${REMOVED}, ${REMOVED}, by ${REMOVED}, ${REMOVED}`))
+test('the date filter covers zone words, offsets and month names but leaves ids, words, versions and ratios', () => {
+  const R = REMOVED
+  assert.equal(undated('17:38 UTC, 2026-10-31 16:30 UTC, 2026-10-31 UTC, 2026-10-31T10:00+02:00, Oct 31, by Nov 3rd'),
+    `${R}, ${R}, ${R}, ${R}, ${R}, by ${R}`)
+  assert.equal(undated('October 30, 2026, Sept 2026, May 3'), `${R}, ${R}, ${R}`)
   assert.equal(undated('run-2026-10-31-abc, om-2026-10-31, sha 2026abc, 3/5 tests, 10:30 ok'),
     'run-2026-10-31-abc, om-2026-10-31, sha 2026abc, 3/5 tests, 10:30 ok')
+  assert.equal(undated('Decision 2 is blocked, Marketplace 3, Mayor 1, Janet 3'),
+    'Decision 2 is blocked, Marketplace 3, Mayor 1, Janet 3')
 })
