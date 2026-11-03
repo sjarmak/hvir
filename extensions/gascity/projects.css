@@ -190,6 +190,15 @@
 .projects-nav-title {
   color: var(--text-strong);
 }
+.projects-archive summary {
+  cursor: pointer;
+  color: var(--text-strong);
+}
+.projects-archive ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
 .projects-page {
   max-width: 1200px;
   font-size: calc(14px * var(--hvir-interface-scale));

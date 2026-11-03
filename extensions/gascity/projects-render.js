@@ -179,8 +179,9 @@
       section('Active now', el('div', { className: 'projects-active-grid' }, ...activeGroups),
         !activeGroups.length && paragraph('No active agents', 'hvir-meta'),
         options.seatJobsUnavailable && paragraph('Seat jobs not shown yet', 'hvir-meta')),
-      ...model.cards.map((group) => section(group.lead,
-        el('div', { className: 'projects-grid' }, ...group.cards.map((card) => renderCard(card, options))))))
+      ...liveGroups(model).map((group) => section(group.lead,
+        el('div', { className: 'projects-grid' }, ...group.cards.map((card) => renderCard(card, options))))),
+      ...archive(model, options))
   }
 
   const tile = (label, value) => el('div', { className: 'projects-tile' }, text(label, 'hvir-meta'), el('strong', {}, value))
@@ -239,14 +240,27 @@
             text(bead.assignee && ` · ${bead.assignee}`, 'hvir-meta'))), 'Nothing in progress')))))
   }
 
-  const navRow = (card, options) => {
+  const navRow = (card, options, withLead = false) => {
     const needs = card.needsCount === 1 ? '1 needs you' : card.needsCount > 1 ? `${card.needsCount} need you` : ''
-    const meta = [needs, `${card.milestones.done}/${card.milestones.total} milestones`,
+    const meta = [withLead && card.lead, needs, `${card.milestones.done}/${card.milestones.total} milestones`,
       card.checks.length > 0 && 'record needs a fix', !card.waitsVerified && 'waits unverified'].filter(Boolean).join(' · ')
     const row = el('button', { type: 'button', className: 'projects-nav-row', title: card.id },
       el('span', { className: 'projects-nav-title' }, card.title), chip(card.derivedState), text(meta, 'hvir-meta'))
     row.addEventListener('click', () => options.onOpenProject?.(card.id, card.store))
     return el('li', {}, row)
+  }
+
+  const isDone = (card) => card.derivedState === 'done'
+
+  const liveGroups = (model) => model.cards
+    .map((group) => ({ ...group, cards: group.cards.filter((card) => !isDone(card)) }))
+    .filter((group) => group.cards.length > 0)
+
+  const archive = (model, options) => {
+    const done = model.cards.flatMap((group) => group.cards).filter(isDone)
+    return done.length === 0 ? [] : [el('details', { className: 'projects-archive' },
+      el('summary', {}, `Done projects (${done.length})`),
+      el('ul', {}, ...done.map((card) => navRow(card, options, true))))]
   }
 
   const renderNav = (model, root, options = {}) => {
@@ -257,7 +271,8 @@
       paragraph(`${model.needsYou.length} need you · ${model.inDelivery.length} answered, waiting on agents`, 'projects-nav-counts'),
       overview,
       section('Needs you', list(model.needsYou.map((ask) => renderAsk(ask, options, true)), 'Nothing needs you')),
-      ...model.cards.map((group) => section(group.lead, el('ul', {}, ...group.cards.map((card) => navRow(card, options))))))
+      ...liveGroups(model).map((group) => section(group.lead, el('ul', {}, ...group.cards.map((card) => navRow(card, options))))),
+      ...archive(model, options))
   }
 
   window.projectsRender = Object.freeze({ renderDashboard, renderNav, renderProject })
