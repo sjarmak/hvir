@@ -370,3 +370,19 @@ test('the rail lists done projects only inside its closed archive', (t) => {
   assert.ok(outside.every((node) => !/Compass handoff/.test(node.textContent)))
   assert.match(archive.textContent, /Compass handoff/)
 })
+
+test('an archive she opened stays open when the minute refresh re-renders the view', (t) => {
+  const { dom, window, root, model } = preview()
+  t.after(() => dom.window.close())
+  root.querySelector('.projects-archive').open = true
+  window.projectsRender.renderDashboard(model, root)
+  assert.equal(root.querySelector('.projects-archive').open, true)
+  root.querySelector('.projects-archive').open = false
+  window.projectsRender.renderDashboard(model, root)
+  assert.equal(root.querySelector('.projects-archive').open, false)
+  const rail = window.document.createElement('nav')
+  window.projectsRender.renderNav(model, rail)
+  rail.querySelector('.projects-archive').open = true
+  window.projectsRender.renderNav(model, rail)
+  assert.equal(rail.querySelector('.projects-archive').open, true)
+})

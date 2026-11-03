@@ -181,7 +181,7 @@
         options.seatJobsUnavailable && paragraph('Seat jobs not shown yet', 'hvir-meta')),
       ...liveGroups(model).map((group) => section(group.lead,
         el('div', { className: 'projects-grid' }, ...group.cards.map((card) => renderCard(card, options))))),
-      ...archive(model, options))
+      ...archive(model, options, root))
   }
 
   const tile = (label, value) => el('div', { className: 'projects-tile' }, text(label, 'hvir-meta'), el('strong', {}, value))
@@ -256,11 +256,14 @@
     .map((group) => ({ ...group, cards: group.cards.filter((card) => !isDone(card)) }))
     .filter((group) => group.cards.length > 0)
 
-  const archive = (model, options) => {
+  const archive = (model, options, root) => {
     const done = model.cards.flatMap((group) => group.cards).filter(isDone)
-    return done.length === 0 ? [] : [el('details', { className: 'projects-archive' },
+    if (done.length === 0) return []
+    const node = el('details', { className: 'projects-archive' },
       el('summary', {}, `Done projects (${done.length})`),
-      el('ul', {}, ...done.map((card) => navRow(card, options, true))))]
+      el('ul', {}, ...done.map((card) => navRow(card, options, true))))
+    node.open = root.querySelector(':scope > .projects-archive')?.open === true
+    return [node]
   }
 
   const renderNav = (model, root, options = {}) => {
@@ -272,7 +275,7 @@
       overview,
       section('Needs you', list(model.needsYou.map((ask) => renderAsk(ask, options, true)), 'Nothing needs you')),
       ...liveGroups(model).map((group) => section(group.lead, el('ul', {}, ...group.cards.map((card) => navRow(card, options))))),
-      ...archive(model, options))
+      ...archive(model, options, root))
   }
 
   window.projectsRender = Object.freeze({ renderDashboard, renderNav, renderProject })
