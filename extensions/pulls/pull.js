@@ -18,6 +18,7 @@ const ui = Object.fromEntries(
     'url',
     'status',
     'checkout',
+    'new-worktree',
     'checkout-note',
     'checkout-status',
     'commits-section',
@@ -61,6 +62,7 @@ const VIEW_FIELDS = [
   'statusCheckRollup',
   'commits',
   'isCrossRepository',
+  'headRefOid',
 ].join(',')
 /** Check runs report `conclusion`; legacy status contexts report `state`. */
 const checkResult = (check) =>
@@ -115,8 +117,9 @@ function renderReviews(pull) {
 }
 
 /** Review threads come from a second, optional query; its failure is a note, not a blank view. */
-function renderThreads(detail) {
+function renderThreads(detail, repo) {
   if (detail.error) {
+    window.feedbackView.reset()
     ui['threads-heading'].textContent =
       `Review threads · unavailable: ${detail.error.message}`
     fill('threads-section', 'threads', [])
@@ -141,16 +144,19 @@ function renderThreads(detail) {
         .filter(Boolean)
         .join(' · ')
       const where = `${thread.path ?? 'location unknown'}${thread.line ? `:${thread.line}` : ''}`
-      return line(
+      const item = line(
         where,
         `${state}${first?.author ? ` · @${first.author.login}` : ''}`,
         first?.body ?? '',
       )
+      item.firstChild.prepend(window.feedbackView.checkbox(thread), ' ')
+      return item
     }),
   )
+  window.feedbackView.update(detail.value?.data?.repository?.pullRequest, repo, () => renderThreads(detail, repo))
 }
 
-function render(pull, detail) {
+function render(pull, detail, repo) {
   document.title = `#${pull.number}`
   ui.title.textContent = `#${pull.number} ${pull.title}`
   ui.meta.textContent = [
@@ -162,10 +168,14 @@ function render(pull, detail) {
   ]
     .filter(Boolean)
     .join(' · ')
-  ui.url.replaceChildren(pull.url, ' ', window.githubLink(pull.url, (text) => (ui.status.textContent = text)) ?? '')
+  ui.url.replaceChildren(
+    pull.url,
+    ' ',
+    window.githubLink(pull.url, (text) => (ui.status.textContent = text)) ?? '',
+  )
   renderChecks(pull.statusCheckRollup ?? [])
   renderReviews(pull)
-  renderThreads(detail)
+  renderThreads(detail, repo)
   fill(
     'comments-section',
     'comments',
@@ -282,9 +292,17 @@ function checkoutNote(existing) {
   return ''
 }
 
-function renderCheckout(repo, number, existing) {
+function renderCheckout(repo, number, existing, pull, connectors) {
   const note = checkoutNote(existing)
   ui.checkout.hidden = existing.path !== undefined
+  ui['new-worktree'].hidden =
+    existing.path !== undefined ||
+    existing.error !== undefined ||
+    pull.isCrossRepository ||
+    connectors.shell !== 'supported' ||
+    !window.worktrees.isPullBranch(pull.headRefName)
+  ui['new-worktree'].dataset.number = String(number)
+  ui['new-worktree'].dataset.branch = pull.headRefName
   ui.checkout.dataset.number = String(number)
   ui.checkout.dataset.repo = repo
   ui['checkout-note'].hidden = note === ''
@@ -346,12 +364,56 @@ let shownKey
 function clearShown(key) {
   shownKey = key
   ui.checkout.hidden = true
+  ui['new-worktree'].hidden = true
+  window.feedbackView.reset()
   ui['checkout-note'].hidden = true
   ui['checkout-status'].textContent = ''
   ui['commits-section'].hidden = true
   ui['explainer-section'].hidden = true
   ui.explainer.shadowRoot?.replaceChildren()
   explainerShown = undefined
+}
+
+let citySignature
+
+async function loadCity(workspace, repo, pull, connectors, key) {
+  const [found, followups] = await Promise.all([
+    window.citySource.runs(workspace, repo, { number: pull.number, headRef: pull.headRefName }, connectors),
+    window.citySource.followups(workspace, repo, pull.number, connectors),
+  ])
+  const packages = new Map()
+  for (const run of found.runs) packages.set(run.id, await window.citySource.reviewPackage(workspace, run, connectors))
+  const signature = JSON.stringify([key, found, followups, [...packages.keys()], [...packages.values()].map((entry) => Boolean(entry.pkg))])
+  if (signature === citySignature) return
+  citySignature = signature
+  window.reviewPage.setCity(key, { ...found, followups, packages })
+}
+
+let diffShown
+
+async function readDiff(workspace, repo, number, head, key) {
+  if (diffShown?.key === key && diffShown.head === head) return diffShown.result
+  try {
+    const text = await run('gh', workspace, ['pr', 'diff', String(number), '-R', repo], {
+      text: true,
+    })
+    diffShown = {
+      key,
+      head,
+      result: {
+        files: window.diffParse.parseDiff(text),
+        diffError: undefined,
+        diffHead: head,
+      },
+    }
+  } catch (error) {
+    diffShown = {
+      key,
+      head,
+      result: { files: [], diffError: error.message, diffHead: undefined },
+    }
+  }
+  return diffShown.result
 }
 
 async function load(context, current) {
@@ -367,6 +429,13 @@ async function load(context, current) {
     ui.status.textContent = window.hostNote('gh', context.workspace)
     return
   }
+  await window.reviewPage.load({
+    key,
+    repo,
+    number,
+    workspace: context.workspace,
+    connectors,
+  })
   const [pull, detail] = await Promise.all([
     run('gh', context.workspace, [
       'pr',
@@ -384,19 +453,36 @@ async function load(context, current) {
   ])
   if (keyOf(current()) !== key) return
   ui.status.textContent = ''
-  render(pull, detail)
+  render(pull, detail, repo)
+  const diff = await readDiff(context.workspace, repo, number, pull.headRefOid, key)
+  if (keyOf(current()) !== key) return
+  window.reviewPage.show({ key, pull, detail: detail.value, ...diff })
+  void loadCity(context.workspace, repo, pull, connectors, key)
   void renderExplainer(context.workspace, pull.body, key)
   const existing = await checkedOut(context.workspace, pull, connectors)
   if (keyOf(current()) !== key) return
-  renderCheckout(repo, number, existing)
+  renderCheckout(repo, number, existing, pull, connectors)
   const labels = await readLabels(context.workspace, pull.commits ?? [], connectors)
   if (keyOf(current()) !== key) return
   renderCommits(labels)
 }
 
-window.startView({
-  load,
-  refreshMs: REFRESH_MS,
-  onStatus: (text) => (ui.status.textContent = text),
-})
+const setStatus = (text) => (ui.status.textContent = text)
+window.reviewPage.setStatusHandler(setStatus)
+window.pullView = window.startView({ load, refreshMs: REFRESH_MS, onStatus: setStatus })
+document
+  .getElementById('connect-store')
+  .addEventListener(
+    'click',
+    window.connectHandler(
+      window.reviewStore.CONNECTOR,
+      setStatus,
+      window.pullView.refresh,
+    ),
+  )
 ui.checkout.addEventListener('click', () => void checkout())
+ui['new-worktree'].addEventListener('click', () => {
+  const number = Number(ui['new-worktree'].dataset.number)
+  const { branch } = ui['new-worktree'].dataset
+  void launch(ui['new-worktree'], 'pull-worktree-terminal', { number, branch }, `Opened a terminal in the pr-${number} worktree on ${branch}.`)
+})

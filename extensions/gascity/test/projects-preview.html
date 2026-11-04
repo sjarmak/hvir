@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>City projects · fixture preview</title>
+    <link rel="stylesheet" href="../tokens.css">
+    <link rel="stylesheet" href="../primitives.css">
+    <link rel="stylesheet" href="../gascity.css">
+    <link rel="stylesheet" href="../projects.css">
+    <script defer src="../view.js"></script>
+    <script defer src="../projects-model.js"></script>
+    <script defer src="../projects-render.js"></script>
+    <script defer src="fixtures/projects-dashboard.js"></script>
+    <script defer src="projects-preview.js"></script>
+  </head>
+  <body class="hvir-guest">
+    <header class="hvir-content">
+      <h1>City projects</h1>
+      <p>Fake fixtures · fixed at <time id="preview-time"></time></p>
+      <button id="theme" class="hvir-button" type="button">Switch to light theme</button>
+      <p id="preview-action" role="status">Select a reference or decision to preview its target.</p>
+    </header>
+    <main id="projects"></main>
+  </body>
+</html>

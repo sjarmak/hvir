@@ -204,11 +204,17 @@
     )
   }
 
+  async function pullWorktreeTerminal(input, context, actionId) {
+    const { number, branch } = input ?? {}
+    return window.host.terminal('shell', context.workspace, window.worktrees.pullWorktreeArgs(number, branch), actionId)
+  }
+
   const HANDLERS = {
     'list-pulls': listPulls,
     'pull-status': pullStatus,
     'checkout-terminal': checkoutTerminal,
     'worktree-terminal': worktreeTerminal,
+    'pull-worktree-terminal': pullWorktreeTerminal,
   }
 
   const RETRY_HINT_MAX_MS = 1000

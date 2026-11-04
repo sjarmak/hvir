@@ -45,7 +45,44 @@
     path,
   ]
 
+  const BRANCH_SEGMENT = /^[A-Za-z0-9_][A-Za-z0-9._+@-]*$/
+  const REMOTE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/
+
+  function isPullBranch(branch) {
+    if (typeof branch !== 'string' || branch.length === 0 || branch.length > 255) return false
+    return branch
+      .split('/')
+      .every(
+        (segment) =>
+          BRANCH_SEGMENT.test(segment) &&
+          !segment.endsWith('.') &&
+          !segment.endsWith('.lock') &&
+          !segment.includes('..') &&
+          !segment.includes('@{'),
+      )
+  }
+
+  const PULL_WORKTREE_SCRIPT = [
+    'root=$(git rev-parse --show-toplevel) || exit 1',
+    'dir="$root.hvir-worktrees/pr-$1"',
+    'if [ ! -d "$dir" ]; then',
+    '  git fetch -- "$3" "$2" || exit 1',
+    '  if git show-ref --verify --quiet "refs/heads/$2"; then git worktree add -- "$dir" "$2" || exit 1',
+    '  else git worktree add --track -b "$2" -- "$dir" "refs/remotes/$3/$2" || exit 1; fi',
+    'fi',
+    'cd -- "$dir" && exec "${SHELL:-/bin/sh}" -l',
+  ].join('\n')
+
+  function pullWorktreeArgs(number, branch, remote = 'origin') {
+    if (!Number.isSafeInteger(number) || number < 1 || number > 1_000_000_000) throw new Error('Invalid pull request number')
+    if (!isPullBranch(branch)) throw new Error('Unsupported pull request branch name')
+    if (!REMOTE.test(remote)) throw new Error('Unsupported git remote name')
+    return ['-c', PULL_WORKTREE_SCRIPT, 'hvir-pull-worktree', String(number), branch, remote]
+  }
+
   const api = Object.freeze({
+    pullWorktreeArgs,
+    isPullBranch,
     WORKTREE_ARGS,
     worktreesByBranch,
     worktreeOf,

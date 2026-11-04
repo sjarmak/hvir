@@ -17,7 +17,9 @@ function loadHost(statusByWorkspace, executed) {
           ? statusByWorkspace[message.input?.workspace]
           : message.capability === 'connector.execute'
             ? executed
-            : undefined
+            : message.capability === 'connector.connect'
+              ? { connections: [{ connector: message.input.connector, outcome: 'approved' }] }
+              : undefined
       queueMicrotask(() =>
         listeners.forEach((listener) =>
           listener(
@@ -111,6 +113,16 @@ test('status is cached per workspace, not shared across workspaces', async () =>
   )
 })
 
+test('connecting drops the cached status so the next availability asks again', async () => {
+  const statuses = { 'ws-local': [{ connector: 'gc', availability: 'unavailable', host: 'local' }] }
+  const { host, sent } = loadHost(statuses)
+  assert.equal((await host.availability({ workspace: LOCAL })).gc, 'unavailable')
+  statuses['ws-local'] = [{ connector: 'gc', availability: 'supported', host: 'local' }]
+  await host.connect('gc')
+  assert.equal((await host.availability({ workspace: LOCAL })).gc, 'supported')
+  assert.equal(sent.filter((message) => message.capability === 'connector.status').length, 2)
+})
+
 test('runs at most three connector executions at once and queues the rest', async () => {
   const pending = []
   let receipts = 0
@@ -191,3 +203,33 @@ for (const [reason, transient] of [
     })
   })
 }
+
+test("a frequency refusal is retried after hvir's retryAfterMs", async () => {
+  let refusals = 0
+  const { host, sent } = loadBridge((message) => {
+    if (message.capability === 'connector.execute')
+      return refusals++ < 1
+        ? { outcome: 'not-started', reason: 'frequency', retryAfterMs: 1 }
+        : completed('r1')
+    return outputFor(message, { r1: '{"ok":true}' })
+  })
+  assert.equal(JSON.stringify(await host.run('gc', LOCAL, ['x'])), '{"ok":true}')
+  assert.equal(executes(sent).length, 2)
+})
+
+test('stderr is read only when the program fails', async () => {
+  const streams = (sent) =>
+    sent.filter((message) => message.capability === 'connector.output' && !message.input.release)
+      .map((message) => message.input.stream)
+  const ok = loadBridge((message) =>
+    message.capability === 'connector.execute' ? completed('r1') : outputFor(message, { r1: '{}' }))
+  await ok.host.run('gc', LOCAL, ['x'])
+  assert.deepEqual(streams(ok.sent), ['stdout'])
+  const failed = loadBridge((message) => {
+    if (message.capability === 'connector.execute') return { ...completed('r2'), code: 1 }
+    if (message.input.release) return {}
+    return { data: message.input.stream === 'stderr' ? 'first\nboom\n' : '', nextOffset: null }
+  })
+  await assert.rejects(failed.host.run('gc', LOCAL, ['x']), /first|boom/)
+  assert.deepEqual(streams(failed.sent), ['stdout', 'stderr'])
+})

@@ -84,6 +84,7 @@ window.host = (() => {
   }
 
   const IN_FLIGHT = 3
+  const RETRIED_REASONS = new Set(['capacity', 'frequency'])
   const CAPACITY_RETRIES = 6
   const RETRY_BASE_MS = 200
   const RETRY_MAX_MS = 2000
@@ -112,7 +113,7 @@ window.host = (() => {
       const result = await request('connector.execute', input, actionId)
       if (
         result.outcome === 'completed' ||
-        result.reason !== 'capacity' ||
+        !RETRIED_REASONS.has(result.reason) ||
         attempt >= CAPACITY_RETRIES
       )
         return result
@@ -155,11 +156,9 @@ window.host = (() => {
       throw error
     }
     try {
-      const [stdout, stderr] = await Promise.all([
-        readStream(result.receipt, 'stdout'),
-        readStream(result.receipt, 'stderr'),
-      ])
-      if (result.code !== 0) throw failure(connector, result.code, stdout, stderr)
+      const stdout = await readStream(result.receipt, 'stdout')
+      if (result.code !== 0)
+        throw failure(connector, result.code, stdout, await readStream(result.receipt, 'stderr'))
       if (result.truncated)
         throw new Error(`${connector} output exceeded the connector bound`)
       if (text) return stdout
@@ -195,5 +194,11 @@ window.host = (() => {
     )
   }
 
-  return Object.freeze({ request, run, availability })
+  async function connect(connector) {
+    const value = await request('connector.connect', { connector })
+    statusCache = new Map()
+    return value
+  }
+
+  return Object.freeze({ request, run, availability, connect })
 })()

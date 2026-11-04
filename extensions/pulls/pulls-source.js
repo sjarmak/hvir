@@ -24,8 +24,10 @@ window.pullsSource = (() => {
 
   /** Current branch and GitHub remotes; undefined branch on a detached HEAD. */
   async function checkout(workspace, actionId) {
-    const head = (await run('git', workspace, ['rev-parse', '--abbrev-ref', 'HEAD'], { text: true, actionId })).trim()
-    const remotes = await run('git', workspace, ['remote', '-v'], { text: true, actionId })
+    const [head, remotes] = await Promise.all([
+      run('git', workspace, ['rev-parse', '--abbrev-ref', 'HEAD'], { text: true, actionId }).then((out) => out.trim()),
+      run('git', workspace, ['remote', '-v'], { text: true, actionId }),
+    ])
     return { branch: head === 'HEAD' || head === '' ? undefined : head, localRepos: githubRemoteRepos(remotes) }
   }
 
@@ -34,8 +36,10 @@ window.pullsSource = (() => {
    * `actionId` is set when an agent action runs the read from a hidden view.
    */
   async function snapshot(workspace, limit, useGit, actionId) {
-    const repo = await repoFor(workspace, actionId)
-    const local = useGit ? await checkout(workspace, actionId) : { branch: undefined, localRepos: new Set() }
+    const [repo, local] = await Promise.all([
+      repoFor(workspace, actionId),
+      useGit ? checkout(workspace, actionId) : { branch: undefined, localRepos: new Set() },
+    ])
     const response = await run('gh', workspace, pullsQueryArgs(repo, local.branch, limit), { actionId })
     return { ...parsePulls(response, { repo, ...local }), gitChecked: useGit }
   }

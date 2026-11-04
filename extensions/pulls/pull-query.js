@@ -67,13 +67,18 @@ fragment issue on Issue {
 ${PULL_FIELDS}`
 
   const PULL_DETAIL_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  viewer { login }
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      number title url headRefOid
-      reviewThreads(first: 40) {
+      id number title url headRefOid
+      author { login }
+      pending: reviews(states: [PENDING], first: 5) {
+        nodes { id viewerDidAuthor comments { totalCount } }
+      }
+      reviewThreads(first: 100) {
         pageInfo { hasNextPage }
         nodes {
-          id isResolved isOutdated path line
+          id isResolved isOutdated path line diffSide originalLine
           comments(first: 20) {
             pageInfo { hasNextPage }
             nodes { id body createdAt commit { oid } author { login } }
