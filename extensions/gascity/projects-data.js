@@ -58,7 +58,7 @@
     const time = new Date(payload.now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     const counts = withCounts ? [`${model.needsYou.length} need you`, `${model.inDelivery.length} answered, waiting on agents`,
       `${payload.projects.length} projects`, `${sessions.length} active sessions`, ''].join(' · ') : ''
-    return `${counts}updated ${time}${window.bdNote(workspace)}${errors.length ? ` · ${errors.join(' · ')}` : ''}`
+    return `${counts}fetched ${time}${window.bdNote(workspace)}${errors.length ? ` · ${errors.join(' · ')}` : ''}`
   }
 
   const startProjectsView = (render, { counts = true } = {}) => {

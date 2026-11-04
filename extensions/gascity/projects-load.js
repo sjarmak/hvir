@@ -2,7 +2,7 @@
   const node = typeof module === 'object'
   const crew = node ? require('./crew-parse.js') : window.crewParse
   const needs = node ? require('./needs-model.js') : window.needsModel
-  const fields = ['projects', 'milestones', 'artifacts', 'decisions', 'inProgress', 'workflowRoots', 'workflowSteps', 'ancestors']
+  const fields = ['projects', 'milestones', 'artifacts', 'decisions', 'inProgress', 'linked', 'workflowRoots', 'workflowSteps', 'ancestors']
   const ROOT_CAP = 30
   const ANCESTOR_CAP = 30
   const ANCESTOR_ROUNDS = 3
@@ -12,6 +12,7 @@
   const LABEL_FIELDS = Object.freeze({ 'city-project': 'projects', 'city-milestone': 'milestones', 'city-artifact': 'artifacts' })
   const labeledArgs = (path) => listArgs(path, ['--all', '--label-any', Object.keys(LABEL_FIELDS).join(',')])
   const inProgressArgs = (path) => listArgs(path, ['--all', '--status', 'in_progress'])
+  const linkedArgs = (path, key) => listArgs(path, ['--status', 'open,in_progress,blocked,deferred', '--has-metadata-key', key])
   const showArgs = (path, ids) => ['-C', path, 'show', ...ids, '--json']
   const stepArgs = (path, id) => listArgs(path,
     ['--all', '--metadata-field', `gc.root_bead_id=${id}`])
@@ -31,6 +32,8 @@
     const requests = stores.flatMap((store) => [
       { store, key: 'labeled', args: labeledArgs(store.path) },
       { store, key: 'inProgress', args: inProgressArgs(store.path) },
+      { store, key: 'linked', args: linkedArgs(store.path, 'proj.id') },
+      { store, key: 'linked', args: linkedArgs(store.path, 'gc.project') },
     ])
     const decisions = needs.decisionsRig(stores)
     if (decisions) requests.push(
@@ -125,13 +128,14 @@
   }
 
   const assemblePayload = ({ now, reads, sessions = [], errors = [] }) => {
-    const payload = { now, sessions, seatJobs: [], refStates: {} }
+    const payload = { now, sessions, seatJobs: [], refStates: {}, unread: [] }
     const failures = [...errors]
     for (const field of fields) {
       const beads = new Map()
       for (const read of reads.filter((entry) => entry.key === field)) {
         if (read.error) {
           failures.push(`${read.store.name} (${read.store.path}) ${field}: ${read.error}`)
+          if (!payload.unread.includes(field)) payload.unread.push(field)
           continue
         }
         for (const bead of read.value) {
@@ -148,7 +152,7 @@
   }
 
   const api = Object.freeze({
-    labeledArgs, splitLabeled, inProgressArgs, showArgs, stepArgs, decisionArgs,
+    labeledArgs, splitLabeled, inProgressArgs, linkedArgs, showArgs, stepArgs, decisionArgs,
     ANCESTOR_ROUNDS, OUTCOME_CONNECTOR, OUTCOME_ARGS, parseOutcomes, storesFor, storeRequests, workflowRequests, ancestorRequests, liveSessions, assemblePayload,
   })
   if (node) module.exports = api

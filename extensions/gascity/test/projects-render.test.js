@@ -26,7 +26,7 @@ const preview = () => {
 test('renderer shows fixture cards, needs, unlinked activity and readable work titles', (t) => {
   const { dom, root } = preview()
   t.after(() => dom.window.close())
-  assert.equal(root.querySelectorAll('.projects-card').length, 6)
+  assert.equal(root.querySelectorAll('.projects-card').length, 5)
   const asks = root.firstElementChild.textContent
   assert.match(asks, /Shared signal board/)
   assert.match(asks, /No project/)
@@ -39,7 +39,9 @@ test('renderer shows fixture cards, needs, unlinked activity and readable work t
   assert.equal(face.querySelector('.projects-chip').dataset.state, 'moving')
   assert.equal(face.querySelector('progress').value, 1)
   assert.equal(face.querySelector('progress').max, 2)
-  assert.equal(root.textContent.match(/not updated in 24h/g).length, 1)
+  assert.doesNotMatch(root.textContent, /not updated in 24h|Updated 2026/)
+  assert.match(face.querySelector('.projects-times').textContent, /^Fetched \S+ ago · /)
+  assert.match(face.querySelector('.projects-unverified').textContent, /^Waits: unverified/)
   assert.match(root.textContent, /fx-review-account/)
 })
 
@@ -78,7 +80,7 @@ test('rerender replaces content and empty dashboards have explicit empty states'
   const { dom, window, root, model } = preview()
   t.after(() => dom.window.close())
   window.projectsRender.renderDashboard(model, root)
-  assert.equal(root.querySelectorAll('.projects-card').length, 6)
+  assert.equal(root.querySelectorAll('.projects-card').length, 5)
   window.projectsRender.renderDashboard(buildDashboard({ now: fixture.now }), root)
   assert.equal(root.querySelectorAll('.projects-card').length, 0)
   assert.match(root.textContent, /Nothing needs you/)
@@ -95,7 +97,7 @@ test('standalone file preview loads its local scripts with fixed time and theme 
     dom.window.addEventListener('load', () => { clearTimeout(timer); resolve() }, { once: true })
   })
   const { document } = dom.window
-  assert.equal(document.querySelectorAll('.projects-card').length, 6)
+  assert.equal(document.querySelectorAll('.projects-card').length, 5)
   assert.equal(dom.window.Date.now(), Date.parse(fixture.now))
   document.getElementById('theme').click()
   assert.equal(document.documentElement.dataset.theme, 'light')
@@ -292,4 +294,95 @@ test('a claimed state with no first-claim time says since unknown', (t) => {
   const live = [...root.querySelector('.projects-artifact').querySelectorAll('.projects-artifact-state')][2]
   assert.match(live.textContent, /^Live · since unknown · checked unknown · hvir reload$/)
   assert.doesNotMatch(root.textContent, /null|false|undefined/)
+})
+
+test('the unverified waits marker shows on face, page, glance and nav until the record declares its waits', (t) => {
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  const { window } = dom
+  window.Date.now = () => Date.parse(fixture.now)
+  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const root = window.document.querySelector('main')
+  const build = (meta, extra = {}) => {
+    const input = structuredClone(fixture)
+    const target = input.projects.find((entry) => entry.id === 'fx-project-1')
+    target.metadata = { ...target.metadata, ...meta }
+    return buildDashboard({ ...input, ...extra }).cards.flatMap((group) => group.cards).find((entry) => entry.id === 'fx-project-1')
+  }
+  const undeclared = build({})
+  window.projectsRender.renderProject(undeclared, root, {})
+  assert.match(root.querySelector('.projects-unverified').textContent, /does not declare what it waits on/)
+  assert.ok([...root.querySelectorAll('.projects-tile')].some((node) => /Waits\s*unverified/.test(node.textContent)))
+  window.projectsRender.renderProject(build({ 'proj.waiting_on': '' }, { unread: ['linked'] }), root, {})
+  assert.match(root.querySelector('.projects-unverified').textContent, /could not be read/)
+  const declared = build({ 'proj.waiting_on': '' })
+  window.projectsRender.renderProject(declared, root, {})
+  assert.equal(root.querySelector('.projects-unverified'), null)
+  window.projectsRender.renderDashboard({ ...buildDashboard(structuredClone(fixture)), cards: [{ name: 'g', cards: [declared] }] }, root, {})
+  assert.equal(root.querySelector('.projects-unverified'), null)
+  window.projectsRender.renderNav({ ...buildDashboard(structuredClone(fixture)), cards: [{ name: 'g', cards: [undeclared, declared] }] }, root, {})
+  const rows = [...root.querySelectorAll('.projects-nav-row')].map((node) => node.textContent)
+  assert.equal(rows.filter((text) => /waits unverified/.test(text)).length, 1)
+})
+
+test('done projects leave the lead grids and sit in one closed archive at the end', (t) => {
+  const { dom, root, model } = preview()
+  t.after(() => dom.window.close())
+  const opened = []
+  dom.window.projectsRender.renderDashboard(model, root, { onOpenProject: (id, store) => opened.push([id, store]) })
+  const cards = [...root.querySelectorAll('.projects-card')].map((node) => node.querySelector('h3').textContent)
+  assert.ok(!cards.includes('Compass handoff'))
+  assert.equal(cards.length, 5)
+  const archive = root.querySelector('details.projects-archive')
+  assert.equal(archive, root.lastElementChild)
+  assert.equal(archive.open, false)
+  assert.equal(archive.querySelector('summary').textContent, 'Done projects (1)')
+  const row = archive.querySelector('.projects-nav-row')
+  assert.match(row.textContent, /Compass handoff/)
+  assert.match(row.textContent, /omni-evals-pl/)
+  row.click()
+  const done = model.cards.flatMap((group) => group.cards).find((card) => card.title === 'Compass handoff')
+  assert.deepEqual(opened, [[done.id, done.store]])
+})
+
+test('a lead whose projects are all done gets no section, and no archive shows when nothing is done', (t) => {
+  const { dom, window, root, model } = preview()
+  t.after(() => dom.window.close())
+  const all = model.cards.flatMap((group) => group.cards)
+  const finished = all.find((card) => card.derivedState === 'done')
+  const live = all.find((card) => card.derivedState !== 'done')
+  window.projectsRender.renderDashboard({ ...model, cards: [{ lead: 'done-lead', cards: [finished] }, { lead: 'live-lead', cards: [live] }] }, root)
+  const heads = [...root.querySelectorAll('section > h2')].map((node) => node.textContent)
+  assert.ok(!heads.includes('done-lead'))
+  assert.ok(heads.includes('live-lead'))
+  window.projectsRender.renderDashboard({ ...model, cards: [{ lead: 'live-lead', cards: [live] }] }, root)
+  assert.equal(root.querySelector('.projects-archive'), null)
+})
+
+test('the rail lists done projects only inside its closed archive', (t) => {
+  const { dom, root } = navPreview()
+  t.after(() => dom.window.close())
+  const archive = root.querySelector('details.projects-archive')
+  assert.equal(archive.open, false)
+  assert.equal(archive.querySelector('summary').textContent, 'Done projects (1)')
+  const outside = [...root.querySelectorAll('.projects-nav-row')].filter((node) => !archive.contains(node))
+  assert.equal(outside.length, 5)
+  assert.ok(outside.every((node) => !/Compass handoff/.test(node.textContent)))
+  assert.match(archive.textContent, /Compass handoff/)
+})
+
+test('an archive she opened stays open when the minute refresh re-renders the view', (t) => {
+  const { dom, window, root, model } = preview()
+  t.after(() => dom.window.close())
+  root.querySelector('.projects-archive').open = true
+  window.projectsRender.renderDashboard(model, root)
+  assert.equal(root.querySelector('.projects-archive').open, true)
+  root.querySelector('.projects-archive').open = false
+  window.projectsRender.renderDashboard(model, root)
+  assert.equal(root.querySelector('.projects-archive').open, false)
+  const rail = window.document.createElement('nav')
+  window.projectsRender.renderNav(model, rail)
+  rail.querySelector('.projects-archive').open = true
+  window.projectsRender.renderNav(model, rail)
+  assert.equal(rail.querySelector('.projects-archive').open, true)
 })
