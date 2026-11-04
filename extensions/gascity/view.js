@@ -11,13 +11,15 @@ window.startView = ({ load, refreshMs = 0, onStatus = () => {} }) => {
   let timer
   let running = false
   let disposed = false
+  let hides = 0
 
   async function tick() {
     if (running || disposed || !context?.visible) return
     running = true
     const started = context
+    const hidesAtStart = hides
     try {
-      await load(context)
+      await load(context, { hidden: () => hides !== hidesAtStart })
     } catch (error) {
       if (!error.transient) onStatus(error.message)
     } finally {
@@ -28,6 +30,7 @@ window.startView = ({ load, refreshMs = 0, onStatus = () => {} }) => {
   }
 
   function apply(next) {
+    if (!next.visible) hides += 1
     context = next
     if (timer !== undefined) window.clearInterval(timer)
     timer = undefined

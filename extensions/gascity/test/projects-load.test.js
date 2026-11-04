@@ -236,6 +236,33 @@ test('a refresh whose reads did not run keeps the last render, and a revisited w
   await back
 })
 
+test('a load the view was hidden during neither renders nor caches its partial reads', async (t) => {
+  const page = livePage(t, 'projects.html', 'projects.js')
+  const { view, document } = page
+  const rows = () => document.querySelectorAll('.projects-nav-row').length
+  const status = () => document.getElementById('status').textContent
+  const refused = new Error('Selected extension window is in the background')
+  const run = document.defaultView.bdRead
+  document.defaultView.bdRead = async (scope, args) => {
+    if (!args.includes('--label-any')) throw refused
+    return run(scope, args)
+  }
+  await view.load({ workspace }, { hidden: () => true })
+  assert.equal(rows(), 0)
+  assert.equal(status(), 'Paused while hvir is in the background; loads when shown')
+  document.defaultView.bdRead = run
+  await view.load({ workspace }, { hidden: () => false })
+  assert.equal(rows(), 1)
+  const shown = document.getElementById('projects').innerHTML
+  document.defaultView.bdRead = async (scope, args) => {
+    if (!args.includes('--label-any')) throw refused
+    return run(scope, args)
+  }
+  await view.load({ workspace }, { hidden: () => true })
+  assert.equal(document.getElementById('projects').innerHTML, shown)
+  assert.match(status(), /refresh paused: hvir went to the background/)
+})
+
 test('project page renders the project named in its input, and says so when it is gone', async (t) => {
   const { view, document } = livePage(t, 'project.html', 'project.js')
   await view.load({ workspace, input: { id: fixture.projects[0].id } })
