@@ -1138,7 +1138,8 @@ its host-qualified checkout and configured upstream to the PR source repository 
 
 ### [ADR-969 — Demand-scoped Needs you navigation](adr/ADR-969-demand-scoped-needs-you-navigation.md)
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
+> Superseded by: [ADR-978](adr/ADR-978-beads-workspace-extension-boundary.md) | partial | Bead selection routing through the built-in Beads panel owner.
 
 A foreground-only destination combines existing session attention with bounded read-only
 Beads and PR snapshots across registered, connected workspaces. Source owners retain
@@ -1215,6 +1216,7 @@ refreshes immediately on focus gain; demand-driven refreshes are unchanged and t
 ### [ADR-978 — Beads workspace extension boundary](adr/ADR-978-beads-workspace-extension-boundary.md)
 
 > Lifecycle: Active
+> Supersedes: [ADR-969](adr/ADR-969-demand-scoped-needs-you-navigation.md) | partial | Bead selection routing through the built-in Beads panel owner.
 
 The Beads and Gas City workspace surface becomes a demand-scoped extension over approved `bd`
 and `gc` connectors. Core retains cross-workspace attention and host authority; bounded targeted

@@ -1,6 +1,7 @@
 # ADR-969: Demand-scoped Needs you navigation
 
-> Lifecycle: Active
+> Lifecycle: Partially superseded
+> Superseded by: [ADR-978](ADR-978-beads-workspace-extension-boundary.md) | partial | Bead selection routing through the built-in Beads panel owner.
 
 ## Context
 

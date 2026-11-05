@@ -1,6 +1,7 @@
 # ADR-978: Beads workspace extension boundary
 
 > Lifecycle: Active
+> Supersedes: [ADR-969](ADR-969-demand-scoped-needs-you-navigation.md) | partial | Bead selection routing through the built-in Beads panel owner.
 
 ## Context
 
@@ -10,7 +11,7 @@ platform that now owns isolated views, finite workspace connectors, contribution
 and explicit terminal handoff. Keeping both paths would make the fork carry a second package
 runtime and would let tool-specific policy leak across the public capability boundary.
 
-The replacement must preserve the behavior exercised by the Beads extension rehearsal:
+The replacement must preserve the behavior of the built-in channels `beads:list`, `beads:probe`, `gascity:crew`, `gascity:probe`, `gascity:analytics-config`, `gascity:attention`, `gascity:attention-changed`, and `project:watch`, listed in the capability map below:
 Beads listing and availability, Gas City crew and availability, analytics configuration,
 Gas City attention, project-watch refresh, terminal commands and session attachment,
 Needs you deep links, and left-rail placement. It must also work for SSH workspaces without
@@ -63,13 +64,15 @@ row visible and reports that the target could not be opened.
 ### SSH connector approval
 
 For an SSH workspace, setup approves `bd` and `gc` independently on the selected remote host.
-Each grant binds the connector declaration and package revision to the exact connected host,
-canonical host-qualified workspace root, and canonical absolute executable path produced by
-`ProjectHost.realpath`. Trusted Settings performs selection, connection, authentication, and
+Each grant follows ADR-051: it binds installation identity, the complete connector declaration,
+the exact configured host, the selected absolute executable path, its canonical path produced by
+`ProjectHost.realpath`, and configuration. Each command pins the live host-qualified workspace
+root and the exact approval. Trusted Settings performs selection, connection, authentication, and
 probing. The guest can request only structured arguments for an approved connector; it cannot
 connect the host, discover executable paths, run a shell, or reuse a local approval remotely.
-Disconnect, workspace replacement, package replacement, or executable drift makes the grant
-unavailable until trusted setup approves the new identity.
+Disconnected execution is refused and never replays on reconnect. Unchanged approval survives
+explicit package revision actions; a changed declaration, host, or canonical executable target
+requires a new trusted decision. This ADR adds no approval rule beyond ADR-051.
 
 ### Core and package ownership
 
@@ -87,8 +90,10 @@ raw marker-file reads. Until `gc` exposes those inputs, analytics links are unav
 than served by the old private `gascity:analytics-config` channel.
 
 Evaluation and analytics links require one additional public platform seam: a user-activated
-safe-external-URL operation. It accepts only an `https` URL from a visible guest gesture, applies
-the existing main-owned URL validation, and opens the system browser. It grants no network read
+safe-external-URL operation. It accepts only an `https` URL, and only when main itself observed a user activation on the
+visible guest surface for that request; a guest-supplied flag never proves activation (ADR-054).
+Main applies the existing `isSafeExternalUrl` validation, shows the destination origin in a
+trusted confirmation before opening, and opens the system browser. It grants no network read
 to the guest and cannot run from the updater. URL construction and domain-specific validation
 remain package code; native opening remains core authority.
 
@@ -117,12 +122,12 @@ acceptance ledger:
 
 | Phase | Scope | Verification command |
 | --- | --- | --- |
-| 1. Targeted input | Add the bounded trusted targeted-view-input contract, ownership checks, replace-latest delivery, and Needs you unavailable behavior. | `npm test -- src/main/extensions src/renderer/src/extensions src/renderer/src/needs-you` |
-| 2. External links | Add visible-gesture-only safe external URL handoff using the existing native URL policy. | `npm test -- src/main/extensions src/main/window src/renderer/src/extensions` |
-| 3. Package read surface | Add the package, `bd` and `gc` declarations, demand-scoped refresh, taxonomy consumption, Beads sections, crew presentation, and explicit failure states. | `npm test -- packages src/main/extensions src/main/connectors` |
-| 4. Commands and navigation | Add terminal handoffs and Needs you focus handling; verify fresh-terminal semantics and local/SSH grant identity. | `npm test -- packages src/main/extensions src/main/terminal src/renderer/src/needs-you` |
-| 5. Link inputs | Add structured `gc` analytics inputs or explicit package configuration and package link rendering; do not restore private domain IPC. | `npm test -- packages src/main/extensions` |
-| 6. Cutover | Remove the built-in Beads/Gas City panel, its private IPC and services, then run the extension, Needs you, terminal, and remote-workspace smoke paths. | `npm run verify && npm run build:smoke && node scripts/run-smoke-scenarios.mts extensions needs-you workspace-remote terminal-lifecycle` |
+| 1. Targeted input | Add the bounded trusted targeted-view-input contract, ownership checks, replace-latest delivery, and Needs you unavailable behavior. | `npm test -- extension-context-owner extension-view-launcher needs-you-navigation` |
+| 2. External links | Add visible-gesture-only safe external URL handoff using the existing native URL policy. | `npm test -- extension-guest-owner extension-view-launcher` |
+| 3. Package read surface | Add the package, `bd` and `gc` declarations, demand-scoped refresh, taxonomy consumption, Beads sections, crew presentation, and explicit failure states. | `npm test -- extension-connector extension-contribution extension-guest` |
+| 4. Commands and navigation | Add terminal handoffs and Needs you focus handling; verify fresh-terminal semantics and local/SSH grant identity. | `npm test -- extension-terminal-handoff extension-connector needs-you-navigation` |
+| 5. Link inputs | Add structured `gc` analytics inputs or explicit package configuration and package link rendering; do not restore private domain IPC. | `npm test -- extension-guest extension-connector` |
+| 6. Cutover | Remove the built-in Beads/Gas City panel, its private IPC and services, then run the extension, terminal, and remote-workspace smoke scenarios; Needs you coverage stays in `needs-you-navigation` unit tests unless the cutover bead adds a smoke scenario. | `npm run verify && npm run build:smoke && node scripts/run-smoke-scenarios.mts extensions workspace-remote terminal-lifecycle` |
 
 ## Consequences
 
