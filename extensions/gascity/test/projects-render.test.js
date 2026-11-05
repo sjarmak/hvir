@@ -386,3 +386,13 @@ test('an archive she opened stays open when the minute refresh re-renders the vi
   window.projectsRender.renderNav(model, rail)
   assert.equal(rail.querySelector('.projects-archive').open, true)
 })
+
+test('a moving card face lists its started work by title with owner and checkpoint', (t) => {
+  const { dom, root } = preview()
+  t.after(() => dom.window.close())
+  const face = root.querySelector('.projects-card-face')
+  const evidence = [...face.querySelectorAll('.projects-evidence li')].map((item) => item.textContent)
+  assert.ok(evidence.length > 0)
+  assert.ok(evidence.every((line) => / · (claimed in progress|started \S+) · /.test(line)), evidence.join('\n'))
+  assert.ok(evidence.some((line) => line.startsWith('Build catalog search · ')), evidence.join('\n'))
+})

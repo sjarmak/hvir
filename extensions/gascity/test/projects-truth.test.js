@@ -187,3 +187,57 @@ test('her name and bead ids in a wait match in any case, as the city reads them'
   assert.deepEqual(result.checks, [])
   assert.deepEqual(result.waitingOn.map((entry) => entry.id), ['stephanie', 'dec-d', 'w1'])
 })
+
+test('a live seat job on work that has not started is queued, not moving', () => {
+  const result = card({ linked: [work('w1', 'open')], projects: [project({})],
+    seatJobs: [{ seat: 'city-infra-pl', label: 'build', alive: true,
+      job: { bead: 'w1', argv: ['claude'], account: 'claude-1', started_at: NOW } }] })
+  assert.equal(result.active.length, 1)
+  assert.equal(result.derivedState, 'queued')
+})
+
+test('work claimed in progress or carrying a start receipt is moving, and the card shows its start evidence', () => {
+  const claimed = card({ projects: [project({})],
+    inProgress: [work('w1', 'in_progress', { 'receipt.milestone': 'pilot scored', 'receipt.due': '2026-10-31T18:00Z' })]
+      .map((bead) => ({ ...bead, assignee: 'omni-pl' })) })
+  assert.equal(claimed.derivedState, 'moving')
+  assert.deepEqual(claimed.stateEvidence, ['w1 · omni-pl · claimed in progress · next pilot scored by 2026-10-31T18:00Z'])
+  const receipted = card({ projects: [project({})], linked: [work('w2', 'open', { 'receipt.owner': 'omni-evals-pl',
+    'receipt.started_at': '2026-10-31T16:00Z', 'receipt.artifact': 'state/r5/report.md' })] })
+  assert.equal(receipted.derivedState, 'moving')
+  assert.deepEqual(receipted.stateEvidence,
+    ['w2 · omni-evals-pl · started 2026-10-31T16:00Z · artifact state/r5/report.md · no next checkpoint'])
+  const delivered = card({ projects: [project({})], linked: [work('w3', 'open', { 'receipt.started_at': '2026-10-31T16:00Z',
+    'receipt.delivered_at': '2026-10-31T16:20Z' })] })
+  assert.equal(delivered.derivedState, 'queued')
+  const blankStart = card({ projects: [project({})], linked: [work('w4', 'open', { 'receipt.started_at': ' ' })] })
+  assert.equal(blankStart.derivedState, 'queued')
+})
+
+test('answered decisions with nothing started read agents owe, with the answer, delivery task, owner and checkpoint', () => {
+  const owed = ask('dec-o', { 'gc.answered': '2026-10-31', 'gc.answered_at': '2026-10-31T09:00Z', 'gc.owner': 'omni-pl',
+    'gc.delivery_bead': 'w9', 'gc.readout_due': '2026-11-01T12:00Z' })
+  const result = card({ decisions: [owed], linked: [work('w9', 'open')], projects: [project({})] })
+  assert.equal(result.derivedState, 'agents-owe')
+  assert.deepEqual(result.stateEvidence,
+    ['dec-o · answered 2026-10-31T09:00Z · delivered by w9 · omni-pl · next 2026-11-01T12:00Z'])
+  const bare = card({ decisions: [ask('dec-p', { 'gc.answered': '2026-10-31' })], projects: [project({})] })
+  assert.deepEqual(bare.stateEvidence,
+    ['dec-p · answered 2026-10-31 · no delivery task named · owner not recorded · no next checkpoint'])
+  const started = card({ decisions: [owed], projects: [project({})],
+    inProgress: [{ ...work('w9', 'in_progress'), assignee: 'omni-pl' }] })
+  assert.equal(started.derivedState, 'moving')
+})
+
+test('blocked on her names each decision with its scope and recommendation; done shows its delivery receipt', () => {
+  const blocked = card({ decisions: [ask('dec-b', { 'gc.scope': 'omni', 'gc.recommendation': 'a: run it' })],
+    projects: [project({ 'proj.waiting_on': 'dec-b' })] })
+  assert.equal(blocked.derivedState, 'needs-you')
+  assert.deepEqual(blocked.stateEvidence, ['dec-b · scope omni · recommend a: run it'])
+  const done = card({ projects: [project({ 'proj.state': 'done', 'proj.receipt_at': '2026-11-03T17:05Z' })] })
+  assert.equal(done.derivedState, 'done')
+  assert.deepEqual(done.stateEvidence, ['delivered · receipt 2026-11-03T17:05Z'])
+  const unreceipted = card({ projects: [project({ 'proj.state': 'done' })] })
+  assert.deepEqual(unreceipted.stateEvidence, ['delivered · no delivery receipt recorded'])
+  assert.deepEqual(card({ linked: [work('w1', 'open')], projects: [project({})] }).stateEvidence, [])
+})

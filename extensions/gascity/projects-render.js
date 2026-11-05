@@ -125,6 +125,9 @@
 
   const renderChecks = (card) => card.checks.map((check) => paragraph(check, 'projects-warning projects-check'))
 
+  const renderEvidence = (card) => card.stateEvidence.length > 0 && el('ul', { className: 'projects-evidence' },
+    ...card.stateEvidence.map((line) => el('li', {}, line)))
+
   const renderTimes = (card) => paragraph([
     `Fetched ${card.fetchedAt ? window.ago(card.fetchedAt) : 'unknown'}`,
     card.verifiedAt ? `last verified progress ${card.verifiedAt} · ${window.ago(card.verifiedAt)}` : 'no verified progress recorded',
@@ -135,6 +138,7 @@
     entry.overdue && text(' · overdue', 'projects-warning'))), 'No dates')
 
   const summary = (card, options) => [
+      renderEvidence(card),
       renderOwner(card),
       renderWaits(card),
       ...renderChecks(card),
@@ -217,7 +221,7 @@
       glance(card),
       el('div', { className: 'projects-page-grid' },
         el('div', {},
-          section('Now', renderOwner(card), renderWaits(card), ...renderChecks(card),
+          section('Now', renderEvidence(card), renderOwner(card), renderWaits(card), ...renderChecks(card),
             card.state !== card.derivedState && paragraph(`Lead's record says ${card.state.replaceAll('-', ' ')}`, 'hvir-meta'),
             paragraph(card.now || 'No current update'),
             card.stuckWhy && paragraph(card.stuckWhy, 'projects-warning'),

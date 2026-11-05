@@ -173,7 +173,9 @@
     const state = meta(project, 'proj.state') || 'unknown'
     const updatedAt = meta(project, 'proj.updated_at') || null
     const complete = !(input.unread ?? []).some((field) => ['linked', 'decisions'].includes(field))
-    const truth = truthApi.truth({ project, milestones: list, running: active.length > 0, now: input.now, complete,
+    const inProgress = (input.inProgress ?? [])
+      .filter((bead) => bead.status === 'in_progress' && resolveProject(bead, index, projects)?.id === project.id)
+    const truth = truthApi.truth({ project, milestones: list, now: input.now, complete, inProgress,
       linkedBeads: [...(input.linked ?? []), ...(input.decisions ?? []), ...(input.inProgress ?? [])] })
     return {
       ...identity(project),
@@ -185,6 +187,7 @@
       blocker: truthApi.undated(meta(project, 'proj.blocker')),
       nextAction: truthApi.undated(meta(project, 'proj.next_action')),
       derivedState: truth.derivedState,
+      stateEvidence: truth.stateEvidence,
       actionOwner: truth.actionOwner,
       waitingOn: truth.waitingOn,
       waitsVerified: truth.waitsVerified,
@@ -207,9 +210,7 @@
       needsCount: truth.needsCount,
       refs: references([project, ...(input.milestones ?? []).filter(childOf(project)), ...decisions], states),
       active,
-      inProgress: (input.inProgress ?? [])
-        .filter((bead) => bead.status === 'in_progress' && resolveProject(bead, index, projects)?.id === project.id)
-        .map((bead) => ({ ...identity(bead), assignee: bead.assignee ?? '' })),
+      inProgress: inProgress.map((bead) => ({ ...identity(bead), assignee: bead.assignee ?? '' })),
       decisions,
       workflows: projectWorkflows(input, index, projects, project, active),
       outcomes: (input.outcomes ?? []).filter((entry) => entry.projects.includes(project.id)),

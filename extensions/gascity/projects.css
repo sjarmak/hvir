@@ -74,6 +74,7 @@
   overflow-wrap: anywhere;
 }
 .projects-chip[data-state='moving'],
+.projects-chip[data-state='agents-owe'],
 .projects-chip[data-state='active'] {
   color: var(--accent-text);
   background: var(--accent-soft);
@@ -252,4 +253,11 @@
 .projects-card-actions {
   display: flex;
   gap: 8px;
+}
+.projects-evidence {
+  margin: 0;
+  padding-inline-start: 16px;
+  color: var(--text-secondary);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
 }
