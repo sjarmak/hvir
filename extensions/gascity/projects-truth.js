@@ -60,8 +60,18 @@
   }
 
   const filled = (bead, key) => meta(bead, key).trim()
-  const hasStarted = (bead) => OPEN.has(bead.status) && !isAsk(bead) && !filled(bead, 'receipt.delivered_at') &&
+  const HELD = new Set(['blocked', 'deferred'])
+  const STATUS_MAX = 160
+  const hasStarted = (bead) => OPEN.has(bead.status) && !HELD.has(bead.status) && !isAsk(bead) &&
+    !filled(bead, 'receipt.delivered_at') &&
     (bead.status === 'in_progress' || filled(bead, 'receipt.started_at').length > 0)
+  const clipped = (value) => value.length > STATUS_MAX ? `${value.slice(0, STATUS_MAX)}…` : value
+  const delivery = (bead) => {
+    const task = filled(bead, 'gc.delivery_bead') || filled(bead, 'gc.work_bead')
+    if (task) return `delivered by ${task}`
+    const status = filled(bead, 'gc.delivery_status')
+    return status ? `status: ${clipped(status)}` : 'no delivery task named'
+  }
 
   const startedWork = (linked, inProgress) => {
     const seen = new Map()
@@ -93,8 +103,7 @@
 
   const owedEvidence = (bead) => [label(bead),
     `answered ${filled(bead, 'gc.answered_at') || filled(bead, 'gc.answered')}`,
-    filled(bead, 'gc.delivery_bead') || filled(bead, 'gc.work_bead')
-      ? `delivered by ${filled(bead, 'gc.delivery_bead') || filled(bead, 'gc.work_bead')}` : 'no delivery task named',
+    delivery(bead),
     filled(bead, 'gc.owner') || 'owner not recorded',
     filled(bead, 'gc.readout_due') ? `next ${filled(bead, 'gc.readout_due')}` : 'no next checkpoint',
   ].join(' · ')
@@ -112,10 +121,10 @@
     const open = linked.filter((bead) => OPEN.has(bead.status) && !isAsk(bead))
     if (pending.length) return 'needs-you'
     if (started.length) return 'moving'
-    if (owed.length) return 'agents-owe'
     if (!complete) return 'unread'
+    if (owed.length) return 'agents-owe'
     if (waits.some((entry) => entry.open)) return 'waiting'
-    if (open.some((bead) => ['blocked', 'deferred'].includes(bead.status))) return 'waiting'
+    if (open.some((bead) => HELD.has(bead.status))) return 'waiting'
     if (open.length) return 'queued'
     return claimed === 'done' ? 'done' : 'no-linked-work'
   }

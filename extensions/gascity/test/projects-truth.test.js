@@ -241,3 +241,29 @@ test('blocked on her names each decision with its scope and recommendation; done
   assert.deepEqual(unreceipted.stateEvidence, ['delivered · no delivery receipt recorded'])
   assert.deepEqual(card({ linked: [work('w1', 'open')], projects: [project({})] }).stateEvidence, [])
 })
+
+test('blocked or deferred work with a start receipt waits, the same as the city checker classes it', () => {
+  for (const status of ['blocked', 'deferred']) {
+    const result = card({ projects: [project({})],
+      linked: [work('w1', status, { 'receipt.started_at': '2026-10-31T10:00Z', 'gc.blocked_on': 'capacity:codex-1' })] })
+    assert.equal(result.derivedState, 'waiting', status)
+  }
+})
+
+test('a failed in-progress read marks the card unread, and partial reads never claim agents owe', () => {
+  const missing = card({ unread: ['inProgress'], linked: [work('w1', 'open')], projects: [project({})] })
+  assert.equal(missing.derivedState, 'unread')
+  assert.equal(missing.waitsUnread, true)
+  const owed = ask('dec-o', { 'gc.answered': '2026-10-31' })
+  assert.equal(card({ unread: ['linked'], decisions: [owed], projects: [project({})] }).derivedState, 'unread')
+})
+
+test('agents owe shows the recorded delivery status when no delivery task is named', () => {
+  const status = `2026-10-31T10:00Z omni-pl: driver built; review ${'x'.repeat(200)}`
+  const result = card({ decisions: [ask('dec-s', { 'gc.answered': '2026-10-31', 'gc.owner': 'omni-pl',
+    'gc.delivery_status': status })], projects: [project({})] })
+  assert.equal(result.derivedState, 'agents-owe')
+  const [line] = result.stateEvidence
+  assert.match(line, /^dec-s · answered 2026-10-31 · status: 2026-10-31T10:00Z omni-pl: driver built; review x+… · omni-pl · no next checkpoint$/)
+  assert.ok(line.length < 260, String(line.length))
+})
