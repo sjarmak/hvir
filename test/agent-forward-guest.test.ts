@@ -176,6 +176,7 @@ async function fixture(origin: 'ssh-forward' | 'application-local' = 'ssh-forwar
       visibility: () => undefined,
       foreground: () => true,
       windowVisible: () => true,
+      consumeUserActivation: () => false,
     },
     () => undefined,
     context,

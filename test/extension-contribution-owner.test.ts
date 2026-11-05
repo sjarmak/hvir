@@ -66,6 +66,7 @@ function fixture(
     visibility: vi.fn(),
     foreground: (_owner: Parameters<ExtensionGuestSurfacePort['foreground']>[0]) => true,
     windowVisible: () => true,
+    consumeUserActivation: () => false,
     send: vi.fn<ExtensionGuestSurfacePort['send']>(),
   }
   const contexts = contextFixture().contexts

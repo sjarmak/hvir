@@ -17,7 +17,11 @@ export function extensionRequestDeadline(capability: string): number {
     return CONNECTOR_LIMITS.timeoutMs + EXTENSION_LIMITS.requestTimeoutMs
   if (capability.startsWith('delivery.'))
     return DELIVERY_LIMITS.deadlineMs + EXTENSION_LIMITS.requestTimeoutMs
-  if (capability === 'actions.invoke' || capability === 'terminal.start')
+  if (
+    capability === 'actions.invoke' ||
+    capability === 'external.open' ||
+    capability === 'terminal.start'
+  )
     return EXTENSION_LIMITS.actionMaximumMs
   return EXTENSION_LIMITS.requestTimeoutMs
 }

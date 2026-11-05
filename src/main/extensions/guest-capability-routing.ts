@@ -45,6 +45,8 @@ export async function routeGuestCapability(
   invocation: ExtensionInvocation | undefined,
   foreground: () => boolean,
 ): Promise<unknown> {
+  if (capability === 'external.open')
+    return ports.externalUrls.open(record, input, assertOrigin, signal)
   if (capability === 'terminal.start') {
     if (!ports.terminals) throw new Error('Terminal handoff is unavailable')
     return ports.terminals.start(

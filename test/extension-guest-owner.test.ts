@@ -11,7 +11,6 @@ import {
 } from '../src/main/extensions/guest-owner'
 import { contextFixture } from './fixtures/extension-context'
 import { localPath } from '../src/shared/host-path'
-
 import { fixture, attached } from './fixtures/extension-guest'
 
 describe('extension guest capability and lifetime owner', () => {
@@ -72,7 +71,12 @@ describe('extension guest capability and lifetime owner', () => {
       {
         updater: 'index.html',
         requiredCapabilities: ['presentation.read'],
-        optionalCapabilities: ['source.request', 'source.reveal', 'terminal.start'],
+        optionalCapabilities: [
+          'source.request',
+          'source.reveal',
+          'external.open',
+          'terminal.start',
+        ],
       },
     )
     const view = await data.owner.open(
