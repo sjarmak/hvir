@@ -1212,6 +1212,14 @@ Periodic workspace refresh runs every thirty seconds only while an hvir window i
 refreshes immediately on focus gain; demand-driven refreshes are unchanged and the broker keeps
 `core.fsmonitor=false`.
 
+### [ADR-978 — Beads workspace extension boundary](adr/ADR-978-beads-workspace-extension-boundary.md)
+
+> Lifecycle: Active
+
+The Beads and Gas City workspace surface becomes a demand-scoped extension over approved `bd`
+and `gc` connectors. Core retains cross-workspace attention and host authority; bounded targeted
+view input and user-activated safe external URL opening close the public capability gaps.
+
 ---
 
 ## 5. Architecture
