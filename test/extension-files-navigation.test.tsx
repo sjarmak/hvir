@@ -91,7 +91,15 @@ async function fixture(host = 'local') {
     close = vi.fn(),
     demand = vi.fn(() => () => undefined)
   const model: Contributions = {
-    state: [{ installationId: 'one', extensionName: 'Example', manifest, values: [] }],
+    state: [
+      {
+        installationId: 'one',
+        revision: 'revision',
+        extensionName: 'Example',
+        manifest,
+        values: [],
+      },
+    ],
     views: [guest],
     topActive: false,
     obscured: false,

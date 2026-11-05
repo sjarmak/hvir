@@ -51,11 +51,19 @@ export interface ExtensionView {
 
 export interface ExtensionContributionState {
   readonly installationId: string
+  readonly revision: string
   readonly extensionName: string
   readonly manifest: ExtensionManifest
   readonly values: readonly ExtensionItemValue[]
   readonly navigationIcons?: Readonly<Record<string, string>>
   readonly error?: string
+}
+export interface ExtensionTargetedViewInputRequest {
+  readonly installationId: string
+  readonly revision: string
+  readonly contributionId: string
+  readonly workspaceId: string
+  readonly input: unknown
 }
 export interface ExtensionSurfaceRequest {
   readonly surface: 'viewer' | 'left' | 'top' | 'popup'

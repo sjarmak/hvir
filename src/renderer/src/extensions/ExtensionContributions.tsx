@@ -25,6 +25,10 @@ import {
   useExtensionContributions,
 } from './extension-contribution-context'
 import { useExtensionForeground } from './use-extension-foreground'
+import {
+  ExtensionTargetedViewLauncher,
+  type ExtensionTargetedViewTarget,
+} from './ExtensionTargetedViewLauncher'
 import type { ProjectState } from '../../../shared/workspace-types'
 
 /** Shared trusted data and presentation subscriptions; never executes package code. */
@@ -37,11 +41,17 @@ export function ExtensionContributionsProvider({
   obscured,
   onTop,
   onWorkspace,
+  targetedView,
+  onTargetedViewOpened = () => undefined,
+  onTargetedViewUnavailable = () => undefined,
 }: {
   readonly topActive: boolean
   readonly obscured: boolean
   readonly onTop: () => void
   readonly onWorkspace: () => void
+  readonly targetedView?: ExtensionTargetedViewTarget
+  readonly onTargetedViewOpened?: (requestId: string) => void
+  readonly onTargetedViewUnavailable?: (requestId: string) => void
   readonly children: ReactNode
   readonly projectContext?: {
     readonly activeWorkspace?: { readonly id: string }
@@ -103,6 +113,7 @@ export function ExtensionContributionsProvider({
     }
   }, [topId, selectedTop, topActive, onWorkspace, views])
   const [state, setState] = useState<readonly ExtensionContributionState[]>([])
+  const [stateReady, setStateReady] = useState(false)
   const [sessions, setSessions] = useState<readonly ExtensionSessionContext[]>([])
   const [workspaces, setWorkspaces] = useState<readonly ExtensionWorkspaceContext[]>([])
   const [terminalIds, setTerminalIds] = useState<Readonly<Record<string, string>>>({})
@@ -185,6 +196,7 @@ export function ExtensionContributionsProvider({
       if (!current) return
       updated = true
       setState(value)
+      setStateReady(true)
       refresh()
     })
     const disposeActivation = window.hvir.on('extensions:state-changed', () => {
@@ -193,7 +205,10 @@ export function ExtensionContributionsProvider({
     })
     void window.hvir.invoke('extensions:contributions', undefined).then(
       (value) => {
-        if (current && !updated) setState(value)
+        if (current && !updated) {
+          setState(value)
+          setStateReady(true)
+        }
       },
       () => undefined,
     )
@@ -238,6 +253,11 @@ export function ExtensionContributionsProvider({
     },
     [onError],
   )
+  const targetedInput = useCallback(
+    (request: import('../../../shared/extensions/workbench').ExtensionTargetedViewInputRequest) =>
+      window.hvir.invoke('extensions:target-view-input', request),
+    [],
+  )
   const close = useCallback(
     (id: string): void => {
       retireLandingFocus(id)
@@ -272,6 +292,7 @@ export function ExtensionContributionsProvider({
         },
         views,
         state,
+        stateReady,
         sessions,
         workspaces,
         projects,
@@ -280,10 +301,16 @@ export function ExtensionContributionsProvider({
         foreground,
         foregroundRevision,
         open,
+        targetedInput,
         demand,
       }}
     >
       {children}
+      <ExtensionTargetedViewLauncher
+        target={targetedView}
+        onOpened={(requestId) => onTargetedViewOpened(requestId)}
+        onUnavailable={(requestId) => onTargetedViewUnavailable(requestId)}
+      />
       {views
         .filter((view) => view.role === 'updater')
         .map((view) => (

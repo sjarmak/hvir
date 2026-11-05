@@ -98,7 +98,7 @@ export function useNeedsYouNavigation({
       if (beadTargetRef.current?.beadId !== id) return
       beadTargetRef.current = undefined
       setBeadTarget(undefined)
-      onError('That bead is no longer actionable in its workspace.')
+      onError('The Beads workspace view could not be opened.')
     },
     [onError],
   )

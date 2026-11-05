@@ -61,6 +61,7 @@ it('keeps the reviewed owner and authority channel policies explicit', () => {
       'extensions:remove',
       'extensions:open-view',
       'extensions:target-view',
+      'extensions:target-view-input',
       'extensions:close-view',
       'extensions:views',
       'extensions:context',

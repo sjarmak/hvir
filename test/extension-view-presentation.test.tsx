@@ -57,7 +57,13 @@ describe('extension presentation observation', () => {
       }
       let model: Contributions = {
         state: [
-          { installationId: 'one', extensionName: 'Example', manifest, values: [] },
+          {
+            installationId: 'one',
+            revision: 'revision',
+            extensionName: 'Example',
+            manifest,
+            values: [],
+          },
         ],
         views: [selectedView],
         topActive: true,

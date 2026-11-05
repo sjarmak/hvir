@@ -109,6 +109,26 @@ describe('Needs you navigation cancellation', () => {
     expect(onWorkspace).not.toHaveBeenCalled()
   })
 
+  it('reports an unavailable extension target without treating the row as handled', () => {
+    const onError = vi.fn()
+    function Harness() {
+      navigation = useNeedsYouNavigation({
+        projectState: state,
+        switchWorkspace: vi.fn(() => Promise.resolve()),
+        onWorkspace,
+        onError,
+      })
+      return null
+    }
+    act(() => rootNode.render(<Harness />))
+    act(() => {
+      void navigation.selectBead(target)
+    })
+    act(() => navigation.beadUnavailable('b'))
+    expect(navigation.beadTarget).toBeUndefined()
+    expect(onError).toHaveBeenCalledWith('The Beads workspace view could not be opened.')
+  })
+
   it('does not let a superseding session selection steal the workspace', async () => {
     const switchWorkspace = vi.fn(() => new Promise<void>((resolve) => { resolveSwitch = resolve }))
     function Harness() {
@@ -153,7 +173,6 @@ describe('Needs you navigation cancellation', () => {
 describe('application destination navigation', () => {
   it('preserves a selected session when the destination switch cancels pending navigation', () => {
     let navigation!: ReturnType<typeof useApplicationNavigation>
-    const setRailMode = vi.fn()
     const onError = vi.fn()
     const switchWorkspace = vi.fn(() => Promise.resolve())
     const session = {
@@ -172,8 +191,6 @@ describe('application destination navigation', () => {
         root,
         switchWorkspace,
         onError,
-        beadsEnabled: false,
-        setRailMode,
       })
       return null
     }

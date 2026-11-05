@@ -206,13 +206,11 @@ export function App(): ReactElement {
   deactivateWebPaneRef.current = () => web.setActive(false)
   const terminalCommands = useTerminalCommands(session.activeWorkspace?.id)
   const rail = useRailExtensions(session, layout, terminalCommands)
-  const { destination, setDestination, needsYou, beadTarget } = useApplicationNavigation({
+  const { destination, setDestination, needsYou, extensionTarget } = useApplicationNavigation({
     projectState,
     root,
     switchWorkspace: session.switchWorkspace,
     onError: session.reportError,
-    beadsEnabled: rail.beads.beadsEnabled,
-    setRailMode: layout.setRailMode,
   })
   useEffect(() => {
     if (root) setWorkspaceRoot(root)
@@ -262,6 +260,7 @@ export function App(): ReactElement {
       projectContext={session}
       placement={extensions}
       onError={session.reportError}
+      {...extensionTarget}
     >
       <div className="app-shell">
         <AppProjectNavigation
@@ -342,9 +341,6 @@ export function App(): ReactElement {
                 rail={rail}
                 session={session}
                 layout={layout}
-                focusBeadId={beadTarget?.beadId}
-                onFocusHandled={needsYou.beadHandled}
-                onFocusUnavailable={needsYou.beadUnavailable}
               />
             }
           />

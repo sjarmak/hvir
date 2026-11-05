@@ -89,7 +89,8 @@ describe('workspace clean-filter polling', () => {
     expect((await readFile(counter, 'utf8')).length).toBe(afterFirstPoll)
 
     await coordinator.refresh('project-1')
-    expect((await readFile(counter, 'utf8')).length).toBeGreaterThan(afterFirstPoll)
+    expect(discovery.workspaceActivity).toHaveBeenCalledTimes(2)
+    expect(discovery.workspaceActivity.mock.calls[1]?.[0]).toEqual(root)
     await coordinator.dispose()
     await host.dispose()
   })

@@ -267,6 +267,11 @@ export function registerExtensionsIpc(
       extensions?.guests?.targetWorkspace(context.owner(), req.viewId, req.workspaceId) ??
       unavailable(),
   )
+  ipc.handle(
+    'extensions:target-view-input',
+    (req, context) =>
+      extensions?.contributions?.targetViewInput(context.owner(), req) ?? unavailable(),
+  )
   ipc.handle('extensions:contributions', (_req, context) => {
     context.owner()
     return extensions?.contributions?.snapshot() ?? []

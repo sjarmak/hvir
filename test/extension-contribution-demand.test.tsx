@@ -36,6 +36,7 @@ async function fixture() {
   ).manifest
   const state: ExtensionContributionState = {
     installationId: 'one',
+    revision: 'revision',
     extensionName: 'Example',
     manifest,
     values: [],

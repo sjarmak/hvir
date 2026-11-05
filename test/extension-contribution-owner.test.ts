@@ -68,7 +68,8 @@ function fixture(
     windowVisible: () => true,
     send: vi.fn<ExtensionGuestSurfacePort['send']>(),
   }
-  const contexts = contextFixture().contexts
+  const context = contextFixture()
+  const contexts = context.contexts
   const presentation = new ExtensionPresentationState(
     { read: () => Promise.resolve({}), save: () => Promise.resolve() },
     () => undefined,
@@ -112,8 +113,123 @@ function fixture(
       sessionId,
     },
   ]
-  return { active, scopes, a, b, guests, surface, contributions, presentation, demand }
+  return {
+    active,
+    scopes,
+    a,
+    b,
+    guests,
+    surface,
+    contributions,
+    presentation,
+    demand,
+    context,
+  }
 }
+
+describe('targeted contribution input', () => {
+  const workspaceView = {
+    id: 'beads',
+    title: 'Beads',
+    entry: 'index.html',
+    placement: 'workspace',
+    navigation: 'left',
+    representations: ['view'],
+  }
+  const views = [
+    {
+      id: 'reference',
+      title: 'Reference',
+      entry: 'index.html',
+      placement: 'application',
+      representations: ['view'],
+    },
+    {
+      id: 'detail',
+      title: 'Detail',
+      entry: 'detail.html',
+      placement: 'application',
+      representations: ['view'],
+    },
+    workspaceView,
+  ]
+
+  it('pins the active revision, declared contribution and exact workspace', async () => {
+    const data = fixture({ views })
+    const revision = data.active.get('one')!.revision.hash
+    const request = {
+      installationId: 'one',
+      revision,
+      contributionId: 'beads',
+      workspaceId: 'workspace',
+      input: { focusBeadId: 'hvir-1' },
+    }
+
+    const view = await data.contributions.targetViewInput(data.a, request)
+    expect(view.context?.workspace?.id).toBe('workspace')
+    expect(data.contributions.snapshot()[0]?.revision).toBe(revision)
+    await expect(
+      data.contributions.targetViewInput(data.a, { ...request, revision: 'stale' }),
+    ).rejects.toThrow('revision')
+    await expect(
+      data.contributions.targetViewInput(data.a, {
+        ...request,
+        contributionId: 'missing',
+      }),
+    ).rejects.toThrow('contribution')
+    await expect(
+      data.contributions.targetViewInput(data.a, {
+        ...request,
+        workspaceId: 'missing',
+      }),
+    ).rejects.toThrow(/workspace/i)
+    await expect(
+      data.contributions.targetViewInput(data.a, {
+        ...request,
+        input: { focusBeadId: 'x'.repeat(6145) },
+      }),
+    ).rejects.toThrow('exceeds 6144 bytes')
+    await data.guests.dispose()
+  })
+
+  it('replaces the latest bounded input and revokes it with workspace context', async () => {
+    const data = fixture({
+      views,
+      requiredCapabilities: ['context.read'],
+    })
+    const request = {
+      installationId: 'one',
+      revision: data.active.get('one')!.revision.hash,
+      contributionId: 'beads',
+      workspaceId: 'workspace',
+      input: { focusBeadId: 'hvir-1' },
+    }
+    const view = await data.contributions.targetViewInput(data.a, request)
+    data.guests.claim(data.a, view.partition, view.url, view.id)
+    data.guests.bind(data.a, view.partition, 10)
+    data.guests.presentation(
+      data.a,
+      view.id,
+      DEFAULT_EXTENSION_PRESENTATION,
+      true,
+      true,
+    )
+    data.guests.receive(10, { kind: 'hello', contract: '1.0' })
+    const reopened = await data.contributions.targetViewInput(data.a, {
+      ...request,
+      input: { focusBeadId: 'hvir-2' },
+    })
+    expect(reopened.id).toBe(view.id)
+    const sent = data.surface.send.mock.calls.at(-1)
+    expect(sent?.[0]).toBe(10)
+    if (sent?.[1].kind !== 'context') throw new Error('missing replaced context')
+    expect(sent[1].context.input).toEqual({ focusBeadId: 'hvir-2' })
+    data.context.change('close')
+    data.guests.updateContext()
+    expect(data.guests.snapshot(data.a)).toEqual([])
+    await data.guests.dispose()
+  })
+})
 
 describe('one shared updater from visible contribution demand', () => {
   it('excludes physical background owners immediately and ignores late rail demand', async () => {

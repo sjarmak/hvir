@@ -52,27 +52,21 @@ describe('application navigation', () => {
 
   function renderNavigation({
     currentRoot = root,
-    beadsEnabled = true,
     switchWorkspace = vi.fn(() => Promise.resolve()),
   }: {
     readonly currentRoot?: typeof root
-    readonly beadsEnabled?: boolean
     readonly switchWorkspace?: (projectId: string, workspaceId: string) => Promise<void>
-  } = {}): ReturnType<typeof vi.fn> {
-    const setRailMode = vi.fn()
+  } = {}): void {
     function Harness() {
       navigation = useApplicationNavigation({
         projectState: state,
         root: currentRoot,
         switchWorkspace,
         onError: vi.fn(),
-        beadsEnabled,
-        setRailMode,
       })
       return null
     }
     act(() => rootNode.render(<Harness />))
-    return setRailMode
   }
 
   it('cancels a pending bead switch when the user changes destination', async () => {
@@ -86,14 +80,13 @@ describe('application navigation', () => {
     expect(navigation.destination).toBe('sessions')
   })
 
-  it('switches to workspace and selects the beads rail after an exact bead target succeeds', async () => {
-    const setRailMode = renderNavigation()
+  it('switches to the exact workspace without routing through the built-in beads rail', async () => {
+    renderNavigation()
     await act(async () => {
       await navigation.needsYou.selectBead(target)
     })
     expect(navigation.destination).toBe('workspace')
     expect(navigation.beadTarget).toEqual(target)
-    expect(setRailMode).toHaveBeenCalledWith('beads')
   })
 
   it('does not expose a rail target while the active root is different', async () => {
@@ -104,12 +97,12 @@ describe('application navigation', () => {
     expect(navigation.beadTarget).toBeUndefined()
   })
 
-  it('does not select the beads rail when beads are disabled', async () => {
-    const setRailMode = renderNavigation({ beadsEnabled: false })
+  it('keeps the extension target independent of the built-in rail', async () => {
+    renderNavigation()
     await act(async () => {
       await navigation.needsYou.selectBead(target)
     })
-    expect(setRailMode).not.toHaveBeenCalled()
+    expect(navigation.beadTarget).toEqual(target)
   })
 
   it('reports an unavailable focused bead outside the state updater', async () => {
@@ -120,8 +113,6 @@ describe('application navigation', () => {
         root,
         switchWorkspace: () => Promise.resolve(),
         onError,
-        beadsEnabled: true,
-        setRailMode: vi.fn(),
       })
       return null
     }
@@ -131,7 +122,7 @@ describe('application navigation', () => {
     })
     act(() => navigation.needsYou.beadUnavailable(target.beadId))
     expect(navigation.beadTarget).toBeUndefined()
-    expect(onError).toHaveBeenCalledWith('That bead is no longer actionable in its workspace.')
+    expect(onError).toHaveBeenCalledWith('The Beads workspace view could not be opened.')
   })
 
   it('revokes a late switch after unmount', async () => {

@@ -21,6 +21,7 @@ import type {
   ExtensionContributionState,
   ExtensionSurfaceRequest,
   ExtensionDemand,
+  ExtensionTargetedViewInputRequest,
 } from '../extensions/workbench'
 
 /** Trusted Settings/viewer transport. This contract is never exposed to a guest. */
@@ -181,6 +182,7 @@ export const extensionsIpc = {
       { readonly viewId: string; readonly workspaceId?: string },
       ExtensionView
     >(),
+    'extensions:target-view-input': invoke<ExtensionTargetedViewInputRequest, ExtensionView>(),
     'extensions:close-view': invoke<{ readonly viewId: string }, void>(),
     'extensions:contributions': invoke<void, readonly ExtensionContributionState[]>(),
     'extensions:context': invoke<

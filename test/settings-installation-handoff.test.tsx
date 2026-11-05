@@ -93,7 +93,13 @@ async function fixture(surface: 'top' | 'viewer' = 'top', initialView = true) {
     obscured: true,
     views: [view],
     state: [
-      { installationId: 'exact', extensionName: 'Reference', manifest, values: [] },
+      {
+        installationId: 'exact',
+        revision: 'revision',
+        extensionName: 'Reference',
+        manifest,
+        values: [],
+      },
     ],
     sessions: [],
     terminalIds: {},

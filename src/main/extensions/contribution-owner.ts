@@ -3,6 +3,7 @@ import type {
   ExtensionContributionState,
   ExtensionDemand,
   ExtensionView,
+  ExtensionTargetedViewInputRequest,
 } from '../../shared/extensions/workbench'
 import type { RendererOwner } from '../renderer-resource-scopes'
 import type { ExtensionActivationOwner } from './activation'
@@ -44,6 +45,7 @@ export class ExtensionContributionOwner {
   snapshot(): readonly ExtensionContributionState[] {
     return [...this.activations.active.values()].map((activation) => ({
       installationId: activation.installationId,
+      revision: activation.revision.hash,
       extensionName: activation.revision.manifest.name,
       manifest: activation.revision.manifest,
       navigationIcons: activation.revision.navigationIcons,
@@ -52,6 +54,46 @@ export class ExtensionContributionOwner {
         ? { error: this.errors.get(activation.installationId) }
         : {}),
     }))
+  }
+
+  async targetViewInput(
+    owner: RendererOwner,
+    request: ExtensionTargetedViewInputRequest,
+  ): Promise<ExtensionView> {
+    this.scopes.assertCurrent(owner)
+    const activation = this.activations.active.get(request.installationId)
+    if (!activation || activation.revision.hash !== request.revision)
+      throw new Error('Extension revision is unavailable')
+    const contribution = activation.revision.manifest.views.find(
+      (view) => view.id === request.contributionId,
+    )
+    if (
+      !contribution ||
+      contribution.placement !== 'workspace' ||
+      contribution.navigation !== 'left'
+    )
+      throw new Error('Targeted workspace contribution is unavailable')
+    const context = this.contexts().admit(owner, {
+      surface: 'left',
+      workspaceId: request.workspaceId,
+    })
+    const admit = (): void => {
+      if (
+        this.activations.active.get(request.installationId) !== activation ||
+        !context.current()
+      )
+        throw new Error('Targeted workspace contribution was revoked')
+    }
+    return this.guests.open(
+      owner,
+      request.installationId,
+      request.contributionId,
+      admit,
+      {
+        context: { surface: 'left', workspaceId: request.workspaceId },
+        input: request.input,
+      },
+    )
   }
 
   demand(owner: RendererOwner, values: readonly ExtensionDemand[]): Promise<void> {

@@ -8,6 +8,7 @@ import type {
   ExtensionDemand,
   ExtensionSurfaceRequest,
   ExtensionView,
+  ExtensionTargetedViewInputRequest,
 } from '../../../shared/extensions/workbench'
 import type { RegisteredProjectState } from '../../../shared/workspace-types'
 
@@ -24,6 +25,7 @@ export interface Contributions {
   readonly landingFocusId?: string
   readonly views: readonly ExtensionView[]
   readonly state: readonly ExtensionContributionState[]
+  readonly stateReady?: boolean
   readonly terminalIds: Readonly<Record<string, string>>
   readonly sessions: readonly ExtensionSessionContext[]
   readonly workspaces?: readonly ExtensionWorkspaceContext[]
@@ -35,6 +37,9 @@ export interface Contributions {
     id: string,
     view: string,
     context: ExtensionSurfaceRequest,
+  ) => Promise<ExtensionView>
+  readonly targetedInput?: (
+    request: ExtensionTargetedViewInputRequest,
   ) => Promise<ExtensionView>
   readonly demand: (key: string, entries: readonly ExtensionDemand[]) => () => void
 }

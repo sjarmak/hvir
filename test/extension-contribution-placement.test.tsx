@@ -106,6 +106,7 @@ describe('extension contribution placement and focus', () => {
               ? [
                   {
                     installationId: 'one',
+                    revision: 'revision',
                     extensionName: 'Example',
                     manifest,
                     values: [],
@@ -221,6 +222,7 @@ describe('extension contribution placement and focus', () => {
     ).manifest
     const item = {
       installationId: 'one',
+      revision: 'revision',
       extensionName: 'Example',
       manifest,
       values: [],
@@ -359,6 +361,7 @@ describe('extension contribution placement and focus', () => {
               ? [
                   {
                     installationId: 'one',
+                    revision: 'revision',
                     extensionName: 'Example',
                     manifest,
                     values: [],
@@ -444,7 +447,15 @@ describe('extension contribution placement and focus', () => {
         if (channel === 'extensions:close-view') return Promise.reject(new Error(failure))
         return Promise.resolve(
           channel === 'extensions:contributions'
-            ? [{ installationId: 'one', extensionName: 'Example', manifest, values: [] }]
+            ? [
+                {
+                  installationId: 'one',
+                  revision: 'revision',
+                  extensionName: 'Example',
+                  manifest,
+                  values: [],
+                },
+              ]
             : channel === 'extensions:context'
               ? { terminalIds: {}, sessions: [] }
               : channel === 'extensions:open-view'
@@ -554,7 +565,15 @@ describe('extension contribution placement and focus', () => {
     const invoke = vi.fn(() => Promise.resolve()),
       open = vi.fn(() => Promise.resolve(left))
     const model: Contributions = {
-      state: [{ installationId: 'one', extensionName: 'Example', manifest, values: [] }],
+      state: [
+        {
+          installationId: 'one',
+          revision: 'revision',
+          extensionName: 'Example',
+          manifest,
+          values: [],
+        },
+      ],
       views: [left, hiddenLeft, independent, view],
       topActive: false,
       obscured: false,
@@ -642,7 +661,15 @@ describe('extension contribution placement and focus', () => {
       const invoke = vi.fn((channel: string) =>
         Promise.resolve(
           channel === 'extensions:contributions'
-            ? [{ installationId: 'one', extensionName: 'Example', manifest, values: [] }]
+            ? [
+                {
+                  installationId: 'one',
+                  revision: 'revision',
+                  extensionName: 'Example',
+                  manifest,
+                  values: [],
+                },
+              ]
             : channel === 'extensions:context'
               ? { terminalIds: { live: 'terminal' }, sessions: [view.context!.session!] }
               : channel === 'extensions:open-view'
@@ -784,6 +811,7 @@ describe('extension contribution placement and focus', () => {
       const model: Contributions = {
         state: ['one', 'two'].map((installationId) => ({
           installationId,
+          revision: 'revision',
           extensionName: installationId,
           manifest,
           values: [],
