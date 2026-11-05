@@ -11,10 +11,12 @@ platform that now owns isolated views, finite workspace connectors, contribution
 and explicit terminal handoff. Keeping both paths would make the fork carry a second package
 runtime and would let tool-specific policy leak across the public capability boundary.
 
-The replacement must preserve the behavior of the built-in channels `beads:list`, `beads:probe`, `gascity:crew`, `gascity:probe`, `gascity:analytics-config`, `gascity:attention`, `gascity:attention-changed`, and `project:watch`, listed in the capability map below:
-Beads listing and availability, Gas City crew and availability, analytics configuration,
-Gas City attention, project-watch refresh, terminal commands and session attachment,
-Needs you deep links, and left-rail placement. It must also work for SSH workspaces without
+The replacement must preserve the behavior of the built-in channels `beads:list`,
+`beads:probe`, `gascity:crew`, `gascity:probe`, `gascity:analytics-config`, `gascity:attention`,
+`gascity:attention-changed`, and `project:watch`, mapped in the capability table below. That
+covers Beads listing and availability, Gas City crew and availability, analytics configuration,
+Gas City attention, refresh, terminal commands and session attachment, Needs you deep links,
+and left-rail placement. It must also work for SSH workspaces without
 granting a guest filesystem, process, host-discovery, or authentication authority.
 
 Beads stores are commonly changed by another process through Dolt. A filesystem watch is not
@@ -123,7 +125,7 @@ acceptance ledger:
 | Phase | Scope | Verification command |
 | --- | --- | --- |
 | 1. Targeted input | Add the bounded trusted targeted-view-input contract, ownership checks, replace-latest delivery, and Needs you unavailable behavior. | `npm test -- extension-context-owner extension-view-launcher needs-you-navigation` |
-| 2. External links | Add visible-gesture-only safe external URL handoff using the existing native URL policy. | `npm test -- extension-guest-owner extension-view-launcher` |
+| 2. External links | Add safe external URL handoff with main-observed activation and origin confirmation, using the existing native URL policy. | `npm test -- extension-guest-owner extension-view-launcher` |
 | 3. Package read surface | Add the package, `bd` and `gc` declarations, demand-scoped refresh, taxonomy consumption, Beads sections, crew presentation, and explicit failure states. | `npm test -- extension-connector extension-contribution extension-guest` |
 | 4. Commands and navigation | Add terminal handoffs and Needs you focus handling; verify fresh-terminal semantics and local/SSH grant identity. | `npm test -- extension-terminal-handoff extension-connector needs-you-navigation` |
 | 5. Link inputs | Add structured `gc` analytics inputs or explicit package configuration and package link rendering; do not restore private domain IPC. | `npm test -- extension-guest extension-connector` |
