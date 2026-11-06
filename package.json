@@ -89,6 +89,7 @@
     "extension:transport": "node scripts/prepare-extension-transport.mts",
     "extension:ui": "node scripts/prepare-extension-ui.mts",
     "extension:ui:tokens": "node scripts/prepare-extension-ui.mts --tokens",
+    "extension:beads": "node scripts/prepare-beads-extension.mts",
     "extension:skillager": "node scripts/prepare-skillager-extension.mts",
     "probe:extension:skillager": "npm run build:smoke && node scripts/probe-skillager-extension.mts"
   },

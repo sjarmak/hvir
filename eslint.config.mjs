@@ -46,7 +46,7 @@ const IPC_RENDERER_BAN = {
 
 const EXTENSION_PACKAGE_IMPORT_BAN = {
   selector:
-    "ImportDeclaration[source.value=/packages\\/(extension-reference|extension-authoring|skillager-extension)(\\/|$)/], ExportNamedDeclaration[source.value=/packages\\/(extension-reference|extension-authoring|skillager-extension)(\\/|$)/], ExportAllDeclaration[source.value=/packages\\/(extension-reference|extension-authoring|skillager-extension)(\\/|$)/], ImportExpression[source.value=/packages\\/(extension-reference|extension-authoring|skillager-extension)(\\/|$)/], TSImportType[source.value=/packages\\/(extension-reference|extension-authoring|skillager-extension)(\\/|$)/], CallExpression[callee.name='require'] > Literal.arguments[value=/packages\\/(extension-reference|extension-authoring|skillager-extension)(\\/|$)/]",
+    "ImportDeclaration[source.value=/packages\\/(extension-reference|extension-authoring|skillager-extension|beads-extension)(\\/|$)/], ExportNamedDeclaration[source.value=/packages\\/(extension-reference|extension-authoring|skillager-extension|beads-extension)(\\/|$)/], ExportAllDeclaration[source.value=/packages\\/(extension-reference|extension-authoring|skillager-extension|beads-extension)(\\/|$)/], ImportExpression[source.value=/packages\\/(extension-reference|extension-authoring|skillager-extension|beads-extension)(\\/|$)/], TSImportType[source.value=/packages\\/(extension-reference|extension-authoring|skillager-extension|beads-extension)(\\/|$)/], CallExpression[callee.name='require'] > Literal.arguments[value=/packages\\/(extension-reference|extension-authoring|skillager-extension|beads-extension)(\\/|$)/]",
   message:
     'Core and public contracts never import extension example or Skillager package implementations; consume the public extension contract.',
 }
@@ -136,6 +136,8 @@ export default tseslint.config(
       'packages/skillager-extension/skillager.js',
       'packages/skillager-extension/updater.js',
       'packages/skillager-extension/operations.js',
+      'packages/beads-extension/beads.js',
+      'packages/beads-extension/updater.js',
     ],
   },
 
@@ -234,6 +236,14 @@ export default tseslint.config(
     rules: dependencyDirectionRules(
       '^node:|^electron$|(^|/)(main|workers|renderer|preload)(/|$)|(^|/)packages/(?!skillager-extension/)',
       'The Skillager package consumes public contracts and browser-safe presentation only, never private workbench or other package implementations.',
+    ),
+  },
+
+  {
+    files: ['packages/beads-extension/**/*.{js,mjs,ts,tsx,mts,cts}'],
+    rules: dependencyDirectionRules(
+      '^node:|^electron$|(^|/)(main|workers|renderer|preload)(/|$)|(^|/)src/shared/(index|ipc)(\\.[cm]?[jt]sx?)?$|(^|/)packages/(?!beads-extension/)',
+      'The Beads package consumes public contracts and browser-safe presentation only, never private workbench or other package implementations.',
     ),
   },
 
@@ -707,6 +717,7 @@ export default tseslint.config(
       'scripts/prepare-extension-ui.mts',
       'scripts/prepare-extension-transport.mts',
       'scripts/prepare-skillager-extension.mts',
+      'scripts/prepare-beads-extension.mts',
       'scripts/check-terminal-runtime.mts',
       'scripts/agent-work-checkpoint-store.mts',
       'scripts/ghostty-web-update/candidate-bundle.mts',

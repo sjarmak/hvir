@@ -1,0 +1,61 @@
+{
+  "id": "beads-workspace",
+  "name": "Beads workspace",
+  "version": "0.1.0",
+  "contract": "1.0",
+  "requiredCapabilities": [
+    "presentation.read",
+    "context.read",
+    "contributions.publish",
+    "connector.execute",
+    "connector.output"
+  ],
+  "optionalCapabilities": ["connector.status"],
+  "access": [],
+  "views": [
+    {
+      "id": "beads",
+      "title": "Beads",
+      "entry": "index.html",
+      "placement": "workspace",
+      "navigation": "left",
+      "navigationIcon": "beads.svg",
+      "representations": ["view"]
+    }
+  ],
+  "railItems": [
+    {
+      "id": "status",
+      "placement": "header",
+      "icon": "◉",
+      "tooltip": "Beads workspace status",
+      "label": "Beads",
+      "kind": "observation",
+      "click": {
+        "view": "beads",
+        "placement": "viewer"
+      }
+    }
+  ],
+  "updater": "updater.html",
+  "connectors": [
+    {
+      "id": "bd",
+      "description": "Read the selected workspace's approved Beads store as bounded structured output.",
+      "context": "workspace",
+      "timeoutMs": 20000,
+      "outputBytes": 4194304,
+      "environment": [],
+      "setup": { "executable": "bd" }
+    },
+    {
+      "id": "gc",
+      "description": "Read approved Gas City session state for the selected workspace.",
+      "context": "workspace",
+      "timeoutMs": 20000,
+      "outputBytes": 4194304,
+      "environment": [],
+      "setup": { "executable": "gc" }
+    }
+  ]
+}

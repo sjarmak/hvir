@@ -1,0 +1,105 @@
+@import '../../../src/shared/presentation/tokens.css';
+@import '../../../src/shared/presentation/primitives.css';
+@import '../../../src/shared/presentation/presentation.css';
+
+html,
+body {
+  min-height: 100%;
+  margin: 0;
+  color: var(--text);
+  background: var(--surface-0);
+  font-family: var(--hvir-interface-font);
+}
+
+.beads-shell {
+  display: grid;
+  gap: 18px;
+  padding: 16px;
+}
+
+.beads-toolbar,
+.beads-row,
+.beads-row-title {
+  display: flex;
+  align-items: center;
+}
+
+.beads-toolbar,
+.beads-row {
+  justify-content: space-between;
+  gap: 12px;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+h1 {
+  color: var(--text-strong);
+  font-size: 18px;
+}
+
+h2 {
+  margin-bottom: 8px;
+  color: var(--text-strong);
+  font-size: 14px;
+}
+
+.beads-sections {
+  display: grid;
+  gap: 10px;
+}
+
+.beads-section {
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-1);
+}
+
+.beads-section h3 {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.beads-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.beads-row {
+  padding: 8px 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.beads-row:first-child {
+  border-top: 0;
+}
+
+.beads-row-title {
+  min-width: 0;
+  gap: 7px;
+}
+
+.beads-id,
+.beads-count {
+  color: var(--text-muted);
+  font-family: var(--hvir-monospace-font);
+  font-size: 11px;
+}
+
+.beads-error {
+  color: var(--danger-text);
+}
+
+.beads-empty {
+  padding: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
