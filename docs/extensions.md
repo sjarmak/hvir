@@ -108,7 +108,7 @@ destination; `navigation: 'left'` creates a workspace rail view. `access` declar
 
 Contract 1.0 provides `presentation.read`, `viewer.open-own`, `context.read`,
 `contributions.read`, `contributions.publish`, `actions.invoke`, `connector.status`,
-`connector.execute`, `connector.output`, `connector.connect`, `terminal.start`, `source.status`, `source.request`, `source.select`,
+`connector.execute`, `connector.output`, `connector.connect`, `external.open`, `terminal.start`, `source.status`, `source.request`, `source.select`,
 `source.read`, `source.asset`, `source.render`, `source.reveal`, `source.request-trash`, `delivery.capture`, `delivery.manifest`, `delivery.preview`, `delivery.apply`, `delivery.status`, `delivery.domain`, `delivery.reconcile`, and `delivery.cleanup`. List required and
 optional capabilities explicitly. Same-major older or equal minor contracts activate;
 a newer minor also activates when every required capability exists. Unsupported major
@@ -172,6 +172,13 @@ DevTools target identity must resolve to that exact guest before each command.
 No debugger API or remote debugging endpoint is exposed. This engine lifecycle
 choice provides actual timer suspension independently of guest cooperation.
 hvir owns reserved close shortcuts and guest disposal.
+
+`external.open` takes `{ url: 'https://example.com/path' }`. It is available only to an
+ordinary visible guest after a current native mouse or keyboard activation. The activation
+is single-use and expires after five seconds. hvir parses the HTTPS URL, displays its origin
+in a trusted native confirmation, and opens the exact URL in the OS browser only after
+approval. Request fields, action provenance, hidden views, and updater guests cannot supply
+or bypass activation.
 
 ### Optional offline UI kit
 

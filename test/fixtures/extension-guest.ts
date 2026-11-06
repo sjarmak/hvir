@@ -56,6 +56,7 @@ export function guestTestPorts(
     updaterFailed: vi.fn(),
     visibleContributionsChanged: vi.fn(),
     updaterSessions: vi.fn(() => []),
+    externalUrls: { open: vi.fn(unavailable) },
     ...overrides,
   }
 }
@@ -92,6 +93,7 @@ export function fixture(
     visibility: vi.fn(),
     foreground: () => true,
     windowVisible: () => true,
+    consumeUserActivation: () => false,
     ...overrides,
   }
   const publish = vi.fn()

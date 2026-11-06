@@ -8,6 +8,7 @@ import type { ExtensionTerminalHandoff } from './terminal-handoff'
 import type { ExtensionConnectorExecutionOwner } from './connector-execution'
 import type { ExtensionActionOwner } from './action-owner'
 import type { ExtensionPresentationState } from './presentation-state'
+import type { ExtensionSafeExternalUrl } from './safe-external-url'
 import type { ExtensionSessionContext } from '../../shared/extensions/contract'
 import type { ExtensionView } from '../../shared/extensions/workbench'
 
@@ -46,6 +47,7 @@ export interface ExtensionGuestPorts {
     | 'revokeView'
   >
   readonly presentationState: Pick<ExtensionPresentationState, 'values' | 'publish'>
+  readonly externalUrls: Pick<ExtensionSafeExternalUrl, 'open'>
   readonly connectorDemand: (
     this: void,
     installation: string,

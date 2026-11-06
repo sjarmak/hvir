@@ -34,6 +34,7 @@ interface SurfaceRecord {
   owner?: RendererOwner
   lifecycle?: ExtensionGuestLifecycle
   presentation?: Extract<ExtensionReply, { kind: 'presentation' }>
+  userActivationUntil: number
 }
 
 type EngineFailureStage =
@@ -51,6 +52,7 @@ type EngineFailureStage =
 
 /** Replaceable Electron webview edge. Sessions and URLs are never borrowed from loopback panes. */
 export class ElectronExtensionGuestSurface implements ExtensionGuestSurfacePort {
+  private static readonly userActivationLifetimeMs = 5_000
   private readonly surfaces = new Map<string, SurfaceRecord>()
   private readonly partitions = new WeakMap<Session, string>()
   private readonly cleanups = new Map<string, Promise<void>>()
@@ -111,6 +113,7 @@ export class ElectronExtensionGuestSurface implements ExtensionGuestSurfacePort 
       revoke,
       visible: false,
       admittedWork: false,
+      userActivationUntil: 0,
     }
     this.surfaces.set(view.id, record)
     this.partitions.set(guestSession, view.partition)
@@ -460,6 +463,23 @@ export class ElectronExtensionGuestSurface implements ExtensionGuestSurfacePort 
     })
     guest.on('did-finish-load', () => this.reapplyWindow(owner))
     guest.once('destroyed', () => this.owner?.failed(guest.id))
+    const activate = (): void => {
+      if (
+        record.visible &&
+        record.owner &&
+        record.view.role !== 'updater' &&
+        this.foreground(record.owner)
+      )
+        record.userActivationUntil =
+          performance.now() + ElectronExtensionGuestSurface.userActivationLifetimeMs
+    }
+    guest.on('before-mouse-event', (_event, mouse) => {
+      if (mouse.type === 'mouseDown' && mouse.button === 'left') activate()
+    })
+    guest.on('before-input-event', (_event, input) => {
+      if (input.type === 'keyDown' && !input.isAutoRepeat && input.key !== 'Escape')
+        activate()
+    })
     if (view.context?.surface === 'popup')
       guest.on('before-input-event', (event, input) => {
         if (input.type === 'keyDown' && input.key === 'Escape') {
@@ -507,6 +527,22 @@ export class ElectronExtensionGuestSurface implements ExtensionGuestSurfacePort 
     )
   }
 
+  consumeUserActivation(guestId: number): boolean {
+    const record = [...this.surfaces.values()].find(
+      (entry) => entry.guest?.id === guestId,
+    )
+    if (
+      !record ||
+      !record.visible ||
+      !record.owner ||
+      !this.foreground(record.owner) ||
+      record.userActivationUntil < performance.now()
+    )
+      return false
+    record.userActivationUntil = 0
+    return true
+  }
+
   installWindowLifecycle(win: BrowserWindow, owner: () => RendererOwner): void {
     let pending: ReturnType<typeof setImmediate> | undefined
     const reapply = (): void => {
@@ -521,12 +557,20 @@ export class ElectronExtensionGuestSurface implements ExtensionGuestSurfacePort 
     win.on('focus', reapply)
     win.on('resize', reapply)
     const foreground = (): void => {
-      this.owner?.foregroundChanged(owner())
+      const currentOwner = owner()
+      if (!this.foreground(currentOwner))
+        for (const record of this.surfaces.values())
+          if (
+            record.owner?.id === currentOwner.id &&
+            record.owner.generation === currentOwner.generation
+          )
+            record.userActivationUntil = 0
+      this.owner?.foregroundChanged(currentOwner)
       for (const listener of this.foregroundObservers) listener()
       sendRendererEvent(
         win.webContents,
         'extensions:foreground-changed',
-        this.foreground(owner()),
+        this.foreground(currentOwner),
       )
     }
     const foregroundEvents = [
@@ -611,6 +655,7 @@ export class ElectronExtensionGuestSurface implements ExtensionGuestSurfacePort 
     )
     if (!record || record.guest?.isDestroyed()) return
     record.visible = visible
+    if (!visible) record.userActivationUntil = 0
     record.lifecycle?.setVisible(visible)
   }
 

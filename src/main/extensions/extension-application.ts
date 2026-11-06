@@ -40,6 +40,7 @@ import { createElectronPackagePicker } from './electron-package-picker'
 import { prepareInstallationLanding } from './installation-landing'
 import { ExtensionSetupOwner } from './extension-setup'
 import { createElectronExtensionSetup } from './electron-extension-setup'
+import { ExtensionSafeExternalUrl } from './safe-external-url'
 
 /** Application composition and lifetime of the extension platform; no extension package code. */
 export class ExtensionApplicationRuntime {
@@ -378,6 +379,7 @@ export class ExtensionApplicationRuntime {
           this.events.toRenderer(owner, 'extensions:files-reveal', request),
         ),
         presentationState: presentation,
+        externalUrls: new ExtensionSafeExternalUrl(),
         actions,
         ...(this.terminalHandoffs
           ? {

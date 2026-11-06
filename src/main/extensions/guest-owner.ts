@@ -52,6 +52,7 @@ export interface ExtensionGuestSurfacePort {
   visibility(guestId: number, visible: boolean): void
   foreground(owner: RendererOwner): boolean
   windowVisible(owner: RendererOwner): boolean
+  consumeUserActivation(guestId: number): boolean
   runnable?(guestId: number, admitted: boolean): void
 }
 
@@ -595,6 +596,18 @@ export class ExtensionGuestOwner {
         pending >= EXTENSION_LIMITS.requests
       )
         throw new Error('Extension request capacity is full')
+      if (
+        capability === 'external.open' &&
+        (record.view.role === 'updater' ||
+          record.readingOrigin !== 'human' ||
+          invocation !== undefined ||
+          !record.visible ||
+          record.guestId === undefined ||
+          !this.surface.consumeUserActivation(record.guestId))
+      )
+        throw new Error(
+          'Activate the visible extension view before opening an external URL',
+        )
       if (capability === 'viewer.open-own')
         warnings = [
           ...warnings,
@@ -893,6 +906,7 @@ export class ExtensionGuestOwner {
           (!capability.startsWith('delivery.') &&
             ![
               'actions.invoke',
+              'external.open',
               'viewer.open-own',
               'source.request',
               'source.select',

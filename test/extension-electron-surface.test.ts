@@ -21,6 +21,23 @@ afterEach(() => {
 })
 
 describe('Electron extension response, native teardown and closing capacity', () => {
+  it('consumes one native activation only while its exact guest is visible and foreground', async () => {
+    const data = await fixture()
+    electron.windows.set(data.guest.id, {
+      isDestroyed: () => false,
+      isVisible: () => true,
+      isFocused: () => true,
+      isMinimized: () => false,
+    })
+    data.surface.visibility(data.guest.id, true)
+    data.guest.emit('before-mouse-event', {}, { type: 'mouseDown', button: 'left' })
+    expect(data.surface.consumeUserActivation(data.guest.id)).toBe(true)
+    expect(data.surface.consumeUserActivation(data.guest.id)).toBe(false)
+    data.guest.emit('before-input-event', {}, { type: 'keyDown', key: 'Enter' })
+    data.surface.visibility(data.guest.id, false)
+    expect(data.surface.consumeUserActivation(data.guest.id)).toBe(false)
+    await data.surface.destroy(data.view.id)
+  })
   it('publishes actual native foreground after synchronous withdrawal and retires native listeners on close', () => {
     const surface = new ElectronExtensionGuestSurface()
     let focused = true,

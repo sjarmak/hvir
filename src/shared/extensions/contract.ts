@@ -9,6 +9,7 @@ export const EXTENSION_CAPABILITIES = [
   'contributions.read',
   'contributions.publish',
   'actions.invoke',
+  'external.open',
   'terminal.start',
   'connector.execute',
   'connector.output',
