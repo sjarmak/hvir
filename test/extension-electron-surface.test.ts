@@ -38,6 +38,48 @@ describe('Electron extension response, native teardown and closing capacity', ()
     expect(data.surface.consumeUserActivation(data.guest.id)).toBe(false)
     await data.surface.destroy(data.view.id)
   })
+  it('expires native activation after five seconds', async () => {
+    const now = vi.spyOn(performance, 'now').mockReturnValue(100)
+    const data = await fixture()
+    electron.windows.set(data.guest.id, {
+      isDestroyed: () => false,
+      isVisible: () => true,
+      isFocused: () => true,
+      isMinimized: () => false,
+    })
+    data.surface.visibility(data.guest.id, true)
+    data.guest.emit('before-input-event', {}, { type: 'keyDown', key: 'Enter' })
+    now.mockReturnValue(5101)
+    expect(data.surface.consumeUserActivation(data.guest.id)).toBe(false)
+    await data.surface.destroy(data.view.id)
+  })
+  it('clears native activation when the owning window loses foreground', async () => {
+    const data = await fixture()
+    let focused = true
+    const contents = {
+      id: data.guest.id,
+      isDestroyed: () => false,
+      mainFrame: { isDestroyed: () => false, postMessage: vi.fn() },
+    }
+    const win = Object.assign(new EventEmitter(), {
+      webContents: contents,
+      isDestroyed: () => false,
+      isVisible: () => true,
+      isFocused: () => focused,
+      isMinimized: () => false,
+    })
+    electron.guests.set(data.guest.id, contents)
+    electron.windows.set(data.guest.id, win)
+    data.surface.installWindowLifecycle(win as never, () => ({ id: 1, generation: 1 }))
+    data.surface.visibility(data.guest.id, true)
+    data.guest.emit('before-mouse-event', {}, { type: 'mouseDown', button: 'left' })
+    focused = false
+    win.emit('blur')
+    focused = true
+    expect(data.surface.consumeUserActivation(data.guest.id)).toBe(false)
+    win.emit('closed')
+    await data.surface.destroy(data.view.id)
+  })
   it('publishes actual native foreground after synchronous withdrawal and retires native listeners on close', () => {
     const surface = new ElectronExtensionGuestSurface()
     let focused = true,

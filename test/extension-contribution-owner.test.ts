@@ -156,7 +156,7 @@ describe('targeted contribution input', () => {
   ]
 
   it('pins the active revision, declared contribution and exact workspace', async () => {
-    const data = fixture({ views })
+    const data = fixture({ views, requiredCapabilities: ['context.read'] })
     const revision = data.active.get('one')!.revision.hash
     const request = {
       installationId: 'one',
@@ -190,6 +190,22 @@ describe('targeted contribution input', () => {
         input: { focusBeadId: 'x'.repeat(6145) },
       }),
     ).rejects.toThrow('exceeds 6144 bytes')
+    await data.guests.dispose()
+  })
+
+  it('rejects targeted input when the package cannot read context', async () => {
+    const data = fixture({ views })
+    const request = {
+      installationId: 'one',
+      revision: data.active.get('one')!.revision.hash,
+      contributionId: 'beads',
+      workspaceId: 'workspace',
+      input: { focusBeadId: 'hvir-1' },
+    }
+    await expect(data.contributions.targetViewInput(data.a, request)).rejects.toThrow(
+      'unavailable',
+    )
+    expect(data.surface.prepare).not.toHaveBeenCalled()
     await data.guests.dispose()
   })
 

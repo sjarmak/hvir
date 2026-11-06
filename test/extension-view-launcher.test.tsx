@@ -94,6 +94,31 @@ it('resolves one installed workspace contribution and names its revision in targ
           value: {
             state: [
               {
+                installationId: 'other',
+                revision: 'revision-other',
+                extensionName: 'Other',
+                manifest: {
+                  id: 'other-extension',
+                  name: 'Other',
+                  version: '1.0.0',
+                  contract: '1.0',
+                  requiredCapabilities: [],
+                  optionalCapabilities: [],
+                  access: [],
+                  views: [
+                    {
+                      id: 'beads',
+                      title: 'Other beads',
+                      entry: 'index.html',
+                      placement: 'workspace',
+                      navigation: 'left',
+                      representations: ['view'],
+                    },
+                  ],
+                },
+                values: [],
+              },
+              {
                 installationId: 'installed',
                 revision: 'revision-1',
                 extensionName: 'Beads',
@@ -133,6 +158,7 @@ it('resolves one installed workspace contribution and names its revision in targ
         createElement(ExtensionTargetedViewLauncher, {
           target: {
             requestId: 'hvir-1',
+            extensionId: 'beads-extension',
             contributionId: 'beads',
             workspaceId: 'workspace',
             input: { focusBeadId: 'hvir-1' },
@@ -168,6 +194,7 @@ it('reports unavailable targeted input without consuming the Needs you row', asy
         createElement(ExtensionTargetedViewLauncher, {
           target: {
             requestId: 'hvir-1',
+            extensionId: 'beads-extension',
             contributionId: 'beads',
             workspaceId: 'workspace',
             input: { focusBeadId: 'hvir-1' },

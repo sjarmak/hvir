@@ -12,19 +12,31 @@ interface ExternalUrlDecision {
   readonly origin: string
 }
 
+const BIDI_CONTROL = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u
+
 export type ConfirmExternalUrl = (
   decision: ExternalUrlDecision,
   signal: AbortSignal,
   owner: RendererOwner,
 ) => Promise<boolean>
 
-export function safeExternalOrigin(rawUrl: string): string | undefined {
+function safeExternalUrl(rawUrl: string): URL | undefined {
   try {
+    if (BIDI_CONTROL.test(rawUrl)) return undefined
     const url = new URL(rawUrl)
-    return url.protocol === 'https:' && isSafeExternalUrl(rawUrl) ? url.origin : undefined
+    return url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      isSafeExternalUrl(url.href)
+      ? url
+      : undefined
   } catch {
     return undefined
   }
+}
+
+export function safeExternalOrigin(rawUrl: string): string | undefined {
+  return safeExternalUrl(rawUrl)?.origin
 }
 
 export const confirmExternalUrl: ConfirmExternalUrl = async (decision, signal, owner) => {
@@ -62,10 +74,14 @@ export class ExtensionSafeExternalUrl {
     current()
     signal.throwIfAborted()
     const input = extensionObject(value)
-    const url = extensionText(input['url'], 'external URL', 4096)
-    const origin = safeExternalOrigin(url)
-    if (!origin) throw new Error('External URLs must use HTTPS')
-    const accepted = await this.confirm({ url, origin }, signal, caller.owner)
+    const parsed = safeExternalUrl(extensionText(input['url'], 'external URL', 4096))
+    if (!parsed) throw new Error('External URLs must use HTTPS')
+    const url = parsed.href
+    const accepted = await this.confirm(
+      { url, origin: parsed.origin },
+      signal,
+      caller.owner,
+    )
     current()
     signal.throwIfAborted()
     if (!accepted) throw new Error('External URL opening was cancelled')
