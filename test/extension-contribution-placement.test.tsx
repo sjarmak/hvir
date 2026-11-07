@@ -495,6 +495,15 @@ describe('extension contribution placement and focus', () => {
           await Promise.resolve()
         })
         expect(element.querySelector('[aria-current=page]')).not.toBeNull()
+        if (path === 'workspace')
+          for (const id of ['w1', 'w2', 'w3']) {
+            act(() => render(id))
+            expect(
+              invoke.mock.calls.filter(
+                ([channel]) => channel === 'extensions:close-view',
+              ),
+            ).toEqual([])
+          }
         await act(async () => {
           if (path === 'workspace') render('next-workspace')
           else
@@ -531,7 +540,7 @@ describe('extension contribution placement and focus', () => {
     },
   )
 
-  it('keeps same-workspace hide/reopen but closes every inaccessible old-workspace left guest', async () => {
+  it('keeps same-workspace hide/reopen, keeps old-workspace left guests on a switch, and closes them once evicted', async () => {
     const manifest = validateExtensionManifest(
       exampleManifest({
         views: [
@@ -612,6 +621,22 @@ describe('extension contribution placement and focus', () => {
           .click(),
       )
       act(() => render('next-workspace'))
+      act(() => render('workspace'))
+      expect(element.querySelector('[aria-current=page]')).toBeNull()
+      expect(invoke).not.toHaveBeenCalled()
+      await act(async () => {
+        element.querySelector<HTMLButtonElement>('nav button')!.click()
+        await Promise.resolve()
+      })
+      act(() => render('next-workspace'))
+      expect(element.querySelector('[aria-current=page]')).toBeNull()
+      act(() => render('workspace'))
+      expect(element.querySelector('[aria-current=page]')).not.toBeNull()
+      expect(open).toHaveBeenCalledTimes(3)
+      expect(invoke).not.toHaveBeenCalled()
+      for (const id of ['w1', 'w2', 'w3']) act(() => render(id))
+      expect(invoke).not.toHaveBeenCalled()
+      act(() => render('w4'))
       expect(invoke.mock.calls).toEqual([
         ['extensions:close-view', { viewId: left.id }],
         ['extensions:close-view', { viewId: hiddenLeft.id }],

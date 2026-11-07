@@ -25,6 +25,14 @@ import {
   useExtensionContributions,
 } from './extension-contribution-context'
 import { useExtensionForeground } from './use-extension-foreground'
+import {
+  evictedLeftViews,
+  leftViewFor,
+  touchWorkspace,
+  withChoice,
+  type LeftRailChoice,
+  type LeftRailChoices,
+} from './left-rail-selection'
 import type { ProjectState } from '../../../shared/workspace-types'
 
 /** Shared trusted data and presentation subscriptions; never executes package code. */
@@ -403,20 +411,37 @@ export function ExtensionLeftRail({
   const model = useExtensionContributions()
   const modelRef = useRef(model)
   modelRef.current = model
-  const [selectedId, setSelectedId] = useState<string>()
-  const selectionLifetime = useRef({ revision: 0 })
+  const workspaceId = model?.workspaceId
+  const [choices, setChoices] = useState<LeftRailChoices>(() => new Map())
+  const choicesRef = useRef(choices)
+  choicesRef.current = choices
+  const recentWorkspaces = useRef<readonly string[]>([])
+  const choice = workspaceId ? choices.get(workspaceId) : undefined
+  const selected = leftViewFor(model?.views ?? [], workspaceId, choice)
+  const selectionRevision = useRef(0)
   const selectBuiltins = useCallback((): void => {
-    selectionLifetime.current.revision++
-    setSelectedId(undefined)
+    selectionRevision.current++
+    const current = modelRef.current?.workspaceId
+    if (current) setChoices((all) => withChoice(all, current, undefined))
   }, [])
   useLayoutEffect(() => {
     selectBuiltins()
-    const lifetime = selectionLifetime.current
-    return () => {
-      lifetime.revision++
-    }
-  }, [builtinActivation, model?.workspaceId, selectBuiltins])
-  const selected = model?.views.find((view) => view.id === selectedId)
+  }, [builtinActivation, selectBuiltins])
+  const openChoice = useCallback((target: string, next: LeftRailChoice): void => {
+    const current = modelRef.current
+    if (!current) return
+    const revision = ++selectionRevision.current
+    void current
+      .open(next.installationId, next.contributionId, {
+        surface: 'left',
+        workspaceId: target,
+      })
+      .then(() => {
+        if (revision === selectionRevision.current)
+          setChoices((all) => withChoice(all, target, next))
+      })
+      .catch(() => undefined)
+  }, [])
   const entries =
     model?.state.flatMap((extension) =>
       extension.manifest.views
@@ -425,14 +450,15 @@ export function ExtensionLeftRail({
     ) ?? []
   useEffect(() => {
     const current = modelRef.current
-    const inaccessible = (current?.views ?? []).filter(
-      (view) =>
-        view.context?.surface === 'left' &&
-        view.context.workspace?.id !== current?.workspaceId,
-    )
-    for (const view of inaccessible) current?.close(view.id)
-    setSelectedId((id) => (inaccessible.some((view) => view.id === id) ? undefined : id))
-  }, [model?.workspaceId, model?.close])
+    selectionRevision.current++
+    if (!workspaceId || !current) return
+    recentWorkspaces.current = touchWorkspace(recentWorkspaces.current, workspaceId)
+    for (const view of evictedLeftViews(current.views, recentWorkspaces.current))
+      current.close(view.id)
+    const remembered = choicesRef.current.get(workspaceId)
+    if (remembered && !leftViewFor(current.views, workspaceId, remembered))
+      openChoice(workspaceId, remembered)
+  }, [workspaceId, openChoice])
   useContributionDemand(
     'left',
     selected && visible && model?.foreground && !model.obscured
@@ -461,21 +487,12 @@ export function ExtensionLeftRail({
                   : undefined
               }
               onClick={() => {
-                if (model?.workspaceId) {
-                  const revision = ++selectionLifetime.current.revision
-                  void model
-                    .open(extension.installationId, view.id, {
-                      surface: 'left',
-                      workspaceId: model.workspaceId,
-                    })
-                    .then((view) => {
-                      if (view.context?.workspace?.id !== modelRef.current?.workspaceId)
-                        modelRef.current?.close(view.id)
-                      else if (revision === selectionLifetime.current.revision)
-                        setSelectedId(view.id)
-                    })
-                    .catch(() => undefined)
+                if (!workspaceId) return
+                const next = {
+                  installationId: extension.installationId,
+                  contributionId: view.id,
                 }
+                openChoice(workspaceId, next)
               }}
               className="hvir-button"
             >

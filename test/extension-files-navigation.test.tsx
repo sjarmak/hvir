@@ -303,13 +303,20 @@ it.each(['Files', 'Project views', 'workspace round trip', 'unmount'] as const)(
         complete(f.guest)
         await Promise.resolve()
       })
-      if (mounted) {
+      if (mounted && transition === 'workspace round trip') {
+        expect(
+          f.element.querySelector('.files-panel')?.closest('[hidden]'),
+        ).not.toBeNull()
+        expect(
+          f.element.querySelector('[data-extension-view]')?.hasAttribute('hidden'),
+        ).toBe(false)
+      } else if (mounted) {
         expect(f.element.querySelector('.files-panel')?.closest('[hidden]')).toBeNull()
         expect(
           f.element.querySelector('[data-extension-view]')?.hasAttribute('hidden'),
         ).toBe(true)
       } else expect(f.element.childElementCount).toBe(0)
-      if (transition !== 'workspace round trip') expect(f.close).not.toHaveBeenCalled()
+      expect(f.close).not.toHaveBeenCalled()
     } finally {
       if (mounted) f.dispose()
     }
