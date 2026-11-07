@@ -30,13 +30,14 @@ test('argument builders use explicit store scope and unlimited flat JSON lists',
 test('store plan reads workspace HQ once, skips suspended rigs, and uses both decision queries', () => {
   assert.deepEqual(stores.map((store) => store.path), ['/city', '/rigs/lead', '/rigs/decisions', '/rigs/broken'])
   const requests = loader.storeRequests(stores)
-  assert.equal(requests.length, 10)
+  assert.equal(requests.length, 18)
   assert.equal(requests.filter((request) => request.key === 'labeled').length, 4)
+  assert.equal(requests.filter((request) => request.key === 'linked').length, 8)
   assert.equal(requests.some((request) => request.args.includes('/rigs/paused')), false)
   const decisions = requests.filter((request) => request.key === 'decisions')
   assert.deepEqual(decisions[0].args, require('../needs-model.js').askArgs('/rigs/decisions'))
   assert.deepEqual(decisions[1].args, loader.decisionArgs('/rigs/decisions'))
-  assert.equal(loader.storeRequests([stores[0]]).length, 2)
+  assert.equal(loader.storeRequests([stores[0]]).length, 4)
 })
 
 test('one labeled read splits into projects, milestones and artifacts; a failed one reports once', () => {
@@ -62,6 +63,21 @@ test('workflow plans deduplicate roots within each store and cap single-root rea
   const result = loader.assemblePayload({ now: fixture.now, reads })
   assert.match(result.errors.join(' '), /lead: workflow reads limited to 30 roots/)
   assert.match(result.errors.join(' '), /broken.*offline/)
+  assert.deepEqual(result.payload.unread, ['inProgress'])
+})
+
+test('a failed linked or decisions read is listed once in unread and the cards stop judging waits', () => {
+  const reads = [{ key: 'linked', store: stores[0], error: 'down' }, { key: 'linked', store: stores[1], error: 'down' },
+    { key: 'decisions', store: stores[2], error: 'down' }, read('projects', [])]
+  const { payload } = loader.assemblePayload({ now: fixture.now, reads })
+  assert.deepEqual(payload.unread, ['decisions', 'linked'])
+  for (const field of ['linked', 'decisions']) {
+    const model = buildDashboard({ now: fixture.now, sessions: [], unread: [field],
+      projects: [{ id: 'p', title: 'P', status: 'open', labels: ['city-project'], store: '/city',
+        metadata: { 'proj.lead': 'lead', 'proj.state': 'paused', 'proj.waiting_on': '' } }] })
+    const card = model.cards.flatMap((group) => group.cards)[0]
+    assert.equal(card.derivedState, 'unread', field)
+  }
 })
 
 test('live sessions preserve model, account, start and agent fields across gc shapes', () => {
@@ -83,7 +99,7 @@ test('live sessions preserve model, account, start and agent fields across gc sh
 test('fake connector outputs assemble a tagged dashboard despite a failed store', async () => {
   const outputs = {
     projects: fixture.projects, milestones: fixture.milestones, artifacts: fixture.artifacts, inProgress: fixture.inProgress,
-    decisions: fixture.decisions, workflowRoots: fixture.workflowRoots, workflowSteps: fixture.workflowSteps,
+    decisions: fixture.decisions, workflowRoots: fixture.workflowRoots, workflowSteps: fixture.workflowSteps, linked: [],
   }
   const execute = async (request) => {
     if (request.store.name === 'broken') return { ...request, error: 'store unavailable' }
@@ -101,7 +117,7 @@ test('fake connector outputs assemble a tagged dashboard despite a failed store'
   assert.equal(result.payload.workflowRoots.length, fixture.workflowRoots.length)
   assert.deepEqual(result.payload.seatJobs, [])
   assert.deepEqual(result.payload.refStates, {})
-  assert.equal(result.errors.length, 2)
+  assert.equal(result.errors.length, 4)
   assert.equal(result.payload.artifacts.length, fixture.artifacts.length)
   assert.equal(result.errors.every((error) => /broken.*store unavailable/.test(error)), true)
   for (const field of Object.keys(outputs).filter((key) => key !== 'labeled')) {
@@ -133,7 +149,7 @@ const livePage = (t, page, script) => {
   const dom = new JSDOM(readFileSync(`${__dirname}/../${page}`, 'utf8'), { runScripts: 'outside-only' })
   t.after(() => dom.window.close())
   const { window } = dom
-  for (const file of ['view', 'crew-parse', 'needs-model', 'projects-load', 'projects-model', 'projects-render', 'projects-data']) {
+  for (const file of ['view', 'crew-parse', 'needs-model', 'projects-load', 'projects-truth', 'projects-model', 'projects-render', 'projects-data']) {
     window.eval(readFileSync(`${__dirname}/../${file}.js`, 'utf8'))
   }
   const page_ = { view: undefined, opened: [], connected: [], bd: 'supported', document: window.document }
@@ -218,6 +234,33 @@ test('a refresh whose reads did not run keeps the last render, and a revisited w
   assert.equal(rows(), 1)
   assert.match(document.getElementById('status').textContent, /refreshing…/)
   await back
+})
+
+test('a load the view was hidden during neither renders nor caches its partial reads', async (t) => {
+  const page = livePage(t, 'projects.html', 'projects.js')
+  const { view, document } = page
+  const rows = () => document.querySelectorAll('.projects-nav-row').length
+  const status = () => document.getElementById('status').textContent
+  const refused = new Error('Selected extension window is in the background')
+  const run = document.defaultView.bdRead
+  document.defaultView.bdRead = async (scope, args) => {
+    if (!args.includes('--label-any')) throw refused
+    return run(scope, args)
+  }
+  await view.load({ workspace }, { hidden: () => true })
+  assert.equal(rows(), 0)
+  assert.equal(status(), 'Paused while hvir is in the background; loads when shown')
+  document.defaultView.bdRead = run
+  await view.load({ workspace }, { hidden: () => false })
+  assert.equal(rows(), 1)
+  const shown = document.getElementById('projects').innerHTML
+  document.defaultView.bdRead = async (scope, args) => {
+    if (!args.includes('--label-any')) throw refused
+    return run(scope, args)
+  }
+  await view.load({ workspace }, { hidden: () => true })
+  assert.equal(document.getElementById('projects').innerHTML, shown)
+  assert.match(status(), /refresh paused: hvir went to the background/)
 })
 
 test('project page renders the project named in its input, and says so when it is gone', async (t) => {

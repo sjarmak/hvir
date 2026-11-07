@@ -49,7 +49,8 @@
     text(`${entry.time} · ${window.ago(entry.time.replace(/Z$/, ':00Z'))}`, 'hvir-meta'))
 
   const renderMilestone = (entry, options) => el('li', { title: entry.id },
-    text(entry.target || 'No target', 'hvir-meta'),
+    text(entry.target ? `Due ${entry.target}` : 'No due date', 'hvir-meta'),
+    entry.overdue && text(' · overdue', 'projects-warning'),
     text(entry.title), chip(entry.state),
     entry.outcome && paragraph(entry.outcome), renderRefs(entry.refs, options))
 
@@ -74,6 +75,8 @@
       `${item.step || 'Step unknown'} · ${item.session}`).join('; ') : 'No active workers', 'hvir-meta'))
 
   const renderDetail = (card, options) => el('div', { className: 'projects-detail' },
+    card.state !== card.derivedState && paragraph(`Lead's record says ${card.state.replaceAll('-', ' ')}`, 'hvir-meta'),
+    section('Dates', renderDates(card)),
     section('Milestones', list(card.milestoneList.map((entry) => renderMilestone(entry, options)), 'No milestones')),
     section('Needs you', list(card.decisions.filter((ask) => ask.needsYou)
       .map((ask) => renderAsk(ask, options)), 'Nothing needs you')),
@@ -93,10 +96,48 @@
     return el('div', { className: 'projects-progress' },
       el('label', {}, `${done}/${total} milestones done`,
         el('progress', { max: total || 1, value: done, title: `${done} of ${total} milestones done` })),
-      paragraph(next ? `Next: ${next.title} · ${next.target || 'No target'}` : 'No next milestone', 'hvir-meta'))
+      paragraph(next ? `Next: ${next.title} · ${next.target ? `due ${next.target}` : 'no due date'}` : 'No next milestone', 'hvir-meta'),
+      next?.overdue && paragraph('Next milestone is overdue', 'projects-warning'))
   }
 
+  const OWNER_LABELS = { user: (name) => `Action: ${name}`, dot: (name) => `Action: ${name}`,
+    agent: (name) => `Action: ${name} (agent)` }
+  const WAIT_LABELS = { her: 'her', 'her-decision': 'her decision', 'decision-in-delivery': 'answered decision',
+    work: 'work', 'not-linked': 'not linked' }
+  const REASON_LABELS = { deadline: 'deadline', dependency: 'dependency', 'evidence-check': 'evidence check' }
+
+  const renderOwner = (card) => {
+    const node = paragraph(OWNER_LABELS[card.actionOwner.kind](card.actionOwner.name), 'projects-owner')
+    node.dataset.kind = card.actionOwner.kind
+    return node
+  }
+
+  const unverified = (card) => card.waitsUnread
+    ? 'Waits: unverified, linked work or decisions could not be read'
+    : 'Waits: unverified, the record does not declare what it waits on'
+
+  const renderWaits = (card) => {
+    if (!card.waitsVerified) return paragraph(unverified(card), 'projects-warning projects-unverified')
+    return card.waitingOn.length > 0 && paragraph(`Waits on: ${card.waitingOn.map((entry) =>
+      `${entry.id} (${[WAIT_LABELS[entry.kind], entry.status, entry.owner && entry.kind === 'work' && entry.owner]
+        .filter(Boolean).join(', ')})`).join('; ')}`, 'hvir-meta')
+  }
+
+  const renderChecks = (card) => card.checks.map((check) => paragraph(check, 'projects-warning projects-check'))
+
+  const renderTimes = (card) => paragraph([
+    `Fetched ${card.fetchedAt ? window.ago(card.fetchedAt) : 'unknown'}`,
+    card.verifiedAt ? `last verified progress ${card.verifiedAt} · ${window.ago(card.verifiedAt)}` : 'no verified progress recorded',
+  ].join(' · '), 'hvir-meta projects-times')
+
+  const renderDates = (card) => list(card.dates.map((entry) => el('li', {},
+    text(entry.label), text(` · ${entry.at || 'none recorded'} · ${REASON_LABELS[entry.reason]}`, 'hvir-meta'),
+    entry.overdue && text(' · overdue', 'projects-warning'))), 'No dates')
+
   const summary = (card, options) => [
+      renderOwner(card),
+      renderWaits(card),
+      ...renderChecks(card),
       card.contributors.length > 0 && paragraph(`With ${card.contributors.join(', ')}`, 'hvir-meta'),
       paragraph(card.now || 'No current update'),
       card.stuckWhy && paragraph(card.stuckWhy, 'projects-warning'),
@@ -105,8 +146,7 @@
       paragraph(`${card.needsCount} ${card.needsCount === 1 ? 'decision needs' : 'decisions need'} you`),
       renderRefs(card.refs, options),
       section('Active now', list(card.active.map(renderActivity), 'No active agents')),
-      card.stale && paragraph('not updated in 24h', 'projects-warning'),
-      paragraph(card.updatedAt ? `Updated ${card.updatedAt} · ${window.ago(card.updatedAt)}` : 'Update time unknown', 'hvir-meta')]
+      renderTimes(card)]
     .filter(Boolean)
 
   const renderCard = (card, options) => {
@@ -119,7 +159,7 @@
     })
     toggle.setAttribute('aria-expanded', 'false')
     const face = el('div', { className: 'projects-card-face' },
-      el('header', {}, el('h3', { title: card.id }, card.title), chip(card.state)),
+      el('header', {}, el('h3', { title: card.id }, card.title), chip(card.derivedState)),
       ...summary(card, options),
       el('div', { className: 'projects-card-actions' }, toggle,
         options.onOpenProject && button('Open page', card.id, () => options.onOpenProject(card.id, card.store))))
@@ -139,19 +179,22 @@
       section('Active now', el('div', { className: 'projects-active-grid' }, ...activeGroups),
         !activeGroups.length && paragraph('No active agents', 'hvir-meta'),
         options.seatJobsUnavailable && paragraph('Seat jobs not shown yet', 'hvir-meta')),
-      ...model.cards.map((group) => section(group.lead,
-        el('div', { className: 'projects-grid' }, ...group.cards.map((card) => renderCard(card, options))))))
+      ...liveGroups(model).map((group) => section(group.lead,
+        el('div', { className: 'projects-grid' }, ...group.cards.map((card) => renderCard(card, options))))),
+      ...archive(model, options, root))
   }
 
   const tile = (label, value) => el('div', { className: 'projects-tile' }, text(label, 'hvir-meta'), el('strong', {}, value))
 
   const glance = (card) => el('div', { className: 'projects-glance' },
-    tile('State', chip(card.state)),
+    tile('State', chip(card.derivedState)),
+    tile('Action', card.actionOwner.name),
+    tile('Waits', card.waitsVerified ? card.waitingOn.map((entry) => entry.id).join(', ') || 'none' : 'unverified'),
     tile('Lead', card.lead),
     tile('Milestones', `${card.milestones.done}/${card.milestones.total}`),
     tile('Needs you', String(card.needsCount)),
     tile('Agents active', String(card.active.length)),
-    tile('Updated', card.updatedAt ? window.ago(card.updatedAt) : 'unknown'))
+    tile('Verified progress', card.verifiedAt ? window.ago(card.verifiedAt) : 'none recorded'))
 
   const decisionSections = (card, options) => {
     const pick = (test) => card.decisions.filter(test).map((ask) => renderAsk(ask, options))
@@ -174,12 +217,15 @@
       glance(card),
       el('div', { className: 'projects-page-grid' },
         el('div', {},
-          section('Now', paragraph(card.now || 'No current update'),
+          section('Now', renderOwner(card), renderWaits(card), ...renderChecks(card),
+            card.state !== card.derivedState && paragraph(`Lead's record says ${card.state.replaceAll('-', ' ')}`, 'hvir-meta'),
+            paragraph(card.now || 'No current update'),
             card.stuckWhy && paragraph(card.stuckWhy, 'projects-warning'),
             card.blocker && paragraph(`Blocker: ${card.blocker}`, 'projects-warning'),
             card.nextAction && paragraph(`Next step: ${card.nextAction}`),
             card.contributors.length > 0 && paragraph(`With ${card.contributors.join(', ')}`, 'hvir-meta'),
-            card.stale && paragraph('not updated in 24h', 'projects-warning')),
+            renderTimes(card)),
+          section('Dates', renderDates(card)),
           section('Milestones', renderProgress(card.milestones),
             list(card.milestoneList.map((entry) => renderMilestone(entry, options)), 'No milestones')),
           section('Artifacts', list(card.artifacts.map(renderArtifact), 'No artifacts recorded')),
@@ -194,14 +240,30 @@
             text(bead.assignee && ` · ${bead.assignee}`, 'hvir-meta'))), 'Nothing in progress')))))
   }
 
-  const navRow = (card, options) => {
+  const navRow = (card, options, withLead = false) => {
     const needs = card.needsCount === 1 ? '1 needs you' : card.needsCount > 1 ? `${card.needsCount} need you` : ''
-    const meta = [needs, `${card.milestones.done}/${card.milestones.total} milestones`,
-      card.stale && 'not updated in 24h'].filter(Boolean).join(' · ')
+    const meta = [withLead && card.lead, needs, `${card.milestones.done}/${card.milestones.total} milestones`,
+      card.checks.length > 0 && 'record needs a fix', !card.waitsVerified && 'waits unverified'].filter(Boolean).join(' · ')
     const row = el('button', { type: 'button', className: 'projects-nav-row', title: card.id },
-      el('span', { className: 'projects-nav-title' }, card.title), chip(card.state), text(meta, 'hvir-meta'))
+      el('span', { className: 'projects-nav-title' }, card.title), chip(card.derivedState), text(meta, 'hvir-meta'))
     row.addEventListener('click', () => options.onOpenProject?.(card.id, card.store))
     return el('li', {}, row)
+  }
+
+  const isDone = (card) => card.derivedState === 'done'
+
+  const liveGroups = (model) => model.cards
+    .map((group) => ({ ...group, cards: group.cards.filter((card) => !isDone(card)) }))
+    .filter((group) => group.cards.length > 0)
+
+  const archive = (model, options, root) => {
+    const done = model.cards.flatMap((group) => group.cards).filter(isDone)
+    if (done.length === 0) return []
+    const node = el('details', { className: 'projects-archive' },
+      el('summary', {}, `Done projects (${done.length})`),
+      el('ul', {}, ...done.map((card) => navRow(card, options, true))))
+    node.open = root.querySelector(':scope > .projects-archive')?.open === true
+    return [node]
   }
 
   const renderNav = (model, root, options = {}) => {
@@ -212,7 +274,8 @@
       paragraph(`${model.needsYou.length} need you · ${model.inDelivery.length} answered, waiting on agents`, 'projects-nav-counts'),
       overview,
       section('Needs you', list(model.needsYou.map((ask) => renderAsk(ask, options, true)), 'Nothing needs you')),
-      ...model.cards.map((group) => section(group.lead, el('ul', {}, ...group.cards.map((card) => navRow(card, options))))))
+      ...liveGroups(model).map((group) => section(group.lead, el('ul', {}, ...group.cards.map((card) => navRow(card, options))))),
+      ...archive(model, options, root))
   }
 
   window.projectsRender = Object.freeze({ renderDashboard, renderNav, renderProject })

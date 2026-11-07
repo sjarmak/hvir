@@ -58,7 +58,7 @@
     const time = new Date(payload.now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     const counts = withCounts ? [`${model.needsYou.length} need you`, `${model.inDelivery.length} answered, waiting on agents`,
       `${payload.projects.length} projects`, `${sessions.length} active sessions`, ''].join(' · ') : ''
-    return `${counts}updated ${time}${window.bdNote(workspace)}${errors.length ? ` · ${errors.join(' · ')}` : ''}`
+    return `${counts}fetched ${time}${window.bdNote(workspace)}${errors.length ? ` · ${errors.join(' · ')}` : ''}`
   }
 
   const startProjectsView = (render, { counts = true } = {}) => {
@@ -84,7 +84,7 @@
       const note = render(data, ui.projects, actions, context)
       setStatus([note, statusLine(data, context.workspace, counts), extra].filter(Boolean).join(' · '))
     }
-    const load = async (context) => {
+    const load = async (context, { hidden = () => false } = {}) => {
       const { workspace } = context
       if (!workspace) {
         shownId = undefined
@@ -114,6 +114,11 @@
         return
       }
       const previous = shownBy.get(workspace.id)
+      if (hidden() && data.errors.length) {
+        if (previous) show(previous, context, 'refresh paused: hvir went to the background')
+        else setStatus('Paused while hvir is in the background; loads when shown')
+        return
+      }
       if (data.deferred && previous) {
         show(previous, context, `refresh deferred: ${data.errors[0] ?? 'no project list read'}`)
         return

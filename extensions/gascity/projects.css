@@ -69,6 +69,9 @@
 }
 .projects-tag {
   margin-inline-end: 8px;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .projects-chip[data-state='moving'],
 .projects-chip[data-state='active'] {
@@ -88,6 +91,10 @@
   background: var(--success-surface);
 }
 .projects-chip[data-state='paused'],
+.projects-chip[data-state='waiting'],
+.projects-chip[data-state='no-linked-work'],
+.projects-chip[data-state='queued'],
+.projects-chip[data-state='unread'],
 .projects-chip[data-state='dropped'] {
   color: var(--inactive-text);
   background: var(--inactive-surface);
@@ -185,6 +192,15 @@
 }
 .projects-nav-title {
   color: var(--text-strong);
+}
+.projects-archive summary {
+  cursor: pointer;
+  color: var(--text-strong);
+}
+.projects-archive ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
 }
 .projects-page {
   max-width: 1200px;

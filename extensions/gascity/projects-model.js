@@ -1,4 +1,5 @@
 ;(() => {
+  const truthApi = typeof module === 'object' ? require('./projects-truth.js') : window.projectsTruth
   const meta = (bead, key) => bead?.metadata?.[key] ?? ''
   const identity = (bead) => bead ? { id: bead.id, title: bead.title,
     ...(bead.store === undefined ? {} : { store: bead.store }) } : null
@@ -167,20 +168,31 @@
     const list = (input.milestones ?? []).filter(childOf(project))
       .map((bead) => milestone(bead, states))
       .sort((a, b) => a.target.localeCompare(b.target) || a.id.localeCompare(b.id))
-    const next = list.find((entry) => entry.id === meta(project, 'proj.next_milestone'))
     const active = entries.filter((entry) => entry.project?.id === project.id).map((entry) => entry.item)
     const decisions = openDecisions.filter((ask) => ask.project?.id === project.id)
     const state = meta(project, 'proj.state') || 'unknown'
     const updatedAt = meta(project, 'proj.updated_at') || null
+    const complete = !(input.unread ?? []).some((field) => ['linked', 'decisions'].includes(field))
+    const truth = truthApi.truth({ project, milestones: list, running: active.length > 0, now: input.now, complete,
+      linkedBeads: [...(input.linked ?? []), ...(input.decisions ?? []), ...(input.inProgress ?? [])] })
     return {
       ...identity(project),
       lead: meta(project, 'proj.lead') || 'Unknown lead',
       contributors: tokens(meta(project, 'proj.contributors')),
       state,
-      now: meta(project, 'proj.now'),
-      stuckWhy: meta(project, 'proj.stuck_why'),
-      blocker: meta(project, 'proj.blocker'),
-      nextAction: meta(project, 'proj.next_action'),
+      now: truthApi.undated(meta(project, 'proj.now')),
+      stuckWhy: truthApi.undated(meta(project, 'proj.stuck_why')),
+      blocker: truthApi.undated(meta(project, 'proj.blocker')),
+      nextAction: truthApi.undated(meta(project, 'proj.next_action')),
+      derivedState: truth.derivedState,
+      actionOwner: truth.actionOwner,
+      waitingOn: truth.waitingOn,
+      waitsVerified: truth.waitsVerified,
+      waitsUnread: truth.waitsUnread,
+      checks: truth.checks,
+      fetchedAt: truth.fetchedAt,
+      verifiedAt: truth.verifiedAt,
+      dates: truth.dates,
       updatedAt,
       stale: state !== 'done' && !(Date.parse(input.now) - Date.parse(updatedAt) <= DAY_MS),
       artifacts: (input.artifacts ?? []).filter(childOf(project))
@@ -188,10 +200,11 @@
       milestones: {
         done: list.filter((entry) => entry.state === 'done').length,
         total: list.filter((entry) => entry.state !== 'dropped').length,
-        next: next ? { ...identity(next), target: next.target, state: next.state } : null,
+        next: truth.next ? { ...identity(truth.next), target: truth.next.target, state: truth.next.state,
+          overdue: truth.next.overdue } : null,
       },
-      milestoneList: list,
-      needsCount: needsYou.filter((ask) => ask.project?.id === project.id).length,
+      milestoneList: truth.milestoneList,
+      needsCount: truth.needsCount,
       refs: references([project, ...(input.milestones ?? []).filter(childOf(project)), ...decisions], states),
       active,
       inProgress: (input.inProgress ?? [])
@@ -214,17 +227,15 @@
   }
 
   const buildDashboard = (input) => {
-    const beads = ['ancestors', 'workflowSteps', 'workflowRoots', 'inProgress', 'decisions', 'artifacts', 'milestones', 'projects']
+    const beads = ['ancestors', 'linked', 'workflowSteps', 'workflowRoots', 'inProgress', 'decisions', 'artifacts', 'milestones', 'projects']
       .flatMap((key) => input[key] ?? [])
     const index = new Map(beads.map((bead) => [bead.id, bead]))
     const projects = new Map((input.projects ?? []).map((bead) => [bead.id, bead]))
     const states = input.refStates ?? {}
-    const asksHer = (bead) => (bead.labels ?? []).some((label) => label.toLowerCase() === 'needs/stephanie')
-    const answered = (bead) => meta(bead, 'gc.answered')?.length > 0
     const openDecisions = (input.decisions ?? []).filter((bead) => bead.status === 'open')
       .map((bead) => ({ ...bead, project: identity(projects.get(meta(bead, 'gc.project'))),
-        refs: references([bead], states), needsYou: asksHer(bead) && !answered(bead),
-        inDelivery: asksHer(bead) && answered(bead) }))
+        refs: references([bead], states), needsYou: truthApi.waitsOnHer(bead),
+        inDelivery: truthApi.inDelivery(bead) }))
     const needsYou = openDecisions.filter((bead) => bead.needsYou)
     const inDelivery = openDecisions.filter((bead) => bead.inDelivery)
     const entries = collectActivity(input, index, projects)
