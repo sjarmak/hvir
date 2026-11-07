@@ -59,13 +59,72 @@
     return { kind: 'agent', name: agent?.owner || lead }
   }
 
-  const derivedState = (claimed, pending, waits, linked, running, complete) => {
+  const filled = (bead, key) => meta(bead, key).trim()
+  const HELD = new Set(['blocked', 'deferred'])
+  const STATUS_MAX = 160
+  const hasStarted = (bead) => OPEN.has(bead.status) && !HELD.has(bead.status) && !isAsk(bead) &&
+    !filled(bead, 'receipt.delivered_at') &&
+    (bead.status === 'in_progress' || filled(bead, 'receipt.started_at').length > 0)
+  const clipped = (value) => value.length > STATUS_MAX ? `${value.slice(0, STATUS_MAX)}…` : value
+  const delivery = (bead) => {
+    const task = filled(bead, 'gc.delivery_bead') || filled(bead, 'gc.work_bead')
+    if (task) return `delivered by ${task}`
+    const status = filled(bead, 'gc.delivery_status')
+    return status ? `status: ${clipped(status)}` : 'no delivery task named'
+  }
+
+  const startedWork = (linked, inProgress) => {
+    const seen = new Map()
+    for (const bead of [...inProgress, ...linked].filter(hasStarted)) {
+      const key = `${bead.store ?? ''}#${bead.id}`
+      if (!seen.has(key)) seen.set(key, bead)
+    }
+    return [...seen.values()]
+  }
+
+  const checkpoint = (milestone, due) => milestone || due
+    ? `next ${[milestone || 'checkpoint', due && `by ${due}`].filter(Boolean).join(' ')}`
+    : 'no next checkpoint'
+
+  const label = (bead) => bead.title || bead.id
+
+  const startEvidence = (bead) => [
+    label(bead),
+    filled(bead, 'receipt.owner') || bead.assignee || 'owner not recorded',
+    filled(bead, 'receipt.started_at') ? `started ${filled(bead, 'receipt.started_at')}` : 'claimed in progress',
+    filled(bead, 'receipt.artifact') && `artifact ${filled(bead, 'receipt.artifact')}`,
+    checkpoint(filled(bead, 'receipt.milestone'), filled(bead, 'receipt.due')),
+  ].filter(Boolean).join(' · ')
+
+  const askEvidence = (bead) => [label(bead),
+    filled(bead, 'gc.scope') ? `scope ${filled(bead, 'gc.scope')}` : 'no scope recorded',
+    filled(bead, 'gc.recommendation') ? `recommend ${filled(bead, 'gc.recommendation')}` : 'no recommendation recorded',
+  ].join(' · ')
+
+  const owedEvidence = (bead) => [label(bead),
+    `answered ${filled(bead, 'gc.answered_at') || filled(bead, 'gc.answered')}`,
+    delivery(bead),
+    filled(bead, 'gc.owner') || 'owner not recorded',
+    filled(bead, 'gc.readout_due') ? `next ${filled(bead, 'gc.readout_due')}` : 'no next checkpoint',
+  ].join(' · ')
+
+  const stateEvidence = (state, { pending, started, owed, project }) => {
+    if (state === 'needs-you') return pending.map(askEvidence)
+    if (state === 'moving') return started.map(startEvidence)
+    if (state === 'agents-owe') return owed.map(owedEvidence)
+    if (state === 'done') return [filled(project, 'proj.receipt_at')
+      ? `delivered · receipt ${filled(project, 'proj.receipt_at')}` : 'delivered · no delivery receipt recorded']
+    return []
+  }
+
+  const derivedState = (claimed, pending, owed, waits, linked, started, complete) => {
     const open = linked.filter((bead) => OPEN.has(bead.status) && !isAsk(bead))
     if (pending.length) return 'needs-you'
-    if (running) return 'moving'
+    if (started.length) return 'moving'
     if (!complete) return 'unread'
+    if (owed.length) return 'agents-owe'
     if (waits.some((entry) => entry.open)) return 'waiting'
-    if (open.some((bead) => ['blocked', 'deferred'].includes(bead.status))) return 'waiting'
+    if (open.some((bead) => HELD.has(bead.status))) return 'waiting'
     if (open.length) return 'queued'
     return claimed === 'done' ? 'done' : 'no-linked-work'
   }
@@ -111,11 +170,13 @@
     { label: 'Fetched', at: fetchedAt, reason: 'evidence-check', overdue: false },
   ].filter(Boolean)
 
-  const truth = ({ project, linkedBeads, milestones, running, now, complete = true }) => {
+  const truth = ({ project, linkedBeads, inProgress = [], milestones, now, complete = true }) => {
     const today = (now ?? '').slice(0, 10)
     const claimed = meta(project, 'proj.state') || 'unknown'
     const linked = linkedTo(project, linkedBeads)
     const pending = linked.filter(waitsOnHer)
+    const owed = linked.filter(inDelivery)
+    const started = startedWork(linked, inProgress)
     const waits = named(project).map((token) => wait(token, linked))
       .map((entry) => entry.kind === 'her' ? { ...entry, open: pending.length > 0 } : entry)
     const declared = names(project)
@@ -123,9 +184,11 @@
       overdue: ['planned', 'active'].includes(entry.state) && /^\d{4}-\d{2}-\d{2}$/.test(entry.target) && entry.target < today }))
     const next = dated.find((entry) => entry.id === meta(project, 'proj.next_milestone'))
     const verifiedAt = meta(project, 'proj.receipt_at') || null
+    const state = derivedState(claimed, pending, owed, waits, linked, started, complete)
     return {
       claimedState: claimed,
-      derivedState: derivedState(claimed, pending, waits, linked, running, complete),
+      derivedState: state,
+      stateEvidence: stateEvidence(state, { pending, started, owed, project }),
       needsCount: pending.length,
       waitingOn: waits,
       waitsVerified: declared && complete,
