@@ -396,3 +396,55 @@ test('a moving card face lists its started work by title with owner and checkpoi
   assert.ok(evidence.every((line) => / · (claimed in progress|started \S+) · /.test(line)), evidence.join('\n'))
   assert.ok(evidence.some((line) => line.startsWith('Build catalog search · ')), evidence.join('\n'))
 })
+
+const pageFrom = (t, input, id) => {
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  const { window } = dom
+  window.Date.now = () => Date.parse(input.now)
+  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const project = buildDashboard(input).cards.flatMap((group) => group.cards).find((entry) => entry.id === id)
+  const root = window.document.querySelector('main')
+  window.projectsRender.renderProject(project, root, {})
+  return root
+}
+
+const milestoneInput = (changes) => {
+  const input = structuredClone(fixture)
+  for (const [id, metadata] of Object.entries(changes)) {
+    const bead = input.milestones.find((entry) => entry.id === id)
+    for (const [key, value] of Object.entries(metadata)) {
+      if (value === undefined) delete bead.metadata[key]
+      else bead.metadata[key] = value
+    }
+  }
+  return input
+}
+
+test('a dated milestone shows Due with its reason and an undated one shows no due line', (t) => {
+  const root = pageFrom(t, milestoneInput({
+    'fx-ms-1': { 'ms.target_reason': 'The vendor contract expires that day.' },
+    'fx-ms-7': { 'ms.target': undefined },
+  }), 'fx-project-1')
+  const rows = Object.fromEntries([...root.querySelectorAll('li[title^="fx-ms-"]')].map((node) => [node.title, node.textContent]))
+  assert.match(rows['fx-ms-1'], /Due 2026-11-02 · The vendor contract expires that day\./)
+  assert.doesNotMatch(rows['fx-ms-7'], /due/i)
+  assert.doesNotMatch(root.textContent, /no due date|false|undefined/i)
+})
+
+test('an undated next milestone is named without a due date', (t) => {
+  const root = pageFrom(t, milestoneInput({ 'fx-ms-1': { 'ms.target': '' } }), 'fx-project-1')
+  const progress = root.querySelector('.projects-progress').textContent
+  assert.match(progress, /Next: Searchable catalog/)
+  assert.doesNotMatch(progress, /due/i)
+})
+
+test('the next milestone line and the Dates entry both carry the date reason', (t) => {
+  const root = pageFrom(t, milestoneInput({
+    'fx-ms-1': { 'ms.target_reason': 'The vendor contract expires that day.' },
+  }), 'fx-project-1')
+  const progress = root.querySelector('.projects-progress').textContent
+  assert.match(progress, /Next: Searchable catalog · due 2026-11-02 · The vendor contract expires that day\./)
+  const due = [...root.querySelectorAll('li')].map((node) => node.textContent).find((line) => line.startsWith('Due: '))
+  assert.match(due ?? '', /^Due: Searchable catalog · 2026-11-02 · deadline · The vendor contract expires that day\./)
+})

@@ -124,6 +124,7 @@
   const milestone = (bead, states) => ({
     ...identity(bead),
     target: meta(bead, 'ms.target'),
+    targetReason: meta(bead, 'ms.target_reason'),
     state: meta(bead, 'ms.state') || 'unknown',
     outcome: meta(bead, 'ms.outcome'),
     refs: references([bead], states),
@@ -203,7 +204,8 @@
       milestones: {
         done: list.filter((entry) => entry.state === 'done').length,
         total: list.filter((entry) => entry.state !== 'dropped').length,
-        next: truth.next ? { ...identity(truth.next), target: truth.next.target, state: truth.next.state,
+        next: truth.next ? { ...identity(truth.next), target: truth.next.target,
+          targetReason: truth.next.targetReason, state: truth.next.state,
           overdue: truth.next.overdue } : null,
       },
       milestoneList: truth.milestoneList,

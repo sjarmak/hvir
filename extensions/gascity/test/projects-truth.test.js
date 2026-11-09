@@ -89,6 +89,7 @@ test('every date on a card carries a reason, and the record write time is not on
   assert.deepEqual(result.dates.map((entry) => [entry.label, entry.reason]), [
     ['Due: Milestone p.1', 'deadline'], ['Last verified progress', 'evidence-check'], ['Fetched', 'evidence-check']])
   assert.equal(result.dates.some((entry) => entry.at === '2026-10-31T16:29Z'), false)
+  assert.equal(result.dates[0].note, '')
   assert.deepEqual(result.actionOwner, { kind: 'dot', name: 'Pip' })
 })
 

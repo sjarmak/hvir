@@ -163,7 +163,8 @@
   }
 
   const dates = ({ next, waits, verifiedAt, fetchedAt }) => [
-    next?.target && { label: `Due: ${next.title}`, at: next.target, reason: 'deadline', overdue: next.overdue },
+    next?.target && { label: `Due: ${next.title}`, at: next.target, reason: 'deadline', note: next.targetReason ?? '',
+      overdue: next.overdue },
     ...waits.filter((entry) => entry.until)
       .map((entry) => ({ label: `Waits until: ${entry.id}`, at: entry.until, reason: 'dependency', overdue: false })),
     { label: 'Last verified progress', at: verifiedAt ?? '', reason: 'evidence-check', overdue: false },

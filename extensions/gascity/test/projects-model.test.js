@@ -122,7 +122,8 @@ test('milestones sort by target, exclude dropped from totals, retain outcomes an
     { type: 'parent-child', id: 'fx-project-1' }]
   const result = card(buildDashboard(input))
   assert.deepEqual(result.milestones, { done: 1, total: 2,
-    next: { id: 'fx-ms-1', title: 'Searchable catalog', target: '2026-11-02', state: 'active', overdue: false } })
+    next: { id: 'fx-ms-1', title: 'Searchable catalog', target: '2026-11-02', targetReason: '', state: 'active',
+      overdue: false } })
   assert.deepEqual(result.milestoneList.map((entry) => entry.state), ['done', 'dropped', 'active'])
   assert.equal(result.milestoneList[0].outcome, 'A synthetic baseline was delivered.')
 })

@@ -49,7 +49,7 @@
     text(`${entry.time} · ${window.ago(entry.time.replace(/Z$/, ':00Z'))}`, 'hvir-meta'))
 
   const renderMilestone = (entry, options) => el('li', { title: entry.id },
-    text(entry.target ? `Due ${entry.target}` : 'No due date', 'hvir-meta'),
+    entry.target && text([`Due ${entry.target}`, entry.targetReason].filter(Boolean).join(' · '), 'hvir-meta'),
     entry.overdue && text(' · overdue', 'projects-warning'),
     text(entry.title), chip(entry.state),
     entry.outcome && paragraph(entry.outcome), renderRefs(entry.refs, options))
@@ -96,7 +96,8 @@
     return el('div', { className: 'projects-progress' },
       el('label', {}, `${done}/${total} milestones done`,
         el('progress', { max: total || 1, value: done, title: `${done} of ${total} milestones done` })),
-      paragraph(next ? `Next: ${next.title} · ${next.target ? `due ${next.target}` : 'no due date'}` : 'No next milestone', 'hvir-meta'),
+      paragraph(next ? [`Next: ${next.title}`, next.target && `due ${next.target}`, next.target && next.targetReason]
+        .filter(Boolean).join(' · ') : 'No next milestone', 'hvir-meta'),
       next?.overdue && paragraph('Next milestone is overdue', 'projects-warning'))
   }
 
@@ -134,7 +135,7 @@
   ].join(' · '), 'hvir-meta projects-times')
 
   const renderDates = (card) => list(card.dates.map((entry) => el('li', {},
-    text(entry.label), text(` · ${entry.at || 'none recorded'} · ${REASON_LABELS[entry.reason]}`, 'hvir-meta'),
+    text(entry.label), text([` · ${entry.at || 'none recorded'}`, REASON_LABELS[entry.reason], entry.note].filter(Boolean).join(' · '), 'hvir-meta'),
     entry.overdue && text(' · overdue', 'projects-warning'))), 'No dates')
 
   const summary = (card, options) => [
