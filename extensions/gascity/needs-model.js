@@ -7,6 +7,7 @@
  */
 ;(() => {
   const NEEDS_LABEL = 'needs/stephanie'
+  const STEP_LABEL = 'needs/stephanie-step'
   const ASK_RIG = 'decisions'
   /** The built-in's MAX_ITEMS_PER_SOURCE. */
   const MAX_ASKS = 50
@@ -15,7 +16,7 @@
   const decisionsRig = (rigs) => rigs.find((rig) => rig.name === ASK_RIG)
 
   /** bd arguments listing the rig's open labelled beads; openAsks applies the full rule after. */
-  const askArgs = (path) => [
+  const labelArgs = (path, label) => [
     '-C',
     path,
     'list',
@@ -25,13 +26,32 @@
     '--status',
     'open',
     '--label',
-    NEEDS_LABEL,
+    label,
     '-n',
     '0',
   ]
+  const askArgs = (path) => labelArgs(path, NEEDS_LABEL)
+  const stepArgs = (path) => labelArgs(path, STEP_LABEL)
 
-  const hasLabel = (issue) =>
-    (issue.labels ?? []).some((label) => label.toLowerCase() === NEEDS_LABEL)
+  const labelled = (issue, wanted) =>
+    (issue.labels ?? []).some((label) => label.toLowerCase() === wanted)
+  const hasLabel = (issue) => labelled(issue, NEEDS_LABEL)
+  const metaText = (issue, key) => {
+    const value = issue.metadata?.[key]
+    return typeof value === 'string' ? value.trim() : ''
+  }
+
+  function herSteps(issues) {
+    return issues
+      .filter((issue) => issue.status === 'open' && labelled(issue, STEP_LABEL))
+      .map((issue) => ({
+        id: issue.id,
+        title: typeof issue.title === 'string' ? issue.title.trim() : '',
+        store: issue.store,
+        step: metaText(issue, 'gc.her_step'),
+        scope: metaText(issue, 'gc.scope'),
+      }))
+  }
   const isAnswered = (issue) => (issue.metadata?.['gc.answered']?.length ?? 0) > 0
   const isOpenLabelledAsk = (issue) =>
     issue.status === 'open' && hasLabel(issue) && !isAnswered(issue)
@@ -48,11 +68,14 @@
 
   const api = Object.freeze({
     NEEDS_LABEL,
+    STEP_LABEL,
     ASK_RIG,
     MAX_ASKS,
     decisionsRig,
     askArgs,
+    stepArgs,
     openAsks,
+    herSteps,
   })
   if (typeof module === 'object') module.exports = api
   else window.needsModel = api

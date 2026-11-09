@@ -30,13 +30,15 @@ test('argument builders use explicit store scope and unlimited flat JSON lists',
 test('store plan reads workspace HQ once, skips suspended rigs, and uses both decision queries', () => {
   assert.deepEqual(stores.map((store) => store.path), ['/city', '/rigs/lead', '/rigs/decisions', '/rigs/broken'])
   const requests = loader.storeRequests(stores)
-  assert.equal(requests.length, 18)
+  assert.equal(requests.length, 19)
   assert.equal(requests.filter((request) => request.key === 'labeled').length, 4)
   assert.equal(requests.filter((request) => request.key === 'linked').length, 8)
   assert.equal(requests.some((request) => request.args.includes('/rigs/paused')), false)
   const decisions = requests.filter((request) => request.key === 'decisions')
   assert.deepEqual(decisions[0].args, require('../needs-model.js').askArgs('/rigs/decisions'))
   assert.deepEqual(decisions[1].args, loader.decisionArgs('/rigs/decisions'))
+  assert.deepEqual(requests.filter((request) => request.key === 'herSteps').map((request) => request.args),
+    [require('../needs-model.js').stepArgs('/rigs/decisions')])
   assert.equal(loader.storeRequests([stores[0]]).length, 4)
 })
 

@@ -33,6 +33,15 @@
     button(ask.title, ask.id, () => options.onOpenBead?.(ask.id, ask.store)),
     renderRefs(ask.refs, options))
 
+  const renderStep = (entry, options) => el('li', { className: 'projects-step', title: entry.id },
+    entry.scope && text(entry.scope, 'projects-tag'),
+    button(entry.step || `No step written: ${entry.title || entry.id}`, entry.id, () => options.onOpenBead?.(entry.id, entry.store)),
+    text(entry.id, 'hvir-meta'))
+
+  const stepSection = (model, options) => ((model.herSteps ?? []).length > 0 || model.stepsUnread) &&
+    section('Your next step', list((model.herSteps ?? []).map((entry) => renderStep(entry, options)), ''),
+      model.stepsUnread && paragraph('Some steps could not be read', 'projects-warning'))
+
   const renderActivity = (item) => {
     const flow = item.workflow
     const formula = flow ? `${flow.formula || 'Unnamed workflow'} · ${flow.step || 'Step unknown'} · ${flow.stepsDone}/${flow.stepsTotal} steps done` : ''
@@ -180,6 +189,7 @@
     const activeGroups = model.activeNow.map((group) => el('div', { className: 'projects-active-group' },
       el('h3', {}, group.project?.title ?? 'No project'), list(group.items.map(renderActivity), 'No active agents')))
     root.replaceChildren(
+      ...[stepSection(model, options)].filter(Boolean),
       section('Needs you', list(model.needsYou.map((ask) => renderAsk(ask, options, true)), 'Nothing needs you')),
       section('Active now', el('div', { className: 'projects-active-grid' }, ...activeGroups),
         !activeGroups.length && paragraph('No active agents', 'hvir-meta'),
@@ -278,6 +288,7 @@
     root.replaceChildren(
       paragraph(`${model.needsYou.length} need you · ${model.inDelivery.length} answered, waiting on agents`, 'projects-nav-counts'),
       overview,
+      ...[stepSection(model, options)].filter(Boolean),
       section('Needs you', list(model.needsYou.map((ask) => renderAsk(ask, options, true)), 'Nothing needs you')),
       ...liveGroups(model).map((group) => section(group.lead, el('ul', {}, ...group.cards.map((card) => navRow(card, options))))),
       ...archive(model, options, root))

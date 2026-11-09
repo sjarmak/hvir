@@ -2,7 +2,7 @@
   const node = typeof module === 'object'
   const crew = node ? require('./crew-parse.js') : window.crewParse
   const needs = node ? require('./needs-model.js') : window.needsModel
-  const fields = ['projects', 'milestones', 'artifacts', 'decisions', 'inProgress', 'linked', 'workflowRoots', 'workflowSteps', 'ancestors']
+  const fields = ['projects', 'milestones', 'artifacts', 'decisions', 'herSteps', 'inProgress', 'linked', 'workflowRoots', 'workflowSteps', 'ancestors']
   const ROOT_CAP = 30
   const ANCESTOR_CAP = 30
   const ANCESTOR_ROUNDS = 3
@@ -38,6 +38,7 @@
     const decisions = needs.decisionsRig(stores)
     if (decisions) requests.push(
       { store: decisions, key: 'decisions', args: needs.askArgs(decisions.path) },
+      { store: decisions, key: 'herSteps', args: needs.stepArgs(decisions.path) },
       { store: decisions, key: 'decisions', args: decisionArgs(decisions.path) })
     return requests
   }

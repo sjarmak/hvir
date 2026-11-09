@@ -1,5 +1,6 @@
 ;(() => {
   const truthApi = typeof module === 'object' ? require('./projects-truth.js') : window.projectsTruth
+  const needsApi = typeof module === 'object' ? require('./needs-model.js') : window.needsModel
   const meta = (bead, key) => bead?.metadata?.[key] ?? ''
   const identity = (bead) => bead ? { id: bead.id, title: bead.title,
     ...(bead.store === undefined ? {} : { store: bead.store }) } : null
@@ -248,7 +249,10 @@
       if (!groups.has(card.lead)) groups.set(card.lead, { lead: card.lead, cards: [] })
       groups.get(card.lead).cards.push(card)
     }
-    return { now: input.now, needsYou, inDelivery, cards: [...groups.values()], activeNow: groupActivity(entries),
+    const stepBeads = new Map([...(input.herSteps ?? []), ...openDecisions].map((bead) => [`${bead.store}#${bead.id}`, bead]))
+    const herSteps = needsApi.herSteps([...stepBeads.values()])
+    const stepsUnread = (input.unread ?? []).includes('herSteps')
+    return { now: input.now, needsYou, inDelivery, herSteps, stepsUnread, cards: [...groups.values()], activeNow: groupActivity(entries),
       outcomesShown: Array.isArray(input.outcomes) }
   }
 
