@@ -235,3 +235,13 @@ test('suspended, bound, unknown or missing mode gives no attach row, and tiers s
   const base = crewAt(CITY, 'hq', { city: true }).members.filter((member) => member.attachable !== true)
   assert.deepEqual(base.map((member) => member.tier), ['lead', 'lead', 'lead', 'worker', 'worker', 'worker'])
 })
+
+test('an on-demand named session whose agent allows no sessions gives no attach row', () => {
+  const withMax = (agent) =>
+    parseConfig({
+      config: { Agents: [{ Name: 'omni-evals-desk', ...agent }], NamedSessions: [{ Template: 'omni-evals-desk', Mode: 'on_demand' }] },
+    })
+  assert.deepEqual(labels(deskCrew(withMax({ MaxActiveSessions: 0 }))), [])
+  assert.deepEqual(labels(deskCrew(withMax({ MaxActiveSessions: 1 }))), ['omni-evals-desk'])
+  assert.deepEqual(labels(deskCrew(withMax({}))), ['omni-evals-desk'])
+})

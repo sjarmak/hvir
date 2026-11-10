@@ -162,13 +162,16 @@
     return root !== undefined && isAtOrUnder(root, input.rigRoot)
   }
 
-  const isAttachable = (named) => named.mode === 'on_demand' && !named.suspended && named.binding === undefined
+  const isAttachable = (named, input) =>
+    named.mode === 'on_demand' &&
+    !named.suspended &&
+    named.binding === undefined &&
+    !input.config.agents.some((agent) => agent.name === named.agent && agent.sessionless)
 
-  /** Pinned identities with no live session, and on-demand desks gc starts on attach: still shown. */
   function dormantLeads(input, live) {
     const claimed = new Set(live.flatMap((member) => member.identityKeys))
     return input.config.namedSessions
-      .filter((named) => isPinned(named) || isAttachable(named))
+      .filter((named) => isPinned(named) || isAttachable(named, input))
       .filter((named) => dormantLeadInScope(named, input))
       .filter((named) => !claimed.has(named.name) && !claimed.has(named.alias ?? named.name))
       .map((named) => {
@@ -179,7 +182,7 @@
           label: target,
           target,
           ...(isDormantCityLead(named, input) ? { cityLead: true } : {}),
-          ...(isAttachable(named) ? { attachable: true } : {}),
+          ...(isAttachable(named, input) ? { attachable: true } : {}),
           identityKeys: [...new Set([named.name, named.alias, named.agent].filter(Boolean))],
         }
       })

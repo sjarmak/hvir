@@ -108,6 +108,7 @@
     return defined({
       name,
       pooled,
+      sessionless: maxActive === 0 ? true : undefined,
       // `Dir` is how an agent names its rig; city-scope agents have none.
       rig: text(entry, 'Dir'),
       workDir: text(entry, 'WorkDir'),
