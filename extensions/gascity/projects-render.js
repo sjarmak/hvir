@@ -228,8 +228,12 @@
 
   const renderChecks = (card) => card.checks.map((check) => paragraph(check, 'projects-warning projects-check'))
 
-  const renderEvidence = (card) => card.stateEvidence.length > 0 && el('ul', { className: 'projects-evidence' },
+  const renderEvidence = (card) => card.derivedState !== 'agents-owe' && card.stateEvidence.length > 0 && el('ul', { className: 'projects-evidence' },
     ...card.stateEvidence.map((line) => el('li', {}, line)))
+
+  const renderInDelivery = (card) => card.inDelivery.length > 0 &&
+    el('div', { className: 'projects-in-delivery' }, paragraph('Answered, in delivery', 'hvir-meta'),
+      el('ul', {}, ...card.inDelivery.map((line) => el('li', {}, line))))
 
   const renderTimes = (card) => paragraph([
     `Fetched ${card.fetchedAt ? window.ago(card.fetchedAt) : 'unknown'}`,
@@ -242,6 +246,7 @@
 
   const summary = (card, options) => [
       renderEvidence(card),
+      renderInDelivery(card),
       renderOwner(card),
       renderWaits(card),
       ...renderChecks(card),
@@ -325,7 +330,7 @@
       glance(card),
       el('div', { className: 'projects-page-grid' },
         el('div', {},
-          section('Now', renderEvidence(card), renderOwner(card), renderWaits(card), ...renderChecks(card),
+          section('Now', renderEvidence(card), renderInDelivery(card), renderOwner(card), renderWaits(card), ...renderChecks(card),
             card.state !== card.derivedState && paragraph(`Lead's record says ${card.state.replaceAll('-', ' ')}`, 'hvir-meta'),
             paragraph(card.now || 'No current update'),
             card.stuckWhy && paragraph(card.stuckWhy, 'projects-warning'),

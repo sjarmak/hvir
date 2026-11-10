@@ -108,6 +108,12 @@
     filled(bead, 'gc.readout_due') ? `next ${filled(bead, 'gc.readout_due')}` : 'no next checkpoint',
   ].join(' · ')
 
+  const inDeliveryLine = (bead) => {
+    const status = filled(bead, 'gc.delivery_status')
+    const named = filled(bead, 'gc.delivery_bead') || filled(bead, 'gc.work_bead')
+    return [owedEvidence(bead), named && status && `status: ${clipped(status)}`].filter(Boolean).join(' · ')
+  }
+
   const stateEvidence = (state, { pending, started, owed, project }) => {
     if (state === 'needs-you') return pending.map(askEvidence)
     if (state === 'moving') return started.map(startEvidence)
@@ -190,6 +196,7 @@
       claimedState: claimed,
       derivedState: state,
       stateEvidence: stateEvidence(state, { pending, started, owed, project }),
+      inDelivery: owed.map(inDeliveryLine),
       needsCount: pending.length,
       waitingOn: waits,
       waitsVerified: declared && complete,

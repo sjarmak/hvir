@@ -196,6 +196,7 @@
       nextAction: truthApi.undated(meta(project, 'proj.next_action')),
       derivedState: truth.derivedState,
       stateEvidence: truth.stateEvidence,
+      inDelivery: truth.inDelivery,
       actionOwner: truth.actionOwner,
       waitingOn: truth.waitingOn,
       waitsVerified: truth.waitsVerified,
