@@ -84,6 +84,18 @@ async function fixture(origin: 'ssh-forward' | 'application-local' = 'ssh-forwar
       ...connector.activation.revision,
       manifest: {
         ...connector.activation.revision.manifest,
+        connectors: [
+          ...connector.activation.revision.manifest.connectors!,
+          {
+            id: 'bound',
+            description: 'Bound tool',
+            context: 'application' as const,
+            timeoutMs: 1000,
+            outputBytes: 1000,
+            environment: [],
+            actions: ['human-only'],
+          },
+        ],
         requiredCapabilities: [
           'connector.execute',
           'actions.invoke',
@@ -130,6 +142,17 @@ async function fixture(origin: 'ssh-forward' | 'application-local' = 'ssh-forwar
   }
   connector.active.set('installation', activation)
   await connector.approve()
+  const boundApproval = await connector.approvals.prepare(
+    {
+      installationId: 'installation',
+      connector: 'bound',
+      host: 'local',
+      executable: '/installed/tool',
+      configuration: { args: [], env: {} },
+    },
+    () => undefined,
+  )
+  await connector.approvals.approve(boundApproval.token)
   const sent: ExtensionReply[] = [],
     installation = new AbortController(),
     lifetime = new AbortController(),
@@ -925,5 +948,53 @@ it.each(['global-off', 'stricter', 'extension'] as const)(
       ),
     ).toBe(false)
     expect(f.guests.snapshot(f.renderer)).toEqual([])
+  },
+)
+
+it.each([
+  ['a local agent', 'application-local'],
+  ['an ssh-forwarded agent', 'ssh-forward'],
+] as const)(
+  'a view opened by %s through the command transport cannot run or page an action-bound connector',
+  async (_label, origin) => {
+    const f = await fixture(origin)
+    await f.view()
+    const bound = { ...f.connector.input, connector: 'bound' }
+    const refusedRun = async (id: string, actionId?: string) => {
+      const result = (await f.request(id, 'connector.execute', bound, actionId)) as {
+        ok: boolean
+        value?: { outcome: string }
+      }
+      if (result.ok) expect(result.value).toMatchObject({ outcome: 'not-started' })
+    }
+    await refusedRun('bare')
+    await refusedRun('forged', 'forged-id')
+    expect(
+      await f.request('human-only', 'actions.invoke', { action: 'human-only' }),
+    ).toMatchObject({ ok: false })
+    f.guests.receive(10, {
+      kind: 'request',
+      id: 'nested',
+      capability: 'actions.invoke',
+      input: { action: 'allowed', input: { destination: f.workspace } },
+    })
+    f.scopes.configure(f.grant, true)
+    const invoked = await vi.waitFor(() => {
+      const sent = f.sent.find((message) => message.kind === 'action')
+      if (!sent) throw new Error('No delivered action')
+      return sent as { invocation: ExtensionInvocation }
+    })
+    await refusedRun('agent-action', invoked.invocation.id)
+    expect(
+      (
+        await f.request(
+          'page',
+          'connector.output',
+          { receipt: 'none', stream: 'stdout', offset: 0 },
+          invoked.invocation.id,
+        )
+      ).ok,
+    ).toBe(false)
+    expect(f.connector.host.exec).not.toHaveBeenCalled()
   },
 )
