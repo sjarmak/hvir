@@ -69,6 +69,58 @@ test('a newer milestone alone marks the card changed', (t) => {
   assert.ok(cardOf(root, 'fx-project-4').querySelector('.projects-changed'))
 })
 
+for (const field of ['proj.state', 'proj.updated_at']) {
+  for (const [label, value] of [
+    ['number', 42],
+    ['null', null],
+    ['object', { a: 1 }],
+    ['empty string', ''],
+  ]) {
+    test(`milestone ${field} as ${label} still renders the page`, (t) => {
+      const { dom, root } = mount((input) => {
+        edit(input, 'fx-ms-1', { [field]: value })
+        edit(input, 'fx-ms-2', { 'proj.state': 'stuck' })
+      })
+      t.after(() => dom.window.close())
+      const row = rowOf(root, 'fx-ms-1')
+      assert.equal(row.querySelector('.projects-chip').dataset.state, 'active')
+      assert.doesNotMatch(row.textContent, /updated/)
+      assert.equal(
+        rowOf(root, 'fx-ms-2').querySelector('.projects-chip').dataset.state,
+        'stuck',
+      )
+    })
+  }
+}
+
+test('an invalid project timestamp does not hide a newer milestone change', (t) => {
+  const { dom, root } = mount(
+    (input) => {
+      edit(input, 'fx-project-4', { 'proj.updated_at': 'garbage' })
+      edit(input, 'fx-ms-4', { 'proj.updated_at': '2026-10-29T11:00Z' })
+    },
+    { lastLooked: '2026-10-29T09:30:00.000Z' },
+  )
+  t.after(() => dom.window.close())
+  assert.ok(cardOf(root, 'fx-project-4').querySelector('.projects-changed'))
+})
+
+test('all timestamps invalid gives no changed time and no badge', (t) => {
+  const { dom, root, model } = mount(
+    (input) => {
+      edit(input, 'fx-project-4', { 'proj.updated_at': 'garbage' })
+      edit(input, 'fx-ms-4', { 'proj.updated_at': 42 })
+    },
+    { lastLooked: '2026-10-29T09:30:00.000Z' },
+  )
+  t.after(() => dom.window.close())
+  const card = model.cards
+    .flatMap((group) => group.cards)
+    .find((entry) => entry.id === 'fx-project-4')
+  assert.equal(card.changedAt, null)
+  assert.equal(cardOf(root, 'fx-project-4').querySelector('.projects-changed'), null)
+})
+
 test('no badge without a previous look', (t) => {
   const { dom, root } = mount(() => {}, { lastLooked: null })
   t.after(() => dom.window.close())

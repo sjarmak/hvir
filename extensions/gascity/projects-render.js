@@ -150,12 +150,15 @@
     text(entry.title), entry.outcome && paragraph(entry.outcome, 'hvir-meta'),
     text(`${entry.time} · ${window.ago(entry.time.replace(/Z$/, ':00Z'))}`, 'hvir-meta'))
 
+  const nonEmptyString = (value) => typeof value === 'string' && value !== ''
+
   const renderMilestone = (entry, options) => el('li', { title: entry.id },
     entry.target && text([`Due ${entry.target}`, entry.targetReason].filter(Boolean).join(' · '), 'hvir-meta'),
     entry.overdue && text(' · overdue', 'projects-warning'),
-    text(entry.title), chip(entry.projState || entry.state),
+    text(entry.title), chip(nonEmptyString(entry.projState) ? entry.projState : entry.state),
     entry.now && paragraph(entry.now),
-    entry.updatedAt && text(`updated ${window.ago(entry.updatedAt.replace(/Z$/, ':00Z'))}`, 'hvir-meta'),
+    nonEmptyString(entry.updatedAt) && Number.isFinite(Date.parse(entry.updatedAt)) &&
+      text(`updated ${window.ago(entry.updatedAt.replace(/Z$/, ':00Z'))}`, 'hvir-meta'),
     entry.outcome && paragraph(entry.outcome), renderRefs(entry.refs, options))
 
   const STATE_LABELS = { tested: 'Tested', installed: 'Installed', live: 'Live' }

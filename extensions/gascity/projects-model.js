@@ -162,7 +162,9 @@
     }
   }
 
-  const newest = (times) => times.filter(Boolean).sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null
+  const validTime = (value) => typeof value === 'string' && Number.isFinite(Date.parse(value))
+
+  const newest = (times) => times.filter(validTime).sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null
 
   const childOf = (project) => (bead) => parents(bead).includes(project.id) && bead.store === project.store
 
