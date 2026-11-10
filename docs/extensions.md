@@ -423,6 +423,11 @@ invocation, from an agent, a restricted view or an ssh-forwarded agent, or from 
 refused as not started. Forged, completed and other-view invocation ids confer nothing. A connector
 without `actions` is unchanged.
 
+Binding proves that the invocation came from a main-owned workbench action or from an
+unrestricted guest's own action invocation. It does not prove a physical click, and it is not a
+human-presence check. An unrestricted guest view can invoke its own declared action and then run
+the bound connector, so a bound connector must still treat its inputs as untrusted.
+
 Handshake. Binding is a safety precondition, so it is negotiated, not an ignorable field. A manifest
 with `actionConnectors` must list `connector.action-binding` in its required or optional
 capabilities, or it is refused. A host that supports binding returns `connector.action-binding` in
