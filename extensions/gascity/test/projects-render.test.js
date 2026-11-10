@@ -471,3 +471,31 @@ test('each decision shows its escalation tier as a tag; an untiered one shows no
   assert.ok(tags('tier-bool').includes('Tier true is not 1-3'))
   assert.deepEqual(model.needsYou.map((entry) => entry.tier), ['Tier 1', 'Tier 2', '', 'Tier 7 is not 1-3', 'Tier true is not 1-3'])
 })
+
+test('an ask names who to answer: live seat is a button, sleeping or unknown seat is plain text', (t) => {
+  const input = structuredClone(fixture)
+  input.decisions = [
+    { id: 'r1', title: 'Live ask', status: 'open', labels: ['needs/stephanie'], metadata: {}, created_by: 'omni-pl' },
+    { id: 'r2', title: 'Asleep ask', status: 'open', labels: ['needs/stephanie'], metadata: { 'gc.owner': 'mayor' } },
+    { id: 'r3', title: 'Unknown ask', status: 'open', labels: ['needs/stephanie'], metadata: { 'gc.owner': 'zz-seat' } },
+    { id: 'r4', title: 'No owner ask', status: 'open', labels: ['needs/stephanie'], metadata: {} },
+  ]
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  const { window } = dom
+  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const root = window.document.querySelector('main')
+  const seats = []
+  window.projectsRender.renderDashboard(buildDashboard(input), root, { onOpenSession: (seat) => seats.push(seat) })
+  const row = (title) => [...root.querySelectorAll('li')].find((li) => li.textContent.includes(title))
+  const live = row('Live ask')
+  const button = [...live.querySelectorAll('button')].find((node) => node.textContent === 'Answer to Verity (omni-pl)')
+  assert.ok(button)
+  button.click()
+  assert.deepEqual(seats, ['omni-pl'])
+  const asleep = row('Asleep ask')
+  assert.match(asleep.textContent, /Answer to Wren \(mayor\) \(asleep\)/)
+  assert.equal([...asleep.querySelectorAll('button')].length, 1)
+  assert.match(row('Unknown ask').textContent, /Answer to zz-seat \(asleep\)/)
+  assert.doesNotMatch(row('No owner ask').textContent, /Answer to/)
+})

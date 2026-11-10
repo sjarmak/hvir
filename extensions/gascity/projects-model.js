@@ -236,6 +236,20 @@
     return [...groups.values()]
   }
 
+  const sessionFor = (sessions, seat) =>
+    seat ? (sessions ?? []).find((session) => session.alias === seat || session.name === seat || session.session_name === seat) : undefined
+
+  const answerToOf = (bead) => {
+    const owner = meta(bead, 'gc.owner')
+    const value = typeof owner === 'string' && owner.trim() ? owner : bead.created_by
+    return typeof value === 'string' ? value.trim() : ''
+  }
+
+  const withAnswerTo = (bead, sessions) => {
+    const answerTo = answerToOf(bead)
+    return answerTo ? { answerTo, answerLive: sessionFor(sessions, answerTo) !== undefined } : {}
+  }
+
   const buildDashboard = (input) => {
     const beads = ['ancestors', 'linked', 'workflowSteps', 'workflowRoots', 'inProgress', 'decisions', 'artifacts', 'milestones', 'projects']
       .flatMap((key) => input[key] ?? [])
@@ -245,7 +259,7 @@
     const openDecisions = (input.decisions ?? []).filter((bead) => bead.status === 'open')
       .map((bead) => ({ ...bead, project: identity(projects.get(meta(bead, 'gc.project'))),
         refs: references([bead], states), needsYou: truthApi.waitsOnHer(bead), tier: tierLabel(bead),
-        inDelivery: truthApi.inDelivery(bead) }))
+        inDelivery: truthApi.inDelivery(bead), ...withAnswerTo(bead, input.sessions) }))
     const needsYou = openDecisions.filter((bead) => bead.needsYou)
     const inDelivery = openDecisions.filter((bead) => bead.inDelivery)
     const entries = collectActivity(input, index, projects)
@@ -268,7 +282,7 @@
     return [...stores].filter(([, found]) => found.size > 1).map(([id]) => id)
   }
 
-  const api = Object.freeze({ parseRefs, buildDashboard, duplicateProjects })
+  const api = Object.freeze({ parseRefs, buildDashboard, duplicateProjects, sessionFor })
   if (typeof module === 'object') module.exports = api
   else window.projectsModel = api
 })()

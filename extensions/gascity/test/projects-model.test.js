@@ -390,3 +390,19 @@ test('an artifact joined through a parent-child dependency attaches in either de
     assert.equal(card(buildDashboard(input)).artifacts.some((entry) => entry.id === 'fx-art-1'), true)
   }
 })
+
+test('answerTo prefers gc.owner, then created_by, and is absent without either', () => {
+  const input = fresh()
+  input.decisions = [
+    { id: 'a1', title: 'Both', status: 'open', labels: ['needs/stephanie'], metadata: { 'gc.owner': 'mayor' }, created_by: 'omni-pl' },
+    { id: 'a2', title: 'Creator only', status: 'open', labels: ['needs/stephanie'], metadata: { 'gc.owner': ' ' }, created_by: 'omni-pl' },
+    { id: 'a3', title: 'Neither', status: 'open', labels: ['needs/stephanie'], metadata: {} },
+  ]
+  const asks = Object.fromEntries(buildDashboard(input).needsYou.map((ask) => [ask.id, ask]))
+  assert.equal(asks.a1.answerTo, 'mayor')
+  assert.equal(asks.a1.answerLive, false)
+  assert.equal(asks.a2.answerTo, 'omni-pl')
+  assert.equal(asks.a2.answerLive, true)
+  assert.equal('answerTo' in asks.a3, false)
+  assert.equal(asks.a1.title, 'Both')
+})

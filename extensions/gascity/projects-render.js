@@ -28,10 +28,27 @@
       refs.invalid.length > 0 && text(refs.invalid.length === 1 ? 'link missing' : `${refs.invalid.length} links missing`, 'projects-warning'))
   }
 
+  const SEAT_NAMES = Object.freeze({
+    mayor: 'Wren',
+    'omni-pl': 'Verity',
+    'omni-evals-pl': 'Caliper',
+    'city-infra-pl': 'Tessera',
+    'omni-evals-desk': 'the evals desk',
+  })
+
+  const renderAnswerTo = (ask, options) => {
+    if (!ask.answerTo) return null
+    const name = SEAT_NAMES[ask.answerTo]
+    const label = `Answer to ${name ? `${name} (${ask.answerTo})` : ask.answerTo}`
+    if (!ask.answerLive) return paragraph(`${label} (asleep)`, 'hvir-meta')
+    return el('p', {}, button(label, `Open the ${ask.answerTo} session`, () => options.onOpenSession?.(ask.answerTo)))
+  }
+
   const renderAsk = (ask, options, tagged = false) => el('li', {},
     tagged && text(ask.project?.title ?? 'No project', 'projects-tag'),
     ask.tier && text(ask.tier, 'projects-tag'),
     button(ask.title, ask.id, () => options.onOpenBead?.(ask.id, ask.store)),
+    renderAnswerTo(ask, options),
     renderRefs(ask.refs, options))
 
   const renderStep = (entry, options) => el('li', { className: 'projects-step', title: entry.id },
