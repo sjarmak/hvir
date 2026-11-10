@@ -104,6 +104,13 @@ test('answered and waiting-on-agents decisions never get buttons, wherever they 
   assert.ok(answerable.some((text) => text.includes(TITLE)))
 })
 
+test('an answered decision still waiting on her is listed under Needs you but gets no answer buttons', (t) => {
+  const state = page(t, { metadata: { 'gc.options': CHOICES, 'gc.answered': '2026-11-10', 'gc.waiting_on': 'stephanie' } })
+  assert.match(state.card().textContent, new RegExp(TITLE))
+  assert.equal(state.root.querySelectorAll('.projects-answer').length, 0)
+  assert.equal(state.present().querySelectorAll('.projects-answer').length, 0)
+})
+
 test('clicking an option asks first, naming the letter, the option text and the card title', (t) => {
   const { buttons, confirm, calls } = page(t)
   buttons()[0].click()

@@ -58,7 +58,7 @@
   }
 
   const renderAnswer = (ask, options) => {
-    if (!ask.needsYou || !options.onAnswer) return null
+    if (!ask.needsYou || !options.onAnswer || ask.metadata?.['gc.answered']) return null
     const choices = window.needsModel.parseOptions(ask)
     if (choices.length === 0) return null
     const store = window.answerState

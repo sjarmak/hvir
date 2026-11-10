@@ -421,11 +421,11 @@ test('an unknown answer outcome stays locked when a later read is incomplete bec
   assert.equal(await phase(), 'unknown')
 })
 
-test('an unknown answer outcome stays locked when the decision is listed as answered but still waiting on her', async (t) => {
-  const { page, reload, locked, phase } = await unknownAnswerPage(t)
+test('an unknown answer outcome stays unknown, with no buttons, when the decision is listed as answered but still waiting on her', async (t) => {
+  const { page, reload, phase } = await unknownAnswerPage(t)
   page.openRows = [withChoices({ ...fixture.decisions[0], metadata: { ...fixture.decisions[0].metadata, 'gc.answered': '2026-11-10', 'gc.waiting_on': 'stephanie' } })]
   await reload()
-  assert.ok(await locked())
+  assert.equal(page.document.querySelectorAll('.projects-answer').length, 0)
   assert.equal(await phase(), 'unknown')
 })
 
