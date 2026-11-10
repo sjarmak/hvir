@@ -140,11 +140,12 @@ export async function attached(
   data: ReturnType<typeof fixture>,
   guestId = 10,
   readingOrigin: 'human' | 'agent' | 'action' = 'human',
+  contribution = 'reference',
 ) {
   const view = await data.owner.open(
     data.renderer,
     'installation',
-    'reference',
+    contribution,
     () => {},
     { readingOrigin },
   )

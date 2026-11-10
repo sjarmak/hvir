@@ -108,7 +108,10 @@ export async function requestGuestConnector(
       ? {
           action: invocation.id,
           actionName: invocation.action,
-          human: invocation.caller === 'guest' && !record.authority.restricted,
+          human:
+            (invocation.caller === 'guest' || invocation.caller === 'human') &&
+            !record.authority.restricted &&
+            !record.authority.forwarded,
         }
       : {}),
     current: assertOrigin,

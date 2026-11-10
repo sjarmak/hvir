@@ -13,9 +13,18 @@ function invocation(caller: ExtensionInvocation['caller']): ExtensionInvocation 
     authorization: 'interactive',
   }
 }
-async function callerFor(restricted: boolean, current: ExtensionInvocation | undefined) {
+async function callerFor(
+  restricted: boolean,
+  current: ExtensionInvocation | undefined,
+  forwarded = false,
+) {
   const execute = vi.fn((_caller: ConnectorCaller) => Promise.resolve({}))
-  const authority = { restricted, assertCapability: vi.fn(), forAction: () => undefined }
+  const authority = {
+    restricted,
+    forwarded,
+    assertCapability: vi.fn(),
+    forAction: () => undefined,
+  }
   const record = {
     authority,
     activation: { installationId: 'installation' },
@@ -38,7 +47,7 @@ async function callerFor(restricted: boolean, current: ExtensionInvocation | und
     { execute } as never,
     {} as never,
     actions as never,
-    (() => true),
+    () => true,
     current,
     {} as never,
     () => true,
@@ -46,20 +55,31 @@ async function callerFor(restricted: boolean, current: ExtensionInvocation | und
   return execute.mock.calls[0]![0]
 }
 describe('guest connector caller provenance', () => {
-  it('marks a guest invocation from an ordinary view as human and names its action', async () => {
-    expect(await callerFor(false, invocation('guest'))).toMatchObject({
-      action: 'invocation',
-      actionName: 'record',
-      human: true,
-    })
-  })
+  it.each([
+    ['a guest invocation', 'guest'],
+    ['a workbench invocation', 'human'],
+  ] as const)(
+    'marks %s from an ordinary view as human and names its action',
+    async (_label, origin) => {
+      expect(await callerFor(false, invocation(origin))).toMatchObject({
+        action: 'invocation',
+        actionName: 'record',
+        human: true,
+      })
+    },
+  )
   it.each([
     ['an agent invocation', false, invocation('agent')],
-    ['a human-origin invocation', false, invocation('human')],
     ['a restricted view', true, invocation('guest')],
+    ['a restricted workbench invocation', true, invocation('human')],
   ] as const)('does not mark %s as human', async (_label, restricted, current) => {
     expect(await callerFor(restricted, current)).toMatchObject({
       actionName: 'record',
+      human: false,
+    })
+  })
+  it('does not mark an ssh-forwarded view as human', async () => {
+    expect(await callerFor(false, invocation('human'), true)).toMatchObject({
       human: false,
     })
   })
