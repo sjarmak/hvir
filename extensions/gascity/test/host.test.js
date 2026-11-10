@@ -255,3 +255,58 @@ test('run without exit still throws on a nonzero exit and sends no action id', a
   await assert.rejects(host.run('gc', { id: 'w', host: 'local' }, []), /boom/)
   assert.ok(sent.every((message) => !('actionId' in message)))
 })
+
+test('an interruption after dispatch is tagged unknown, never not-sent', async () => {
+  const { host } = loadBridge((message) =>
+    message.capability === 'connector.execute'
+      ? { outcome: 'interrupted-uncertain', reason: 'transport', host: 'local' }
+      : outputFor(message, {}))
+  await assert.rejects(host.run('hvir-answer', LOCAL, ['dec-a', 'a', 'c'], { exit: true }), (error) => {
+    assert.equal(error.dispatch, 'unknown')
+    assert.doesNotMatch(error.message, /did not run/)
+    assert.equal(error.reason, 'transport')
+    return true
+  })
+})
+
+test('a completed run whose output cannot be read is tagged unknown', async () => {
+  const { host } = loadBridge((message) => {
+    if (message.capability === 'connector.execute') return completed('r1')
+    if (message.input.release) return {}
+    throw new Error('output expired')
+  })
+  await assert.rejects(host.run('hvir-answer', LOCAL, ['dec-a', 'a', 'c'], { exit: true }), (error) => {
+    assert.equal(error.dispatch, 'unknown')
+    assert.match(error.message, /output expired/)
+    return true
+  })
+})
+
+test('a definite refusal before dispatch is tagged not-sent', async () => {
+  for (const outcome of ['not-started', 'unavailable']) {
+    const { host } = loadBridge((message) =>
+      message.capability === 'connector.execute'
+        ? { outcome, reason: 'unapproved', host: 'local' }
+        : outputFor(message, {}))
+    await assert.rejects(host.run('hvir-answer', LOCAL, [], { exit: true }), (error) => {
+      assert.equal(error.dispatch, 'not-sent')
+      assert.match(error.message, /did not run/)
+      return true
+    })
+  }
+})
+
+test('an outcome hvir does not name is tagged unknown', async () => {
+  const { host } = loadBridge((message) =>
+    message.capability === 'connector.execute' ? { outcome: 'mystery' } : outputFor(message, {}))
+  await assert.rejects(host.run('hvir-answer', LOCAL, [], { exit: true }), (error) => error.dispatch === 'unknown')
+})
+
+test('a real nonzero exit is returned, not thrown, in exit mode', async () => {
+  const { host } = loadBridge((message) =>
+    message.capability === 'connector.execute'
+      ? { outcome: 'completed', receipt: 'r1', code: 2, truncated: false }
+      : outputFor(message, { r1: 'Card changed.\n' }))
+  const value = await host.run('hvir-answer', LOCAL, [], { exit: true })
+  assert.equal(value.exitCode, 2)
+})

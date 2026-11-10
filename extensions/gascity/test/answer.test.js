@@ -133,3 +133,85 @@ test('the project views load the invoker and only the Gas City view registers th
   assert.match(fs.readFileSync(join(__dirname, '..', 'projects.js'), 'utf8'), /answerAction\.listen/)
   assert.doesNotMatch(fs.readFileSync(join(__dirname, '..', 'project.js'), 'utf8'), /listen/)
 })
+
+const tagged = (dispatch, message = 'hvir-answer failed') => Object.assign(new Error(message), { dispatch })
+
+test('a run that may have been dispatched comes back as an unknown completion, not an error', async () => {
+  const state = load({ fail: tagged('unknown', 'hvir-answer outcome unknown: transport') })
+  state.api.listen(state.window.hvirExtension)
+  state.deliver(invocation({ decId: 'dec-a1', letter: 'a', cardSha256: SHA }))
+  await settled()
+  assert.equal(state.sent.length, 1)
+  assert.equal(state.sent[0].error, undefined)
+  assert.equal(state.sent[0].value.unknown, true)
+  assert.equal(state.sent[0].value.line, 'Completion unknown; check the decision before answering again')
+})
+
+test('a definite refusal before dispatch comes back as not sent', async () => {
+  const state = load({ fail: tagged('not-sent', 'hvir-answer did not run: unapproved') })
+  state.api.listen(state.window.hvirExtension)
+  state.deliver(invocation({ decId: 'dec-a1', letter: 'a', cardSha256: SHA }))
+  await settled()
+  assert.equal(state.sent[0].value.notSent, true)
+  assert.equal(state.sent[0].value.unknown, undefined)
+  assert.match(state.sent[0].value.line, /did not run: unapproved/)
+})
+
+test('a real exit 2 stays a plain result, apart from not sent and unknown', async () => {
+  const state = load({ result: { exitCode: 2, stdout: 'Card changed.\n', stderr: '' } })
+  state.api.listen(state.window.hvirExtension)
+  state.deliver(invocation({ decId: 'dec-a1', letter: 'a', cardSha256: SHA }))
+  await settled()
+  assert.deepEqual(plain(state.sent[0].value), { exitCode: 2, line: 'Card changed.' })
+})
+
+test('an untagged error longer than 240 characters is cut to 240 before it is sent', async () => {
+  const state = load({ fail: new Error('x'.repeat(900)) })
+  state.api.listen(state.window.hvirExtension)
+  state.deliver(invocation({ decId: 'dec-a1', letter: 'a', cardSha256: SHA }))
+  await settled()
+  assert.equal(state.sent[0].error.length, 240)
+})
+
+test('every error the handler sends fits the 240 character bridge limit', async () => {
+  const state = load({ fail: new Error('y'.repeat(900)) })
+  state.api.listen(state.window.hvirExtension)
+  state.deliver(invocation({ decId: 'dec-a1', letter: 'a', cardSha256: SHA }, { context: {} }))
+  state.deliver(invocation({ decId: 'bad' }))
+  await settled()
+  assert.ok(state.sent.every((message) => message.error.length <= 240))
+})
+
+test('a second submission for the same workspace, decision and hash while one is in flight never reaches the connector', async () => {
+  let release
+  const state = load({ result: undefined })
+  state.window.host.run = (...args) => {
+    state.calls.push(args)
+    return new Promise((resolve) => { release = () => resolve({ exitCode: 0, stdout: 'Recorded.\n', stderr: '' }) })
+  }
+  state.api.listen(state.window.hvirExtension)
+  const input = { decId: 'dec-a1', letter: 'a', cardSha256: SHA }
+  state.deliver({ kind: 'action', invocation: { id: 'inv-1', action: 'answer-decision', input, context: { workspace } } })
+  state.deliver({ kind: 'action', invocation: { id: 'inv-2', action: 'answer-decision', input, context: { workspace } } })
+  await settled()
+  assert.equal(state.calls.length, 1)
+  assert.equal(state.sent.length, 1)
+  assert.equal(state.sent[0].id, 'inv-2')
+  assert.equal(state.sent[0].value.unknown, true)
+  release()
+  await settled()
+  assert.equal(state.sent.length, 2)
+  assert.deepEqual(plain(state.sent[1].value), { exitCode: 0, line: 'Recorded.' })
+})
+
+test('after the first finishes the same key is admitted again, and other keys were never blocked', async () => {
+  const state = load()
+  state.api.listen(state.window.hvirExtension)
+  const input = { decId: 'dec-a1', letter: 'a', cardSha256: SHA }
+  state.deliver({ kind: 'action', invocation: { id: 'inv-1', action: 'answer-decision', input, context: { workspace } } })
+  await settled()
+  state.deliver({ kind: 'action', invocation: { id: 'inv-2', action: 'answer-decision', input, context: { workspace } } })
+  state.deliver({ kind: 'action', invocation: { id: 'inv-3', action: 'answer-decision', input: { ...input, decId: 'dec-b2' }, context: { workspace } } })
+  await settled()
+  assert.equal(state.calls.length, 3)
+})

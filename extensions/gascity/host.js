@@ -137,6 +137,19 @@ window.host = (() => {
     }
   }
 
+  const NOT_SENT_OUTCOMES = new Set(['not-started', 'unavailable'])
+
+  async function readExit(result, actionId) {
+    try {
+      const stdout = await readStream(result.receipt, 'stdout', actionId)
+      return { exitCode: result.code, stdout, stderr: await readStream(result.receipt, 'stderr', actionId) }
+    } catch (cause) {
+      const error = new Error(`output of a completed run could not be read: ${cause.message}`)
+      error.dispatch = 'unknown'
+      throw error
+    }
+  }
+
   async function runAdmitted(connector, workspace, args, { lines, text, exit, actionId }) {
     const result = await execute({
       connector,
@@ -145,19 +158,20 @@ window.host = (() => {
       args,
     }, actionId)
     if (result.outcome !== 'completed') {
+      const notSent = NOT_SENT_OUTCOMES.has(result.outcome)
       const error = new Error(
-        `${connector} did not run: ${result.reason ?? result.outcome}`,
+        `${connector} ${notSent ? 'did not run' : 'outcome unknown'}: ${result.reason ?? result.outcome}`,
       )
       error.reason = result.reason ?? result.outcome
-      // hvir's own pacing and admission budget: the next refresh can run, so views keep their last render.
+      error.dispatch = notSent ? 'not-sent' : 'unknown'
       error.transient = error.reason === 'frequency' || error.reason === 'capacity'
       if (Number.isSafeInteger(result.retryAfterMs))
         error.retryAfterMs = result.retryAfterMs
       throw error
     }
     try {
+      if (exit) return await readExit(result, actionId)
       const stdout = await readStream(result.receipt, 'stdout', actionId)
-      if (exit) return { exitCode: result.code, stdout, stderr: await readStream(result.receipt, 'stderr', actionId) }
       if (result.code !== 0)
         throw failure(connector, result.code, stdout, await readStream(result.receipt, 'stderr', actionId))
       if (result.truncated)
