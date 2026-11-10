@@ -2,6 +2,12 @@
   const truthApi = typeof module === 'object' ? require('./projects-truth.js') : window.projectsTruth
   const needsApi = typeof module === 'object' ? require('./needs-model.js') : window.needsModel
   const meta = (bead, key) => bead?.metadata?.[key] ?? ''
+  const tierLabel = (bead) => {
+    const raw = bead?.metadata?.['gc.tier']
+    if (raw === undefined || raw === null || String(raw).trim() === '') return ''
+    const value = String(raw).trim()
+    return typeof raw !== 'boolean' && ['1', '2', '3'].includes(value) ? `Tier ${value}` : `Tier ${value} is not 1-3`
+  }
   const identity = (bead) => bead ? { id: bead.id, title: bead.title,
     ...(bead.store === undefined ? {} : { store: bead.store }) } : null
   const tokens = (value) => value ? value.split(',') : []
@@ -238,7 +244,7 @@
     const states = input.refStates ?? {}
     const openDecisions = (input.decisions ?? []).filter((bead) => bead.status === 'open')
       .map((bead) => ({ ...bead, project: identity(projects.get(meta(bead, 'gc.project'))),
-        refs: references([bead], states), needsYou: truthApi.waitsOnHer(bead),
+        refs: references([bead], states), needsYou: truthApi.waitsOnHer(bead), tier: tierLabel(bead),
         inDelivery: truthApi.inDelivery(bead) }))
     const needsYou = openDecisions.filter((bead) => bead.needsYou)
     const inDelivery = openDecisions.filter((bead) => bead.inDelivery)

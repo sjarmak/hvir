@@ -448,3 +448,26 @@ test('the next milestone line and the Dates entry both carry the date reason', (
   const due = [...root.querySelectorAll('li')].map((node) => node.textContent).find((line) => line.startsWith('Due: '))
   assert.match(due ?? '', /^Due: Searchable catalog · 2026-11-02 · deadline · The vendor contract expires that day\./)
 })
+
+test('each decision shows its escalation tier as a tag; an untiered one shows none and a bad one says so', (t) => {
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  const { window } = dom
+  window.Date.now = () => Date.parse(fixture.now)
+  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const input = structuredClone(fixture)
+  const ask = (id, tier) => ({ id, title: `Ask ${id}`, status: 'open', labels: ['needs/stephanie'],
+    metadata: tier === undefined ? {} : { 'gc.tier': tier } })
+  input.decisions = [ask('tier-one', '1'), ask('tier-two', 2), ask('tier-none'), ask('tier-bad', '7'), ask('tier-bool', true)]
+  const model = buildDashboard(input)
+  const root = window.document.querySelector('main')
+  window.projectsRender.renderDashboard(model, root, {})
+  const row = (id) => [...root.querySelectorAll('li')].find((node) => node.textContent.includes(`Ask ${id}`))
+  const tags = (id) => [...row(id).querySelectorAll('.projects-tag')].map((node) => node.textContent)
+  assert.ok(tags('tier-one').includes('Tier 1'))
+  assert.ok(tags('tier-two').includes('Tier 2'))
+  assert.ok(!tags('tier-none').some((tag) => /Tier/.test(tag)))
+  assert.ok(tags('tier-bad').includes('Tier 7 is not 1-3'))
+  assert.ok(tags('tier-bool').includes('Tier true is not 1-3'))
+  assert.deepEqual(model.needsYou.map((entry) => entry.tier), ['Tier 1', 'Tier 2', '', 'Tier 7 is not 1-3', 'Tier true is not 1-3'])
+})

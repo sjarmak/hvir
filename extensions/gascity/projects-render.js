@@ -30,6 +30,7 @@
 
   const renderAsk = (ask, options, tagged = false) => el('li', {},
     tagged && text(ask.project?.title ?? 'No project', 'projects-tag'),
+    ask.tier && text(ask.tier, 'projects-tag'),
     button(ask.title, ask.id, () => options.onOpenBead?.(ask.id, ask.store)),
     renderRefs(ask.refs, options))
 
