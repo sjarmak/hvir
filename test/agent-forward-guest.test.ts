@@ -982,17 +982,17 @@ it.each([
     const invoked = await vi.waitFor(() => {
       const sent = f.sent.find((message) => message.kind === 'action')
       if (!sent) throw new Error('No delivered action')
-      return sent as { invocation: ExtensionInvocation }
+      return sent
     })
     await refusedRun('agent-action', invoked.invocation.id)
     expect(
       (
-        await f.request(
+        (await f.request(
           'page',
           'connector.output',
           { receipt: 'none', stream: 'stdout', offset: 0 },
           invoked.invocation.id,
-        )
+        )) as { ok: boolean }
       ).ok,
     ).toBe(false)
     expect(f.connector.host.exec).not.toHaveBeenCalled()
