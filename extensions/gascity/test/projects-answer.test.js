@@ -65,6 +65,15 @@ const deferred = () => {
   return { promise, resolve }
 }
 
+test('the owner and session link render below the answer buttons', (t) => {
+  const state = page(t, { metadata: { 'gc.options': CHOICES, 'gc.owner': 'omni-pl' } })
+  const answer = state.card().querySelector('.projects-answer')
+  const owner = [...state.card().querySelectorAll('div')].find((node) => node.textContent.startsWith('Owner: Verity'))
+  assert.ok(answer)
+  assert.ok(owner)
+  assert.ok(answer.compareDocumentPosition(owner) & state.window.Node.DOCUMENT_POSITION_FOLLOWING)
+})
+
 test('a needs-you card with valid options shows one button per option labelled letter and text', (t) => {
   const { buttons } = page(t)
   assert.deepEqual(buttons().map((node) => node.textContent.slice(0, 40)), [

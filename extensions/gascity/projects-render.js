@@ -39,9 +39,10 @@
   const renderAnswerTo = (ask, options) => {
     if (!ask.answerTo) return null
     const name = SEAT_NAMES[ask.answerTo]
-    const label = `Answer to ${name ? `${name} (${ask.answerTo})` : ask.answerTo}`
-    if (!ask.answerLive) return paragraph(`${label} (asleep)`, 'hvir-meta')
-    return el('p', {}, button(label, `Open the ${ask.answerTo} session`, () => options.onOpenSession?.(ask.answerTo)))
+    const owner = text(`Owner: ${name ? `${name} (${ask.answerTo})` : ask.answerTo}`, 'hvir-meta')
+    if (!ask.answerLive) return el('div', {}, owner, paragraph(name ? `${name} is asleep` : `The ${ask.answerTo} session is asleep`, 'hvir-meta'))
+    const label = name ? `Open ${name}'s session` : `Open the ${ask.answerTo} session`
+    return el('div', {}, owner, el('p', {}, button(label, `Open the ${ask.answerTo} session`, () => options.onOpenSession?.(ask.answerTo))))
   }
 
   const OPTION_LABEL_MAX = 48
@@ -122,8 +123,8 @@
     tagged && text(ask.project?.title ?? 'No project', 'projects-tag'),
     ask.tier && text(ask.tier, 'projects-tag'),
     button(ask.title, ask.id, () => options.onOpenBead?.(ask.id, ask.store)),
-    renderAnswerTo(ask, options),
     renderAnswer(ask, options),
+    renderAnswerTo(ask, options),
     renderRefs(ask.refs, options))
 
   const renderStep = (entry, options) => el('li', { className: 'projects-step', title: entry.id },
