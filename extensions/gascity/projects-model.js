@@ -133,6 +133,9 @@
     target: meta(bead, 'ms.target'),
     targetReason: meta(bead, 'ms.target_reason'),
     state: meta(bead, 'ms.state') || 'unknown',
+    projState: meta(bead, 'proj.state'),
+    now: truthApi.undated(meta(bead, 'proj.now')),
+    updatedAt: meta(bead, 'proj.updated_at') || null,
     outcome: meta(bead, 'ms.outcome'),
     refs: references([bead], states),
   })
@@ -158,6 +161,8 @@
       }),
     }
   }
+
+  const newest = (times) => times.filter(Boolean).sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null
 
   const childOf = (project) => (bead) => parents(bead).includes(project.id) && bead.store === project.store
 
@@ -206,6 +211,7 @@
       verifiedAt: truth.verifiedAt,
       dates: truth.dates,
       updatedAt,
+      changedAt: newest([updatedAt, ...list.map((entry) => entry.updatedAt)]),
       stale: state !== 'done' && !(Date.parse(input.now) - Date.parse(updatedAt) <= DAY_MS),
       artifacts: (input.artifacts ?? []).filter(childOf(project))
         .map((bead) => artifact(bead, input.now, state === 'done')),

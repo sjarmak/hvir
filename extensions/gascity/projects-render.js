@@ -153,7 +153,9 @@
   const renderMilestone = (entry, options) => el('li', { title: entry.id },
     entry.target && text([`Due ${entry.target}`, entry.targetReason].filter(Boolean).join(' · '), 'hvir-meta'),
     entry.overdue && text(' · overdue', 'projects-warning'),
-    text(entry.title), chip(entry.state),
+    text(entry.title), chip(entry.projState || entry.state),
+    entry.now && paragraph(entry.now),
+    entry.updatedAt && text(`updated ${window.ago(entry.updatedAt.replace(/Z$/, ':00Z'))}`, 'hvir-meta'),
     entry.outcome && paragraph(entry.outcome), renderRefs(entry.refs, options))
 
   const STATE_LABELS = { tested: 'Tested', installed: 'Installed', live: 'Live' }
@@ -244,14 +246,22 @@
     text(entry.label), text([` · ${entry.at || 'none recorded'}`, REASON_LABELS[entry.reason], entry.note].filter(Boolean).join(' · '), 'hvir-meta'),
     entry.overdue && text(' · overdue', 'projects-warning'))), 'No dates')
 
+  const renderStrip = (card) => el('div', { className: 'projects-strip' },
+    chip(card.derivedState),
+    text(card.now || 'No current update'),
+    card.actionOwner.kind === 'user' && text('Waits on you', 'projects-waits-you'),
+    renderWaits(card))
+
+  const changedSince = (card, lastLooked) =>
+    Boolean(lastLooked && card.changedAt && Date.parse(card.changedAt) > Date.parse(lastLooked))
+
   const summary = (card, options) => [
+      renderStrip(card),
       renderEvidence(card),
       renderInDelivery(card),
       renderOwner(card),
-      renderWaits(card),
       ...renderChecks(card),
       card.contributors.length > 0 && paragraph(`With ${card.contributors.join(', ')}`, 'hvir-meta'),
-      paragraph(card.now || 'No current update'),
       card.stuckWhy && paragraph(card.stuckWhy, 'projects-warning'),
       renderProgress(card.milestones),
       options.outcomesShown && section('Recent outcomes', list(card.outcomes.slice(0, 3).map(renderOutcome), 'No outcomes yet')),
@@ -271,7 +281,8 @@
     })
     toggle.setAttribute('aria-expanded', 'false')
     const face = el('div', { className: 'projects-card-face' },
-      el('header', {}, el('h3', { title: card.id }, card.title), chip(card.derivedState)),
+      el('header', {}, el('h3', { title: card.id }, card.title),
+        changedSince(card, options.lastLooked) && text('changed', 'projects-changed'), chip(card.derivedState)),
       ...summary(card, options),
       el('div', { className: 'projects-card-actions' }, toggle,
         options.onOpenProject && button('Open page', card.id, () => options.onOpenProject(card.id, card.store))))

@@ -1,9 +1,15 @@
 ;(() => {
+  let visited = false
+  let lastLooked = null
   window.projectsData.startProjectsView((data, root, actions, context) => {
     const { id, store } = context.input ?? {}
     if (id === undefined) {
       document.title = 'Projects overview'
-      window.projectsRender.renderDashboard(data.model, root, { ...actions, seatJobsUnavailable: true })
+      if (!visited) {
+        visited = true
+        lastLooked = window.projectsSeen.visit(() => window.localStorage, new Date().toISOString())
+      }
+      window.projectsRender.renderDashboard(data.model, root, { ...actions, seatJobsUnavailable: true, lastLooked })
       return ''
     }
     const card = data.model.cards.flatMap((group) => group.cards)
