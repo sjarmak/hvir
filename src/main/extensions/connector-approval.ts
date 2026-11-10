@@ -108,9 +108,11 @@ export class ExtensionConnectorApprovalOwner {
         throw new Error('Invalid connector approval state')
       const approvals = value.map((entry: unknown): ExtensionConnectorApproval => {
         const object = extensionObject(entry)
+        const saved = extensionObject(object['declaration'])
         const declaration = validateConnectorDeclarations(
-          [object['declaration']],
+          [saved],
           () => undefined,
+          saved['actions'] !== undefined,
         )[0]!
         return {
           installationId: extensionText(
