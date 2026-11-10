@@ -70,6 +70,7 @@ test('a PR opens a copy of the Pull requests pull view, with the actions it laun
     ['checkout-terminal', 'pr-actions', false],
     ['worktree-terminal', 'pr-actions', false],
     ['pull-worktree-terminal', 'pr-actions', false],
+    ['attach-session', 'city', false],
   ])
   assert.equal((manifest.connectors ?? []).some((item) => item.id === 'city-pr'), false)
   const data = fs.readFileSync(path.join(__dirname, '..', 'projects-data.js'), 'utf8')

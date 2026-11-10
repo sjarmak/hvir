@@ -80,6 +80,7 @@ test('the city workspace leads with the mayor, then rig leads, running before do
       ['mayor', 'lead', undefined, true],
       ['mem-pl', 'lead', undefined, false],
       ['gascity-pl', 'lead', undefined, false],
+      ['project-lead', 'lead', undefined, false],
       ['mem-worker-1', 'worker', 'mem-worker', false],
       ['mem-worker-2', 'worker', 'mem-worker', false],
       ['polecat-3', 'worker', 'polecat', false],
@@ -163,7 +164,7 @@ test('crew view groups workers by pool and prefers gc active_bead', () => {
     member.label === 'polecat-3' ? { ...member, session: { ...member.session, activeBead: 'gc-42' } } : member,
   )
   const view = crewView(withBead, [{ id: 'gc-42', title: 'Fix the thing', status: 'in_progress', assignee: 'someone' }])
-  assert.deepEqual(view.leads.map((card) => card.member.label), ['mayor', 'mem-pl', 'gascity-pl'])
+  assert.deepEqual(view.leads.map((card) => card.member.label), ['mayor', 'mem-pl', 'gascity-pl', 'project-lead'])
   assert.deepEqual(
     view.pools.map((group) => [group.label, group.cards.map((card) => card.member.label)]),
     [
@@ -172,7 +173,7 @@ test('crew view groups workers by pool and prefers gc active_bead', () => {
     ],
   )
   assert.deepEqual(view.pools[1].cards[0].bead, { id: 'gc-42', title: 'Fix the thing' })
-  assert.equal(view.total, 6)
+  assert.equal(view.total, 7)
 })
 
 test('without active_bead an in-progress bead joins by exact identity, never an ambiguous one', () => {
@@ -196,4 +197,41 @@ test('an active_bead missing from the bead list still shows its id', () => {
   const [member] = crewAt(CITY, 'hq', { city: true }).members
   const view = crewView([{ ...member, session: { ...member.session, activeBead: 'x-9' } }], [])
   assert.deepEqual(view.leads[0].bead, { id: 'x-9', title: 'x-9' })
+})
+
+function onDemand(extra = {}) {
+  return parseConfig({
+    config: {
+      Agents: [{ Name: 'omni-evals-desk' }],
+      NamedSessions: [{ Template: 'omni-evals-desk', Mode: 'on_demand', ...extra }],
+    },
+  })
+}
+
+const deskCrew = (config, sessions = []) => crewAt(CITY, 'hq', { city: true, sessions, config })
+
+test('a dormant on-demand named session is listed as an attachable lead', () => {
+  const [desk] = deskCrew(onDemand()).members
+  assert.deepEqual(
+    [desk.label, desk.target, desk.tier, desk.attachable, desk.session],
+    ['omni-evals-desk', 'omni-evals-desk', 'lead', true, undefined],
+  )
+})
+
+test('a running on-demand session is not duplicated and a pinned dormant lead is not attachable', () => {
+  const running = parseSessions([
+    { id: 'gc-7', name: 'omni-evals-desk', alias: 'omni-evals-desk', template: 'omni-evals-desk', state: 'active', work_dir: CITY },
+  ])
+  const crew = deskCrew(onDemand(), running)
+  assert.deepEqual(labels(crew), ['omni-evals-desk'])
+  assert.notEqual(crew.members[0].attachable, true)
+  const dormantPinned = crewAt(CITY, 'hq', { city: true }).members.find((member) => member.label === 'gascity-pl')
+  assert.equal(dormantPinned.attachable, undefined)
+})
+
+test('suspended, bound, unknown or missing mode gives no attach row, and tiers stay as they were', () => {
+  for (const extra of [{ Suspended: true }, { Template: 'core.desk' }, { Mode: 'later' }, { Mode: undefined }])
+    assert.deepEqual(labels(deskCrew(onDemand(extra))), [])
+  const base = crewAt(CITY, 'hq', { city: true }).members.filter((member) => member.attachable !== true)
+  assert.deepEqual(base.map((member) => member.tier), ['lead', 'lead', 'lead', 'worker', 'worker', 'worker'])
 })

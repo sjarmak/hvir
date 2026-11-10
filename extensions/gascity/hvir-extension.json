@@ -1,7 +1,7 @@
 {
   "id": "hvir.gascity",
   "name": "Gas City",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "contract": "1.0",
   "requiredCapabilities": [
     "presentation.read",
@@ -270,6 +270,29 @@
           }
         },
         "required": ["number", "branch"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "attach-session",
+      "title": "Open a Gas City session in a new terminal",
+      "view": "city",
+      "agents": false,
+      "effects": {
+        "delete": false,
+        "replace": false
+      },
+      "timeoutMs": 120000,
+      "description": "Runs gc session attach <name> once in a new terminal at the workspace root, after you confirm in hvir. gc starts an on-demand session that is asleep. Only a person clicking an asleep desk on the City view can run it; agents cannot.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "required": ["name"],
         "additionalProperties": false
       }
     }

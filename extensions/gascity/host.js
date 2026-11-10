@@ -216,5 +216,8 @@ window.host = (() => {
     return value
   }
 
-  return Object.freeze({ request, run, availability, connect })
+  const terminal = (connector, workspace, args, actionId) =>
+    request('terminal.start', { connector, workspace: workspace.id, args }, actionId)
+
+  return Object.freeze({ request, run, availability, connect, terminal })
 })()

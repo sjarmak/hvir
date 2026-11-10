@@ -49,24 +49,32 @@ function bindRows(container, rows, onSelect) {
 
 const reportOpenError = (error) => (ui.status.textContent = error.message)
 const openSession = (row) => window.openOwn('session', { id: row.dataset.id }).catch(reportOpenError)
+const selectRow = (row) =>
+  window.attachAction
+    .routeRow(row, openSession, (result) => (ui.status.textContent = result?.line ?? ''))
+    .catch(reportOpenError)
 
 /** One crew card: state, context use and the bead being worked; a dormant lead is listed but inert. */
 function crewRow({ member, bead }) {
   const { session } = member
   const row = window.optionRow({
     title: member.label,
-    hover: session ? `${session.id} · ${session.workDir ?? ''}` : `${member.target}: configured, not running`,
+    hover: session
+      ? `${session.id} · ${session.workDir ?? ''}`
+      : member.attachable
+        ? `${member.target}: asleep, opens a terminal and starts it`
+        : `${member.target}: configured, not running`,
     meta: [
-      el('span', { className: `state state-${session?.state ?? 'dormant'}` }, session?.state ?? 'not running'),
+      el('span', { className: `state state-${session?.state ?? 'dormant'}` }, session?.state ?? (member.attachable ? 'asleep' : 'not running')),
       member.cityLead ? ' · city' : '',
       session?.contextPct === undefined ? '' : ` · context ${Math.round(session.contextPct)}%`,
       bead ? ` · ${bead.id}${bead.title === bead.id ? '' : ` ${bead.title}`}` : '',
       window.knownTime(session?.lastActive) ? ` · active ${window.ago(session.lastActive)}` : '',
     ],
-    data: session ? { id: session.id } : {},
+    data: session ? { id: session.id } : member.attachable ? { attach: member.target } : {},
   })
   row.dataset.band = activityBand(session?.state)
-  if (!session) row.setAttribute('aria-disabled', 'true')
+  if (!session && !member.attachable) row.setAttribute('aria-disabled', 'true')
   return row
 }
 
@@ -76,8 +84,8 @@ function renderCrew() {
   const view = crewView(crew.members, inFlight)
   const workers = view.pools.flatMap((pool) => [groupLabel(`${pool.label} · ${pool.cards.length}`), ...pool.cards.map(crewRow)])
   const leads = view.leads.length ? [groupLabel(`Leads · ${view.leads.length}`), ...view.leads.map(crewRow)] : []
-  bindRows(ui.crew, [...leads, ...workers], openSession)
-  bindRows(ui.internals, view.internals.map(crewRow), openSession)
+  bindRows(ui.crew, [...leads, ...workers], selectRow)
+  bindRows(ui.internals, view.internals.map(crewRow), selectRow)
   const live = crew.members.filter((member) => member.session)
   const active = live.filter((member) => activityBand(member.session.state) === 'active').length
   heading('crew', `${crew.scope === 'rig' ? 'Rig crew' : 'Crew'} · ${active} active of ${live.length}${inFlightNote}`)
@@ -292,6 +300,7 @@ async function load(context) {
 
 /** Each tick runs `gc session list` on the city host; twice a minute keeps it light on the machine. */
 const view = window.startView({ load, refreshMs: 30000, onStatus: (text) => (ui.status.textContent = text) })
+window.attachAction.listen(window.hvirExtension)
 ui.scope.addEventListener('click', () => {
   wholeCity = !wholeCity
   readyLoadedAt = 0
