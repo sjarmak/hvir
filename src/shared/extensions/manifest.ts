@@ -1,5 +1,7 @@
 import {
+  ACTION_BINDING_CAPABILITY,
   assertConnectorActionBindings,
+  CONNECTOR_LIMITS,
   validateConnectorDeclarations,
 } from './connectors'
 import { validateSourceDeclarations } from './source-access'
@@ -112,6 +114,7 @@ export function validateExtensionManifest(value: unknown): ManifestValidation {
     'actions',
     'updater',
     'connectors',
+    'actionConnectors',
   ])
   const requiredCapabilities = capabilities(object['requiredCapabilities'])
   const optionalCapabilities = capabilities(object['optionalCapabilities'])
@@ -174,16 +177,35 @@ export function validateExtensionManifest(value: unknown): ManifestValidation {
     !views.some((view) => view.id === landing && view.placement === 'application')
   )
     throw new Error('Installation landing must name an ordinary application view')
-  const connectors =
+  const warn = (value: Record<string, unknown>, known: readonly string[]): void => {
+    warnings.push(...unknownExtensionFields(value, known))
+  }
+  const unbound =
     object['connectors'] === undefined
-      ? undefined
-      : validateConnectorDeclarations(object['connectors'], (value, known) =>
-          warnings.push(...unknownExtensionFields(value, known)),
-        )
+      ? []
+      : validateConnectorDeclarations(object['connectors'], warn)
+  const bound =
+    object['actionConnectors'] === undefined
+      ? []
+      : validateConnectorDeclarations(object['actionConnectors'], warn, true)
+  const connectors = [...unbound, ...bound]
+  if (connectors.length > CONNECTOR_LIMITS.declarations)
+    throw new Error('Too many connector declarations')
+  if (new Set(connectors.map((entry) => entry.id)).size !== connectors.length)
+    throw new Error('Duplicate connector identity')
+  if (
+    bound.length &&
+    ![...requiredCapabilities, ...optionalCapabilities].includes(
+      ACTION_BINDING_CAPABILITY,
+    )
+  )
+    throw new Error(
+      `Action-bound connectors require the ${ACTION_BINDING_CAPABILITY} capability`,
+    )
   const contributions = validateContributionDeclarations(object, views, (value, known) =>
     warnings.push(...unknownExtensionFields(value, known)),
   )
-  if (connectors) assertConnectorActionBindings(connectors, contributions.actions)
+  assertConnectorActionBindings(bound, contributions.actions)
   return {
     manifest: {
       id: extensionId(object['id']),
@@ -196,7 +218,7 @@ export function validateExtensionManifest(value: unknown): ManifestValidation {
       access,
       views,
       ...(landing ? { landing } : {}),
-      ...(connectors ? { connectors } : {}),
+      ...(connectors.length || object['connectors'] !== undefined ? { connectors } : {}),
       ...contributions,
     },
     warnings: warnings.slice(0, EXTENSION_LIMITS.warnings),

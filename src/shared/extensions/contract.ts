@@ -15,6 +15,7 @@ export const EXTENSION_CAPABILITIES = [
   'connector.output',
   'connector.status',
   'connector.connect',
+  'connector.action-binding',
   'source.status',
   'source.request',
   'source.select',

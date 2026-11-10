@@ -11,7 +11,7 @@ The complete installed capability reference is split into focused topics. Each n
 - `guide bridge`: presentation.read, context.read; message envelopes, actionId and deadlines.
 - `guide surfaces`: viewer.open-own, viewer.open-external, contributions.read, contributions.publish.
 - `guide actions`: actions.invoke and finite action delivery/cancellation.
-- `guide connectors`: connector.status, connector.connect, connector.execute, connector.output, terminal.start.
+- `guide connectors`: connector.status, connector.connect, connector.action-binding, connector.execute, connector.output, terminal.start.
 - `guide sources`: source.status, source.request, source.select, source.read, source.asset, source.render, source.reveal, source.request-trash.
 - `guide delivery`: delivery.capture, delivery.manifest, delivery.preview, delivery.apply, delivery.status, delivery.domain, delivery.reconcile, delivery.cleanup.
 

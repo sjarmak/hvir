@@ -110,9 +110,11 @@ function integer(value: unknown, maximum: number, label: string): number {
     throw new Error(`Invalid connector ${label}`)
   return value as number
 }
+export const ACTION_BINDING_CAPABILITY = 'connector.action-binding'
 export function validateConnectorDeclarations(
   value: unknown,
   warnings: (value: Record<string, unknown>, known: readonly string[]) => void,
+  bound = false,
 ): ExtensionConnectorDeclaration[] {
   if (!Array.isArray(value) || value.length > CONNECTOR_LIMITS.declarations)
     throw new Error('Too many connector declarations')
@@ -126,8 +128,12 @@ export function validateConnectorDeclarations(
       'outputBytes',
       'environment',
       'setup',
-      'actions',
+      ...(bound ? ['actions'] : []),
     ])
+    if (!bound && object['actions'] !== undefined)
+      throw new Error('Action-bound connectors are declared in actionConnectors')
+    if (bound && object['actions'] === undefined)
+      throw new Error('Invalid connector actions')
     if (!['application', 'workspace'].includes(object['context'] as string))
       throw new Error('Invalid connector working context')
     const environment = object['environment']

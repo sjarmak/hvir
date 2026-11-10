@@ -108,7 +108,7 @@ destination; `navigation: 'left'` creates a workspace rail view. `access` declar
 
 Contract 1.0 provides `presentation.read`, `viewer.open-own`, `viewer.open-external`, `context.read`,
 `contributions.read`, `contributions.publish`, `actions.invoke`, `connector.status`,
-`connector.execute`, `connector.output`, `connector.connect`, `terminal.start`, `source.status`, `source.request`, `source.select`,
+`connector.execute`, `connector.output`, `connector.connect`, `connector.action-binding`, `terminal.start`, `source.status`, `source.request`, `source.select`,
 `source.read`, `source.asset`, `source.render`, `source.reveal`, `source.request-trash`, `delivery.capture`, `delivery.manifest`, `delivery.preview`, `delivery.apply`, `delivery.status`, `delivery.domain`, `delivery.reconcile`, and `delivery.cleanup`. List required and
 optional capabilities explicitly. Same-major older or equal minor contracts activate;
 a newer minor also activates when every required capability exists. Unsupported major
@@ -413,12 +413,27 @@ capabilities and check the guest handshake. Optional native capabilities leave u
 usable when the executable is unapproved or disconnected. Discovery and status read metadata;
 no executable probes run. hvir installs neither a tool nor a remote service.
 
-A connector may declare `actions`, a non-empty list of unique action names from the same manifest.
-Each named action must be declared `"agents": false`, or the manifest is refused. The connector then
-runs, and its output pages are served, only for a human invocation of one of those actions: an
-invocation from a guest view with ordinary authority. A call without an invocation, from an agent
-or restricted view, or from another action is refused as not started. Use this for connectors that
-record a person's decision. A connector without `actions` is unchanged.
+A connector that records a person's decision binds to actions. Declare it in `actionConnectors`
+instead of `connectors`, with the same fields plus `actions`, a non-empty list of unique action names
+from the same manifest. Each named action must be declared `"agents": false`, or the manifest is
+refused. The two lists share one identity space and the limit of eight. The connector then runs, and
+its output pages are served, only for a human invocation of one of those actions: an action run by
+a person from the workbench, or invoked by a guest view with ordinary authority. A call without an
+invocation, from an agent, a restricted view or an ssh-forwarded agent, or from another action, is
+refused as not started. Forged, completed and other-view invocation ids confer nothing. A connector
+without `actions` is unchanged.
+
+Handshake. Binding is a safety precondition, so it is negotiated, not an ignorable field. A manifest
+with `actionConnectors` must list `connector.action-binding` in its required or optional
+capabilities, or it is refused. A host that supports binding returns `connector.action-binding` in
+the guest `hello` capabilities; a package that depends on the restriction checks for it before
+sending `connector.execute` to a bound connector. An older host does not know the capability, drops
+it from `hello`, and reads `actionConnectors` as an unknown field with a warning, so it declares no
+bound connector and refuses that connector as undeclared. The rest of the extension keeps working,
+which is why the capability should be optional. An `actions` list inside `connectors` is refused:
+an older host would ignore it and run the connector unrestricted. List the capability as required
+only when the whole package is useless without the connector; an older host then refuses the
+package at activation.
 
 In **Settings → Extensions**, enable the package, choose its configured host and an absolute
 installed executable path, and enter configuration as `{ "args": [], "env": {} }`. The argument
