@@ -122,3 +122,12 @@ test('the copied pull view and its connectors match the Pull requests extension'
     assert.deepEqual(withoutSetup(manifest.connectors.find((item) => item.id === id)), withoutSetup(pulls.connectors.find((item) => item.id === id)))
   assert.ok(manifest.connectors.filter((item) => item.setup).length <= 4, 'hvir allows at most four setup hints')
 })
+
+test('the hvir-answer connector is bound to the agents-false answer-decision action', () => {
+  const connector = manifest.connectors.find((item) => item.id === 'hvir-answer')
+  assert.deepEqual(connector.actions, ['answer-decision'])
+  const action = manifest.actions.find((item) => item.id === 'answer-decision')
+  assert.equal(action.agents, false)
+  for (const other of manifest.connectors.filter((item) => item.id !== 'hvir-answer'))
+    assert.equal(other.actions, undefined, `${other.id} must stay unbound`)
+})

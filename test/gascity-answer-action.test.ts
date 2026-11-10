@@ -11,6 +11,7 @@ const root = join(__dirname, '..', 'extensions', 'gascity')
 const manifest = JSON.parse(readFileSync(join(root, 'hvir-extension.json'), 'utf8')) as {
   views: { entry: string; navigationIcon?: string }[]
   actions: { id: string; agents: boolean }[]
+  connectors: { id: string; actions?: string[] }[]
 }
 
 function gascityActivation() {
@@ -51,6 +52,16 @@ function owner() {
 describe('Gas City answer-decision action', () => {
   it('is declared for people only', () => {
     expect(manifest.actions.find((item) => item.id === 'answer-decision')?.agents).toBe(false)
+  })
+
+  it('binds the hvir-answer connector to the action and validates on cores with and without the binding field', () => {
+    expect(manifest.connectors.find((item) => item.id === 'hvir-answer')?.actions).toEqual([
+      'answer-decision',
+    ])
+    const revision = gascityActivation().revision
+    expect(revision.manifest.connectors?.some((item) => item.id === 'hvir-answer')).toBe(true)
+    for (const text of revision.warnings.filter((entry) => entry.startsWith('Ignored unknown field')))
+      expect(text).toBe('Ignored unknown field: actions')
   })
 
   it('refuses an agent caller and admits a human caller', () => {

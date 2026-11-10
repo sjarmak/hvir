@@ -159,7 +159,8 @@
       "context": "workspace",
       "timeoutMs": 120000,
       "outputBytes": 65536,
-      "environment": ["GC_CITY", "PATH"]
+      "environment": ["GC_CITY", "PATH"],
+      "actions": ["answer-decision"]
     }
   ],
   "actions": [
