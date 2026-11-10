@@ -15,19 +15,28 @@
     (firstLine(stdout) || firstLine(stderr) || `${CONNECTOR} exited ${exitCode}`).slice(0, LINE_MAX)
 
   let bound = false
+  const unboundListeners = []
   window.hvirExtension?.onMessage((message) => {
     if (message.kind === 'hello') bound = Array.isArray(message.capabilities) && message.capabilities.includes(BINDING)
+    else if (message.kind === 'revoked') bound = false
+    else return
+    if (!bound) unboundListeners.forEach((listener) => listener())
   })
   const actionBound = () => bound
+  const onUnbound = (listener) => { unboundListeners.push(listener) }
+
+  const requireBound = () => {
+    if (!bound) throw Object.assign(new Error(UNBOUND_LINE), { dispatch: 'not-sent' })
+  }
 
   async function record(host, workspace, input, actionId) {
-    if (!bound) throw Object.assign(new Error(UNBOUND_LINE), { dispatch: 'not-sent' })
+    requireBound()
     const { decId, letter, cardSha256 } = input ?? {}
     if (!window.needsModel.validAnswer(decId, letter, cardSha256))
       throw new Error('The answer needs a decision id, one letter and the card hash')
     if (typeof actionId !== 'string' || actionId === '')
       throw new Error('An answer can only be recorded from an action')
-    const result = await host.run(CONNECTOR, workspace, [decId, letter, cardSha256], { exit: true, actionId })
+    const result = await host.run(CONNECTOR, workspace, [decId, letter, cardSha256], { exit: true, actionId, beforeSend: requireBound })
     return { exitCode: result.exitCode, line: outcomeLine(result) }
   }
 
@@ -71,6 +80,6 @@
   const answerDecision = (decId, letter, cardSha256) =>
     window.host.request('actions.invoke', { action: ACTION, input: { decId, letter, cardSha256 } })
 
-  const api = Object.freeze({ ACTION, CONNECTOR, UNKNOWN_LINE, actionBound, record, handle, listen, outcomeLine, answerDecision })
+  const api = Object.freeze({ ACTION, CONNECTOR, UNKNOWN_LINE, actionBound, onUnbound, record, handle, listen, outcomeLine, answerDecision })
   window.answerAction = api
 })()

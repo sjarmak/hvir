@@ -78,6 +78,10 @@
     complete: data.complete,
   })
 
+  window.answerAction.onUnbound(() => {
+    document.querySelectorAll('.projects-answer').forEach((node) => node.remove())
+  })
+
   const startProjectsView = (render, { counts = true } = {}) => {
     const ui = Object.fromEntries(['refresh', 'status', 'connect', 'projects']
       .map((id) => [id, document.getElementById(id)]))

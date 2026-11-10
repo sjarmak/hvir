@@ -53,6 +53,8 @@ test('record runs hvir-answer once with the decision, letter and hash, tied to t
     { run: async (...args) => (calls.push(args), { exitCode: 0, stdout: 'Recorded b for dec-r30f.\nmore', stderr: '' }) },
     workspace, { decId: 'dec-r30f', letter: 'b', cardSha256: SHA }, 'inv-9')
   assert.equal(calls.length, 1)
+  assert.equal(typeof calls[0][3].beforeSend, 'function')
+  delete calls[0][3].beforeSend
   assert.deepEqual(plain(calls[0]), ['hvir-answer', workspace, ['dec-r30f', 'b', SHA], { exit: true, actionId: 'inv-9' }])
   assert.deepEqual(plain(value), { exitCode: 0, line: 'Recorded b for dec-r30f.' })
 })

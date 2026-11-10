@@ -23,8 +23,9 @@ window.host = (() => {
     }
   }
 
-  async function request(capability, input, actionId) {
+  async function request(capability, input, actionId, beforeSend) {
     await paced()
+    beforeSend?.()
     const id = `${prefix}-${++serial}`
     return new Promise((resolve, reject) => {
       const unsubscribe = bridge.onMessage((message) => {
@@ -108,9 +109,9 @@ window.host = (() => {
       : Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_MAX_MS)
   }
 
-  async function execute(input, actionId) {
+  async function execute(input, actionId, beforeSend) {
     for (let attempt = 0; ; attempt += 1) {
-      const result = await request('connector.execute', input, actionId)
+      const result = await request('connector.execute', input, actionId, beforeSend)
       if (
         result.outcome === 'completed' ||
         !RETRIED_REASONS.has(result.reason) ||
@@ -128,10 +129,10 @@ window.host = (() => {
    * is set, raw stdout when `text` is set, `{ exitCode, stdout, stderr }` when `exit` is set); rejects with the program's failure report, its first
    * stderr line, or the connector's reason.
    */
-  async function run(connector, workspace, args, { lines = false, text = false, exit = false, actionId } = {}) {
+  async function run(connector, workspace, args, { lines = false, text = false, exit = false, actionId, beforeSend } = {}) {
     await admitted()
     try {
-      return await runAdmitted(connector, workspace, args, { lines, text, exit, actionId })
+      return await runAdmitted(connector, workspace, args, { lines, text, exit, actionId, beforeSend })
     } finally {
       released()
     }
@@ -150,13 +151,13 @@ window.host = (() => {
     }
   }
 
-  async function runAdmitted(connector, workspace, args, { lines, text, exit, actionId }) {
+  async function runAdmitted(connector, workspace, args, { lines, text, exit, actionId, beforeSend }) {
     const result = await execute({
       connector,
       host: workspace.host,
       workspace: workspace.id,
       args,
-    }, actionId)
+    }, actionId, beforeSend)
     if (result.outcome !== 'completed') {
       const notSent = NOT_SENT_OUTCOMES.has(result.outcome)
       const error = new Error(

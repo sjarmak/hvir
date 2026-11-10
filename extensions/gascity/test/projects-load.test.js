@@ -440,6 +440,24 @@ test('a core without connector.action-binding shows no answer buttons even with 
   assert.ok(page.document.querySelectorAll('#projects li').length > 0)
 })
 
+test('a later hello without connector.action-binding removes rendered answer and confirmation controls before any refresh finishes', async (t) => {
+  const { page, buttons } = await answerPage(t)
+  const { document } = page
+  buttons()[0].click()
+  assert.ok(document.querySelector('.projects-confirm button'))
+  page.view.load = () => new Promise(() => {})
+  page.deliver({ kind: 'hello', contract: '1.0', capabilities: ['connector.execute'] })
+  assert.equal(document.querySelectorAll('.projects-answer').length, 0)
+  assert.equal(document.querySelectorAll('.projects-confirm').length, 0)
+  assert.ok(document.querySelectorAll('#projects li').length > 0)
+})
+
+test('a revoked guest has its rendered answer controls removed at once', async (t) => {
+  const { page } = await answerPage(t)
+  page.deliver({ kind: 'revoked' })
+  assert.equal(page.document.querySelectorAll('.projects-answer').length, 0)
+})
+
 test('a core with connector.action-binding shows the answer buttons', async (t) => {
   const page = livePage(t, 'project.html', 'project.js')
   const window = page.document.defaultView
