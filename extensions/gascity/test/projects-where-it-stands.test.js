@@ -144,3 +144,12 @@ test('answered decisions show title, date and owner, with delivery notes collaps
   assert.equal(details.querySelector('summary').textContent, 'Delivery notes')
   assert.match(details.textContent, /re-record answer with dec-answer --replace/)
 })
+
+test('each answered decision shows its next checkpoint, or says none is recorded', (t) => {
+  const root = pageFor(t, {
+    decisions: [owed('d1', { 'gc.readout_due': '2099-12-24' }), owed('d2')],
+  })
+  const [first, second] = [...root.querySelectorAll('.projects-in-delivery li')]
+  assert.match(first.textContent, /omni-pl · next 2099-12-24/)
+  assert.match(second.textContent, /omni-pl · no next checkpoint/)
+})

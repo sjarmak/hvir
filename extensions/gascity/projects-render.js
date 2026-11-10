@@ -242,7 +242,7 @@
       el('ul', {}, ...card.inDelivery.map((line) => el('li', {}, line))))
 
   const renderDeliveryItem = (item) => el('li', {},
-    text(item.title), text(` · answered ${item.answered || 'date not recorded'} · ${item.owner || 'owner not recorded'}`, 'hvir-meta'),
+    text(item.title), text(` · answered ${item.answered || 'date not recorded'} · ${item.owner || 'owner not recorded'} · ${item.checkpoint}`, 'hvir-meta'),
     item.notes && el('details', {}, el('summary', {}, 'Delivery notes'), paragraph(item.notes, 'hvir-meta')))
 
   const renderDeliveryList = (card) => card.inDeliveryItems.length > 0 &&

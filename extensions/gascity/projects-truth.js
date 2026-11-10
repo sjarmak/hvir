@@ -101,11 +101,14 @@
     filled(bead, 'gc.recommendation') ? `recommend ${filled(bead, 'gc.recommendation')}` : 'no recommendation recorded',
   ].join(' · ')
 
+  const readoutCheckpoint = (bead) =>
+    filled(bead, 'gc.readout_due') ? `next ${filled(bead, 'gc.readout_due')}` : 'no next checkpoint'
+
   const owedEvidence = (bead) => [label(bead),
     `answered ${filled(bead, 'gc.answered_at') || filled(bead, 'gc.answered')}`,
     delivery(bead),
     filled(bead, 'gc.owner') || 'owner not recorded',
-    filled(bead, 'gc.readout_due') ? `next ${filled(bead, 'gc.readout_due')}` : 'no next checkpoint',
+    readoutCheckpoint(bead),
   ].join(' · ')
 
   const inDeliveryLine = (bead) => {
@@ -119,6 +122,7 @@
     title: label(bead),
     answered: filled(bead, 'gc.answered_at') || filled(bead, 'gc.answered'),
     owner: filled(bead, 'gc.owner'),
+    checkpoint: readoutCheckpoint(bead),
     notes: [filled(bead, 'gc.delivery_bead') || filled(bead, 'gc.work_bead')
       ? `delivered by ${filled(bead, 'gc.delivery_bead') || filled(bead, 'gc.work_bead')}` : '', filled(bead, 'gc.delivery_status')]
       .filter(Boolean).join(' · '),
