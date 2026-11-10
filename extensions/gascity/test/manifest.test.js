@@ -7,7 +7,7 @@ const CONNECTOR_DESCRIPTION = 240
 const ACTION_DESCRIPTION = 500
 
 test('connector and action descriptions fit hvir manifest limits', () => {
-  for (const connector of manifest.connectors ?? [])
+  for (const connector of [...(manifest.connectors ?? []), ...(manifest.actionConnectors ?? [])])
     assert.ok(
       connector.description.length <= CONNECTOR_DESCRIPTION,
       `${connector.id}: ${connector.description.length} chars`,
@@ -76,16 +76,22 @@ test('a PR opens a copy of the Pull requests pull view, with the actions it laun
   assert.match(data, /window\.openOwn\('pull', \{ repo: `\$\{ref\.owner\}\/\$\{ref\.repo\}`, number: ref\.number \}\)/)
 })
 
-test('hvir-answer is the seventh connector, has no setup hint and describes itself in plain words', () => {
+test('hvir-answer is an action connector with no setup hint and describes itself in plain words', () => {
   const connectors = manifest.connectors ?? []
-  assert.equal(connectors.length, 7)
-  assert.ok(connectors.length <= 8)
-  const answer = connectors.find((item) => item.id === 'hvir-answer')
+  assert.equal(connectors.length, 6)
+  assert.equal(connectors.some((item) => item.id === 'hvir-answer'), false)
+  const answer = (manifest.actionConnectors ?? []).find((item) => item.id === 'hvir-answer')
+  assert.equal(manifest.actionConnectors.length, 1)
   assert.equal(answer.setup, undefined)
   assert.equal(answer.context, 'workspace')
   assert.ok(answer.description.length <= CONNECTOR_DESCRIPTION)
   assert.match(answer.description, /answer/i)
   assert.ok(connectors.filter((item) => item.setup).length <= 4)
+})
+
+test('connector.action-binding is an optional capability, not a required one', () => {
+  assert.ok(manifest.optionalCapabilities.includes('connector.action-binding'))
+  assert.equal(manifest.requiredCapabilities.includes('connector.action-binding'), false)
 })
 
 test('the answer action is for people only, on the Gas City view, and its input is a bare three-field object', () => {
@@ -124,10 +130,9 @@ test('the copied pull view and its connectors match the Pull requests extension'
 })
 
 test('the hvir-answer connector is bound to the agents-false answer-decision action', () => {
-  const connector = manifest.connectors.find((item) => item.id === 'hvir-answer')
+  const connector = manifest.actionConnectors.find((item) => item.id === 'hvir-answer')
   assert.deepEqual(connector.actions, ['answer-decision'])
   const action = manifest.actions.find((item) => item.id === 'answer-decision')
   assert.equal(action.agents, false)
-  for (const other of manifest.connectors.filter((item) => item.id !== 'hvir-answer'))
-    assert.equal(other.actions, undefined, `${other.id} must stay unbound`)
+  for (const other of manifest.connectors) assert.equal(other.actions, undefined, `${other.id} must stay unbound`)
 })

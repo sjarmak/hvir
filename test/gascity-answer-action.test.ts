@@ -14,6 +14,8 @@ const manifest = JSON.parse(readFileSync(join(root, 'hvir-extension.json'), 'utf
   views: { entry: string; navigationIcon?: string }[]
   actions: { id: string; agents: boolean }[]
   connectors: { id: string; actions?: string[] }[]
+  actionConnectors: { id: string; actions?: string[] }[]
+  optionalCapabilities: string[]
 }
 
 function gascityActivation() {
@@ -58,18 +60,20 @@ describe('Gas City answer-decision action', () => {
     )
   })
 
-  it('binds the hvir-answer connector to the action and validates on cores with and without the binding field', () => {
+  it('declares hvir-answer as an action connector bound to the action, and validates on a core without the binding field', () => {
+    expect(manifest.connectors.some((item) => item.id === 'hvir-answer')).toBe(false)
     expect(
-      manifest.connectors.find((item) => item.id === 'hvir-answer')?.actions,
+      manifest.actionConnectors.find((item) => item.id === 'hvir-answer')?.actions,
     ).toEqual(['answer-decision'])
+    expect(manifest.optionalCapabilities).toContain('connector.action-binding')
     const revision = gascityActivation().revision
     expect(revision.manifest.connectors?.some((item) => item.id === 'hvir-answer')).toBe(
-      true,
+      false,
     )
     for (const text of revision.warnings.filter((entry) =>
       entry.startsWith('Ignored unknown field'),
     ))
-      expect(text).toBe('Ignored unknown field: actions')
+      expect(text).toMatch(/^Ignored unknown field: (actionConnectors|actions)$/)
   })
 
   it('refuses an agent caller and admits a human caller', () => {

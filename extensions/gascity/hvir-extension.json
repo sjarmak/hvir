@@ -16,7 +16,8 @@
     "connector.connect",
     "actions.invoke",
     "terminal.start",
-    "viewer.open-external"
+    "viewer.open-external",
+    "connector.action-binding"
   ],
   "access": [],
   "views": [
@@ -152,7 +153,9 @@
       "timeoutMs": 10000,
       "outputBytes": 4194304,
       "environment": []
-    },
+    }
+  ],
+  "actionConnectors": [
     {
       "id": "hvir-answer",
       "description": "Records your answer to a Gas City decision when you click an answer button on a Needs you card and confirm. It runs the city's hvir-answer program once, with the decision, the letter and a card fingerprint.",
