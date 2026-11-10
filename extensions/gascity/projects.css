@@ -291,3 +291,21 @@
   font-size: 0.9em;
   overflow-wrap: anywhere;
 }
+.projects-where {
+  display: grid;
+  gap: 6px;
+}
+.projects-where ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+.projects-where-label {
+  font-weight: 600;
+  margin-right: 8px;
+}
+.projects-where-label::after {
+  content: ':';
+}

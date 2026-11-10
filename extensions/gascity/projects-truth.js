@@ -44,12 +44,12 @@
   }
 
   const wait = (token, linked) => {
-    if (token === HER) return { id: HER, kind: 'her', open: true, owner: HER, until: '' }
+    if (token === HER) return { id: HER, kind: 'her', title: '', open: true, owner: HER, until: '' }
     const bead = linked.find((entry) => entry.id === token)
-    if (!bead) return { id: token, kind: 'not-linked', open: false, owner: '', until: '' }
+    if (!bead) return { id: token, kind: 'not-linked', title: '', open: false, owner: '', until: '' }
     const until = meta(bead, 'gc.paused_until') || bead.defer_until || ''
     const kind = isAsk(bead) ? (waitsOnHer(bead) ? 'her-decision' : 'decision-in-delivery') : 'work'
-    return { id: token, kind, status: bead.status, open: OPEN.has(bead.status), owner: owner(bead), until }
+    return { id: token, kind, title: bead.title || '', status: bead.status, open: OPEN.has(bead.status), owner: owner(bead), until }
   }
 
   const actionOwner = (pending, waits, lead) => {
@@ -113,6 +113,16 @@
     const named = filled(bead, 'gc.delivery_bead') || filled(bead, 'gc.work_bead')
     return [owedEvidence(bead), named && status && `status: ${clipped(status)}`].filter(Boolean).join(' · ')
   }
+
+  const inDeliveryItem = (bead) => ({
+    id: bead.id,
+    title: label(bead),
+    answered: filled(bead, 'gc.answered_at') || filled(bead, 'gc.answered'),
+    owner: filled(bead, 'gc.owner'),
+    notes: [filled(bead, 'gc.delivery_bead') || filled(bead, 'gc.work_bead')
+      ? `delivered by ${filled(bead, 'gc.delivery_bead') || filled(bead, 'gc.work_bead')}` : '', filled(bead, 'gc.delivery_status')]
+      .filter(Boolean).join(' · '),
+  })
 
   const stateEvidence = (state, { pending, started, owed, project }) => {
     if (state === 'needs-you') return pending.map(askEvidence)
@@ -197,6 +207,7 @@
       derivedState: state,
       stateEvidence: stateEvidence(state, { pending, started, owed, project }),
       inDelivery: owed.map(inDeliveryLine),
+      inDeliveryItems: owed.map(inDeliveryItem),
       needsCount: pending.length,
       waitingOn: waits,
       waitsVerified: declared && complete,

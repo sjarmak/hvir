@@ -241,6 +241,14 @@
     el('div', { className: 'projects-in-delivery' }, paragraph('Answered, in delivery', 'hvir-meta'),
       el('ul', {}, ...card.inDelivery.map((line) => el('li', {}, line))))
 
+  const renderDeliveryItem = (item) => el('li', {},
+    text(item.title), text(` · answered ${item.answered || 'date not recorded'} · ${item.owner || 'owner not recorded'}`, 'hvir-meta'),
+    item.notes && el('details', {}, el('summary', {}, 'Delivery notes'), paragraph(item.notes, 'hvir-meta')))
+
+  const renderDeliveryList = (card) => card.inDeliveryItems.length > 0 &&
+    el('div', { className: 'projects-in-delivery' }, paragraph('Answered, in delivery', 'hvir-meta'),
+      el('ul', {}, ...card.inDeliveryItems.map(renderDeliveryItem)))
+
   const renderTimes = (card) => paragraph([
     `Fetched ${card.fetchedAt ? window.ago(card.fetchedAt) : 'unknown'}`,
     card.verifiedAt ? `last verified progress ${card.verifiedAt} · ${window.ago(card.verifiedAt)}` : 'no verified progress recorded',
@@ -312,10 +320,29 @@
       ...archive(model, options, root))
   }
 
+  const waitName = (entry) => entry.id === 'stephanie' ? el('span', {}, 'you')
+    : entry.title ? el('span', {}, entry.title, text(` (${entry.id})`, 'hvir-meta')) : el('span', {}, entry.id)
+
+  const whereLine = (label, ...content) => el('li', {}, text(label, 'projects-where-label'), ...content)
+
+  const renderWhere = (card) => {
+    const waits = card.waitingOn.length > 0
+      ? card.waitingOn.flatMap((entry, index) => [index > 0 && text('; '), waitName(entry)]).filter(Boolean)
+      : [text('nothing')]
+    return el('div', { className: 'projects-where' },
+      chip(card.state),
+      card.state !== card.derivedState && paragraph(`The board and the lead's record disagree: board says ${
+        card.derivedState.replaceAll('-', ' ')}, record says ${card.state.replaceAll('-', ' ')}`, 'projects-warning projects-where-disagree'),
+      el('ul', {},
+        ...[card.now && whereLine('Now', text(card.now)),
+          card.nextAction && whereLine('Next', text(card.nextAction)),
+          whereLine('Waiting on', ...waits),
+          card.verifiedAt && whereLine('Last real progress', text(window.ago(card.verifiedAt)))].filter(Boolean)))
+  }
+
   const tile = (label, value) => el('div', { className: 'projects-tile' }, text(label, 'hvir-meta'), el('strong', {}, value))
 
   const glance = (card) => el('div', { className: 'projects-glance' },
-    tile('State', chip(card.derivedState)),
     tile('Action', card.actionOwner.name),
     tile('Waits', card.waitsVerified ? card.waitingOn.map((entry) => entry.id).join(', ') || 'none' : 'unverified'),
     tile('Lead', card.lead),
@@ -342,11 +369,11 @@
     root.replaceChildren(
       back,
       el('header', {}, el('h1', { title: card.id }, card.title)),
+      renderWhere(card),
       glance(card),
       el('div', { className: 'projects-page-grid' },
         el('div', {},
-          section('Now', renderEvidence(card), renderInDelivery(card), renderOwner(card), renderWaits(card), ...renderChecks(card),
-            card.state !== card.derivedState && paragraph(`Lead's record says ${card.state.replaceAll('-', ' ')}`, 'hvir-meta'),
+          section('Now', renderEvidence(card), renderDeliveryList(card), renderOwner(card), renderWaits(card), ...renderChecks(card),
             paragraph(card.now || 'No current update'),
             card.stuckWhy && paragraph(card.stuckWhy, 'projects-warning'),
             card.blocker && paragraph(`Blocker: ${card.blocker}`, 'projects-warning'),
