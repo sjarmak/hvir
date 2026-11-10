@@ -66,6 +66,7 @@ test('a PR opens a copy of the Pull requests pull view, with the actions it laun
   assert.equal(views['pr-actions']?.entry, 'pr/pulls.html')
   for (const view of [views.pull, views['pr-actions']]) assert.equal(view.navigation, undefined)
   assert.deepEqual((manifest.actions ?? []).map((item) => [item.id, item.view, item.agents]), [
+    ['answer-decision', 'projects', false],
     ['checkout-terminal', 'pr-actions', false],
     ['worktree-terminal', 'pr-actions', false],
     ['pull-worktree-terminal', 'pr-actions', false],
@@ -73,6 +74,30 @@ test('a PR opens a copy of the Pull requests pull view, with the actions it laun
   assert.equal((manifest.connectors ?? []).some((item) => item.id === 'city-pr'), false)
   const data = fs.readFileSync(path.join(__dirname, '..', 'projects-data.js'), 'utf8')
   assert.match(data, /window\.openOwn\('pull', \{ repo: `\$\{ref\.owner\}\/\$\{ref\.repo\}`, number: ref\.number \}\)/)
+})
+
+test('hvir-answer is the seventh connector, has no setup hint and describes itself in plain words', () => {
+  const connectors = manifest.connectors ?? []
+  assert.equal(connectors.length, 7)
+  assert.ok(connectors.length <= 8)
+  const answer = connectors.find((item) => item.id === 'hvir-answer')
+  assert.equal(answer.setup, undefined)
+  assert.equal(answer.context, 'workspace')
+  assert.ok(answer.description.length <= CONNECTOR_DESCRIPTION)
+  assert.match(answer.description, /answer/i)
+  assert.ok(connectors.filter((item) => item.setup).length <= 4)
+})
+
+test('the answer action is for people only, on the Gas City view, and its input is a bare three-field object', () => {
+  const action = (manifest.actions ?? []).find((item) => item.id === 'answer-decision')
+  assert.equal(action.agents, false)
+  assert.equal(action.view, 'projects')
+  assert.ok((manifest.actions ?? []).length <= 16)
+  assert.deepEqual(action.inputSchema.required, ['decId', 'letter', 'cardSha256'])
+  assert.equal(action.inputSchema.additionalProperties, false)
+  const supported = ['type', 'properties', 'required', 'additionalProperties', 'items', 'enum', 'maxLength', 'maxItems']
+  for (const schema of [action.inputSchema, ...Object.values(action.inputSchema.properties)])
+    for (const key of Object.keys(schema)) assert.ok(supported.includes(key), `${key} is not an hvir schema key`)
 })
 
 test('the copied pull view and its connectors match the Pull requests extension', () => {

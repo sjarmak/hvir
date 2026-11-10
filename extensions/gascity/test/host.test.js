@@ -233,3 +233,25 @@ test('stderr is read only when the program fails', async () => {
   await assert.rejects(failed.host.run('gc', LOCAL, ['x']), /first|boom/)
   assert.deepEqual(streams(failed.sent), ['stdout', 'stderr'])
 })
+
+test('run with exit returns the exit code and both streams instead of throwing, and carries the action id', async () => {
+  const stdout = { r1: 'Refused: card changed.\n' }
+  const { host, sent } = loadBridge((message) => {
+    if (message.capability === 'connector.execute') return { outcome: 'completed', receipt: 'r1', code: 2, truncated: false }
+    if (message.capability === 'connector.output' && message.input.release) return {}
+    return { data: message.input.stream === 'stdout' ? stdout.r1 : 'warn\n', nextOffset: null }
+  })
+  const result = await host.run('hvir-answer', { id: 'w', host: 'local' }, ['dec-a1', 'a', 'f'.repeat(64)], { exit: true, actionId: 'inv-3' })
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), { exitCode: 2, stdout: 'Refused: card changed.\n', stderr: 'warn\n' })
+  assert.ok(sent.every((message) => message.actionId === 'inv-3'))
+})
+
+test('run without exit still throws on a nonzero exit and sends no action id', async () => {
+  const { host, sent } = loadBridge((message) => {
+    if (message.capability === 'connector.execute') return { outcome: 'completed', receipt: 'r1', code: 1, truncated: false }
+    if (message.capability === 'connector.output' && message.input.release) return {}
+    return { data: message.input.stream === 'stdout' ? '' : 'boom\n', nextOffset: null }
+  })
+  await assert.rejects(host.run('gc', { id: 'w', host: 'local' }, []), /boom/)
+  assert.ok(sent.every((message) => !('actionId' in message)))
+})

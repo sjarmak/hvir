@@ -103,6 +103,20 @@
 .projects-warning {
   color: var(--warning-text);
 }
+.projects-error {
+  color: var(--danger-text);
+}
+.projects-answer,
+.projects-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.projects-answer > .projects-confirm,
+.projects-answer > .projects-answer-outcome {
+  flex-basis: 100%;
+}
 .projects-refs {
   display: flex;
   flex-wrap: wrap;

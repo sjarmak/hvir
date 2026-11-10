@@ -50,7 +50,8 @@
     if (conflicts.length) result.errors.push(`project id in several stores: ${conflicts.join(', ')}`)
     const deferred = failures.notRun || reads.some((entry) => entry.notRun) ||
       !reads.some((entry) => entry.key === 'projects' && !entry.error)
-    return { model: window.projectsModel.buildDashboard(result.payload), payload: result.payload, errors: result.errors, sessions, deferred }
+    const answerable = connectors[window.answerAction.CONNECTOR] === 'supported'
+    return { answerable, model: window.projectsModel.buildDashboard(result.payload), payload: result.payload, errors: result.errors, sessions, deferred }
   }
 
   const statusLine = (data, workspace, withCounts = true) => {
@@ -90,7 +91,8 @@
     let shownId
     const show = (data, context, extra) => {
       liveSessions = data.sessions
-      const note = render(data, ui.projects, actions, context)
+      const shownActions = data.answerable ? { ...actions, onAnswer: window.answerAction.answerDecision } : actions
+      const note = render(data, ui.projects, shownActions, context)
       setStatus([note, statusLine(data, context.workspace, counts), extra].filter(Boolean).join(' · '))
     }
     const load = async (context, { hidden = () => false } = {}) => {

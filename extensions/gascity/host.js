@@ -23,7 +23,7 @@ window.host = (() => {
     }
   }
 
-  async function request(capability, input) {
+  async function request(capability, input, actionId) {
     await paced()
     const id = `${prefix}-${++serial}`
     return new Promise((resolve, reject) => {
@@ -33,15 +33,15 @@ window.host = (() => {
         if (message.ok) resolve(message.value)
         else reject(new Error(message.error))
       })
-      bridge.send({ kind: 'request', id, capability, ...(input ? { input } : {}) })
+      bridge.send({ kind: 'request', id, capability, ...(input ? { input } : {}), ...(actionId ? { actionId } : {}) })
     })
   }
 
-  async function readStream(receipt, stream) {
+  async function readStream(receipt, stream, actionId) {
     let text = ''
     let offset = 0
     while (offset !== null) {
-      const page = await request('connector.output', { receipt, stream, offset })
+      const page = await request('connector.output', { receipt, stream, offset }, actionId)
       text += page.data
       offset = page.nextOffset
     }
@@ -125,25 +125,25 @@ window.host = (() => {
 
   /**
    * Run an approved connector in the workspace root. Resolves parsed JSON (JSON lines when `lines`
-   * is set, raw stdout when `text` is set); rejects with the program's failure report, its first
+   * is set, raw stdout when `text` is set, `{ exitCode, stdout, stderr }` when `exit` is set); rejects with the program's failure report, its first
    * stderr line, or the connector's reason.
    */
-  async function run(connector, workspace, args, { lines = false, text = false } = {}) {
+  async function run(connector, workspace, args, { lines = false, text = false, exit = false, actionId } = {}) {
     await admitted()
     try {
-      return await runAdmitted(connector, workspace, args, { lines, text })
+      return await runAdmitted(connector, workspace, args, { lines, text, exit, actionId })
     } finally {
       released()
     }
   }
 
-  async function runAdmitted(connector, workspace, args, { lines, text }) {
+  async function runAdmitted(connector, workspace, args, { lines, text, exit, actionId }) {
     const result = await execute({
       connector,
       host: workspace.host,
       workspace: workspace.id,
       args,
-    })
+    }, actionId)
     if (result.outcome !== 'completed') {
       const error = new Error(
         `${connector} did not run: ${result.reason ?? result.outcome}`,
@@ -156,15 +156,16 @@ window.host = (() => {
       throw error
     }
     try {
-      const stdout = await readStream(result.receipt, 'stdout')
+      const stdout = await readStream(result.receipt, 'stdout', actionId)
+      if (exit) return { exitCode: result.code, stdout, stderr: await readStream(result.receipt, 'stderr', actionId) }
       if (result.code !== 0)
-        throw failure(connector, result.code, stdout, await readStream(result.receipt, 'stderr'))
+        throw failure(connector, result.code, stdout, await readStream(result.receipt, 'stderr', actionId))
       if (result.truncated)
         throw new Error(`${connector} output exceeded the connector bound`)
       if (text) return stdout
       return lines ? parseLines(stdout) : JSON.parse(stdout)
     } finally {
-      await request('connector.output', { receipt: result.receipt, release: true }).catch(
+      await request('connector.output', { receipt: result.receipt, release: true }, actionId).catch(
         () => {},
       )
     }

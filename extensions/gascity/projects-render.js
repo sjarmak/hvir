@@ -44,11 +44,61 @@
     return el('p', {}, button(label, `Open the ${ask.answerTo} session`, () => options.onOpenSession?.(ask.answerTo)))
   }
 
+  const OPTION_LABEL_MAX = 48
+  const clip = (value, max) => (value.length > max ? `${value.slice(0, max - 1)}…` : value)
+  const ANSWER_TONES = Object.freeze({ 0: 'done', 1: 'warning' })
+
+  const outcomeNote = (result) => {
+    const tone = ANSWER_TONES[result.exitCode] ?? 'error'
+    const note = paragraph(result.line, tone === 'warning' ? 'projects-warning' : 'hvir-meta')
+    note.dataset.state = tone
+    if (tone === 'error') note.classList.add('projects-error')
+    return note
+  }
+
+  const renderAnswer = (ask, options) => {
+    if (!ask.needsYou || !options.onAnswer) return null
+    const choices = window.needsModel.parseOptions(ask)
+    if (choices.length === 0) return null
+    const choiceButtons = []
+    const confirmBox = el('div', { className: 'projects-confirm' })
+    const outcome = el('div', { className: 'projects-answer-outcome' })
+    const setBusy = (busy) => {
+      for (const node of [...choiceButtons, ...confirmBox.querySelectorAll('button')]) node.disabled = busy
+    }
+    const settle = async (choice) => {
+      setBusy(true)
+      let result
+      try {
+        const sha = await window.needsModel.cardHash(ask)
+        if (!sha) throw new Error('This card cannot be fingerprinted, so no answer was sent')
+        result = await options.onAnswer(ask.id, choice.letter, sha)
+      } catch (error) {
+        result = { exitCode: 2, line: error.message }
+      }
+      confirmBox.replaceChildren()
+      outcome.replaceChildren(outcomeNote(result))
+      setBusy(false)
+      if (result.exitCode === 0 || result.exitCode === 1) for (const node of choiceButtons) node.disabled = true
+    }
+    const askToConfirm = (choice) => {
+      outcome.replaceChildren()
+      confirmBox.replaceChildren(
+        paragraph(`Record ${choice.letter}: ${choice.text} as your answer to ${ask.title}?`),
+        button('Confirm', `Record ${choice.letter}`, () => void settle(choice)),
+        button('Cancel', 'Keep the card as it is', () => confirmBox.replaceChildren()))
+    }
+    choiceButtons.push(...choices.map((choice) => button(
+      `${choice.letter}: ${clip(choice.text, OPTION_LABEL_MAX)}`, choice.text, () => askToConfirm(choice))))
+    return el('div', { className: 'projects-answer' }, ...choiceButtons, confirmBox, outcome)
+  }
+
   const renderAsk = (ask, options, tagged = false) => el('li', {},
     tagged && text(ask.project?.title ?? 'No project', 'projects-tag'),
     ask.tier && text(ask.tier, 'projects-tag'),
     button(ask.title, ask.id, () => options.onOpenBead?.(ask.id, ask.store)),
     renderAnswerTo(ask, options),
+    renderAnswer(ask, options),
     renderRefs(ask.refs, options))
 
   const renderStep = (entry, options) => el('li', { className: 'projects-step', title: entry.id },

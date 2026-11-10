@@ -151,10 +151,11 @@ const livePage = (t, page, script) => {
   const dom = new JSDOM(readFileSync(`${__dirname}/../${page}`, 'utf8'), { runScripts: 'outside-only' })
   t.after(() => dom.window.close())
   const { window } = dom
-  for (const file of ['view', 'crew-parse', 'needs-model', 'projects-load', 'projects-truth', 'projects-model', 'projects-render', 'projects-data']) {
+  for (const file of ['view', 'crew-parse', 'needs-model', 'projects-load', 'projects-truth', 'projects-model', 'projects-render', 'answer', 'projects-data']) {
     window.eval(readFileSync(`${__dirname}/../${file}.js`, 'utf8'))
   }
   const page_ = { view: undefined, opened: [], connected: [], bd: 'supported', document: window.document }
+  window.hvirExtension = { onMessage: () => () => {}, send: () => {} }
   window.startView = (options) => { page_.view = options; return { refresh: async () => {} } }
   window.host = {
     availability: async () => ({ gc: 'supported', bd: page_.bd }),
