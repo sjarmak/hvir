@@ -62,6 +62,11 @@
     return `${counts}fetched ${time}${window.bdNote(workspace)}${errors.length ? ` · ${errors.join(' · ')}` : ''}`
   }
 
+  const listedKeys = async (workspaceId, model) => new Set((await Promise.all(model.needsYou.map(async (ask) => {
+    const sha = await window.needsModel.cardHash(ask)
+    return sha ? window.answerState.keyOf(workspaceId, ask.id, sha) : undefined
+  }))).filter(Boolean))
+
   const startProjectsView = (render, { counts = true } = {}) => {
     const ui = Object.fromEntries(['refresh', 'status', 'connect', 'projects']
       .map((id) => [id, document.getElementById(id)]))
@@ -91,7 +96,7 @@
     let shownId
     const show = (data, context, extra) => {
       liveSessions = data.sessions
-      const shownActions = data.answerable ? { ...actions, onAnswer: window.answerAction.answerDecision } : actions
+      const shownActions = data.answerable ? { ...actions, workspaceId: context.workspace.id, onAnswer: window.answerAction.answerDecision } : actions
       const note = render(data, ui.projects, shownActions, context)
       setStatus([note, statusLine(data, context.workspace, counts), extra].filter(Boolean).join(' · '))
     }
@@ -113,6 +118,7 @@
           setStatus('Loading…')
         }
       }
+      const readStartedAt = Date.now()
       const data = await read(workspace)
       if (workspace.id !== shownId) return
       missing = data.missing
@@ -134,6 +140,8 @@
         show(previous, context, `refresh deferred: ${data.errors[0] ?? 'no project list read'}`)
         return
       }
+      window.answerState.reconcile(workspace.id, await listedKeys(workspace.id, data.model), readStartedAt)
+      if (workspace.id !== shownId) return
       shownBy.set(workspace.id, data)
       show(data, context)
     }

@@ -46,11 +46,12 @@
 
   const OPTION_LABEL_MAX = 48
   const clip = (value, max) => (value.length > max ? `${value.slice(0, max - 1)}…` : value)
-  const ANSWER_TONES = Object.freeze({ 0: 'done', 1: 'warning' })
+  const ANSWER_TONES = Object.freeze({ done: 'done', warning: 'warning', unknown: 'warning', idle: 'error' })
+  const UNKNOWN_RESULT = Object.freeze({ unknown: true, line: 'Completion unknown; check the decision before answering again' })
 
-  const outcomeNote = (result) => {
-    const tone = ANSWER_TONES[result.exitCode] ?? 'error'
-    const note = paragraph(result.line, tone === 'warning' ? 'projects-warning' : 'hvir-meta')
+  const outcomeNote = (entry) => {
+    const tone = ANSWER_TONES[entry.phase]
+    const note = paragraph(entry.result.line, tone === 'warning' ? 'projects-warning' : 'hvir-meta')
     note.dataset.state = tone
     if (tone === 'error') note.classList.add('projects-error')
     return note
@@ -60,26 +61,43 @@
     if (!ask.needsYou || !options.onAnswer) return null
     const choices = window.needsModel.parseOptions(ask)
     if (choices.length === 0) return null
+    const store = window.answerState
     const choiceButtons = []
     const confirmBox = el('div', { className: 'projects-confirm' })
     const outcome = el('div', { className: 'projects-answer-outcome' })
-    const setBusy = (busy) => {
-      for (const node of [...choiceButtons, ...confirmBox.querySelectorAll('button')]) node.disabled = busy
+    const container = el('div', { className: 'projects-answer' }, confirmBox, outcome)
+    let key
+    const disableAll = (disabled) => {
+      for (const node of [...choiceButtons, ...confirmBox.querySelectorAll('button')]) node.disabled = disabled
     }
+    const sync = (entry) => {
+      if (!container.isConnected) return false
+      const locked = entry.phase !== 'idle'
+      disableAll(locked)
+      if (locked) confirmBox.replaceChildren()
+      outcome.replaceChildren(...(entry.result ? [outcomeNote(entry)] : []))
+      return true
+    }
+    const show = (result) => outcome.replaceChildren(outcomeNote({ phase: 'idle', result }))
     const settle = async (choice) => {
-      setBusy(true)
+      disableAll(true)
+      const sha = await window.needsModel.cardHash(ask)
+      if (!sha) {
+        disableAll(false)
+        confirmBox.replaceChildren()
+        show({ exitCode: 2, line: 'This card cannot be fingerprinted, so no answer was sent' })
+        return
+      }
+      key = store.keyOf(options.workspaceId, ask.id, sha)
+      store.subscribe(key, sync)
+      if (!store.begin(key)) return
       let result
       try {
-        const sha = await window.needsModel.cardHash(ask)
-        if (!sha) throw new Error('This card cannot be fingerprinted, so no answer was sent')
         result = await options.onAnswer(ask.id, choice.letter, sha)
-      } catch (error) {
-        result = { exitCode: 2, line: error.message }
+      } catch {
+        result = UNKNOWN_RESULT
       }
-      confirmBox.replaceChildren()
-      outcome.replaceChildren(outcomeNote(result))
-      setBusy(false)
-      if (result.exitCode === 0 || result.exitCode === 1) for (const node of choiceButtons) node.disabled = true
+      store.finish(key, result)
     }
     const askToConfirm = (choice) => {
       outcome.replaceChildren()
@@ -90,7 +108,14 @@
     }
     choiceButtons.push(...choices.map((choice) => button(
       `${choice.letter}: ${clip(choice.text, OPTION_LABEL_MAX)}`, choice.text, () => askToConfirm(choice))))
-    return el('div', { className: 'projects-answer' }, ...choiceButtons, confirmBox, outcome)
+    container.prepend(...choiceButtons)
+    void window.needsModel.cardHash(ask).then((sha) => {
+      if (!sha) return
+      key = store.keyOf(options.workspaceId, ask.id, sha)
+      store.subscribe(key, sync)
+      sync(store.get(key))
+    })
+    return container
   }
 
   const renderAsk = (ask, options, tagged = false) => el('li', {},

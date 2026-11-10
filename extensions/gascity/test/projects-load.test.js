@@ -151,7 +151,9 @@ const livePage = (t, page, script) => {
   const dom = new JSDOM(readFileSync(`${__dirname}/../${page}`, 'utf8'), { runScripts: 'outside-only' })
   t.after(() => dom.window.close())
   const { window } = dom
-  for (const file of ['view', 'crew-parse', 'needs-model', 'projects-load', 'projects-truth', 'projects-model', 'projects-render', 'answer', 'projects-data']) {
+  Object.defineProperty(window, 'crypto', { value: require('node:crypto').webcrypto, configurable: true })
+  Object.defineProperty(window, 'TextEncoder', { value: TextEncoder, configurable: true })
+  for (const file of ['view', 'crew-parse', 'needs-model', 'projects-load', 'projects-truth', 'projects-model', 'answer-state', 'projects-render', 'answer', 'projects-data']) {
     window.eval(readFileSync(`${__dirname}/../${file}.js`, 'utf8'))
   }
   const page_ = { view: undefined, opened: [], connected: [], bd: 'supported', document: window.document }
@@ -336,4 +338,37 @@ test('outcome entries are shape-checked and keep only the contract fields', () =
   for (const bad of [null, {}, { entries: {} }, { entries: [{ ...entry, projects: 'fx' }] }, { entries: [{ ...entry, title: 1 }] }])
     assert.throws(() => loader.parseOutcomes(bad), /unexpected JSON shape/)
   assert.deepEqual([loader.OUTCOME_CONNECTOR, ...loader.OUTCOME_ARGS], ['city-outcomes', '--json'])
+})
+
+test('a fresh read frees an unknown answer outcome only after the decision is listed unanswered again', async (t) => {
+  const page = livePage(t, 'project.html', 'project.js')
+  const { view, document } = page
+  const window = document.defaultView
+  window.host.availability = async () => ({ gc: 'supported', bd: 'supported', 'hvir-answer': 'supported' })
+  const submissions = []
+  window.host.request = async (...args) => {
+    submissions.push(args)
+    return { unknown: true, line: 'Completion unknown; check the decision before answering again' }
+  }
+  const choices = JSON.stringify([{ letter: 'a', text: 'Yes' }, { letter: 'b', text: 'No' }])
+  const bdRead = window.bdRead
+  window.bdRead = async (scope, args) => {
+    const rows = await bdRead(scope, args)
+    return args.includes('--status') && args.includes('open')
+      ? rows.map((row) => ({ ...row, metadata: { ...row.metadata, 'gc.options': choices } }))
+      : rows
+  }
+  await view.load({ workspace })
+  const buttons = () => [...document.querySelectorAll('.projects-answer > button')]
+  assert.ok(buttons().length > 0)
+  const wait = () => new Promise((resolve) => setTimeout(resolve, 10))
+  buttons()[0].click()
+  ;[...document.querySelectorAll('.projects-confirm button')].find((node) => node.textContent === 'Confirm').click()
+  await wait()
+  assert.equal(submissions.length, 1)
+  assert.ok(buttons().every((node) => node.disabled))
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  await view.load({ workspace })
+  await wait()
+  assert.ok(buttons().every((node) => !node.disabled))
 })

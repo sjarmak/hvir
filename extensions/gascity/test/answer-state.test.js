@@ -1,0 +1,97 @@
+const { test } = require('node:test')
+const assert = require('node:assert/strict')
+const { readFileSync } = require('node:fs')
+const { join } = require('node:path')
+const vm = require('node:vm')
+
+const load = () => {
+  const window = {}
+  vm.runInNewContext(readFileSync(join(__dirname, '..', 'answer-state.js'), 'utf8'), { window })
+  return window.answerState
+}
+const SHA = 'a'.repeat(64)
+
+test('the key joins workspace, decision and card hash', () => {
+  const state = load()
+  assert.notEqual(state.keyOf('w1', 'dec-a', SHA), state.keyOf('w2', 'dec-a', SHA))
+  assert.notEqual(state.keyOf('w1', 'dec-a', SHA), state.keyOf('w1', 'dec-b', SHA))
+  assert.notEqual(state.keyOf('w1', 'dec-a', SHA), state.keyOf('w1', 'dec-a', 'b'.repeat(64)))
+})
+
+test('begin admits one submission per key until it finishes with a retryable result', () => {
+  const state = load()
+  const key = state.keyOf('w1', 'dec-a', SHA)
+  assert.equal(state.begin(key), true)
+  assert.equal(state.begin(key), false)
+  assert.equal(state.get(key).phase, 'pending')
+  state.finish(key, { exitCode: 2, line: 'Refused.' })
+  assert.equal(state.get(key).phase, 'idle')
+  assert.equal(state.begin(key), true)
+})
+
+test('finish classifies results: 0 and 1 lock, 2 and not sent retry, unknown and odd exits lock as unknown', () => {
+  const state = load()
+  const phaseOf = (result) => {
+    const key = state.keyOf('w1', `dec-${JSON.stringify(result).length}`, SHA)
+    state.begin(key)
+    return state.finish(key, result).phase
+  }
+  assert.equal(phaseOf({ exitCode: 0, line: 'x' }), 'done')
+  assert.equal(phaseOf({ exitCode: 1, line: 'xx' }), 'warning')
+  assert.equal(phaseOf({ exitCode: 2, line: 'xxx' }), 'idle')
+  assert.equal(phaseOf({ exitCode: 2, notSent: true, line: 'x' }), 'idle')
+  assert.equal(phaseOf({ unknown: true, line: 'xxxxxx' }), 'unknown')
+  assert.equal(phaseOf({ exitCode: 7, line: 'xxxxxxxx' }), 'unknown')
+})
+
+test('listeners hear every change for their key and a disconnected one is dropped', () => {
+  const state = load()
+  const key = state.keyOf('w1', 'dec-a', SHA)
+  const heard = []
+  state.subscribe(key, (entry) => (heard.push(entry.phase), true))
+  state.subscribe(key, () => false)
+  state.begin(key)
+  state.finish(key, { exitCode: 0, line: 'ok' })
+  state.begin(state.keyOf('w1', 'dec-other', SHA))
+  assert.deepEqual(heard, ['pending', 'done'])
+  heard.length = 0
+  state.begin(key)
+  assert.deepEqual(heard, [])
+})
+
+test('reconcile frees an unknown outcome older than the refresh when the decision is still listed', () => {
+  const state = load()
+  const key = state.keyOf('w1', 'dec-a', SHA)
+  state.begin(key)
+  state.finish(key, { unknown: true, line: 'u' }, 100)
+  state.reconcile('w1', new Set([key]), 50)
+  assert.equal(state.get(key).phase, 'unknown')
+  state.reconcile('w1', new Set([key]), 100)
+  assert.equal(state.get(key).phase, 'idle')
+})
+
+test('reconcile never frees a pending submission and drops settled entries for decisions no longer listed', () => {
+  const state = load()
+  const pending = state.keyOf('w1', 'dec-a', SHA)
+  const done = state.keyOf('w1', 'dec-b', SHA)
+  const other = state.keyOf('w2', 'dec-c', SHA)
+  for (const key of [pending, done, other]) state.begin(key)
+  state.finish(done, { exitCode: 0, line: 'ok' }, 1)
+  state.finish(other, { exitCode: 0, line: 'ok' }, 1)
+  state.reconcile('w1', new Set(), 1000)
+  assert.equal(state.get(pending).phase, 'pending')
+  assert.equal(state.get(done).phase, 'idle')
+  assert.equal(state.get(done).result, undefined)
+  assert.equal(state.get(other).phase, 'done')
+})
+
+test('subscribing the same listener twice delivers each change once', () => {
+  const state = load()
+  const key = state.keyOf('w1', 'dec-a', SHA)
+  let heard = 0
+  const listener = () => (heard += 1, true)
+  state.subscribe(key, listener)
+  state.subscribe(key, listener)
+  state.begin(key)
+  assert.equal(heard, 1)
+})

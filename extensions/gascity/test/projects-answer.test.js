@@ -28,20 +28,27 @@ const page = (t, { metadata = { 'gc.options': CHOICES }, description, onAnswer, 
   window.Date.now = () => Date.parse(fixture.now)
   Object.defineProperty(window, 'crypto', { value: webcrypto, configurable: true })
   Object.defineProperty(window, 'TextEncoder', { value: TextEncoder, configurable: true })
-  for (const file of ['view.js', 'needs-model.js', 'projects-render.js'])
+  for (const file of ['view.js', 'needs-model.js', 'answer-state.js', 'projects-render.js'])
     window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = window.document.querySelector('main')
   const calls = []
   const options = answerable
-    ? { onAnswer: onAnswer ?? (async (...args) => (calls.push(args), { exitCode: 0, line: 'Recorded.' })) }
+    ? { workspaceId: 'ws-1', onAnswer: onAnswer ?? (async (...args) => (calls.push(args), { exitCode: 0, line: 'Recorded.' })) }
     : {}
   const model = buildDashboard(withAsk(metadata, description))
   window.projectsRender.renderDashboard(model, root, options)
+  const rerender = () => window.projectsRender.renderDashboard(model, root, options)
+  const present = () => {
+    const extra = window.document.createElement('main')
+    window.document.body.append(extra)
+    window.projectsRender.renderDashboard(model, extra, options)
+    return extra
+  }
   const card = () => root.querySelector('section li')
   const buttons = () => [...card().querySelectorAll('.projects-answer > button')]
   const confirm = () => card().querySelector('.projects-confirm')
   const press = (label) => [...card().querySelectorAll('button')].find((node) => node.textContent === label).click()
-  return { window, root, calls, card, buttons, confirm, press }
+  return { window, root, calls, card, buttons, confirm, press, rerender, present, options }
 }
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5))
 const deferred = () => {
@@ -162,14 +169,14 @@ test('exit 1 shows the line as a warning and the answer is not offered again', a
   assert.ok(buttons().every((node) => node.disabled))
 })
 
-test('an unexpected exit code or a thrown error shows as an error and keeps the buttons', async (t) => {
+test('an unexpected exit code or a thrown error is an unknown completion and keeps the buttons off', async (t) => {
   for (const onAnswer of [async () => ({ exitCode: 7, line: 'Odd.' }), async () => { throw new Error('actions.invoke refused') }]) {
     const { card, buttons, press } = page(t, { onAnswer })
     buttons()[0].click()
     press('Confirm')
     await settle()
-    assert.equal(card().querySelector('.projects-answer-outcome p').dataset.state, 'error')
-    assert.ok(buttons().every((node) => !node.disabled))
+    assert.equal(card().querySelector('.projects-answer-outcome p').dataset.state, 'warning')
+    assert.ok(buttons().every((node) => node.disabled))
   }
 })
 
@@ -182,4 +189,99 @@ test('a card whose text cannot be fingerprinted sends nothing and says so as an 
   const note = card().querySelector('.projects-answer-outcome p')
   assert.equal(note.dataset.state, 'error')
   assert.match(note.textContent, /no answer was sent/)
+})
+
+const UNKNOWN = { unknown: true, line: 'Completion unknown; check the decision before answering again' }
+
+const submit = async (state, index = 0) => {
+  state.buttons()[index].click()
+  state.press('Confirm')
+  await settle()
+}
+
+test('a refresh while a submission is pending keeps every button disabled and the count at one', async (t) => {
+  const pending = deferred()
+  const state = page(t, { onAnswer: (...args) => (state.calls.push(args), pending.promise) })
+  await submit(state)
+  state.rerender()
+  await settle()
+  assert.equal(state.buttons().length, 2)
+  assert.ok(state.buttons().every((node) => node.disabled))
+  state.buttons()[0].click()
+  state.window.document.querySelectorAll('.projects-confirm button').forEach((node) => node.click())
+  await settle()
+  assert.equal(state.calls.length, 1)
+})
+
+test('the completion of a submission started before a refresh lands on the card that is shown now', async (t) => {
+  const pending = deferred()
+  const state = page(t, { onAnswer: () => pending.promise })
+  await submit(state)
+  const detached = state.card()
+  state.rerender()
+  await settle()
+  pending.resolve({ exitCode: 0, line: 'Recorded a.' })
+  await settle()
+  assert.equal(state.card().querySelector('.projects-answer-outcome p').textContent, 'Recorded a.')
+  assert.notEqual(state.card(), detached)
+  assert.ok(state.buttons().every((node) => node.disabled))
+})
+
+test('two presentations of the same card submit at most once', async (t) => {
+  const pending = deferred()
+  const state = page(t, { onAnswer: (...args) => (state.calls.push(args), pending.promise) })
+  const other = state.present()
+  await settle()
+  const click = (root, label) => [...root.querySelectorAll('button')].find((node) => node.textContent === label).click()
+  const first = state.buttons()[0]
+  first.click()
+  click(state.root, 'Confirm')
+  const second = other.querySelector('.projects-answer > button')
+  second.click()
+  click(other, 'Confirm')
+  await settle()
+  assert.equal(state.calls.length, 1)
+  assert.ok([...other.querySelectorAll('.projects-answer > button')].every((node) => node.disabled))
+  pending.resolve({ exitCode: 0, line: 'Recorded a.' })
+  await settle()
+  assert.equal(other.querySelector('.projects-answer-outcome p').textContent, 'Recorded a.')
+})
+
+test('a thrown error shows that completion is unknown and survives a refresh', async (t) => {
+  const state = page(t, { onAnswer: async () => { throw new Error('bridge went away') } })
+  await submit(state)
+  assert.equal(state.card().querySelector('.projects-answer-outcome p').textContent, UNKNOWN.line)
+  state.rerender()
+  await settle()
+  assert.ok(state.buttons().every((node) => node.disabled))
+})
+
+test('an unknown outcome from the action stays disabled until a later fresh read lists the decision again', async (t) => {
+  const state = page(t, { onAnswer: async () => UNKNOWN })
+  await submit(state)
+  assert.equal(state.card().querySelector('.projects-answer-outcome p').textContent, UNKNOWN.line)
+  assert.ok(state.buttons().every((node) => node.disabled))
+  const sha = await state.window.needsModel.cardHash(buildDashboard(withAsk({ 'gc.options': CHOICES })).needsYou[0])
+  state.window.answerState.reconcile('ws-1', new Set([state.window.answerState.keyOf('ws-1', 'fx-ask-retention', sha)]), Date.now() + 1000)
+  state.rerender()
+  await settle()
+  assert.ok(state.buttons().every((node) => !node.disabled))
+})
+
+test('a definite not-sent result and a real exit 2 both re-enable the buttons', async (t) => {
+  for (const result of [{ exitCode: 2, notSent: true, line: 'hvir-answer did not run: unapproved' }, { exitCode: 2, line: 'Card changed.' }]) {
+    const state = page(t, { onAnswer: async () => result })
+    await submit(state)
+    assert.equal(state.card().querySelector('.projects-answer-outcome p').textContent, result.line)
+    assert.ok(state.buttons().every((node) => !node.disabled))
+  }
+})
+
+test('a settled exit 0 stays locked across a refresh', async (t) => {
+  const state = page(t, { onAnswer: async () => ({ exitCode: 0, line: 'Recorded a.' }) })
+  await submit(state)
+  state.rerender()
+  await settle()
+  assert.ok(state.buttons().every((node) => node.disabled))
+  assert.equal(state.card().querySelector('.projects-answer-outcome p').textContent, 'Recorded a.')
 })
