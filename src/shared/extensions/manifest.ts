@@ -1,4 +1,7 @@
-import { validateConnectorDeclarations } from './connectors'
+import {
+  assertConnectorActionBindings,
+  validateConnectorDeclarations,
+} from './connectors'
 import { validateSourceDeclarations } from './source-access'
 import {
   EXTENSION_CAPABILITIES,
@@ -171,6 +174,16 @@ export function validateExtensionManifest(value: unknown): ManifestValidation {
     !views.some((view) => view.id === landing && view.placement === 'application')
   )
     throw new Error('Installation landing must name an ordinary application view')
+  const connectors =
+    object['connectors'] === undefined
+      ? undefined
+      : validateConnectorDeclarations(object['connectors'], (value, known) =>
+          warnings.push(...unknownExtensionFields(value, known)),
+        )
+  const contributions = validateContributionDeclarations(object, views, (value, known) =>
+    warnings.push(...unknownExtensionFields(value, known)),
+  )
+  if (connectors) assertConnectorActionBindings(connectors, contributions.actions ?? [])
   return {
     manifest: {
       id: extensionId(object['id']),
@@ -183,17 +196,8 @@ export function validateExtensionManifest(value: unknown): ManifestValidation {
       access,
       views,
       ...(landing ? { landing } : {}),
-      ...(object['connectors'] === undefined
-        ? {}
-        : {
-            connectors: validateConnectorDeclarations(
-              object['connectors'],
-              (value, known) => warnings.push(...unknownExtensionFields(value, known)),
-            ),
-          }),
-      ...validateContributionDeclarations(object, views, (value, known) =>
-        warnings.push(...unknownExtensionFields(value, known)),
-      ),
+      ...(connectors ? { connectors } : {}),
+      ...contributions,
     },
     warnings: warnings.slice(0, EXTENSION_LIMITS.warnings),
   }

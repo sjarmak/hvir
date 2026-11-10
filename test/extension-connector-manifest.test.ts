@@ -51,4 +51,41 @@ describe('connector declaration contract', () => {
       ),
     ).toThrow('Too many connector')
   })
+  describe('actions binding', () => {
+    const action = (id: string, agents: boolean) => ({
+      id,
+      title: id,
+      view: 'reference',
+      agents,
+      effects: { delete: false, replace: false },
+    })
+    const manifest = (actions: unknown, declared = [action('record', false)]) =>
+      exampleManifest({
+        connectors: [{ ...connector, actions }],
+        actions: declared,
+      })
+    it('keeps a declared action list on the connector', () => {
+      const result = validateExtensionManifest(manifest(['record']))
+      expect(result.manifest.connectors).toEqual([{ ...connector, actions: ['record'] }])
+    })
+    it.each([
+      ['an empty list', [], 'Invalid connector actions'],
+      ['a non-array', 'record', 'Invalid connector actions'],
+      ['a non-string entry', [1], 'Invalid connector actions'],
+      ['duplicate names', ['record', 'record'], 'Invalid connector actions'],
+      ['an unknown action', ['missing'], 'Connector actions must name declared actions'],
+    ])('refuses %s', (_label, actions, message) => {
+      expect(() => validateExtensionManifest(manifest(actions))).toThrow(message)
+    })
+    it('refuses an action that agents may run', () => {
+      expect(() =>
+        validateExtensionManifest(manifest(['record'], [action('record', true)])),
+      ).toThrow('Connector actions must not be available to agents')
+    })
+    it('refuses actions when the manifest declares none', () => {
+      expect(() =>
+        validateExtensionManifest(exampleManifest({ connectors: [{ ...connector, actions: ['record'] }] })),
+      ).toThrow('Connector actions must name declared actions')
+    })
+  })
 })

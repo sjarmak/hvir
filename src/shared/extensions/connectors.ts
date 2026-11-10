@@ -29,6 +29,7 @@ export interface ExtensionConnectorDeclaration {
   readonly outputBytes: number
   readonly setup?: { readonly executable: string }
   readonly environment: readonly string[]
+  readonly actions?: readonly string[]
 }
 export interface ExtensionConnectorConfiguration {
   readonly args: readonly string[]
@@ -125,6 +126,7 @@ export function validateConnectorDeclarations(
       'outputBytes',
       'environment',
       'setup',
+      'actions',
     ])
     if (!['application', 'workspace'].includes(object['context'] as string))
       throw new Error('Invalid connector working context')
@@ -145,8 +147,21 @@ export function validateConnectorDeclarations(
       warnings(hint, ['executable'])
       setup = { executable: connectorExecutableBasename(hint['executable']) }
     }
+    let actions: string[] | undefined
+    if (object['actions'] !== undefined) {
+      const named = object['actions']
+      if (
+        !Array.isArray(named) ||
+        named.length === 0 ||
+        named.some((name: unknown) => typeof name !== 'string') ||
+        new Set(named).size !== named.length
+      )
+        throw new Error('Invalid connector actions')
+      actions = named.map((name: string) => extensionId(name))
+    }
     return {
       ...(setup ? { setup } : {}),
+      ...(actions ? { actions } : {}),
       id: extensionId(object['id']),
       description: extensionText(object['description'], 'connector description', 240),
       context: object['context'] as 'application' | 'workspace',
@@ -164,6 +179,17 @@ export function validateConnectorDeclarations(
   if (new Set(declarations.map((entry) => entry.id)).size !== declarations.length)
     throw new Error('Duplicate connector identity')
   return declarations
+}
+export function assertConnectorActionBindings(
+  connectors: readonly ExtensionConnectorDeclaration[],
+  actions: readonly { readonly id: string; readonly agents: boolean }[],
+): void {
+  for (const name of connectors.flatMap((entry) => entry.actions ?? [])) {
+    const action = actions.find((entry) => entry.id === name)
+    if (!action) throw new Error('Connector actions must name declared actions')
+    if (action.agents)
+      throw new Error('Connector actions must not be available to agents')
+  }
 }
 export function connectorArguments(value: unknown): string[] {
   if (
