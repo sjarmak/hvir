@@ -52,6 +52,47 @@
         scope: metaText(issue, 'gc.scope'),
       }))
   }
+  const OPTIONS_KEY = 'gc.options'
+  const MAX_OPTIONS = 8
+  const LETTER = /^[a-z]$/
+
+  function parseOptions(issue) {
+    const raw = issue?.metadata?.[OPTIONS_KEY]
+    if (typeof raw !== 'string') return []
+    let list
+    try {
+      list = JSON.parse(raw)
+    } catch {
+      return []
+    }
+    if (!Array.isArray(list) || list.length === 0 || list.length > MAX_OPTIONS) return []
+    const options = []
+    for (const entry of list) {
+      const letter = entry?.letter
+      const text = entry?.text
+      if (typeof letter !== 'string' || !LETTER.test(letter)) return []
+      if (typeof text !== 'string' || text.trim() === '') return []
+      if (options.some((option) => option.letter === letter)) return []
+      options.push({ letter, text })
+    }
+    return options
+  }
+
+  const DEC_ID = /^dec-[a-z0-9]+$/
+  const CARD_SHA = /^[0-9a-f]{64}$/
+  const validAnswer = (decId, letter, cardSha256) =>
+    typeof decId === 'string' && DEC_ID.test(decId) &&
+    typeof letter === 'string' && LETTER.test(letter) &&
+    typeof cardSha256 === 'string' && CARD_SHA.test(cardSha256)
+
+  async function cardHash(issue) {
+    const description = issue?.description ?? ''
+    if (typeof issue?.title !== 'string' || typeof description !== 'string') return undefined
+    const bytes = new TextEncoder().encode(`${issue.title}\n${description}`)
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  }
+
   const isAnswered = (issue) => (issue.metadata?.['gc.answered']?.length ?? 0) > 0
   const isOpenLabelledAsk = (issue) =>
     issue.status === 'open' && hasLabel(issue) && !isAnswered(issue)
@@ -76,6 +117,9 @@
     stepArgs,
     openAsks,
     herSteps,
+    parseOptions,
+    cardHash,
+    validAnswer,
   })
   if (typeof module === 'object') module.exports = api
   else window.needsModel = api
