@@ -215,3 +215,25 @@ test('after the first finishes the same key is admitted again, and other keys we
   await settled()
   assert.equal(state.calls.length, 3)
 })
+
+test('concurrent answers with different letters for one workspace, decision and hash reach the connector once', async () => {
+  let release
+  const state = load()
+  state.window.host.run = (...args) => {
+    state.calls.push(args)
+    return new Promise((resolve) => { release = () => resolve({ exitCode: 0, stdout: 'Recorded.\n', stderr: '' }) })
+  }
+  state.api.listen(state.window.hvirExtension)
+  const base = { decId: 'dec-a1', cardSha256: SHA }
+  state.deliver({ kind: 'action', invocation: { id: 'inv-a', action: 'answer-decision', input: { ...base, letter: 'a' }, context: { workspace } } })
+  state.deliver({ kind: 'action', invocation: { id: 'inv-b', action: 'answer-decision', input: { ...base, letter: 'b' }, context: { workspace } } })
+  await settled()
+  assert.equal(state.calls.length, 1)
+  assert.equal(state.calls[0][2][1], 'a')
+  assert.equal(state.sent.length, 1)
+  assert.equal(state.sent[0].id, 'inv-b')
+  assert.equal(state.sent[0].value.unknown, true)
+  release()
+  await settled()
+  assert.equal(state.sent.length, 2)
+})

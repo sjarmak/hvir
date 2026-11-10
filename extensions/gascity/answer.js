@@ -24,8 +24,8 @@
 
   const inFlight = new Set()
   const keyOf = (invocation) => {
-    const { decId, letter, cardSha256 } = invocation.input ?? {}
-    return `${invocation.context?.workspace?.id}|${decId}|${letter}|${cardSha256}`
+    const { decId, cardSha256 } = invocation.input ?? {}
+    return `${invocation.context?.workspace?.id}|${decId}|${cardSha256}`
   }
 
   const reply = (bridge, invocation, body) => bridge.send({ kind: 'action-result', id: invocation.id, ...body })
