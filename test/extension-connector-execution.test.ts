@@ -458,4 +458,78 @@ describe('finite connector execution', () => {
       (await f.execution.execute({ ...f.caller, action: 'new' }, f.input)).outcome,
     ).toBe('completed')
   })
+  describe('action-bound connectors', () => {
+    function bound() {
+      const f = fixture()
+      const declaration = f.activation.revision.manifest.connectors![0]!
+      Object.assign(declaration, { actions: ['record'] })
+      const human = {
+        ...f.caller,
+        action: 'invocation',
+        actionName: 'record',
+        human: true,
+      }
+      return { f, human }
+    }
+    it('refuses a call that carries no invocation without native work', async () => {
+      const { f } = bound()
+      await f.approve()
+      expect(await f.execution.execute(f.caller, f.input)).toMatchObject({
+        outcome: 'not-started',
+        reason: 'unavailable',
+      })
+      expect(f.host.exec).not.toHaveBeenCalled()
+    })
+    it('refuses an invocation that is not human', async () => {
+      const { f, human } = bound()
+      await f.approve()
+      expect(
+        await f.execution.execute({ ...human, human: false }, f.input),
+      ).toMatchObject({ outcome: 'not-started', reason: 'unavailable' })
+      expect(
+        await f.execution.execute({ ...human, human: undefined }, f.input),
+      ).toMatchObject({ outcome: 'not-started', reason: 'unavailable' })
+      expect(f.host.exec).not.toHaveBeenCalled()
+    })
+    it('refuses a human invocation of an action the declaration does not list', async () => {
+      const { f, human } = bound()
+      await f.approve()
+      expect(
+        await f.execution.execute({ ...human, actionName: 'other' }, f.input),
+      ).toMatchObject({ outcome: 'not-started', reason: 'unavailable' })
+      expect(f.host.exec).not.toHaveBeenCalled()
+    })
+    it('admits a human invocation of a listed action', async () => {
+      const { f, human } = bound()
+      await f.approve()
+      expect((await f.execution.execute(human, f.input)).outcome).toBe('completed')
+      expect(f.host.exec).toHaveBeenCalledOnce()
+    })
+    it('refuses output paging for a caller that is not a human invocation of a listed action', async () => {
+      const { f, human } = bound()
+      await f.approve()
+      const result = await f.execution.execute(human, f.input)
+      const page = { receipt: result.receipt, stream: 'stdout', offset: 0 }
+      expect(f.execution.output(human, page)).toMatchObject({ data: 'result' })
+      expect(() => f.execution.output({ ...human, human: false }, page)).toThrow(
+        'human invocation',
+      )
+      expect(() => f.execution.output({ ...human, actionName: 'other' }, page)).toThrow(
+        'human invocation',
+      )
+    })
+    it('leaves a connector without actions unchanged for any caller', async () => {
+      const f = fixture()
+      await f.approve()
+      expect((await f.execution.execute(f.caller, f.input)).outcome).toBe('completed')
+      expect(
+        (
+          await f.execution.execute(
+            { ...f.caller, action: 'invocation', actionName: 'x', human: false },
+            f.input,
+          )
+        ).outcome,
+      ).toBe('completed')
+    })
+  })
 })

@@ -183,7 +183,7 @@ export function validateExtensionManifest(value: unknown): ManifestValidation {
   const contributions = validateContributionDeclarations(object, views, (value, known) =>
     warnings.push(...unknownExtensionFields(value, known)),
   )
-  if (connectors) assertConnectorActionBindings(connectors, contributions.actions ?? [])
+  if (connectors) assertConnectorActionBindings(connectors, contributions.actions)
   return {
     manifest: {
       id: extensionId(object['id']),

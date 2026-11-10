@@ -104,7 +104,13 @@ export async function requestGuestConnector(
     activation: record.activation,
     view: record.view.id,
     signal,
-    ...(invocation ? { action: invocation.id } : {}),
+    ...(invocation
+      ? {
+          action: invocation.id,
+          actionName: invocation.action,
+          human: invocation.caller === 'guest' && !record.authority.restricted,
+        }
+      : {}),
     current: assertOrigin,
     context: (workspace) => {
       if (

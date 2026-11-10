@@ -413,6 +413,13 @@ capabilities and check the guest handshake. Optional native capabilities leave u
 usable when the executable is unapproved or disconnected. Discovery and status read metadata;
 no executable probes run. hvir installs neither a tool nor a remote service.
 
+A connector may declare `actions`, a non-empty list of unique action names from the same manifest.
+Each named action must be declared `"agents": false`, or the manifest is refused. The connector then
+runs, and its output pages are served, only for a human invocation of one of those actions: an
+invocation from a guest view with ordinary authority. A call without an invocation, from an agent
+or restricted view, or from another action is refused as not started. Use this for connectors that
+record a person's decision. A connector without `actions` is unchanged.
+
 In **Settings → Extensions**, enable the package, choose its configured host and an absolute
 installed executable path, and enter configuration as `{ "args": [], "env": {} }`. The argument
 prefix precedes each request's structured arguments. Environment overrides use only names declared

@@ -10,6 +10,7 @@ import {
   CONNECTOR_LIMITS,
   connectorArguments,
   type ExtensionConnectorApproval,
+  type ExtensionConnectorDeclaration,
   type ExtensionConnectorResult,
   type ExtensionConnectorOutput,
 } from '../../shared/extensions/connectors'
@@ -22,6 +23,8 @@ export interface ConnectorCaller {
   readonly activation: ExtensionActivation
   readonly view: string
   readonly action?: string
+  readonly actionName?: string
+  readonly human?: boolean
   readonly signal: AbortSignal
   readonly current: () => void
   readonly context: (
@@ -62,6 +65,18 @@ interface OutputReceipt {
   readonly timer: ReturnType<typeof setTimeout>
 }
 
+function admitsCaller(
+  declaration: ExtensionConnectorDeclaration,
+  caller: ConnectorCaller,
+): boolean {
+  if (!declaration.actions) return true
+  return (
+    caller.human === true &&
+    caller.actionName !== undefined &&
+    declaration.actions.includes(caller.actionName)
+  )
+}
+
 /** Finite native admission and truthful outcomes; ProjectHost owns process/transport mechanics. */
 export class ExtensionConnectorExecutionOwner {
   private readonly admissions = new Set<Admission>()
@@ -99,6 +114,7 @@ export class ExtensionConnectorExecutionOwner {
     const unavailable = (reason: ExtensionConnectorResult['reason'], host = hostId) =>
       emptyResult(host, 'not-started', reason)
     if (!approval) return unavailable('unapproved')
+    if (!admitsCaller(approval.declaration, caller)) return unavailable('unavailable')
     const host = this.approvals.hosts.hostById(approval.host)
     if (!host || host.connectionState !== 'connected') return unavailable('disconnected')
     if (!host.finiteExec) return unavailable('unavailable')
@@ -278,6 +294,8 @@ export class ExtensionConnectorExecutionOwner {
       receipt.consumer.caller.action !== caller.action
     )
       throw new Error('Connector output receipt is stale or belongs to another caller')
+    if (!admitsCaller(receipt.consumer.approval.declaration, caller))
+      throw new Error('Connector output requires a human invocation of a bound action')
     caller.current()
     caller.signal.throwIfAborted()
     if (!this.valid(receipt.consumer)) {
