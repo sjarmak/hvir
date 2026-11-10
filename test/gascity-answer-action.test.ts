@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { runInNewContext } from 'node:vm'
 import { describe, expect, it, vi } from 'vitest'
 import {
   ExtensionActionOwner,
   type ExtensionActionGuestPort,
 } from '../src/main/extensions/action-owner'
 import { validateCapturedExtension } from '../src/main/extensions/package-store'
+import type { ExtensionView } from '../src/shared/extensions/workbench'
 
 const root = join(__dirname, '..', 'extensions', 'gascity')
 const manifest = JSON.parse(readFileSync(join(root, 'hvir-extension.json'), 'utf8')) as {
@@ -51,16 +53,22 @@ function owner() {
 
 describe('Gas City answer-decision action', () => {
   it('is declared for people only', () => {
-    expect(manifest.actions.find((item) => item.id === 'answer-decision')?.agents).toBe(false)
+    expect(manifest.actions.find((item) => item.id === 'answer-decision')?.agents).toBe(
+      false,
+    )
   })
 
   it('binds the hvir-answer connector to the action and validates on cores with and without the binding field', () => {
-    expect(manifest.connectors.find((item) => item.id === 'hvir-answer')?.actions).toEqual([
-      'answer-decision',
-    ])
+    expect(
+      manifest.connectors.find((item) => item.id === 'hvir-answer')?.actions,
+    ).toEqual(['answer-decision'])
     const revision = gascityActivation().revision
-    expect(revision.manifest.connectors?.some((item) => item.id === 'hvir-answer')).toBe(true)
-    for (const text of revision.warnings.filter((entry) => entry.startsWith('Ignored unknown field')))
+    expect(revision.manifest.connectors?.some((item) => item.id === 'hvir-answer')).toBe(
+      true,
+    )
+    for (const text of revision.warnings.filter((entry) =>
+      entry.startsWith('Ignored unknown field'),
+    ))
       expect(text).toBe('Ignored unknown field: actions')
   })
 
@@ -94,5 +102,97 @@ describe('Gas City answer-decision action', () => {
         'human',
       ),
     ).toThrow()
+  })
+})
+
+async function handlerError(message: string): Promise<string> {
+  const sent: { error?: string }[] = []
+  let deliver: (message: unknown) => void = () => undefined
+  const window: Record<string, unknown> = {
+    host: {
+      run: () => Promise.reject(new Error(message)),
+    },
+    hvirExtension: {
+      onMessage: (listener: (message: unknown) => void) => {
+        deliver = listener
+        return () => undefined
+      },
+      send: (reply: { error?: string }) => sent.push(reply),
+    },
+  }
+  runInNewContext(readFileSync(join(root, 'needs-model.js'), 'utf8'), { window })
+  runInNewContext(readFileSync(join(root, 'answer.js'), 'utf8'), { window })
+  ;(window['answerAction'] as { listen: (bridge: unknown) => void }).listen(
+    window['hvirExtension'],
+  )
+  deliver({
+    kind: 'action',
+    invocation: {
+      id: 'inv-1',
+      action: 'answer-decision',
+      input: answer,
+      context: { workspace: { id: 'ws-1', host: 'local' } },
+    },
+  })
+  await new Promise((resolve) => setImmediate(resolve))
+  return sent[0]!.error!
+}
+
+describe('Gas City answer-decision long errors through the real action owner', () => {
+  const view: ExtensionView = {
+    id: 'view',
+    installationId: 'one',
+    contributionId: 'projects',
+    title: 'Gas City',
+    extensionName: 'Gas City',
+    partition: 'partition',
+    url: 'hvir-extension://view/projects.html',
+    context: { surface: 'viewer', visible: true },
+  }
+
+  async function invoked() {
+    const ports = {
+      open: vi.fn((_owner, _id, _view, _options, admit: () => void) => {
+        admit()
+        return Promise.resolve(view)
+      }),
+      dispatch: vi.fn(() => true),
+      runnable: vi.fn(),
+      cancelAction: vi.fn(),
+      assertView: vi.fn(),
+    } as unknown as ExtensionActionGuestPort
+    const actions = new ExtensionActionOwner(ports)
+    const result = actions.invoke(
+      { id: 1, generation: 1 },
+      gascityActivation(),
+      'answer-decision',
+      answer,
+      { surface: 'viewer' },
+      'human',
+      'interactive',
+      () => undefined,
+    )
+    const settled = result.then(
+      () => 'resolved',
+      (reason: Error) => reason.message,
+    )
+    await new Promise((resolve) => setImmediate(resolve))
+    const invocation = vi.mocked(ports.dispatch).mock.calls[0]![1]
+    return { actions, invocation, settled }
+  }
+
+  it('settles the invocation with the capped error the handler sends', async () => {
+    const error = await handlerError('x'.repeat(900))
+    expect(error.length).toBe(240)
+    const { actions, invocation, settled } = await invoked()
+    actions.result('view', invocation.id, undefined, error)
+    expect(await settled).toBe(error)
+  })
+
+  it('refuses an uncapped 241 character error, which is why the handler caps it', async () => {
+    const { actions, invocation } = await invoked()
+    expect(() =>
+      actions.result('view', invocation.id, undefined, 'x'.repeat(241)),
+    ).toThrow('Invalid action error')
   })
 })
