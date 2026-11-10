@@ -156,7 +156,7 @@ const livePage = (t, page, script) => {
   for (const file of ['view', 'crew-parse', 'needs-model', 'projects-load', 'projects-truth', 'projects-model', 'answer-state', 'projects-render', 'answer', 'projects-data']) {
     window.eval(readFileSync(`${__dirname}/../${file}.js`, 'utf8'))
   }
-  const page_ = { view: undefined, opened: [], connected: [], bd: 'supported', document: window.document }
+  const page_ = { view: undefined, opened: [], connected: [], bd: 'supported', document: window.document, openRows: [fixture.decisions[0]] }
   window.hvirExtension = { onMessage: () => () => {}, send: () => {} }
   window.startView = (options) => { page_.view = options; return { refresh: async () => {} } }
   window.host = {
@@ -171,7 +171,11 @@ const livePage = (t, page, script) => {
     if (page_.bdError) throw page_.bdError
     if (args[1] === '/rigs/broken') throw new Error('offline')
     if (args.includes('--label-any')) return [{ ...fixture.projects[0], store: undefined }]
-    return args.includes('--status') && args.includes('open') ? [fixture.decisions[0]] : []
+    if (args.includes('--status') && args.includes('open')) {
+      if (page_.decisionError) throw page_.decisionError
+      return page_.openRows
+    }
+    return []
   }
   window.bdNote = () => ' · store refuses --readonly'
   window.openOwn = async (view, input) => { page_.opened.push({ view, input }) }
@@ -340,9 +344,20 @@ test('outcome entries are shape-checked and keep only the contract fields', () =
   assert.deepEqual([loader.OUTCOME_CONNECTOR, ...loader.OUTCOME_ARGS], ['city-outcomes', '--json'])
 })
 
-test('a fresh read frees an unknown answer outcome only after the decision is listed unanswered again', async (t) => {
+const until = async (condition, timeoutMs = 2000) => {
+  const deadline = Date.now() + timeoutMs
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error('condition not met before the timeout')
+    await new Promise((resolve) => setImmediate(resolve))
+  }
+}
+
+const CHOICES = JSON.stringify([{ letter: 'a', text: 'Yes' }, { letter: 'b', text: 'No' }])
+const withChoices = (row) => ({ ...row, metadata: { ...row.metadata, 'gc.options': CHOICES } })
+
+const answerPage = async (t) => {
   const page = livePage(t, 'project.html', 'project.js')
-  const { view, document } = page
+  const { document } = page
   const window = document.defaultView
   window.host.availability = async () => ({ gc: 'supported', bd: 'supported', 'hvir-answer': 'supported' })
   const submissions = []
@@ -350,25 +365,90 @@ test('a fresh read frees an unknown answer outcome only after the decision is li
     submissions.push(args)
     return { unknown: true, line: 'Completion unknown; check the decision before answering again' }
   }
-  const choices = JSON.stringify([{ letter: 'a', text: 'Yes' }, { letter: 'b', text: 'No' }])
-  const bdRead = window.bdRead
-  window.bdRead = async (scope, args) => {
-    const rows = await bdRead(scope, args)
-    return args.includes('--status') && args.includes('open')
-      ? rows.map((row) => ({ ...row, metadata: { ...row.metadata, 'gc.options': choices } }))
-      : rows
-  }
-  await view.load({ workspace })
+  page.openRows = [withChoices(fixture.decisions[0])]
+  await page.view.load({ workspace })
   const buttons = () => [...document.querySelectorAll('.projects-answer > button')]
   assert.ok(buttons().length > 0)
-  const wait = () => new Promise((resolve) => setTimeout(resolve, 10))
-  buttons()[0].click()
-  ;[...document.querySelectorAll('.projects-confirm button')].find((node) => node.textContent === 'Confirm').click()
-  await wait()
-  assert.equal(submissions.length, 1)
-  assert.ok(buttons().every((node) => node.disabled))
-  await new Promise((resolve) => setTimeout(resolve, 5))
-  await view.load({ workspace })
-  await wait()
+  const submit = async () => {
+    buttons()[0].click()
+    ;[...document.querySelectorAll('.projects-confirm button')].find((node) => node.textContent === 'Confirm').click()
+    await until(() => submissions.length === 1 && document.querySelector('.projects-answer-outcome p'))
+  }
+  const reload = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 2))
+    await page.view.load({ workspace })
+  }
+  const phase = async () => {
+    const { answerState, needsModel } = window
+    const { title, description, id } = fixture.decisions[0]
+    return answerState.get(answerState.keyOf('city', id, await needsModel.cardHash({ title, description }))).phase
+  }
+  const locked = async () => {
+    await until(() => document.querySelector('.projects-answer-outcome p'))
+    return buttons().every((node) => node.disabled)
+  }
+  return { page, buttons, submit, reload, locked, phase }
+}
+
+const unknownAnswerPage = async (t) => {
+  const state = await answerPage(t)
+  await state.submit()
+  assert.ok(await state.locked())
+  return state
+}
+
+test('a fresh complete read frees an unknown answer outcome once the decision is listed open and unanswered again', async (t) => {
+  const { reload, phase, buttons } = await unknownAnswerPage(t)
+  await reload()
+  assert.equal(await phase(), 'idle')
   assert.ok(buttons().every((node) => !node.disabled))
+})
+
+test('an unknown answer outcome stays locked when the decision read failed', async (t) => {
+  const { page, reload, phase } = await unknownAnswerPage(t)
+  page.decisionError = new Error('bd went away')
+  await reload()
+  assert.equal(await phase(), 'unknown')
+})
+
+test('an unknown answer outcome stays locked when a later read is incomplete because gc could not be read', async (t) => {
+  const { page, reload, phase } = await unknownAnswerPage(t)
+  page.document.defaultView.host.run = async () => { throw new Error('gc went away') }
+  await reload()
+  assert.equal(await phase(), 'unknown')
+})
+
+test('an unknown answer outcome stays locked when the decision is listed as answered but still waiting on her', async (t) => {
+  const { page, reload, locked, phase } = await unknownAnswerPage(t)
+  page.openRows = [withChoices({ ...fixture.decisions[0], metadata: { ...fixture.decisions[0].metadata, 'gc.answered': '2026-11-10', 'gc.waiting_on': 'stephanie' } })]
+  await reload()
+  assert.ok(await locked())
+  assert.equal(await phase(), 'unknown')
+})
+
+test('an unknown answer outcome is kept when the decision is no longer listed, and freed by the next read that lists it open', async (t) => {
+  const { page, reload, phase } = await unknownAnswerPage(t)
+  page.openRows = []
+  await reload()
+  assert.equal(page.document.querySelectorAll('.projects-answer').length, 0)
+  assert.equal(await phase(), 'unknown')
+  page.openRows = [withChoices(fixture.decisions[0])]
+  await reload()
+  assert.equal(await phase(), 'idle')
+})
+
+test('an unknown answer outcome stays locked when the read began before the outcome completed', async (t) => {
+  const { page, submit, locked, phase } = await answerPage(t)
+  const window = page.document.defaultView
+  const bdRead = window.bdRead
+  let hold
+  const gate = new Promise((resolve) => { hold = resolve })
+  window.bdRead = async (...args) => { await gate; return bdRead(...args) }
+  const loading = page.view.load({ workspace })
+  await new Promise((resolve) => setTimeout(resolve, 2))
+  await submit()
+  hold()
+  await loading
+  assert.ok(await locked())
+  assert.equal(await phase(), 'unknown')
 })

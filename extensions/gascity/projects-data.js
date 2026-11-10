@@ -51,7 +51,9 @@
     const deferred = failures.notRun || reads.some((entry) => entry.notRun) ||
       !reads.some((entry) => entry.key === 'projects' && !entry.error)
     const answerable = connectors[window.answerAction.CONNECTOR] === 'supported'
-    return { answerable, model: window.projectsModel.buildDashboard(result.payload), payload: result.payload, errors: result.errors, sessions, deferred }
+    const decisionReads = reads.filter((entry) => entry.key === 'decisions')
+    const complete = !deferred && !failures.errors.length && decisionReads.length > 0 && decisionReads.every((entry) => !entry.error)
+    return { answerable, complete, model: window.projectsModel.buildDashboard(result.payload), payload: result.payload, errors: result.errors, sessions, deferred }
   }
 
   const statusLine = (data, workspace, withCounts = true) => {
@@ -62,10 +64,19 @@
     return `${counts}fetched ${time}${window.bdNote(workspace)}${errors.length ? ` · ${errors.join(' · ')}` : ''}`
   }
 
-  const listedKeys = async (workspaceId, model) => new Set((await Promise.all(model.needsYou.map(async (ask) => {
+  const keysOf = async (workspaceId, asks) => new Set((await Promise.all(asks.map(async (ask) => {
     const sha = await window.needsModel.cardHash(ask)
     return sha ? window.answerState.keyOf(workspaceId, ask.id, sha) : undefined
   }))).filter(Boolean))
+
+  const isUnanswered = (ask) => !ask.metadata?.['gc.answered']
+
+  const reconcileAnswers = async (workspaceId, data, readStartedAt) => window.answerState.reconcile(workspaceId, {
+    listedKeys: await keysOf(workspaceId, data.model.needsYou),
+    openKeys: await keysOf(workspaceId, data.model.needsYou.filter(isUnanswered)),
+    readStartedAt,
+    complete: data.complete,
+  })
 
   const startProjectsView = (render, { counts = true } = {}) => {
     const ui = Object.fromEntries(['refresh', 'status', 'connect', 'projects']
@@ -140,7 +151,7 @@
         show(previous, context, `refresh deferred: ${data.errors[0] ?? 'no project list read'}`)
         return
       }
-      window.answerState.reconcile(workspace.id, await listedKeys(workspace.id, data.model), readStartedAt)
+      await reconcileAnswers(workspace.id, data, readStartedAt)
       if (workspace.id !== shownId) return
       shownBy.set(workspace.id, data)
       show(data, context)

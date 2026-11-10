@@ -59,18 +59,54 @@ test('listeners hear every change for their key and a disconnected one is droppe
   assert.deepEqual(heard, [])
 })
 
-test('reconcile frees an unknown outcome older than the refresh when the decision is still listed', () => {
-  const state = load()
+const read = (key, overrides = {}) => ({
+  listedKeys: new Set([key]), openKeys: new Set([key]), readStartedAt: 200, complete: true, ...overrides,
+})
+const unknownAt100 = (state) => {
   const key = state.keyOf('w1', 'dec-a', SHA)
   state.begin(key)
   state.finish(key, { unknown: true, line: 'u' }, 100)
-  state.reconcile('w1', new Set([key]), 50)
-  assert.equal(state.get(key).phase, 'unknown')
-  state.reconcile('w1', new Set([key]), 100)
+  return key
+}
+
+test('an unknown outcome is freed only by a fresh complete read listing the decision open and unanswered', () => {
+  const state = load()
+  const key = unknownAt100(state)
+  state.reconcile('w1', read(key))
   assert.equal(state.get(key).phase, 'idle')
 })
 
-test('reconcile never frees a pending submission and drops settled entries for decisions no longer listed', () => {
+test('an unknown outcome survives a read that began before or at its completion', () => {
+  const state = load()
+  const key = unknownAt100(state)
+  state.reconcile('w1', read(key, { readStartedAt: 50 }))
+  state.reconcile('w1', read(key, { readStartedAt: 100 }))
+  assert.equal(state.get(key).phase, 'unknown')
+})
+
+test('an unknown outcome survives incomplete, failed and inconclusive reads', () => {
+  const state = load()
+  const key = unknownAt100(state)
+  state.reconcile('w1', read(key, { complete: false }))
+  state.reconcile('w1', read(key, { complete: false, listedKeys: new Set(), openKeys: new Set() }))
+  assert.equal(state.get(key).phase, 'unknown')
+})
+
+test('an unknown outcome survives a read listing the decision as answered but still waiting', () => {
+  const state = load()
+  const key = unknownAt100(state)
+  state.reconcile('w1', read(key, { openKeys: new Set() }))
+  assert.equal(state.get(key).phase, 'unknown')
+})
+
+test('an unknown outcome survives a complete read that no longer lists the decision', () => {
+  const state = load()
+  const key = unknownAt100(state)
+  state.reconcile('w1', read(key, { listedKeys: new Set(), openKeys: new Set() }))
+  assert.equal(state.get(key).phase, 'unknown')
+})
+
+test('reconcile never frees a pending submission and drops settled entries only on a fresh complete read that does not list them', () => {
   const state = load()
   const pending = state.keyOf('w1', 'dec-a', SHA)
   const done = state.keyOf('w1', 'dec-b', SHA)
@@ -78,7 +114,12 @@ test('reconcile never frees a pending submission and drops settled entries for d
   for (const key of [pending, done, other]) state.begin(key)
   state.finish(done, { exitCode: 0, line: 'ok' }, 1)
   state.finish(other, { exitCode: 0, line: 'ok' }, 1)
-  state.reconcile('w1', new Set(), 1000)
+  const empty = { listedKeys: new Set(), openKeys: new Set(), readStartedAt: 1000, complete: true }
+  state.reconcile('w1', { ...empty, complete: false })
+  assert.equal(state.get(done).phase, 'done')
+  state.reconcile('w1', { ...empty, readStartedAt: 0 })
+  assert.equal(state.get(done).phase, 'done')
+  state.reconcile('w1', empty)
   assert.equal(state.get(pending).phase, 'pending')
   assert.equal(state.get(done).phase, 'idle')
   assert.equal(state.get(done).result, undefined)

@@ -42,12 +42,14 @@
     if (!current.includes(listener)) listeners.set(key, [...current, listener])
   }
 
-  const reconcile = (workspaceId, listedKeys, readStartedAt) => {
+  const reconcile = (workspaceId, { listedKeys, openKeys, readStartedAt, complete }) => {
+    if (!complete) return
     for (const [key, entry] of [...entries]) {
       if (!key.startsWith(`${workspaceId}|`) || entry.phase === 'pending') continue
-      const listed = listedKeys.has(key)
-      if (entry.phase === 'unknown' && listed && entry.at <= readStartedAt) set(key, IDLE)
-      else if (!listed) set(key, IDLE)
+      const fresh = entry.at < readStartedAt
+      if (entry.phase === 'unknown') {
+        if (fresh && openKeys.has(key)) set(key, IDLE)
+      } else if (fresh && !listedKeys.has(key)) set(key, IDLE)
     }
   }
 
