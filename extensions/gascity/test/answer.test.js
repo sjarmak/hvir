@@ -9,13 +9,15 @@ const plain = (value) => JSON.parse(JSON.stringify(value))
 const SHA = 'c'.repeat(64)
 const workspace = { id: 'ws-1', host: 'local' }
 
-const load = ({ result = { exitCode: 0, stdout: 'Recorded.\n', stderr: '' }, fail } = {}) => {
+const HELLO = { kind: 'hello', contract: '1.0', capabilities: ['connector.execute', 'connector.action-binding'] }
+
+const load = ({ result = { exitCode: 0, stdout: 'Recorded.\n', stderr: '' }, fail, hello = HELLO } = {}) => {
   const calls = []
   const sent = []
   const requests = []
-  let deliver
+  const listeners = new Set()
   const bridge = {
-    onMessage: (listener) => { deliver = listener; return () => {} },
+    onMessage: (listener) => { listeners.add(listener); return () => listeners.delete(listener) },
     send: (message) => sent.push(message),
   }
   const host = {
@@ -28,7 +30,9 @@ const load = ({ result = { exitCode: 0, stdout: 'Recorded.\n', stderr: '' }, fai
   }
   const window = { needsModel, host, hvirExtension: bridge }
   vm.runInNewContext(readFileSync(join(__dirname, '..', 'answer.js'), 'utf8'), { window })
-  return { api: window.answerAction, window, calls, sent, requests, deliver: (message) => deliver(message) }
+  const deliver = (message) => [...listeners].forEach((listener) => listener(message))
+  if (hello) deliver(hello)
+  return { api: window.answerAction, window, calls, sent, requests, deliver }
 }
 
 const invocation = (input, extra = {}) => ({
@@ -236,4 +240,41 @@ test('concurrent answers with different letters for one workspace, decision and 
   release()
   await settled()
   assert.equal(state.sent.length, 2)
+})
+
+test('with a core that grants connector.action-binding the answer is bound', () => {
+  assert.equal(load().api.actionBound(), true)
+})
+
+test('before any hello, or with a hello lacking connector.action-binding, the answer is not bound', () => {
+  assert.equal(load({ hello: null }).api.actionBound(), false)
+  assert.equal(load({ hello: { ...HELLO, capabilities: ['connector.execute'] } }).api.actionBound(), false)
+  assert.equal(load({ hello: { kind: 'hello', contract: '1.0' } }).api.actionBound(), false)
+})
+
+test('without connector.action-binding the handler never runs the connector and reports not sent', async () => {
+  const state = load({ hello: { ...HELLO, capabilities: ['connector.execute'] } })
+  state.api.listen(state.window.hvirExtension)
+  state.deliver(invocation({ decId: 'dec-a1', letter: 'a', cardSha256: SHA }))
+  await settled()
+  assert.equal(state.calls.length, 0)
+  assert.equal(state.sent.length, 1)
+  assert.equal(state.sent[0].value.notSent, true)
+  assert.equal(state.sent[0].value.exitCode, 2)
+  assert.match(state.sent[0].value.line, /cannot bind answers/)
+})
+
+test('record refuses to run the connector without connector.action-binding', async () => {
+  const { api, calls } = load({ hello: null })
+  await assert.rejects(
+    api.record({ run: async (...args) => (calls.push(args), { exitCode: 0, stdout: '', stderr: '' }) },
+      workspace, { decId: 'dec-a1', letter: 'a', cardSha256: SHA }, 'inv-1'),
+    (error) => error.dispatch === 'not-sent')
+  assert.equal(calls.length, 0)
+})
+
+test('a later hello that drops connector.action-binding unbinds the answer again', () => {
+  const state = load()
+  state.deliver({ ...HELLO, capabilities: ['connector.execute'] })
+  assert.equal(state.api.actionBound(), false)
 })

@@ -153,11 +153,14 @@ const livePage = (t, page, script) => {
   const { window } = dom
   Object.defineProperty(window, 'crypto', { value: require('node:crypto').webcrypto, configurable: true })
   Object.defineProperty(window, 'TextEncoder', { value: TextEncoder, configurable: true })
+  const listeners = new Set()
+  window.hvirExtension = { onMessage: (listener) => (listeners.add(listener), () => listeners.delete(listener)), send: () => {} }
+  const deliver = (message) => [...listeners].forEach((listener) => listener(message))
   for (const file of ['view', 'crew-parse', 'needs-model', 'projects-load', 'projects-truth', 'projects-model', 'answer-state', 'projects-render', 'answer', 'projects-data']) {
     window.eval(readFileSync(`${__dirname}/../${file}.js`, 'utf8'))
   }
-  const page_ = { view: undefined, opened: [], connected: [], bd: 'supported', document: window.document, openRows: [fixture.decisions[0]] }
-  window.hvirExtension = { onMessage: () => () => {}, send: () => {} }
+  const page_ = { deliver, view: undefined, opened: [], connected: [], bd: 'supported', document: window.document, openRows: [fixture.decisions[0]] }
+  deliver({ kind: 'hello', contract: '1.0', capabilities: ['connector.execute', 'connector.action-binding'] })
   window.startView = (options) => { page_.view = options; return { refresh: async () => {} } }
   window.host = {
     availability: async () => ({ gc: 'supported', bd: page_.bd }),
@@ -424,6 +427,26 @@ test('an unknown answer outcome stays locked when the decision is listed as answ
   await reload()
   assert.ok(await locked())
   assert.equal(await phase(), 'unknown')
+})
+
+test('a core without connector.action-binding shows no answer buttons even with the connector supported', async (t) => {
+  const page = livePage(t, 'project.html', 'project.js')
+  const window = page.document.defaultView
+  window.host.availability = async () => ({ gc: 'supported', bd: 'supported', 'hvir-answer': 'supported' })
+  page.deliver({ kind: 'hello', contract: '1.0', capabilities: ['connector.execute'] })
+  page.openRows = [withChoices(fixture.decisions[0])]
+  await page.view.load({ workspace })
+  assert.equal(page.document.querySelectorAll('.projects-answer').length, 0)
+  assert.ok(page.document.querySelectorAll('#projects li').length > 0)
+})
+
+test('a core with connector.action-binding shows the answer buttons', async (t) => {
+  const page = livePage(t, 'project.html', 'project.js')
+  const window = page.document.defaultView
+  window.host.availability = async () => ({ gc: 'supported', bd: 'supported', 'hvir-answer': 'supported' })
+  page.openRows = [withChoices(fixture.decisions[0])]
+  await page.view.load({ workspace })
+  assert.ok(page.document.querySelectorAll('.projects-answer > button').length > 0)
 })
 
 test('an unknown answer outcome is kept when the decision is no longer listed, and freed by the next read that lists it open', async (t) => {

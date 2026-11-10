@@ -2,6 +2,8 @@
 ;(() => {
   const ACTION = 'answer-decision'
   const CONNECTOR = 'hvir-answer'
+  const BINDING = 'connector.action-binding'
+  const UNBOUND_LINE = 'This hvir cannot bind answers to actions, so no answer was sent'
   const LINE_MAX = 400
   const ERROR_MAX = 240
   const UNKNOWN_LINE = 'Completion unknown; check the decision before answering again'
@@ -12,7 +14,14 @@
   const outcomeLine = ({ exitCode, stdout, stderr }) =>
     (firstLine(stdout) || firstLine(stderr) || `${CONNECTOR} exited ${exitCode}`).slice(0, LINE_MAX)
 
+  let bound = false
+  window.hvirExtension?.onMessage((message) => {
+    if (message.kind === 'hello') bound = Array.isArray(message.capabilities) && message.capabilities.includes(BINDING)
+  })
+  const actionBound = () => bound
+
   async function record(host, workspace, input, actionId) {
+    if (!bound) throw Object.assign(new Error(UNBOUND_LINE), { dispatch: 'not-sent' })
     const { decId, letter, cardSha256 } = input ?? {}
     if (!window.needsModel.validAnswer(decId, letter, cardSha256))
       throw new Error('The answer needs a decision id, one letter and the card hash')
@@ -62,6 +71,6 @@
   const answerDecision = (decId, letter, cardSha256) =>
     window.host.request('actions.invoke', { action: ACTION, input: { decId, letter, cardSha256 } })
 
-  const api = Object.freeze({ ACTION, CONNECTOR, UNKNOWN_LINE, record, handle, listen, outcomeLine, answerDecision })
+  const api = Object.freeze({ ACTION, CONNECTOR, UNKNOWN_LINE, actionBound, record, handle, listen, outcomeLine, answerDecision })
   window.answerAction = api
 })()

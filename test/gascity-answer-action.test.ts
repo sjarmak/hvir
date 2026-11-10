@@ -111,15 +111,16 @@ describe('Gas City answer-decision action', () => {
 
 async function handlerError(message: string): Promise<string> {
   const sent: { error?: string }[] = []
-  let deliver: (message: unknown) => void = () => undefined
+  const listeners = new Set<(message: unknown) => void>()
+  const deliver = (message: unknown) => listeners.forEach((listener) => listener(message))
   const window: Record<string, unknown> = {
     host: {
       run: () => Promise.reject(new Error(message)),
     },
     hvirExtension: {
       onMessage: (listener: (message: unknown) => void) => {
-        deliver = listener
-        return () => undefined
+        listeners.add(listener)
+        return () => listeners.delete(listener)
       },
       send: (reply: { error?: string }) => sent.push(reply),
     },
@@ -129,6 +130,11 @@ async function handlerError(message: string): Promise<string> {
   ;(window['answerAction'] as { listen: (bridge: unknown) => void }).listen(
     window['hvirExtension'],
   )
+  deliver({
+    kind: 'hello',
+    contract: '1.0',
+    capabilities: ['connector.execute', 'connector.action-binding'],
+  })
   deliver({
     kind: 'action',
     invocation: {

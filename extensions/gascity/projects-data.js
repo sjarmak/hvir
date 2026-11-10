@@ -107,7 +107,7 @@
     let shownId
     const show = (data, context, extra) => {
       liveSessions = data.sessions
-      const shownActions = data.answerable ? { ...actions, workspaceId: context.workspace.id, onAnswer: window.answerAction.answerDecision } : actions
+      const shownActions = data.answerable && window.answerAction.actionBound() ? { ...actions, workspaceId: context.workspace.id, onAnswer: window.answerAction.answerDecision } : actions
       const note = render(data, ui.projects, shownActions, context)
       setStatus([note, statusLine(data, context.workspace, counts), extra].filter(Boolean).join(' · '))
     }
