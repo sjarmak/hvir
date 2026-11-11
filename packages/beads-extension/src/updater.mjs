@@ -13,8 +13,7 @@ const controller = createRefreshController({
   async refresh() {
     return buildReadSurface(await readWorkspace(client, context, snapshot))
   },
-  publish(value) {
-    snapshot = value
+  async publish(value) {
     const failures = [value.beads, value.crew].filter(
       (source) => source.state === 'error' || source.state === 'unavailable',
     )
@@ -22,17 +21,21 @@ const controller = createRefreshController({
       (total, section) => total + section.count,
       0,
     )
-    void client
-      .request('contributions.publish', {
-        item: 'status',
-        label: failures.length ? 'Beads unavailable' : `Beads ${count}`,
-        tooltip: failures.length
-          ? failures.map((source) => source.message).join(' · ')
-          : `${count} visible work items in the current as-of snapshot`,
-        availability: failures.length ? 'failed' : 'current',
-        ...(failures.length ? {} : { observedAt: Date.now() }),
-      })
-      .catch(() => {})
+    await client.request('contributions.publish', {
+      item: 'status',
+      label: failures.length ? 'Beads unavailable' : `Beads ${count}`,
+      tooltip: failures.length
+        ? failures.map((source) => source.message).join(' · ')
+        : `${count} visible work items in the current as-of snapshot`,
+      availability: failures.length ? 'failed' : 'current',
+      ...(failures.length ? {} : { observedAt: Date.now() }),
+    })
+    snapshot = value
+  },
+  fail(error) {
+    globalThis.queueMicrotask(() => {
+      throw error
+    })
   },
 })
 

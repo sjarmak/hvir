@@ -68,7 +68,8 @@ interface BeadsPackage {
   ): Promise<unknown>
   createRefreshController(options: {
     refresh(): Promise<unknown>
-    publish(value: unknown): void
+    publish(value: unknown): void | Promise<void>
+    fail(error: unknown): void
     schedule(callback: () => void, delay: number): number
     cancel(timer: number): void
   }): {
@@ -628,6 +629,15 @@ describe('Beads workspace extension package', () => {
       ])
     }))
 
+  it.each(['crew-attach', 'crew-peek', 'crew-reset', 'crew-handoff'])(
+    'rejects a leading-dash crew target for %s before constructing terminal argv',
+    (action) => {
+      expect(() => api.commandForAction(action, { target: '--help' })).toThrow(
+        'Invalid command input',
+      )
+    },
+  )
+
   it('keeps malformed, unavailable, and failed reads distinct from successful emptiness', () => {
     const empty = api.buildReadSurface({
       bd: { text: '[]', observedAt: 1 },
@@ -662,6 +672,7 @@ describe('Beads workspace extension package', () => {
     const controller = api.createRefreshController({
       refresh,
       publish,
+      fail: vi.fn(),
       schedule(callback, delay) {
         scheduled = callback
         delays.push(delay)
@@ -713,6 +724,7 @@ describe('Beads workspace extension package', () => {
     const controller = api.createRefreshController({
       refresh,
       publish: vi.fn(),
+      fail: vi.fn(),
       schedule: vi.fn(() => 1),
       cancel: vi.fn(),
     })

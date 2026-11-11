@@ -30,8 +30,11 @@ const controller = createRefreshController({
     return buildReadSurface(await readWorkspace(client, context, snapshot))
   },
   publish(value) {
-    snapshot = value
     render(value)
+    snapshot = value
+  },
+  fail(error) {
+    showError(error)
   },
 })
 
@@ -160,14 +163,29 @@ function actionButton(label, action, input) {
 
 async function invoke(action, input) {
   try {
-    await client.request('actions.invoke', { action, input })
+    const result = await client.request('actions.invoke', { action, input })
+    if (result?.outcome !== 'handed-off') {
+      showError(
+        typeof result?.reason === 'string'
+          ? result.reason
+          : `Terminal launch ${result?.outcome ?? 'did not complete'}`,
+      )
+      return false
+    }
     return true
   } catch (error) {
-    state.dataset.state = 'error'
-    state.textContent = error.message
-    state.classList.add('beads-error')
+    showError(error)
     return false
   }
+}
+
+function showError(error) {
+  state.dataset.state = 'error'
+  state.textContent =
+    error && typeof error === 'object' && typeof error.message === 'string'
+      ? error.message
+      : String(error)
+  state.classList.add('beads-error')
 }
 
 function applyFocus(value) {
