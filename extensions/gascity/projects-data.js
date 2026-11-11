@@ -48,12 +48,13 @@
     if (outcomes) result.payload.outcomes = outcomes
     const conflicts = window.projectsModel.duplicateProjects(result.payload.projects)
     if (conflicts.length) result.errors.push(`project id in several stores: ${conflicts.join(', ')}`)
+    const projectsRead = reads.some((entry) => entry.key === 'projects' && !entry.error)
     const deferred = failures.notRun || reads.some((entry) => entry.notRun) ||
-      !reads.some((entry) => entry.key === 'projects' && !entry.error)
+      !projectsRead
     const answerable = connectors[window.answerAction.CONNECTOR] === 'supported'
     const decisionReads = reads.filter((entry) => entry.key === 'decisions')
     const complete = !deferred && !failures.errors.length && decisionReads.length > 0 && decisionReads.every((entry) => !entry.error)
-    return { answerable, complete, model: window.projectsModel.buildDashboard(result.payload), payload: result.payload, errors: result.errors, sessions, deferred }
+    return { answerable, complete, model: window.projectsModel.buildDashboard(result.payload), payload: result.payload, errors: result.errors, sessions, deferred, projectsRead }
   }
 
   const statusLine = (data, workspace, withCounts = true) => {
@@ -115,7 +116,8 @@
       const note = render(data, ui.projects, shownActions, context)
       setStatus([note, statusLine(data, context.workspace, counts), extra].filter(Boolean).join(' · '))
     }
-    const load = async (context, { hidden = () => false } = {}) => {
+    const unrendered = new Set()
+    const load = async (context, { hidden = () => false, visible = () => true } = {}) => {
       const { workspace } = context
       if (!workspace) {
         shownId = undefined
@@ -128,11 +130,11 @@
         shownId = workspace.id
         const cached = shownBy.get(workspace.id)
         if (cached) show(cached, context, 'refreshing…')
-        else {
-          ui.projects.replaceChildren()
-          setStatus('Loading…')
-        }
+        else ui.projects.replaceChildren()
       }
+      const waiting = shownBy.get(workspace.id)
+      if (waiting && unrendered.delete(workspace.id)) show(waiting, context, 'refresh paused: hvir went to the background')
+      else if (!waiting) setStatus('Loading…')
       const readStartedAt = Date.now()
       const data = await read(workspace)
       if (workspace.id !== shownId) return
@@ -147,9 +149,19 @@
       }
       const previous = shownBy.get(workspace.id)
       if (hidden() && data.errors.length) {
-        if (previous) show(previous, context, 'refresh paused: hvir went to the background')
-        else setStatus('Paused while hvir is in the background; loads when shown')
-        return
+        if (previous) {
+          show(previous, context, 'refresh paused: hvir went to the background')
+          return
+        }
+        if (!data.projectsRead) {
+          setStatus('Paused while hvir is in the background; loads when shown')
+          return
+        }
+        if (!visible()) {
+          shownBy.set(workspace.id, data)
+          unrendered.add(workspace.id)
+          return
+        }
       }
       if (data.deferred && previous) {
         show(previous, context, `refresh deferred: ${data.errors[0] ?? 'no project list read'}`)

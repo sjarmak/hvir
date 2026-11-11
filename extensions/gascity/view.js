@@ -19,7 +19,7 @@ window.startView = ({ load, refreshMs = 0, onStatus = () => {} }) => {
     const started = context
     const hidesAtStart = hides
     try {
-      await load(context, { hidden: () => hides !== hidesAtStart })
+      await load(context, { hidden: () => hides !== hidesAtStart, visible: () => !!context?.visible })
     } catch (error) {
       if (!error.transient) onStatus(error.message)
     } finally {
@@ -57,7 +57,12 @@ window.startView = ({ load, refreshMs = 0, onStatus = () => {} }) => {
   })
   window.addEventListener('pagehide', dispose)
   bridge.send({ kind: 'hello', contract: '1.0' })
-  return { refresh: tick }
+  const refresh = () => {
+    if (!disposed && !running && !context?.visible)
+      onStatus('hvir reports this pane as hidden; it loads when hvir shows it')
+    return tick()
+  }
+  return { refresh }
 }
 
 /** Small DOM helper: el('span', { className: 'x' }, 'text', child). */

@@ -248,7 +248,7 @@ test('a refresh whose reads did not run keeps the last render, and a revisited w
   await back
 })
 
-test('a load the view was hidden during neither renders nor caches its partial reads', async (t) => {
+test('a load the view was hidden during does not render its partial reads while the pane stays hidden', async (t) => {
   const page = livePage(t, 'projects.html', 'projects.js')
   const { view, document } = page
   const rows = () => document.querySelectorAll('.projects-nav-row').length
@@ -259,9 +259,8 @@ test('a load the view was hidden during neither renders nor caches its partial r
     if (!args.includes('--label-any')) throw refused
     return run(scope, args)
   }
-  await view.load({ workspace }, { hidden: () => true })
+  await view.load({ workspace }, { hidden: () => true, visible: () => false })
   assert.equal(rows(), 0)
-  assert.equal(status(), 'Paused while hvir is in the background; loads when shown')
   document.defaultView.bdRead = run
   await view.load({ workspace }, { hidden: () => false })
   assert.equal(rows(), 1)
@@ -270,9 +269,68 @@ test('a load the view was hidden during neither renders nor caches its partial r
     if (!args.includes('--label-any')) throw refused
     return run(scope, args)
   }
-  await view.load({ workspace }, { hidden: () => true })
+  await view.load({ workspace }, { hidden: () => true, visible: () => false })
   assert.equal(document.getElementById('projects').innerHTML, shown)
   assert.match(status(), /refresh paused: hvir went to the background/)
+})
+
+const refusingBd = (page) => {
+  const { bdRead } = page.document.defaultView
+  const refused = new Error('Selected extension window is in the background')
+  page.document.defaultView.bdRead = async (scope, args) => {
+    if (!args.includes('--label-any')) throw refused
+    return bdRead(scope, args)
+  }
+  return bdRead
+}
+
+const gateHostRun = (page) => {
+  const { host } = page.document.defaultView
+  const run = host.run
+  let release
+  const gate = new Promise((resolve) => (release = resolve))
+  host.run = async (...args) => (await gate, run(...args))
+  return () => { release(); host.run = run }
+}
+
+test('a first read that ends after hvir went to the background renders when the pane is visible again', async (t) => {
+  const page = livePage(t, 'projects.html', 'projects.js')
+  refusingBd(page)
+  await page.view.load({ workspace }, { hidden: () => true, visible: () => true })
+  assert.equal(page.document.querySelectorAll('.projects-nav-row').length, 1)
+})
+
+test('a first read that ends while the pane is hidden is kept and rendered, noted, when the pane is shown', async (t) => {
+  const page = livePage(t, 'projects.html', 'projects.js')
+  const { document } = page
+  const restore = refusingBd(page)
+  await page.view.load({ workspace }, { hidden: () => true, visible: () => false })
+  assert.equal(document.querySelectorAll('.projects-nav-row').length, 0)
+  document.defaultView.bdRead = restore
+  const release = gateHostRun(page)
+  const shown = page.view.load({ workspace }, { hidden: () => false, visible: () => true })
+  assert.equal(document.querySelectorAll('.projects-nav-row').length, 1)
+  assert.match(document.getElementById('status').textContent, /refresh paused: hvir went to the background/)
+  release()
+  await shown
+})
+
+test('a hidden first read with no project list read stays unrendered on the paused line, then says Loading… when the next load starts', async (t) => {
+  const page = livePage(t, 'projects.html', 'projects.js')
+  const { document } = page
+  const status = () => document.getElementById('status').textContent
+  const { bdRead } = document.defaultView
+  document.defaultView.bdRead = async () => { throw new Error('Selected extension window is in the background') }
+  await page.view.load({ workspace }, { hidden: () => true, visible: () => true })
+  assert.equal(document.querySelectorAll('.projects-nav-row').length, 0)
+  assert.equal(status(), 'Paused while hvir is in the background; loads when shown')
+  document.defaultView.bdRead = bdRead
+  const release = gateHostRun(page)
+  const next = page.view.load({ workspace }, { hidden: () => false, visible: () => true })
+  assert.equal(status(), 'Loading…')
+  release()
+  await next
+  assert.equal(document.querySelectorAll('.projects-nav-row').length, 1)
 })
 
 test('project page renders the project named in its input, and says so when it is gone', async (t) => {
