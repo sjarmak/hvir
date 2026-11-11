@@ -4,6 +4,7 @@ import { useExtensionContributions } from './extension-contribution-context'
 
 export interface ExtensionTargetedViewTarget {
   readonly requestId: string
+  readonly extensionId: string
   readonly contributionId: string
   readonly workspaceId: string
   readonly input: unknown
@@ -34,6 +35,7 @@ export function ExtensionTargetedViewLauncher({
       installation.manifest.views
         .filter(
           (view) =>
+            installation.manifest.id === request.extensionId &&
             view.id === request.contributionId &&
             view.placement === 'workspace' &&
             view.navigation === 'left',

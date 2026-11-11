@@ -40,6 +40,7 @@ export function useApplicationNavigation({
     targetedView: beadTarget
       ? {
           requestId: beadTarget.beadId,
+          extensionId: 'beads-extension',
           contributionId: 'beads',
           workspaceId: beadTarget.workspaceId,
           input: { focusBeadId: beadTarget.beadId },

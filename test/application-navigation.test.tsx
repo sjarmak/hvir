@@ -103,6 +103,10 @@ describe('application navigation', () => {
       await navigation.needsYou.selectBead(target)
     })
     expect(navigation.beadTarget).toEqual(target)
+    expect(navigation.extensionTarget.targetedView).toMatchObject({
+      extensionId: 'beads-extension',
+      contributionId: 'beads',
+    })
   })
 
   it('reports an unavailable focused bead outside the state updater', async () => {

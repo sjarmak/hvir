@@ -64,6 +64,12 @@ export class ExtensionContributionOwner {
     const activation = this.activations.active.get(request.installationId)
     if (!activation || activation.revision.hash !== request.revision)
       throw new Error('Extension revision is unavailable')
+    const capabilities = [
+      ...activation.revision.manifest.requiredCapabilities,
+      ...activation.revision.manifest.optionalCapabilities,
+    ]
+    if (!capabilities.includes('context.read'))
+      throw new Error('Targeted workspace contribution is unavailable')
     const contribution = activation.revision.manifest.views.find(
       (view) => view.id === request.contributionId,
     )
