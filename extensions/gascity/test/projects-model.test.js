@@ -406,3 +406,83 @@ test('answerTo prefers gc.owner, then created_by, and is absent without either',
   assert.equal('answerTo' in asks.a3, false)
   assert.equal(asks.a1.title, 'Both')
 })
+
+test('a session holding several in-progress beads counts toward every project it works', () => {
+  const input = fresh()
+  input.inProgress.push({ id: 'fx-lead-other', title: 'Second project work', status: 'in_progress',
+    labels: [], metadata: { 'proj.id': 'fx-project-2' }, assignee: 'omni-pl' })
+  const model = buildDashboard(input)
+  assert.deepEqual(card(model, 'fx-project-1').inFlight.filter((row) => row.who === 'omni-pl').map((row) => row.bead.id), ['fx-lead-work'])
+  assert.deepEqual(card(model, 'fx-project-2').inFlight.filter((row) => row.who === 'omni-pl').map((row) => row.bead.id), ['fx-lead-other'])
+  assert.equal(card(model, 'fx-project-2').agentsActive, 2)
+})
+
+test('two beads of one project held by one session count as one active agent', () => {
+  const input = fresh()
+  input.inProgress.push({ id: 'fx-lead-second', title: 'More catalog work', status: 'in_progress',
+    labels: [], metadata: { 'proj.id': 'fx-project-1' }, assignee: 'omni-pl' })
+  const project = card(buildDashboard(input))
+  assert.equal(project.inFlight.filter((row) => row.who === 'omni-pl').length, 2)
+  assert.equal(project.agentsActive, new Set(project.active.map((item) => item.session)).size)
+})
+
+test('in flight lists live workers with bead, start and model, and live seat jobs', () => {
+  const model = buildDashboard(fresh())
+  const row = card(model).inFlight.find((entry) => entry.bead.id === 'fx-lead-work')
+  assert.equal(row.working, true)
+  assert.equal(row.who, 'omni-pl')
+  assert.equal(row.bead.title, 'Shape the catalog launch')
+  assert.equal(row.model, 'gpt-fixture')
+  assert.equal(row.startedAt, '2026-10-29T09:00Z')
+  const seat = card(model, 'fx-project-3').inFlight.find((entry) => entry.bead.id === 'fx-seat-work')
+  assert.equal(seat.working, true)
+  assert.match(seat.who, /city-infra-pl/)
+})
+
+test('a claimed in-progress bead with no live session or seat job is flagged, not counted active', () => {
+  const input = fresh()
+  input.inProgress.push({ id: 'fx-claimed', title: 'Claimed and abandoned', status: 'in_progress',
+    labels: [], metadata: { 'proj.id': 'fx-project-1' }, assignee: 'fx-gone' })
+  const project = card(buildDashboard(input))
+  const row = project.inFlight.find((entry) => entry.bead.id === 'fx-claimed')
+  assert.equal(row.working, false)
+  assert.equal(row.who, 'fx-gone')
+  assert.ok(!project.active.some((item) => item.bead?.id === 'fx-claimed'))
+})
+
+test('a claimed bead whose assignee has a live seat job elsewhere is not flagged', () => {
+  const input = fresh()
+  input.inProgress.push({ id: 'fx-seat-claim', title: 'Seat owned', status: 'in_progress',
+    labels: [], metadata: { 'proj.id': 'fx-project-1' }, assignee: 'city-infra-pl' })
+  const row = card(buildDashboard(input)).inFlight.find((entry) => entry.bead.id === 'fx-seat-claim')
+  assert.equal(row, undefined)
+})
+
+test('queued lists open beads of the project with owner and what they wait on, and skips records', () => {
+  const input = fresh()
+  input.linked = [
+    { id: 'fx-q1', title: 'Rebuild stack', status: 'open', labels: [], assignee: 'omni-pl', store: 's',
+      metadata: { 'proj.id': 'fx-project-1', 'gc.waiting_on': 'fx-q2' } },
+    { id: 'fx-q2', title: 'Unowned step', status: 'open', labels: [], store: 's', metadata: { 'gc.project': 'fx-project-1' } },
+    { id: 'fx-q3', title: 'Running', status: 'in_progress', labels: [], store: 's', metadata: { 'proj.id': 'fx-project-1' } },
+    { id: 'fx-q4', title: 'A milestone', status: 'open', labels: ['city-milestone'], store: 's', metadata: { 'proj.id': 'fx-project-1' } },
+    { id: 'fx-q5', title: 'Other project', status: 'open', labels: [], store: 's', metadata: { 'proj.id': 'fx-project-2' } },
+    { id: 'fx-q6', title: 'Workflow root', status: 'open', labels: [], store: 's',
+      metadata: { 'proj.id': 'fx-project-1', 'gc.kind': 'workflow' } },
+  ]
+  const model = buildDashboard(input)
+  const queued = card(model).queued
+  assert.deepEqual(queued.map((entry) => entry.id), ['fx-q1', 'fx-q2'])
+  assert.equal(queued[0].owner, 'omni-pl')
+  assert.equal(queued[0].waitingOn, 'fx-q2')
+  assert.equal(queued[1].owner, '')
+  assert.deepEqual(card(model, 'fx-project-2').queued.map((entry) => entry.id), ['fx-q5'])
+})
+
+test('queued skips open decisions raised against the project', () => {
+  const input = fresh()
+  const ask = input.decisions.find((bead) => bead.status === 'open' && bead.metadata?.['gc.project'])
+  input.linked = [{ ...ask }]
+  const model = buildDashboard(input)
+  assert.ok(!cards(model).some((entry) => entry.queued.some((row) => row.id === ask.id)))
+})

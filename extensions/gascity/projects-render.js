@@ -348,8 +348,21 @@
     tile('Lead', card.lead),
     tile('Milestones', `${card.milestones.done}/${card.milestones.total}`),
     tile('Needs you', String(card.needsCount)),
-    tile('Agents active', String(card.active.length)),
+    tile('Agents active', String(card.agentsActive)),
+    tile('Queued', String(card.queued.length)),
     tile('Verified progress', card.verifiedAt ? window.ago(card.verifiedAt) : 'none recorded'))
+
+  const renderFlight = (row, options) => el('li', {},
+    button(row.bead.title, row.bead.id, () => options.onOpenBead?.(row.bead.id, row.bead.store)),
+    text(` · ${row.who}`, 'hvir-meta'),
+    !row.working && text(' · claimed, nobody working', 'projects-warning'),
+    row.model && text(` · ${row.model}`, 'hvir-meta'),
+    row.startedAt && text(` · started ${window.ago(row.startedAt)}`, 'hvir-meta'))
+
+  const renderQueued = (entry, options) => el('li', {},
+    button(entry.title, entry.id, () => options.onOpenBead?.(entry.id, entry.store)),
+    text(entry.owner && ` · ${entry.owner}`, 'hvir-meta'),
+    text(entry.waitingOn && ` · waiting on ${entry.waitingOn}`, 'hvir-meta'))
 
   const decisionSections = (card, options) => {
     const pick = (test) => card.decisions.filter(test).map((ask) => renderAsk(ask, options))
@@ -389,6 +402,8 @@
         el('div', {},
           ...decisionSections(card, options),
           refs > 0 && section('Pull requests and issues', renderRefs(card.refs, options)),
+          section(`In flight (${card.inFlight.length})`, list(card.inFlight.map((row) => renderFlight(row, options)), 'Nothing in flight')),
+          section(`Queued (${card.queued.length})`, list(card.queued.map((entry) => renderQueued(entry, options)), 'Nothing queued')),
           section('Active now', list(card.active.map(renderActivity), 'No active agents')),
           section(`In progress (${card.inProgress.length})`, list(card.inProgress.map((bead) => el('li', {},
             button(bead.title, bead.id, () => options.onOpenBead?.(bead.id, bead.store)),

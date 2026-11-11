@@ -116,9 +116,9 @@
       if (seen.has(key)) continue
       seen.add(key)
       const assignees = [session.id, session.name, session.agent_name].filter(Boolean)
-      const bead = (input.inProgress ?? []).find((entry) =>
+      const beads = (input.inProgress ?? []).filter((entry) =>
         entry.status === 'in_progress' && assignees.includes(entry.assignee))
-      add(session, bead, 'session')
+      for (const bead of beads.length ? beads : [undefined]) add(session, bead, 'session')
     }
     for (const { seat, label, job, alive } of input.seatJobs ?? []) {
       if (!alive || !job) continue
@@ -126,6 +126,34 @@
         provider: job.account, account: job.account, started_at: job.started_at }, index.get(job.bead), 'seat-job')
     }
     return entries
+  }
+
+  const flightRow = (item) => ({ who: item.session, bead: item.bead, startedAt: item.startedAt,
+    model: item.model, working: true })
+
+  const liveWorkers = (input) => new Set([
+    ...(input.sessions ?? []).flatMap((session) => [session.id, session.name, session.agent_name, session.alias]),
+    ...(input.seatJobs ?? []).filter((entry) => entry.alive && entry.job).map((entry) => entry.seat),
+  ].filter(Boolean))
+
+  const claimedIdle = (inProgress, active, input) => {
+    const workers = liveWorkers(input)
+    const covered = new Set(active.filter((item) => item.bead).map((item) => item.bead.id))
+    return inProgress
+      .filter((bead) => bead.assignee && !covered.has(bead.id) && !workers.has(bead.assignee))
+      .map((bead) => ({ who: bead.assignee, bead: identity(bead), startedAt: null, model: '', working: false }))
+  }
+
+  const isRecord = (bead) => (bead.labels ?? []).some((label) => ['city-project', 'city-milestone', 'city-artifact'].includes(label)) ||
+    meta(bead, 'gc.kind') === 'workflow'
+
+  const queuedBeads = (input, index, projects, project, active) => {
+    const decisions = new Set((input.decisions ?? []).map((bead) => `${bead.store}#${bead.id}`))
+    const flying = new Set(active.filter((item) => item.bead).map((item) => item.bead.id))
+    return (input.linked ?? [])
+      .filter((bead) => bead.status === 'open' && !isRecord(bead) && !flying.has(bead.id) &&
+        !decisions.has(`${bead.store}#${bead.id}`) && (resolveProject(bead, index, projects)?.id ?? meta(bead, 'gc.project')) === project.id)
+      .map((bead) => ({ ...identity(bead), owner: bead.assignee ?? '', waitingOn: meta(bead, 'gc.waiting_on') }))
   }
 
   const milestone = (bead, states) => ({
@@ -229,6 +257,9 @@
       needsCount: truth.needsCount,
       refs: references([project, ...(input.milestones ?? []).filter(childOf(project)), ...decisions], states),
       active,
+      agentsActive: new Set(active.map((item) => item.session)).size,
+      inFlight: [...active.filter((item) => item.bead).map(flightRow), ...claimedIdle(inProgress, active, input)],
+      queued: queuedBeads(input, index, projects, project, active),
       inProgress: inProgress.map((bead) => ({ ...identity(bead), assignee: bead.assignee ?? '' })),
       decisions,
       workflows: projectWorkflows(input, index, projects, project, active),

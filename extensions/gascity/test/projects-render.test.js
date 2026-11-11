@@ -504,3 +504,31 @@ test('an ask names who to answer: live seat is a button, sleeping or unknown sea
   assert.match(row('Unknown ask').textContent, /Owner: zz-seat/)
   assert.doesNotMatch(row('No owner ask').textContent, /Owner:|Answer to/)
 })
+
+test('a project page lists what is in flight and what is queued in plain words', (t) => {
+  const input = structuredClone(fixture)
+  input.inProgress.push({ id: 'fx-claimed', title: 'Claimed and abandoned', status: 'in_progress',
+    labels: [], metadata: { 'proj.id': 'fx-project-1' }, assignee: 'fx-gone' })
+  input.linked = [{ id: 'fx-q1', title: 'Rebuild stack', status: 'open', labels: [], assignee: 'omni-pl',
+    metadata: { 'proj.id': 'fx-project-1', 'gc.waiting_on': 'fx-q2' } }]
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  dom.window.Date.now = () => Date.parse(fixture.now)
+  for (const file of ['view.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const root = dom.window.document.querySelector('main')
+  const project = buildDashboard(input).cards.flatMap((group) => group.cards).find((entry) => entry.id === 'fx-project-1')
+  dom.window.projectsRender.renderProject(project, root, {})
+  const headings = [...root.querySelectorAll('h2')].map((node) => node.textContent)
+  assert.ok(headings.some((title) => /^In flight/.test(title)))
+  assert.ok(headings.some((title) => /^Queued/.test(title)))
+  const section = (name) => [...root.querySelectorAll('section')].find((node) => new RegExp(`^${name}`).test(node.querySelector('h2').textContent))
+  assert.match(section('In flight').textContent, /Shape the catalog launch/)
+  assert.match(section('In flight').textContent, /Claimed and abandoned/)
+  assert.match(section('In flight').textContent, /claimed, nobody working/)
+  assert.match(section('Queued').textContent, /Rebuild stack/)
+  assert.match(section('Queued').textContent, /omni-pl/)
+  assert.match(section('Queued').textContent, /waiting on fx-q2/)
+  const tiles = [...root.querySelectorAll('.projects-glance .projects-tile')].map((node) => node.textContent)
+  assert.ok(tiles.some((text) => /Queued/.test(text) && /1$/.test(text)))
+  assert.ok(tiles.some((text) => /Agents active/.test(text)))
+})
