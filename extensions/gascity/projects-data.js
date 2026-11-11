@@ -1,9 +1,11 @@
 ;(() => {
   const loader = window.projectsLoad
 
-  const readStores = (workspace, requests) => Promise.all(requests.map(async (request) => {
+  const REFRESH_DEADLINE_MS = 60000
+
+  const readStores = (workspace, requests, options) => Promise.all(requests.map(async (request) => {
     try {
-      const value = await window.bdRead(workspace, request.args)
+      const value = await window.bdRead(workspace, request.args, options)
       if (!Array.isArray(value)) throw new Error('bd returned an unexpected JSON shape')
       return { ...request, value }
     } catch (error) {
@@ -18,20 +20,23 @@
     return minutes < 1 ? 'under a minute ago' : `${minutes} min ago`
   }
 
-  const withFreshNeeds = (previous, fresh) => {
-    const payload = { ...previous.payload, decisions: fresh.payload.decisions, herSteps: fresh.payload.herSteps,
+  const aboutNeeds = (error) => NEEDS_KEYS.some((key) => error.includes(`) ${key}: `))
+
+  const withFreshNeeds = (previous, needs) => {
+    const payload = { ...previous.payload, decisions: needs.decisions, herSteps: needs.herSteps,
       unread: previous.payload.unread.filter((field) => !NEEDS_KEYS.includes(field)) }
     return { ...previous, payload, model: window.projectsModel.buildDashboard(payload), complete: false,
-      deferred: false, errors: fresh.errors }
+      deferred: false, answerable: needs.answerable, needs,
+      errors: [...previous.errors.filter((error) => !aboutNeeds(error)), ...needs.errors] }
   }
 
-  const deferredNote = (shown, reason, needsFresh) => needsFresh
-    ? `Needs you is current; other sections from ${ageText(shown.payload.now)}: ${reason}`
+  const deferredNote = (shown, reason, needs) => needs
+    ? `Needs you read ${ageText(needs.readAt)}; other sections from ${ageText(shown.payload.now)}: ${reason}`
     : `showing data from ${ageText(shown.payload.now)}: ${reason}`
 
-  const readCity = async (workspace, args, parse, failures, connector = 'gc') => {
+  const readCity = async (workspace, args, parse, failures, connector = 'gc', options) => {
     try {
-      return parse(await window.host.run(connector, workspace, args))
+      return parse(await window.host.run(connector, workspace, args, options))
     } catch (error) {
       if (error.reason) failures.notRun = true
       failures.errors.push(`${connector} ${args.slice(0, 2).join(' ')}: ${error.message}`)
@@ -39,7 +44,8 @@
     }
   }
 
-  const read = async (workspace) => {
+  const read = async (workspace, { onNeeds } = {}) => {
+    const deadline = Date.now() + REFRESH_DEADLINE_MS
     const connectors = await window.host.availability({ workspace })
     const missing = ['gc', 'bd'].find((name) => connectors[name] !== 'supported')
     if (missing) return { missing }
@@ -52,20 +58,28 @@
     const stores = loader.storesFor(workspace, Array.isArray(city) ? {} : city)
     const requests = loader.storeRequests(stores)
     const isNeeds = (request) => NEEDS_KEYS.includes(request.key)
+    const answerable = connectors[window.answerAction.CONNECTOR] === 'supported'
     const needsReads = await readStores(workspace, requests.filter(isNeeds))
-    const otherReads = await readStores(workspace, requests.filter((request) => !isNeeds(request)))
-    const reads = loader.splitLabeled([...needsReads, ...otherReads])
     const needsFresh = needsReads.some((entry) => entry.key === 'decisions') && needsReads.every((entry) => !entry.error)
-    reads.push(...await readStores(workspace, loader.workflowRequests(reads)))
+    let needs
+    if (needsFresh) {
+      const { payload, errors: needsErrors } = loader.assemblePayload({ now: new Date(Date.now()).toISOString(), reads: needsReads })
+      needs = { readAt: payload.now, decisions: payload.decisions, herSteps: payload.herSteps, errors: needsErrors, answerable }
+      await onNeeds?.(needs)
+    }
+    const options = { deadline }
+    const otherReads = await readStores(workspace, requests.filter((request) => !isNeeds(request)), options)
+    const reads = loader.splitLabeled([...needsReads, ...otherReads])
+    reads.push(...await readStores(workspace, loader.workflowRequests(reads), options))
     for (let round = 0; round < loader.ANCESTOR_ROUNDS; round += 1) {
       const requests = loader.ancestorRequests(reads)
       if (!requests.length) break
-      reads.push(...await readStores(workspace, requests))
+      reads.push(...await readStores(workspace, requests, options))
     }
     if (loader.ancestorRequests(reads).length)
       errors.push(`parent chains deeper than ${loader.ANCESTOR_ROUNDS} unread levels were not followed`)
     const outcomes = connectors[loader.OUTCOME_CONNECTOR] === 'supported'
-      ? await readCity(workspace, [...loader.OUTCOME_ARGS], loader.parseOutcomes, failures, loader.OUTCOME_CONNECTOR)
+      ? await readCity(workspace, [...loader.OUTCOME_ARGS], loader.parseOutcomes, failures, loader.OUTCOME_CONNECTOR, options)
       : undefined
     const result = loader.assemblePayload({ now: new Date().toISOString(), reads, sessions, errors })
     if (outcomes) result.payload.outcomes = outcomes
@@ -74,10 +88,9 @@
     const projectsRead = reads.some((entry) => entry.key === 'projects' && !entry.error)
     const deferred = failures.notRun || reads.some((entry) => entry.notRun) ||
       !projectsRead
-    const answerable = connectors[window.answerAction.CONNECTOR] === 'supported'
     const decisionReads = reads.filter((entry) => entry.key === 'decisions')
     const complete = !deferred && !failures.errors.length && decisionReads.length > 0 && decisionReads.every((entry) => !entry.error)
-    return { answerable, complete, model: window.projectsModel.buildDashboard(result.payload), payload: result.payload, errors: result.errors, sessions, deferred, projectsRead, needsFresh }
+    return { answerable, complete, model: window.projectsModel.buildDashboard(result.payload), payload: result.payload, errors: result.errors, sessions, deferred, projectsRead, needs }
   }
 
   const statusLine = (data, workspace, withCounts = true) => {
@@ -144,6 +157,19 @@
       setStatus([note, statusLine(data, context.workspace, counts), extra].filter(Boolean).join(' · '))
     }
     const unrendered = new Set()
+    const switchTo = (context) => {
+      const id = context.workspace?.id
+      if (id === shownId) return
+      shownId = id
+      const cached = id && shownBy.get(id)
+      if (cached) {
+        show(cached, context, 'refreshing…')
+        return
+      }
+      ui.projects.replaceChildren()
+      ui.connect.hidden = true
+      setStatus(id ? 'Loading…' : 'No workspace selected')
+    }
     const load = async (context, { hidden = () => false, visible = () => true } = {}) => {
       const { workspace } = context
       if (!workspace) {
@@ -153,17 +179,21 @@
         setStatus('No workspace selected')
         return
       }
-      if (workspace.id !== shownId) {
-        shownId = workspace.id
-        const cached = shownBy.get(workspace.id)
-        if (cached) show(cached, context, 'refreshing…')
-        else ui.projects.replaceChildren()
-      }
+      switchTo(context)
       const waiting = shownBy.get(workspace.id)
       if (waiting && unrendered.delete(workspace.id)) show(waiting, context, 'refresh paused: hvir went to the background')
       else if (!waiting) setStatus('Loading…')
       const readStartedAt = Date.now()
-      const data = await read(workspace)
+      const publishNeeds = async (needs) => {
+        const earlier = shownBy.get(workspace.id)
+        if (workspace.id !== shownId || hidden() || !earlier) return
+        const shown = withFreshNeeds(earlier, needs)
+        await reconcileAnswers(workspace.id, shown, readStartedAt)
+        if (workspace.id !== shownId) return
+        shownBy.set(workspace.id, shown)
+        show(shown, context, deferredNote(earlier, 'other sections refreshing…', needs))
+      }
+      const data = await read(workspace, { onNeeds: publishNeeds })
       if (workspace.id !== shownId) return
       missing = data.missing
       ui.connect.hidden = !missing
@@ -192,13 +222,13 @@
       }
       if (data.deferred && previous) {
         const reason = data.errors[0] ?? 'no project list read'
-        const shown = data.needsFresh ? withFreshNeeds(previous, data) : previous
-        if (data.needsFresh) {
+        const shown = data.needs ? withFreshNeeds(previous, data.needs) : previous
+        if (data.needs) {
           await reconcileAnswers(workspace.id, shown, readStartedAt)
           if (workspace.id !== shownId) return
           shownBy.set(workspace.id, shown)
         }
-        show(shown, context, deferredNote(previous, reason, data.needsFresh))
+        show(shown, context, deferredNote(previous, reason, data.needs))
         return
       }
       await reconcileAnswers(workspace.id, data, readStartedAt)
@@ -206,7 +236,7 @@
       shownBy.set(workspace.id, data)
       show(data, context)
     }
-    const view = window.startView({ load, refreshMs: 60000, onStatus: setStatus, onNotice: addNotice })
+    const view = window.startView({ load, refreshMs: 60000, onStatus: setStatus, onNotice: addNotice, onContext: switchTo })
     ui.refresh.addEventListener('click', () => void view.refresh())
     ui.connect.addEventListener('click', () => {
       if (missing) void window.connectHandler(missing, setStatus, view.refresh)()

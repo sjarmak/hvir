@@ -608,7 +608,7 @@ test('when other reads defer, Needs you still shows the fresh decisions and the 
   assert.match(needsTitles(document), /Nothing needs you/)
   assert.equal(document.querySelectorAll('.projects-nav-row').length, 1)
   assert.match(document.getElementById('status').textContent,
-    /Needs you is current; other sections from 4 min ago: .*did not run: capacity/)
+    /Needs you read under a minute ago; other sections from 4 min ago: .*did not run: capacity/)
 })
 
 test('a deferred refresh with unreadable decisions keeps the old render and says how old it is', async (t) => {
@@ -623,4 +623,94 @@ test('a deferred refresh with unreadable decisions keeps the old render and says
   await view.load({ workspace })
   assert.equal(needsTitles(document), before)
   assert.match(document.getElementById('status').textContent, /showing data from 4 min ago: /)
+})
+
+const isNeedsRead = (args) => args.includes('--status') && args.includes('open')
+
+const gateOthers = (page) => {
+  const window = page.document.defaultView
+  const { bdRead } = window
+  let release
+  const gate = new Promise((resolve) => { release = resolve })
+  const calls = []
+  window.bdRead = async (scope, args, options) => {
+    calls.push({ args, options })
+    if (!isNeedsRead(args)) await gate
+    return bdRead(scope, args, options)
+  }
+  return { release, calls }
+}
+
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+
+test('fresh Needs you is shown before a slow other read completes, dated by its own read', async (t) => {
+  const page = livePage(t, 'projects.html', 'projects.js')
+  const { view, document } = page
+  await view.load({ workspace })
+  assert.match(needsTitles(document), new RegExp(fixture.decisions[0].title.slice(0, 12)))
+  page.openRows = []
+  const { release } = gateOthers(page)
+  const loading = view.load({ workspace })
+  await settle()
+  assert.match(needsTitles(document), /Nothing needs you/)
+  assert.match(document.getElementById('status').textContent, /Needs you read under a minute ago; other sections from/)
+  assert.doesNotMatch(document.getElementById('status').textContent, /is current/)
+  release()
+  await loading
+  assert.match(needsTitles(document), /Nothing needs you/)
+  assert.doesNotMatch(document.getElementById('status').textContent, /Needs you read/)
+})
+
+test('only the reads after Needs you carry the refresh deadline', async (t) => {
+  const page = livePage(t, 'projects.html', 'projects.js')
+  const { release, calls } = gateOthers(page)
+  release()
+  const before = Date.now()
+  await page.view.load({ workspace })
+  const needs = calls.filter((call) => isNeedsRead(call.args))
+  const others = calls.filter((call) => !isNeedsRead(call.args))
+  assert.ok(needs.length > 0 && others.length > 0)
+  assert.ok(needs.every((call) => call.options?.deadline === undefined))
+  const deadlines = new Set(others.map((call) => call.options?.deadline))
+  assert.equal(deadlines.size, 1)
+  const [deadline] = [...deadlines]
+  assert.ok(deadline >= before + 59000 && deadline <= Date.now() + 60000)
+})
+
+test('a workspace switch clears the old cards and answer controls at once and the old load cannot repaint them', async (t) => {
+  const { page, buttons } = await answerPage(t)
+  const { document } = page
+  const rows = () => document.querySelectorAll('#projects li').length
+  assert.ok(rows() > 0)
+  const { release } = gateOthers(page)
+  const loading = page.view.load({ workspace })
+  await settle()
+  page.view.onContext({ workspace: { ...workspace, id: 'other' }, visible: true })
+  assert.equal(rows(), 0)
+  assert.equal(buttons().length, 0)
+  assert.equal(document.getElementById('status').textContent, 'Loading…')
+  release()
+  await loading
+  assert.equal(rows(), 0)
+  assert.equal(buttons().length, 0)
+})
+
+test('answer controls follow the connector availability read with the fresh Needs, not the cached one', async (t) => {
+  const { page, buttons } = await answerPage(t)
+  const window = page.document.defaultView
+  window.host.availability = async () => ({ gc: 'supported', bd: 'supported', 'hvir-answer': 'unsupported' })
+  deferProjects(page)
+  await page.view.load({ workspace })
+  assert.equal(buttons().length, 0)
+})
+
+test('a merged snapshot keeps the explanations for fields it still has not read', async (t) => {
+  const page = livePage(t, 'projects.html', 'projects.js')
+  const { view, document } = page
+  await view.load({ workspace })
+  assert.match(document.getElementById('status').textContent, /broken.*offline/)
+  deferProjects(page)
+  await view.load({ workspace })
+  assert.match(document.getElementById('status').textContent, /Needs you read/)
+  assert.match(document.getElementById('status').textContent, /broken.*offline/)
 })

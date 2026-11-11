@@ -4,7 +4,7 @@
  * and teardown on revoke/pagehide. `load(context)` runs on visibility, on context change and
  * every `refreshMs` while visible; it never overlaps itself.
  */
-window.startView = ({ load, refreshMs = 0, onStatus = () => {}, onNotice }) => {
+window.startView = ({ load, refreshMs = 0, onStatus = () => {}, onNotice, onContext }) => {
   const bridge = window.hvirExtension
   const unbindPresentation = window.hvirUI.bindPresentation(bridge)
   let context
@@ -32,6 +32,7 @@ window.startView = ({ load, refreshMs = 0, onStatus = () => {}, onNotice }) => {
   function apply(next) {
     if (!next.visible) hides += 1
     context = next
+    onContext?.(next)
     if (timer !== undefined) window.clearInterval(timer)
     timer = undefined
     if (!context.visible || disposed) return
