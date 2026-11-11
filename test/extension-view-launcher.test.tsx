@@ -6,6 +6,9 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { ExtensionViewLauncher } from '../src/renderer/src/settings/sections/ExtensionViewLauncher'
 import { ExtensionTargetedViewLauncher } from '../src/renderer/src/extensions/ExtensionTargetedViewLauncher'
 import { ExtensionContributionContext } from '../src/renderer/src/extensions/extension-contribution-context'
+const beadsManifest = readExtensionPackageManifest(
+  'packages/beads-extension/hvir-extension.json',
+)
 let root: Root | undefined
 afterEach(() => {
   act(() => root?.unmount())
@@ -122,25 +125,7 @@ it('resolves one installed workspace contribution and names its revision in targ
                 installationId: 'installed',
                 revision: 'revision-1',
                 extensionName: 'Beads',
-                manifest: {
-                  id: 'beads-extension',
-                  name: 'Beads',
-                  version: '1.0.0',
-                  contract: '1.0',
-                  requiredCapabilities: [],
-                  optionalCapabilities: [],
-                  access: [],
-                  views: [
-                    {
-                      id: 'beads',
-                      title: 'Beads',
-                      entry: 'index.html',
-                      placement: 'workspace',
-                      navigation: 'left',
-                      representations: ['view'],
-                    },
-                  ],
-                },
+                manifest: beadsManifest,
                 values: [],
               },
             ],
@@ -158,7 +143,7 @@ it('resolves one installed workspace contribution and names its revision in targ
         createElement(ExtensionTargetedViewLauncher, {
           target: {
             requestId: 'hvir-1',
-            extensionId: 'beads-extension',
+            extensionId: beadsManifest.id,
             contributionId: 'beads',
             workspaceId: 'workspace',
             input: { focusBeadId: 'hvir-1' },
@@ -194,7 +179,7 @@ it('reports unavailable targeted input without consuming the Needs you row', asy
         createElement(ExtensionTargetedViewLauncher, {
           target: {
             requestId: 'hvir-1',
-            extensionId: 'beads-extension',
+            extensionId: beadsManifest.id,
             contributionId: 'beads',
             workspaceId: 'workspace',
             input: { focusBeadId: 'hvir-1' },

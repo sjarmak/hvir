@@ -6,7 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useApplicationNavigation } from '../src/renderer/src/needs-you/use-application-navigation'
 import { asHostId, hostPath, type ProjectState } from '../src/shared'
+import { BEADS_EXTENSION_ID } from '../src/shared/extensions/beads-extension-identity'
+import { readExtensionPackageManifest } from './fixtures/extension-package-files'
 
+const beadsManifest = readExtensionPackageManifest(
+  'packages/beads-extension/hvir-extension.json',
+)
 const root = hostPath(asHostId('local'), '/repo')
 const otherRoot = hostPath(asHostId('ssh-a'), '/repo')
 const target = { projectId: 'p', workspaceId: 'w', root, beadId: 'b' }
@@ -98,13 +103,14 @@ describe('application navigation', () => {
   })
 
   it('keeps the extension target independent of the built-in rail', async () => {
+    expect(beadsManifest.id).toBe(BEADS_EXTENSION_ID)
     renderNavigation()
     await act(async () => {
       await navigation.needsYou.selectBead(target)
     })
     expect(navigation.beadTarget).toEqual(target)
     expect(navigation.extensionTarget.targetedView).toMatchObject({
-      extensionId: 'beads-extension',
+      extensionId: beadsManifest.id,
       contributionId: 'beads',
     })
   })
