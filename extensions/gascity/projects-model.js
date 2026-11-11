@@ -147,6 +147,8 @@
   const isRecord = (bead) => (bead.labels ?? []).some((label) => ['city-project', 'city-milestone', 'city-artifact'].includes(label)) ||
     meta(bead, 'gc.kind') === 'workflow'
 
+  const isWorkflowStep = (bead) => Boolean(meta(bead, 'gc.root_bead_id') || meta(bead, 'gc.step_ref'))
+
   const queuedBeads = (input, index, projects, project, active) => {
     const decisions = new Set((input.decisions ?? []).map((bead) => `${bead.store}#${bead.id}`))
     const flying = new Set(active.filter((item) => item.bead).map((item) => item.bead.id))
@@ -298,7 +300,7 @@
     const seen = new Map()
     for (const bead of [...(input.urgent ?? []), ...(input.inProgress ?? []), ...(input.linked ?? [])]) {
       const key = `${bead.store}#${bead.id}`
-      if (known.has(key) || seen.has(key) || isRecord(bead)) continue
+      if (known.has(key) || seen.has(key) || isRecord(bead) || isWorkflowStep(bead)) continue
       if (!['open', 'in_progress'].includes(bead.status) || !(Number(bead.priority) <= 1)) continue
       if (bead.priority === null || bead.priority === '' || bead.priority === undefined) continue
       seen.set(key, bead)

@@ -525,3 +525,16 @@ test('stuck skips decisions, merges inProgress and linked reads, and caps at fif
   assert.equal(capped.items.length, 50)
   assert.equal(capped.more, 3)
 })
+
+test('stuck and waiting skip automatic workflow step beads', () => {
+  const input = fresh()
+  input.urgent = [
+    urgent('fx-s-root', { metadata: { 'gc.root_bead_id': 'fx-root-catalog' } }),
+    urgent('fx-s-ref', { metadata: { 'gc.step_ref': 'mol.spec' } }),
+    urgent('fx-s-wait', { metadata: { 'gc.root_bead_id': 'r', 'gc.waiting_on': 'x' } }),
+    urgent('fx-s-real'),
+  ]
+  const model = buildDashboard(input)
+  assert.deepEqual(model.stuck.items.map((row) => row.id), ['fx-s-real'])
+  assert.deepEqual(model.waiting.items, [])
+})
