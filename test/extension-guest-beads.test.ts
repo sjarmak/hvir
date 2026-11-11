@@ -576,6 +576,7 @@ describe('Beads workspace extension package', () => {
         '--include-gates',
         '--include-infra',
       ],
+      ['list', '--format', 'digraph', '--flat', '--no-pager', '-n', '0'],
       ['gate', 'list', '--json'],
     ])
     expect(

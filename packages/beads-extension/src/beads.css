@@ -116,6 +116,11 @@ h2 {
   gap: 8px;
 }
 
+.beads-row-details {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .beads-external {
   padding: 0;
   border: 0;
@@ -137,6 +142,13 @@ h2 {
 }
 
 .beads-gate-unlocks {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.beads-blockedby,
+.beads-unlocks,
+.beads-next-unblock {
   color: var(--text-muted);
   font-size: 11px;
 }

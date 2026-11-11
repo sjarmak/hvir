@@ -78,7 +78,7 @@ window.addEventListener('pagehide', () => {
 client.hello()
 
 function render(value) {
-  const failures = [value.beads, value.gates, value.crew].filter(
+  const failures = [value.beads, value.dependencies, value.gates, value.crew].filter(
     (source) => source.state === 'error',
   )
   state.dataset.state = failures.length ? 'error' : 'ready'
@@ -120,6 +120,7 @@ function render(value) {
   )
   const observed = Math.max(
     value.beads.observedAt ?? 0,
+    value.dependencies.observedAt ?? 0,
     value.gates.observedAt ?? 0,
     value.crew.observedAt ?? 0,
   )

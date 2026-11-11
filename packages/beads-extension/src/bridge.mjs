@@ -6,7 +6,7 @@ export async function readWorkspace(client, context, previous) {
     const failure = { message: 'No workspace is selected', observedAt: Date.now() }
     return { bdFailure: failure, gcFailure: failure, previous }
   }
-  const [bd, bdReady, gc, gcRig] = await Promise.allSettled([
+  const [bd, bdReady, bdDependencies, gc, gcRig] = await Promise.allSettled([
     runConnector(client, context, 'bd', [
       'list',
       '--json',
@@ -27,6 +27,15 @@ export async function readWorkspace(client, context, previous) {
       '0',
       '--include-gates',
       '--include-infra',
+    ]),
+    runConnector(client, context, 'bd', [
+      'list',
+      '--format',
+      'digraph',
+      '--flat',
+      '--no-pager',
+      '-n',
+      '0',
     ]),
     runConnector(client, context, 'gc', ['session', 'list', '--json']),
     runConnector(client, context, 'gc', ['rig', 'status', '--json']),
@@ -50,6 +59,14 @@ export async function readWorkspace(client, context, previous) {
           gc: { text: gc.value, observedAt },
           gcRig: { text: gcRig.value, observedAt },
         }),
+    ...(bdDependencies.status === 'rejected'
+      ? {
+          bdDependenciesFailure: {
+            message: message(bdDependencies.reason),
+            observedAt,
+          },
+        }
+      : { bdDependencies: { text: bdDependencies.value, observedAt } }),
     ...(bdGates.status === 'rejected'
       ? { bdGatesFailure: { message: message(bdGates.reason), observedAt } }
       : { bdGates: { text: bdGates.value, observedAt } }),
