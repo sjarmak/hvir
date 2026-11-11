@@ -162,18 +162,62 @@ test("a capacity refusal is retried after hvir's retryAfterMs until it completes
   assert.equal(executes(sent).length, 3)
 })
 
-test('a capacity refusal that never clears is reported after the retries run out', async () => {
-  const { host, sent } = loadBridge((message) => {
-    if (message.capability === 'connector.execute')
-      return { outcome: 'unavailable', reason: 'capacity', retryAfterMs: 1 }
-    return outputFor(message, {})
-  })
+const clocked = (answer) => {
+  let clock = 0
+  const waits = []
+  const listeners = new Set()
+  const sent = []
+  const bridge = {
+    onMessage: (listener) => (listeners.add(listener), () => listeners.delete(listener)),
+    send: (message) => {
+      sent.push(message)
+      Promise.resolve(answer(message)).then((value) =>
+        listeners.forEach((listener) => listener({ kind: 'result', id: message.id, ok: true, value })))
+    },
+  }
+  const window = {
+    hvirExtension: bridge,
+    setTimeout: (callback, ms) => { waits.push(ms); clock += ms; setImmediate(callback) },
+  }
+  vm.runInNewContext(readFileSync(join(__dirname, '..', 'host.js'), 'utf8'), { window, Date: { now: () => clock } })
+  return { host: window.host, sent, waits, elapsed: () => clock }
+}
+
+test('a capacity refusal that never clears waits out the time budget, then is reported', async () => {
+  const { host, sent, elapsed } = clocked((message) =>
+    message.capability === 'connector.execute'
+      ? { outcome: 'unavailable', reason: 'capacity' }
+      : outputFor(message, {}))
   await assert.rejects(host.run('gc', LOCAL, ['status']), (error) => {
     assert.equal(error.reason, 'capacity')
     assert.equal(error.message, 'gc did not run: capacity')
     return true
   })
-  assert.equal(executes(sent).length, 7)
+  assert.ok(executes(sent).length > 7)
+  assert.ok(elapsed() >= 40000 && elapsed() <= 45000)
+})
+
+test('a capacity refusal that clears after thirty seconds still completes', async () => {
+  const { host, sent, elapsed } = clocked((message) => {
+    if (message.capability !== 'connector.execute') return outputFor(message, { r1: '{"ok":true}' })
+    return elapsed() < 30000 ? { outcome: 'unavailable', reason: 'capacity' } : completed('r1')
+  })
+  assert.equal(JSON.stringify(await host.run('gc', LOCAL, ['status'])), '{"ok":true}')
+  assert.ok(executes(sent).length > 7)
+})
+
+test('backoff between refusals is capped at two seconds and honours retryAfterMs', async () => {
+  let refusals = 0
+  const { host, waits } = clocked((message) => {
+    if (message.capability !== 'connector.execute') return outputFor(message, { r1: '{}' })
+    refusals += 1
+    if (refusals === 1) return { outcome: 'unavailable', reason: 'capacity', retryAfterMs: 3500 }
+    return refusals < 12 ? { outcome: 'unavailable', reason: 'frequency' } : completed('r1')
+  })
+  await host.run('gc', LOCAL, ['status'])
+  assert.equal(waits[0], 3500)
+  assert.ok(waits.slice(1).every((ms) => ms <= 2000))
+  assert.equal(waits.at(-1), 2000)
 })
 
 test('other refusals are not retried', async () => {

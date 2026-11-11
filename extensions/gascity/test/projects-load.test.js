@@ -232,7 +232,7 @@ test('a refresh whose reads did not run keeps the last render, and a revisited w
   page.bdError = Object.assign(new Error('bd did not run: capacity'), { reason: 'capacity', transient: true })
   await view.load({ workspace })
   assert.equal(rows(), 1)
-  assert.match(document.getElementById('status').textContent, /refresh deferred: .*did not run: capacity/)
+  assert.match(document.getElementById('status').textContent, /showing data from .* ago: .*did not run: capacity/)
   page.bdError = undefined
   const other = { ...workspace, id: 'other' }
   let release
@@ -563,4 +563,64 @@ test('the hidden-pane Refresh notice is appended to the error already shown, onc
   page.view.onNotice('hvir reports this pane as hidden; it loads when hvir shows it')
   assert.equal(status.textContent,
     'bd: database is corrupt · hvir reports this pane as hidden; it loads when hvir shows it')
+})
+
+const needsTitles = (document) => [...document.querySelectorAll('section')]
+  .find((node) => node.querySelector('h2')?.textContent === 'Needs you').textContent
+
+const deferProjects = (page) => {
+  const { bdRead } = page.document.defaultView
+  const refused = Object.assign(new Error('bd did not run: capacity'), { reason: 'capacity', transient: true })
+  page.document.defaultView.bdRead = async (scope, args) => {
+    if (!args.includes('--status') || !args.includes('open')) throw refused
+    return bdRead(scope, args)
+  }
+  return () => { page.document.defaultView.bdRead = bdRead }
+}
+
+test('decision and next-step reads are issued before any other store read', async (t) => {
+  const page = livePage(t, 'projects.html', 'projects.js')
+  const order = []
+  const { bdRead } = page.document.defaultView
+  page.document.defaultView.bdRead = async (scope, args) => {
+    order.push(args)
+    return bdRead(scope, args)
+  }
+  await page.view.load({ workspace })
+  const needs = page.document.defaultView.needsModel
+  const ask = JSON.stringify(needs.askArgs('/rigs/decisions'))
+  const step = JSON.stringify(needs.stepArgs('/rigs/decisions'))
+  const first = order.slice(0, 2).map((args) => JSON.stringify(args))
+  assert.deepEqual(first.sort(), [ask, step].sort())
+})
+
+test('when other reads defer, Needs you still shows the fresh decisions and the status line gives the age', async (t) => {
+  const page = livePage(t, 'projects.html', 'projects.js')
+  const { view, document } = page
+  await view.load({ workspace })
+  assert.match(needsTitles(document), new RegExp(fixture.decisions[0].title.slice(0, 12)))
+  page.openRows = []
+  deferProjects(page)
+  const { Date: clock } = document.defaultView
+  const real = clock.now
+  clock.now = () => real() + 4 * 60000
+  await view.load({ workspace })
+  assert.match(needsTitles(document), /Nothing needs you/)
+  assert.equal(document.querySelectorAll('.projects-nav-row').length, 1)
+  assert.match(document.getElementById('status').textContent,
+    /Needs you is current; other sections from 4 min ago: .*did not run: capacity/)
+})
+
+test('a deferred refresh with unreadable decisions keeps the old render and says how old it is', async (t) => {
+  const page = livePage(t, 'projects.html', 'projects.js')
+  const { view, document } = page
+  await view.load({ workspace })
+  const before = needsTitles(document)
+  page.decisionError = Object.assign(new Error('bd did not run: capacity'), { reason: 'capacity', transient: true })
+  const { Date: clock } = document.defaultView
+  const real = clock.now
+  clock.now = () => real() + 4 * 60000
+  await view.load({ workspace })
+  assert.equal(needsTitles(document), before)
+  assert.match(document.getElementById('status').textContent, /showing data from 4 min ago: /)
 })

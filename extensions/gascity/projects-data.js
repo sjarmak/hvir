@@ -11,6 +11,24 @@
     }
   }))
 
+  const NEEDS_KEYS = ['decisions', 'herSteps']
+
+  const ageText = (since) => {
+    const minutes = Math.floor((Date.now() - Date.parse(since)) / 60000)
+    return minutes < 1 ? 'under a minute ago' : `${minutes} min ago`
+  }
+
+  const withFreshNeeds = (previous, fresh) => {
+    const payload = { ...previous.payload, decisions: fresh.payload.decisions, herSteps: fresh.payload.herSteps,
+      unread: previous.payload.unread.filter((field) => !NEEDS_KEYS.includes(field)) }
+    return { ...previous, payload, model: window.projectsModel.buildDashboard(payload), complete: false,
+      deferred: false, errors: fresh.errors }
+  }
+
+  const deferredNote = (shown, reason, needsFresh) => needsFresh
+    ? `Needs you is current; other sections from ${ageText(shown.payload.now)}: ${reason}`
+    : `showing data from ${ageText(shown.payload.now)}: ${reason}`
+
   const readCity = async (workspace, args, parse, failures, connector = 'gc') => {
     try {
       return parse(await window.host.run(connector, workspace, args))
@@ -32,7 +50,12 @@
       readCity(workspace, ['session', 'list', '--json'], loader.liveSessions, failures),
     ])
     const stores = loader.storesFor(workspace, Array.isArray(city) ? {} : city)
-    const reads = loader.splitLabeled(await readStores(workspace, loader.storeRequests(stores)))
+    const requests = loader.storeRequests(stores)
+    const isNeeds = (request) => NEEDS_KEYS.includes(request.key)
+    const needsReads = await readStores(workspace, requests.filter(isNeeds))
+    const otherReads = await readStores(workspace, requests.filter((request) => !isNeeds(request)))
+    const reads = loader.splitLabeled([...needsReads, ...otherReads])
+    const needsFresh = needsReads.some((entry) => entry.key === 'decisions') && needsReads.every((entry) => !entry.error)
     reads.push(...await readStores(workspace, loader.workflowRequests(reads)))
     for (let round = 0; round < loader.ANCESTOR_ROUNDS; round += 1) {
       const requests = loader.ancestorRequests(reads)
@@ -54,7 +77,7 @@
     const answerable = connectors[window.answerAction.CONNECTOR] === 'supported'
     const decisionReads = reads.filter((entry) => entry.key === 'decisions')
     const complete = !deferred && !failures.errors.length && decisionReads.length > 0 && decisionReads.every((entry) => !entry.error)
-    return { answerable, complete, model: window.projectsModel.buildDashboard(result.payload), payload: result.payload, errors: result.errors, sessions, deferred, projectsRead }
+    return { answerable, complete, model: window.projectsModel.buildDashboard(result.payload), payload: result.payload, errors: result.errors, sessions, deferred, projectsRead, needsFresh }
   }
 
   const statusLine = (data, workspace, withCounts = true) => {
@@ -168,7 +191,14 @@
         }
       }
       if (data.deferred && previous) {
-        show(previous, context, `refresh deferred: ${data.errors[0] ?? 'no project list read'}`)
+        const reason = data.errors[0] ?? 'no project list read'
+        const shown = data.needsFresh ? withFreshNeeds(previous, data) : previous
+        if (data.needsFresh) {
+          await reconcileAnswers(workspace.id, shown, readStartedAt)
+          if (workspace.id !== shownId) return
+          shownBy.set(workspace.id, shown)
+        }
+        show(shown, context, deferredNote(previous, reason, data.needsFresh))
         return
       }
       await reconcileAnswers(workspace.id, data, readStartedAt)

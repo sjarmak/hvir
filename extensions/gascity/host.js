@@ -86,7 +86,7 @@ window.host = (() => {
 
   const IN_FLIGHT = 3
   const RETRIED_REASONS = new Set(['capacity', 'frequency'])
-  const CAPACITY_RETRIES = 6
+  const RETRY_BUDGET_MS = 45000
   const RETRY_BASE_MS = 200
   const RETRY_MAX_MS = 2000
   let inFlight = 0
@@ -110,17 +110,13 @@ window.host = (() => {
   }
 
   async function execute(input, actionId, beforeSend) {
+    const deadline = Date.now() + RETRY_BUDGET_MS
     for (let attempt = 0; ; attempt += 1) {
       const result = await request('connector.execute', input, actionId, beforeSend)
-      if (
-        result.outcome === 'completed' ||
-        !RETRIED_REASONS.has(result.reason) ||
-        attempt >= CAPACITY_RETRIES
-      )
-        return result
-      await new Promise((resolve) =>
-        window.setTimeout(resolve, retryDelay(result, attempt)),
-      )
+      if (result.outcome === 'completed' || !RETRIED_REASONS.has(result.reason)) return result
+      const delay = retryDelay(result, attempt)
+      if (Date.now() + delay > deadline) return result
+      await new Promise((resolve) => window.setTimeout(resolve, delay))
     }
   }
 
