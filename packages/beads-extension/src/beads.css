@@ -24,6 +24,18 @@ body {
   align-items: center;
 }
 
+.beads-toolbar-actions,
+.beads-create,
+.beads-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.beads-create input {
+  min-width: 180px;
+}
+
 .beads-toolbar,
 .beads-row {
   justify-content: space-between;
@@ -82,6 +94,16 @@ h2 {
   border-top: 0;
 }
 
+.beads-row-focused {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.beads-action {
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
 .beads-row-title {
   min-width: 0;
   gap: 7px;
@@ -102,4 +124,33 @@ h2 {
   padding: 10px;
   color: var(--text-muted);
   font-size: 12px;
+}
+
+@media (max-width: 520px) {
+  .beads-toolbar,
+  .beads-row {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .beads-toolbar-actions,
+  .beads-row-title {
+    flex-basis: 100%;
+  }
+
+  .beads-create {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .beads-create input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .beads-row-actions {
+    margin-left: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
 }

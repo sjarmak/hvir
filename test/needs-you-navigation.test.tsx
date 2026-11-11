@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 
 import { act } from 'react'
+import { buildSync } from 'esbuild'
 import { createRoot, type Root } from 'react-dom/client'
+import { runInNewContext } from 'node:vm'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -35,6 +37,50 @@ describe('Needs you navigation authority', () => {
     expect(isNeedsYouWorkspaceTarget({ ...project, connectionState: 'disconnected' }, workspace, target)).toBe(false)
     expect(isNeedsYouWorkspaceTarget(project, { ...workspace, closed: true }, target)).toBe(false)
     expect(isNeedsYouWorkspaceTarget(project, { ...workspace, missing: true }, target)).toBe(false)
+  })
+
+  it('resolves package focus only from a fresh snapshot', () => {
+    const result = buildSync({
+      entryPoints: ['packages/beads-extension/src/focus.mjs'],
+      bundle: true,
+      format: 'iife',
+      globalName: 'BeadsFocus',
+      write: false,
+    })
+    const context = { BeadsFocus: undefined as unknown }
+    runInNewContext(result.outputFiles[0]!.text, context)
+    const focus = context.BeadsFocus as {
+      focusNeedsRefresh(wasVisible: boolean, input: unknown): boolean
+      focusResult(
+        value: unknown,
+        surface: {
+          beads: { state: string; issues?: readonly { id: string }[] }
+        },
+      ): { state: string; id?: string }
+    }
+    expect(
+      focus.focusResult(
+        { focusBeadId: 'b' },
+        { beads: { state: 'ready', issues: [{ id: 'b' }] } },
+      ),
+    ).toEqual({ state: 'found', id: 'b' })
+    expect(
+      focus.focusResult(
+        { focusBeadId: 'gone' },
+        { beads: { state: 'empty', issues: [] } },
+      ),
+    ).toEqual({ state: 'missing', id: 'gone' })
+    expect(
+      focus.focusResult(
+        { focusBeadId: 'b' },
+        { beads: { state: 'error', issues: [{ id: 'b' }] } },
+      ),
+    ).toEqual({ state: 'pending', id: 'b' })
+    expect(
+      focus.focusResult({}, { beads: { state: 'ready', issues: [{ id: 'b' }] } }),
+    ).toEqual({ state: 'none' })
+    expect(focus.focusNeedsRefresh(false, { focusBeadId: 'b' })).toBe(false)
+    expect(focus.focusNeedsRefresh(true, { focusBeadId: 'b' })).toBe(true)
   })
 })
 

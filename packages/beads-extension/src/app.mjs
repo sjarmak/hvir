@@ -3,6 +3,8 @@ import { guestClient } from '../../../src/shared/extensions/guest-client.mjs'
 import { readWorkspace } from './bridge.mjs'
 import { buildReadSurface } from './model.mjs'
 import { createRefreshController } from './refresh.mjs'
+import { executeTerminalAction } from './actions.mjs'
+import { focusBeadId, focusNeedsRefresh, focusResult } from './focus.mjs'
 
 const { document, window } = globalThis
 const bridge = window.hvirExtension
@@ -14,8 +16,11 @@ const sections = document.getElementById('sections')
 const crew = document.getElementById('crew')
 const asOf = document.getElementById('as-of')
 const refresh = document.getElementById('refresh')
+const create = document.getElementById('create')
+const createTitle = document.getElementById('create-title')
 let context = { visible: false }
 let snapshot
+let pendingFocus
 
 const controller = createRefreshController({
   async refresh() {
@@ -28,11 +33,32 @@ const controller = createRefreshController({
 })
 
 client.listen((message) => {
-  if (message.kind !== 'context') return
-  context = message.context
-  controller.setVisible(context.visible)
+  if (message.kind === 'context') {
+    const refreshFocus = focusNeedsRefresh(context.visible, message.context.input)
+    context = message.context
+    pendingFocus = focusBeadId(context.input)
+    controller.setVisible(context.visible)
+    if (refreshFocus) controller.request()
+    return
+  }
+  if (message.kind !== 'action') return
+  const scoped = client.forAction(message.invocation)
+  void executeTerminalAction(scoped, message.invocation)
+    .then(
+      (value) => scoped.reply(value),
+      (error) => scoped.reply(undefined, error.message),
+    )
+    .finally(() => scoped.dispose())
 })
 refresh.addEventListener('click', () => controller.request())
+create.addEventListener('submit', (event) => {
+  event.preventDefault()
+  const title = createTitle.value.trim()
+  if (!title) return
+  void invoke('bead-create', { title }).then((started) => {
+    if (started) create.reset()
+  })
+})
 window.addEventListener('pagehide', () => {
   controller.dispose()
   binding.dispose()
@@ -50,7 +76,7 @@ function render(value) {
   content.hidden = false
   sections.replaceChildren(
     ...value.beads.sections.map((section) =>
-      sectionElement(section.label, section.items ?? [], section.count),
+      sectionElement(section.label, section.items ?? [], section.count, beadActions),
     ),
   )
   crew.replaceChildren(
@@ -64,6 +90,7 @@ function render(value) {
             : `${member.label} · ${member.state}`,
         })),
         group.members.length,
+        crewActions,
       ),
     ),
   )
@@ -71,9 +98,10 @@ function render(value) {
   asOf.textContent = observed
     ? `As of ${new Date(observed).toLocaleTimeString()}`
     : 'No snapshot yet'
+  applyFocus(value)
 }
 
-function sectionElement(label, items, count) {
+function sectionElement(label, items, count, actions) {
   const container = document.createElement('section')
   container.className = 'beads-section'
   const heading = document.createElement('h3')
@@ -97,9 +125,76 @@ function sectionElement(label, items, count) {
     const id = document.createElement('span')
     id.className = 'beads-id'
     id.textContent = item.id
-    row.append(title, id)
+    row.dataset.beadId = item.id
+    const controls = actions(item)
+    row.append(title, id, controls)
     list.append(row)
   }
   container.append(list)
   return container
+}
+
+function beadActions(item) {
+  const controls = document.createElement('span')
+  controls.className = 'beads-row-actions'
+  if (item.status !== 'in_progress')
+    controls.append(actionButton('Claim', 'bead-claim', { id: item.id }))
+  if (item.status !== 'closed')
+    controls.append(actionButton('Close', 'bead-close', { id: item.id }))
+  return controls
+}
+
+function crewActions(item) {
+  const controls = document.createElement('span')
+  controls.className = 'beads-row-actions'
+  for (const [label, action] of [
+    ['Attach', 'crew-attach'],
+    ['Peek', 'crew-peek'],
+    ['Reset', 'crew-reset'],
+    ['Handoff', 'crew-handoff'],
+  ])
+    controls.append(actionButton(label, action, { target: item.id }))
+  return controls
+}
+
+function actionButton(label, action, input) {
+  const button = document.createElement('button')
+  button.className = 'hvir-button beads-action'
+  button.type = 'button'
+  button.textContent = label
+  button.addEventListener('click', () => void invoke(action, input))
+  return button
+}
+
+async function invoke(action, input) {
+  try {
+    await client.request('actions.invoke', { action, input })
+    return true
+  } catch (error) {
+    state.dataset.state = 'error'
+    state.textContent = error.message
+    state.classList.add('beads-error')
+    return false
+  }
+}
+
+function applyFocus(value) {
+  if (!pendingFocus) return
+  const result = focusResult({ focusBeadId: pendingFocus }, value)
+  if (result.state === 'pending') return
+  pendingFocus = undefined
+  if (result.state === 'missing') {
+    state.dataset.state = 'error'
+    state.textContent = `Bead ${result.id} is no longer available in this workspace.`
+    state.classList.add('beads-error')
+    return
+  }
+  const row = [...document.querySelectorAll('[data-bead-id]')].find(
+    (element) => element.dataset.beadId === result.id,
+  )
+  if (!row) return
+  row.classList.add('beads-row-focused')
+  row.tabIndex = -1
+  row.focus()
+  row.scrollIntoView({ block: 'center' })
 }

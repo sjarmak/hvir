@@ -14,7 +14,13 @@
           <h1>Beads</h1>
           <p id="as-of" class="hvir-meta">No snapshot yet</p>
         </div>
-        <button id="refresh" class="hvir-button" type="button">Refresh</button>
+        <div class="beads-toolbar-actions">
+          <form id="create" class="beads-create">
+            <input id="create-title" class="hvir-input" type="text" maxlength="512" placeholder="New bead title" required />
+            <button class="hvir-button" type="submit">Create</button>
+          </form>
+          <button id="refresh" class="hvir-button" type="button">Refresh</button>
+        </div>
       </header>
       <section id="state" class="hvir-state" data-state="loading">
         Reading workspace…

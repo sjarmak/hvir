@@ -1,5 +1,5 @@
 {
-  "id": "beads-workspace",
+  "id": "beads-extension",
   "name": "Beads workspace",
   "version": "0.1.0",
   "contract": "1.0",
@@ -8,7 +8,9 @@
     "context.read",
     "contributions.publish",
     "connector.execute",
-    "connector.output"
+    "connector.output",
+    "actions.invoke",
+    "terminal.start"
   ],
   "optionalCapabilities": ["connector.status"],
   "access": [],
@@ -34,6 +36,109 @@
       "click": {
         "view": "beads",
         "placement": "viewer"
+      }
+    }
+  ],
+  "actions": [
+    {
+      "id": "bead-claim",
+      "title": "Claim bead",
+      "view": "beads",
+      "agents": true,
+      "effects": { "delete": false, "replace": false },
+      "description": "Open a fresh terminal and run bd update --claim in the exact workspace.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "id": { "type": "string", "maxLength": 256 } },
+        "required": ["id"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "bead-close",
+      "title": "Close bead",
+      "view": "beads",
+      "agents": true,
+      "effects": { "delete": false, "replace": false },
+      "description": "Open a fresh terminal and run bd close in the exact workspace.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "id": { "type": "string", "maxLength": 256 } },
+        "required": ["id"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "bead-create",
+      "title": "Create bead",
+      "view": "beads",
+      "agents": true,
+      "effects": { "delete": false, "replace": false },
+      "description": "Open a fresh terminal and run bd create in the exact workspace.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string", "maxLength": 512 },
+          "description": { "type": "string", "maxLength": 4096 }
+        },
+        "required": ["title"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "crew-attach",
+      "title": "Attach to session",
+      "view": "beads",
+      "agents": true,
+      "effects": { "delete": false, "replace": false },
+      "description": "Open a fresh terminal and attach to the exact Gas City session target.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "target": { "type": "string", "maxLength": 256 } },
+        "required": ["target"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "crew-peek",
+      "title": "Peek at session",
+      "view": "beads",
+      "agents": true,
+      "effects": { "delete": false, "replace": false },
+      "description": "Open a fresh terminal and peek at the exact Gas City session target.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "target": { "type": "string", "maxLength": 256 } },
+        "required": ["target"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "crew-reset",
+      "title": "Reset session",
+      "view": "beads",
+      "agents": true,
+      "effects": { "delete": false, "replace": true },
+      "description": "Open a fresh terminal and reset the exact Gas City session target.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "target": { "type": "string", "maxLength": 256 } },
+        "required": ["target"],
+        "additionalProperties": false
+      }
+    },
+    {
+      "id": "crew-handoff",
+      "title": "Handoff session",
+      "view": "beads",
+      "agents": true,
+      "effects": { "delete": false, "replace": true },
+      "description": "Open a fresh terminal and hand off the exact Gas City session target.",
+      "inputSchema": {
+        "type": "object",
+        "properties": { "target": { "type": "string", "maxLength": 256 } },
+        "required": ["target"],
+        "additionalProperties": false
       }
     }
   ],
