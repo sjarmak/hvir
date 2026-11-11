@@ -15,7 +15,9 @@ vi.mock('electron', () => ({
   BrowserWindow: {
     fromWebContents: (contents: { id: number }) => electronPorts.windows.get(contents.id),
   },
-  session: { fromPartition: (partition: string) => electronPorts.sessions.get(partition) },
+  session: {
+    fromPartition: (partition: string) => electronPorts.sessions.get(partition),
+  },
   webContents: {
     fromDevToolsTargetId: () => electronPorts.guests.get(1),
     fromId: (id: number) => electronPorts.guests.get(id),
@@ -102,6 +104,7 @@ export async function fixture(
     id: 1,
     session,
     debugger: debuggerPort,
+    mainFrame: { isDestroyed: vi.fn(() => false), postMessage: vi.fn() },
     isDestroyed: () => destroyed,
     getURL: () => (committed ? view.url : 'about:blank'),
     isLoading: () => loading,
