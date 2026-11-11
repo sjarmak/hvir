@@ -221,13 +221,80 @@ test('a timer that fires after the deadline does not dispatch another attempt', 
   assert.equal(executes(sent).length, 1)
 })
 
+const virtual = (answer) => {
+  let clock = 0
+  let order = 0
+  let timers = []
+  const listeners = new Set()
+  const sent = []
+  const window = {
+    hvirExtension: {
+      onMessage: (listener) => (listeners.add(listener), () => listeners.delete(listener)),
+      send: (message) => {
+        sent.push(message)
+        const { value, after = 0 } = answer(message, clock)
+        window.setTimeout(() => listeners.forEach((listener) =>
+          listener({ kind: 'result', id: message.id, ok: true, value })), after)
+      },
+    },
+    setTimeout: (callback, ms) => {
+      const timer = { at: clock + ms, callback, order: order += 1 }
+      timers = [...timers, timer]
+      return timer
+    },
+    clearTimeout: (timer) => { timers = timers.filter((entry) => entry !== timer) },
+  }
+  vm.runInNewContext(readFileSync(join(__dirname, '..', 'host.js'), 'utf8'), { window, Date: { now: () => clock } })
+  const settleAll = async (promises) => {
+    let done = false
+    const all = Promise.allSettled(promises).then((results) => { done = true; return results })
+    while (!done) {
+      await new Promise((resolve) => setImmediate(resolve))
+      if (done) break
+      const next = [...timers].sort((a, b) => a.at - b.at || a.order - b.order)[0]
+      if (!next) continue
+      timers = timers.filter((entry) => entry !== next)
+      clock = Math.max(clock, next.at)
+      next.callback()
+    }
+    return all
+  }
+  return { host: window.host, sent, elapsed: () => clock, settleAll }
+}
+
+const slowReads = (delay) => (message) => {
+  if (message.capability !== 'connector.execute') return { value: outputFor(message, { r1: '[]' }) }
+  return { value: completed('r1'), after: delay }
+}
+
+test('reads admitted three at a time end by the caller deadline, the rest abandoned as not run', async () => {
+  const { host, sent, elapsed, settleAll } = virtual(slowReads(25000))
+  const results = await settleAll(Array.from({ length: 12 }, () =>
+    host.run('bd', LOCAL, ['list'], { deadline: 60000 })))
+  const fulfilled = results.filter((result) => result.status === 'fulfilled')
+  const abandoned = results.filter((result) => result.status === 'rejected')
+  assert.equal(fulfilled.length, 6)
+  assert.equal(abandoned.length, 6)
+  assert.ok(abandoned.every((result) => result.reason.reason === 'deadline' && result.reason.transient))
+  assert.ok(elapsed() <= 60000)
+  assert.equal(executes(sent).length, 9)
+})
+
+test('an expired deadline sends nothing, including a first attempt', async () => {
+  const { host, sent, settleAll } = virtual(slowReads(0))
+  const [result] = await settleAll([host.run('bd', LOCAL, ['list'], { deadline: 0 })])
+  assert.equal(result.status, 'rejected')
+  assert.equal(result.reason.reason, 'deadline')
+  assert.equal(executes(sent).length, 0)
+})
+
 test('a caller deadline ends retries before the default budget', async () => {
-  const { host, sent, elapsed } = clocked((message) =>
-    message.capability === 'connector.execute'
-      ? { outcome: 'unavailable', reason: 'capacity' }
-      : outputFor(message, {}))
-  await assert.rejects(host.run('gc', LOCAL, ['status'], { deadline: 3000 }), /did not run: capacity/)
-  assert.ok(executes(sent).length > 1)
+  const { host, elapsed, settleAll } = virtual((message) => message.capability === 'connector.execute'
+    ? { value: { outcome: 'unavailable', reason: 'capacity' } }
+    : { value: outputFor(message, {}) })
+  const [result] = await settleAll([host.run('gc', LOCAL, ['status'], { deadline: 3000 })])
+  assert.equal(result.status, 'rejected')
+  assert.equal(result.reason.transient, true)
   assert.ok(elapsed() <= 3000)
 })
 

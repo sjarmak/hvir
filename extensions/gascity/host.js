@@ -23,8 +23,17 @@ window.host = (() => {
     }
   }
 
-  async function request(capability, input, actionId, beforeSend) {
+  function pastDeadline(dispatch) {
+    const error = new Error('did not run: the refresh deadline passed')
+    error.reason = 'deadline'
+    error.dispatch = dispatch
+    error.transient = true
+    return error
+  }
+
+  async function request(capability, input, actionId, beforeSend, deadline = Infinity) {
     await paced()
+    if (Date.now() >= deadline) throw pastDeadline('not-sent')
     beforeSend?.()
     const id = `${prefix}-${++serial}`
     return new Promise((resolve, reject) => {
@@ -92,9 +101,35 @@ window.host = (() => {
   let inFlight = 0
   const waiting = []
 
-  async function admitted() {
-    if (inFlight >= IN_FLIGHT) await new Promise((resolve) => waiting.push(resolve))
+  async function admitted(deadline = Infinity) {
+    if (inFlight >= IN_FLIGHT) {
+      await new Promise((resolve, reject) => {
+        const start = () => {
+          if (timer !== undefined) window.clearTimeout(timer)
+          resolve()
+        }
+        const timer = Number.isFinite(deadline)
+          ? window.setTimeout(() => {
+            const at = waiting.indexOf(start)
+            if (at >= 0) waiting.splice(at, 1)
+            reject(pastDeadline('not-sent'))
+          }, Math.max(0, deadline - Date.now()))
+          : undefined
+        waiting.push(start)
+      })
+    }
     inFlight += 1
+  }
+
+  function bounded(work, deadline) {
+    if (!Number.isFinite(deadline)) return work
+    return new Promise((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(pastDeadline('unknown')), Math.max(0, deadline - Date.now()))
+      work.then(
+        (value) => { window.clearTimeout(timer); resolve(value) },
+        (error) => { window.clearTimeout(timer); reject(error) },
+      )
+    })
   }
 
   function released() {
@@ -112,7 +147,7 @@ window.host = (() => {
   async function execute(input, actionId, beforeSend, callerDeadline = Infinity) {
     const deadline = Math.min(Date.now() + RETRY_BUDGET_MS, callerDeadline)
     for (let attempt = 0; ; attempt += 1) {
-      const result = await request('connector.execute', input, actionId, beforeSend)
+      const result = await request('connector.execute', input, actionId, beforeSend, callerDeadline)
       if (result.outcome === 'completed' || !RETRIED_REASONS.has(result.reason)) return result
       const delay = retryDelay(result, attempt)
       if (Date.now() + delay > deadline) return result
@@ -127,9 +162,10 @@ window.host = (() => {
    * stderr line, or the connector's reason.
    */
   async function run(connector, workspace, args, { lines = false, text = false, exit = false, actionId, beforeSend, deadline } = {}) {
-    await admitted()
+    const limit = deadline ?? Infinity
+    await admitted(limit)
     try {
-      return await runAdmitted(connector, workspace, args, { lines, text, exit, actionId, beforeSend, deadline })
+      return await bounded(runAdmitted(connector, workspace, args, { lines, text, exit, actionId, beforeSend, deadline: limit }), limit)
     } finally {
       released()
     }
