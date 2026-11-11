@@ -47,10 +47,11 @@ window.host = (() => {
     })
   }
 
-  async function readStream(receipt, stream, actionId) {
+  async function readStream(receipt, stream, actionId, control) {
     let text = ''
     let offset = 0
     while (offset !== null) {
+      if (control?.abandoned) throw pastDeadline('unknown')
       const page = await request('connector.output', { receipt, stream, offset }, actionId)
       text += page.data
       offset = page.nextOffset
@@ -121,10 +122,13 @@ window.host = (() => {
     inFlight += 1
   }
 
-  function bounded(work, deadline) {
+  function bounded(work, deadline, control) {
     if (!Number.isFinite(deadline)) return work
     return new Promise((resolve, reject) => {
-      const timer = window.setTimeout(() => reject(pastDeadline('unknown')), Math.max(0, deadline - Date.now()))
+      const timer = window.setTimeout(() => {
+        control.abandoned = true
+        reject(pastDeadline('unknown'))
+      }, Math.max(0, deadline - Date.now()))
       work.then(
         (value) => { window.clearTimeout(timer); resolve(value) },
         (error) => { window.clearTimeout(timer); reject(error) },
@@ -165,7 +169,8 @@ window.host = (() => {
     const limit = deadline ?? Infinity
     await admitted(limit)
     try {
-      return await bounded(runAdmitted(connector, workspace, args, { lines, text, exit, actionId, beforeSend, deadline: limit }), limit)
+      const control = { abandoned: false }
+      return await bounded(runAdmitted(connector, workspace, args, { lines, text, exit, actionId, beforeSend, deadline: limit, control }), limit, control)
     } finally {
       released()
     }
@@ -173,10 +178,10 @@ window.host = (() => {
 
   const NOT_SENT_OUTCOMES = new Set(['not-started', 'unavailable'])
 
-  async function readExit(result, actionId) {
+  async function readExit(result, actionId, control) {
     try {
-      const stdout = await readStream(result.receipt, 'stdout', actionId)
-      return { exitCode: result.code, stdout, stderr: await readStream(result.receipt, 'stderr', actionId) }
+      const stdout = await readStream(result.receipt, 'stdout', actionId, control)
+      return { exitCode: result.code, stdout, stderr: await readStream(result.receipt, 'stderr', actionId, control) }
     } catch (cause) {
       const error = new Error(`output of a completed run could not be read: ${cause.message}`)
       error.dispatch = 'unknown'
@@ -184,7 +189,7 @@ window.host = (() => {
     }
   }
 
-  async function runAdmitted(connector, workspace, args, { lines, text, exit, actionId, beforeSend, deadline }) {
+  async function runAdmitted(connector, workspace, args, { lines, text, exit, actionId, beforeSend, deadline, control }) {
     const result = await execute({
       connector,
       host: workspace.host,
@@ -204,10 +209,11 @@ window.host = (() => {
       throw error
     }
     try {
-      if (exit) return await readExit(result, actionId)
-      const stdout = await readStream(result.receipt, 'stdout', actionId)
+      if (control?.abandoned) throw pastDeadline('unknown')
+      if (exit) return await readExit(result, actionId, control)
+      const stdout = await readStream(result.receipt, 'stdout', actionId, control)
       if (result.code !== 0)
-        throw failure(connector, result.code, stdout, await readStream(result.receipt, 'stderr', actionId))
+        throw failure(connector, result.code, stdout, await readStream(result.receipt, 'stderr', actionId, control))
       if (result.truncated)
         throw new Error(`${connector} output exceeded the connector bound`)
       if (text) return stdout

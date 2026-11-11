@@ -280,6 +280,15 @@ test('reads admitted three at a time end by the caller deadline, the rest abando
   assert.equal(executes(sent).length, 9)
 })
 
+test('a read abandoned before its result arrives pages no output but still releases the receipt', async () => {
+  const { host, sent, settleAll } = virtual(slowReads(25000))
+  const [result] = await settleAll([host.run('bd', LOCAL, ['list'], { deadline: 10000 })])
+  assert.equal(result.status, 'rejected')
+  await settleAll([new Promise((resolve) => setTimeout(resolve, 5))])
+  const outputs = sent.filter((message) => message.capability === 'connector.output')
+  assert.deepEqual(outputs.map((message) => Boolean(message.input.release)), [true])
+})
+
 test('an expired deadline sends nothing, including a first attempt', async () => {
   const { host, sent, settleAll } = virtual(slowReads(0))
   const [result] = await settleAll([host.run('bd', LOCAL, ['list'], { deadline: 0 })])
