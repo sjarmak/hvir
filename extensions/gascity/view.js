@@ -4,7 +4,7 @@
  * and teardown on revoke/pagehide. `load(context)` runs on visibility, on context change and
  * every `refreshMs` while visible; it never overlaps itself.
  */
-window.startView = ({ load, refreshMs = 0, onStatus = () => {} }) => {
+window.startView = ({ load, refreshMs = 0, onStatus = () => {}, onNotice }) => {
   const bridge = window.hvirExtension
   const unbindPresentation = window.hvirUI.bindPresentation(bridge)
   let context
@@ -59,7 +59,7 @@ window.startView = ({ load, refreshMs = 0, onStatus = () => {} }) => {
   bridge.send({ kind: 'hello', contract: '1.0' })
   const refresh = () => {
     if (!disposed && !running && !context?.visible)
-      onStatus('hvir reports this pane as hidden; it loads when hvir shows it')
+      onNotice?.('hvir reports this pane as hidden; it loads when hvir shows it')
     return tick()
   }
   return { refresh }

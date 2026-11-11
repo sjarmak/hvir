@@ -551,3 +551,13 @@ test('an unknown answer outcome stays locked when the read began before the outc
   assert.ok(await locked())
   assert.equal(await phase(), 'unknown')
 })
+
+test('the hidden-pane Refresh notice is appended to the error already shown, once', (t) => {
+  const page = livePage(t, 'project.html', 'project.js')
+  const status = page.document.getElementById('status')
+  page.view.onStatus('bd: database is corrupt')
+  page.view.onNotice('hvir reports this pane as hidden; it loads when hvir shows it')
+  page.view.onNotice('hvir reports this pane as hidden; it loads when hvir shows it')
+  assert.equal(status.textContent,
+    'bd: database is corrupt · hvir reports this pane as hidden; it loads when hvir shows it')
+})

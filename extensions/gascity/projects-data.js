@@ -88,6 +88,10 @@
       .map((id) => [id, document.getElementById(id)]))
     let missing
     const setStatus = (text) => { ui.status.textContent = text }
+    const addNotice = (text) => {
+      const current = ui.status.textContent
+      if (!current.split(' · ').includes(text)) setStatus(current ? `${current} · ${text}` : text)
+    }
     const actions = {
       onOpenBead: (id, store) => window.openOwn('bead', { id, rig: store })
         .catch((error) => setStatus(`Could not open ${id}: ${error.message}`)),
@@ -172,7 +176,7 @@
       shownBy.set(workspace.id, data)
       show(data, context)
     }
-    const view = window.startView({ load, refreshMs: 60000, onStatus: setStatus })
+    const view = window.startView({ load, refreshMs: 60000, onStatus: setStatus, onNotice: addNotice })
     ui.refresh.addEventListener('click', () => void view.refresh())
     ui.connect.addEventListener('click', () => {
       if (missing) void window.connectHandler(missing, setStatus, view.refresh)()

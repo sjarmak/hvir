@@ -4,7 +4,7 @@ const { readFileSync } = require('node:fs')
 const { join } = require('node:path')
 const vm = require('node:vm')
 
-function loadView(load, onStatus) {
+function loadView(load, onStatus, onNotice) {
   const listeners = new Set()
   const bridge = {
     onMessage: (listener) => (listeners.add(listener), () => listeners.delete(listener)),
@@ -20,7 +20,7 @@ function loadView(load, onStatus) {
     clearInterval: () => {},
   }
   vm.runInNewContext(readFileSync(join(__dirname, '..', 'view.js'), 'utf8'), { window, document: {} })
-  const view = window.startView({ load, onStatus })
+  const view = window.startView({ load, onStatus, onNotice })
   return { view, context: (context) => deliver({ kind: 'context', context }) }
 }
 
@@ -42,14 +42,24 @@ test('a load learns the view was hidden while it ran, and the next one starts cl
   assert.equal(loads.length, 2)
 })
 
-test('a refresh while hvir reports the pane hidden says so and starts no load', async () => {
+test('a refresh while hvir reports the pane hidden starts no load and shows nothing without onNotice', async () => {
   const statuses = []
   let loads = 0
   const page = loadView(async () => { loads += 1 }, (text) => statuses.push(text))
   page.context({ visible: false, workspace: { id: 'w' } })
   await page.view.refresh()
-  assert.deepEqual(statuses, ['hvir reports this pane as hidden; it loads when hvir shows it'])
+  assert.deepEqual(statuses, [])
   assert.equal(loads, 0)
+})
+
+test('the hidden notice goes to onNotice when given and never to onStatus', async () => {
+  const statuses = []
+  const notices = []
+  const page = loadView(async () => {}, (text) => statuses.push(text), (text) => notices.push(text))
+  page.context({ visible: false, workspace: { id: 'w' } })
+  await page.view.refresh()
+  assert.deepEqual(notices, ['hvir reports this pane as hidden; it loads when hvir shows it'])
+  assert.deepEqual(statuses, [])
 })
 
 test('a refresh during a running load starts no second load and adds no hidden notice', async () => {
