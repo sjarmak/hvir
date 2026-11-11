@@ -2,7 +2,7 @@
   const node = typeof module === 'object'
   const crew = node ? require('./crew-parse.js') : window.crewParse
   const needs = node ? require('./needs-model.js') : window.needsModel
-  const fields = ['projects', 'milestones', 'artifacts', 'decisions', 'herSteps', 'inProgress', 'linked', 'workflowRoots', 'workflowSteps', 'ancestors']
+  const fields = ['projects', 'milestones', 'artifacts', 'decisions', 'herSteps', 'inProgress', 'linked', 'workflowRoots', 'workflowSteps', 'ancestors', 'urgent']
   const ROOT_CAP = 30
   const ANCESTOR_CAP = 30
   const ANCESTOR_ROUNDS = 3
@@ -13,6 +13,7 @@
   const labeledArgs = (path) => listArgs(path, ['--all', '--label-any', Object.keys(LABEL_FIELDS).join(',')])
   const inProgressArgs = (path) => listArgs(path, ['--all', '--status', 'in_progress'])
   const linkedArgs = (path, key) => listArgs(path, ['--status', 'open,in_progress,blocked,deferred', '--has-metadata-key', key])
+  const urgentArgs = (path) => listArgs(path, ['--status', 'open,in_progress', '--priority-max', '1'])
   const showArgs = (path, ids) => ['-C', path, 'show', ...ids, '--json']
   const stepArgs = (path, id) => listArgs(path,
     ['--all', '--metadata-field', `gc.root_bead_id=${id}`])
@@ -34,6 +35,7 @@
       { store, key: 'inProgress', args: inProgressArgs(store.path) },
       { store, key: 'linked', args: linkedArgs(store.path, 'proj.id') },
       { store, key: 'linked', args: linkedArgs(store.path, 'gc.project') },
+      { store, key: 'urgent', args: urgentArgs(store.path) },
     ])
     const decisions = needs.decisionsRig(stores)
     if (decisions) requests.push(
@@ -153,7 +155,7 @@
   }
 
   const api = Object.freeze({
-    labeledArgs, splitLabeled, inProgressArgs, linkedArgs, showArgs, stepArgs, decisionArgs,
+    labeledArgs, splitLabeled, inProgressArgs, urgentArgs, linkedArgs, showArgs, stepArgs, decisionArgs,
     ANCESTOR_ROUNDS, OUTCOME_CONNECTOR, OUTCOME_ARGS, parseOutcomes, storesFor, storeRequests, workflowRequests, ancestorRequests, liveSessions, assemblePayload,
   })
   if (node) module.exports = api

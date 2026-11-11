@@ -23,6 +23,8 @@ test('argument builders use explicit store scope and unlimited flat JSON lists',
   assert.deepEqual(loader.stepArgs('/rig', 'root'),
     [...base, '--all', '--metadata-field', 'gc.root_bead_id=root', '-n', '0'])
   assert.deepEqual(loader.showArgs('/rig', ['a', 'b']), ['-C', '/rig', 'show', 'a', 'b', '--json'])
+  assert.deepEqual(loader.urgentArgs('/rig'),
+    [...base, '--status', 'open,in_progress', '--priority-max', '1', '-n', '0'])
   assert.deepEqual(loader.decisionArgs('/rig'),
     [...base, '--status', 'open', '--has-metadata-key', 'gc.project', '-n', '0'])
 })
@@ -30,7 +32,8 @@ test('argument builders use explicit store scope and unlimited flat JSON lists',
 test('store plan reads workspace HQ once, skips suspended rigs, and uses both decision queries', () => {
   assert.deepEqual(stores.map((store) => store.path), ['/city', '/rigs/lead', '/rigs/decisions', '/rigs/broken'])
   const requests = loader.storeRequests(stores)
-  assert.equal(requests.length, 19)
+  assert.equal(requests.length, 23)
+  assert.equal(requests.filter((request) => request.key === 'urgent').length, 4)
   assert.equal(requests.filter((request) => request.key === 'labeled').length, 4)
   assert.equal(requests.filter((request) => request.key === 'linked').length, 8)
   assert.equal(requests.some((request) => request.args.includes('/rigs/paused')), false)
@@ -39,7 +42,7 @@ test('store plan reads workspace HQ once, skips suspended rigs, and uses both de
   assert.deepEqual(decisions[1].args, loader.decisionArgs('/rigs/decisions'))
   assert.deepEqual(requests.filter((request) => request.key === 'herSteps').map((request) => request.args),
     [require('../needs-model.js').stepArgs('/rigs/decisions')])
-  assert.equal(loader.storeRequests([stores[0]]).length, 4)
+  assert.equal(loader.storeRequests([stores[0]]).length, 5)
 })
 
 test('one labeled read splits into projects, milestones and artifacts; a failed one reports once', () => {
@@ -101,7 +104,7 @@ test('live sessions preserve model, account, start and agent fields across gc sh
 test('fake connector outputs assemble a tagged dashboard despite a failed store', async () => {
   const outputs = {
     projects: fixture.projects, milestones: fixture.milestones, artifacts: fixture.artifacts, inProgress: fixture.inProgress,
-    decisions: fixture.decisions, workflowRoots: fixture.workflowRoots, workflowSteps: fixture.workflowSteps, linked: [],
+    decisions: fixture.decisions, workflowRoots: fixture.workflowRoots, workflowSteps: fixture.workflowSteps, linked: [], urgent: [],
   }
   const execute = async (request) => {
     if (request.store.name === 'broken') return { ...request, error: 'store unavailable' }
@@ -119,7 +122,7 @@ test('fake connector outputs assemble a tagged dashboard despite a failed store'
   assert.equal(result.payload.workflowRoots.length, fixture.workflowRoots.length)
   assert.deepEqual(result.payload.seatJobs, [])
   assert.deepEqual(result.payload.refStates, {})
-  assert.equal(result.errors.length, 4)
+  assert.equal(result.errors.length, 5)
   assert.equal(result.payload.artifacts.length, fixture.artifacts.length)
   assert.equal(result.errors.every((error) => /broken.*store unavailable/.test(error)), true)
   for (const field of Object.keys(outputs).filter((key) => key !== 'labeled')) {

@@ -486,3 +486,42 @@ test('queued skips open decisions raised against the project', () => {
   const model = buildDashboard(input)
   assert.ok(!cards(model).some((entry) => entry.queued.some((row) => row.id === ask.id)))
 })
+
+const urgent = (id, extra = {}) => ({ id, title: `Title ${id}`, status: 'open', priority: 1, labels: [],
+  store: 's', updated_at: '2026-10-29T08:00:00Z', metadata: {}, ...extra })
+
+test('stuck lists urgent open work with no waiting note, oldest update first, and waiting lists the rest', () => {
+  const input = fresh()
+  input.urgent = [
+    urgent('fx-u-new', { updated_at: '2026-10-29T10:00:00Z', assignee: 'omni-pl' }),
+    urgent('fx-u-old', { updated_at: '2026-10-28T10:00:00Z' }),
+    urgent('fx-u-wait', { metadata: { 'gc.waiting_on': 'omni-49z8xs' }, updated_at: '2026-10-29T06:00:00Z' }),
+    urgent('fx-u-p2', { priority: 2 }),
+    urgent('fx-u-closed', { status: 'closed' }),
+    urgent('fx-u-record', { labels: ['city-milestone'] }),
+    urgent('fx-u-root', { metadata: { 'gc.kind': 'workflow' } }),
+    urgent('fx-u-prog', { status: 'in_progress', priority: 0, updated_at: '2026-10-29T09:00:00Z' }),
+  ]
+  input.urgent.push({ ...input.urgent[0] })
+  const model = buildDashboard(input)
+  assert.deepEqual(model.stuck.items.map((row) => row.id), ['fx-u-old', 'fx-u-prog', 'fx-u-new'])
+  assert.equal(model.stuck.items[0].owner, '')
+  assert.equal(model.stuck.items[2].owner, 'omni-pl')
+  assert.equal(model.stuck.items[0].updatedAt, '2026-10-28T10:00:00Z')
+  assert.deepEqual(model.waiting.items.map((row) => [row.id, row.waitingOn]), [['fx-u-wait', 'omni-49z8xs']])
+})
+
+test('stuck skips decisions, merges inProgress and linked reads, and caps at fifty with a remainder', () => {
+  const input = fresh()
+  const ask = input.decisions[0]
+  input.urgent = [urgent(ask.id, { store: ask.store })]
+  input.linked = [urgent('fx-l1')]
+  input.inProgress.push(urgent('fx-ip1', { status: 'in_progress' }))
+  const ids = buildDashboard(input).stuck.items.map((row) => row.id)
+  assert.ok(ids.includes('fx-l1') && ids.includes('fx-ip1') && !ids.includes(ask.id))
+  const many = fresh()
+  many.urgent = Array.from({ length: 53 }, (_, i) => urgent(`fx-m${i}`, { updated_at: `2026-10-0${1 + (i % 9)}T00:00:00Z` }))
+  const capped = buildDashboard(many).stuck
+  assert.equal(capped.items.length, 50)
+  assert.equal(capped.more, 3)
+})

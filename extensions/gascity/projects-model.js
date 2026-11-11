@@ -291,8 +291,36 @@
     return answerTo ? { answerTo, answerLive: sessionFor(sessions, answerTo) !== undefined } : {}
   }
 
+  const STUCK_CAP = 50
+
+  const urgentBeads = (input, decisions) => {
+    const known = new Set(decisions.map((bead) => `${bead.store}#${bead.id}`))
+    const seen = new Map()
+    for (const bead of [...(input.urgent ?? []), ...(input.inProgress ?? []), ...(input.linked ?? [])]) {
+      const key = `${bead.store}#${bead.id}`
+      if (known.has(key) || seen.has(key) || isRecord(bead)) continue
+      if (!['open', 'in_progress'].includes(bead.status) || !(Number(bead.priority) <= 1)) continue
+      if (bead.priority === null || bead.priority === '' || bead.priority === undefined) continue
+      seen.set(key, bead)
+    }
+    return [...seen.values()]
+  }
+
+  const urgentRow = (bead) => ({ ...identity(bead), owner: bead.assignee ?? '', priority: Number(bead.priority),
+    updatedAt: validTime(bead.updated_at) ? bead.updated_at : null, waitingOn: String(meta(bead, 'gc.waiting_on')).trim() })
+
+  const oldestFirst = (a, b) => (a.updatedAt === null) - (b.updatedAt === null) ||
+    Date.parse(a.updatedAt) - Date.parse(b.updatedAt) || a.id.localeCompare(b.id)
+
+  const capped = (rows) => ({ items: rows.slice(0, STUCK_CAP), more: Math.max(0, rows.length - STUCK_CAP) })
+
+  const urgentLists = (input, decisions) => {
+    const rows = urgentBeads(input, decisions).map(urgentRow).sort(oldestFirst)
+    return { stuck: capped(rows.filter((row) => !row.waitingOn)), waiting: capped(rows.filter((row) => row.waitingOn)) }
+  }
+
   const buildDashboard = (input) => {
-    const beads = ['ancestors', 'linked', 'workflowSteps', 'workflowRoots', 'inProgress', 'decisions', 'artifacts', 'milestones', 'projects']
+    const beads = ['ancestors', 'urgent', 'linked', 'workflowSteps', 'workflowRoots', 'inProgress', 'decisions', 'artifacts', 'milestones', 'projects']
       .flatMap((key) => input[key] ?? [])
     const index = new Map(beads.map((bead) => [bead.id, bead]))
     const projects = new Map((input.projects ?? []).map((bead) => [bead.id, bead]))
@@ -313,7 +341,7 @@
     const stepBeads = new Map([...(input.herSteps ?? []), ...openDecisions].map((bead) => [`${bead.store}#${bead.id}`, bead]))
     const herSteps = needsApi.herSteps([...stepBeads.values()])
     const stepsUnread = (input.unread ?? []).includes('herSteps')
-    return { now: input.now, needsYou, inDelivery, herSteps, stepsUnread, cards: [...groups.values()], activeNow: groupActivity(entries),
+    return { now: input.now, ...urgentLists(input, input.decisions ?? []), needsYou, inDelivery, herSteps, stepsUnread, cards: [...groups.values()], activeNow: groupActivity(entries),
       outcomesShown: Array.isArray(input.outcomes) }
   }
 

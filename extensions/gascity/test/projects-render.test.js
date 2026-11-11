@@ -532,3 +532,29 @@ test('a project page lists what is in flight and what is queued in plain words',
   assert.ok(tiles.some((text) => /Queued/.test(text) && /1$/.test(text)))
   assert.ok(tiles.some((text) => /Agents active/.test(text)))
 })
+
+test('the pane shows a Stuck list and a Waiting on list above the project cards', (t) => {
+  const input = structuredClone(fixture)
+  input.urgent = [
+    { id: 'fx-u1', title: 'Fix the bias run', status: 'open', priority: 1, labels: [], store: 's',
+      updated_at: '2026-10-29T08:00:00Z', assignee: 'omni-pl', metadata: {} },
+    { id: 'fx-u2', title: 'Ship the warning', status: 'open', priority: 0, labels: [], store: 's',
+      updated_at: '2026-10-29T09:00:00Z', metadata: { 'gc.waiting_on': 'omni-49z8xs' } },
+  ]
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  dom.window.Date.now = () => Date.parse(fixture.now)
+  for (const file of ['view.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const root = dom.window.document.querySelector('main')
+  const opened = []
+  dom.window.projectsRender.renderDashboard(buildDashboard(input), root, { onOpenBead: (id) => opened.push(id) })
+  const titles = [...root.querySelectorAll(':scope > section > h2')].map((node) => node.textContent)
+  assert.ok(titles.indexOf('Stuck (1)') > titles.indexOf('Needs you'))
+  assert.ok(titles.indexOf('Stuck (1)') < titles.findIndex((title) => /^omni-pl$/.test(title)))
+  const named = (name) => [...root.querySelectorAll(':scope > section')].find((node) => node.querySelector('h2').textContent.startsWith(name))
+  assert.match(named('Stuck').textContent, /Fix the bias run.*fx-u1.*omni-pl.*no update for \S+/s)
+  assert.match(named('Waiting on').textContent, /Ship the warning.*no owner.*waiting on omni-49z8xs for \S+/s)
+  named('Stuck').querySelector('button').click()
+  assert.deepEqual(opened, ['fx-u1'])
+  assert.doesNotMatch(named('Stuck').textContent, /undefined/)
+})

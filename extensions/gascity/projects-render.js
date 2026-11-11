@@ -136,6 +136,25 @@
     section('Your next step', list((model.herSteps ?? []).map((entry) => renderStep(entry, options)), ''),
       model.stepsUnread && paragraph('Some steps could not be read', 'projects-warning'))
 
+  const urgentRow = (row, options, waiting) => el('li', { title: row.id },
+    button(row.title, row.id, () => options.onOpenBead?.(row.id, row.store)),
+    text(` · ${row.id} · ${row.owner || 'no owner'}`, 'hvir-meta'),
+    text(waiting ? ` · waiting on ${row.waitingOn}${row.updatedAt ? ` for ${window.ago(row.updatedAt).replace(/ ago$/, '')}` : ''}`
+      : row.updatedAt ? ` · no update for ${window.ago(row.updatedAt).replace(/ ago$/, '')}` : ' · no update recorded', 'projects-warning'))
+
+  const urgentSection = (title, group, empty, options, waiting) => {
+    const rows = group?.items ?? []
+    const more = group?.more ?? 0
+    return section(`${title} (${rows.length + more})`,
+      list(rows.map((row) => urgentRow(row, options, waiting)), empty),
+      more > 0 && paragraph(`+${more} more`, 'hvir-meta'))
+  }
+
+  const urgentSections = (model, options) => [
+    urgentSection('Stuck', model.stuck, 'Nothing stuck', options, false),
+    (model.waiting?.items.length ?? 0) > 0 && urgentSection('Waiting on', model.waiting, '', options, true),
+  ].filter(Boolean)
+
   const renderActivity = (item) => {
     const flow = item.workflow
     const formula = flow ? `${flow.formula || 'Unnamed workflow'} · ${flow.step || 'Step unknown'} · ${flow.stepsDone}/${flow.stepsTotal} steps done` : ''
@@ -312,6 +331,7 @@
     root.replaceChildren(
       ...[stepSection(model, options)].filter(Boolean),
       section('Needs you', list(model.needsYou.map((ask) => renderAsk(ask, options, true)), 'Nothing needs you')),
+      ...urgentSections(model, options),
       section('Active now', el('div', { className: 'projects-active-grid' }, ...activeGroups),
         !activeGroups.length && paragraph('No active agents', 'hvir-meta'),
         options.seatJobsUnavailable && paragraph('Seat jobs not shown yet', 'hvir-meta')),
@@ -445,6 +465,7 @@
       overview,
       ...[stepSection(model, options)].filter(Boolean),
       section('Needs you', list(model.needsYou.map((ask) => renderAsk(ask, options, true)), 'Nothing needs you')),
+      ...urgentSections(model, options),
       ...liveGroups(model).map((group) => section(group.lead, el('ul', {}, ...group.cards.map((card) => navRow(card, options))))),
       ...archive(model, options, root))
   }
