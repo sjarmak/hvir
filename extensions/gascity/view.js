@@ -205,14 +205,14 @@ window.beadRow = (issue) => {
 const unguardedBeadStores = new Set()
 
 /** Run a read-only bd command, dropping --readonly only where the store refuses it. */
-window.bdRead = async (workspace, args) => {
-  if (unguardedBeadStores.has(workspace.id)) return window.host.run('bd', workspace, args)
+window.bdRead = async (workspace, args, options) => {
+  if (unguardedBeadStores.has(workspace.id)) return window.host.run('bd', workspace, args, options)
   try {
-    return await window.host.run('bd', workspace, ['--readonly', ...args])
+    return await window.host.run('bd', workspace, ['--readonly', ...args], options)
   } catch (error) {
     if (error.code !== 'proxy.readonly.unsupported') throw error
     unguardedBeadStores.add(workspace.id)
-    return window.host.run('bd', workspace, args)
+    return window.host.run('bd', workspace, args, options)
   }
 }
 

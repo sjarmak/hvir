@@ -197,6 +197,40 @@ test('a capacity refusal that never clears waits out the time budget, then is re
   assert.ok(elapsed() >= 40000 && elapsed() <= 45000)
 })
 
+test('a timer that fires after the deadline does not dispatch another attempt', async () => {
+  let clock = 0
+  const listeners = new Set()
+  const sent = []
+  const bridge = {
+    onMessage: (listener) => (listeners.add(listener), () => listeners.delete(listener)),
+    send: (message) => {
+      sent.push(message)
+      const value = message.capability === 'connector.execute'
+        ? { outcome: 'unavailable', reason: 'capacity' }
+        : outputFor(message, {})
+      Promise.resolve(value).then((answer) =>
+        listeners.forEach((listener) => listener({ kind: 'result', id: message.id, ok: true, value: answer })))
+    },
+  }
+  const window = {
+    hvirExtension: bridge,
+    setTimeout: (callback, ms) => { clock += ms + 60000; setImmediate(callback) },
+  }
+  vm.runInNewContext(readFileSync(join(__dirname, '..', 'host.js'), 'utf8'), { window, Date: { now: () => clock } })
+  await assert.rejects(window.host.run('gc', LOCAL, ['status']), /did not run: capacity/)
+  assert.equal(executes(sent).length, 1)
+})
+
+test('a caller deadline ends retries before the default budget', async () => {
+  const { host, sent, elapsed } = clocked((message) =>
+    message.capability === 'connector.execute'
+      ? { outcome: 'unavailable', reason: 'capacity' }
+      : outputFor(message, {}))
+  await assert.rejects(host.run('gc', LOCAL, ['status'], { deadline: 3000 }), /did not run: capacity/)
+  assert.ok(executes(sent).length > 1)
+  assert.ok(elapsed() <= 3000)
+})
+
 test('a capacity refusal that clears after thirty seconds still completes', async () => {
   const { host, sent, elapsed } = clocked((message) => {
     if (message.capability !== 'connector.execute') return outputFor(message, { r1: '{"ok":true}' })

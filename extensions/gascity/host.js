@@ -109,14 +109,15 @@ window.host = (() => {
       : Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_MAX_MS)
   }
 
-  async function execute(input, actionId, beforeSend) {
-    const deadline = Date.now() + RETRY_BUDGET_MS
+  async function execute(input, actionId, beforeSend, callerDeadline = Infinity) {
+    const deadline = Math.min(Date.now() + RETRY_BUDGET_MS, callerDeadline)
     for (let attempt = 0; ; attempt += 1) {
       const result = await request('connector.execute', input, actionId, beforeSend)
       if (result.outcome === 'completed' || !RETRIED_REASONS.has(result.reason)) return result
       const delay = retryDelay(result, attempt)
       if (Date.now() + delay > deadline) return result
       await new Promise((resolve) => window.setTimeout(resolve, delay))
+      if (Date.now() >= deadline) return result
     }
   }
 
@@ -125,10 +126,10 @@ window.host = (() => {
    * is set, raw stdout when `text` is set, `{ exitCode, stdout, stderr }` when `exit` is set); rejects with the program's failure report, its first
    * stderr line, or the connector's reason.
    */
-  async function run(connector, workspace, args, { lines = false, text = false, exit = false, actionId, beforeSend } = {}) {
+  async function run(connector, workspace, args, { lines = false, text = false, exit = false, actionId, beforeSend, deadline } = {}) {
     await admitted()
     try {
-      return await runAdmitted(connector, workspace, args, { lines, text, exit, actionId, beforeSend })
+      return await runAdmitted(connector, workspace, args, { lines, text, exit, actionId, beforeSend, deadline })
     } finally {
       released()
     }
@@ -147,13 +148,13 @@ window.host = (() => {
     }
   }
 
-  async function runAdmitted(connector, workspace, args, { lines, text, exit, actionId, beforeSend }) {
+  async function runAdmitted(connector, workspace, args, { lines, text, exit, actionId, beforeSend, deadline }) {
     const result = await execute({
       connector,
       host: workspace.host,
       workspace: workspace.id,
       args,
-    }, actionId, beforeSend)
+    }, actionId, beforeSend, deadline)
     if (result.outcome !== 'completed') {
       const notSent = NOT_SENT_OUTCOMES.has(result.outcome)
       const error = new Error(
