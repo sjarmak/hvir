@@ -30,6 +30,26 @@
       errors: [...previous.errors.filter((error) => !aboutNeeds(error)), ...needs.errors] }
   }
 
+  const partialFrom = (needs, sessions) => {
+    const { payload } = loader.assemblePayload({ now: needs.readAt, reads: [], sessions })
+    const base = { payload, model: window.projectsModel.buildDashboard(payload), errors: [], sessions, complete: false,
+      deferred: true, partial: true }
+    return withFreshNeeds(base, needs)
+  }
+
+  const isNeedsSection = (node) => node.tagName === 'SECTION' && node.querySelector('h2')?.textContent === 'Needs you'
+
+  const markLoading = (root) => {
+    for (const node of [...root.children]) {
+      if (isNeedsSection(node)) node.querySelectorAll('.projects-tag').forEach((tag) => tag.remove())
+      else {
+        const heading = node.tagName === 'SECTION' ? node.querySelector('h2')?.textContent : undefined
+        node.replaceWith(window.el('section', { className: 'projects-loading' },
+          ...(heading ? [window.el('h2', {}, heading)] : []), window.el('p', { className: 'hvir-meta' }, 'Loading…')))
+      }
+    }
+  }
+
   const deferredNote = (shown, reason, needs) => needs
     ? `Needs you read ${ageText(needs.readAt)}; other sections from ${ageText(shown.payload.now)}: ${reason}`
     : `showing data from ${ageText(shown.payload.now)}: ${reason}`
@@ -65,7 +85,7 @@
     if (needsFresh) {
       const { payload, errors: needsErrors } = loader.assemblePayload({ now: new Date(Date.now()).toISOString(), reads: needsReads })
       needs = { readAt: payload.now, decisions: payload.decisions, herSteps: payload.herSteps, errors: needsErrors, answerable }
-      await onNeeds?.(needs)
+      await onNeeds?.(needs, sessions)
     }
     const options = { deadline }
     const otherReads = await readStores(workspace, requests.filter((request) => !isNeeds(request)), options)
@@ -81,7 +101,7 @@
     const outcomes = connectors[loader.OUTCOME_CONNECTOR] === 'supported'
       ? await readCity(workspace, [...loader.OUTCOME_ARGS], loader.parseOutcomes, failures, loader.OUTCOME_CONNECTOR, options)
       : undefined
-    const result = loader.assemblePayload({ now: new Date().toISOString(), reads, sessions, errors })
+    const result = loader.assemblePayload({ now: new Date(Date.now()).toISOString(), reads, sessions, errors })
     if (outcomes) result.payload.outcomes = outcomes
     const conflicts = window.projectsModel.duplicateProjects(result.payload.projects)
     if (conflicts.length) result.errors.push(`project id in several stores: ${conflicts.join(', ')}`)
@@ -95,10 +115,13 @@
 
   const statusLine = (data, workspace, withCounts = true) => {
     const { model, payload, errors, sessions } = data
-    const time = new Date(payload.now).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    const time = clock(payload.now)
+    const needsTime = data.needs ? clock(data.needs.readAt) : time
+    const needsRead = needsTime === time ? '' : ` · Needs you read ${needsTime}`
     const counts = withCounts ? [`${model.needsYou.length} need you`, `${model.inDelivery.length} answered, waiting on agents`,
       `${payload.projects.length} projects`, `${sessions.length} active sessions`, ''].join(' · ') : ''
-    return `${counts}fetched ${time}${window.bdNote(workspace)}${errors.length ? ` · ${errors.join(' · ')}` : ''}`
+    return `${counts}fetched ${time}${needsRead}${window.bdNote(workspace)}${errors.length ? ` · ${errors.join(' · ')}` : ''}`
   }
 
   const keysOf = async (workspaceId, asks) => new Set((await Promise.all(asks.map(async (ask) => {
@@ -154,6 +177,11 @@
       liveSessions = data.sessions
       const shownActions = data.answerable && window.answerAction.actionBound() ? { ...actions, workspaceId: context.workspace.id, onAnswer: window.answerAction.answerDecision } : actions
       const note = render(data, ui.projects, shownActions, context)
+      if (data.partial) {
+        markLoading(ui.projects)
+        setStatus([note, extra].filter(Boolean).join(' · '))
+        return
+      }
       setStatus([note, statusLine(data, context.workspace, counts), extra].filter(Boolean).join(' · '))
     }
     const unrendered = new Set()
@@ -184,14 +212,16 @@
       if (waiting && unrendered.delete(workspace.id)) show(waiting, context, 'refresh paused: hvir went to the background')
       else if (!waiting) setStatus('Loading…')
       const readStartedAt = Date.now()
-      const publishNeeds = async (needs) => {
+      const publishNeeds = async (needs, sessions) => {
         const earlier = shownBy.get(workspace.id)
-        if (workspace.id !== shownId || hidden() || !earlier) return
-        const shown = withFreshNeeds(earlier, needs)
+        if (workspace.id !== shownId || hidden()) return
+        const shown = earlier ? withFreshNeeds(earlier, needs) : partialFrom(needs, sessions)
         await reconcileAnswers(workspace.id, shown, readStartedAt)
         if (workspace.id !== shownId) return
-        shownBy.set(workspace.id, shown)
-        show(shown, context, deferredNote(earlier, 'other sections refreshing…', needs))
+        if (earlier) {
+          shownBy.set(workspace.id, shown)
+          show(shown, context, deferredNote(earlier, 'other sections refreshing…', needs))
+        } else show(shown, context, `Needs you read ${ageText(needs.readAt)}; other sections loading…`)
       }
       const data = await read(workspace, { onNeeds: publishNeeds })
       if (workspace.id !== shownId) return

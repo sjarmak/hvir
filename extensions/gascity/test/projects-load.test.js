@@ -714,3 +714,41 @@ test('a merged snapshot keeps the explanations for fields it still has not read'
   assert.match(document.getElementById('status').textContent, /Needs you read/)
   assert.match(document.getElementById('status').textContent, /broken.*offline/)
 })
+
+test('on a first load Needs you shows before the other reads finish, with the other sections marked as loading', async (t) => {
+  const page = livePage(t, 'projects.html', 'projects.js')
+  const { view, document } = page
+  const { release } = gateOthers(page)
+  const loading = view.load({ workspace })
+  await settle()
+  assert.match(needsTitles(document), new RegExp(fixture.decisions[0].title.slice(0, 12)))
+  assert.doesNotMatch(needsTitles(document), /No project/)
+  assert.ok(document.querySelectorAll('.projects-loading').length > 0)
+  assert.equal(document.querySelectorAll('.projects-nav-row').length, 0)
+  assert.match(document.getElementById('status').textContent, /^Needs you read under a minute ago; other sections loading/)
+  release()
+  await loading
+  assert.equal(document.querySelectorAll('.projects-loading').length, 0)
+  assert.equal(document.querySelectorAll('.projects-nav-row').length, 1)
+})
+
+test('final and cached renders carry the time Needs you was read, not only the time the refresh finished', async (t) => {
+  const page = livePage(t, 'projects.html', 'projects.js')
+  const { view, document } = page
+  const { Date: clock } = document.defaultView
+  const real = clock.now
+  const clockTime = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const needsReadAt = real()
+  const { release } = gateOthers(page)
+  const loading = view.load({ workspace })
+  await settle()
+  clock.now = () => real() + 4 * 60000
+  release()
+  await loading
+  const status = () => document.getElementById('status').textContent
+  assert.match(status(), new RegExp(`Needs you read ${clockTime(needsReadAt)}`))
+  assert.match(status(), new RegExp(`fetched ${clockTime(needsReadAt + 4 * 60000)}`))
+  page.view.onContext({ workspace: { ...workspace, id: 'other' }, visible: true })
+  page.view.onContext({ workspace, visible: true })
+  assert.match(status(), new RegExp(`Needs you read ${clockTime(needsReadAt)}`))
+})
