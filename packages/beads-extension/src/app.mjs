@@ -5,6 +5,8 @@ import { buildReadSurface } from './model.mjs'
 import { createRefreshController } from './refresh.mjs'
 import { executeTerminalAction } from './actions.mjs'
 import { focusBeadId, focusNeedsRefresh, focusResult } from './focus.mjs'
+import { packageAnalyticsUrl } from './links.mjs'
+import { sectionElement } from './render.mjs'
 
 const { document, window } = globalThis
 const bridge = window.hvirExtension
@@ -18,6 +20,7 @@ const asOf = document.getElementById('as-of')
 const refresh = document.getElementById('refresh')
 const create = document.getElementById('create')
 const createTitle = document.getElementById('create-title')
+const analytics = document.getElementById('analytics')
 let context = { visible: false }
 let snapshot
 let pendingFocus
@@ -59,6 +62,11 @@ create.addEventListener('submit', (event) => {
     if (started) create.reset()
   })
 })
+const analyticsUrl = packageAnalyticsUrl()
+analytics.hidden = analyticsUrl === undefined
+analytics.addEventListener('click', () => {
+  if (analyticsUrl !== undefined) openExternal(analyticsUrl)
+})
 window.addEventListener('pagehide', () => {
   controller.dispose()
   binding.dispose()
@@ -76,12 +84,20 @@ function render(value) {
   content.hidden = false
   sections.replaceChildren(
     ...value.beads.sections.map((section) =>
-      sectionElement(section.label, section.items ?? [], section.count, beadActions),
+      sectionElement(
+        document,
+        section.label,
+        section.items ?? [],
+        section.count,
+        openExternal,
+        beadActions,
+      ),
     ),
   )
   crew.replaceChildren(
     ...value.crew.groups.map((group) =>
       sectionElement(
+        document,
         group.label,
         group.members.map((member) => ({
           id: member.id,
@@ -90,6 +106,7 @@ function render(value) {
             : `${member.label} · ${member.state}`,
         })),
         group.members.length,
+        openExternal,
         crewActions,
       ),
     ),
@@ -101,37 +118,12 @@ function render(value) {
   applyFocus(value)
 }
 
-function sectionElement(label, items, count, actions) {
-  const container = document.createElement('section')
-  container.className = 'beads-section'
-  const heading = document.createElement('h3')
-  heading.textContent = `${label} · ${count}`
-  container.append(heading)
-  if (!items.length) {
-    const empty = document.createElement('p')
-    empty.className = 'beads-empty'
-    empty.textContent = 'None'
-    container.append(empty)
-    return container
-  }
-  const list = document.createElement('ul')
-  list.className = 'beads-list'
-  for (const item of items) {
-    const row = document.createElement('li')
-    row.className = 'beads-row'
-    const title = document.createElement('span')
-    title.className = 'beads-row-title'
-    title.textContent = item.title
-    const id = document.createElement('span')
-    id.className = 'beads-id'
-    id.textContent = item.id
-    row.dataset.beadId = item.id
-    const controls = actions(item)
-    row.append(title, id, controls)
-    list.append(row)
-  }
-  container.append(list)
-  return container
+function openExternal(url) {
+  client.request('external.open', { url }).catch((reason) => {
+    state.dataset.state = 'error'
+    state.textContent = reason instanceof Error ? reason.message : String(reason)
+    state.classList.add('beads-error')
+  })
 }
 
 function beadActions(item) {

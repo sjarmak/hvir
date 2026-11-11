@@ -19,7 +19,9 @@ body {
 
 .beads-toolbar,
 .beads-row,
-.beads-row-title {
+.beads-row-title,
+.beads-row-details,
+.beads-toolbar-actions {
   display: flex;
   align-items: center;
 }
@@ -107,6 +109,25 @@ h2 {
 .beads-row-title {
   min-width: 0;
   gap: 7px;
+}
+
+.beads-row-details,
+.beads-toolbar-actions {
+  gap: 8px;
+}
+
+.beads-external {
+  padding: 0;
+  border: 0;
+  color: var(--accent);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.beads-link-unavailable {
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .beads-id,
