@@ -30,6 +30,7 @@ interface BeadsPackage {
   ): HTMLElement
   buildReadSurface(input: {
     bd?: { text: string; observedAt: number }
+    bdReady?: { text: string; observedAt: number }
     bdFailure?: { message: string; observedAt: number }
     gc?: { text: string; observedAt: number }
     gcFailure?: { message: string; observedAt: number }
@@ -53,6 +54,13 @@ interface BeadsPackage {
       message?: string
     }
   }
+  readWorkspace(
+    client: {
+      request(capability: string, input: unknown): Promise<unknown>
+    },
+    context: unknown,
+    previous: unknown,
+  ): Promise<unknown>
   createRefreshController(options: {
     refresh(): Promise<unknown>
     publish(value: unknown): void
@@ -69,7 +77,7 @@ function packageApi(): BeadsPackage {
   const result = buildSync({
     stdin: {
       contents:
-        "export * from './packages/beads-extension/src/model.mjs'; export * from './packages/beads-extension/src/refresh.mjs'; export * from './packages/beads-extension/src/actions.mjs'; export * from './packages/beads-extension/src/links.mjs'; export * from './packages/beads-extension/src/render.mjs'",
+        "export * from './packages/beads-extension/src/model.mjs'; export * from './packages/beads-extension/src/refresh.mjs'; export * from './packages/beads-extension/src/actions.mjs'; export * from './packages/beads-extension/src/links.mjs'; export * from './packages/beads-extension/src/render.mjs'; export * from './packages/beads-extension/src/bridge.mjs'",
       resolveDir: process.cwd(),
     },
     bundle: true,
@@ -230,6 +238,10 @@ describe('Beads workspace extension package', () => {
           issue('unknown-1', 'future-kind', 'open'),
         ]),
       },
+      bdReady: {
+        observedAt: 100,
+        text: JSON.stringify([issue('task-1', 'task', 'open')]),
+      },
       gc: {
         observedAt: 101,
         text: JSON.stringify({
@@ -286,6 +298,63 @@ describe('Beads workspace extension package', () => {
     ).toMatchObject([{ id: 'gc-internal' }, { id: 'gc-control' }])
   })
 
+  it('treats a bead with only closed dependencies as dependency-ready', () => {
+    const row = issue('ready-after-close', 'task', 'open', { dependency_count: 1 })
+    const view = api.buildReadSurface({
+      bd: { observedAt: 100, text: JSON.stringify([row]) },
+      bdReady: { observedAt: 100, text: JSON.stringify([row]) },
+      gc: { observedAt: 100, text: '{"ok":true,"sessions":[]}' },
+    })
+    expect(
+      view.beads.sections.find((section) => section.key === 'dependency-ready')
+        ?.items,
+    ).toMatchObject([{ id: 'ready-after-close' }])
+    expect(
+      view.beads.sections.find((section) => section.key === 'blocked')?.count,
+    ).toBe(0)
+  })
+
+  it('reads the authoritative ready set through the bounded bd connector', async () => {
+    const calls: { connector: string; args: string[] }[] = []
+    const client = {
+      request(capability: string, input: unknown) {
+        expect(capability).toBe('connector.execute')
+        const request = input as { connector: string; args: string[] }
+        calls.push(request)
+        return Promise.resolve({ outcome: 'completed', code: 0, truncated: false })
+      },
+    }
+    await api.readWorkspace(
+      client,
+      { workspace: { host: 'local', id: 'workspace-1' } },
+      undefined,
+    )
+    expect(calls.filter((call) => call.connector === 'bd').map((call) => call.args))
+      .toEqual([
+        [
+          'list',
+          '--json',
+          '--flat',
+          '--no-pager',
+          '-n',
+          '0',
+          '--include-gates',
+          '--include-infra',
+        ],
+        [
+          'list',
+          '--ready',
+          '--json',
+          '--flat',
+          '--no-pager',
+          '-n',
+          '0',
+          '--include-gates',
+          '--include-infra',
+        ],
+      ])
+  })
+
   it('places every visible typed issue in exactly one section', () =>
     hegel.test((tc) => {
       const rows = tc.draw(
@@ -314,6 +383,14 @@ describe('Beads workspace extension package', () => {
       )
       const view = api.buildReadSurface({
         bd: { text: JSON.stringify(issues), observedAt: 1 },
+        bdReady: {
+          text: JSON.stringify(
+            issues.filter(
+              (row) => row['status'] === 'open' && row['dependency_count'] === 0,
+            ),
+          ),
+          observedAt: 1,
+        },
         gc: { text: '{"ok":true,"sessions":[]}', observedAt: 1 },
       })
       const placed = view.beads.sections.flatMap((section) => section.items ?? [])
@@ -341,6 +418,7 @@ describe('Beads workspace extension package', () => {
   it('keeps malformed, unavailable, and failed reads distinct from successful emptiness', () => {
     const empty = api.buildReadSurface({
       bd: { text: '[]', observedAt: 1 },
+      bdReady: { text: '[]', observedAt: 1 },
       gc: { text: '{"ok":true,"sessions":[]}', observedAt: 1 },
     })
     expect(empty.beads.state).toBe('empty')

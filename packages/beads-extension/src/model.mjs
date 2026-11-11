@@ -19,14 +19,15 @@ export function buildReadSurface(input) {
       input.bd,
       input.bdFailure,
       previous?.beads,
-      parseBeads,
+      (text, observedAt) => parseBeads(text, observedAt, input.bdReady?.text),
       'structured bd output',
     ),
     crew: sourceView(
       input.gc,
       input.gcFailure,
       previous?.crew,
-      (text, observedAt) => parseCrew(text, observedAt, input.bd, previous?.beads),
+      (text, observedAt) =>
+        parseCrew(text, observedAt, input.bd, input.bdReady, previous?.beads),
       'structured gc output',
     ),
   }
@@ -62,17 +63,19 @@ function emptySource() {
   return { sections: [], groups: [] }
 }
 
-export function parseBeads(text, observedAt) {
+export function parseBeads(text, observedAt, readyText) {
   const raw = JSON.parse(text)
+  const rawReady = JSON.parse(readyText)
   if (!Array.isArray(raw)) throw new Error('Invalid structured bd output')
+  if (!Array.isArray(rawReady)) throw new Error('Invalid structured bd output')
   const issues = raw.map(readIssue)
   const buckets = new Map(sectionOrder.map(([key]) => [key, []]))
   const ready = new Set(
-    issues
+    rawReady
+      .map(readIssue)
       .filter(
         (issue) =>
           issue.status === 'open' &&
-          issue.dependencyCount === 0 &&
           classifyIssueType(issue.issueType) === 'executable-leaf',
       )
       .map((issue) => issue.id),
@@ -85,7 +88,11 @@ export function parseBeads(text, observedAt) {
     else if (beadNeedsHuman(issue)) key = 'needs-you'
     else if (isAnsweredAsk(issue)) key = 'answered'
     else if (issue.status === 'in_progress') key = 'in-flight'
-    else if (issue.status === 'blocked' || issue.dependencyCount > 0) key = 'blocked'
+    else if (
+      issue.status === 'blocked' ||
+      (issue.dependencyCount > 0 && !ready.has(issue.id))
+    )
+      key = 'blocked'
     else if (shipState(issue, category)) key = 'ready-to-ship'
     else if (ready.has(issue.id)) key = 'dependency-ready'
     else key = 'planned'
@@ -151,14 +158,18 @@ function compareIssues(left, right) {
   return left.priority - right.priority || left.id.localeCompare(right.id)
 }
 
-export function parseCrew(text, observedAt, bdSource, previousBeads) {
+export function parseCrew(text, observedAt, bdSource, bdReadySource, previousBeads) {
   const raw = JSON.parse(text)
   if (!raw || raw.ok !== true || !Array.isArray(raw.sessions))
     throw new Error('Invalid structured gc output')
   let issues = previousBeads?.issues ?? []
   if (bdSource) {
     try {
-      issues = parseBeads(bdSource.text, bdSource.observedAt).issues
+      issues = parseBeads(
+        bdSource.text,
+        bdSource.observedAt,
+        bdReadySource?.text,
+      ).issues
     } catch {
       issues = previousBeads?.issues ?? []
     }
