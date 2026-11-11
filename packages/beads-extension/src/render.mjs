@@ -1,12 +1,20 @@
 import { beadEvalLink } from './links.mjs'
 
-export function sectionElement(document, label, items, count, openExternal, actions) {
+export function sectionElement(
+  document,
+  label,
+  items,
+  count,
+  openExternal,
+  actions,
+  leading = [],
+) {
   const container = document.createElement('section')
   container.className = 'beads-section'
   const heading = document.createElement('h3')
   heading.textContent = `${label} · ${count}`
   container.append(heading)
-  if (!items.length) {
+  if (!items.length && !leading.length) {
     const empty = document.createElement('p')
     empty.className = 'beads-empty'
     empty.textContent = 'None'
@@ -15,10 +23,31 @@ export function sectionElement(document, label, items, count, openExternal, acti
   }
   const list = document.createElement('ul')
   list.className = 'beads-list'
-  for (const item of items)
-    list.append(rowElement(document, item, openExternal, actions))
+  list.append(...leading)
+  for (const item of items) list.append(rowElement(document, item, openExternal, actions))
   container.append(list)
   return container
+}
+
+export function gateElement(document, item) {
+  const row = document.createElement('li')
+  row.className = 'beads-row beads-gate'
+  const badge = document.createElement('span')
+  badge.className = 'beads-gate-badge'
+  badge.textContent = `${item.gate.gateType} gate`
+  const title = document.createElement('span')
+  title.className = 'beads-row-title'
+  title.textContent = item.gate.title
+  const unlocks = document.createElement('span')
+  unlocks.className = 'beads-gate-unlocks'
+  const blocked =
+    item.blocks ??
+    (item.gate.blockedId
+      ? { id: item.gate.blockedId, title: item.gate.blockedId }
+      : undefined)
+  unlocks.textContent = blocked ? `unblocks ${blocked.title}` : ''
+  row.append(badge, title, unlocks)
+  return row
 }
 
 function rowElement(document, item, openExternal, actions) {

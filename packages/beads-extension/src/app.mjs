@@ -6,7 +6,7 @@ import { createRefreshController } from './refresh.mjs'
 import { executeTerminalAction } from './actions.mjs'
 import { focusBeadId, focusNeedsRefresh, focusResult } from './focus.mjs'
 import { packageAnalyticsUrl } from './links.mjs'
-import { sectionElement } from './render.mjs'
+import { gateElement, sectionElement } from './render.mjs'
 
 const { document, window } = globalThis
 const bridge = window.hvirExtension
@@ -78,7 +78,9 @@ window.addEventListener('pagehide', () => {
 client.hello()
 
 function render(value) {
-  const failures = [value.beads, value.crew].filter((source) => source.state === 'error')
+  const failures = [value.beads, value.gates, value.crew].filter(
+    (source) => source.state === 'error',
+  )
   state.dataset.state = failures.length ? 'error' : 'ready'
   state.textContent = failures.length
     ? failures.map((source) => source.message).join(' · ')
@@ -86,16 +88,18 @@ function render(value) {
   state.classList.toggle('beads-error', failures.length > 0)
   content.hidden = false
   sections.replaceChildren(
-    ...value.beads.sections.map((section) =>
-      sectionElement(
+    ...value.beads.sections.map((section) => {
+      const gates = section.key === 'needs-you' ? value.gates.gates : []
+      return sectionElement(
         document,
         section.label,
         section.items ?? [],
-        section.count,
+        section.count + gates.length,
         openExternal,
         beadActions,
-      ),
-    ),
+        gates.map((gate) => gateElement(document, gate)),
+      )
+    }),
   )
   crew.replaceChildren(
     ...value.crew.groups.map((group) =>
@@ -114,7 +118,11 @@ function render(value) {
       ),
     ),
   )
-  const observed = Math.max(value.beads.observedAt ?? 0, value.crew.observedAt ?? 0)
+  const observed = Math.max(
+    value.beads.observedAt ?? 0,
+    value.gates.observedAt ?? 0,
+    value.crew.observedAt ?? 0,
+  )
   asOf.textContent = observed
     ? `As of ${new Date(observed).toLocaleTimeString()}`
     : 'No snapshot yet'

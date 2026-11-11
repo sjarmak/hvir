@@ -14,13 +14,22 @@ const sectionOrder = [
 
 export function buildReadSurface(input) {
   const previous = input.previous
+  const beads = sourceView(
+    input.bd,
+    input.bdFailure,
+    previous?.beads,
+    (text, observedAt) => parseBeads(text, observedAt, input.bdReady?.text),
+    'structured bd output',
+  )
   return {
-    beads: sourceView(
-      input.bd,
-      input.bdFailure,
-      previous?.beads,
-      (text, observedAt) => parseBeads(text, observedAt, input.bdReady?.text),
-      'structured bd output',
+    beads,
+    gates: sourceView(
+      input.bdGates,
+      input.bdGatesFailure,
+      previous?.gates,
+      (text, observedAt) => parseGates(text, observedAt, beads.issues),
+      'structured bd gate output',
+      { gates: [] },
     ),
     crew: sourceView(
       input.gc,
@@ -40,17 +49,17 @@ export function buildReadSurface(input) {
   }
 }
 
-function sourceView(source, failure, previous, parse, label) {
+function sourceView(source, failure, previous, parse, label, empty = emptySource()) {
   if (failure)
     return {
-      ...(previous ?? emptySource()),
+      ...(previous ?? empty),
       state: 'error',
       message: failure.message,
       observedAt: failure.observedAt,
     }
   if (!source)
     return {
-      ...(previous ?? emptySource()),
+      ...(previous ?? empty),
       state: 'unavailable',
       message: `${label} is unavailable`,
     }
@@ -58,11 +67,47 @@ function sourceView(source, failure, previous, parse, label) {
     return parse(source.text, source.observedAt)
   } catch {
     return {
-      ...(previous ?? emptySource()),
+      ...(previous ?? empty),
       state: 'error',
       message: `Invalid ${label}`,
       observedAt: source.observedAt,
     }
+  }
+}
+
+export function parseGates(text, observedAt, issues = []) {
+  const raw = JSON.parse(text)
+  if (!Array.isArray(raw)) throw new Error('Invalid structured bd gate output')
+  const byId = new Map(issues.map((issue) => [issue.id, issue]))
+  const gates = raw.map(readGate).map((gate) => ({
+    gate,
+    ...(gate.blockedId && byId.has(gate.blockedId)
+      ? {
+          blocks: {
+            id: gate.blockedId,
+            title: byId.get(gate.blockedId).title,
+          },
+        }
+      : {}),
+  }))
+  return {
+    state: gates.length ? 'ready' : 'empty',
+    observedAt,
+    gates,
+  }
+}
+
+function readGate(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Invalid gate')
+  const id = string(value.id)
+  const blockedId = optionalString(value.blocked_id ?? value.issue_id ?? value.blocks)
+  return {
+    id,
+    title: optionalString(value.title) ?? id,
+    gateType: optionalString(value.gate_type ?? value.type) ?? 'human',
+    state: optionalString(value.state ?? value.status) ?? 'open',
+    ...(blockedId ? { blockedId } : {}),
   }
 }
 
