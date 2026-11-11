@@ -6,6 +6,10 @@ export function focusBeadId(input) {
   return typeof value === 'string' && beadId.test(value) ? value : undefined
 }
 
+export function focusNeedsRefresh(wasVisible, input) {
+  return wasVisible && focusBeadId(input) !== undefined
+}
+
 export function focusResult(input, surface) {
   const id = focusBeadId(input)
   if (!id) return { state: 'none' }

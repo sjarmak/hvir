@@ -4,7 +4,7 @@ import { readWorkspace } from './bridge.mjs'
 import { buildReadSurface } from './model.mjs'
 import { createRefreshController } from './refresh.mjs'
 import { executeTerminalAction } from './actions.mjs'
-import { focusBeadId, focusResult } from './focus.mjs'
+import { focusBeadId, focusNeedsRefresh, focusResult } from './focus.mjs'
 
 const { document, window } = globalThis
 const bridge = window.hvirExtension
@@ -34,10 +34,11 @@ const controller = createRefreshController({
 
 client.listen((message) => {
   if (message.kind === 'context') {
+    const refreshFocus = focusNeedsRefresh(context.visible, message.context.input)
     context = message.context
     pendingFocus = focusBeadId(context.input)
     controller.setVisible(context.visible)
-    if (pendingFocus) controller.request()
+    if (refreshFocus) controller.request()
     return
   }
   if (message.kind !== 'action') return

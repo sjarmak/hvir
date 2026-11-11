@@ -50,6 +50,7 @@ describe('Needs you navigation authority', () => {
     const context = { BeadsFocus: undefined as unknown }
     runInNewContext(result.outputFiles[0]!.text, context)
     const focus = context.BeadsFocus as {
+      focusNeedsRefresh(wasVisible: boolean, input: unknown): boolean
       focusResult(
         value: unknown,
         surface: {
@@ -78,6 +79,8 @@ describe('Needs you navigation authority', () => {
     expect(
       focus.focusResult({}, { beads: { state: 'ready', issues: [{ id: 'b' }] } }),
     ).toEqual({ state: 'none' })
+    expect(focus.focusNeedsRefresh(false, { focusBeadId: 'b' })).toBe(false)
+    expect(focus.focusNeedsRefresh(true, { focusBeadId: 'b' })).toBe(true)
   })
 })
 
