@@ -69,7 +69,7 @@ import { sessionsPresentationSmokeProvider } from './sessions-presentation-provi
 import { createTerminalMoveSmokeHarness } from './terminal-move'
 import { createSmokeTerminalSessionStore } from './terminal-session-store'
 import { verifyTerminalPresentationLifecycle } from './terminal-presentation'
-import { extensionPtyPorts, verifyExtensionScenario } from './extensions'
+import { extensionPtyPorts, prepareExtensionSmoke, verifyExtensionScenario } from './extensions'
 import { verifyWebPaneWorkflow } from './web-pane'
 import { verifyWorkspaceRemoteWorkflow } from './workspace-remote'
 import { workspaceCloseSmokeCommands } from './workspace-close'
@@ -82,7 +82,6 @@ import {
   type Disposer,
   type EchoWorkerProtocol,
 } from '../../shared'
-
 /** Production-composed Electron acceptance workflow selected by `HVIR_SMOKE=1`. */
 export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise<number> {
   const {
@@ -98,8 +97,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     interruptionCheckpoint,
     rendererRoot,
   } = dependencies
-  let smokeWindow: BrowserWindow | undefined
-  let smokeSupervisor: PtySupervisor | undefined
+  let smokeWindow: BrowserWindow | undefined, smokeSupervisor: PtySupervisor | undefined
   let stopSmokeWatch: Disposer | undefined
   const failure = createSmokeFailureTracker(() =>
     smokeOwnedResourceEvidence(
@@ -349,6 +347,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     )
     const readiness = new SmokeRendererReadiness()
     const ipcRouter = registerIpcHandlers({
+      agents: dependencies.agents, extensions: dependencies.extensions,
       architectureReview: architectureReview.createSmokeArchitectureReview(
         rendererResources,
         cleanup,
@@ -409,6 +408,7 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     })
     failure.recordPhase('watch-active')
     prepareAgentSmoke(dependencies, host, sessionsObservation.context, supervisor)
+    await prepareExtensionSmoke(dependencies, host, sessionsObservation.context)
     const windowLifetime = await createSmokeWindow(
       dependencies,
       cleanup,

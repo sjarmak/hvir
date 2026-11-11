@@ -48,6 +48,37 @@ import {
   verifyExtensionEngineStartup,
 } from './extension-lifecycle'
 
+function extensionSmokeHosts(host: ProjectHost) {
+  return {
+    local: host,
+    hostById: (id: string) => (id === host.hostId ? host : undefined),
+    listHosts: () => [
+      {
+        hostId: host.hostId,
+        label: 'Local',
+        kind: 'local' as const,
+        connectionState: host.connectionState,
+        watchTier: host.watchTier,
+      },
+    ],
+    materializeHost: (id: string) => {
+      if (id !== host.hostId) throw new Error('Unknown host')
+      return Promise.resolve(host)
+    },
+    onHostStateChange: (listener: Parameters<ProjectHost['onConnectionState']>[0]) =>
+      host.onConnectionState(listener),
+  }
+}
+
+export async function prepareExtensionSmoke(
+  dependencies: ElectronSmokeDependencies,
+  host: ProjectHost,
+  sources: LiveSessionMetadataSources,
+): Promise<void> {
+  if (dependencies.mode !== 'extensions') return
+  await dependencies.extensions.start(host, sources, extensionSmokeHosts(host))
+}
+
 /** Uses ordinary Settings and public guest contracts in the production-composed window. */
 export async function verifyExtensionScenario(
   win: BrowserWindow,
@@ -62,24 +93,7 @@ export async function verifyExtensionScenario(
   if (mode !== 'extensions') return false
   await verifyCombinedDocumentProtocols(ports.htmlPreviews)
   await focusSmokeWindow(win)
-  await extensions.start(host, sources.context, {
-    local: host,
-    hostById: (id) => (id === host.hostId ? host : undefined),
-    listHosts: () => [
-      {
-        hostId: host.hostId,
-        label: 'Local',
-        kind: 'local',
-        connectionState: host.connectionState,
-        watchTier: host.watchTier,
-      },
-    ],
-    materializeHost: (id) => {
-      if (id !== host.hostId) throw new Error('Unknown host')
-      return Promise.resolve(host)
-    },
-    onHostStateChange: (listener) => host.onConnectionState(listener),
-  })
+  await extensions.start(host, sources.context, extensionSmokeHosts(host))
   if (
     await verifyExtensionSetup(win, extensions, scopes, host, {
       click: (name) => click(win, name),

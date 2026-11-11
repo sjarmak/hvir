@@ -258,8 +258,15 @@ export async function verifyTerminalThemeGalleryPresentation(
           if (currentName() === 'Alabaster') {
             const close = [...document.querySelectorAll('.settings-dialog button')]
               .find((button) => button.textContent?.trim() === 'Close settings');
-            close?.click();
-            return resolve('Catppuccin Mocha + Alabaster');
+            if (!(close instanceof HTMLButtonElement)) {
+              return fail('close settings action missing after restart');
+            }
+            close.click();
+            const waitForClose = () => {
+              if (!document.querySelector('.settings-dialog')) return resolve('Catppuccin Mocha + Alabaster');
+              setTimeout(waitForClose, 25);
+            };
+            return waitForClose();
           }
           setTimeout(inspectLight, 25);
         };

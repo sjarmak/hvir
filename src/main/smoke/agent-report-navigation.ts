@@ -57,7 +57,8 @@ export async function verifyAgentReportNavigation(
     throw new Error('Report shortcuts changed the hidden file viewer')
 
   await win.webContents.executeJavaScript(
-    `document.querySelector('nav[aria-label="Project views"] button:last-child').click()`,
+    `([...document.querySelectorAll('nav[aria-label="Project views"] button')]
+      .find(button => button.textContent?.trim().startsWith('Git'))).click()`,
   )
   await ports.click('History')
   await ports.wait(

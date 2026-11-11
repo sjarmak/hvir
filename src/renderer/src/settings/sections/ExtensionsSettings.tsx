@@ -223,14 +223,20 @@ export function ExtensionsSettings({
                     setConnection(next.connection)
                     const added =
                       next.installed &&
-                      (observed === publication.current
-                        ? next.installations
-                        : (currentState.current?.installations ?? [])
-                      ).find(
+                      next.installations.find(
                         (entry) =>
                           entry.installationId === next.installed!.installationId,
                       )
-                    if (added) setSelection(added)
+                    const addedStillPresent =
+                      added &&
+                      (observed === publication.current ||
+                        currentState.current?.installations.some(
+                          (entry) =>
+                            entry.source === added.source ||
+                            (!!added.sourceIdentity &&
+                              entry.sourceIdentity === added.sourceIdentity),
+                        ))
+                    if (addedStillPresent) setSelection(added)
                     if (landing) consumed = landingCallback.current?.(landing) === true
                   } finally {
                     if (landing && next.installed?.landingCreated && !consumed)

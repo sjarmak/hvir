@@ -240,6 +240,7 @@ export function createElectronWindowManager(
     const entryUrl = rendererUrl ?? pathToFileURL(packagedEntry).href
     const ownerId = win.webContents.id
     let rendererOwner = dependencies.activateRenderer(ownerId)
+    dependencies.extensionGuests?.installWindowLifecycle(win, () => rendererOwner)
     let rendererRevoked = false
     let committedDocument = false
     let hadUsableDocument = false
