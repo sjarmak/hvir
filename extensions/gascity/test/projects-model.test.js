@@ -538,3 +538,81 @@ test('stuck and waiting skip automatic workflow step beads', () => {
   assert.deepEqual(model.stuck.items.map((row) => row.id), ['fx-s-real'])
   assert.deepEqual(model.waiting.items, [])
 })
+
+test('a claimed bead says "no live session" until seat jobs were actually read', () => {
+  const claim = { id: 'fx-claimed', title: 'Claimed', status: 'in_progress', labels: [],
+    metadata: { 'proj.id': 'fx-project-1' }, assignee: 'fx-gone' }
+  const rowOf = (input) => card(buildDashboard(input)).inFlight.find((entry) => entry.bead.id === 'fx-claimed')
+  const unread = fresh()
+  unread.seatJobs = []
+  unread.inProgress.push(claim)
+  assert.equal(rowOf(unread).claim, 'no live session')
+  const absent = fresh()
+  delete absent.seatJobs
+  absent.inProgress.push(claim)
+  assert.equal(rowOf(absent).claim, 'no live session')
+  const readEmpty = { ...unread, seatJobsRead: true }
+  assert.equal(rowOf(readEmpty).claim, 'nobody working')
+  const populated = fresh()
+  populated.inProgress.push(claim)
+  assert.equal(rowOf(populated).claim, 'nobody working')
+})
+
+test('a session matches its work by alias as well as id, name and agent name', () => {
+  const input = fresh()
+  input.sessions.push({ id: 'fx-s-alias', name: 'fx-long-name', alias: 'fx-alias', agent_name: 'fx-pool',
+    command: 'codex', provider: 'codex', started_at: '2026-10-29T12:00Z' })
+  input.inProgress.push({ id: 'fx-by-alias', title: 'By alias', status: 'in_progress', labels: [],
+    metadata: { 'proj.id': 'fx-project-1' }, assignee: 'fx-alias' })
+  const rows = card(buildDashboard(input)).inFlight.filter((entry) => entry.bead.id === 'fx-by-alias')
+  assert.deepEqual(rows.map((entry) => [entry.who, entry.working]), [['fx-long-name', true]])
+})
+
+test('coverage is keyed by store and id so a shared bead id in another store is still flagged', () => {
+  const input = fresh()
+  input.inProgress = input.inProgress.map((bead) => ({ ...bead, store: '/a' }))
+  input.inProgress.push({ id: 'fx-lead-work', title: 'Twin in another store', status: 'in_progress', labels: [],
+    metadata: { 'proj.id': 'fx-project-1' }, assignee: 'fx-gone', store: '/b' })
+  const rows = card(buildDashboard(input)).inFlight.filter((entry) => entry.bead.id === 'fx-lead-work')
+  assert.deepEqual(rows.map((entry) => [entry.bead.store, entry.working]).sort(), [['/a', true], ['/b', false]])
+  const queued = fresh()
+  queued.inProgress = queued.inProgress.map((bead) => ({ ...bead, store: '/a' }))
+  queued.linked = [{ id: 'fx-lead-work', title: 'Twin queued', status: 'open', labels: [], store: '/b',
+    metadata: { 'proj.id': 'fx-project-1' } }]
+  assert.deepEqual(card(buildDashboard(queued)).queued.map((entry) => entry.store), ['/b'])
+})
+
+test('an open bead with a start receipt is not queued', () => {
+  const input = fresh()
+  input.linked = [
+    urgent('fx-r-started', { metadata: { 'proj.id': 'fx-project-1', 'receipt.started_at': '2026-10-29T08:00Z' } }),
+    urgent('fx-r-plain', { metadata: { 'proj.id': 'fx-project-1' } }),
+  ]
+  assert.deepEqual(card(buildDashboard(input)).queued.map((entry) => entry.id), ['fx-r-plain'])
+})
+
+test('decisions are kept out of Stuck and Waiting on by shape, whatever store they came from', () => {
+  const input = fresh()
+  input.urgent = [
+    urgent('dec-abc1', { status: 'in_progress', store: '/elsewhere' }),
+    urgent('fx-labelled', { labels: ['needs/stephanie'], store: '/elsewhere' }),
+    urgent('dec-wait1', { metadata: { 'gc.waiting_on': 'x' } }),
+    urgent('fx-real'),
+  ]
+  const model = buildDashboard(input)
+  assert.deepEqual(model.stuck.items.map((row) => row.id), ['fx-real'])
+  assert.deepEqual(model.waiting.items, [])
+})
+
+test('in flight and queued cap at twenty rows with the remainder counted', () => {
+  const input = fresh()
+  input.linked = Array.from({ length: 23 }, (_, i) => urgent(`fx-cq${i}`, { metadata: { 'proj.id': 'fx-project-1' } }))
+  input.inProgress.push(...Array.from({ length: 22 }, (_, i) => ({ id: `fx-cf${i}`, title: `Claim ${i}`,
+    status: 'in_progress', labels: [], metadata: { 'proj.id': 'fx-project-1' }, assignee: `fx-ghost-${i}` })))
+  const project = card(buildDashboard(input))
+  assert.equal(project.queued.length, 20)
+  assert.equal(project.queuedMore, 3)
+  assert.equal(project.inFlight.length, 20)
+  assert.equal(project.inFlightMore, project.inFlightTotal - 20)
+  assert.ok(project.inFlightTotal >= 22)
+})

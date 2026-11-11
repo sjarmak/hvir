@@ -226,7 +226,7 @@
     }
   }
 
-  const api = Object.freeze({ HER, REMOVED, UNREAD, waitsOnHer, inDelivery, undated, truth })
+  const api = Object.freeze({ HER, REMOVED, UNREAD, isAsk, hasStarted, waitsOnHer, inDelivery, undated, truth })
   if (typeof module === 'object') module.exports = api
   else window.projectsTruth = api
 })()

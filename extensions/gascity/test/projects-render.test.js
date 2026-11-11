@@ -558,3 +558,25 @@ test('the pane shows a Stuck list and a Waiting on list above the project cards'
   assert.deepEqual(opened, ['fx-u1'])
   assert.doesNotMatch(named('Stuck').textContent, /undefined/)
 })
+
+test('in flight and queued say how many more rows are hidden, and an unread seat list changes the claim wording', (t) => {
+  const input = structuredClone(fixture)
+  input.seatJobs = []
+  input.linked = Array.from({ length: 23 }, (_, i) => ({ id: `fx-cq${i}`, title: `Queued ${i}`, status: 'open',
+    labels: [], metadata: { 'proj.id': 'fx-project-1' } }))
+  input.inProgress.push({ id: 'fx-claimed', title: 'Claimed and abandoned', status: 'in_progress', labels: [],
+    metadata: { 'proj.id': 'fx-project-1' }, assignee: 'fx-gone' })
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  dom.window.Date.now = () => Date.parse(fixture.now)
+  for (const file of ['view.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const root = dom.window.document.querySelector('main')
+  const project = buildDashboard(input).cards.flatMap((group) => group.cards).find((entry) => entry.id === 'fx-project-1')
+  dom.window.projectsRender.renderProject(project, root, {})
+  const named = (name) => [...root.querySelectorAll('section')].find((node) => node.querySelector('h2').textContent.startsWith(name))
+  assert.match(named('In flight').textContent, /claimed, no live session/)
+  assert.doesNotMatch(named('In flight').textContent, /nobody working/)
+  assert.match(named('Queued (23)').textContent, /\+3 more/)
+  const tiles = [...root.querySelectorAll('.projects-glance .projects-tile')].map((node) => node.textContent)
+  assert.ok(tiles.some((text) => /Queued/.test(text) && /23$/.test(text)))
+})

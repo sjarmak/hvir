@@ -369,13 +369,13 @@
     tile('Milestones', `${card.milestones.done}/${card.milestones.total}`),
     tile('Needs you', String(card.needsCount)),
     tile('Agents active', String(card.agentsActive)),
-    tile('Queued', String(card.queued.length)),
+    tile('Queued', String(card.queuedTotal)),
     tile('Verified progress', card.verifiedAt ? window.ago(card.verifiedAt) : 'none recorded'))
 
   const renderFlight = (row, options) => el('li', {},
     button(row.bead.title, row.bead.id, () => options.onOpenBead?.(row.bead.id, row.bead.store)),
     text(` · ${row.who}`, 'hvir-meta'),
-    !row.working && text(' · claimed, nobody working', 'projects-warning'),
+    !row.working && text(` · claimed, ${row.claim}`, 'projects-warning'),
     row.model && text(` · ${row.model}`, 'hvir-meta'),
     row.startedAt && text(` · started ${window.ago(row.startedAt)}`, 'hvir-meta'))
 
@@ -422,8 +422,10 @@
         el('div', {},
           ...decisionSections(card, options),
           refs > 0 && section('Pull requests and issues', renderRefs(card.refs, options)),
-          section(`In flight (${card.inFlight.length})`, list(card.inFlight.map((row) => renderFlight(row, options)), 'Nothing in flight')),
-          section(`Queued (${card.queued.length})`, list(card.queued.map((entry) => renderQueued(entry, options)), 'Nothing queued')),
+          section(`In flight (${card.inFlightTotal})`, list(card.inFlight.map((row) => renderFlight(row, options)), 'Nothing in flight'),
+            card.inFlightMore > 0 && paragraph(`+${card.inFlightMore} more`, 'hvir-meta')),
+          section(`Queued (${card.queuedTotal})`, list(card.queued.map((entry) => renderQueued(entry, options)), 'Nothing queued'),
+            card.queuedMore > 0 && paragraph(`+${card.queuedMore} more`, 'hvir-meta')),
           section('Active now', list(card.active.map(renderActivity), 'No active agents')),
           section(`In progress (${card.inProgress.length})`, list(card.inProgress.map((bead) => el('li', {},
             button(bead.title, bead.id, () => options.onOpenBead?.(bead.id, bead.store)),
