@@ -498,6 +498,29 @@ describe('Beads workspace extension package', () => {
     ).toBe(0)
   })
 
+  it.each([
+    ['epic-ready', 'epic', { 'gc.outcome': 'pass' }],
+    ['merge-ready', 'merge-request', {}],
+  ])('keeps ready non-leaf %s work out of Blocked', (id, issueType, metadata) => {
+    const row = issue(id, issueType, 'open', {
+      dependency_count: 1,
+      metadata,
+    })
+    const view = api.buildReadSurface({
+      bd: { observedAt: 100, text: JSON.stringify([row]) },
+      bdReady: { observedAt: 100, text: JSON.stringify([row]) },
+      gc: { observedAt: 100, text: '{"ok":true,"sessions":[]}' },
+      gcRig: cityRigSource,
+    })
+
+    expect(
+      view.beads.sections.find((section) => section.key === 'ready-to-ship')?.items,
+    ).toMatchObject([{ id }])
+    expect(
+      view.beads.sections.find((section) => section.key === 'blocked')?.count,
+    ).toBe(0)
+  })
+
   it('reads the authoritative ready set through the bounded bd connector', async () => {
     const calls: { connector: string; args: string[] }[] = []
     const client = {

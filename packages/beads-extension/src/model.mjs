@@ -80,11 +80,7 @@ export function parseBeads(text, observedAt, readyText) {
   const ready = new Set(
     rawReady
       .map(readIssue)
-      .filter(
-        (issue) =>
-          issue.status === 'open' &&
-          classifyIssueType(issue.issueType) === 'executable-leaf',
-      )
+      .filter((issue) => issue.status === 'open')
       .map((issue) => issue.id),
   )
   for (const issue of issues) {
@@ -101,7 +97,8 @@ export function parseBeads(text, observedAt, readyText) {
     )
       key = 'blocked'
     else if (shipState(issue, category)) key = 'ready-to-ship'
-    else if (ready.has(issue.id)) key = 'dependency-ready'
+    else if (category === 'executable-leaf' && ready.has(issue.id))
+      key = 'dependency-ready'
     else key = 'planned'
     buckets.get(key).push(issue)
   }
