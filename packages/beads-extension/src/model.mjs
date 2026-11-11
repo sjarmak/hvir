@@ -27,7 +27,14 @@ export function buildReadSurface(input) {
       input.gcFailure,
       previous?.crew,
       (text, observedAt) =>
-        parseCrew(text, observedAt, input.bd, input.bdReady, previous?.beads),
+        parseCrew(
+          text,
+          observedAt,
+          input.bd,
+          input.bdReady,
+          previous?.beads,
+          input.gcRig?.text,
+        ),
       'structured gc output',
     ),
   }
@@ -158,7 +165,14 @@ function compareIssues(left, right) {
   return left.priority - right.priority || left.id.localeCompare(right.id)
 }
 
-export function parseCrew(text, observedAt, bdSource, bdReadySource, previousBeads) {
+export function parseCrew(
+  text,
+  observedAt,
+  bdSource,
+  bdReadySource,
+  previousBeads,
+  rigText,
+) {
   const raw = JSON.parse(text)
   if (!raw || raw.ok !== true || !Array.isArray(raw.sessions))
     throw new Error('Invalid structured gc output')
@@ -174,7 +188,11 @@ export function parseCrew(text, observedAt, bdSource, bdReadySource, previousBea
       issues = previousBeads?.issues ?? []
     }
   }
-  const members = raw.sessions.map((session) => crewMember(session, issues))
+  const scope = readCrewScope(rigText)
+  const sessions = raw.sessions.filter((session) =>
+    crewSessionInScope(session, scope),
+  )
+  const members = sessions.map((session) => crewMember(session, issues))
   const groups = [
     {
       key: 'leads',
@@ -193,6 +211,38 @@ export function parseCrew(text, observedAt, bdSource, bdReadySource, previousBea
     },
   ]
   return { state: members.length ? 'ready' : 'empty', observedAt, groups }
+}
+
+function readCrewScope(text) {
+  const value = JSON.parse(text)
+  if (!value || value.ok !== true || !value.rig || typeof value.rig !== 'object')
+    throw new Error('Invalid structured gc rig output')
+  const name = string(value.rig.name)
+  const path = normalizedPath(string(value.rig.path))
+  const cityPath = normalizedPath(string(value.city_path ?? value.cityPath))
+  return { name, path, city: path === cityPath }
+}
+
+function crewSessionInScope(value, scope) {
+  if (scope.city) return true
+  if (!value || typeof value !== 'object') throw new Error('Invalid crew member')
+  const projectedRig = optionalString(value.rig)
+  if (projectedRig) return projectedRig === scope.name
+  const identity = optionalString(value.template) ?? optionalString(value.name)
+  if (identity?.startsWith('/'))
+    return normalizedPath(identity.slice(0, identity.lastIndexOf('/'))) === scope.path
+  if (identity?.startsWith(`${scope.name}/`)) return true
+  const workDir = optionalString(value.work_dir ?? value.workDir)
+  return workDir ? pathAtOrBelow(workDir, scope.path) : false
+}
+
+function normalizedPath(value) {
+  return value.length > 1 ? value.replace(/\/+$/, '') : value
+}
+
+function pathAtOrBelow(value, root) {
+  const path = normalizedPath(value)
+  return path === root || path.startsWith(root === '/' ? '/' : `${root}/`)
 }
 
 function crewMember(value, issues) {

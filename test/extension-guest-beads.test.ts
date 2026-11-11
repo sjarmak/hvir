@@ -33,6 +33,7 @@ interface BeadsPackage {
     bdReady?: { text: string; observedAt: number }
     bdFailure?: { message: string; observedAt: number }
     gc?: { text: string; observedAt: number }
+    gcRig?: { text: string; observedAt: number }
     gcFailure?: { message: string; observedAt: number }
     previous?: unknown
   }): {
@@ -49,7 +50,11 @@ interface BeadsPackage {
       state: string
       groups: readonly {
         key: string
-        members: readonly { bead?: { id: string }; held: readonly { id: string }[] }[]
+        members: readonly {
+          id: string
+          bead?: { id: string }
+          held: readonly { id: string }[]
+        }[]
       }[]
       message?: string
     }
@@ -91,6 +96,14 @@ function packageApi(): BeadsPackage {
 }
 
 const api = packageApi()
+const cityRigSource = {
+  observedAt: 1,
+  text: JSON.stringify({
+    ok: true,
+    city_path: '/city',
+    rig: { name: 'city', path: '/city' },
+  }),
+}
 
 describe('Beads workspace extension package', () => {
   it('declares one left workspace view, one updater, and bounded bd and gc connectors', () => {
@@ -269,6 +282,7 @@ describe('Beads workspace extension package', () => {
           ],
         }),
       },
+      gcRig: cityRigSource,
     })
     expect(
       Object.fromEntries(
@@ -298,12 +312,182 @@ describe('Beads workspace extension package', () => {
     ).toMatchObject([{ id: 'gc-internal' }, { id: 'gc-control' }])
   })
 
+  it('shows only sessions belonging to the selected rig', () => {
+    const view = api.buildReadSurface({
+      bd: { observedAt: 100, text: '[]' },
+      bdReady: { observedAt: 100, text: '[]' },
+      gc: {
+        observedAt: 101,
+        text: JSON.stringify({
+          ok: true,
+          sessions: [
+            {
+              id: 'gc-hvir-worker',
+              name: 'hvir-worker-pool',
+              template: '/projects/hvir/hvir-worker',
+              work_dir: '/worktrees/hvir-worker-1',
+              state: 'active',
+            },
+            {
+              id: 'gc-hvir-lead',
+              name: 'hvir-pl',
+              alias: 'hvir-pl',
+              template: 'hvir-pl',
+              work_dir: '/projects/hvir',
+              state: 'active',
+            },
+            {
+              id: 'gc-hvir-internal',
+              name: 'hvir/core.control-dispatcher',
+              alias: 'hvir/core.control-dispatcher',
+              template: 'hvir/core.control-dispatcher',
+              work_dir: '/projects/hvir',
+              state: 'active',
+            },
+            {
+              id: 'gc-foreign',
+              name: 'mem-pl',
+              alias: 'mem-pl',
+              template: 'mem-pl',
+              work_dir: '/projects/mem',
+              state: 'active',
+            },
+          ],
+        }),
+      },
+      gcRig: {
+        observedAt: 101,
+        text: JSON.stringify({
+          ok: true,
+          city_path: '/city',
+          rig: { name: 'hvir', path: '/projects/hvir' },
+        }),
+      },
+    })
+    expect(
+      view.crew.groups.flatMap((group) =>
+        group.members.map((member) => member.id),
+      ),
+    ).toEqual(['gc-hvir-lead', 'gc-hvir-worker', 'gc-hvir-internal'])
+  })
+
+  it('keeps foreign sessions out of every scoped crew group', () =>
+    hegel.test((tc) => {
+      const suffixes = tc.draw(
+        gs.arrays(gs.fromRegex('[a-z][a-z0-9-]{0,20}'), { maxSize: 30 }),
+      )
+      const view = api.buildReadSurface({
+        bd: { observedAt: 1, text: '[]' },
+        bdReady: { observedAt: 1, text: '[]' },
+        gc: {
+          observedAt: 1,
+          text: JSON.stringify({
+            ok: true,
+            sessions: [
+              {
+                id: 'own-worker',
+                name: 'hvir-worker',
+                template: '/projects/hvir/hvir-worker',
+                work_dir: '/worktrees/hvir-worker',
+                state: 'active',
+              },
+              ...suffixes.map((suffix, index) => ({
+                id: `foreign-${index}`,
+                name: `foreign-${suffix}`,
+                template: `/projects/foreign/${suffix}`,
+                work_dir: `/projects/foreign/${suffix}`,
+                state: 'active',
+              })),
+            ],
+          }),
+        },
+        gcRig: {
+          observedAt: 1,
+          text: JSON.stringify({
+            ok: true,
+            city_path: '/city',
+            rig: { name: 'hvir', path: '/projects/hvir' },
+          }),
+        },
+      })
+      expect(
+        view.crew.groups.flatMap((group) =>
+          group.members.map((member) => member.id),
+        ),
+      ).toEqual(['own-worker'])
+    }))
+
+  it('keeps the city workspace city-wide and fails closed without a valid rig', () => {
+    const gc = {
+      observedAt: 1,
+      text: JSON.stringify({
+        ok: true,
+        sessions: [
+          {
+            id: 'hvir-lead',
+            name: 'hvir-pl',
+            alias: 'hvir-pl',
+            work_dir: '/projects/hvir',
+            state: 'active',
+          },
+          {
+            id: 'mem-lead',
+            name: 'mem-pl',
+            alias: 'mem-pl',
+            work_dir: '/projects/mem',
+            state: 'active',
+          },
+        ],
+      }),
+    }
+    const city = api.buildReadSurface({
+      bd: { observedAt: 1, text: '[]' },
+      bdReady: { observedAt: 1, text: '[]' },
+      gc,
+      gcRig: {
+        observedAt: 1,
+        text: JSON.stringify({
+          ok: true,
+          city_path: '/city',
+          rig: { name: 'city', path: '/city' },
+        }),
+      },
+    })
+    expect(
+      city.crew.groups.flatMap((group) =>
+        group.members.map((member) => member.id),
+      ),
+    ).toEqual(['hvir-lead', 'mem-lead'])
+
+    const unknown = api.buildReadSurface({
+      bd: { observedAt: 1, text: '[]' },
+      bdReady: { observedAt: 1, text: '[]' },
+      gc,
+      gcRig: { observedAt: 1, text: '{"ok":false}' },
+    })
+    expect(unknown.crew).toMatchObject({
+      state: 'error',
+      message: 'Invalid structured gc output',
+    })
+
+    const missing = api.buildReadSurface({
+      bd: { observedAt: 1, text: '[]' },
+      bdReady: { observedAt: 1, text: '[]' },
+      gc,
+    })
+    expect(missing.crew).toMatchObject({
+      state: 'error',
+      message: 'Invalid structured gc output',
+    })
+  })
+
   it('treats a bead with only closed dependencies as dependency-ready', () => {
     const row = issue('ready-after-close', 'task', 'open', { dependency_count: 1 })
     const view = api.buildReadSurface({
       bd: { observedAt: 100, text: JSON.stringify([row]) },
       bdReady: { observedAt: 100, text: JSON.stringify([row]) },
       gc: { observedAt: 100, text: '{"ok":true,"sessions":[]}' },
+      gcRig: cityRigSource,
     })
     expect(
       view.beads.sections.find((section) => section.key === 'dependency-ready')
@@ -353,6 +537,11 @@ describe('Beads workspace extension package', () => {
           '--include-infra',
         ],
       ])
+    expect(calls.filter((call) => call.connector === 'gc').map((call) => call.args))
+      .toEqual([
+        ['session', 'list', '--json'],
+        ['rig', 'status', '--json'],
+      ])
   })
 
   it('places every visible typed issue in exactly one section', () =>
@@ -392,6 +581,7 @@ describe('Beads workspace extension package', () => {
           observedAt: 1,
         },
         gc: { text: '{"ok":true,"sessions":[]}', observedAt: 1 },
+        gcRig: cityRigSource,
       })
       const placed = view.beads.sections.flatMap((section) => section.items ?? [])
       const visible = issues.filter(
@@ -420,12 +610,14 @@ describe('Beads workspace extension package', () => {
       bd: { text: '[]', observedAt: 1 },
       bdReady: { text: '[]', observedAt: 1 },
       gc: { text: '{"ok":true,"sessions":[]}', observedAt: 1 },
+      gcRig: cityRigSource,
     })
     expect(empty.beads.state).toBe('empty')
     expect(empty.crew.state).toBe('empty')
     const failed = api.buildReadSurface({
       bdFailure: { message: 'bd deadline', observedAt: 2 },
       gc: { text: '{', observedAt: 2 },
+      gcRig: cityRigSource,
       previous: empty,
     })
     expect(failed.beads).toMatchObject({ state: 'error', message: 'bd deadline' })
