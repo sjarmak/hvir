@@ -205,7 +205,7 @@ export function App(): ReactElement {
   deactivateGitGraphRef.current = deactivateGitGraph
   deactivateWebPaneRef.current = () => web.setActive(false)
   const terminalCommands = useTerminalCommands(session.activeWorkspace?.id)
-  const rail = useRailExtensions(session, layout, terminalCommands)
+  const rail = useRailExtensions(session, layout)
   const { destination, setDestination, needsYou, extensionTarget } = useApplicationNavigation({
     projectState,
     root,

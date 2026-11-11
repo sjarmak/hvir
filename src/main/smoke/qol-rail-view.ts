@@ -1,52 +1,11 @@
 import { clipboard, type BrowserWindow } from 'electron'
 
-const SYNTHETIC_RUN_URL = 'https://eval.example/runs/smoke-91'
 const SYNTHETIC_HEAD = '0123456789abcdef0123456789abcdef01234567'
 const HOSTILE_PREFIX = '<img src=x onerror=alert(1)>'
 
 export async function verifyQolRailView(win: BrowserWindow): Promise<string> {
-  await verifyBeadEvaluation(win)
   const copyStatus = await verifyPullFeedback(win)
-  return `synthetic Bead evaluation + PR feedback preview${copyStatus}`
-}
-
-async function verifyBeadEvaluation(win: BrowserWindow): Promise<void> {
-  await clickRailTab(win, 'Gas City', '.beads-panel')
-  await waitFor(win, `Boolean(document.querySelector('[data-bead-id="smoke-eval-1"]'))`)
-  await win.webContents.executeJavaScript(`
-    (() => {
-      const row = document.querySelector('[data-bead-id="smoke-eval-1"] .beads-row');
-      if (!(row instanceof HTMLButtonElement)) throw new Error('Synthetic evaluation bead row missing');
-      row.click();
-    })()
-  `)
-  await waitFor(
-    win,
-    `Boolean(document.querySelector('[aria-label="Evaluation result"] a'))`,
-  )
-  const facts = (await win.webContents.executeJavaScript(`(() => {
-    const panel = document.querySelector('.beads-panel');
-    const link = panel?.querySelector('[aria-label="Evaluation result"] a');
-    return {
-      href: link?.getAttribute('href'),
-      text: panel?.textContent ?? '',
-      untrustedNodes: panel?.querySelectorAll('img,script,iframe').length ?? 0,
-    };
-  })()`)) as {
-    readonly href?: string
-    readonly text: string
-    readonly untrustedNodes: number
-  }
-  if (facts.href !== SYNTHETIC_RUN_URL)
-    throw new Error('Synthetic evaluation URL changed in the expanded card')
-  if (
-    !facts.text.includes(SYNTHETIC_HEAD) ||
-    !facts.text.includes('Producer-supplied. Current result not verified.')
-  ) {
-    throw new Error('Synthetic evaluation facts or provenance were omitted')
-  }
-  if (facts.untrustedNodes !== 0)
-    throw new Error('Synthetic evaluation metadata created executable markup')
+  return `PR feedback preview${copyStatus}`
 }
 
 async function verifyPullFeedback(win: BrowserWindow): Promise<string> {

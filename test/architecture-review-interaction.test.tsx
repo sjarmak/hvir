@@ -4,7 +4,7 @@ import {
   claimArchitectureAgentLaunch,
   queueArchitectureAgentLaunch,
 } from '../src/renderer/src/architecture-review/architecture-review-launch'
-import { dispatchBeadCommand } from '../src/renderer/src/beads/bead-launch-event'
+import { dispatchBeadCommand } from '../src/renderer/src/terminal/bead-command-event'
 
 const root = { hostId: 'local', path: '/repo' } as never
 const worktree = { hostId: 'local', path: '/repo.hvir-worktrees/review-1' } as never

@@ -9,12 +9,10 @@ import { registerAppIpc } from './ipc/features/app'
 import { registerAgentIpc } from './ipc/features/agent'
 import { registerExtensionsIpc } from './ipc/features/extensions'
 import { registerClipboardIpc } from './ipc/features/clipboard'
-import { registerBeadsIpc } from './ipc/features/beads'
 import { registerCompanionIpc } from './ipc/features/companion'
 import { registerDiagnosticReportIpc } from './ipc/features/diagnostic-report'
 import { registerDocumentReviewIpc } from './ipc/features/document-review'
 import { registerFilesystemIpc } from './ipc/features/filesystem'
-import { registerGasCityIpc } from './ipc/features/gascity'
 import { registerGitHubIpc } from './ipc/features/github'
 import { registerNeedsYouIpc } from './ipc/features/needs-you'
 import { registerArchitectureReviewIpc } from './ipc/features/architecture-review'
@@ -59,8 +57,6 @@ export function registerIpcHandlers(
     registerWebPaneIpc(router, deps)
     registerTerminalIpc(router, deps)
     registerTerminalFilePasteIpc(router, new ElectronClipboardFilePaste())
-    registerBeadsIpc(router, deps)
-    registerGasCityIpc(router, deps)
     registerGitHubIpc(router, deps)
     registerNeedsYouIpc(router, deps)
     registerCompanionIpc(router, deps)

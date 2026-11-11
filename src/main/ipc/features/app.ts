@@ -12,6 +12,7 @@ import type { IpcDeps } from '../deps'
 type AppIpcDeps = Pick<
   IpcDeps,
   | 'echoWorker'
+  | 'getExternalAttention'
   | 'rendererReady'
   | 'updateAttention'
   | 'recordRenderContainment'
@@ -28,6 +29,7 @@ export function registerAppIpc(ipc: IpcRegistrar, deps: AppIpcDeps): void {
     nodeVersion: process.versions.node,
     platform: process.platform,
   }))
+  ipc.handle('app:external-attention', () => deps.getExternalAttention())
 
   ipc.handle('demo:echo', async (req) => {
     const result = await deps.echoWorker.request(ECHO_REQUEST_TYPE, { text: req.text })

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { createVisibilityRefresh } from '../src/renderer/src/beads/beads-refresh'
+import { createVisibilityRefresh } from '../src/renderer/src/shared/visibility-refresh'
 
 interface Harness {
   readonly onRefresh: ReturnType<typeof vi.fn<() => Promise<void>>>
@@ -153,10 +153,13 @@ describe('createVisibilityRefresh', () => {
 
   it('keeps polling after a refresh throws', async () => {
     const h = harness()
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     h.onRefresh.mockRejectedValueOnce(new Error('gc exploded'))
     h.controller.setVisible(true)
     await h.settle()
     expect(h.delays).toEqual([5000])
+    expect(errors).toHaveBeenCalledOnce()
+    errors.mockRestore()
   })
 
   it('disposes: stops polling and makes every method a no-op', async () => {

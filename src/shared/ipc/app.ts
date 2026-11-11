@@ -1,4 +1,5 @@
 import type { RendererAttentionSet } from '../actionable-attention'
+import type { ExternalAttentionSnapshot } from '../external-attention'
 import { invoke, payload, type IpcFeatureContract } from '../ipc-contract'
 
 /** Basic app/runtime info — the trivial round-trip that proves the contract. */
@@ -22,6 +23,7 @@ export interface EchoResponse {
 export const appIpc = {
   invoke: {
     'app:info': invoke<void, AppInfo>(),
+    'app:external-attention': invoke<void, ExternalAttentionSnapshot>(),
     'demo:echo': invoke<EchoRequest, EchoResponse>(),
   },
   send: {
@@ -29,5 +31,7 @@ export const appIpc = {
     /** What this window presents as waiting on the person (ADR-949). */
     'app:attention': payload<RendererAttentionSet>(),
   },
-  event: {},
+  event: {
+    'app:external-attention-changed': payload<ExternalAttentionSnapshot>(),
+  },
 } satisfies IpcFeatureContract

@@ -250,6 +250,7 @@ export function createElectronWindowManager(
       () => rendererOwner,
       dependencies.setOwnerFocused,
     )
+    dependencies.extensionGuests?.installWindowLifecycle(win, () => rendererOwner)
 
     win.on('ready-to-show', () => win.show())
     const rolloverRendererResources = (

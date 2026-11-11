@@ -26,7 +26,7 @@ export function useExternalAttention(): ExternalWorkspaceAttention {
       if (!active || !isExternalAttentionSnapshot(candidate)) return
       setAttention(externalAttentionByWorkspace(candidate))
     }
-    const unsubscribe = window.hvir.on('gascity:attention-changed', (candidate) => {
+    const unsubscribe = window.hvir.on('app:external-attention-changed', (candidate) => {
       eventRevision.current++
       accept(candidate)
     })
@@ -34,7 +34,7 @@ export function useExternalAttention(): ExternalWorkspaceAttention {
     // of the two, and the read cannot know that.
     const requestedAtRevision = eventRevision.current
     void window.hvir
-      .invoke('gascity:attention', undefined)
+      .invoke('app:external-attention', undefined)
       .then((candidate) => {
         if (eventRevision.current === requestedAtRevision) accept(candidate)
       })

@@ -10,7 +10,7 @@ import {
   claimArchitectureAgentLaunch,
   type PendingArchitectureAgentLaunch,
 } from '../architecture-review/architecture-review-launch'
-import { BEAD_COMMAND_EVENT, type BeadCommandDetail } from '../beads/bead-launch-event'
+import { BEAD_COMMAND_EVENT, type BeadCommandDetail } from './bead-command-event'
 
 interface ArchitectureReviewLaunchCommands {
   readonly launchArchitectureReview: (

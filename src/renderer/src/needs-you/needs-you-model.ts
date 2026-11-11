@@ -1,5 +1,6 @@
 import {
   businessMsBetween,
+  beadNeedsHuman,
   formatBusinessAge,
   pullWaitRows,
   type BeadIssue,
@@ -8,14 +9,12 @@ import {
   type PullSummary,
   type PullWaitRow,
 } from '../../../shared'
-import { classifyBeads } from '../beads/beads-model'
 
 export function needsYouBeads(response: BeadsListResponse): readonly BeadIssue[] {
   if (!response.available) return []
-  const view = classifyBeads(response)
-  return (view.sections.find((section) => section.key === 'needsYou')?.cards ?? [])
-    .map((card) => card.issue)
-    .filter((issue) => issue.status !== 'closed')
+  return response.issues.filter(
+    (issue) => issue.status !== 'closed' && beadNeedsHuman(issue),
+  )
 }
 
 export interface NeedsYouPull {

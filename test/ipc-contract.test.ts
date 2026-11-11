@@ -39,6 +39,18 @@ const preloadFeature = {
 } satisfies IpcFeatureContract
 
 describe('feature-owned IPC composition', () => {
+  it('exposes external attention through app IPC without panel-private channels', () => {
+    expect(INVOKE_CHANNELS).toContain('app:external-attention')
+    expect(EVENT_CHANNELS).toContain('app:external-attention-changed')
+    expect(INVOKE_CHANNELS).not.toContain('beads:list')
+    expect(INVOKE_CHANNELS).not.toContain('beads:probe')
+    expect(INVOKE_CHANNELS).not.toContain('gascity:crew')
+    expect(INVOKE_CHANNELS).not.toContain('gascity:probe')
+    expect(INVOKE_CHANNELS).not.toContain('gascity:analytics-config')
+    expect(INVOKE_CHANNELS).not.toContain('gascity:attention')
+    expect(EVENT_CHANNELS).not.toContain('gascity:attention-changed')
+  })
+
   it('preserves representative payloads, project-state identity, and preload-only classification', () => {
     expect(
       new Set([...RENDERER_INVOKE_CHANNELS, ...PRELOAD_ONLY_INVOKE_CHANNELS]),

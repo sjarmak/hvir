@@ -187,7 +187,7 @@ vi.mock('../src/renderer/src/terminal/use-terminal-commands', () => ({
 vi.mock('../src/renderer/src/rail/RailExtensions', () => ({
   RailPanels: () => null,
   RailTabs: () => null,
-  useRailExtensions: () => ({ beads: { beadsEnabled: false } }),
+  useRailExtensions: () => ({ github: { pullsEnabled: false } }),
 }))
 
 vi.mock('../src/renderer/src/needs-you/use-application-navigation', () => ({
