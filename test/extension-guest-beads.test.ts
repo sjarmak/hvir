@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { buildSync } from 'esbuild'
 import { runInNewContext } from 'node:vm'
+import { Window } from 'happy-dom'
 import { describe, expect, it, vi } from 'vitest'
 import * as hegel from '@hegeldev/hegel'
 import * as gs from '@hegeldev/hegel/generators'
@@ -8,6 +9,25 @@ import { validateExtensionManifest } from '../src/shared/extensions/manifest'
 
 interface BeadsPackage {
   commandForAction(action: string, input: unknown): [string, string[]]
+  beadEvalLink(
+    metadata: Readonly<Record<string, string>> | undefined,
+  ):
+    | { kind: 'absent' }
+    | { kind: 'invalid' }
+    | { kind: 'available'; url: string; origin: string }
+  packageAnalyticsUrl(): string | undefined
+  sectionElement(
+    document: Document,
+    label: string,
+    items: readonly {
+      id: string
+      title: string
+      metadata?: Readonly<Record<string, string>>
+    }[],
+    count: number,
+    openExternal: (url: string) => void,
+    actions: (item: { id: string; title: string }) => HTMLElement,
+  ): HTMLElement
   buildReadSurface(input: {
     bd?: { text: string; observedAt: number }
     bdFailure?: { message: string; observedAt: number }
@@ -49,7 +69,7 @@ function packageApi(): BeadsPackage {
   const result = buildSync({
     stdin: {
       contents:
-        "export * from './packages/beads-extension/src/model.mjs'; export * from './packages/beads-extension/src/refresh.mjs'; export * from './packages/beads-extension/src/actions.mjs'",
+        "export * from './packages/beads-extension/src/model.mjs'; export * from './packages/beads-extension/src/refresh.mjs'; export * from './packages/beads-extension/src/actions.mjs'; export * from './packages/beads-extension/src/links.mjs'; export * from './packages/beads-extension/src/render.mjs'",
       resolveDir: process.cwd(),
     },
     bundle: true,
@@ -57,7 +77,7 @@ function packageApi(): BeadsPackage {
     globalName: 'BeadsPackage',
     write: false,
   })
-  const context = { BeadsPackage: undefined as unknown, Date, Set, Map }
+  const context = { BeadsPackage: undefined as unknown, Date, Set, Map, URL }
   runInNewContext(result.outputFiles[0]!.text, context)
   return context.BeadsPackage as BeadsPackage
 }
@@ -97,10 +117,69 @@ describe('Beads workspace extension package', () => {
       ['gc', 'workspace', { executable: 'gc' }],
     ])
     expect(manifest.requiredCapabilities).not.toContain('project.watch')
+    expect(manifest.requiredCapabilities).toContain('external.open')
     for (const entry of [...manifest.views.map((view) => view.entry), manifest.updater])
       expect(readFileSync(`packages/beads-extension/${entry}`, 'utf8')).toContain(
         'script',
       )
+  })
+
+  it('accepts only bounded credential-free HTTPS evaluation destinations', () =>
+    hegel.test((tc) => {
+      const raw = tc.draw(gs.text({ maxSize: 2100 }))
+      const result = api.beadEvalLink({ 'eval.run_url': raw })
+      if (result.kind !== 'available') return
+      const parsed = new URL(result.url)
+      expect(result.url).toBe(raw)
+      expect(parsed.protocol).toBe('https:')
+      expect(parsed.username + parsed.password).toBe('')
+      expect(result.url.length).toBeLessThanOrEqual(2048)
+    }))
+
+  it('derives analytics from package configuration without private IPC inputs', () => {
+    expect(api.packageAnalyticsUrl()).toBe(
+      'https://sjarmak.omniapp.co/dashboards/gas-city-factory-rig-health',
+    )
+  })
+
+  it('renders producer evaluation links and opens them through the public effect port', () => {
+    const window = new Window()
+    const openExternal = vi.fn()
+    const section = api.sectionElement(
+      window.document as unknown as Document,
+      'Needs you',
+      [
+        {
+          id: 'eval-1',
+          title: 'Review evaluation',
+          metadata: {
+            'eval.run_url': 'https://results.example/runs/eval-1',
+          },
+        },
+        {
+          id: 'eval-2',
+          title: 'Unsafe evaluation',
+          metadata: { 'eval.run_url': 'javascript:alert(1)' },
+        },
+      ],
+      2,
+      openExternal,
+      () => {
+        const button = window.document.createElement('button')
+        button.textContent = 'Claim'
+        return button as unknown as HTMLElement
+      },
+    )
+    const buttons = section.querySelectorAll('button[data-external-url]')
+    expect(buttons).toHaveLength(1)
+    expect(section.querySelector('[data-bead-id="eval-1"]')).not.toBeNull()
+    expect(buttons[0]?.textContent).toBe('Evaluation')
+    expect(section.textContent).toContain('Claim')
+    expect(section.textContent).toContain('Evaluation link unavailable')
+    buttons[0]?.dispatchEvent(
+      new window.MouseEvent('click', { bubbles: true }) as unknown as MouseEvent,
+    )
+    expect(openExternal).toHaveBeenCalledWith('https://results.example/runs/eval-1')
   })
 
   it('reproduces the browser bundles byte for byte', () => {
