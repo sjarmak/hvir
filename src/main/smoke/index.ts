@@ -68,7 +68,11 @@ import { sessionsPresentationSmokeProvider } from './sessions-presentation-provi
 import { createTerminalMoveSmokeHarness } from './terminal-move'
 import { createSmokeTerminalSessionStore } from './terminal-session-store'
 import { verifyTerminalPresentationLifecycle } from './terminal-presentation'
-import { extensionPtyPorts, prepareExtensionSmoke, verifyExtensionScenario } from './extensions'
+import {
+  extensionPtyPorts,
+  prepareExtensionSmoke,
+  verifyExtensionScenario,
+} from './extensions'
 import { verifyWebPaneWorkflow } from './web-pane'
 import { verifyWorkspaceRemoteWorkflow } from './workspace-remote'
 import { workspaceCloseSmokeCommands } from './workspace-close'

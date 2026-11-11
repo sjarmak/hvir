@@ -2,7 +2,10 @@ import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-const buildConfig = readFileSync(new URL('../electron.vite.config.ts', import.meta.url), 'utf8')
+const buildConfig = readFileSync(
+  new URL('../electron.vite.config.ts', import.meta.url),
+  'utf8',
+)
 const smokeComposition = readFileSync(
   new URL('../src/main/smoke/index.ts', import.meta.url),
   'utf8',
@@ -47,7 +50,9 @@ describe('smoke regression contracts', () => {
 
   it('accepts the complete seven-section settings surface', () => {
     expect(appSettings).toContain('sections.length !== 7')
-    expect(appSettings).toContain("resolve('7 sections · modal isolation · validation focus')")
+    expect(appSettings).toContain(
+      "resolve('7 sections · modal isolation · validation focus')",
+    )
   })
 
   it('waits for restarted settings to close before naming a session', () => {

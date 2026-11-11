@@ -260,7 +260,10 @@ export function bearer(token: string): OutgoingHttpHeaders {
   return { authorization: `Bearer ${token}` }
 }
 
-export async function pair(companion: ApplicationCompanion, port: number): Promise<string> {
+export async function pair(
+  companion: ApplicationCompanion,
+  port: number,
+): Promise<string> {
   const code = companion.settings.issuePairing().pairing?.code
   if (code === undefined) throw new Error('no pairing code issued')
   const reply = await send(port, 'POST', '/pair', { body: { code } })

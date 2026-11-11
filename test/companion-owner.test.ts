@@ -78,7 +78,9 @@ describe('installApplicationCompanion listener lifecycle', () => {
     const { companion, diagnostics } = await harness()
     const blocker = createNetServer()
     await new Promise<void>((resolve) => blocker.listen(0, '127.0.0.1', resolve))
-    companionOwnerCleanups.push(() => new Promise<void>((resolve) => blocker.close(() => resolve())))
+    companionOwnerCleanups.push(
+      () => new Promise<void>((resolve) => blocker.close(() => resolve())),
+    )
     const taken = (blocker.address() as AddressInfo).port
 
     await companion.settings.save({
@@ -145,7 +147,12 @@ describe('installApplicationCompanion assets', () => {
   it('serves underscore-prefixed generated JavaScript chunks without widening paths', () =>
     hegel.testAsync(async (testCase) => {
       const suffix = testCase
-        .draw(gs.arrays(gs.integers({ minValue: 0, maxValue: 9 }), { minSize: 1, maxSize: 24 }))
+        .draw(
+          gs.arrays(gs.integers({ minValue: 0, maxValue: 9 }), {
+            minSize: 1,
+            maxSize: 24,
+          }),
+        )
         .join('')
       const path = `assets/_chunk-${suffix}.js`
       const host = {
