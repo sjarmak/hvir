@@ -1,6 +1,51 @@
+import { EventEmitter } from 'node:events'
 import { readFileSync } from 'node:fs'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+const electron = vi.hoisted(() => ({
+  windows: [] as FakeWindow[],
+}))
+
+vi.mock('electron', () => ({
+  app: {
+    getAppPath: () => process.cwd(),
+    on: vi.fn(),
+    off: vi.fn(),
+  },
+  BrowserWindow: class {
+    constructor() {
+      const window = new FakeWindow()
+      electron.windows.push(window)
+      return window
+    }
+  },
+  dialog: { showMessageBox: vi.fn() },
+  session: { fromPartition: vi.fn() },
+  shell: { openExternal: vi.fn() },
+  webContents: { fromId: vi.fn() },
+}))
+
+import { createElectronWindowManager } from '../src/main/window/electron-window-manager'
+
+class FakeWebContents extends EventEmitter {
+  readonly id = 41
+  readonly mainFrame = { isDestroyed: () => false, postMessage: vi.fn() }
+  readonly setWindowOpenHandler = vi.fn()
+  readonly getOSProcessId = vi.fn(() => 10)
+  readonly isCrashed = vi.fn(() => false)
+  readonly reload = vi.fn()
+  readonly forcefullyCrashRenderer = vi.fn()
+}
+
+class FakeWindow extends EventEmitter {
+  readonly webContents = new FakeWebContents()
+  readonly loadFile = vi.fn(() => Promise.resolve())
+  readonly loadURL = vi.fn(() => Promise.resolve())
+  readonly show = vi.fn()
+  readonly isFocused = vi.fn(() => true)
+  readonly isDestroyed = vi.fn(() => false)
+}
 
 const buildConfig = readFileSync(
   new URL('../electron.vite.config.ts', import.meta.url),
@@ -26,11 +71,6 @@ const agentReportNavigation = readFileSync(
   new URL('../src/main/smoke/agent-report-navigation.ts', import.meta.url),
   'utf8',
 )
-const electronWindowManager = readFileSync(
-  new URL('../src/main/window/electron-window-manager.ts', import.meta.url),
-  'utf8',
-)
-
 describe('smoke regression contracts', () => {
   it('builds every main-process entry exercised by smoke scenarios', () => {
     expect(buildConfig).toContain("'agent-cli': resolve('src/agent-cli/index.ts')")
@@ -75,8 +115,36 @@ describe('smoke regression contracts', () => {
   })
 
   it('binds extension foreground authority to native window focus', () => {
-    expect(electronWindowManager).toContain(
-      'dependencies.extensionGuests?.installWindowLifecycle(win, () => rendererOwner)',
+    electron.windows.length = 0
+    const owner = { id: 41, generation: 1 }
+    const installWindowLifecycle = vi.fn(
+      (_window: unknown, _getOwner: () => typeof owner) => undefined,
     )
+    const manager = createElectronWindowManager({
+      extensionGuests: { installWindowLifecycle } as never,
+      htmlPreviews: { releaseOwner: vi.fn() } as never,
+      activateRenderer: vi.fn(() => owner),
+      rolloverRenderer: vi.fn(() => ({ ...owner, generation: 2 })),
+      revokeRenderer: vi.fn(),
+      isRendererCurrent: vi.fn(() => true),
+      resumeRendererIpc: vi.fn(),
+      setOwnerFocused: vi.fn(),
+      startRendererDiagnostics: vi.fn(() => ({
+        version: 1 as const,
+        ownerGeneration: 1,
+        sessionId: 'diagnostic',
+      })),
+      rendererReady: vi.fn(),
+      recordWindowHealth: vi.fn(),
+      onLastWindowClosed: vi.fn(),
+      isShuttingDown: vi.fn(() => false),
+    })
+
+    const win = manager.createWindow()
+
+    expect(win).toBe(electron.windows[0])
+    expect(installWindowLifecycle).toHaveBeenCalledOnce()
+    expect(installWindowLifecycle).toHaveBeenCalledWith(win, expect.any(Function))
+    expect(installWindowLifecycle.mock.calls[0]?.[1]()).toBe(owner)
   })
 })
