@@ -41,6 +41,7 @@
 
   const markLoading = (root) => {
     for (const node of [...root.children]) {
+      if (node.classList.contains('projects-back')) continue
       if (isNeedsSection(node)) node.querySelectorAll('.projects-tag').forEach((tag) => tag.remove())
       else {
         const heading = node.tagName === 'SECTION' ? node.querySelector('h2')?.textContent : undefined

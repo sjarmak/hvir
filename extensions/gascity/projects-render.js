@@ -472,5 +472,14 @@
       ...archive(model, options, root))
   }
 
-  window.projectsRender = Object.freeze({ renderDashboard, renderNav, renderProject })
+  const renderProjectNeeds = (model, id, root, options = {}) => {
+    root.classList.add('projects-dashboard', 'projects-page')
+    const back = button('← All projects', 'Back to the overview', () => options.onOpenOverview?.())
+    back.classList.add('projects-back')
+    const asks = model.needsYou.filter((ask) => ask.metadata?.['gc.project'] === id)
+    root.replaceChildren(back, section('Needs you', list(asks.map((ask) => renderAsk(ask, options)), 'Nothing needs you')),
+      el('section', { className: 'projects-loading' }, paragraph('Loading the rest of this project…', 'hvir-meta')))
+  }
+
+  window.projectsRender = Object.freeze({ renderDashboard, renderNav, renderProject, renderProjectNeeds })
 })()

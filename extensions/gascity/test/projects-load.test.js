@@ -641,7 +641,20 @@ const gateOthers = (page) => {
   return { release, calls }
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+const gatedLoad = async (page, context, check) => {
+  const { release, calls } = gateOthers(page)
+  const loading = page.view.load(context)
+  try {
+    await check({ release, calls })
+  } finally {
+    release()
+    await loading
+  }
+  return { release, calls }
+}
+
+const statusOf = (page) => page.document.getElementById('status').textContent
+const needsPublished = (page) => () => /Needs you read/.test(statusOf(page))
 
 test('fresh Needs you is shown before a slow other read completes, dated by its own read', async (t) => {
   const page = livePage(t, 'projects.html', 'projects.js')
@@ -649,14 +662,12 @@ test('fresh Needs you is shown before a slow other read completes, dated by its 
   await view.load({ workspace })
   assert.match(needsTitles(document), new RegExp(fixture.decisions[0].title.slice(0, 12)))
   page.openRows = []
-  const { release } = gateOthers(page)
-  const loading = view.load({ workspace })
-  await settle()
-  assert.match(needsTitles(document), /Nothing needs you/)
-  assert.match(document.getElementById('status').textContent, /Needs you read under a minute ago; other sections from/)
-  assert.doesNotMatch(document.getElementById('status').textContent, /is current/)
-  release()
-  await loading
+  await gatedLoad(page, { workspace }, async () => {
+    await until(needsPublished(page))
+    assert.match(needsTitles(document), /Nothing needs you/)
+    assert.match(statusOf(page), /Needs you read under a minute ago; other sections from/)
+    assert.doesNotMatch(statusOf(page), /is current/)
+  })
   assert.match(needsTitles(document), /Nothing needs you/)
   assert.doesNotMatch(document.getElementById('status').textContent, /Needs you read/)
 })
@@ -682,15 +693,13 @@ test('a workspace switch clears the old cards and answer controls at once and th
   const { document } = page
   const rows = () => document.querySelectorAll('#projects li').length
   assert.ok(rows() > 0)
-  const { release } = gateOthers(page)
-  const loading = page.view.load({ workspace })
-  await settle()
-  page.view.onContext({ workspace: { ...workspace, id: 'other' }, visible: true })
-  assert.equal(rows(), 0)
-  assert.equal(buttons().length, 0)
-  assert.equal(document.getElementById('status').textContent, 'Loading…')
-  release()
-  await loading
+  await gatedLoad(page, { workspace }, async ({ calls }) => {
+    await until(() => calls.some((call) => !isNeedsRead(call.args)))
+    page.view.onContext({ workspace: { ...workspace, id: 'other' }, visible: true })
+    assert.equal(rows(), 0)
+    assert.equal(buttons().length, 0)
+    assert.equal(document.getElementById('status').textContent, 'Loading…')
+  })
   assert.equal(rows(), 0)
   assert.equal(buttons().length, 0)
 })
@@ -718,16 +727,13 @@ test('a merged snapshot keeps the explanations for fields it still has not read'
 test('on a first load Needs you shows before the other reads finish, with the other sections marked as loading', async (t) => {
   const page = livePage(t, 'projects.html', 'projects.js')
   const { view, document } = page
-  const { release } = gateOthers(page)
-  const loading = view.load({ workspace })
-  await settle()
-  assert.match(needsTitles(document), new RegExp(fixture.decisions[0].title.slice(0, 12)))
-  assert.doesNotMatch(needsTitles(document), /No project/)
-  assert.ok(document.querySelectorAll('.projects-loading').length > 0)
-  assert.equal(document.querySelectorAll('.projects-nav-row').length, 0)
-  assert.match(document.getElementById('status').textContent, /^Needs you read under a minute ago; other sections loading/)
-  release()
-  await loading
+  await gatedLoad(page, { workspace }, async () => {
+    await until(() => document.querySelectorAll('.projects-loading').length > 0)
+    assert.match(needsTitles(document), new RegExp(fixture.decisions[0].title.slice(0, 12)))
+    assert.doesNotMatch(needsTitles(document), /No project/)
+    assert.equal(document.querySelectorAll('.projects-nav-row').length, 0)
+    assert.match(statusOf(page), /^Needs you read under a minute ago; other sections loading/)
+  })
   assert.equal(document.querySelectorAll('.projects-loading').length, 0)
   assert.equal(document.querySelectorAll('.projects-nav-row').length, 1)
 })
@@ -739,16 +745,35 @@ test('final and cached renders carry the time Needs you was read, not only the t
   const real = clock.now
   const clockTime = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
   const needsReadAt = real()
-  const { release } = gateOthers(page)
-  const loading = view.load({ workspace })
-  await settle()
-  clock.now = () => real() + 4 * 60000
-  release()
-  await loading
+  await gatedLoad(page, { workspace }, async () => {
+    await until(needsPublished(page))
+    clock.now = () => real() + 4 * 60000
+  })
   const status = () => document.getElementById('status').textContent
   assert.match(status(), new RegExp(`Needs you read ${clockTime(needsReadAt)}`))
   assert.match(status(), new RegExp(`fetched ${clockTime(needsReadAt + 4 * 60000)}`))
   page.view.onContext({ workspace: { ...workspace, id: 'other' }, visible: true })
   page.view.onContext({ workspace, visible: true })
   assert.match(status(), new RegExp(`Needs you read ${clockTime(needsReadAt)}`))
+})
+
+test('a project page opened by id shows the Needs you rows for that project on a first load, the rest marked loading', async (t) => {
+  const page = livePage(t, 'project.html', 'project.js')
+  const { document } = page
+  const input = { id: fixture.decisions[0].metadata['gc.project'] }
+  await gatedLoad(page, { workspace, input }, async () => {
+    await until(() => document.querySelectorAll('.projects-loading').length > 0)
+    assert.match(needsTitles(document), new RegExp(fixture.decisions[0].title.slice(0, 12)))
+    assert.doesNotMatch(document.body.textContent, /not found/)
+    assert.match(statusOf(page), /^Needs you read under a minute ago; other sections loading/)
+  })
+})
+
+test('a project page opened by id lists no Needs you rows that belong to another project', async (t) => {
+  const page = livePage(t, 'project.html', 'project.js')
+  const { document } = page
+  await gatedLoad(page, { workspace, input: { id: 'some-other-project' } }, async () => {
+    await until(() => document.querySelectorAll('.projects-loading').length > 0)
+    assert.match(needsTitles(document), /Nothing needs you/)
+  })
 })

@@ -14,6 +14,11 @@
     }
     const card = data.model.cards.flatMap((group) => group.cards)
       .find((entry) => entry.id === id && (store === undefined || entry.store === store))
+    if (!card && data.partial) {
+      document.title = 'Project'
+      window.projectsRender.renderProjectNeeds(data.model, id, root, actions)
+      return ''
+    }
     if (!card) {
       document.title = 'Project'
       root.replaceChildren(window.el('p', { className: 'hvir-meta' }, `Project ${id} not found`))
