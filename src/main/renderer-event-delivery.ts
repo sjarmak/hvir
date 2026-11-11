@@ -18,12 +18,20 @@ export function sendRendererEvent<E extends IpcEventChannel>(
   channel: E,
   payload: IpcEventPayload<E>,
 ): void {
+  sendRendererMessage(target, channel, payload)
+}
+
+export function sendRendererMessage(
+  target: RendererEventTarget,
+  channel: string,
+  payload: unknown,
+): void {
   try {
     const frame = target.mainFrame
     if (classifyRendererEventDeliveryTarget(frame.isDestroyed()) === 'disposed-frame') {
       return
     }
-    postRendererEvent(frame, channel, payload)
+    frame.postMessage(channel, payload)
   } catch (error) {
     classifyRendererEventDeliveryFailure(error)
   }
@@ -44,14 +52,4 @@ export function classifyRendererEventDeliveryFailure(
     return 'disposed-frame'
   }
   throw error
-}
-
-function postRendererEvent<E extends IpcEventChannel>(
-  frame: Pick<WebFrameMain, 'postMessage'>,
-  channel: E,
-  payload: IpcEventPayload<E>,
-): void {
-  // WebFrameMain.send logs every native failure inside Electron. postMessage keeps
-  // this one-payload IPC contract while leaving failures at our delivery boundary.
-  frame.postMessage(channel, payload)
 }

@@ -14,7 +14,7 @@ import type { RendererOwner } from '../renderer-resource-scopes'
 import type { ExtensionGuestOwner, ExtensionGuestSurfacePort } from './guest-owner'
 import type { ExtensionRevision } from './package-store'
 import { ExtensionGuestLifecycle } from './guest-lifecycle'
-import { sendRendererEvent } from '../renderer-event-delivery'
+import { sendRendererEvent, sendRendererMessage } from '../renderer-event-delivery'
 
 export const EXTENSION_GUEST_CSP =
   "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; media-src 'self'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
@@ -646,7 +646,7 @@ export class ElectronExtensionGuestSurface implements ExtensionGuestSurfacePort 
       if (!record) return
       record.presentation = reply
       this.flushPresentation(record)
-    } else guest.send('extension-guest:reply', reply)
+    } else sendRendererMessage(guest, 'extension-guest:reply', reply)
   }
 
   visibility(guestId: number, visible: boolean): void {
@@ -673,10 +673,11 @@ export class ElectronExtensionGuestSurface implements ExtensionGuestSurfacePort 
       this.surfaces.get(record.view.id) !== record ||
       !record.lifecycle?.isActive ||
       !record.presentation ||
-      record.guest?.isDestroyed()
+      !record.guest ||
+      record.guest.isDestroyed()
     )
       return
-    record.guest?.send('extension-guest:reply', record.presentation)
+    sendRendererMessage(record.guest, 'extension-guest:reply', record.presentation)
     record.presentation = undefined
   }
 

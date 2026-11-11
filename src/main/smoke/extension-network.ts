@@ -2,10 +2,31 @@ import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
 import { BrowserWindow, type WebContents } from 'electron'
 
+interface WebSocketControlRequest {
+  readonly headers: { readonly 'sec-websocket-key'?: string }
+}
+
+interface WebSocketControlSocket {
+  write(data: string): boolean
+}
+
+export function acceptWebSocketControl(
+  request: WebSocketControlRequest,
+  socket: WebSocketControlSocket,
+): void {
+  const accept = createHash('sha1')
+    .update(`${request.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`)
+    .digest('base64')
+  socket.write(
+    `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
+  )
+}
+
 /** Reachable positive controls distinguish isolation from an unavailable destination. */
 export async function verifyExtensionNetwork(guest: WebContents): Promise<void> {
   let httpContacts = 0,
     socketContacts = 0
+  const upgradedSockets = new Set<import('node:stream').Duplex>()
   const server = createServer((_request, response) => {
     httpContacts++
     response.writeHead(200, { 'Access-Control-Allow-Origin': '*' })
@@ -13,14 +34,10 @@ export async function verifyExtensionNetwork(guest: WebContents): Promise<void> 
   })
   server.on('upgrade', (request, socket) => {
     socketContacts++
-    const accept = createHash('sha1')
-      .update(
-        `${request.headers['sec-websocket-key']}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`,
-      )
-      .digest('base64')
-    socket.end(
-      `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
-    )
+    upgradedSockets.add(socket)
+    socket.once('close', () => upgradedSockets.delete(socket))
+    socket.once('error', () => socket.destroy())
+    acceptWebSocketControl(request, socket)
   })
   let control: BrowserWindow | undefined
   try {
@@ -55,7 +72,9 @@ export async function verifyExtensionNetwork(guest: WebContents): Promise<void> 
       socket: boolean
     }
     if (!positive.http || !positive.socket || !httpContacts || !socketContacts)
-      throw new Error('HTTP/WebSocket positive network controls failed')
+      throw new Error(
+        `HTTP/WebSocket positive network controls failed: ${JSON.stringify({ positive, httpContacts, socketContacts })}`,
+      )
     control.destroy()
     control = undefined
     const before = { httpContacts, socketContacts }
@@ -82,6 +101,7 @@ export async function verifyExtensionNetwork(guest: WebContents): Promise<void> 
     )
   } finally {
     control?.destroy()
+    for (const socket of upgradedSockets) socket.destroy()
     server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }

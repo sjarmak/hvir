@@ -1,7 +1,10 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { EXTENSION_LIMITS } from '../src/shared/extensions/contract'
-import type { ExtensionGuestOwner } from '../src/main/extensions/guest-owner'
+import {
+  DEFAULT_EXTENSION_PRESENTATION,
+  type ExtensionGuestOwner,
+} from '../src/main/extensions/guest-owner'
 import {
   electron,
   deferred,
@@ -21,6 +24,27 @@ afterEach(() => {
 })
 
 describe('Electron extension response, native teardown and closing capacity', () => {
+  it('delivers replies only through an available guest frame', async () => {
+    const data = await fixture(undefined, true)
+    const presentation = {
+      kind: 'presentation' as const,
+      presentation: DEFAULT_EXTENSION_PRESENTATION,
+    }
+    await turn()
+
+    data.surface.send(data.guest.id, presentation)
+    expect(data.guest.mainFrame.postMessage).toHaveBeenCalledWith(
+      'extension-guest:reply',
+      presentation,
+    )
+    expect(data.guest.send).not.toHaveBeenCalled()
+
+    data.guest.mainFrame.isDestroyed.mockReturnValue(true)
+    data.surface.send(data.guest.id, presentation)
+    expect(data.guest.mainFrame.postMessage).toHaveBeenCalledTimes(1)
+    await data.surface.destroy(data.view.id)
+  })
+
   it('consumes one native activation only while its exact guest is visible and foreground', async () => {
     const data = await fixture()
     electron.windows.set(data.guest.id, {
