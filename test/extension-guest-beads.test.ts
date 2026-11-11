@@ -7,6 +7,7 @@ import * as gs from '@hegeldev/hegel/generators'
 import { validateExtensionManifest } from '../src/shared/extensions/manifest'
 
 interface BeadsPackage {
+  commandForAction(action: string, input: unknown): [string, string[]]
   buildReadSurface(input: {
     bd?: { text: string; observedAt: number }
     bdFailure?: { message: string; observedAt: number }
@@ -48,7 +49,7 @@ function packageApi(): BeadsPackage {
   const result = buildSync({
     stdin: {
       contents:
-        "export * from './packages/beads-extension/src/model.mjs'; export * from './packages/beads-extension/src/refresh.mjs'",
+        "export * from './packages/beads-extension/src/model.mjs'; export * from './packages/beads-extension/src/refresh.mjs'; export * from './packages/beads-extension/src/actions.mjs'",
       resolveDir: process.cwd(),
     },
     bundle: true,
@@ -68,7 +69,19 @@ describe('Beads workspace extension package', () => {
     const manifest = validateExtensionManifest(
       JSON.parse(readFileSync('packages/beads-extension/hvir-extension.json', 'utf8')),
     ).manifest
-    expect(manifest.id).toBe('beads-workspace')
+    expect(manifest.id).toBe('beads-extension')
+    expect(manifest.requiredCapabilities).toEqual(
+      expect.arrayContaining(['actions.invoke', 'terminal.start']),
+    )
+    expect(manifest.actions!.map((action) => action.id)).toEqual([
+      'bead-claim',
+      'bead-close',
+      'bead-create',
+      'crew-attach',
+      'crew-peek',
+      'crew-reset',
+      'crew-handoff',
+    ])
     expect(
       manifest.views.map((view) => [view.id, view.placement, view.navigation]),
     ).toEqual([['beads', 'workspace', 'left']])
@@ -231,6 +244,19 @@ describe('Beads workspace extension package', () => {
       expect(placed.map((row) => row.id).sort()).toEqual(
         visible.map((row) => row['id']).sort(),
       )
+    }))
+
+  it('preserves every admitted bead id as one structured argv value', () =>
+    hegel.test((tc) => {
+      const id = tc.draw(gs.fromRegex('[A-Za-z0-9][A-Za-z0-9._:-]{0,80}'))
+      expect(api.commandForAction('bead-claim', { id })).toEqual([
+        'bd',
+        ['update', id, '--claim'],
+      ])
+      expect(api.commandForAction('bead-close', { id })).toEqual([
+        'bd',
+        ['close', id],
+      ])
     }))
 
   it('keeps malformed, unavailable, and failed reads distinct from successful emptiness', () => {

@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { buildSync } from 'esbuild'
+import { runInNewContext } from 'node:vm'
 vi.mock('electron', () => ({ dialog: {}, BrowserWindow: {}, webContents: {} }))
 import {
   ExtensionTerminalHandoff,
@@ -15,6 +17,30 @@ import { asHostId, hostPath, localPath } from '../src/shared/host-path'
 import { connectorFixture } from './fixtures/extension-connector'
 
 const disposers: Array<() => void> = []
+
+interface BeadsActions {
+  executeTerminalAction(
+    client: { request(capability: string, input: unknown): Promise<unknown> },
+    invocation: {
+      action: string
+      input: unknown
+      context: { workspace?: { id: string; host: string } }
+    },
+  ): Promise<unknown>
+}
+
+function beadsActions(): BeadsActions {
+  const result = buildSync({
+    entryPoints: ['packages/beads-extension/src/actions.mjs'],
+    bundle: true,
+    format: 'iife',
+    globalName: 'BeadsActions',
+    write: false,
+  })
+  const context = { BeadsActions: undefined as unknown }
+  runInNewContext(result.outputFiles[0]!.text, context)
+  return context.BeadsActions as BeadsActions
+}
 afterEach(() => {
   for (const dispose of disposers.splice(0)) dispose()
 })
@@ -370,5 +396,80 @@ describe('extension terminal handoff authority', () => {
     ).rejects.toThrow('exact workspace')
     expect(f.confirm).not.toHaveBeenCalled()
     expect(f.published).not.toHaveBeenCalled()
+  })
+})
+
+describe('Beads package terminal actions', () => {
+  it.each([
+    ['bead-claim', { id: 'hvir-123' }, 'bd', ['update', 'hvir-123', '--claim']],
+    ['bead-close', { id: 'hvir-123' }, 'bd', ['close', 'hvir-123']],
+    [
+      'bead-create',
+      { title: 'Add command handoffs', description: 'Phase four' },
+      'bd',
+      ['create', '--title', 'Add command handoffs', '--description', 'Phase four'],
+    ],
+    ['crew-attach', { target: 'hvir-worker' }, 'gc', ['session', 'attach', 'hvir-worker']],
+    ['crew-peek', { target: 'hvir-worker' }, 'gc', ['session', 'peek', 'hvir-worker']],
+    ['crew-reset', { target: 'hvir-worker' }, 'gc', ['session', 'reset', 'hvir-worker']],
+    [
+      'crew-handoff',
+      { target: 'hvir-worker' },
+      'gc',
+      ['handoff', '--target', 'hvir-worker', 'hvir handoff'],
+    ],
+  ])('maps %s to one structured command-once handoff', async (action, input, connector, args) => {
+    const request = vi.fn(() => Promise.resolve({ outcome: 'handed-off' }))
+    await expect(
+      beadsActions().executeTerminalAction(
+        { request },
+        {
+          action,
+          input,
+          context: { workspace: { id: 'workspace-1', host: 'ssh-a' } },
+        },
+      ),
+    ).resolves.toEqual({ outcome: 'handed-off' })
+    expect(request).toHaveBeenCalledOnce()
+    expect(request).toHaveBeenCalledWith('terminal.start', {
+      connector,
+      workspace: 'workspace-1',
+      args,
+    })
+  })
+
+  it('requests a fresh handoff for every repeated attach invocation', async () => {
+    const request = vi.fn(() => Promise.resolve({ outcome: 'handed-off' }))
+    const invocation = {
+      action: 'crew-attach',
+      input: { target: 'hvir-worker' },
+      context: { workspace: { id: 'workspace-1', host: 'local' } },
+    }
+    const api = beadsActions()
+    await api.executeTerminalAction({ request }, invocation)
+    await api.executeTerminalAction({ request }, invocation)
+    expect(request).toHaveBeenCalledTimes(2)
+  })
+
+  it('refuses missing workspace identity and malformed command input', async () => {
+    const request = vi.fn(() => Promise.resolve())
+    const api = beadsActions()
+    await expect(
+      api.executeTerminalAction(
+        { request },
+        { action: 'bead-claim', input: { id: 'hvir-1' }, context: {} },
+      ),
+    ).rejects.toThrow('workspace')
+    await expect(
+      api.executeTerminalAction(
+        { request },
+        {
+          action: 'bead-claim',
+          input: { id: 'bad id' },
+          context: { workspace: { id: 'workspace-1', host: 'local' } },
+        },
+      ),
+    ).rejects.toThrow('input')
+    expect(request).not.toHaveBeenCalled()
   })
 })

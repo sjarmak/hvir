@@ -24,6 +24,18 @@ body {
   align-items: center;
 }
 
+.beads-toolbar-actions,
+.beads-create,
+.beads-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.beads-create input {
+  min-width: 180px;
+}
+
 .beads-toolbar,
 .beads-row {
   justify-content: space-between;
@@ -80,6 +92,16 @@ h2 {
 
 .beads-row:first-child {
   border-top: 0;
+}
+
+.beads-row-focused {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.beads-action {
+  padding: 3px 6px;
+  font-size: 11px;
 }
 
 .beads-row-title {
