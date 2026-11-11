@@ -88,6 +88,7 @@ const baseConfig: UserConfig = {
       rollupOptions: {
         input: {
           index: resolve('src/main/index.ts'),
+          'agent-cli': resolve('src/agent-cli/index.ts'),
           // Utility-process workers are built as sibling entries so the main
           // process can `utilityProcess.fork` their compiled output.
           'echo-worker': resolve('src/workers/echo-worker.ts'),

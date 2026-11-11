@@ -68,6 +68,7 @@ export function bundleHost(): {
     [`${BUNDLE_ROOT}/assets/app-1.js`, 'console.log(1)'],
     [`${BUNDLE_ROOT}/assets/app-1.css`, 'body{}'],
     [`${BUNDLE_ROOT}/assets/app-1.js.map`, '{"version":3}'],
+    [`${BUNDLE_ROOT}/assets/_commonjsHelpers-abc123.js`, 'export{}'],
     [`${BUNDLE_ROOT}/assets/ghostty-vt-abc123.wasm`, '\0asm'],
     [`${BUNDLE_ROOT}/secret.txt`, 'never served'],
   ])

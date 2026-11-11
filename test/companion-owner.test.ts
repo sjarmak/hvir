@@ -1,6 +1,8 @@
 import { createServer as createNetServer, type AddressInfo } from 'node:net'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import * as hegel from '@hegeldev/hegel'
+import * as gs from '@hegeldev/hegel/generators'
 
 const electron = vi.hoisted(() => ({
   safeStorage: {
@@ -111,6 +113,9 @@ describe('installApplicationCompanion assets', () => {
     expect(script.status).toBe(200)
     expect(script.headers['content-type']).toBe('text/javascript; charset=utf-8')
     expect(script.body).toBe('console.log(1)')
+    const helper = await send(port, 'GET', '/assets/_commonjsHelpers-abc123.js')
+    expect(helper.status).toBe(200)
+    expect(helper.body).toBe('export{}')
     expect((await send(port, 'GET', '/assets/app-1.css')).headers['content-type']).toBe(
       'text/css; charset=utf-8',
     )
@@ -136,6 +141,27 @@ describe('installApplicationCompanion assets', () => {
     expect(host.reads.every((path) => path.startsWith(`${BUNDLE_ROOT}/`))).toBe(true)
     expect(host.reads).not.toContain(`${BUNDLE_ROOT}/secret.txt`)
   })
+
+  it('serves underscore-prefixed generated JavaScript chunks without widening paths', () =>
+    hegel.testAsync(async (testCase) => {
+      const suffix = testCase
+        .draw(gs.arrays(gs.integers({ minValue: 0, maxValue: 9 }), { minSize: 1, maxSize: 24 }))
+        .join('')
+      const path = `assets/_chunk-${suffix}.js`
+      const host = {
+        readFile: (requested: { path: string }) =>
+          requested.path === `${BUNDLE_ROOT}/${path}`
+            ? Promise.resolve(Buffer.from('chunk'))
+            : Promise.reject(Object.assign(new Error('missing'), { code: 'ENOENT' })),
+      }
+      const reader = createCompanionAssetReader(host, BUNDLE_ROOT)
+
+      await expect(reader.read(path)).resolves.toMatchObject({
+        body: Buffer.from('chunk'),
+        contentType: 'text/javascript; charset=utf-8',
+      })
+      await expect(reader.read(`assets/sub/_chunk-${suffix}.js`)).resolves.toBeUndefined()
+    }))
 
   it('refuses every path the allowlist does not name before touching the host', async () => {
     const host = bundleHost()

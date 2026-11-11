@@ -281,13 +281,13 @@ export async function verifyExtensionConnection(
         ),
       'missing-name manual retry survives actual native focus withdrawal and returns through SDK',
     )
-    if (
-      (await guest.executeJavaScript('Number(document.body.dataset.hiddenContexts)')) <=
-        hiddenBefore ||
-      !(await views()).some((entry) => entry.id === view.id)
-    )
+    const hiddenAfter = (await guest.executeJavaScript(
+      'Number(document.body.dataset.hiddenContexts)',
+    )) as number
+    const viewRetained = (await views()).some((entry) => entry.id === view.id)
+    if (hiddenAfter <= hiddenBefore || !viewRetained)
       throw new Error(
-        'SDK intent did not survive actual top-view withdrawal on the same guest',
+        `SDK intent did not survive actual top-view withdrawal on the same guest (hidden contexts ${hiddenBefore} -> ${hiddenAfter}; view retained ${viewRetained})`,
       )
     if (
       !(await guest.executeJavaScript(

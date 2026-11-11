@@ -126,3 +126,92 @@ it('selects the exact next Add after removal retains the missing prior directory
     vi.unstubAllGlobals()
   }
 })
+
+it('selects the committed Add when discovery publishes before the installation receipt', async () => {
+  const manifest = validateExtensionManifest(
+    exampleManifest({ name: 'Imported directory' }),
+  ).manifest
+  const initial = {
+    writable: true,
+    installations: [
+      {
+        source: 'reference',
+        installationId: 'reference',
+        manifest: { ...manifest, id: 'example.reference', name: 'Reference' },
+        enabled: true,
+        warnings: [],
+      },
+    ],
+  }
+  const discovered = {
+    writable: true,
+    installations: [
+      ...initial.installations,
+      {
+        source: 'imported-directory',
+        manifest,
+        enabled: false,
+        warnings: [],
+      },
+    ],
+  }
+  const committed: ExtensionAdditionResult = {
+    writable: true,
+    installations: discovered.installations.map((entry) =>
+      entry.source === 'imported-directory'
+        ? { ...entry, installationId: 'imported', enabled: true }
+        : entry,
+    ),
+    installed: { installationId: 'imported' },
+  }
+  let publish!: (value: ExtensionPlatformState) => void
+  let finish!: (value: ExtensionAdditionResult) => void
+  const adding = new Promise<ExtensionAdditionResult>((resolve) => {
+    finish = resolve
+  })
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  vi.stubGlobal('hvir', {
+    invoke: (channel: string) =>
+      channel === 'extensions:state'
+        ? Promise.resolve(initial)
+        : channel === 'extensions:add'
+          ? adding
+          : Promise.resolve([]),
+    on: (channel: string, callback: typeof publish) => {
+      if (channel === 'extensions:state-changed') publish = callback
+      return () => {}
+    },
+  })
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  const selected = () =>
+    host
+      .querySelector('.extension-installation-list [aria-current="true"]')
+      ?.getAttribute('data-source')
+  try {
+    await act(async () => {
+      root.render(createElement(ExtensionsSettings))
+      await Promise.resolve()
+    })
+    act(() =>
+      [...host.querySelectorAll<HTMLButtonElement>('button')]
+        .find((entry) => entry.textContent?.trim() === 'Add extension…')!
+        .click(),
+    )
+    act(() => publish(discovered))
+    await act(async () => {
+      finish(committed)
+      await adding
+    })
+    act(() => publish(committed))
+    expect(selected()).toBe('imported-directory')
+    expect(host.querySelector('.extension-installation h4')?.textContent).toBe(
+      'Imported directory',
+    )
+  } finally {
+    act(() => root.unmount())
+    host.remove()
+    vi.unstubAllGlobals()
+  }
+})
