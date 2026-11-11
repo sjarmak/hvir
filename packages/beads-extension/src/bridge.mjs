@@ -31,6 +31,9 @@ export async function readWorkspace(client, context, previous) {
     runConnector(client, context, 'gc', ['session', 'list', '--json']),
     runConnector(client, context, 'gc', ['rig', 'status', '--json']),
   ])
+  const [bdGates] = await Promise.allSettled([
+    runConnector(client, context, 'bd', ['gate', 'list', '--json']),
+  ])
   const observedAt = Date.now()
   const bdFailure = [bd, bdReady].find((result) => result.status === 'rejected')
   const gcFailure = [gc, gcRig].find((result) => result.status === 'rejected')
@@ -47,6 +50,9 @@ export async function readWorkspace(client, context, previous) {
           gc: { text: gc.value, observedAt },
           gcRig: { text: gcRig.value, observedAt },
         }),
+    ...(bdGates.status === 'rejected'
+      ? { bdGatesFailure: { message: message(bdGates.reason), observedAt } }
+      : { bdGates: { text: bdGates.value, observedAt } }),
     previous,
   }
 }
@@ -66,7 +72,13 @@ async function runConnector(client, context, connector, args) {
       stdout = await readConnectorOutput(client, result)
       stderr = await readConnectorOutput(client, result, { stream: 'stderr' })
     }
-    if (result.outcome !== 'completed' || result.code !== 0 || result.truncated)
+    if (result.truncated)
+      throw new Error(
+        result.reason
+          ? `${result.reason} (output truncated)`
+          : `${connector} output was truncated`,
+      )
+    if (result.outcome !== 'completed' || result.code !== 0)
       throw new Error(
         result.reason ||
           stderr.trim() ||

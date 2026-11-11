@@ -27,6 +27,7 @@ interface BeadsPackage {
     count: number,
     openExternal: (url: string) => void,
     actions: (item: { id: string; title: string }) => HTMLElement,
+    leading?: readonly HTMLElement[],
   ): HTMLElement
   buildReadSurface(input: {
     bd?: { text: string; observedAt: number }
@@ -43,6 +44,20 @@ interface BeadsPackage {
         key: string
         count: number
         items?: readonly { id: string }[]
+      }[]
+      message?: string
+    }
+    gates: {
+      state: string
+      gates: readonly {
+        gate: {
+          id: string
+          title: string
+          gateType: string
+          blockedId?: string
+          state: string
+        }
+        blocks?: { id: string; title: string }
       }[]
       message?: string
     }
@@ -537,35 +552,38 @@ describe('Beads workspace extension package', () => {
       { workspace: { host: 'local', id: 'workspace-1' } },
       undefined,
     )
-    expect(calls.filter((call) => call.connector === 'bd').map((call) => call.args))
-      .toEqual([
-        [
-          'list',
-          '--json',
-          '--flat',
-          '--no-pager',
-          '-n',
-          '0',
-          '--include-gates',
-          '--include-infra',
-        ],
-        [
-          'list',
-          '--ready',
-          '--json',
-          '--flat',
-          '--no-pager',
-          '-n',
-          '0',
-          '--include-gates',
-          '--include-infra',
-        ],
-      ])
-    expect(calls.filter((call) => call.connector === 'gc').map((call) => call.args))
-      .toEqual([
-        ['session', 'list', '--json'],
-        ['rig', 'status', '--json'],
-      ])
+    expect(
+      calls.filter((call) => call.connector === 'bd').map((call) => call.args),
+    ).toEqual([
+      [
+        'list',
+        '--json',
+        '--flat',
+        '--no-pager',
+        '-n',
+        '0',
+        '--include-gates',
+        '--include-infra',
+      ],
+      [
+        'list',
+        '--ready',
+        '--json',
+        '--flat',
+        '--no-pager',
+        '-n',
+        '0',
+        '--include-gates',
+        '--include-infra',
+      ],
+      ['gate', 'list', '--json'],
+    ])
+    expect(
+      calls.filter((call) => call.connector === 'gc').map((call) => call.args),
+    ).toEqual([
+      ['session', 'list', '--json'],
+      ['rig', 'status', '--json'],
+    ])
   })
 
   it('places every visible typed issue in exactly one section', () =>
@@ -646,6 +664,7 @@ describe('Beads workspace extension package', () => {
       gcRig: cityRigSource,
     })
     expect(empty.beads.state).toBe('empty')
+    expect(empty.gates.state).toBe('unavailable')
     expect(empty.crew.state).toBe('empty')
     const failed = api.buildReadSurface({
       bdFailure: { message: 'bd deadline', observedAt: 2 },
