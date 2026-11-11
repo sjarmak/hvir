@@ -4,8 +4,8 @@ import type {
   ArchitectureReviewSnapshot,
 } from '../../../shared/architecture-review'
 import type { HostPath } from '../../../shared'
-import { beadCommand } from '../beads/bead-commands'
-import { dispatchBeadCommand } from '../beads/bead-launch-event'
+import { dispatchBeadCommand } from '../terminal/bead-command-event'
+import { createBeadCommand } from './bead-command'
 
 interface Props {
   readonly root: HostPath
@@ -53,14 +53,14 @@ export function ArchitectureFindingForm({
         currentRevision: snapshot.currentRevision,
       },
     })
-    const built = beadCommand({ action: 'create', title: title.trim(), description })
-    if (!built) {
+    const command = createBeadCommand(title.trim(), description)
+    if (!command) {
       setState('error')
       return
     }
     submitted.current = true
     setState('pending')
-    const accepted = await dispatchBeadCommand(root, built.command)
+    const accepted = await dispatchBeadCommand(root, command)
     if (!accepted) submitted.current = false
     setState(accepted ? 'sent' : 'error')
   }

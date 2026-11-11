@@ -13,17 +13,6 @@ import type { GasCityContext } from './gascity-context'
 import { deriveCrew } from './gascity-crew'
 import { hasProjectedTierFields, rigForPath, type GasCityRig } from './gascity-parse'
 
-/**
- * A whole host's Gas City crew, flattened to the facts a global view needs.
- *
- * The crew panel answers "who is working in *this* workspace"; a global sessions
- * view answers "what is running at all, and where does it belong". Same reads,
- * same derivation, different question — so this module takes the derivation's
- * output and keeps only what survives leaving the workspace: no card affordances,
- * no diagnostics, and no claim about which project owns a session, because that
- * is hvir's to decide and not gc's.
- */
-
 /** One running gc session, host-qualified and stripped to projectable facts. */
 export interface CitySessionFact {
   /**
@@ -79,7 +68,6 @@ export interface DeriveCitySessionsInput {
   readonly cityRoot?: HostPath
   readonly sessions: readonly GasCitySession[]
   readonly context: GasCityContext
-  /** Orchestration-internal sessions, matching the crew panel's own toggle. */
   readonly includeInternals: boolean
 }
 
@@ -110,9 +98,6 @@ export function deriveCitySessions(
   })
   return (
     crew.members
-      // A member with no session is a configured identity that is not running.
-      // It is the interesting part of a crew panel and has no place in a list of
-      // sessions: there is no session to project.
       .flatMap((member) =>
         member.session === undefined
           ? []

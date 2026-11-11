@@ -1,26 +1,19 @@
 import type { ReactElement } from 'react'
 
-import { BeadsRailPanel, BeadsRailTab, useBeadsWorkspace } from '../beads/BeadsRail'
 import { GitHubRailPanel, GitHubRailTab, useGitHubWorkspace } from '../github/GitHubRail'
 
-type RailSession = Parameters<typeof useBeadsWorkspace>[0] &
-  Parameters<typeof useGitHubWorkspace>[0]
-type RailLayout = Parameters<typeof useBeadsWorkspace>[1] &
-  Parameters<typeof useGitHubWorkspace>[1]
-type RailTerminal = Parameters<typeof useBeadsWorkspace>[2]
+type RailSession = Parameters<typeof useGitHubWorkspace>[0]
+type RailLayout = Parameters<typeof useGitHubWorkspace>[1]
 
 export interface RailExtensions {
-  readonly beads: ReturnType<typeof useBeadsWorkspace>
   readonly github: ReturnType<typeof useGitHubWorkspace>
 }
 
 export function useRailExtensions(
   session: RailSession,
   layout: RailLayout,
-  terminal: RailTerminal,
 ): RailExtensions {
   return {
-    beads: useBeadsWorkspace(session, layout, terminal),
     github: useGitHubWorkspace(session, layout),
   }
 }
@@ -34,7 +27,6 @@ export function RailTabs({
 }): ReactElement {
   return (
     <>
-      <BeadsRailTab beads={rail.beads} layout={layout} />
       <GitHubRailTab github={rail.github} layout={layout} />
     </>
   )
@@ -44,28 +36,10 @@ export function RailPanels({
   rail,
   session,
   layout,
-  focusBeadId,
-  onFocusHandled,
-  onFocusUnavailable,
 }: {
   readonly rail: RailExtensions
   readonly session: RailSession
   readonly layout: RailLayout
-  readonly focusBeadId?: string
-  readonly onFocusHandled?: (id: string) => void
-  readonly onFocusUnavailable?: (id: string) => void
 }): ReactElement {
-  return (
-    <>
-      <BeadsRailPanel
-        beads={rail.beads}
-        session={session}
-        layout={layout}
-        focusBeadId={focusBeadId}
-        onFocusHandled={onFocusHandled}
-        onFocusUnavailable={onFocusUnavailable}
-      />
-      <GitHubRailPanel github={rail.github} session={session} layout={layout} />
-    </>
-  )
+  return <GitHubRailPanel github={rail.github} session={session} layout={layout} />
 }

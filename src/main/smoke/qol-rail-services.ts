@@ -1,4 +1,4 @@
-import { BeadsService } from '../beads/beads-service'
+import { BeadsReader } from '../beads/beads-reader'
 import { GitHubService } from '../github/github-service'
 import type { ProjectHost } from '../project-host'
 import { type ExecOptions } from '../project-host'
@@ -23,15 +23,13 @@ export function createQolRailServices(options: {
   readonly synthetic?: boolean
 }): {
   readonly host: ProjectHost
-  readonly beads: BeadsService
+  readonly beads: BeadsReader
   readonly github: GitHubService
 } {
   const smokeHost = options.synthetic ? createQolHost(options.host, options.root) : options.host
   return {
     host: smokeHost,
-    beads: new BeadsService({
-      getProject: () => ({ host: smokeHost, root: options.root }),
-    }),
+    beads: new BeadsReader(),
     github: new GitHubService({
       getProject: () => ({ host: smokeHost, root: options.root }),
     }),

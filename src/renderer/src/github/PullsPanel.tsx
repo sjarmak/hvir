@@ -16,7 +16,10 @@ import {
   type PullsResponse,
   type PullsSnapshot,
 } from '../../../shared'
-import { createVisibilityRefresh, type VisibilityRefresh } from '../beads/beads-refresh'
+import {
+  createVisibilityRefresh,
+  type VisibilityRefresh,
+} from '../shared/visibility-refresh'
 import {
   pullSections,
   unavailableHint,

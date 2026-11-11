@@ -15,7 +15,7 @@ import {
   type ProjectState,
   type PullsResponse,
 } from '../../shared'
-import type { BeadsService } from '../beads/beads-service'
+import type { BeadsReader } from '../beads/beads-reader'
 import type { ProjectHost } from '../project-host'
 import type { GitHubService } from '../github/github-service'
 import {
@@ -75,7 +75,7 @@ interface CandidateSet {
 export interface NeedsYouServiceDeps {
   readonly getProjectState: () => ProjectState
   readonly connectedHosts: () => readonly ProjectHost[]
-  readonly beads: Pick<BeadsService, 'listForProject' | 'storeForProject'>
+  readonly beads: Pick<BeadsReader, 'listForProject' | 'storeForProject'>
   readonly cityRigs?: (project: HostProject) => Promise<readonly CityRig[] | undefined>
   readonly github: Pick<GitHubService, 'pullsForProject'>
   readonly observeCandidates?: (listener: () => void) => Disposer

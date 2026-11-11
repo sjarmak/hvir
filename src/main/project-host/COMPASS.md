@@ -76,7 +76,7 @@ whether a project is local or remote. Remoteness is latency, not a second produc
 - **Ordinary callers** take `ProjectHost` as a *type*: `project-watch.ts` (multiplexes UI
   interests into `additionalPaths`), `workspace-coordinator.ts`, `ipc/features/filesystem.ts`
   (`pollingInterest: true`), `terminal/session-registry.ts`, all of `harness/`, and
-  `beads/beads-service.ts` (the only `loginShell: true` caller).
+  `beads/beads-reader.ts` (the Needs You `bd` reader).
 - **Boundaries crossed:** process, network (SSH transport / SFTP / `forwardOut` direct-TCP),
   utility process (git worker calls arrive as `WorkerHostCall`), and heavy async — every SSH
   operation is a promise over an ssh2 callback.

@@ -43,7 +43,6 @@ export interface GasCitySessionsSourceOptions {
   readonly candidates: () => readonly GasCityTarget[]
   /** Fires when the candidate set may have changed (a project or host change). */
   readonly observeCandidates: (listener: () => void) => Disposer
-  /** Orchestration-internal sessions; matches the crew panel's default. */
   readonly includeInternals?: boolean
   /** Injectable for tests; defaults to `Date.now`. */
   readonly now?: () => number

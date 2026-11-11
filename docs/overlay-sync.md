@@ -4,8 +4,9 @@
 Ben's upstream (`jarmak-personal/hvir`, remote `origin`). The overlay is merged
 with upstream only at upstream release tags, never at the tip of `main`.
 
-The overlay lives in `src/main/beads`, `src/main/gascity`, `src/renderer/src/beads`,
-`src/shared/ipc/*.ts`, `test/`, and `scripts/generate-gascity-supervisor-types.mts`.
+The overlay lives in `packages/beads-extension`, the core Needs You and Gas City
+projection paths under `src/main`, `src/shared/ipc/*.ts`, `test/`, and
+`scripts/generate-gascity-supervisor-types.mts`.
 Six upstream files carry only wiring lines and are the usual conflict sites:
 
 - `src/renderer/src/App.tsx`

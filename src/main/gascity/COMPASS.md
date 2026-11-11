@@ -1,351 +1,64 @@
 ---
-compass_area: "gascity — read-only gc crew bridge (fork-only)"
+compass_area: "gascity — main-owned session and external-attention projection"
 area_path: "src/main/gascity/"
-generated: "2026-09-12"
-# Staleness stamp — machine-readable so a refresh can test drift without a model.
-# `sources` are area-relative paths (relative to THIS file's directory). Recompute:
-#   node ~/.claude/skills/project-compass/compass-hash.mjs src/main/gascity/COMPASS.md
-sources_hash: "sha256-16:ca6ba5c6ec4f8d55"
+generated: "2026-11-11"
+sources_hash: "sha256-16:b28be16acc7ca91f"
 sources:
-  - gascity-service.ts
-  - gascity-context.ts
-  - gascity-host-cache.ts
-  - gascity-parse.ts
-  - gascity-config.ts
-  - gascity-crew.ts
   - gascity-owner.ts
-  - ../ipc/features/gascity.ts
-  - ../../shared/gascity.ts
-  - ../../renderer/src/beads/crew-model.ts
-  - ../../renderer/src/beads/gascity-commands.ts
-  - ../../renderer/src/beads/use-gascity-crew.ts
-  - ../../renderer/src/beads/CrewSection.tsx
-  - ../../shared/gascity-analytics.ts
-  - ../../renderer/src/beads/analytics-links.ts
-  - ../../renderer/src/beads/use-analytics-config.ts
-  - ../../renderer/src/beads/BeadTraceLink.tsx
+  - gascity-reader.ts
+  - gascity-city-sessions.ts
+  - gascity-crew.ts
+  - gascity-parse.ts
+  - city-event-streams.ts
+  - city-attention.ts
+  - supervisor-access.ts
 ---
 
-# Compass: gascity — read-only gc crew bridge (fork-only)
-
-> Tribal-knowledge map for `src/main/gascity/` **and its renderer half** (the crew
-> section inside the Beads rail). The *why* and the *gotchas* — not the *what*.
+# Compass: Gas City session and attention projection
 
 ## Purpose
 
-The Beads panel used to show a live agent only as an `@owner` chip. This area answers the
-question the chip could not: **who is the crew of this rig right now?** The workspace's
-pinned lead identities first — rendered even when dormant — then the live worker pools,
-each clickable into the terminal and restartable from it. Tier changes a card's
-prominence, not what you can do to the session behind it: every card carries the same
-four actions, because "which sessions may I reset" is not a question the tiering answers.
+This area turns connected-host Gas City state into two core hvir capabilities: the global Sessions projection and external attention that participates in application badges. It does not own a visible Beads or crew panel. The Beads extension package owns that workspace UI and reaches Gas City only through approved connector capabilities.
 
-It is shaped exactly like the beads bridge (see `src/main/beads/COMPASS.md`): a service
-behind `ProjectHost`, pure parsing beside it, an owner module keeping the composition
-root to one line, and a self-contained renderer half. Copy that shape, not this file's
-specifics.
+The main process retains this area because session identity, project placement, host connection authority, event-stream lifetime, and application attention are trusted lifecycle responsibilities. Neither a package guest nor the renderer may own them.
 
-## What counts as a lead (verified against gc, not our aliases)
+## Key files and entry points
 
-gc has **no role or label field** on an agent or a named session. The one concept that
-unifies leads across every city is structural:
-
-> A pinned identity is a configured named session with `mode = "always"` that is not
-> suspended, associated with the workspace's rig.
-
-`*-pl` naming is a convention of one city, not an anchor — never key off it. Filtering
-suspended entries also dedupes the common two-generation situation for free: a
-pack-stamped lead that a rig override suspended drops out, leaving the hand-defined one.
-
-## Key files & entry points
-
-- **`gascity-service.ts`** — the whole main-process surface: `crew` / `probe`. Every `gc`
-  invocation goes through `ProjectHost.exec`, so the crew view works over SSH.
-- **`gascity-parse.ts`** — defensive normalization of `gc session list --json` and
-  `gc rig list --json`, plus `rigForPath`. gc's output shape is not ours to control.
-- **`gascity-config.ts`** — structural extraction from the resolved city TOML: which named
-  sessions are pinned, which agents are multi-session.
-- **`gascity-crew.ts`** — the tiering itself. Every rule is structural; nothing keys off a
-  naming convention.
-- **`src/renderer/src/beads/gascity-commands.ts`** — the gc command vocabulary
-  (attach / peek / reset / handoff) and the one place a target is shell-quoted.
-- **`src/renderer/src/beads/crew-model.ts`** — the bead join and tier grouping, pure.
-- **`src/shared/gascity-analytics.ts`** — the non-secret Honeycomb / Omni link configuration
-  (`gascity:analytics-config`). The main-process environment says where each surface lives or
-  turns it off everywhere; the city opts in per surface. Honeycomb needs a valid
-  `<city>/.gc/honeycomb-tracing-seats` (gas-city's own tracing gate, parsed with its rules), and
-  Trace renders only for members that gate names. Omni needs `<city>/.gc/omni-analytics`: the Omni
-  origin on the first line, then optional `dashboard=<id>` and `rig_filter=<id>` lines naming
-  the city's own dashboard. Origin alone keeps the fleet rig-health dashboard. A city-scoped crew gets the Analytics link without a rig filter.
-  Overlay-only defaults live here under an explicit header; no API key is ever read.
-- **`src/renderer/src/beads/analytics-links.ts`** — pure URL builders for the Trace and
-  Analytics links; the one place the gas-city identity facts below are encoded.
+- `gascity-owner.ts` is the composition boundary. `ownGasCityRuntime` assembles one shared reader, supervisor access, event-stream owner, Sessions source, and attention projection.
+- `gascity-reader.ts` is the bounded `gc` read path behind `ProjectHost`. Its caches share expensive host reads without turning a failed read into a durable empty answer.
+- `city-event-streams.ts` owns one supervisor event stream per connected host with an open project. It publishes stale facts on transport loss instead of silently withdrawing prior attention.
+- `city-attention.ts` places pending interactions onto hvir workspaces and emits revisioned external-attention snapshots.
+- `gascity-city-sessions.ts` derives host session facts for the Sessions application. `gascity-crew.ts` remains its structural tiering input; it is not a renderer-panel model.
+- `supervisor-access.ts` resolves a connected host and city name to the narrow supervisor client surface used by Sessions, attention, and Companion.
+- `gascity-parse.ts` normalizes untrusted `gc` output. Unknown or incomplete records stay explicit rather than being guessed from names.
 
 ## How it connects
 
-- **In:** the crew section inside `BeadsPanel` over IPC (`gascity:crew`, `gascity:probe`).
-- **Out:** `ProjectHost.exec` (`gc session list`, `gc rig list`, `gc config show`) and
-  `ProjectHost.stat` for the city probe.
-- **Sideways:** card clicks become `TerminalAttachRequest`s. `attach` carries an identity
-  key so a repeat click *focuses* the terminal already showing that session; peek, reset,
-  and handoff are unkeyed one-shot commands that always get a fresh shell
-  (`resolveTerminalAttach` in `terminal-workspace-model.ts`).
+- `src/main/index.ts` owns one `GasCityRuntime` for the application lifetime and publishes external attention over app IPC.
+- `src/main/sessions/` consumes observation, event, transcript, and attach capabilities without holding supervisor credentials or foreign identifiers in the renderer.
+- `src/main/attention/` combines Gas City attention with renderer-owned actionable attention for the application badge.
+- `src/main/companion/` reads the same pending-interaction facts for companion status and responses.
+- `src/main/rail-services.ts` uses the shared reader only to determine which Needs You candidate roots belong to a city. It does not expose Gas City IPC.
+- All subprocess and remote work crosses `ProjectHost`; supervisor traffic is limited to hosts hvir already connected.
 
-## Gotchas & non-obvious constraints
+## Gotchas and non-obvious constraints
 
-- **Scope depends on whether the workspace *is* the city.** The orchestration workspace
-  shows the whole city — every rig's lead pinned and every active worker — because that is
-  the one place you want it. A rig workspace narrows to that rig's own lead and workers;
-  everything else drops out — other rigs' leads and workers, the city's worker pools, and the
-  mayor. Standing in one project, the crew that matters is the one working that project.
-  `findCityRoot` answers "is this the city" with a marker walk, so no rig is recognized by
-  name.
-- **The city is found through `gc rig list`, not the filesystem walk.** `gc rig list`
-  reports the HQ rig — the city itself — alongside every registered rig, so `resolveCity`
-  asks which listed rig root carries `city.toml`. Rigs are *external project directories*
-  and often live outside the city, where walking up from the workspace never reaches it; on
-  that path the city root came back undefined, which mis-sorts the city workspace and
-  costs every member its trace rig. The walk survives only as the fallback for when the rig
-  list is unavailable, and when no city root resolves at all `isCityLead` turns permissive on
-  purpose — an extra lead at the head of the city crew is a visible annoyance, a missing
-  mayor looks like the whole view is broken.
-- **`city.toml` marks the city root; `.gc` does not.** gc creates a `.gc` directory inside
-  every registered rig. Treating it as a city marker made every rig workspace look like the
-  orchestration workspace, so the whole city's workers showed up everywhere. Membership
-  ("am I in a city", used by the probe) and identity ("am I *the* city") are different
-  questions and use different markers — `CITY_MEMBER_MARKERS` vs `CITY_ROOT_MARKER`.
-- **Order inside a tier is activity, then name.** A crew is read to find out who is working
-  right now, so `sortCrew` ranks by `crewActivityBand` — running, parked, absent, unknown —
-  before falling back to the label. The band vocabulary is shared with the renderer's state
-  styling (`crewActivityBand` in `shared/gascity.ts`) so a state that sorts as dormant can
-  never be painted as active. Tier and pool still group first; activity orders within.
-- **`GasCityCrew.scope` is surfaced in the header** for exactly that reason: a wrong scope is
-  otherwise invisible, it just looks like too many cards.
-- **`cityLead` is one fact serving three jobs.** "Belongs to the city, not to a rig" sorts
-  the mayor to the head of the crew in the city workspace, picks the city trace rig, and
-  marks the card visually. It is derived once on the member, live (`isCityLead`) and dormant
-  (`isDormantCityLead`) by the same rule, so the three never drift apart. Scope no longer
-  reads it: a rig workspace shows its own rig and nothing else.
-- **`GasCityCrew.diagnostics` is the standing answer to this whole class of bug.** Every
-  failure in this area has been a rule deciding quietly on data that was not there, and a
-  config key read under the wrong name yields zero pinned identities while looking exactly
-  like a city that has none. The panel now states the pinned count when it is zero and names
-  the in-scope sessions no config entry describes. Keep it: the alternative is another
-  round-trip through a bug report to learn what the derivation already knew.
-- **City scope is `work_dir` *equal to* the city root, not under it.** In a nested layout
-  every rig is under the city root too, so containment would classify everything as city
-  scope. Exact equality is what separates the mayor from a rig's project lead, and it holds
-  without knowing either name. The HQ rig is identified the same structural way: the rig
-  whose own root carries the city marker.
-- **Rig association** is `work_dir` at or under the rig root, or gc's `rig` field, or a
-  rig-qualified template. The `rig` field alone would miss city-scope leads, so `work_dir`
-  matching stays in the rule regardless of the data source.
-- **"The mayor" is the pinned identity rooted *at the city*, and nothing else works.** The
-  trap: a rig's hand-defined project lead is a **city-scope** named session carrying no
-  `rig` key at all — its rig association lives only in `work_dir`, pointing at the rig root.
-  So "has no rig" marks every rig's lead as the city's, which is exactly the bug that
-  shipped twice. The rule that holds: with no rig on either side, compare the identity's
-  root against the city root. `identityRoot` prefers the live session's `work_dir` and falls
-  back to the configured `work_dir` on the named session or its backing agent, so dormant
-  leads scope the same way live ones do. Keying off the literal name `mayor` would be the
-  naming convention this design refuses.
-- **`[[named_session]]` is keyed by `template`, not `name`.** Most entries carry no `name`
-  at all. Requiring one dropped every named session, which silently meant "no leads exist" —
-  no mayor, no pins, everything a worker. Identity is `template`; `name` is the exception.
-- **An agent names its rig with `dir`; `scope = "city"` agents have none.** The same agent
-  name recurs once per rig (`codex`, `core.control-dispatcher`), so a name alone never
-  identifies one — always disambiguate by rig before reading `poolName`.
-- **A rig lead is declared at city scope and gets its rig through its agent.**
-  `[[named_session]] template = "aoa-pl"` has no `dir`; the `[[agent]] name = "aoa-pl"` it
-  names carries `dir = "aoa"`. `withAgentRig` closes that link at parse time. Without it
-  every rig lead reads as rig-less, which the scope rule treats as "the city's own lead".
-- **Sessions are named with the rig's absolute path baked in**
-  (`/home/ds/projects/mem/mem-worker-2`), and that prefix is the most reliable rig signal:
-  a pooled worker's `work_dir` is frequently a *worktree*
-  (`/home/ds/gascity-worktrees/polecat-3`) that lives nowhere near its rig, so containment
-  alone loses it. An absolute prefix settles association both ways; a relative qualifier
-  (`mem/agent`) names a rig rather than a directory and is matched against the rig name.
-- **Those paths are not display text.** Cards label with the basename, and `gc session
-  <verb>` targets the session id whenever the alias is path-shaped — a path-shaped alias is
-  fragile on a command line. The bead join keeps *both* forms as identity keys, since a bead
-  may be assigned either way.
-- **A named session need not run under its configured name.** A lead configured as
-  `project-lead` can run as `mem-pl`, so matching sessions to config by name/alias alone
-  silently demotes leads to workers. The agent template is the fallback link, restricted to
-  non-pooled agents so a pool member can never be promoted by sharing a template.
-- **A crew refresh has a fast half and a slow half, and only the fast half may poll.**
-  The session list is live and re-read every tick (3 s share window). The city's shape —
-  rigs, city root, resolved config — changes when someone edits config, i.e. never on a
-  4-second timescale, and is held for 60 s. An explicit refresh passes `refresh: true` and
-  drops both; the poll never does.
-- **All three `gc` reads are city-wide, so all three are shared per host.** `gc session
-  list` ignores `--rig`, `gc rig list` describes the whole city, and `gc config show` is the
-  city's composed config. The *only* per-workspace fact is which rig it maps to, and
-  `rigForPath` derives that from the shared rig list with no IO. That is why switching
-  workspaces on a warm host costs no `gc` at all — the previous per-workspace keying re-paid
-  every read, seconds each.
-- **The key could not be the city, only the host.** gc resolves the city from the working
-  directory through its machine-wide registry, and hvir learns it only from `gc rig list` —
-  one of the reads being cached. So `HostReadCache` keys by host and `attribute()` records
-  the city afterwards, once `crew` has resolved a context; a read attributed to two
-  different cities is dropped rather than served. Do not "fix" the key to the city without
-  solving that ordering problem first: the naive version deadlocks the reads against each
-  other, and the version that peeks a cached context never shares on the first visit to a
-  workspace, which is exactly the case that hurts.
-- **`GasCityContextCache.peek` exists for that ordering problem** and nothing else. It
-  returns a context only if one is already resolved and fresh, so a caller that needs the
-  city root to decide *how* to fetch something degrades instead of stalling.
-- **A failed read is thrown, not defaulted, and the degrading happens at the call site.**
-  A missing rig list still yields a workers-only crew rather than a blank section — that is
-  deliberate — but if the loader returned `[]` the cache would hold that emptiness for a
-  minute for *every* workspace on the host. `loadRigs` / `loadConfig` throw so the entry
-  evicts; `degradeTo` in `loadContext` supplies the fallback and logs.
-- **The poll period is a floor the host raises, not a schedule.** What a refresh costs is a
-  property of the host: the same `gc session list` returns in milliseconds locally and in
-  about three seconds against a real city over SSH. A fixed 4-second interval left the
-  reader permanently mid-read. `createVisibilityRefresh` now chains — refresh, measure, wait
-  a multiple of what that cost, repeat — so a fast host keeps the configured period and a
-  slow one backs off to a cap without a constant here having to guess which it is. It also
-  means a poll can no longer overlap its own successor.
-- **The city probe waits for the section to be on screen.** `BeadsPanel` stays mounted
-  behind the Files and Git tabs, so an ungated probe walked up to a dozen directory levels —
-  one SSH round trip each — on every workspace switch, for a section the user may never
-  open. The answer holds as long as the workspace does, so `probedRoot` also stops a
-  hide/show cycle from asking again.
-- **The context cache re-inserts on a hit** so its eviction is least-recently-*used*. A Map
-  evicts in insertion order, and without the re-insert the workspace you keep returning to
-  is dropped while one abandoned long ago survives.
-- **Read the gc binary's build stamp; never infer it from a checkout.** `go version -m
-  $(readlink -f ~/.local/bin/gc)` carries `-X main.commit=…`, which is the only reliable
-  answer to "which gc did I just measure". A gc host runs many trees — around twenty on
-  ds-5090, most of them stale PR-check branches — and the one named plainly `gascity` was
-  *not* the one building the binary on PATH, which came from `gascity-main` at `origin/HEAD`.
-  Guessing from the directory name produced a confident, wrong claim that the measurements
-  described a two-month-old branch. The binary is also rebuilt roughly hourly by the city's
-  own agents, so its mtime and size shift mid-investigation. A timing without its commit is
-  not evidence.
-- **Measure gc before optimizing around it; the costs are not where they look.** On a real
-  city (~22 rigs, ~73 sessions, 2026-07-19), timed on the host itself: `gc session list
-  --json` **2.3–3.3 s**, `gc rig list --json` **2.7–2.9 s**, `gc config show` **0.25 s**.
-  The intuition that `config show` is the expensive one — it re-composes every include,
-  pack, patch, and override and emits 123 KB of TOML — is wrong by an order of magnitude,
-  and the caching above was originally justified by it. The two commands that actually cost
-  seconds are the small ones. For scale, `bd` and `git status` on the same host return in
-  **under 50 ms**, so gc is roughly sixty times slower than everything else hvir runs.
-- **gc runs on the background exec lane, and that is containment, not tuning.** A host's
-  buffered-exec budget is shared by git, harness probes, and every panel
-  (`SSH_DEFAULT_MAX_CONCURRENT_EXECS` is 4). A three-second poll on a four-second timer
-  holds most of it, and the git discovery a user is waiting on after a workspace switch
-  queues behind gc — which reads as the whole app being slow rather than one panel being
-  slow. Every `gc` call passes `lane: 'background'`, capping gc at one slot. Do not drop it
-  to make a cold crew load faster: the point is that a slow city costs the crew section its
-  own latency and nothing else's.
-- **Rig marker stats run concurrently.** A city has tens of rigs and each stat is a round
-  trip over SSH; sequential probing was the first-load cost.
-- **`gc status --json` is disqualified.** Its runtime probe has taken over 120 s to return
-  partial data. Never put it on a refresh path.
-- **The global `--rig` flag does not filter `gc session list`.** It returns every session
-  in the city; the filtering is ours to do.
-- **Two data-source generations, one code path.** `hasProjectedTierFields` detects whether
-  gc already projects `pool` / `configured_named_session`. When it does, hvir uses them
-  verbatim and **skips the config read entirely**; when it does not, the resolved config
-  supplies the tiering. `GasCityCrew.tierSource` tells the UI which ran, and the panel says
-  so rather than implying gc classified the crew itself.
-- **The resolved-config walk is deliberately shape-tolerant.** `named_session` arrays and
-  `agents` tables appear at both city and rig scope and have moved between gc versions, so
-  the walk finds them wherever they sit and records the enclosing rig. Anything it cannot
-  recognize is left out — the crew degrades to "workers only" rather than inventing a
-  hierarchy.
-- **Open item:** it is unverified that `gc config show` emits *rig-expanded* named sessions
-  with overrides applied. If it emits pre-composition config, suspended entries will not be
-  marked; `dedupeByTarget` is the safety net (one card per identity, preferring the one
-  with a live session), but the right fix is the gc-side projection.
-- **The bead join must agree with the scheduler.** Match `bead.assignee` against the same
-  identity set gc's own active-bead matcher uses (id, session name, alias, template). When
-  gc projects `active_bead`, prefer it verbatim.
-- **`activeProject()` is a security boundary**, exactly as in beads: the renderer-supplied
-  root is compared against the registry root and then discarded.
-- **`loginShell: true` on every `gc` call is load-bearing** — same `~/.local/bin` PATH gap
-  that makes it necessary for `bd`.
-- **Actions are typed commands in a real terminal, never background invocations.** That is
-  what keeps `reset` and `handoff` visible and interruptible. `gc handoff` requires a
-  subject, which is why the command carries one.
-
-## Observability links (Trace / Analytics)
-
-- **Links are plain anchors; there is no open-link IPC.** `target="_blank"` on an `<a>` is
-  routed by the main window's `setWindowOpenHandler` (`electron-window-manager.ts`) through
-  `isSafeExternalUrl` to `shell.openExternal`, the same path rendered-document links use.
-  If an upstream merge ever removes that handler the links would open an in-app window;
-  the crew-section test asserts `target`/`rel` but cannot assert the main-side route.
-- **`gen_ai.agent.name` is `<rig>.<agent>`, not the session name.** gas-city sets agent to
-  `_gc_seat_trace_safe_component(basename "$GC_AGENT")` and joins it to the rig
-  (gas-city `bin/lib/gc-seat-tracing.sh:43-53`, `:317`). hvir approximates the agent with the
-  basename of `session.template ?? session.name`, applies the same `[A-Za-z0-9_.-]{1,64}`
-  rule, and renders no Trace link when either half fails it: a link that could never match
-  is worse than none. Where gc's template differs from `GC_AGENT` the query opens correctly
-  formed but empty; the `gc.rig` filter stays so the agent filter can be dropped in the UI.
-- **A bead id never appears on a span.** `gc.session_name` / `gc.root_bead_id` are bd
-  metadata keys, absent from the dataset. The only bead signal is
-  `gc.work.id = sha256(json.dumps(["work", store_ref, id], separators=(",",":"),
-  ensure_ascii=True))` (`bin/honeycomb_lifecycle.py:31-33,68`) with `store_ref` being
-  `rig:<name>` or `city:<name>` (`bin/honeycomb_work_observation.py:102`), and it is only on
-  `city.*` event spans (the collector strips it from model/tool spans). `BeadTraceLink`
-  hashes under `rig:<rigName>`; a city-owned bead hashes under a city name hvir does not
-  know and opens empty.
-- **Absence rule, applied uniformly:** unset or blank variable means the overlay default is
-  shown; an explicit invalid value, or the literal `off`, hides that surface. `off` is spelled
-  out because it would otherwise pass the path-segment rule and become a Honeycomb 404.
-- **No health strip.** No production main module reaches an off-host network endpoint
-  (the one HTTP client, `supervisor-client.ts`, speaks only to a host-local loopback
-  address through `ProjectHost.connectLoopback`), ADR-013 keeps network bytes out of
-  renderer IPC, and gas-city documents `HONEYCOMB_API_KEY` as ingest/boards-only with no
-  Query Data API access. Because no analytics value is rendered,
-  the read-time convention is met by each link stating its window (last 2h from the click)
-  rather than a timestamp on a cached number.
-- **Omni rig filter defaults on.** `mart_factory_health.rig` backs the "Factory Health by Rig"
-  dashboard, and its ids are the overlay defaults `OMNI_DEFAULT_DASHBOARD_ID` /
-  `OMNI_DEFAULT_RIG_FILTER_ID` (recorded in gas-city-observability `omni/README.md`). They
-  apply only on the default Omni origin; `off` on either variable drops that id, and the link
-  then opens the dashboard unfiltered or the model home. Recreating the dashboard or its filter
-  in Omni mints new ids, so update the defaults when that happens.
-
-## The supervisor API, alongside the CLI
-
-The bridge above shells out to `gc`. ADR-947 adds a second, narrower road to the same
-service: the supervisor's loopback HTTP API, used only for what the CLI cannot give
-cheaply (a session transcript, a live event stream, pending interactions, respond and
-submit).
-
-- **Declared, not discovered.** `supervisor-endpoint.ts` holds gc's documented default
-  `127.0.0.1:8372`, one optional override per host
-  (`HVIR_GASCITY_SUPERVISOR_<HOST_ID>`, then `HVIR_GASCITY_SUPERVISOR`), and the same
-  absence rule as the analytics overlays: blank falls through, `off` hides the surface,
-  an unusable value degrades to a named `misconfigured` reason. Nothing scans ports.
-- **The host opens the channel, always.** `supervisor-transport.ts` speaks HTTP over the
-  `Duplex` that `ProjectHost.connectLoopback` returns, so a local supervisor and one
-  behind an SSH tunnel are the same code. It never calls `net.connect`, and it never
-  keeps a channel: every exit path destroys it. The response is timed with an owned
-  timer, not `request.setTimeout`, because an SSH channel is not a `Socket`.
-- **The service is unauthenticated and machine-wide.** `X-GC-Request` is presence-only
-  anti-CSRF, not an idempotency key, so a failed `respond` or `submit` is never retried
-  here. Reconnecting a dropped stream is the caller's decision; the client hands back the
-  cursor it reached.
-- **Structured only.** `format=structured` on every transcript and stream request, and
-  `include_thinking` is never sent. The generated types deliberately exclude the raw
-  branch, so a provider-shaped payload cannot be named, and an arriving `message` frame
-  is reported as unrecognized rather than parsed.
-- **Types are generated and pinned.** `npm run generate:gascity-supervisor-types` reads
-  the running supervisor's `openapi.json`, fails if a declared operation moved or was
-  renamed, and rewrites `generated-supervisor-{api,transcript,tools}.ts`. The digest of
-  the document it read is recorded in `GASCITY_SUPERVISOR_API_PROVENANCE`.
+- A hidden Sessions view must not stop external attention. Event streams follow open projects, not view demand, because a worker can start waiting while no session UI is visible.
+- Transport loss is uncertainty, not resolution. Preserve the last nonzero pending count as stale with a reason; dropping it would tell the person that nobody is waiting.
+- Stream callbacks are generation-checked. A close or event from a replaced client must never overwrite the replacement stream's facts.
+- There is one stream per host, even when several projects on that host are open. City resolution may improve a held host entry, but project count must not multiply connections.
+- Supervisor clients are created only for already-connected hosts. Observing an external session must never dial a disconnected SSH host.
+- Failed city-name reads are not cached. A transient supervisor failure should be retried on the next selection instead of becoming a false city-unknown verdict for the cache lifetime.
+- Host-wide `gc` caches are attributed to the city they described. Invalidating a workspace also invalidates host reads so a city switch cannot reuse another city's session/config facts.
+- Session placement is structural. Paths, rig records, configured identities, and projected tier fields are evidence; `*-pl`, `mayor`, and other naming conventions are not.
+- City scope is exact root equality. Containment would classify nested rigs as the city and leak unrelated sessions across project boundaries.
+- A rig lead can be declared at city scope and acquire its rig through the referenced agent. Name-only matching loses that association and can promote or demote the wrong session.
+- Path-shaped aliases are identity evidence, not display text or safe command arguments. Main resolves attach targets and the shared command builder quotes the selected target.
 
 ## Failure modes seen here
 
-- **A crew card spawning a new terminal on every click** → the identity key was dropped from
-  the attach request; `resolveTerminalAttach` is what prevents it.
-- **Two cards for the same lead** → a city carrying both a suspended pack lead and its
-  replacement, with suspension not visible in the resolved config. See the open item above.
-- **An empty crew in a real city** → usually the rig-list read failing, which drops the
-  template-qualified and `rig`-field association rules and leaves only `work_dir` matching.
-  It is logged, not surfaced, because a partial crew still beats a blank section.
+- Treating `.gc` as the city marker made every registered rig look like the orchestration workspace because each rig owns a `.gc` directory.
+- Associating sessions only by `work_dir` lost pooled workers whose worktrees live outside the rig root.
+- Treating an identity with no explicit rig as the city lead promoted project leads that inherit their rig through agent configuration.
+- Reusing a stale stream callback after reconnect replaced current facts until generation checks were added.
+- Clearing pending facts on a stream failure hid a person-facing wait; the current stale-count contract exists to prevent that regression.

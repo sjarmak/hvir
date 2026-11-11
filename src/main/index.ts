@@ -214,7 +214,7 @@ function createWorkbenchEntry(): void {
     const gasCity = ownGasCityRuntime(
       runtime,
       { projects: projectRegistry, hosts: hostCatalog },
-      (snapshot) => rendererEvents.toWindows('gascity:attention-changed', snapshot),
+      (snapshot) => rendererEvents.toWindows('app:external-attention-changed', snapshot),
     )
     attention = installApplicationAttention(runtime, {
       gasCityAttention: gasCity.attention,

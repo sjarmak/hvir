@@ -19,9 +19,7 @@ import type {
 } from '../../shared'
 import type { ArchitectureReviewCoordinator } from '../architecture-review/coordinator'
 import type { AgentApplicationRuntime } from '../agent/agent-application'
-import type { BeadsService } from '../beads/beads-service'
 import type { CompanionSettingsPort } from '../companion/companion-settings'
-import type { GasCityService } from '../gascity/gascity-service'
 import type { GitHubService } from '../github/github-service'
 import type { PullWorktreeSource } from '../git/pull-worktrees'
 import type { HarnessProfileStoreContract } from '../harness/harness-profile-store'
@@ -217,8 +215,6 @@ export interface IpcDeps extends IpcRouterAuthorityPort {
   readonly remoteImagePaste: Pick<RemoteImagePasteCoordinator, 'pasteOrForward'>
   /** Defaults to the Electron clipboard; scenarios override it to stay inert. */
   readonly systemClipboard?: SystemClipboardPort
-  readonly beads: Pick<BeadsService, 'list' | 'probe'>
-  readonly gascity: Pick<GasCityService, 'crew' | 'probe' | 'analyticsConfig'>
   readonly github: Pick<
     GitHubService,
     'pulls' | 'probe' | 'checkouts' | 'detail' | 'pullWorktreeSource'

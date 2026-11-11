@@ -26,7 +26,6 @@ import { createFilenameSearchCoordinator } from '../filename-search'
 import { createProjectFileOperationCoordinator } from '../project-file-operations'
 import { ProjectFolderPickerCoordinator } from '../project-folder-picker'
 import { createDocumentReviewRuntime } from '../document-review'
-import { GasCityService } from '../gascity/gascity-service'
 import { createSmokeNeedsYou } from './needs-you'
 import { memoryOnlyHealth } from './health'
 import { HarnessProfileStore } from '../harness/harness-profile-store'
@@ -267,9 +266,6 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       synthetic: mode === 'sessions-projection',
     })
     const smokeBeads = qolRailServices.beads
-    const smokeGasCity = new GasCityService({
-      getProject: () => ({ host, root: smokeRoot }),
-    })
     const smokeGitHub = qolRailServices.github
     const smokeNeedsYou = createSmokeNeedsYou({
       host: qolRailServices.host,
@@ -349,6 +345,8 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
     )
     const readiness = new SmokeRendererReadiness()
     const ipcRouter = registerIpcHandlers({
+      agents: dependencies.agents,
+      extensions: dependencies.extensions,
       architectureReview: architectureReview.createSmokeArchitectureReview(
         rendererResources,
         cleanup,
@@ -387,8 +385,6 @@ export async function runSmoke(dependencies: ElectronSmokeDependencies): Promise
       remoteImagePaste: createSmokeImagePasteFallback(supervisor),
       // A scenario must not overwrite the clipboard of the machine running it.
       systemClipboard: { writeText: () => undefined },
-      beads: smokeBeads,
-      gascity: smokeGasCity,
       github: smokeGitHub,
       needsYou: smokeNeedsYou,
       updateAttention: smokeAttention.updateAttention,

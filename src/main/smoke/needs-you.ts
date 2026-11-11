@@ -1,5 +1,5 @@
 import type { EmitRendererEvent } from '../ipc/deps'
-import type { BeadsService } from '../beads/beads-service'
+import type { BeadsReader } from '../beads/beads-reader'
 import type { GitHubService } from '../github/github-service'
 import { NeedsYouService } from '../needs-you/needs-you-service'
 import type { ProjectHost } from '../project-host'
@@ -8,7 +8,7 @@ import type { createSmokeProjectState } from './project-state-fixture'
 export function createSmokeNeedsYou(options: {
   readonly host: ProjectHost
   readonly projectFixture: ReturnType<typeof createSmokeProjectState>
-  readonly beads: BeadsService
+  readonly beads: BeadsReader
   readonly github: GitHubService
   readonly emit: EmitRendererEvent
 }) {

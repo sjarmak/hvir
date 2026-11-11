@@ -63,17 +63,6 @@ interface GcResult {
   readonly unavailable?: GasCityUnavailable
 }
 
-/**
- * Every `gc` read hvir makes, cached and shared.
- *
- * The reader is deliberately ignorant of which workspace is active: it takes
- * the host and root it is asked about. That is what lets the per-workspace crew
- * view and the global Sessions projection share one `gc session list` per host
- * instead of each paying for its own. Authority over *which* roots may be read
- * stays with the callers — {@link GasCityService} limits itself to the active
- * workspace, and the Sessions source reads only hosts hvir has already
- * connected.
- */
 export class GasCityReader {
   /**
    * The city's shape, cached per workspace. Only the session list is re-read

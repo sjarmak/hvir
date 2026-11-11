@@ -1,6 +1,5 @@
 import type { HostPath } from '../shared'
-import { BeadsService } from './beads/beads-service'
-import { ownGasCityService } from './gascity/gascity-owner'
+import { BeadsReader } from './beads/beads-reader'
 import type { GasCityReader } from './gascity/gascity-reader'
 import { GitHubService } from './github/github-service'
 import type { EmitRendererEvent, IpcDeps } from './ipc/deps'
@@ -14,12 +13,10 @@ export function ownRailServices(
   registry: Pick<ProjectRegistry, 'state' | 'observe'>,
   hostCatalog: Pick<ProjectHostCatalog, 'connectedHosts'> | undefined,
   emit: EmitRendererEvent,
-): Pick<IpcDeps, 'beads' | 'gascity' | 'github' | 'needsYou'> {
-  const beads = new BeadsService({ getProject })
+): Pick<IpcDeps, 'github' | 'needsYou'> {
+  const beads = new BeadsReader()
   const github = new GitHubService({ getProject })
   return {
-    beads,
-    gascity: ownGasCityService(getProject, cityReader),
     github,
     needsYou: new NeedsYouService({
       getProjectState: () => registry.state(),
