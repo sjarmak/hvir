@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 
 import type { ProjectState } from '../../../shared'
 import { hostPathEquals } from '../../../shared'
+import { BEADS_EXTENSION_ID } from '../../../shared/extensions/beads-extension-identity'
 import { useNeedsYouNavigation } from './use-needs-you-navigation'
 
 export function useApplicationNavigation({
@@ -40,7 +41,7 @@ export function useApplicationNavigation({
     targetedView: beadTarget
       ? {
           requestId: beadTarget.beadId,
-          extensionId: 'beads-extension',
+          extensionId: BEADS_EXTENSION_ID,
           contributionId: 'beads',
           workspaceId: beadTarget.workspaceId,
           input: { focusBeadId: beadTarget.beadId },
