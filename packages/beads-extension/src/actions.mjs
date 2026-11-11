@@ -11,7 +11,7 @@ export function commandForAction(action, input) {
       args.push('--description', text(value.description, 4096))
     return ['bd', args]
   }
-  const target = text(value.target, 256)
+  const target = crewTarget(value.target)
   if (action === 'crew-attach') return ['gc', ['session', 'attach', target]]
   if (action === 'crew-peek') return ['gc', ['session', 'peek', target]]
   if (action === 'crew-reset') return ['gc', ['session', 'reset', target]]
@@ -53,4 +53,10 @@ function text(value, maximum) {
   )
     throw new Error('Invalid command input')
   return value
+}
+
+function crewTarget(value) {
+  const target = text(value, 256)
+  if (target.startsWith('-')) throw new Error('Invalid command input')
+  return target
 }

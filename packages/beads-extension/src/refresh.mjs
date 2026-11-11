@@ -1,6 +1,7 @@
 export function createRefreshController({
   refresh,
   publish,
+  fail,
   schedule = globalThis.setTimeout,
   cancel = globalThis.clearTimeout,
   intervalMs = 5000,
@@ -43,10 +44,11 @@ export function createRefreshController({
       )
       const changed = nextSignature !== signature
       signature = nextSignature
-      publish(value)
+      await publish(value)
       backoff = changed ? 1 : Math.min(backoff * 2, maximumIntervalMs / intervalMs)
-    } catch {
+    } catch (error) {
       if (!visible || disposed || current !== revision) return
+      fail(error)
       backoff = Math.min(backoff * 2, maximumIntervalMs / intervalMs)
     } finally {
       running = false
