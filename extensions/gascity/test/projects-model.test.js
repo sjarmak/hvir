@@ -623,6 +623,17 @@ test('an unread convoy target takes no time, owner or wait from its convoy and i
   assert.deepEqual([dependency.stuck.items.length, dependency.notStarted.items.map((row) => [row.id, row.state, row.unread])], [0, [['fx-cv-t-dep', 'open', true]]])
 })
 
+test('a convoy target is found by store and id, and a same id in two other stores stays unknown', () => {
+  const input = fresh()
+  input.urgent = [convoy('fx-cv-s1', 'fx-dup', { store: 's1' }), convoy('fx-cv-s3', 'fx-dup', { store: 's3' })]
+  input.linked = [urgent('fx-dup', { store: 's1', status: 'in_progress', title: 'Open target' })]
+  input.workflowRoots = [urgent('fx-dup', { store: 's2', status: 'closed', title: 'Closed namesake' })]
+  const model = buildDashboard(input)
+  const rows = [model.stuck, model.working, model.waiting, model.notStarted].flatMap((group) => group.items)
+  assert.deepEqual(rows.map((row) => [row.id, row.store, row.title, row.unread]).sort(),
+    [['fx-dup', 's1', 'Open target', false], ['fx-dup', 's3', '', true]])
+})
+
 test('a stuck row names its owner seat, falling back to the project lead, and an unclaimed pool route', () => {
   const input = fresh()
   input.urgent = [

@@ -326,10 +326,17 @@
     title: dependency.title ?? '', status: dependency.status ?? '', priority: convoy.priority, labels: [], metadata: {},
     ...(convoy.store === undefined ? {} : { store: convoy.store }), convoy: convoy.id, unread: true })
 
+  const trackedTarget = (convoy, id, index) => {
+    const candidates = index.get(id) ?? []
+    const sameStore = candidates.filter((candidate) => candidate.store === convoy.store)
+    if (sameStore.length > 0) return sameStore[0]
+    return new Set(candidates.map((candidate) => candidate.store)).size === 1 ? candidates[0] : undefined
+  }
+
   const folded = (bead, index) => {
     const tracks = isSyntheticConvoy(bead) ? trackedDependencies(bead) : []
     if (tracks.length !== 1 || !(tracks[0].depends_on_id ?? tracks[0].id)) return bead
-    const tracked = index.get(tracks[0].depends_on_id ?? tracks[0].id)
+    const tracked = trackedTarget(bead, tracks[0].depends_on_id ?? tracks[0].id, index)
     return tracked ? { ...tracked, store: tracked.store ?? bead.store, convoy: bead.id } : unreadTracked(bead, tracks[0])
   }
 
@@ -396,7 +403,7 @@
   ].filter(Boolean)
 
   const urgentLists = (input, decisions, context) => {
-    const rows = urgentBeads(input, decisions, context.index).map(urgentRow(context)).sort(oldestFirst)
+    const rows = urgentBeads(input, decisions, context.byId).map(urgentRow(context)).sort(oldestFirst)
       .map((row) => ({ ...row, stuckReasons: row.unread ? [] : stuckReasons(row, context.now) }))
     const stuck = rows.filter((row) => row.stuckReasons.length > 0)
     const calm = rows.filter((row) => row.stuckReasons.length === 0)
@@ -412,6 +419,7 @@
     const beads = ['ancestors', 'urgent', 'linked', 'workflowSteps', 'workflowRoots', 'inProgress', 'decisions', 'artifacts', 'milestones', 'projects']
       .flatMap((key) => input[key] ?? [])
     const index = new Map(beads.map((bead) => [bead.id, bead]))
+    const byId = beads.reduce((found, bead) => found.set(bead.id, [...(found.get(bead.id) ?? []), bead]), new Map())
     const projects = new Map((input.projects ?? []).map((bead) => [bead.id, bead]))
     const states = input.refStates ?? {}
     const cardTexts = needsApi.cardTextRecord(input.artifacts ?? [])
@@ -431,7 +439,7 @@
     const stepBeads = new Map([...(input.herSteps ?? []), ...openDecisions].map((bead) => [`${bead.store}#${bead.id}`, bead]))
     const herSteps = needsApi.herSteps([...stepBeads.values()], cardTexts.texts)
     const stepsUnread = (input.unread ?? []).includes('herSteps')
-    return { now: input.now, ...urgentLists(input, input.decisions ?? [], { index, projects, texts: cardTexts.texts,
+    return { now: input.now, ...urgentLists(input, input.decisions ?? [], { index, byId, projects, texts: cardTexts.texts,
       now: input.now, seats: knownSeats(input, index, projects),
       active: new Set(entries.filter((entry) => entry.item.bead).map((entry) => beadKey(entry.item.bead))) }), needsYou, inDelivery, herSteps, stepsUnread,
       cardTextsInvalid: cardTexts.invalid, cards: [...groups.values()], activeNow: groupActivity(entries),
