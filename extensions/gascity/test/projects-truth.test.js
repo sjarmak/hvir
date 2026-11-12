@@ -1,7 +1,7 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { buildDashboard } = require('../projects-model.js')
-const { undated, REMOVED, UNREAD } = require('../projects-truth.js')
+const { UNREAD } = require('../projects-truth.js')
 
 const NOW = '2026-10-31T16:30:00.000Z'
 const project = (meta) => ({ id: 'p', title: 'Project', status: 'open', labels: ['city-project'], store: '/hq',
@@ -100,13 +100,22 @@ test('a named wait with a defer date shows it as a dependency', () => {
   assert.deepEqual(result.actionOwner, { kind: 'agent', name: 'gascity-pl' })
 })
 
-test('dates inside lead prose are removed because no record supports them', () => {
-  assert.equal(undated('Chased 2026-10-31T16:30Z, again at 17:38Z, then on 2026-11-03.'),
-    `Chased ${REMOVED}, again at ${REMOVED}, then on ${REMOVED}.`)
-  assert.equal(undated('Three PRs, issue #68966, version 0.166.0'), 'Three PRs, issue #68966, version 0.166.0')
-  const result = card({ projects: [project({ 'proj.now': 'Fixed 2026-10-31T16:30Z.', 'proj.blocker': 'Waits to 18:00Z.' })] })
-  assert.equal(result.now, `Fixed ${REMOVED}.`)
-  assert.equal(result.blocker, `Waits to ${REMOVED}.`)
+test('dates inside lead prose reach the card unchanged', () => {
+  const prose = { 'proj.now': 'Fixed 2026-10-31T16:30Z, again at 17:38Z.', 'proj.blocker': 'Waits to Nov 3rd.',
+    'proj.stuck_why': 'Stalled since October 30, 2026.', 'proj.next_action': 'Rerun by 2026-11-03 18:00 UTC.' }
+  const result = card({ projects: [project(prose)], milestones: [{ ...milestone('p.1', '2026-11-05'),
+    metadata: { 'ms.state': 'active', 'ms.target': '2026-11-05', 'proj.now': 'Landed 2026-10-30.' } }] })
+  assert.equal(result.now, prose['proj.now'])
+  assert.equal(result.blocker, prose['proj.blocker'])
+  assert.equal(result.stuckWhy, prose['proj.stuck_why'])
+  assert.equal(result.nextAction, prose['proj.next_action'])
+  assert.equal(result.milestoneList[0].now, 'Landed 2026-10-30.')
+})
+
+test('the card carries when its text was last written, and nothing when that time is missing or invalid', () => {
+  assert.equal(card({ projects: [project({ 'proj.content_at': '2026-10-31T14:30Z' })] }).writtenAt, '2026-10-31T14:30Z')
+  assert.equal(card({ projects: [project({})] }).writtenAt, null)
+  assert.equal(card({ projects: [project({ 'proj.content_at': 'yesterday' })] }).writtenAt, null)
 })
 
 test('fetched time and last verified progress are separate, and a refreshed record time moves neither', () => {
@@ -147,17 +156,6 @@ test('non-string metadata does not break the card', () => {
   const result = card({ projects: [project({ 'proj.waiting_on': 42, 'proj.now': 7 })] })
   assert.deepEqual(result.checks, ['42 is named as a wait but is closed or not linked to this project'])
   assert.equal(result.now, '7')
-})
-
-test('the date filter covers zone words, offsets and month names but leaves ids, words, versions and ratios', () => {
-  const R = REMOVED
-  assert.equal(undated('17:38 UTC, 2026-10-31 16:30 UTC, 2026-10-31 UTC, 2026-10-31T10:00+02:00, Oct 31, by Nov 3rd'),
-    `${R}, ${R}, ${R}, ${R}, ${R}, by ${R}`)
-  assert.equal(undated('October 30, 2026, Sept 2026, May 3'), `${R}, ${R}, ${R}`)
-  assert.equal(undated('run-2026-10-31-abc, om-2026-10-31, sha 2026abc, 3/5 tests, 10:30 ok'),
-    'run-2026-10-31-abc, om-2026-10-31, sha 2026abc, 3/5 tests, 10:30 ok')
-  assert.equal(undated('Decision 2 is blocked, Marketplace 3, Mayor 1, Janet 3'),
-    'Decision 2 is blocked, Marketplace 3, Mayor 1, Janet 3')
 })
 
 test('a record that does not declare its waits, or whose links failed to read, is never shown as verified clean', () => {

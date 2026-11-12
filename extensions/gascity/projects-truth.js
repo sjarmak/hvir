@@ -5,16 +5,6 @@
   const NEEDS_LABEL = 'needs/stephanie'
   const LINK_KEYS = ['proj.id', 'gc.project']
   const SPLIT = /[\s,;+()]+/
-  const ZONE = '(?:Z|\\s?(?:UTC|GMT))'
-  const MONTH = '(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|' +
-    'Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\.?'
-  const DATE = new RegExp([
-    `(?<![\\w-])\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d+)?)?(?:${ZONE}|[+-]\\d{2}:?\\d{2})?)?(?:\\s(?:UTC|GMT))?(?![\\w-])`,
-    `(?<![\\w:-])\\d{1,2}:\\d{2}(?::\\d{2})?${ZONE}(?![\\w-])`,
-    `\\b${MONTH}\\s+\\d{1,2}(?:st|nd|rd|th)?\\b(?:,?\\s+\\d{4}\\b)?`,
-    `\\b${MONTH}\\s+\\d{4}\\b`,
-  ].join('|'), 'g')
-  const REMOVED = '[date removed]'
   const OPEN = new Set(['open', 'in_progress', 'blocked', 'deferred', 'hooked'])
 
   const meta = (bead, key) => {
@@ -27,7 +17,6 @@
   const waitsOnHer = (bead) => bead.status === 'open' && isAsk(bead) &&
     (!answered(bead) || meta(bead, 'gc.waiting_on') === HER)
   const inDelivery = (bead) => bead.status === 'open' && isAsk(bead) && answered(bead) && !waitsOnHer(bead)
-  const undated = (value) => String(value ?? '').replace(DATE, REMOVED)
   const tokens = (project) => meta(project, 'proj.waiting_on').toLowerCase().split(SPLIT).filter(Boolean)
   const named = (project) => tokens(project).filter((token) => token !== NO_WAITS)
   const mixesNone = (project) => tokens(project).includes(NO_WAITS) && tokens(project).length > 1
@@ -226,7 +215,7 @@
     }
   }
 
-  const api = Object.freeze({ HER, REMOVED, UNREAD, isAsk, hasStarted, waitsOnHer, inDelivery, undated, truth })
+  const api = Object.freeze({ HER, UNREAD, isAsk, hasStarted, waitsOnHer, inDelivery, truth })
   if (typeof module === 'object') module.exports = api
   else window.projectsTruth = api
 })()

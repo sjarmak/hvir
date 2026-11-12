@@ -277,9 +277,12 @@
     text(entry.label), text([` · ${entry.at || 'none recorded'}`, REASON_LABELS[entry.reason], entry.note].filter(Boolean).join(' · '), 'hvir-meta'),
     entry.overdue && text(' · overdue', 'projects-warning'))), 'No dates')
 
+  const writtenNote = (card) => card.now && card.writtenAt && text(` · written ${window.ago(card.writtenAt)}`, 'hvir-meta')
+
   const renderStrip = (card) => el('div', { className: 'projects-strip' },
     chip(card.derivedState),
     text(card.now || 'No current update'),
+    writtenNote(card),
     card.actionOwner.kind === 'user' && text('Waits on you', 'projects-waits-you'),
     renderWaits(card))
 
@@ -354,7 +357,7 @@
       card.state !== card.derivedState && paragraph(`The board and the lead's record disagree: board says ${
         card.derivedState.replaceAll('-', ' ')}, record says ${card.state.replaceAll('-', ' ')}`, 'projects-warning projects-where-disagree'),
       el('ul', {},
-        ...[card.now && whereLine('Now', text(card.now)),
+        ...[card.now && whereLine('Now', text(card.now), writtenNote(card)),
           card.nextAction && whereLine('Next', text(card.nextAction)),
           whereLine('Waiting on', ...waits),
           card.verifiedAt && whereLine('Last real progress', text(window.ago(card.verifiedAt)))].filter(Boolean)))

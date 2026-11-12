@@ -153,3 +153,25 @@ test('each answered decision shows its next checkpoint, or says none is recorded
   assert.match(first.textContent, /omni-pl · next 2099-12-24/)
   assert.match(second.textContent, /omni-pl · no next checkpoint/)
 })
+
+test('dated lead text shows its dates with when it was written, on the page and the overview card', (t) => {
+  const now = 'Stack 2 boots 2026-11-01T09:00Z, then the rerun on Nov 3rd.'
+  const root = pageFor(t, { projects: [project({ 'proj.now': now, 'proj.content_at': '2026-10-31T14:30Z' })] })
+  assert.equal(lines(root).Now, `${now} · written 2h ago`)
+  assert.doesNotMatch(root.textContent, /date removed/)
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  dom.window.Date.now = () => Date.parse(NOW)
+  for (const file of ['view.js', 'projects-render.js'])
+    dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const overview = dom.window.document.querySelector('main')
+  dom.window.projectsRender.renderDashboard(buildDashboard({ now: NOW, sessions: [],
+    projects: [project({ 'proj.now': now, 'proj.content_at': '2026-10-31T14:30Z' })] }), overview, {})
+  const strip = overview.querySelector('.projects-strip')
+  assert.match(strip.textContent, /Stack 2 boots 2026-11-01T09:00Z, then the rerun on Nov 3rd\.\s*· written 2h ago/)
+})
+
+test('lead text without a recorded write time shows no written note', (t) => {
+  const root = pageFor(t)
+  assert.equal(lines(root).Now, 'Waiting for the rerun.')
+})
