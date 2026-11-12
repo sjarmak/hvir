@@ -805,6 +805,15 @@ test('a bead a live worker is on stays In progress however old its update, and a
   assert.deepEqual(ids(model.notStarted), ['fx-a-gone-undated'])
 })
 
+test('open work nobody is assigned to but a live seat job is on is In progress, not unowned', () => {
+  const input = fresh()
+  input.inProgress = input.inProgress.filter((bead) => bead.id !== 'fx-seat-work')
+  input.urgent = [urgent('fx-seat-work', { status: 'open', updated_at: '2026-10-29T11:30:00Z' })]
+  const model = buildDashboard(input)
+  assert.deepEqual(model.stuck.items.map((row) => row.id), [])
+  assert.deepEqual(model.working.items.map((row) => [row.id, row.active, row.assigned, row.routed]), [['fx-seat-work', true, false, false]])
+})
+
 test('routed work waits on its named pool until a day passes, and other unstarted work stays visible', () => {
   const input = fresh()
   const at = (time) => `2026-10-29T${time}:00Z`

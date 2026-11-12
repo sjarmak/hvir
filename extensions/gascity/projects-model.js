@@ -399,7 +399,7 @@
   const stuckReasons = (row, now) => [
     row.likelyBroken && 'broken-wait',
     !hasNamedWait(row) && !row.active && stillOverHour(row, now) && 'no-movement',
-    !row.waitingOn && row.state === 'open' && !row.assigned && !row.routed && 'unowned',
+    !row.waitingOn && !row.active && row.state === 'open' && !row.assigned && !row.routed && 'unowned',
   ].filter(Boolean)
 
   const urgentLists = (input, decisions, context) => {
