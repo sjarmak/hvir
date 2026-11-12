@@ -28,7 +28,7 @@ const page = (t, { metadata = { 'gc.options': CHOICES }, description, onAnswer, 
   window.Date.now = () => Date.parse(fixture.now)
   Object.defineProperty(window, 'crypto', { value: webcrypto, configurable: true })
   Object.defineProperty(window, 'TextEncoder', { value: TextEncoder, configurable: true })
-  for (const file of ['view.js', 'needs-model.js', 'answer-state.js', 'projects-render.js'])
+  for (const file of ['view.js', 'needs-model.js', 'answer-state.js', 'card-words.js', 'projects-render.js'])
     window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = window.document.querySelector('main')
   const calls = []

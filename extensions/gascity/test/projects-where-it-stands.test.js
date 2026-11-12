@@ -48,7 +48,7 @@ const pageFor = (t, input = {}) => {
   t.after(() => dom.window.close())
   const { window } = dom
   window.Date.now = () => Date.parse(NOW)
-  for (const file of ['view.js', 'projects-render.js'])
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js'])
     window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const card = buildDashboard({
     now: NOW,
@@ -162,7 +162,7 @@ test('dated lead text shows its dates with when it was written, on the page and 
   const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
   t.after(() => dom.window.close())
   dom.window.Date.now = () => Date.parse(NOW)
-  for (const file of ['view.js', 'projects-render.js'])
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js'])
     dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const overview = dom.window.document.querySelector('main')
   dom.window.projectsRender.renderDashboard(buildDashboard({ now: NOW, sessions: [],

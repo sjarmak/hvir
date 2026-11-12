@@ -22,7 +22,7 @@ const faceFor = (t, input) => {
   t.after(() => dom.window.close())
   const { window } = dom
   window.Date.now = () => Date.parse(NOW)
-  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = window.document.querySelector('main')
   window.projectsRender.renderDashboard(model(input), root, {})
   return root.querySelector('.projects-card-face')

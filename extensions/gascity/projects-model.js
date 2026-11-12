@@ -373,9 +373,16 @@
 
   const waitedOverDay = (row, now) => row.updatedAt !== null && Date.parse(now) - Date.parse(row.updatedAt) > DAY_MS
 
+  const waitTitleOf = (token, context) => {
+    const target = token ? context.index.get(token) : undefined
+    return target ? needsApi.cardText(target, context.texts) || String(target.title ?? '').trim() : ''
+  }
+
   const withBrokenWait = (context) => (row) => {
     const kind = waitKind(row, context)
-    return { ...row, waitKind: kind, likelyBroken: Boolean(kind) && waitedOverDay(row, context.now) }
+    const token = waitToken(row.waitingOn)
+    return { ...row, waitKind: kind, waitToken: token, waitTitle: waitTitleOf(token, context),
+      likelyBroken: Boolean(kind) && waitedOverDay(row, context.now) }
   }
 
   const urgentRow = (context) => (bead) => {

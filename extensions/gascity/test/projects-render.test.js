@@ -9,7 +9,7 @@ const preview = () => {
   const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
   const { window } = dom
   window.Date.now = () => Date.parse(fixture.now)
-  for (const file of ['view.js', 'projects-render.js']) {
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) {
     window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   }
   const root = window.document.querySelector('main')
@@ -143,7 +143,7 @@ const navPreview = () => {
   const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
   const { window } = dom
   window.Date.now = () => Date.parse(fixture.now)
-  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = window.document.querySelector('main')
   const opened = []
   const model = buildDashboard(structuredClone(fixture))
@@ -174,7 +174,7 @@ test('a project page shows the whole project with decisions split by who acts ne
   t.after(() => dom.window.close())
   const { window } = dom
   window.Date.now = () => Date.parse(fixture.now)
-  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = window.document.querySelector('main')
   const model = buildDashboard(structuredClone(fixture))
   const project = model.cards.flatMap((group) => group.cards).find((entry) => entry.id === 'fx-project-1')
@@ -191,7 +191,7 @@ test('an unanswered decision without her label is listed as other open, never as
   t.after(() => dom.window.close())
   const { window } = dom
   window.Date.now = () => Date.parse(fixture.now)
-  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const input = structuredClone(fixture)
   input.decisions.push({ id: 'fx-plain', title: 'Plain open record', status: 'open', metadata: { 'gc.project': 'fx-project-1' } })
   const project = buildDashboard(input).cards.flatMap((group) => group.cards).find((entry) => entry.id === 'fx-project-1')
@@ -208,7 +208,7 @@ const pageFor = (t, id, options = {}) => {
   t.after(() => dom.window.close())
   const { window } = dom
   window.Date.now = () => Date.parse(fixture.now)
-  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const project = buildDashboard(structuredClone(fixture)).cards.flatMap((group) => group.cards).find((entry) => entry.id === id)
   const root = window.document.querySelector('main')
   window.projectsRender.renderProject(project, root, options)
@@ -267,7 +267,7 @@ test('an artifact with only some fields shows unknowns as words, never null, fal
   t.after(() => dom.window.close())
   const { window } = dom
   window.Date.now = () => Date.parse(fixture.now)
-  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const input = structuredClone(fixture)
   input.artifacts[0].metadata = { 'art.ref': 'fixture-lab/lantern@abc1234', 'art.tested_at': '2026-10-29T09:00Z' }
   const project = buildDashboard(input).cards.flatMap((group) => group.cards).find((entry) => entry.id === 'fx-project-1')
@@ -285,7 +285,7 @@ test('a claimed state with no first-claim time says since unknown', (t) => {
   t.after(() => dom.window.close())
   const { window } = dom
   window.Date.now = () => Date.parse(fixture.now)
-  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const input = structuredClone(fixture)
   input.artifacts[0].metadata = { 'art.kind': 'path', 'art.ref': '/fixture/x', 'art.live_source': 'hvir reload' }
   const project = buildDashboard(input).cards.flatMap((group) => group.cards).find((entry) => entry.id === 'fx-project-1')
@@ -301,7 +301,7 @@ test('the unverified waits marker shows on face, page, glance and nav until the 
   t.after(() => dom.window.close())
   const { window } = dom
   window.Date.now = () => Date.parse(fixture.now)
-  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = window.document.querySelector('main')
   const build = (meta, extra = {}) => {
     const input = structuredClone(fixture)
@@ -402,7 +402,7 @@ const pageFrom = (t, input, id) => {
   t.after(() => dom.window.close())
   const { window } = dom
   window.Date.now = () => Date.parse(input.now)
-  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const project = buildDashboard(input).cards.flatMap((group) => group.cards).find((entry) => entry.id === id)
   const root = window.document.querySelector('main')
   window.projectsRender.renderProject(project, root, {})
@@ -454,7 +454,7 @@ test('each decision shows its escalation tier as a tag; an untiered one shows no
   t.after(() => dom.window.close())
   const { window } = dom
   window.Date.now = () => Date.parse(fixture.now)
-  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const input = structuredClone(fixture)
   const ask = (id, tier) => ({ id, title: `Ask ${id}`, status: 'open', labels: ['needs/stephanie'],
     metadata: tier === undefined ? {} : { 'gc.tier': tier } })
@@ -483,7 +483,7 @@ test('an ask names who to answer: live seat is a button, sleeping or unknown sea
   const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
   t.after(() => dom.window.close())
   const { window } = dom
-  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = window.document.querySelector('main')
   const seats = []
   window.projectsRender.renderDashboard(buildDashboard(input), root, { onOpenSession: (seat) => seats.push(seat) })
@@ -514,7 +514,7 @@ test('a project page lists what is in flight and what is queued in plain words',
   const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
   t.after(() => dom.window.close())
   dom.window.Date.now = () => Date.parse(fixture.now)
-  for (const file of ['view.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = dom.window.document.querySelector('main')
   const project = buildDashboard(input).cards.flatMap((group) => group.cards).find((entry) => entry.id === 'fx-project-1')
   dom.window.projectsRender.renderProject(project, root, {})
@@ -544,7 +544,7 @@ test('the pane shows a Stuck list and a Waiting on list above the project cards'
   const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
   t.after(() => dom.window.close())
   dom.window.Date.now = () => Date.parse(fixture.now)
-  for (const file of ['view.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = dom.window.document.querySelector('main')
   const opened = []
   dom.window.projectsRender.renderDashboard(buildDashboard(input), root, { onOpenBead: (id) => opened.push(id) })
@@ -552,8 +552,8 @@ test('the pane shows a Stuck list and a Waiting on list above the project cards'
   assert.ok(titles.indexOf('Stuck (1)') > titles.indexOf('Needs you'))
   assert.ok(titles.indexOf('Stuck (1)') < titles.findIndex((title) => /^omni-pl$/.test(title)))
   const named = (name) => [...root.querySelectorAll(':scope > section')].find((node) => node.querySelector('h2').textContent.startsWith(name))
-  assert.match(named('Stuck').textContent, /Fix the bias run.*fx-u1.*omni-pl.*no update for \S+/s)
-  assert.match(named('Waiting on').textContent, /Ship the warning.*no owner.*waiting on omni-49z8xs for \S+/s)
+  assert.match(named('Stuck').textContent, /Fix the bias run.*Owner: the Omni code lead · Waiting on: nothing recorded — it has not moved for 4 hours/s)
+  assert.match(named('Waiting on').textContent, /Ship the warning.*Owner: nobody assigned · Waiting on: omni-49z8xs for 3 hours/s)
   named('Stuck').querySelector('button').click()
   assert.deepEqual(opened, ['fx-u1'])
   assert.doesNotMatch(named('Stuck').textContent, /undefined/)
@@ -566,7 +566,7 @@ const renderUrgent = (t, urgent, linked = []) => {
   const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
   t.after(() => dom.window.close())
   dom.window.Date.now = () => Date.parse(fixture.now)
-  for (const file of ['view.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = dom.window.document.querySelector('main')
   const opened = []
   dom.window.projectsRender.renderDashboard(buildDashboard(input), root, { onOpenBead: (id, store) => opened.push([id, store]) })
@@ -588,16 +588,16 @@ test('a Stuck row explains itself: tracked bead for a convoy, owner seat, unclai
     bead('fx-routed', { updated_at: '2026-10-29T09:00:00Z', metadata: { 'gc.execution_routed_to': 'rig/rig-worker' } }),
   ], [bead('fx-t1', { title: 'The real work', status: 'in_progress', priority: 2, assignee: 'omni-evals-pl' })])
   const tracked = row('Stuck', 'fx-t1')
-  assert.match(tracked.textContent, /The real work.*fx-t1.*in_progress.*omni-evals-pl/s)
+  assert.match(tracked.textContent, /The real work.*Owner: the evals lead/s)
   assert.doesNotMatch(tracked.textContent, /input convoy/)
   tracked.querySelector('button').click()
   assert.deepEqual(opened, [['fx-t1', 's']])
-  assert.match(row('Stuck', 'fx-t2').textContent, /Title not read.*fx-t2.*state not read/s)
-  assert.match(row('Stuck', 'fx-lead').textContent, /omni-pl \(project lead\)/)
+  assert.match(row('Stuck', 'fx-t2').textContent, /Title not read/)
+  assert.match(row('Stuck', 'fx-lead').textContent, /Owner: the Omni code lead \(leads the project; nobody assigned\)/)
   const flag = row('Stuck', 'fx-lead').querySelector('.projects-flag')
-  assert.equal(flag.textContent, 'no wait recorded')
+  assert.equal(flag.textContent, 'Nobody has recorded what this is waiting for')
   const routed = row('Stuck', 'fx-routed')
-  assert.match(routed.textContent, /no owner · unclaimed by rig\/rig-worker since 3h ago/)
+  assert.match(routed.textContent, /Owner: nobody assigned · Waiting on: a free worker in rig\/rig-worker for 3 hours/)
   assert.equal(routed.querySelector('.projects-flag'), null)
 })
 
@@ -612,14 +612,16 @@ test('card text leads Stuck and Waiting on rows and folds title, ids, status lin
   assert.equal(stuck.querySelector('.projects-card-text').textContent, text)
   const details = stuck.querySelector('details')
   assert.equal(details.open, false)
-  assert.match(details.textContent, /Title fx-k1.*fx-k1.*omni-pl.*no update for.*raw: rerun after omni-49z8xs/s)
-  assert.equal(stuck.querySelector('.projects-flag').textContent, 'no wait recorded')
+  assert.match(details.textContent, /Title fx-k1.*fx-k1.*open.*raw: rerun after omni-49z8xs/s)
+  assert.equal(stuck.querySelector('.projects-flag').textContent, 'Nobody has recorded what this is waiting for')
+  assert.match(stuck.querySelector('.projects-status-line').textContent, /^Owner: the Omni code lead · Waiting on: nothing recorded/)
+  assert.equal(details.contains(stuck.querySelector('.projects-status-line')), false)
   assert.equal(details.contains(stuck.querySelector('.projects-flag')), false)
   details.querySelector('button').click()
   assert.deepEqual(opened, [['fx-k1', 's']])
   const waiting = row('Waiting on', 'fx-k2')
   assert.equal(waiting.querySelector('.projects-card-text').textContent, 'Waits for the warning fix.')
-  assert.match(waiting.querySelector('details').textContent, /Title fx-k2.*waiting on omni-49z8xs.*raw wait note/s)
+  assert.match(waiting.querySelector('details').textContent, /Title fx-k2.*raw wait note/s)
   const plain = row('Stuck', 'fx-k3')
   assert.equal(plain.querySelector('details'), null)
   assert.equal(plain.querySelector('.projects-card-text'), null)
@@ -636,7 +638,7 @@ test('card text leads a Needs you row, keeps the answer buttons visible and fold
   const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
   t.after(() => dom.window.close())
   dom.window.Date.now = () => Date.parse(fixture.now)
-  for (const file of ['view.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = dom.window.document.querySelector('main')
   dom.window.projectsRender.renderDashboard(model, root, {})
   const needs = [...root.querySelectorAll(':scope > section')].find((node) => node.querySelector('h2').textContent === 'Needs you')
@@ -655,7 +657,7 @@ test('an unreadable card text record shows a warning under Needs you', (t) => {
     store: '/hq', metadata: { 'gc.card_texts': '{bad' } }]
   const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
   t.after(() => dom.window.close())
-  for (const file of ['view.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = dom.window.document.querySelector('main')
   dom.window.projectsRender.renderDashboard(buildDashboard(input), root, {})
   assert.match(root.textContent, /Card text record could not be read/)
@@ -672,7 +674,7 @@ test('Waiting on and Stuck rows flag a wait on her, a decision or an agent that 
   ])
   const flags = (node) => [...node.querySelectorAll('.projects-flag')].map((flag) => flag.textContent)
   assert.deepEqual(flags(row('Stuck', 'fx-lb-her')), ['likely broken'])
-  assert.match(row('Stuck', 'fx-lb-her').textContent, /waiting on stephanie for 2d/)
+  assert.match(row('Stuck', 'fx-lb-her').textContent, /Waiting on: you for 2 days — likely broken/)
   assert.deepEqual(flags(row('Waiting on', 'fx-lb-time')), [])
   assert.deepEqual(flags(row('Stuck', 'fx-lb-pool')), ['likely broken'])
   const card = row('Stuck', 'fx-lb-card')
@@ -689,12 +691,31 @@ test('an In progress section sits between Stuck and Waiting on, and each Stuck r
   const titles = [...root.querySelectorAll(':scope > section > h2')].map((node) => node.textContent)
   const at = (prefix) => titles.findIndex((title) => title.startsWith(prefix))
   assert.ok(at('Stuck (2)') >= 0 && at('Stuck') < at('In progress (1)') && at('In progress') < at('Waiting on (1)'))
-  assert.match(row('In progress', 'fx-ip-live').textContent, /Title fx-ip-live · fx-ip-live · in_progress · omni-pl · moved 30m ago/)
+  assert.match(row('In progress', 'fx-ip-live').textContent, /Title fx-ip-live.*Owner: the Omni code lead · Waiting on: nothing recorded — it last moved 30 minutes ago/s)
   assert.equal(row('In progress', 'fx-ip-live').querySelector('.projects-flag'), null)
   assert.match(row('Stuck', 'fx-st-old').querySelector('.projects-stuck-why').textContent,
     /Stuck because: no movement for over an hour; open with no assignee and no route/)
   assert.match(row('Stuck', 'fx-st-her').querySelector('.projects-stuck-why').textContent, /Stuck because: waiting on you for over a day/)
   assert.ok(named('Waiting on').textContent.includes('fx-ip-wait'))
+})
+
+test('a named wait reads as words: a read bead by its card text or title, a seat by its role, a decision as yours', (t) => {
+  const { row } = renderUrgent(t, [
+    bead('fx-n-bead', { metadata: { 'gc.waiting_on': 'fx-dep landing (lead)' } }),
+    bead('fx-n-card', { metadata: { 'gc.waiting_on': 'fx-dep-card' } }),
+    bead('fx-n-seat', { metadata: { 'gc.waiting_on': 'omni-evals-pl' } }),
+    bead('fx-n-dec', { metadata: { 'gc.waiting_on': 'dec-abc1' } }),
+    bead('fx-n-raw', { metadata: { 'gc.waiting_on': 'disk headroom' } }),
+  ], [
+    bead('fx-dep', { title: 'Land the driver', priority: 2 }),
+    bead('fx-dep-card', { title: 'Raw title', priority: 2, metadata: { 'gc.card_text': 'The judge fix ships.' } }),
+  ])
+  const line = (id) => row('Waiting on', id).querySelector('.projects-status-line').textContent
+  assert.match(line('fx-n-bead'), /Waiting on: Land the driver landing \(lead\) for 4 hours$/)
+  assert.match(line('fx-n-card'), /Waiting on: The judge fix ships\. for 4 hours$/)
+  assert.match(line('fx-n-seat'), /Waiting on: the evals lead for 4 hours$/)
+  assert.match(line('fx-n-dec'), /Waiting on: you \(a decision\) for 4 hours$/)
+  assert.match(line('fx-n-raw'), /Waiting on: disk headroom for 4 hours$/)
 })
 
 test('in flight and queued say how many more rows are hidden, and an unread seat list changes the claim wording', (t) => {
@@ -707,7 +728,7 @@ test('in flight and queued say how many more rows are hidden, and an unread seat
   const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
   t.after(() => dom.window.close())
   dom.window.Date.now = () => Date.parse(fixture.now)
-  for (const file of ['view.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = dom.window.document.querySelector('main')
   const project = buildDashboard(input).cards.flatMap((group) => group.cards).find((entry) => entry.id === 'fx-project-1')
   dom.window.projectsRender.renderProject(project, root, {})

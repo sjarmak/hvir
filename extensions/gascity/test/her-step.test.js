@@ -29,7 +29,7 @@ const render = (input, method) => {
   const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
   const { window } = dom
   window.Date.now = () => Date.parse(fixture.now)
-  for (const file of ['view.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = window.document.querySelector('main')
   const opened = []
   window.projectsRender[method](buildDashboard(input), root, {
