@@ -153,35 +153,48 @@
   const rowMeta = (row) => text(` · ${[row.id, row.convoy ? row.state || 'state not read' : row.state, ownerLabel(row)]
     .filter(Boolean).join(' · ')}`, 'hvir-meta')
 
-  const rowWait = (row, waiting) => {
-    if (waiting) return [text(` · waiting on ${row.waitingOn}${row.updatedAt ? ` for ${age(row)}` : ''}`, 'projects-warning')]
+  const BROKEN_WAIT = Object.freeze({ her: 'you', decision: 'a decision', agent: 'an agent' })
+  const STUCK_REASONS = Object.freeze({
+    'broken-wait': (row) => `waiting on ${BROKEN_WAIT[row.waitKind]} for over a day`,
+    'no-movement': () => 'no movement for over an hour',
+    'no-movement-recorded': () => 'no movement recorded',
+    unowned: () => 'open with no assignee and no route',
+  })
+
+  const stuckWhy = (row) => (row.stuckReasons ?? []).length > 0 &&
+    text(` · Stuck because: ${row.stuckReasons.map((reason) => STUCK_REASONS[reason](row)).join('; ')}`, 'projects-warning projects-stuck-why')
+
+  const rowWait = (row, mode) => {
+    if (mode === 'working') return [text(row.updatedAt ? ` · moved ${window.ago(row.updatedAt)}` : '', 'hvir-meta')]
+    if (row.waitingOn) return [text(` · waiting on ${row.waitingOn}${row.updatedAt ? ` for ${age(row)}` : ''}`, 'projects-warning')]
     if (row.unclaimedBy) return [text(` · unclaimed by ${row.unclaimedBy} since ${row.updatedAt ? window.ago(row.updatedAt) : 'an unrecorded time'}`, 'projects-warning')]
     return [text(row.updatedAt ? ` · no update for ${age(row)}` : ' · no update recorded', 'projects-warning')]
   }
 
-  const rowFlags = (row, waiting) => [!waiting && !row.unclaimedBy && flag('no wait recorded'),
+  const rowFlags = (row, mode) => [mode === 'stuck' && !row.waitingOn && !row.unclaimedBy && flag('no wait recorded'),
     row.likelyBroken && flag('likely broken')].filter(Boolean)
 
-  const urgentRow = (row, options, waiting) => {
+  const urgentRow = (row, options, mode) => {
     const status = [button(row.title || 'Title not read', row.id, () => options.onOpenBead?.(row.id, row.store)),
-      rowMeta(row), ...rowWait(row, waiting)]
-    const flags = rowFlags(row, waiting)
+      rowMeta(row), ...rowWait(row, mode)]
+    const flags = [...rowFlags(row, mode), stuckWhy(row)].filter(Boolean)
     return el('li', { title: row.id }, ...(row.cardText
       ? [cardLead(row.cardText), ...flags, cardDetails(row.description, ...status)]
       : [...status, ...flags]))
   }
 
-  const urgentSection = (title, group, empty, options, waiting) => {
+  const urgentSection = (title, group, empty, options, mode) => {
     const rows = group?.items ?? []
     const more = group?.more ?? 0
     return section(`${title} (${rows.length + more})`,
-      list(rows.map((row) => urgentRow(row, options, waiting)), empty),
+      list(rows.map((row) => urgentRow(row, options, mode)), empty),
       more > 0 && paragraph(`+${more} more`, 'hvir-meta'))
   }
 
   const urgentSections = (model, options) => [
-    urgentSection('Stuck', model.stuck, 'Nothing stuck', options, false),
-    (model.waiting?.items.length ?? 0) > 0 && urgentSection('Waiting on', model.waiting, '', options, true),
+    urgentSection('Stuck', model.stuck, 'Nothing stuck', options, 'stuck'),
+    (model.working?.items.length ?? 0) > 0 && urgentSection('In progress', model.working, '', options, 'working'),
+    (model.waiting?.items.length ?? 0) > 0 && urgentSection('Waiting on', model.waiting, '', options, 'waiting'),
   ].filter(Boolean)
 
   const renderActivity = (item) => {

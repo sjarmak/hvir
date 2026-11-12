@@ -671,12 +671,30 @@ test('Waiting on and Stuck rows flag a wait on her, a decision or an agent that 
     bead('fx-lb-card', { updated_at: '2026-10-27T12:00:00Z', metadata: { 'gc.waiting_on': 'dec-abc1', 'gc.card_text': 'Waits on a decision.' } }),
   ])
   const flags = (node) => [...node.querySelectorAll('.projects-flag')].map((flag) => flag.textContent)
-  assert.deepEqual(flags(row('Waiting on', 'fx-lb-her')), ['likely broken'])
-  assert.match(row('Waiting on', 'fx-lb-her').textContent, /waiting on stephanie for 2d/)
+  assert.deepEqual(flags(row('Stuck', 'fx-lb-her')), ['likely broken'])
+  assert.match(row('Stuck', 'fx-lb-her').textContent, /waiting on stephanie for 2d/)
   assert.deepEqual(flags(row('Waiting on', 'fx-lb-time')), [])
   assert.deepEqual(flags(row('Stuck', 'fx-lb-pool')), ['likely broken'])
-  const card = row('Waiting on', 'fx-lb-card')
+  const card = row('Stuck', 'fx-lb-card')
   assert.equal(card.querySelector('details').contains(card.querySelector('.projects-flag')), false)
+})
+
+test('an In progress section sits between Stuck and Waiting on, and each Stuck row says why it is stuck', (t) => {
+  const { root, named, row } = renderUrgent(t, [
+    bead('fx-ip-live', { status: 'in_progress', assignee: 'omni-pl', updated_at: '2026-10-29T11:30:00Z' }),
+    bead('fx-ip-wait', { assignee: 'omni-pl', updated_at: '2026-10-29T11:30:00Z', metadata: { 'gc.waiting_on': 'time' } }),
+    bead('fx-st-old', { updated_at: '2026-10-29T08:00:00Z' }),
+    bead('fx-st-her', { assignee: 'omni-pl', updated_at: '2026-10-27T10:00:00Z', metadata: { 'gc.waiting_on': 'stephanie' } }),
+  ])
+  const titles = [...root.querySelectorAll(':scope > section > h2')].map((node) => node.textContent)
+  const at = (prefix) => titles.findIndex((title) => title.startsWith(prefix))
+  assert.ok(at('Stuck (2)') >= 0 && at('Stuck') < at('In progress (1)') && at('In progress') < at('Waiting on (1)'))
+  assert.match(row('In progress', 'fx-ip-live').textContent, /Title fx-ip-live · fx-ip-live · in_progress · omni-pl · moved 30m ago/)
+  assert.equal(row('In progress', 'fx-ip-live').querySelector('.projects-flag'), null)
+  assert.match(row('Stuck', 'fx-st-old').querySelector('.projects-stuck-why').textContent,
+    /Stuck because: no movement for over an hour; open with no assignee and no route/)
+  assert.match(row('Stuck', 'fx-st-her').querySelector('.projects-stuck-why').textContent, /Stuck because: waiting on you for over a day/)
+  assert.ok(named('Waiting on').textContent.includes('fx-ip-wait'))
 })
 
 test('in flight and queued say how many more rows are hidden, and an unread seat list changes the claim wording', (t) => {

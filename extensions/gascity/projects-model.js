@@ -384,6 +384,7 @@
     return withBrokenWait(context)({ ...identity(bead), state: bead.status ?? '', convoy: bead.convoy ?? '', ...ownerOf(bead, context),
       priority: Number(bead.priority), updatedAt: validTime(bead.updated_at) ? bead.updated_at : null,
       waitingOn, waitsOnHer: stepLabel || namesHerFirst(waitingOn), unclaimedBy: unclaimedPool(bead, waitingOn),
+      routed: Boolean(String(meta(bead, 'gc.execution_routed_to')).trim()), assigned: Boolean(bead.assignee),
       cardText: needsApi.cardText(bead, context.texts), description: needsApi.descriptionOf(bead) })
   }
 
@@ -392,10 +393,24 @@
 
   const capped = (rows) => ({ items: rows.slice(0, STUCK_CAP), more: Math.max(0, rows.length - STUCK_CAP) })
 
+  const HOUR_MS = 3600000
+
+  const movedWithinHour = (row, now) => row.updatedAt !== null && Date.parse(now) - Date.parse(row.updatedAt) <= HOUR_MS
+
+  const stuckReasons = (row, now) => [
+    row.likelyBroken && 'broken-wait',
+    !row.waitingOn && !movedWithinHour(row, now) && (row.updatedAt === null ? 'no-movement-recorded' : 'no-movement'),
+    !row.waitingOn && row.state === 'open' && !row.assigned && !row.routed && 'unowned',
+  ].filter(Boolean)
+
   const urgentLists = (input, decisions, context) => {
     const rows = urgentBeads(input, decisions, context.index).map(urgentRow(context)).sort(oldestFirst)
-    const waiting = rows.filter((row) => row.waitingOn)
-    return { stuck: capped(rows.filter((row) => !row.waitingOn)),
+      .map((row) => ({ ...row, stuckReasons: stuckReasons(row, context.now) }))
+    const stuck = rows.filter((row) => row.stuckReasons.length > 0)
+    const calm = rows.filter((row) => row.stuckReasons.length === 0)
+    const waiting = calm.filter((row) => row.waitingOn)
+    return { stuck: capped(stuck),
+      working: capped(calm.filter((row) => !row.waitingOn && row.state === 'in_progress')),
       waiting: capped([...waiting.filter((row) => row.waitsOnHer), ...waiting.filter((row) => !row.waitsOnHer)]) }
   }
 

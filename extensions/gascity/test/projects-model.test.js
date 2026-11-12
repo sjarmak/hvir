@@ -514,14 +514,14 @@ test('stuck lists urgent open work with no waiting note, oldest update first, an
 test('waiting lists what waits on her first, longest waiting first, then the other waits in their usual order', () => {
   const input = fresh()
   input.urgent = [
-    urgent('fx-w-agent-old', { metadata: { 'gc.waiting_on': 'omni-pl' }, updated_at: '2026-10-27T10:00:00Z' }),
+    urgent('fx-w-agent-old', { metadata: { 'gc.waiting_on': 'omni-pl' }, updated_at: '2026-10-28T15:00:00Z' }),
     urgent('fx-w-her-new', { metadata: { 'gc.waiting_on': 'stephanie' }, updated_at: '2026-10-29T10:00:00Z' }),
-    urgent('fx-w-time', { metadata: { 'gc.waiting_on': 'time' }, updated_at: '2026-10-28T10:00:00Z' }),
-    urgent('fx-w-her-caps', { metadata: { 'gc.waiting_on': ' Stephanie ' }, updated_at: '2026-10-28T12:00:00Z' }),
+    urgent('fx-w-time', { metadata: { 'gc.waiting_on': 'time' }, updated_at: '2026-10-28T16:00:00Z' }),
+    urgent('fx-w-her-caps', { metadata: { 'gc.waiting_on': ' Stephanie ' }, updated_at: '2026-10-28T17:00:00Z' }),
     urgent('fx-w-step', { labels: ['Needs/Stephanie-Step'], updated_at: '2026-10-29T08:00:00Z' }),
-    urgent('fx-w-her-note', { metadata: { 'gc.waiting_on': 'stephanie: reload the extension' }, updated_at: '2026-10-26T10:00:00Z' }),
-    urgent('fx-w-named', { metadata: { 'gc.waiting_on': 'stephanie-bot' }, updated_at: '2026-10-25T10:00:00Z' }),
-    urgent('fx-w-agent-tie', { metadata: { 'gc.waiting_on': 'om-1' }, updated_at: '2026-10-28T10:00:00Z' }),
+    urgent('fx-w-her-note', { metadata: { 'gc.waiting_on': 'stephanie: reload the extension' }, updated_at: '2026-10-28T14:00:00Z' }),
+    urgent('fx-w-named', { metadata: { 'gc.waiting_on': 'stephanie-bot' }, updated_at: '2026-10-28T13:00:00Z' }),
+    urgent('fx-w-agent-tie', { metadata: { 'gc.waiting_on': 'om-1' }, updated_at: '2026-10-28T16:00:00Z' }),
     urgent('fx-w-undated', { metadata: { 'gc.waiting_on': 'stephanie' }, updated_at: 'never' }),
   ]
   const model = buildDashboard(input)
@@ -673,6 +673,36 @@ test('a wait on her, a decision or an agent for over a day is likely broken; a w
   const kind = (id) => rows.find((row) => row.id === id).waitKind
   assert.deepEqual(['fx-b-her', 'fx-b-dec', 'fx-b-bead-agent', 'fx-b-seat', 'fx-b-unclaimed', 'fx-b-time', 'fx-b-quiet'].map(kind),
     ['her', 'decision', 'agent', 'agent', 'agent', '', ''])
+})
+
+test('in progress holds active work moved within the hour, stuck says why, and waiting keeps named waits that are not broken', () => {
+  const input = fresh()
+  const at = (time) => `2026-10-29T${time}:00Z`
+  input.urgent = [
+    urgent('fx-p-active', { status: 'in_progress', assignee: 'omni-pl', updated_at: at('11:30') }),
+    urgent('fx-p-quiet', { status: 'in_progress', assignee: 'omni-pl', updated_at: at('10:30') }),
+    urgent('fx-p-undated', { status: 'in_progress', assignee: 'omni-pl', updated_at: 'never' }),
+    urgent('fx-p-active-wait', { status: 'in_progress', assignee: 'omni-pl', updated_at: at('11:30'), metadata: { 'gc.waiting_on': 'time' } }),
+    urgent('fx-p-unowned', { updated_at: at('11:50') }),
+    urgent('fx-p-unowned-old', { updated_at: at('08:00') }),
+    urgent('fx-p-routed-new', { updated_at: at('11:50'), metadata: { 'gc.execution_routed_to': 'rig/rig-worker' } }),
+    urgent('fx-p-open-new', { assignee: 'omni-pl', updated_at: at('11:50') }),
+    urgent('fx-p-broken', { assignee: 'omni-pl', updated_at: '2026-10-27T10:00:00Z', metadata: { 'gc.waiting_on': 'stephanie' } }),
+    urgent('fx-p-unowned-wait', { updated_at: at('11:00'), metadata: { 'gc.waiting_on': 'time' } }),
+  ]
+  const model = buildDashboard(input)
+  assert.deepEqual(model.working.items.map((row) => row.id), ['fx-p-active'])
+  assert.equal(model.working.more, 0)
+  assert.deepEqual(model.waiting.items.map((row) => row.id).sort(), ['fx-p-active-wait', 'fx-p-unowned-wait'])
+  assert.deepEqual(model.stuck.items.map((row) => [row.id, row.stuckReasons]), [
+    ['fx-p-broken', ['broken-wait']],
+    ['fx-p-unowned-old', ['no-movement', 'unowned']],
+    ['fx-p-quiet', ['no-movement']],
+    ['fx-p-unowned', ['unowned']],
+    ['fx-p-undated', ['no-movement-recorded']],
+  ])
+  const listed = [...model.working.items, ...model.waiting.items, ...model.stuck.items].map((row) => row.id)
+  assert.ok(!listed.includes('fx-p-routed-new') && !listed.includes('fx-p-open-new'))
 })
 
 test('a claimed bead says "no live session" until seat jobs were actually read', () => {
