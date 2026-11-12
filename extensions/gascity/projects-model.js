@@ -443,7 +443,7 @@
     return [...stores].filter(([, found]) => found.size > 1).map(([id]) => id)
   }
 
-  const api = Object.freeze({ parseRefs, buildDashboard, duplicateProjects, sessionFor })
+  const api = Object.freeze({ parseRefs, buildDashboard, duplicateProjects })
   if (typeof module === 'object') module.exports = api
   else window.projectsModel = api
 })()

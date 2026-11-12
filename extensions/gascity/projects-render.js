@@ -36,13 +36,12 @@
     'omni-evals-desk': 'the evals desk',
   })
 
-  const renderAnswerTo = (ask, options) => {
+  const renderAnswerTo = (ask) => {
     if (!ask.answerTo) return null
     const name = SEAT_NAMES[ask.answerTo]
     const owner = text(`Owner: ${name ? `${name} (${ask.answerTo})` : ask.answerTo}`, 'hvir-meta')
-    if (!ask.answerLive) return el('div', {}, owner, paragraph(name ? `${name} is asleep` : `The ${ask.answerTo} session is asleep`, 'hvir-meta'))
-    const label = name ? `Open ${name}'s session` : `Open the ${ask.answerTo} session`
-    return el('div', {}, owner, el('p', {}, button(label, `Open the ${ask.answerTo} session`, () => options.onOpenSession?.(ask.answerTo))))
+    return el('div', {}, owner,
+      !ask.answerLive && paragraph(name ? `${name} is asleep` : `The ${ask.answerTo} session is asleep`, 'hvir-meta'))
   }
 
   const OPTION_LABEL_MAX = 48
@@ -132,7 +131,7 @@
       ask.tier && text(ask.tier, 'projects-tag'),
       ask.cardText ? cardButton(ask.cardText, ask.id, open) : button(ask.title, ask.id, open),
       renderAnswer(ask, options),
-      renderAnswerTo(ask, options),
+      renderAnswerTo(ask),
       renderRefs(ask.refs, options))
   }
 

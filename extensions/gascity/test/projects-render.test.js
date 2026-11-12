@@ -472,7 +472,7 @@ test('each decision shows its escalation tier as a tag; an untiered one shows no
   assert.deepEqual(model.needsYou.map((entry) => entry.tier), ['Tier 1', 'Tier 2', '', 'Tier 7 is not 1-3', 'Tier true is not 1-3'])
 })
 
-test('an ask names who to answer: live seat is a button, sleeping or unknown seat is plain text', (t) => {
+test('an ask names who to answer as a plain owner label, with no button to open a session', (t) => {
   const input = structuredClone(fixture)
   input.decisions = [
     { id: 'r1', title: 'Live ask', status: 'open', labels: ['needs/stephanie'], metadata: {}, created_by: 'omni-pl' },
@@ -485,17 +485,12 @@ test('an ask names who to answer: live seat is a button, sleeping or unknown sea
   const { window } = dom
   for (const file of ['view.js', 'card-words.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = window.document.querySelector('main')
-  const seats = []
-  window.projectsRender.renderDashboard(buildDashboard(input), root, { onOpenSession: (seat) => seats.push(seat) })
+  window.projectsRender.renderDashboard(buildDashboard(input), root, {})
   const row = (title) => [...root.querySelectorAll('li')].find((li) => li.textContent.includes(title))
   const live = row('Live ask')
-  const button = [...live.querySelectorAll('button')].find((node) => node.textContent === "Open Verity's session")
-  assert.ok(button)
-  assert.equal(button.title, 'Open the omni-pl session')
   assert.match(live.textContent, /Owner: Verity \(omni-pl\)/)
-  assert.doesNotMatch(live.textContent, /Answer to/)
-  button.click()
-  assert.deepEqual(seats, ['omni-pl'])
+  assert.doesNotMatch(live.textContent, /Answer to|Open .*session/)
+  assert.deepEqual([...root.querySelectorAll('button')].filter((node) => /session/i.test(`${node.textContent} ${node.title}`)), [])
   const asleep = row('Asleep ask')
   assert.match(asleep.textContent, /Wren is asleep/)
   assert.match(asleep.textContent, /Owner: Wren \(mayor\)/)

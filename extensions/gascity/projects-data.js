@@ -164,18 +164,9 @@
       onOpenOverview: () => window.openOwn('project', {})
         .catch((error) => setStatus(`Could not open the overview: ${error.message}`)),
     }
-    let liveSessions = []
-    actions.onOpenSession = (seat) => {
-      const session = window.projectsModel.sessionFor(liveSessions, seat)
-      return session
-        ? window.openOwn('session', { id: session.id })
-          .catch((error) => setStatus(`Could not open ${seat}: ${error.message}`))
-        : setStatus(`${seat} is asleep`)
-    }
     const shownBy = new Map()
     let shownId
     const show = (data, context, extra) => {
-      liveSessions = data.sessions
       const shownActions = data.answerable && window.answerAction.actionBound() ? { ...actions, workspaceId: context.workspace.id, onAnswer: window.answerAction.answerDecision } : actions
       const note = render(data, ui.projects, shownActions, context)
       if (data.partial) {
