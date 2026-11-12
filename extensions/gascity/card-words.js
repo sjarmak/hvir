@@ -11,6 +11,7 @@
   const DAY_MS = 86400000
 
   const roleOf = (name) => SEAT_ROLES[name] ?? name
+  const waitToken = (waitingOn) => (String(waitingOn ?? '').match(/[\w.-]+/)?.[0] ?? '').replace(/\.+$/, '')
   const unit = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`
 
   const spanWords = (ms) => {
@@ -49,7 +50,7 @@
 
   const statusLine = (row, now) => `Owner: ${ownerWords(row)} · Waiting on: ${waitWords(row, now)}`
 
-  const api = Object.freeze({ SEAT_ROLES, NO_WAIT, roleOf, spanWords, sinceWords, ownerWords, waitWords, statusLine })
+  const api = Object.freeze({ SEAT_ROLES, NO_WAIT, roleOf, waitToken, spanWords, sinceWords, ownerWords, waitWords, statusLine })
   if (typeof module === 'object') module.exports = api
   else window.cardWords = api
 })()

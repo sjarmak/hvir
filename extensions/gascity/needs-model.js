@@ -43,7 +43,8 @@
 
   const CARD_TEXTS_RECORD = 'om-p86nj8'
   const CARD_TEXTS_KEY = 'gc.card_texts'
-  const cardTexts = (entries, invalid) => Object.freeze({ texts: new Map(entries), invalid })
+  const CARD_DETAILS_KEY = 'gc.card_details'
+  const cardMap = (entries, invalid) => Object.freeze({ map: new Map(entries), invalid })
 
   const parseCardTexts = (raw) => {
     try {
@@ -54,17 +55,23 @@
     }
   }
 
-  function cardTextRecord(beads) {
-    const raw = beads.find((bead) => bead.id === CARD_TEXTS_RECORD)?.metadata?.[CARD_TEXTS_KEY]
-    if (raw === undefined) return cardTexts([], false)
+  const recordMap = (record, key) => {
+    const raw = record?.metadata?.[key]
+    if (raw === undefined) return cardMap([], false)
     const parsed = typeof raw === 'string' ? parseCardTexts(raw) : null
-    if (!parsed) return cardTexts([], true)
-    return cardTexts(Object.entries(parsed).filter(([, value]) => typeof value === 'string' && value.trim())
+    if (!parsed) return cardMap([], true)
+    return cardMap(Object.entries(parsed).filter(([, value]) => typeof value === 'string' && value.trim())
       .map(([id, value]) => [id, value.trim()]), false)
   }
 
+  function cardTextRecord(beads) {
+    const record = beads.find((bead) => bead.id === CARD_TEXTS_RECORD)
+    const texts = recordMap(record, CARD_TEXTS_KEY)
+    const details = recordMap(record, CARD_DETAILS_KEY)
+    return Object.freeze({ texts: texts.map, details: details.map, invalid: texts.invalid || details.invalid })
+  }
+
   const cardText = (issue, texts = new Map()) => metaText(issue, 'gc.card_text') || texts.get(issue?.id) || ''
-  const descriptionOf = (issue) => typeof issue?.description === 'string' ? issue.description : ''
 
   function herSteps(issues, texts = new Map()) {
     return issues
@@ -76,7 +83,6 @@
         step: metaText(issue, 'gc.her_step'),
         scope: metaText(issue, 'gc.scope'),
         cardText: cardText(issue, texts),
-        description: descriptionOf(issue),
       }))
   }
   const OPTIONS_KEY = 'gc.options'
@@ -147,7 +153,6 @@
     CARD_TEXTS_RECORD,
     cardTextRecord,
     cardText,
-    descriptionOf,
     parseOptions,
     cardHash,
     validAnswer,

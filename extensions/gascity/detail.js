@@ -1,6 +1,6 @@
 /* global window, document */
 const ui = Object.fromEntries(
-  ['title', 'meta', 'status', 'description', 'acceptance', 'acceptance-section', 'dependencies', 'dependencies-section'].map(
+  ['title', 'meta', 'status', 'page', 'original', 'acceptance', 'acceptance-section', 'dependencies', 'dependencies-section'].map(
     (id) => [id, document.getElementById(id)],
   ),
 )
@@ -9,13 +9,15 @@ const BEAD_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
 const RIG_PATH = /^\/[^\0\n]{0,1023}$/
 let shownKey
 
-function render(issue) {
+function render(issue, card) {
   document.title = issue.id
   ui.title.textContent = issue.title
   ui.meta.textContent = [issue.id, issue.status, `P${issue.priority}`, issue.issue_type, issue.assignee]
     .filter(Boolean)
     .join(' · ')
-  ui.description.textContent = issue.description ?? ''
+  const page = window.beadPage.pageOf(issue, card, new Date().toISOString())
+  ui.page.replaceChildren(...window.beadPage.renderPage(page))
+  ui.original.replaceChildren(...[window.beadPage.renderOriginal(page)].filter(Boolean))
   ui.acceptance.textContent = issue.acceptance_criteria ?? ''
   ui['acceptance-section'].hidden = !issue.acceptance_criteria
   const deps = issue.dependencies ?? []
@@ -31,6 +33,17 @@ function render(issue) {
   ui['dependencies-section'].hidden = deps.length === 0
 }
 
+async function cardFor(workspace, issue) {
+  const needs = window.needsModel
+  try {
+    const [record] = await window.bdRead(workspace, ['show', needs.CARD_TEXTS_RECORD, '--json'])
+    const cards = needs.cardTextRecord(record ? [record] : [])
+    return { text: needs.cardText(issue, cards.texts), details: cards.details.get(issue.id) ?? '', invalid: cards.invalid || !record }
+  } catch {
+    return { text: needs.cardText(issue), details: '', invalid: true }
+  }
+}
+
 async function load(context) {
   const { id, rig } = context.input ?? {}
   const key = `${rig ?? ''}#${id}`
@@ -40,11 +53,12 @@ async function load(context) {
     return
   }
   const scope = rig === undefined ? [] : ['-C', rig]
-  const [issue] = await window.bdRead(context.workspace, [...scope, 'show', id, '--json'])
+  const [issue] = await window.bdRead(context.workspace, [...scope, 'show', id, '--json', '--include-comments'])
   if (!issue) throw new Error(`${id} was not found in ${rig ?? "this workspace's beads"}`)
+  const card = await cardFor(context.workspace, issue)
   shownKey = key
   ui.status.textContent = ''
-  render(issue)
+  render(issue, card)
 }
 
 window.startView({ load, onStatus: (text) => (ui.status.textContent = text) })

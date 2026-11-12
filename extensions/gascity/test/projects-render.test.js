@@ -601,7 +601,7 @@ test('a Stuck row explains itself: tracked bead for a convoy, owner seat, unclai
   assert.equal(routed.querySelector('.projects-flag'), null)
 })
 
-test('card text leads Stuck and Waiting on rows and folds title, ids, status line and description into details', (t) => {
+test('card text is the main open button of Stuck and Waiting on rows, with the status line and flags beside it and no inline details', (t) => {
   const text = 'The bias run needs a rerun after the fix lands.'
   const { row, opened } = renderUrgent(t, [
     bead('fx-k1', { assignee: 'omni-pl', description: 'raw: rerun after omni-49z8xs', metadata: { 'gc.card_text': ` ${text} ` } }),
@@ -609,26 +609,24 @@ test('card text leads Stuck and Waiting on rows and folds title, ids, status lin
     bead('fx-k3', { metadata: {} }),
   ])
   const stuck = row('Stuck', 'fx-k1')
-  assert.equal(stuck.querySelector('.projects-card-text').textContent, text)
-  const details = stuck.querySelector('details')
-  assert.equal(details.open, false)
-  assert.match(details.textContent, /Title fx-k1.*fx-k1.*open.*raw: rerun after omni-49z8xs/s)
+  assert.equal(stuck.querySelector('details'), null)
+  const main = stuck.querySelector('button.projects-card-text')
+  assert.equal(main.textContent, text)
+  assert.doesNotMatch(stuck.textContent, /raw: rerun|Title fx-k1/)
   assert.equal(stuck.querySelector('.projects-flag').textContent, 'Nobody has recorded what this is waiting for')
   assert.match(stuck.querySelector('.projects-status-line').textContent, /^Owner: the Omni code lead · Waiting on: nothing recorded/)
-  assert.equal(details.contains(stuck.querySelector('.projects-status-line')), false)
-  assert.equal(details.contains(stuck.querySelector('.projects-flag')), false)
-  details.querySelector('button').click()
+  main.click()
   assert.deepEqual(opened, [['fx-k1', 's']])
   const waiting = row('Waiting on', 'fx-k2')
-  assert.equal(waiting.querySelector('.projects-card-text').textContent, 'Waits for the warning fix.')
-  assert.match(waiting.querySelector('details').textContent, /Title fx-k2.*raw wait note/s)
+  assert.equal(waiting.querySelector('button.projects-card-text').textContent, 'Waits for the warning fix.')
+  assert.equal(waiting.querySelector('details'), null)
   const plain = row('Stuck', 'fx-k3')
   assert.equal(plain.querySelector('details'), null)
   assert.equal(plain.querySelector('.projects-card-text'), null)
   assert.equal(plain.querySelector('button').textContent, 'Title fx-k3')
 })
 
-test('card text leads a Needs you row, keeps the answer buttons visible and folds title, id and description away', (t) => {
+test('card text is a Needs you row\'s open button, answer buttons stay, and title and description are not inline', (t) => {
   const input = structuredClone(fixture)
   const ask = input.decisions.find((bead) => bead.status === 'open' && (bead.labels ?? []).includes('needs/stephanie') && !bead.metadata?.['gc.answered'])
   ask.description = 'Raw decision body'
@@ -640,15 +638,17 @@ test('card text leads a Needs you row, keeps the answer buttons visible and fold
   dom.window.Date.now = () => Date.parse(fixture.now)
   for (const file of ['view.js', 'card-words.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = dom.window.document.querySelector('main')
-  dom.window.projectsRender.renderDashboard(model, root, {})
+  const opened = []
+  dom.window.projectsRender.renderDashboard(model, root, { onOpenBead: (id) => opened.push(id) })
   const needs = [...root.querySelectorAll(':scope > section')].find((node) => node.querySelector('h2').textContent === 'Needs you')
-  const rows = [...needs.querySelectorAll(':scope > ul > li')]
-  const shown = rows.find((node) => node.querySelector('.projects-card-text'))
-  assert.equal(shown.querySelector('.projects-card-text').textContent, 'Pick the accent colour so the catalog can ship.')
-  const details = shown.querySelector(':scope > details')
-  assert.equal(details.open, false)
-  assert.match(details.textContent, new RegExp(`${ask.title}.*${ask.id}.*Raw decision body`, 's'))
-  assert.ok(rows.filter((node) => node !== shown).every((node) => node.querySelector(':scope > details') === null))
+  const shown = [...needs.querySelectorAll(':scope > ul > li')].find((node) => node.querySelector('.projects-card-text'))
+  const main = shown.querySelector('button.projects-card-text')
+  assert.equal(main.textContent, 'Pick the accent colour so the catalog can ship.')
+  assert.equal(needs.querySelector('details'), null)
+  assert.doesNotMatch(shown.textContent, /Raw decision body/)
+  assert.ok(!shown.textContent.includes(ask.title))
+  main.click()
+  assert.deepEqual(opened, [ask.id])
 })
 
 test('an unreadable card text record shows a warning under Needs you', (t) => {
@@ -678,7 +678,8 @@ test('Waiting on and Stuck rows flag a wait on her, a decision or an agent that 
   assert.deepEqual(flags(row('Waiting on', 'fx-lb-time')), [])
   assert.deepEqual(flags(row('Stuck', 'fx-lb-pool')), ['likely broken'])
   const card = row('Stuck', 'fx-lb-card')
-  assert.equal(card.querySelector('details').contains(card.querySelector('.projects-flag')), false)
+  assert.equal(card.querySelector('details'), null)
+  assert.deepEqual(flags(card), ['likely broken'])
 })
 
 test('an In progress section sits between Stuck and Waiting on, and each Stuck row says why it is stuck', (t) => {

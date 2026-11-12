@@ -131,11 +131,9 @@
   margin: 2px 0 0;
 }
 .projects-card-text {
-  margin: 0;
+  text-align: left;
+  white-space: normal;
   color: var(--text-strong);
-}
-.projects-card-details summary {
-  cursor: pointer;
 }
 .projects-error {
   color: var(--danger-text);

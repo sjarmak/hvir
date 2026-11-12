@@ -119,27 +119,29 @@
     return container
   }
 
-  const cardLead = (cardText) => paragraph(cardText, 'projects-card-text')
-  const cardDetails = (description, ...parts) => el('details', { className: 'projects-card-details' },
-    el('summary', {}, 'Details'), ...parts, description && paragraph(description, 'hvir-meta projects-card-raw'))
+  const cardButton = (cardText, id, action) => {
+    const node = button(cardText, id, action)
+    node.classList.add('projects-card-text')
+    return node
+  }
 
   const renderAsk = (ask, options, tagged = false) => {
-    const title = button(ask.title, ask.id, () => options.onOpenBead?.(ask.id, ask.store))
-    const actions = [renderAnswer(ask, options), renderAnswerTo(ask, options), renderRefs(ask.refs, options)]
-    return el('li', {},
+    const open = () => options.onOpenBead?.(ask.id, ask.store)
+    return el('li', { title: ask.id },
       tagged && text(ask.project?.title ?? 'No project', 'projects-tag'),
       ask.tier && text(ask.tier, 'projects-tag'),
-      ...(ask.cardText
-        ? [cardLead(ask.cardText), ...actions, cardDetails(ask.description, title, text(` · ${ask.id}`, 'hvir-meta'))]
-        : [title, ...actions]))
+      ask.cardText ? cardButton(ask.cardText, ask.id, open) : button(ask.title, ask.id, open),
+      renderAnswer(ask, options),
+      renderAnswerTo(ask, options),
+      renderRefs(ask.refs, options))
   }
 
   const renderStep = (entry, options) => {
-    const parts = [button(entry.step || `No step written: ${entry.title || entry.id}`, entry.id, () => options.onOpenBead?.(entry.id, entry.store)),
-      text(entry.id, 'hvir-meta')]
+    const open = () => options.onOpenBead?.(entry.id, entry.store)
     return el('li', { className: 'projects-step', title: entry.id },
       entry.scope && text(entry.scope, 'projects-tag'),
-      ...(entry.cardText ? [cardLead(entry.cardText), cardDetails(entry.description, ...parts)] : parts))
+      ...(entry.cardText ? [cardButton(entry.cardText, entry.id, open)]
+        : [button(entry.step || `No step written: ${entry.title || entry.id}`, entry.id, open), text(entry.id, 'hvir-meta')]))
   }
 
   const stepSection = (model, options) => ((model.herSteps ?? []).length > 0 || model.stepsUnread) &&
@@ -147,7 +149,6 @@
       model.stepsUnread && paragraph('Some steps could not be read', 'projects-warning'))
 
   const flag = (label) => text(label, 'projects-flag')
-  const rowIds = (row) => text(` · ${[row.id, row.state || 'state not read'].join(' · ')}`, 'hvir-meta')
   const statusLine = (row, now) => paragraph(window.cardWords.statusLine(row, now), 'projects-status-line')
 
   const BROKEN_WAIT = Object.freeze({ her: 'you', decision: 'a decision', agent: 'an agent' })
@@ -165,11 +166,10 @@
     row.likelyBroken && flag('likely broken')].filter(Boolean)
 
   const urgentRow = (row, options, mode, now) => {
-    const title = button(row.title || 'Title not read', row.id, () => options.onOpenBead?.(row.id, row.store))
-    const flags = [...rowFlags(row, mode), stuckWhy(row)].filter(Boolean)
-    return el('li', { title: row.id }, ...(row.cardText
-      ? [cardLead(row.cardText), statusLine(row, now), ...flags, cardDetails(row.description, title, rowIds(row))]
-      : [title, statusLine(row, now), ...flags]))
+    const open = () => options.onOpenBead?.(row.id, row.store)
+    return el('li', { title: row.id },
+      row.cardText ? cardButton(row.cardText, row.id, open) : button(row.title || 'Title not read', row.id, open),
+      statusLine(row, now), ...rowFlags(row, mode), stuckWhy(row))
   }
 
   const urgentSection = (title, group, empty, options, mode, now) => {

@@ -92,6 +92,26 @@ h2 {
 .bead-description {
   white-space: pre-wrap;
 }
+.bead-lead {
+  font-size: 1.15em;
+  color: var(--text-strong);
+}
+.bead-warning {
+  color: var(--warning-text);
+}
+.bead-page h2 {
+  font-size: 1em;
+  margin-bottom: 2px;
+}
+.bead-page section p {
+  margin: 0 0 6px;
+}
+.bead-comments {
+  padding-left: 16px;
+}
+.bead-original summary {
+  cursor: pointer;
+}
 .peek-output {
   margin: 0;
   padding: 6px 8px;

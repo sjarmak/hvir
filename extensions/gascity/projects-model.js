@@ -1,6 +1,7 @@
 ;(() => {
   const truthApi = typeof module === 'object' ? require('./projects-truth.js') : window.projectsTruth
   const needsApi = typeof module === 'object' ? require('./needs-model.js') : window.needsModel
+  const wordsApi = typeof module === 'object' ? require('./card-words.js') : window.cardWords
   const meta = (bead, key) => bead?.metadata?.[key] ?? ''
   const tierLabel = (bead) => {
     const raw = bead?.metadata?.['gc.tier']
@@ -361,10 +362,8 @@
     ...[...projects.values()].map((project) => String(meta(project, 'proj.lead')).trim()),
     ...[...index.values()].map((bead) => bead.assignee)].filter(Boolean))
 
-  const waitToken = (waitingOn) => (waitingOn.match(/[\w.-]+/)?.[0] ?? '').replace(/\.+$/, '')
-
   const waitKind = (row, context) => {
-    const token = waitToken(row.waitingOn)
+    const token = wordsApi.waitToken(row.waitingOn)
     if (row.waitsOnHer || row.waitingOn.toLowerCase().startsWith(truthApi.HER)) return 'her'
     if (DEC_ID.test(token)) return 'decision'
     if (row.unclaimedBy || context.index.get(token)?.assignee || context.seats.has(token)) return 'agent'
@@ -380,7 +379,7 @@
 
   const withBrokenWait = (context) => (row) => {
     const kind = waitKind(row, context)
-    const token = waitToken(row.waitingOn)
+    const token = wordsApi.waitToken(row.waitingOn)
     return { ...row, waitKind: kind, waitToken: token, waitTitle: waitTitleOf(token, context),
       likelyBroken: Boolean(kind) && waitedOverDay(row, context.now) }
   }
@@ -392,7 +391,7 @@
       priority: Number(bead.priority), updatedAt: validTime(bead.updated_at) ? bead.updated_at : null,
       waitingOn, waitsOnHer: stepLabel || namesHerFirst(waitingOn), unclaimedBy: unclaimedPool(bead, waitingOn),
       routed: Boolean(String(meta(bead, 'gc.execution_routed_to')).trim()), assigned: Boolean(bead.assignee),
-      cardText: needsApi.cardText(bead, context.texts), description: needsApi.descriptionOf(bead) })
+      cardText: needsApi.cardText(bead, context.texts) })
   }
 
   const oldestFirst = (a, b) => (a.updatedAt === null) - (b.updatedAt === null) ||

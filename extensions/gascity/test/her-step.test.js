@@ -82,9 +82,9 @@ test('herSteps keeps open step-labelled beads, answered or not, with her step an
     decision('dec-6', { labels: undefined }),
   ])
   assert.deepEqual(steps, [
-    { id: 'dec-1', title: 'Decision dec-1', store: '/rigs/decisions', step: 'run the login', scope: 'omni', cardText: '', description: '' },
-    { id: 'dec-2', title: 'Decision dec-2', store: '/rigs/decisions', step: 'pull the branch', scope: '', cardText: '', description: '' },
-    { id: 'dec-5', title: 'Decision dec-5', store: '/rigs/decisions', step: '', scope: '', cardText: '', description: '' },
+    { id: 'dec-1', title: 'Decision dec-1', store: '/rigs/decisions', step: 'run the login', scope: 'omni', cardText: '' },
+    { id: 'dec-2', title: 'Decision dec-2', store: '/rigs/decisions', step: 'pull the branch', scope: '', cardText: '' },
+    { id: 'dec-5', title: 'Decision dec-5', store: '/rigs/decisions', step: '', scope: '', cardText: '' },
   ])
 })
 
@@ -133,7 +133,7 @@ test('a labelled bead with no step written still shows, naming the gap without s
   }
 })
 
-test('card text leads a step row and folds the step, id and raw description into details', (t) => {
+test('card text is the step row\'s open button, with no inline details', (t) => {
   const input = withStep()
   const target = input.decisions.find((bead) => bead.id === 'fx-ask-answered')
   target.description = 'Raw notes for the agent'
@@ -142,11 +142,11 @@ test('card text leads a step row and folds the step, id and raw description into
   const { dom, root, opened } = render(input, 'renderDashboard')
   t.after(() => dom.window.close())
   const row = root.querySelector('.projects-step')
-  assert.equal(row.querySelector('.projects-card-text').textContent, 'Open the shared sheet so the agents can start. Only you have access.')
-  const details = row.querySelector('details')
-  assert.equal(details.open, false)
-  assert.match(details.textContent, /open the sheet and share it.*fx-ask-answered.*Raw notes for the agent/s)
-  details.querySelector('button').click()
+  assert.equal(row.querySelector('details'), null)
+  const main = row.querySelector('button.projects-card-text')
+  assert.equal(main.textContent, 'Open the shared sheet so the agents can start. Only you have access.')
+  assert.doesNotMatch(row.textContent, /Raw notes for the agent|open the sheet and share it/)
+  main.click()
   assert.equal(opened[0][0], 'fx-ask-answered')
 })
 
