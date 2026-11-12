@@ -15,7 +15,7 @@ interface BeadsPackage {
     | { kind: 'absent' }
     | { kind: 'invalid' }
     | { kind: 'available'; url: string; origin: string }
-  packageAnalyticsUrl(): string | undefined
+  packageAnalyticsUrl(configuration?: unknown): string | undefined
   sectionElement(
     document: Document,
     label: string,
@@ -173,10 +173,20 @@ describe('Beads workspace extension package', () => {
       expect(result.url.length).toBeLessThanOrEqual(2048)
     }))
 
-  it('derives analytics from package configuration without private IPC inputs', () => {
-    expect(api.packageAnalyticsUrl()).toBe(
-      'https://sjarmak.omniapp.co/dashboards/gas-city-factory-rig-health',
-    )
+  it('keeps analytics unavailable without structured or package configuration', () => {
+    expect(api.packageAnalyticsUrl()).toBeUndefined()
+    expect(
+      api.packageAnalyticsUrl({
+        baseUrl: 'https://analytics.example',
+        dashboardId: 'rig-health',
+      }),
+    ).toBe('https://analytics.example/dashboards/rig-health')
+    expect(
+      api.packageAnalyticsUrl({
+        baseUrl: 'https://analytics.example',
+        dashboardId: 123,
+      }),
+    ).toBeUndefined()
   })
 
   it('renders producer evaluation links and opens them through the public effect port', () => {
