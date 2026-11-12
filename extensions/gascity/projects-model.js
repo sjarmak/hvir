@@ -315,15 +315,30 @@
 
   const STUCK_CAP = 50
 
-  const urgentBeads = (input, decisions) => {
+  const isSyntheticConvoy = (bead) => String(meta(bead, 'gc.synthetic')) === 'true'
+
+  const trackedDependencies = (bead) => (bead.dependencies ?? [])
+    .filter((dependency) => (dependency.type ?? dependency.dependency_type) === 'tracks')
+
+  const unreadTracked = (convoy, dependency) => ({ ...convoy, id: dependency.depends_on_id ?? dependency.id,
+    title: dependency.title ?? '', status: dependency.status ?? '', convoy: convoy.id })
+
+  const folded = (bead, index) => {
+    const tracks = isSyntheticConvoy(bead) ? trackedDependencies(bead) : []
+    if (tracks.length !== 1 || !(tracks[0].depends_on_id ?? tracks[0].id)) return bead
+    const tracked = index.get(tracks[0].depends_on_id ?? tracks[0].id)
+    return tracked ? { ...tracked, store: tracked.store ?? bead.store, convoy: bead.id } : unreadTracked(bead, tracks[0])
+  }
+
+  const urgentBeads = (input, decisions, index) => {
     const known = new Set(decisions.map(beadKey))
     const seen = new Map()
     for (const bead of [...(input.urgent ?? []), ...(input.inProgress ?? []), ...(input.linked ?? [])]) {
-      const key = beadKey(bead)
-      if (known.has(key) || seen.has(key) || isRecord(bead) || isWorkflowStep(bead) || isDecision(bead)) continue
+      if (known.has(beadKey(bead)) || isRecord(bead) || isWorkflowStep(bead) || isDecision(bead)) continue
       if (!['open', 'in_progress'].includes(bead.status) || !(Number(bead.priority) <= 1)) continue
       if (bead.priority === null || bead.priority === '' || bead.priority === undefined) continue
-      seen.set(key, bead)
+      const shown = folded(bead, index)
+      if (!seen.has(beadKey(shown))) seen.set(beadKey(shown), shown)
     }
     return [...seen.values()]
   }
@@ -331,11 +346,22 @@
   const namesHerFirst = (value) => value.toLowerCase().split(/[^\w-]/)[0] === truthApi.HER
   const hasStepLabel = (bead) => (bead.labels ?? []).some((label) => String(label).toLowerCase() === needsApi.STEP_LABEL)
 
-  const urgentRow = (bead) => {
+  const ownerOf = (bead, context) => {
+    if (bead.assignee) return { owner: bead.assignee, ownerFrom: 'assignee' }
+    const project = resolveProject(bead, context.index, context.projects) ?? context.projects.get(meta(bead, 'gc.project'))
+    const lead = String(meta(project, 'proj.lead')).trim()
+    return lead ? { owner: lead, ownerFrom: 'project lead' } : { owner: '', ownerFrom: '' }
+  }
+
+  const unclaimedPool = (bead, waitingOn) =>
+    !waitingOn && !bead.assignee ? String(meta(bead, 'gc.execution_routed_to')).trim() : ''
+
+  const urgentRow = (context) => (bead) => {
     const stepLabel = hasStepLabel(bead)
     const waitingOn = String(meta(bead, 'gc.waiting_on')).trim() || (stepLabel ? truthApi.HER : '')
-    return { ...identity(bead), owner: bead.assignee ?? '', priority: Number(bead.priority),
-      updatedAt: validTime(bead.updated_at) ? bead.updated_at : null, waitingOn, waitsOnHer: stepLabel || namesHerFirst(waitingOn) }
+    return { ...identity(bead), state: bead.status ?? '', convoy: bead.convoy ?? '', ...ownerOf(bead, context),
+      priority: Number(bead.priority), updatedAt: validTime(bead.updated_at) ? bead.updated_at : null,
+      waitingOn, waitsOnHer: stepLabel || namesHerFirst(waitingOn), unclaimedBy: unclaimedPool(bead, waitingOn) }
   }
 
   const oldestFirst = (a, b) => (a.updatedAt === null) - (b.updatedAt === null) ||
@@ -343,8 +369,8 @@
 
   const capped = (rows) => ({ items: rows.slice(0, STUCK_CAP), more: Math.max(0, rows.length - STUCK_CAP) })
 
-  const urgentLists = (input, decisions) => {
-    const rows = urgentBeads(input, decisions).map(urgentRow).sort(oldestFirst)
+  const urgentLists = (input, decisions, context) => {
+    const rows = urgentBeads(input, decisions, context.index).map(urgentRow(context)).sort(oldestFirst)
     const waiting = rows.filter((row) => row.waitingOn)
     return { stuck: capped(rows.filter((row) => !row.waitingOn)),
       waiting: capped([...waiting.filter((row) => row.waitsOnHer), ...waiting.filter((row) => !row.waitsOnHer)]) }
@@ -372,7 +398,7 @@
     const stepBeads = new Map([...(input.herSteps ?? []), ...openDecisions].map((bead) => [`${bead.store}#${bead.id}`, bead]))
     const herSteps = needsApi.herSteps([...stepBeads.values()])
     const stepsUnread = (input.unread ?? []).includes('herSteps')
-    return { now: input.now, ...urgentLists(input, input.decisions ?? []), needsYou, inDelivery, herSteps, stepsUnread, cards: [...groups.values()], activeNow: groupActivity(entries),
+    return { now: input.now, ...urgentLists(input, input.decisions ?? [], { index, projects }), needsYou, inDelivery, herSteps, stepsUnread, cards: [...groups.values()], activeNow: groupActivity(entries),
       outcomesShown: Array.isArray(input.outcomes) }
   }
 

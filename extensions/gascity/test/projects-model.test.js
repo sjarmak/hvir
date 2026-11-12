@@ -561,6 +561,48 @@ test('stuck and waiting skip automatic workflow step beads', () => {
   assert.deepEqual(model.waiting.items, [])
 })
 
+const convoy = (id, tracked, extra = {}) => urgent(id, { title: `input convoy for ${tracked}`, issue_type: 'convoy',
+  metadata: { 'gc.synthetic': 'true' }, dependencies: [{ issue_id: id, depends_on_id: tracked, type: 'tracks' }], ...extra })
+
+test('a synthetic convoy row shows the bead it tracks, once, with that bead\'s state', () => {
+  const input = fresh()
+  input.urgent = [
+    convoy('fx-c1', 'fx-t1'),
+    urgent('fx-t1', { title: 'Tracked work', status: 'in_progress', assignee: 'omni-pl' }),
+    convoy('fx-c2', 'fx-t2', { store: 's2' }),
+    convoy('fx-c3', 'fx-t3'),
+    urgent('fx-plain-convoy', { issue_type: 'convoy', dependencies: [{ depends_on_id: 'fx-x', type: 'tracks' }] }),
+  ]
+  input.linked = [urgent('fx-t3', { title: 'Tracked elsewhere', priority: 2, status: 'open' })]
+  const rows = buildDashboard(input).stuck.items
+  assert.deepEqual(rows.map((row) => row.id).sort(), ['fx-plain-convoy', 'fx-t1', 'fx-t2', 'fx-t3'])
+  const byId = (id) => rows.find((row) => row.id === id)
+  assert.deepEqual([byId('fx-t1').title, byId('fx-t1').state, byId('fx-t1').owner], ['Tracked work', 'in_progress', 'omni-pl'])
+  assert.deepEqual([byId('fx-t2').title, byId('fx-t2').state, byId('fx-t2').store, byId('fx-t2').convoy], ['', '', 's2', 'fx-c2'])
+  assert.deepEqual([byId('fx-t3').title, byId('fx-t3').state, byId('fx-t3').convoy], ['Tracked elsewhere', 'open', 'fx-c3'])
+})
+
+test('a stuck row names its owner seat, falling back to the project lead, and an unclaimed pool route', () => {
+  const input = fresh()
+  input.urgent = [
+    urgent('fx-o-assigned', { assignee: 'omni-evals-pl', metadata: { 'proj.id': 'fx-project-1' } }),
+    urgent('fx-o-lead', { metadata: { 'proj.id': 'fx-project-1' } }),
+    urgent('fx-o-gc-project', { metadata: { 'gc.project': 'fx-project-1' } }),
+    urgent('fx-o-routed', { metadata: { 'gc.execution_routed_to': 'omni-experiments/omni-experiments-worker' } }),
+    urgent('fx-o-routed-claimed', { assignee: 'pool-2', metadata: { 'gc.execution_routed_to': 'omni-experiments/omni-experiments-worker' } }),
+    urgent('fx-o-none'),
+  ]
+  const rows = buildDashboard(input).stuck.items
+  const byId = (id) => rows.find((row) => row.id === id)
+  assert.deepEqual([byId('fx-o-assigned').owner, byId('fx-o-assigned').ownerFrom], ['omni-evals-pl', 'assignee'])
+  assert.deepEqual([byId('fx-o-lead').owner, byId('fx-o-lead').ownerFrom], ['omni-pl', 'project lead'])
+  assert.deepEqual([byId('fx-o-gc-project').owner, byId('fx-o-gc-project').ownerFrom], ['omni-pl', 'project lead'])
+  assert.deepEqual([byId('fx-o-none').owner, byId('fx-o-none').ownerFrom], ['', ''])
+  assert.equal(byId('fx-o-routed').unclaimedBy, 'omni-experiments/omni-experiments-worker')
+  assert.equal(byId('fx-o-routed-claimed').unclaimedBy, '')
+  assert.equal(byId('fx-o-none').unclaimedBy, '')
+})
+
 test('a claimed bead says "no live session" until seat jobs were actually read', () => {
   const claim = { id: 'fx-claimed', title: 'Claimed', status: 'in_progress', labels: [],
     metadata: { 'proj.id': 'fx-project-1' }, assignee: 'fx-gone' }

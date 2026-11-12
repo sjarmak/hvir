@@ -136,11 +136,24 @@
     section('Your next step', list((model.herSteps ?? []).map((entry) => renderStep(entry, options)), ''),
       model.stepsUnread && paragraph('Some steps could not be read', 'projects-warning'))
 
+  const flag = (label) => text(label, 'projects-flag')
+  const age = (row) => window.ago(row.updatedAt).replace(/ ago$/, '')
+  const ownerLabel = (row) => !row.owner ? 'no owner' : row.ownerFrom === 'project lead' ? `${row.owner} (project lead)` : row.owner
+
+  const rowMeta = (row) => text(` · ${[row.id, row.convoy ? row.state || 'state not read' : row.state, ownerLabel(row)]
+    .filter(Boolean).join(' · ')}`, 'hvir-meta')
+
+  const rowWait = (row, waiting) => {
+    if (waiting) return [text(` · waiting on ${row.waitingOn}${row.updatedAt ? ` for ${age(row)}` : ''}`, 'projects-warning')]
+    if (row.unclaimedBy) return [text(` · unclaimed by ${row.unclaimedBy} since ${row.updatedAt ? window.ago(row.updatedAt) : 'an unrecorded time'}`, 'projects-warning')]
+    return [text(' · ', 'hvir-meta'), flag('no wait recorded'),
+      text(row.updatedAt ? ` · no update for ${age(row)}` : ' · no update recorded', 'projects-warning')]
+  }
+
   const urgentRow = (row, options, waiting) => el('li', { title: row.id },
-    button(row.title, row.id, () => options.onOpenBead?.(row.id, row.store)),
-    text(` · ${row.id} · ${row.owner || 'no owner'}`, 'hvir-meta'),
-    text(waiting ? ` · waiting on ${row.waitingOn}${row.updatedAt ? ` for ${window.ago(row.updatedAt).replace(/ ago$/, '')}` : ''}`
-      : row.updatedAt ? ` · no update for ${window.ago(row.updatedAt).replace(/ ago$/, '')}` : ' · no update recorded', 'projects-warning'))
+    button(row.title || 'Title not read', row.id, () => options.onOpenBead?.(row.id, row.store)),
+    rowMeta(row),
+    ...rowWait(row, waiting))
 
   const urgentSection = (title, group, empty, options, waiting) => {
     const rows = group?.items ?? []

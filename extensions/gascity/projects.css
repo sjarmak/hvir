@@ -119,6 +119,13 @@
 .projects-warning {
   color: var(--warning-text);
 }
+.projects-flag {
+  color: var(--warning-text);
+  font-weight: 600;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 4px;
+}
 .projects-error {
   color: var(--danger-text);
 }

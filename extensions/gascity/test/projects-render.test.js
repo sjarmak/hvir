@@ -559,6 +559,48 @@ test('the pane shows a Stuck list and a Waiting on list above the project cards'
   assert.doesNotMatch(named('Stuck').textContent, /undefined/)
 })
 
+const renderUrgent = (t, urgent, linked = []) => {
+  const input = structuredClone(fixture)
+  input.urgent = urgent
+  input.linked = [...(input.linked ?? []), ...linked]
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  dom.window.Date.now = () => Date.parse(fixture.now)
+  for (const file of ['view.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const root = dom.window.document.querySelector('main')
+  const opened = []
+  dom.window.projectsRender.renderDashboard(buildDashboard(input), root, { onOpenBead: (id, store) => opened.push([id, store]) })
+  const named = (name) => [...root.querySelectorAll(':scope > section')].find((node) => node.querySelector('h2').textContent.startsWith(name))
+  const row = (name, id) => [...named(name).querySelectorAll('li')].find((node) => node.title === id)
+  return { root, named, row, opened }
+}
+
+const bead = (id, extra = {}) => ({ id, title: `Title ${id}`, status: 'open', priority: 1, labels: [], store: 's',
+  updated_at: '2026-10-29T08:00:00Z', metadata: {}, ...extra })
+
+test('a Stuck row explains itself: tracked bead for a convoy, owner seat, unclaimed route or a flagged missing wait', (t) => {
+  const { row, opened } = renderUrgent(t, [
+    bead('fx-c1', { title: 'input convoy for fx-t1', issue_type: 'convoy', metadata: { 'gc.synthetic': 'true' },
+      dependencies: [{ issue_id: 'fx-c1', depends_on_id: 'fx-t1', type: 'tracks' }] }),
+    bead('fx-c2', { title: 'input convoy for fx-t2', issue_type: 'convoy', metadata: { 'gc.synthetic': 'true' },
+      dependencies: [{ issue_id: 'fx-c2', depends_on_id: 'fx-t2', type: 'tracks' }] }),
+    bead('fx-lead', { metadata: { 'proj.id': 'fx-project-1' } }),
+    bead('fx-routed', { updated_at: '2026-10-29T09:00:00Z', metadata: { 'gc.execution_routed_to': 'rig/rig-worker' } }),
+  ], [bead('fx-t1', { title: 'The real work', status: 'in_progress', priority: 2, assignee: 'omni-evals-pl' })])
+  const tracked = row('Stuck', 'fx-t1')
+  assert.match(tracked.textContent, /The real work.*fx-t1.*in_progress.*omni-evals-pl/s)
+  assert.doesNotMatch(tracked.textContent, /input convoy/)
+  tracked.querySelector('button').click()
+  assert.deepEqual(opened, [['fx-t1', 's']])
+  assert.match(row('Stuck', 'fx-t2').textContent, /Title not read.*fx-t2.*state not read/s)
+  assert.match(row('Stuck', 'fx-lead').textContent, /omni-pl \(project lead\)/)
+  const flag = row('Stuck', 'fx-lead').querySelector('.projects-flag')
+  assert.equal(flag.textContent, 'no wait recorded')
+  const routed = row('Stuck', 'fx-routed')
+  assert.match(routed.textContent, /no owner · unclaimed by rig\/rig-worker since 3h ago/)
+  assert.equal(routed.querySelector('.projects-flag'), null)
+})
+
 test('in flight and queued say how many more rows are hidden, and an unread seat list changes the claim wording', (t) => {
   const input = structuredClone(fixture)
   input.seatJobs = []
