@@ -472,7 +472,7 @@ test('each decision shows its escalation tier as a tag; an untiered one shows no
   assert.deepEqual(model.needsYou.map((entry) => entry.tier), ['Tier 1', 'Tier 2', '', 'Tier 7 is not 1-3', 'Tier true is not 1-3'])
 })
 
-test('an ask names who to answer as a plain owner label, with no button to open a session', (t) => {
+test('an ask\'s owner label opens that seat\'s session, live or asleep, and no other session button is shown', (t) => {
   const input = structuredClone(fixture)
   input.decisions = [
     { id: 'r1', title: 'Live ask', status: 'open', labels: ['needs/stephanie'], metadata: {}, created_by: 'omni-pl' },
@@ -485,19 +485,24 @@ test('an ask names who to answer as a plain owner label, with no button to open 
   const { window } = dom
   for (const file of ['view.js', 'card-words.js', 'projects-render.js']) window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = window.document.querySelector('main')
-  window.projectsRender.renderDashboard(buildDashboard(input), root, {})
+  const seats = []
+  window.projectsRender.renderDashboard(buildDashboard(input), root, { onAttachSeat: (seat) => seats.push(seat) })
   const row = (title) => [...root.querySelectorAll('li')].find((li) => li.textContent.includes(title))
-  const live = row('Live ask')
-  assert.match(live.textContent, /Owner: Verity \(omni-pl\)/)
-  assert.doesNotMatch(live.textContent, /Answer to|Open .*session/)
-  assert.deepEqual([...root.querySelectorAll('button')].filter((node) => /session/i.test(`${node.textContent} ${node.title}`)), [])
-  const asleep = row('Asleep ask')
-  assert.match(asleep.textContent, /Wren is asleep/)
-  assert.match(asleep.textContent, /Owner: Wren \(mayor\)/)
-  assert.equal([...asleep.querySelectorAll('button')].length, 1)
+  const owner = (title) => [...row(title).querySelectorAll('button')].find((node) => node.textContent.startsWith('Owner:'))
+  assert.equal(owner('Live ask').textContent, 'Owner: Verity (omni-pl)')
+  assert.equal(owner('Live ask').title, 'Open the omni-pl session in a terminal')
+  assert.doesNotMatch(row('Live ask').textContent, /Answer to|Open .*session/)
+  owner('Live ask').click()
+  owner('Asleep ask').click()
+  owner('Unknown ask').click()
+  assert.deepEqual(seats, ['omni-pl', 'mayor', 'zz-seat'])
+  assert.match(row('Asleep ask').textContent, /Wren is asleep/)
   assert.match(row('Unknown ask').textContent, /The zz-seat session is asleep/)
-  assert.match(row('Unknown ask').textContent, /Owner: zz-seat/)
   assert.doesNotMatch(row('No owner ask').textContent, /Owner:|Answer to/)
+  const plain = window.document.createElement('main')
+  window.projectsRender.renderDashboard(buildDashboard(input), plain, {})
+  assert.match(plain.textContent, /Owner: Verity \(omni-pl\)/)
+  assert.equal([...plain.querySelectorAll('button')].some((node) => node.textContent.startsWith('Owner:')), false)
 })
 
 test('a project page lists what is in flight and what is queued in plain words', (t) => {

@@ -163,6 +163,9 @@
         .catch((error) => setStatus(`Could not open ${id}: ${error.message}`)),
       onOpenOverview: () => window.openOwn('project', {})
         .catch((error) => setStatus(`Could not open the overview: ${error.message}`)),
+      onAttachSeat: (seat) => window.attachAction.attachSeat(seat)
+        .then((result) => setStatus(result?.line ?? ''))
+        .catch((error) => setStatus(`Could not open ${seat}: ${error.message}`)),
     }
     const shownBy = new Map()
     let shownId

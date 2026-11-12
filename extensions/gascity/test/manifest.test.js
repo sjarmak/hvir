@@ -71,10 +71,12 @@ test('a PR opens a copy of the Pull requests pull view, with the actions it laun
     ['worktree-terminal', 'pr-actions', false],
     ['pull-worktree-terminal', 'pr-actions', false],
     ['attach-session', 'city', false],
+    ['attach-seat', 'projects', false],
   ])
   assert.equal((manifest.connectors ?? []).some((item) => item.id === 'city-pr'), false)
   const data = fs.readFileSync(path.join(__dirname, '..', 'projects-data.js'), 'utf8')
   assert.match(data, /window\.openOwn\('pull', \{ repo: `\$\{ref\.owner\}\/\$\{ref\.repo\}`, number: ref\.number \}\)/)
+  assert.doesNotMatch(data, /openOwn\('session'/)
 })
 
 test('hvir-answer is an action connector with no setup hint and describes itself in plain words', () => {

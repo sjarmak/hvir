@@ -1,6 +1,7 @@
 /* global window */
 ;(() => {
   const ACTION = 'attach-session'
+  const SEAT_ACTION = 'attach-seat'
   const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/
   const ERROR_MAX = 240
 
@@ -44,14 +45,19 @@
     }
   }
 
-  const listen = (bridge) =>
+  const listen = (bridge, action = ACTION) =>
     bridge.onMessage((message) => {
-      if (message.kind === 'action' && message.invocation?.action === ACTION)
+      if (message.kind === 'action' && message.invocation?.action === action)
         void handle(bridge, message.invocation)
     })
 
-  const invoke = (name) =>
-    window.host.request('actions.invoke', { action: ACTION, input: { name } })
+  const invoke = (name, action = ACTION) =>
+    window.host.request('actions.invoke', { action, input: { name } })
+
+  const attachSeat = async (name) => {
+    if (typeof name !== 'string' || !NAME.test(name)) throw new Error('name must be a session name')
+    return invoke(name, SEAT_ACTION)
+  }
 
   const routeRow = (row, open, onAttach) => {
     if (row.dataset.attach) return invoke(row.dataset.attach).then(onAttach)
@@ -60,11 +66,13 @@
 
   window.attachAction = Object.freeze({
     ACTION,
+    SEAT_ACTION,
     NAME,
     attach,
     handle,
     listen,
     invoke,
+    attachSeat,
     routeRow,
   })
 })()

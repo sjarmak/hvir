@@ -295,6 +295,29 @@
         "required": ["name"],
         "additionalProperties": false
       }
+    },
+    {
+      "id": "attach-seat",
+      "title": "Open a Gas City seat's session in a new terminal",
+      "view": "projects",
+      "agents": false,
+      "effects": {
+        "delete": false,
+        "replace": false
+      },
+      "timeoutMs": 120000,
+      "description": "Runs gc session attach <name> once in a new terminal at the workspace root, after you confirm in hvir. gc starts an on-demand seat that is asleep. Only a person clicking an owner label on a Needs you card can run it; agents cannot.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 64
+          }
+        },
+        "required": ["name"],
+        "additionalProperties": false
+      }
     }
   ]
 }

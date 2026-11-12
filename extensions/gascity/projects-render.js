@@ -36,10 +36,13 @@
     'omni-evals-desk': 'the evals desk',
   })
 
-  const renderAnswerTo = (ask) => {
+  const renderAnswerTo = (ask, options) => {
     if (!ask.answerTo) return null
     const name = SEAT_NAMES[ask.answerTo]
-    const owner = text(`Owner: ${name ? `${name} (${ask.answerTo})` : ask.answerTo}`, 'hvir-meta')
+    const label = `Owner: ${name ? `${name} (${ask.answerTo})` : ask.answerTo}`
+    const owner = options.onAttachSeat
+      ? button(label, `Open the ${ask.answerTo} session in a terminal`, () => options.onAttachSeat(ask.answerTo))
+      : text(label, 'hvir-meta')
     return el('div', {}, owner,
       !ask.answerLive && paragraph(name ? `${name} is asleep` : `The ${ask.answerTo} session is asleep`, 'hvir-meta'))
   }
@@ -131,7 +134,7 @@
       ask.tier && text(ask.tier, 'projects-tag'),
       ask.cardText ? cardButton(ask.cardText, ask.id, open) : button(ask.title, ask.id, open),
       renderAnswer(ask, options),
-      renderAnswerTo(ask),
+      renderAnswerTo(ask, options),
       renderRefs(ask.refs, options))
   }
 
