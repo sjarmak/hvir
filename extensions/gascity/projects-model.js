@@ -403,9 +403,11 @@
 
   const movedWithinHour = (row, now) => row.updatedAt !== null && Date.parse(now) - Date.parse(row.updatedAt) <= HOUR_MS
 
+  const hasNamedWait = (row) => Boolean(row.waitingOn || row.unclaimedBy)
+
   const stuckReasons = (row, now) => [
     row.likelyBroken && 'broken-wait',
-    !row.waitingOn && !movedWithinHour(row, now) && (row.updatedAt === null ? 'no-movement-recorded' : 'no-movement'),
+    !hasNamedWait(row) && !movedWithinHour(row, now) && (row.updatedAt === null ? 'no-movement-recorded' : 'no-movement'),
     !row.waitingOn && row.state === 'open' && !row.assigned && !row.routed && 'unowned',
   ].filter(Boolean)
 
@@ -414,10 +416,12 @@
       .map((row) => ({ ...row, stuckReasons: stuckReasons(row, context.now) }))
     const stuck = rows.filter((row) => row.stuckReasons.length > 0)
     const calm = rows.filter((row) => row.stuckReasons.length === 0)
-    const waiting = calm.filter((row) => row.waitingOn)
-    return { stuck: capped(stuck),
-      working: capped(calm.filter((row) => !row.waitingOn && row.state === 'in_progress')),
-      waiting: capped([...waiting.filter((row) => row.waitsOnHer), ...waiting.filter((row) => !row.waitsOnHer)]) }
+    const waiting = calm.filter(hasNamedWait)
+    const unwaited = calm.filter((row) => !hasNamedWait(row))
+    const working = unwaited.filter((row) => row.state === 'in_progress')
+    return { stuck: capped(stuck), working: capped(working),
+      waiting: capped([...waiting.filter((row) => row.waitsOnHer), ...waiting.filter((row) => !row.waitsOnHer)]),
+      notStarted: capped(unwaited.filter((row) => !working.includes(row))) }
   }
 
   const buildDashboard = (input) => {

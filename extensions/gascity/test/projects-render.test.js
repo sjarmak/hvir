@@ -596,7 +596,7 @@ test('a Stuck row explains itself: tracked bead for a convoy, owner seat, unclai
   assert.match(row('Stuck', 'fx-lead').textContent, /Owner: the Omni code lead \(leads the project; nobody assigned\)/)
   const flag = row('Stuck', 'fx-lead').querySelector('.projects-flag')
   assert.equal(flag.textContent, 'Nobody has recorded what this is waiting for')
-  const routed = row('Stuck', 'fx-routed')
+  const routed = row('Waiting on', 'fx-routed')
   assert.match(routed.textContent, /Owner: nobody assigned · Waiting on: a free worker in rig\/rig-worker for 3 hours/)
   assert.equal(routed.querySelector('.projects-flag'), null)
 })
@@ -698,6 +698,17 @@ test('an In progress section sits between Stuck and Waiting on, and each Stuck r
     /Stuck because: no movement for over an hour; open with no assignee and no route/)
   assert.match(row('Stuck', 'fx-st-her').querySelector('.projects-stuck-why').textContent, /Stuck because: waiting on you for over a day/)
   assert.ok(named('Waiting on').textContent.includes('fx-ip-wait'))
+})
+
+test('open assigned work that has not started yet shows under Not started or unknown, after Waiting on', (t) => {
+  const { root, row } = renderUrgent(t, [
+    bead('fx-ns-open', { assignee: 'omni-pl', updated_at: '2026-10-29T11:50:00Z' }),
+    bead('fx-ns-wait', { assignee: 'omni-pl', updated_at: '2026-10-29T11:30:00Z', metadata: { 'gc.waiting_on': 'time' } }),
+  ])
+  const titles = [...root.querySelectorAll(':scope > section > h2')].map((node) => node.textContent)
+  assert.ok(titles.indexOf('Not started or unknown (1)') > titles.indexOf('Waiting on (1)'))
+  assert.match(row('Not started or unknown', 'fx-ns-open').textContent,
+    /Title fx-ns-open.*Owner: the Omni code lead · Waiting on: nothing recorded — it last moved 10 minutes ago/s)
 })
 
 test('a named wait reads as words: a read bead by its card text or title, a seat by its role, a decision as yours', (t) => {

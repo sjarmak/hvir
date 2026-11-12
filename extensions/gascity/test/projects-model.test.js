@@ -592,7 +592,8 @@ test('a stuck row names its owner seat, falling back to the project lead, and an
     urgent('fx-o-routed-claimed', { assignee: 'pool-2', metadata: { 'gc.execution_routed_to': 'omni-experiments/omni-experiments-worker' } }),
     urgent('fx-o-none'),
   ]
-  const rows = buildDashboard(input).stuck.items
+  const model = buildDashboard(input)
+  const rows = [...model.stuck.items, ...model.waiting.items]
   const byId = (id) => rows.find((row) => row.id === id)
   assert.deepEqual([byId('fx-o-assigned').owner, byId('fx-o-assigned').ownerFrom], ['omni-evals-pl', 'assignee'])
   assert.deepEqual([byId('fx-o-lead').owner, byId('fx-o-lead').ownerFrom], ['omni-pl', 'project lead'])
@@ -693,7 +694,7 @@ test('in progress holds active work moved within the hour, stuck says why, and w
   const model = buildDashboard(input)
   assert.deepEqual(model.working.items.map((row) => row.id), ['fx-p-active'])
   assert.equal(model.working.more, 0)
-  assert.deepEqual(model.waiting.items.map((row) => row.id).sort(), ['fx-p-active-wait', 'fx-p-unowned-wait'])
+  assert.deepEqual(model.waiting.items.map((row) => row.id).sort(), ['fx-p-active-wait', 'fx-p-routed-new', 'fx-p-unowned-wait'])
   assert.deepEqual(model.stuck.items.map((row) => [row.id, row.stuckReasons]), [
     ['fx-p-broken', ['broken-wait']],
     ['fx-p-unowned-old', ['no-movement', 'unowned']],
@@ -701,8 +702,29 @@ test('in progress holds active work moved within the hour, stuck says why, and w
     ['fx-p-unowned', ['unowned']],
     ['fx-p-undated', ['no-movement-recorded']],
   ])
-  const listed = [...model.working.items, ...model.waiting.items, ...model.stuck.items].map((row) => row.id)
-  assert.ok(!listed.includes('fx-p-routed-new') && !listed.includes('fx-p-open-new'))
+  assert.deepEqual(model.notStarted.items.map((row) => row.id), ['fx-p-open-new'])
+  const listed = [model.working, model.waiting, model.stuck, model.notStarted].flatMap((group) => group.items.map((row) => row.id))
+  assert.deepEqual([...listed].sort(), input.urgent.map((bead) => bead.id).sort())
+})
+
+test('routed work waits on its named pool until a day passes, and other unstarted work stays visible', () => {
+  const input = fresh()
+  const at = (time) => `2026-10-29T${time}:00Z`
+  const routed = { 'gc.execution_routed_to': 'rig/rig-worker' }
+  input.urgent = [
+    urgent('fx-r-fresh', { updated_at: at('11:50'), metadata: routed }),
+    urgent('fx-r-hours', { updated_at: at('08:00'), metadata: routed }),
+    urgent('fx-r-days', { updated_at: '2026-10-27T08:00:00Z', metadata: routed }),
+    urgent('fx-r-claimed', { assignee: 'rig-worker-2', updated_at: at('11:50'), metadata: routed }),
+    urgent('fx-r-assigned', { assignee: 'omni-pl', updated_at: at('11:50') }),
+  ]
+  const model = buildDashboard(input)
+  const ids = (group) => group.items.map((row) => row.id).sort()
+  assert.deepEqual(ids(model.waiting), ['fx-r-fresh', 'fx-r-hours'])
+  assert.equal(model.waiting.items.find((row) => row.id === 'fx-r-hours').unclaimedBy, 'rig/rig-worker')
+  assert.deepEqual(model.stuck.items.map((row) => [row.id, row.stuckReasons]), [['fx-r-days', ['broken-wait']]])
+  assert.deepEqual(ids(model.notStarted), ['fx-r-assigned', 'fx-r-claimed'])
+  assert.deepEqual(ids(model.working), [])
 })
 
 test('a claimed bead says "no live session" until seat jobs were actually read', () => {

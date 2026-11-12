@@ -184,6 +184,7 @@
     urgentSection('Stuck', model.stuck, 'Nothing stuck', options, 'stuck', model.now),
     (model.working?.items.length ?? 0) > 0 && urgentSection('In progress', model.working, '', options, 'working', model.now),
     (model.waiting?.items.length ?? 0) > 0 && urgentSection('Waiting on', model.waiting, '', options, 'waiting', model.now),
+    (model.notStarted?.items.length ?? 0) > 0 && urgentSection('Not started or unknown', model.notStarted, '', options, 'not-started', model.now),
   ].filter(Boolean)
 
   const renderActivity = (item) => {
