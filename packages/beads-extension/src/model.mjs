@@ -14,15 +14,25 @@ const sectionOrder = [
 
 export function buildReadSurface(input) {
   const previous = input.previous
+  const dependencies = sourceView(
+    input.bdDependencies,
+    input.bdDependenciesFailure,
+    previous?.dependencies,
+    parseDependencyEdges,
+    'structured bd dependency output',
+    { edges: [] },
+  )
   const beads = sourceView(
     input.bd,
     input.bdFailure,
     previous?.beads,
-    (text, observedAt) => parseBeads(text, observedAt, input.bdReady?.text),
+    (text, observedAt) =>
+      parseBeads(text, observedAt, input.bdReady?.text, dependencies.edges),
     'structured bd output',
   )
   return {
     beads,
+    dependencies,
     gates: sourceView(
       input.bdGates,
       input.bdGatesFailure,
@@ -115,12 +125,12 @@ function emptySource() {
   return { sections: [], groups: [] }
 }
 
-export function parseBeads(text, observedAt, readyText) {
+export function parseBeads(text, observedAt, readyText, dependencyEdges = []) {
   const raw = JSON.parse(text)
   const rawReady = JSON.parse(readyText)
   if (!Array.isArray(raw)) throw new Error('Invalid structured bd output')
   if (!Array.isArray(rawReady)) throw new Error('Invalid structured bd output')
-  const issues = raw.map(readIssue)
+  const issues = enrichDependencies(raw.map(readIssue), dependencyEdges)
   const buckets = new Map(sectionOrder.map(([key]) => [key, []]))
   const ready = new Set(
     rawReady
@@ -138,6 +148,7 @@ export function parseBeads(text, observedAt, readyText) {
     else if (issue.status === 'in_progress') key = 'in-flight'
     else if (
       issue.status === 'blocked' ||
+      issue.blockedBy.length > 0 ||
       (issue.dependencyCount > 0 && !ready.has(issue.id))
     )
       key = 'blocked'
@@ -159,6 +170,53 @@ export function parseBeads(text, observedAt, readyText) {
     sections,
     issues,
   }
+}
+
+export function parseDependencyEdges(text, observedAt) {
+  const edges = text.split(/\r?\n/u).flatMap((line) => {
+    const [blockerId, ...blockedIds] = line.trim().split(/\s+/u)
+    if (!blockerId || !blockedIds.length) return []
+    return blockedIds.map((blockedId) => ({ blockerId, blockedId }))
+  })
+  return { state: edges.length ? 'ready' : 'empty', observedAt, edges }
+}
+
+function enrichDependencies(issues, edges) {
+  const byId = new Map(issues.map((issue) => [issue.id, issue]))
+  const blockedBy = new Map()
+  const unlocks = new Map()
+  for (const edge of edges) {
+    appendId(blockedBy, edge.blockedId, edge.blockerId)
+    appendId(unlocks, edge.blockerId, edge.blockedId)
+  }
+  const reference = (id) => {
+    const issue = byId.get(id)
+    return issue ? { id: issue.id, title: issue.title, status: issue.status } : undefined
+  }
+  return issues.map((issue) => {
+    const blockers = (blockedBy.get(issue.id) ?? []).map(reference).filter(Boolean)
+    const unlocked = (unlocks.get(issue.id) ?? []).map(reference).filter(Boolean)
+    const firstBlocker = blockers[0]
+    const blocker = firstBlocker ? byId.get(firstBlocker.id) : undefined
+    return {
+      ...issue,
+      blockedBy: blockers,
+      unlocks: unlocked,
+      unlocksCount: unlocked.length,
+      ...(firstBlocker
+        ? {
+            nextUnblock: {
+              action: `Resolve “${firstBlocker.title}”`,
+              ...(blocker?.assignee ? { owner: blocker.assignee } : {}),
+            },
+          }
+        : {}),
+    }
+  })
+}
+
+function appendId(collection, key, value) {
+  collection.set(key, [...(collection.get(key) ?? []), value])
 }
 
 function readIssue(value) {
@@ -221,19 +279,13 @@ export function parseCrew(
   let issues = previousBeads?.issues ?? []
   if (bdSource) {
     try {
-      issues = parseBeads(
-        bdSource.text,
-        bdSource.observedAt,
-        bdReadySource?.text,
-      ).issues
+      issues = parseBeads(bdSource.text, bdSource.observedAt, bdReadySource?.text).issues
     } catch {
       issues = previousBeads?.issues ?? []
     }
   }
   const scope = readCrewScope(rigText)
-  const sessions = raw.sessions.filter((session) =>
-    crewSessionInScope(session, scope),
-  )
+  const sessions = raw.sessions.filter((session) => crewSessionInScope(session, scope))
   const members = sessions.map((session) => crewMember(session, issues))
   const groups = [
     {

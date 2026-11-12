@@ -75,6 +75,30 @@ function rowElement(document, item, openExternal, actions) {
     unavailable.textContent = 'Evaluation link unavailable'
     details.append(unavailable)
   }
+  if (item.blockedBy?.length) {
+    const blocked = document.createElement('span')
+    blocked.className = 'beads-blockedby'
+    blocked.textContent = `Blocked by: ${item.blockedBy[0].title}${
+      item.blockedBy.length > 1 ? ` +${item.blockedBy.length - 1}` : ''
+    }`
+    details.append(blocked)
+  }
+  if (item.unlocksCount > 0) {
+    const unlocks = document.createElement('span')
+    unlocks.className = 'beads-unlocks'
+    unlocks.textContent = `Unlocks ${item.unlocksCount}: ${item.unlocks
+      .map((issue) => issue.title)
+      .join(', ')}`
+    details.append(unlocks)
+  }
+  if (item.nextUnblock) {
+    const next = document.createElement('span')
+    next.className = 'beads-next-unblock'
+    next.textContent = `Next unblock: ${item.nextUnblock.action}${
+      item.nextUnblock.owner ? ` — ${item.nextUnblock.owner}` : ''
+    }`
+    details.append(next)
+  }
   const id = document.createElement('span')
   id.className = 'beads-id'
   id.textContent = item.id

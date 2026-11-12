@@ -14,7 +14,7 @@ const controller = createRefreshController({
     return buildReadSurface(await readWorkspace(client, context, snapshot))
   },
   async publish(value) {
-    const failures = [value.beads, value.crew].filter(
+    const failures = [value.beads, value.dependencies, value.crew].filter(
       (source) => source.state === 'error' || source.state === 'unavailable',
     )
     const count = value.beads.sections.reduce(
