@@ -700,11 +700,26 @@ test('in progress holds active work moved within the hour, stuck says why, and w
     ['fx-p-unowned-old', ['no-movement', 'unowned']],
     ['fx-p-quiet', ['no-movement']],
     ['fx-p-unowned', ['unowned']],
-    ['fx-p-undated', ['no-movement-recorded']],
   ])
-  assert.deepEqual(model.notStarted.items.map((row) => row.id), ['fx-p-open-new'])
+  assert.deepEqual(model.notStarted.items.map((row) => row.id), ['fx-p-open-new', 'fx-p-undated'])
   const listed = [model.working, model.waiting, model.stuck, model.notStarted].flatMap((group) => group.items.map((row) => row.id))
   assert.deepEqual([...listed].sort(), input.urgent.map((bead) => bead.id).sort())
+})
+
+test('a bead a live worker is on stays In progress however old its update, and a missing time is unknown, not Stuck', () => {
+  const input = fresh()
+  const work = (id, extra = {}) => urgent(id, { status: 'in_progress', updated_at: '2026-10-29T10:00:00Z', ...extra })
+  input.inProgress = [
+    work('fx-a-session', { assignee: 'fx-worker-a' }),
+    work('fx-a-gone', { assignee: 'fx-gone' }),
+    work('fx-a-gone-undated', { assignee: 'fx-gone', updated_at: undefined }),
+  ]
+  input.urgent = [urgent('fx-seat-work', { updated_at: '2026-10-29T09:00:00Z', assignee: 'city-infra-pl' })]
+  const model = buildDashboard(input)
+  const ids = (group) => group.items.map((row) => row.id).sort()
+  assert.deepEqual(ids(model.working), ['fx-a-session', 'fx-seat-work'])
+  assert.deepEqual(model.stuck.items.map((row) => [row.id, row.stuckReasons]), [['fx-a-gone', ['no-movement']]])
+  assert.deepEqual(ids(model.notStarted), ['fx-a-gone-undated'])
 })
 
 test('routed work waits on its named pool until a day passes, and other unstarted work stays visible', () => {

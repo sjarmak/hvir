@@ -391,6 +391,7 @@
       priority: Number(bead.priority), updatedAt: validTime(bead.updated_at) ? bead.updated_at : null,
       waitingOn, waitsOnHer: stepLabel || namesHerFirst(waitingOn), unclaimedBy: unclaimedPool(bead, waitingOn),
       routed: Boolean(String(meta(bead, 'gc.execution_routed_to')).trim()), assigned: Boolean(bead.assignee),
+      active: context.active.has(beadKey(bead)),
       cardText: needsApi.cardText(bead, context.texts) })
   }
 
@@ -401,13 +402,13 @@
 
   const HOUR_MS = 3600000
 
-  const movedWithinHour = (row, now) => row.updatedAt !== null && Date.parse(now) - Date.parse(row.updatedAt) <= HOUR_MS
+  const stillOverHour = (row, now) => row.updatedAt !== null && Date.parse(now) - Date.parse(row.updatedAt) > HOUR_MS
 
   const hasNamedWait = (row) => Boolean(row.waitingOn || row.unclaimedBy)
 
   const stuckReasons = (row, now) => [
     row.likelyBroken && 'broken-wait',
-    !hasNamedWait(row) && !movedWithinHour(row, now) && (row.updatedAt === null ? 'no-movement-recorded' : 'no-movement'),
+    !hasNamedWait(row) && !row.active && stillOverHour(row, now) && 'no-movement',
     !row.waitingOn && row.state === 'open' && !row.assigned && !row.routed && 'unowned',
   ].filter(Boolean)
 
@@ -418,7 +419,7 @@
     const calm = rows.filter((row) => row.stuckReasons.length === 0)
     const waiting = calm.filter(hasNamedWait)
     const unwaited = calm.filter((row) => !hasNamedWait(row))
-    const working = unwaited.filter((row) => row.state === 'in_progress')
+    const working = unwaited.filter((row) => row.active || (row.state === 'in_progress' && row.updatedAt !== null))
     return { stuck: capped(stuck), working: capped(working),
       waiting: capped([...waiting.filter((row) => row.waitsOnHer), ...waiting.filter((row) => !row.waitsOnHer)]),
       notStarted: capped(unwaited.filter((row) => !working.includes(row))) }
@@ -448,7 +449,8 @@
     const herSteps = needsApi.herSteps([...stepBeads.values()], cardTexts.texts)
     const stepsUnread = (input.unread ?? []).includes('herSteps')
     return { now: input.now, ...urgentLists(input, input.decisions ?? [], { index, projects, texts: cardTexts.texts,
-      now: input.now, seats: knownSeats(input, index, projects) }), needsYou, inDelivery, herSteps, stepsUnread,
+      now: input.now, seats: knownSeats(input, index, projects),
+      active: new Set(entries.filter((entry) => entry.item.bead).map((entry) => beadKey(entry.item.bead))) }), needsYou, inDelivery, herSteps, stepsUnread,
       cardTextsInvalid: cardTexts.invalid, cards: [...groups.values()], activeNow: groupActivity(entries),
       outcomesShown: Array.isArray(input.outcomes) }
   }

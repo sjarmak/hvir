@@ -155,7 +155,6 @@
   const STUCK_REASONS = Object.freeze({
     'broken-wait': (row) => `waiting on ${BROKEN_WAIT[row.waitKind]} for over a day`,
     'no-movement': () => 'no movement for over an hour',
-    'no-movement-recorded': () => 'no movement recorded',
     unowned: () => 'open with no assignee and no route',
   })
 
