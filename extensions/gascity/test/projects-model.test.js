@@ -582,6 +582,30 @@ test('a synthetic convoy row shows the bead it tracks, once, with that bead\'s s
   assert.deepEqual([byId('fx-t3').title, byId('fx-t3').state, byId('fx-t3').convoy], ['Tracked elsewhere', 'open', 'fx-c3'])
 })
 
+test('a convoy is judged by the bead it tracks: decisions, records, workflow steps and closed work stay out, unread targets stay unknown', () => {
+  const input = fresh()
+  const ask = input.decisions.find((bead) => bead.status === 'open' && (bead.labels ?? []).includes('needs/stephanie') && !bead.metadata?.['gc.answered'])
+  input.urgent = [
+    convoy('fx-cv-dec', ask.id),
+    convoy('fx-cv-closed', 'fx-cv-t-closed'),
+    convoy('fx-cv-record', 'fx-cv-t-record'),
+    convoy('fx-cv-step', 'fx-cv-t-step'),
+    convoy('fx-cv-unread', 'fx-cv-t-unread'),
+    convoy('fx-cv-open', 'fx-cv-t-open', { store: 's1' }),
+    convoy('fx-cv-open-again', 'fx-cv-t-open', { store: 's2' }),
+  ]
+  input.linked = [
+    urgent('fx-cv-t-closed', { status: 'closed' }),
+    urgent('fx-cv-t-record', { labels: ['city-milestone'] }),
+    urgent('fx-cv-t-step', { metadata: { 'gc.root_bead_id': 'fx-root' } }),
+    urgent('fx-cv-t-open', { store: 's0', priority: 3 }),
+  ]
+  const model = buildDashboard(input)
+  const rows = [model.stuck, model.working, model.waiting, model.notStarted].flatMap((group) => group.items)
+  assert.deepEqual(rows.map((row) => [row.id, row.store, row.state]).sort(), [['fx-cv-t-open', 's0', 'open'], ['fx-cv-t-unread', 's', '']])
+  assert.ok(model.needsYou.some((entry) => entry.id === ask.id))
+})
+
 test('a stuck row names its owner seat, falling back to the project lead, and an unclaimed pool route', () => {
   const input = fresh()
   input.urgent = [

@@ -323,7 +323,7 @@
     .filter((dependency) => (dependency.type ?? dependency.dependency_type) === 'tracks')
 
   const unreadTracked = (convoy, dependency) => ({ ...convoy, id: dependency.depends_on_id ?? dependency.id,
-    title: dependency.title ?? '', status: dependency.status ?? '', convoy: convoy.id })
+    title: dependency.title ?? '', status: dependency.status ?? '', convoy: convoy.id, unread: true })
 
   const folded = (bead, index) => {
     const tracks = isSyntheticConvoy(bead) ? trackedDependencies(bead) : []
@@ -332,14 +332,18 @@
     return tracked ? { ...tracked, store: tracked.store ?? bead.store, convoy: bead.id } : unreadTracked(bead, tracks[0])
   }
 
+  const listable = (bead, known) => !known.has(beadKey(bead)) && !isRecord(bead) && !isWorkflowStep(bead) && !isDecision(bead)
+  const openWork = (bead) => ['open', 'in_progress'].includes(bead.status) || (bead.unread === true && bead.status === '')
+
   const urgentBeads = (input, decisions, index) => {
     const known = new Set(decisions.map(beadKey))
     const seen = new Map()
     for (const bead of [...(input.urgent ?? []), ...(input.inProgress ?? []), ...(input.linked ?? [])]) {
-      if (known.has(beadKey(bead)) || isRecord(bead) || isWorkflowStep(bead) || isDecision(bead)) continue
+      if (!listable(bead, known)) continue
       if (!['open', 'in_progress'].includes(bead.status) || !(Number(bead.priority) <= 1)) continue
       if (bead.priority === null || bead.priority === '' || bead.priority === undefined) continue
       const shown = folded(bead, index)
+      if (!listable(shown, known) || !openWork(shown)) continue
       if (!seen.has(beadKey(shown))) seen.set(beadKey(shown), shown)
     }
     return [...seen.values()]
