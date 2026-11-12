@@ -511,6 +511,28 @@ test('stuck lists urgent open work with no waiting note, oldest update first, an
   assert.deepEqual(model.waiting.items.map((row) => [row.id, row.waitingOn]), [['fx-u-wait', 'omni-49z8xs']])
 })
 
+test('waiting lists what waits on her first, longest waiting first, then the other waits in their usual order', () => {
+  const input = fresh()
+  input.urgent = [
+    urgent('fx-w-agent-old', { metadata: { 'gc.waiting_on': 'omni-pl' }, updated_at: '2026-10-27T10:00:00Z' }),
+    urgent('fx-w-her-new', { metadata: { 'gc.waiting_on': 'stephanie' }, updated_at: '2026-10-29T10:00:00Z' }),
+    urgent('fx-w-time', { metadata: { 'gc.waiting_on': 'time' }, updated_at: '2026-10-28T10:00:00Z' }),
+    urgent('fx-w-her-caps', { metadata: { 'gc.waiting_on': ' Stephanie ' }, updated_at: '2026-10-28T12:00:00Z' }),
+    urgent('fx-w-step', { labels: ['Needs/Stephanie-Step'], updated_at: '2026-10-29T08:00:00Z' }),
+    urgent('fx-w-her-note', { metadata: { 'gc.waiting_on': 'stephanie: reload the extension' }, updated_at: '2026-10-26T10:00:00Z' }),
+    urgent('fx-w-named', { metadata: { 'gc.waiting_on': 'stephanie-bot' }, updated_at: '2026-10-25T10:00:00Z' }),
+    urgent('fx-w-agent-tie', { metadata: { 'gc.waiting_on': 'om-1' }, updated_at: '2026-10-28T10:00:00Z' }),
+    urgent('fx-w-undated', { metadata: { 'gc.waiting_on': 'stephanie' }, updated_at: 'never' }),
+  ]
+  const model = buildDashboard(input)
+  assert.deepEqual(model.waiting.items.map((row) => row.id), [
+    'fx-w-her-note', 'fx-w-her-caps', 'fx-w-step', 'fx-w-her-new', 'fx-w-undated',
+    'fx-w-named', 'fx-w-agent-old', 'fx-w-agent-tie', 'fx-w-time',
+  ])
+  assert.equal(model.waiting.items.find((row) => row.id === 'fx-w-step').waitingOn, 'stephanie')
+  assert.ok(!model.stuck.items.some((row) => row.id === 'fx-w-step'))
+})
+
 test('stuck skips decisions, merges inProgress and linked reads, and caps at fifty with a remainder', () => {
   const input = fresh()
   const ask = input.decisions[0]

@@ -327,8 +327,15 @@
     return [...seen.values()]
   }
 
-  const urgentRow = (bead) => ({ ...identity(bead), owner: bead.assignee ?? '', priority: Number(bead.priority),
-    updatedAt: validTime(bead.updated_at) ? bead.updated_at : null, waitingOn: String(meta(bead, 'gc.waiting_on')).trim() })
+  const namesHerFirst = (value) => value.toLowerCase().split(/[^\w-]/)[0] === truthApi.HER
+  const hasStepLabel = (bead) => (bead.labels ?? []).some((label) => String(label).toLowerCase() === needsApi.STEP_LABEL)
+
+  const urgentRow = (bead) => {
+    const stepLabel = hasStepLabel(bead)
+    const waitingOn = String(meta(bead, 'gc.waiting_on')).trim() || (stepLabel ? truthApi.HER : '')
+    return { ...identity(bead), owner: bead.assignee ?? '', priority: Number(bead.priority),
+      updatedAt: validTime(bead.updated_at) ? bead.updated_at : null, waitingOn, waitsOnHer: stepLabel || namesHerFirst(waitingOn) }
+  }
 
   const oldestFirst = (a, b) => (a.updatedAt === null) - (b.updatedAt === null) ||
     Date.parse(a.updatedAt) - Date.parse(b.updatedAt) || a.id.localeCompare(b.id)
@@ -337,7 +344,9 @@
 
   const urgentLists = (input, decisions) => {
     const rows = urgentBeads(input, decisions).map(urgentRow).sort(oldestFirst)
-    return { stuck: capped(rows.filter((row) => !row.waitingOn)), waiting: capped(rows.filter((row) => row.waitingOn)) }
+    const waiting = rows.filter((row) => row.waitingOn)
+    return { stuck: capped(rows.filter((row) => !row.waitingOn)),
+      waiting: capped([...waiting.filter((row) => row.waitsOnHer), ...waiting.filter((row) => !row.waitsOnHer)]) }
   }
 
   const buildDashboard = (input) => {
