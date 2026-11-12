@@ -159,7 +159,8 @@
     return [text(row.updatedAt ? ` · no update for ${age(row)}` : ' · no update recorded', 'projects-warning')]
   }
 
-  const rowFlags = (row, waiting) => [!waiting && !row.unclaimedBy && flag('no wait recorded')].filter(Boolean)
+  const rowFlags = (row, waiting) => [!waiting && !row.unclaimedBy && flag('no wait recorded'),
+    row.likelyBroken && flag('likely broken')].filter(Boolean)
 
   const urgentRow = (row, options, waiting) => {
     const status = [button(row.title || 'Title not read', row.id, () => options.onOpenBead?.(row.id, row.store)),

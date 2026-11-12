@@ -642,6 +642,39 @@ test('an unreadable card text record leaves rows on their own text and says so',
   assert.equal(absent.cardTextsInvalid, false)
 })
 
+test('a wait on her, a decision or an agent for over a day is likely broken; a wait on a resource or time is not', () => {
+  const input = fresh()
+  const old = '2026-10-28T10:00:00Z'
+  const waits = (id, waitingOn, extra = {}) => urgent(id, { updated_at: old, metadata: { 'gc.waiting_on': waitingOn }, ...extra })
+  input.urgent = [
+    waits('fx-b-her', 'stephanie'),
+    waits('fx-b-her-note', 'Stephanie: reload the extension'),
+    waits('fx-b-her-new', 'stephanie', { updated_at: '2026-10-29T10:00:00Z' }),
+    waits('fx-b-her-undated', 'stephanie', { updated_at: 'never' }),
+    urgent('fx-b-step', { updated_at: old, labels: ['needs/stephanie-step'] }),
+    waits('fx-b-dec', 'dec-qs0x (her: relaunch the run)'),
+    waits('fx-b-bead-agent', 'fx-b-target-owned landing (lead'),
+    waits('fx-b-bead-free', 'fx-b-target-free'),
+    waits('fx-b-seat', '(omni-pl, reassigned by omni-evals-pl)'),
+    waits('fx-b-time', 'time'),
+    waits('fx-b-disk', 'disk need: free 195136604 KB'),
+    waits('fx-b-date', '2026-11-16 week-after proof'),
+    urgent('fx-b-unclaimed', { updated_at: old, metadata: { 'gc.execution_routed_to': 'rig/rig-worker' } }),
+    urgent('fx-b-quiet', { updated_at: old }),
+  ]
+  input.linked = [
+    urgent('fx-b-target-owned', { priority: 2, assignee: 'omni-experiments-worker' }),
+    urgent('fx-b-target-free', { priority: 2 }),
+  ]
+  const model = buildDashboard(input)
+  const rows = [...model.stuck.items, ...model.waiting.items]
+  const broken = rows.filter((row) => row.likelyBroken).map((row) => row.id).sort()
+  assert.deepEqual(broken, ['fx-b-bead-agent', 'fx-b-dec', 'fx-b-her', 'fx-b-her-note', 'fx-b-seat', 'fx-b-step', 'fx-b-unclaimed'])
+  const kind = (id) => rows.find((row) => row.id === id).waitKind
+  assert.deepEqual(['fx-b-her', 'fx-b-dec', 'fx-b-bead-agent', 'fx-b-seat', 'fx-b-unclaimed', 'fx-b-time', 'fx-b-quiet'].map(kind),
+    ['her', 'decision', 'agent', 'agent', 'agent', '', ''])
+})
+
 test('a claimed bead says "no live session" until seat jobs were actually read', () => {
   const claim = { id: 'fx-claimed', title: 'Claimed', status: 'in_progress', labels: [],
     metadata: { 'proj.id': 'fx-project-1' }, assignee: 'fx-gone' }

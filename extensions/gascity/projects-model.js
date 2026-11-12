@@ -96,7 +96,8 @@
   const beadKey = (bead) => `${bead.store ?? ''}#${bead.id}`
   const LIST_CAP = 20
   const capRows = (rows) => ({ rows: rows.slice(0, LIST_CAP), more: Math.max(0, rows.length - LIST_CAP) })
-  const isDecision = (bead) => truthApi.isAsk(bead) || /^dec-[a-z0-9]+$/.test(bead.id)
+  const DEC_ID = /^dec-[a-z0-9]+$/
+  const isDecision = (bead) => truthApi.isAsk(bead) || DEC_ID.test(bead.id)
 
   const collectActivity = (input, index, projects) => {
     const entries = []
@@ -356,13 +357,34 @@
   const unclaimedPool = (bead, waitingOn) =>
     !waitingOn && !bead.assignee ? String(meta(bead, 'gc.execution_routed_to')).trim() : ''
 
+  const knownSeats = (input, index, projects) => new Set([...liveWorkers(input),
+    ...[...projects.values()].map((project) => String(meta(project, 'proj.lead')).trim()),
+    ...[...index.values()].map((bead) => bead.assignee)].filter(Boolean))
+
+  const waitToken = (waitingOn) => (waitingOn.match(/[\w.-]+/)?.[0] ?? '').replace(/\.+$/, '')
+
+  const waitKind = (row, context) => {
+    const token = waitToken(row.waitingOn)
+    if (row.waitsOnHer || row.waitingOn.toLowerCase().startsWith(truthApi.HER)) return 'her'
+    if (DEC_ID.test(token)) return 'decision'
+    if (row.unclaimedBy || context.index.get(token)?.assignee || context.seats.has(token)) return 'agent'
+    return ''
+  }
+
+  const waitedOverDay = (row, now) => row.updatedAt !== null && Date.parse(now) - Date.parse(row.updatedAt) > DAY_MS
+
+  const withBrokenWait = (context) => (row) => {
+    const kind = waitKind(row, context)
+    return { ...row, waitKind: kind, likelyBroken: Boolean(kind) && waitedOverDay(row, context.now) }
+  }
+
   const urgentRow = (context) => (bead) => {
     const stepLabel = hasStepLabel(bead)
     const waitingOn = String(meta(bead, 'gc.waiting_on')).trim() || (stepLabel ? truthApi.HER : '')
-    return { ...identity(bead), state: bead.status ?? '', convoy: bead.convoy ?? '', ...ownerOf(bead, context),
+    return withBrokenWait(context)({ ...identity(bead), state: bead.status ?? '', convoy: bead.convoy ?? '', ...ownerOf(bead, context),
       priority: Number(bead.priority), updatedAt: validTime(bead.updated_at) ? bead.updated_at : null,
       waitingOn, waitsOnHer: stepLabel || namesHerFirst(waitingOn), unclaimedBy: unclaimedPool(bead, waitingOn),
-      cardText: needsApi.cardText(bead, context.texts), description: needsApi.descriptionOf(bead) }
+      cardText: needsApi.cardText(bead, context.texts), description: needsApi.descriptionOf(bead) })
   }
 
   const oldestFirst = (a, b) => (a.updatedAt === null) - (b.updatedAt === null) ||
@@ -400,7 +422,8 @@
     const stepBeads = new Map([...(input.herSteps ?? []), ...openDecisions].map((bead) => [`${bead.store}#${bead.id}`, bead]))
     const herSteps = needsApi.herSteps([...stepBeads.values()], cardTexts.texts)
     const stepsUnread = (input.unread ?? []).includes('herSteps')
-    return { now: input.now, ...urgentLists(input, input.decisions ?? [], { index, projects, texts: cardTexts.texts }), needsYou, inDelivery, herSteps, stepsUnread,
+    return { now: input.now, ...urgentLists(input, input.decisions ?? [], { index, projects, texts: cardTexts.texts,
+      now: input.now, seats: knownSeats(input, index, projects) }), needsYou, inDelivery, herSteps, stepsUnread,
       cardTextsInvalid: cardTexts.invalid, cards: [...groups.values()], activeNow: groupActivity(entries),
       outcomesShown: Array.isArray(input.outcomes) }
   }

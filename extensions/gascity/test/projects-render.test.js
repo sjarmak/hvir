@@ -663,6 +663,22 @@ test('an unreadable card text record shows a warning under Needs you', (t) => {
   assert.doesNotMatch(root.textContent, /Card text record/)
 })
 
+test('Waiting on and Stuck rows flag a wait on her, a decision or an agent that is over a day old as likely broken', (t) => {
+  const { row } = renderUrgent(t, [
+    bead('fx-lb-her', { updated_at: '2026-10-27T12:00:00Z', metadata: { 'gc.waiting_on': 'stephanie' } }),
+    bead('fx-lb-time', { updated_at: '2026-10-27T12:00:00Z', metadata: { 'gc.waiting_on': 'time' } }),
+    bead('fx-lb-pool', { updated_at: '2026-10-27T12:00:00Z', metadata: { 'gc.execution_routed_to': 'rig/rig-worker' } }),
+    bead('fx-lb-card', { updated_at: '2026-10-27T12:00:00Z', metadata: { 'gc.waiting_on': 'dec-abc1', 'gc.card_text': 'Waits on a decision.' } }),
+  ])
+  const flags = (node) => [...node.querySelectorAll('.projects-flag')].map((flag) => flag.textContent)
+  assert.deepEqual(flags(row('Waiting on', 'fx-lb-her')), ['likely broken'])
+  assert.match(row('Waiting on', 'fx-lb-her').textContent, /waiting on stephanie for 2d/)
+  assert.deepEqual(flags(row('Waiting on', 'fx-lb-time')), [])
+  assert.deepEqual(flags(row('Stuck', 'fx-lb-pool')), ['likely broken'])
+  const card = row('Waiting on', 'fx-lb-card')
+  assert.equal(card.querySelector('details').contains(card.querySelector('.projects-flag')), false)
+})
+
 test('in flight and queued say how many more rows are hidden, and an unread seat list changes the claim wording', (t) => {
   const input = structuredClone(fixture)
   input.seatJobs = []
