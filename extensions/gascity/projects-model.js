@@ -322,8 +322,9 @@
   const trackedDependencies = (bead) => (bead.dependencies ?? [])
     .filter((dependency) => (dependency.type ?? dependency.dependency_type) === 'tracks')
 
-  const unreadTracked = (convoy, dependency) => ({ ...convoy, id: dependency.depends_on_id ?? dependency.id,
-    title: dependency.title ?? '', status: dependency.status ?? '', convoy: convoy.id, unread: true })
+  const unreadTracked = (convoy, dependency) => ({ id: dependency.depends_on_id ?? dependency.id,
+    title: dependency.title ?? '', status: dependency.status ?? '', priority: convoy.priority, labels: [], metadata: {},
+    ...(convoy.store === undefined ? {} : { store: convoy.store }), convoy: convoy.id, unread: true })
 
   const folded = (bead, index) => {
     const tracks = isSyntheticConvoy(bead) ? trackedDependencies(bead) : []
@@ -369,7 +370,7 @@
     const isAgent = (token) => Boolean(context.index.get(token)?.assignee) || context.seats.has(token)
     const wait = waitApi.waitOf(bead, context.now, isAgent)
     const waitTitle = waitTitleOf(wait.waitToken, context)
-    return { ...identity(bead), state: bead.status ?? '', convoy: bead.convoy ?? '', ...ownerOf(bead, context),
+    return { ...identity(bead), state: bead.status ?? '', convoy: bead.convoy ?? '', unread: bead.unread === true, ...ownerOf(bead, context),
       priority: Number(bead.priority), ...wait, waitTitle,
       waitTarget: { token: wait.waitToken, agent: Boolean(wait.waitToken) && isAgent(wait.waitToken), title: waitTitle },
       routed: Boolean(waitApi.routeOf(bead)), assigned: Boolean(bead.assignee),
@@ -396,12 +397,12 @@
 
   const urgentLists = (input, decisions, context) => {
     const rows = urgentBeads(input, decisions, context.index).map(urgentRow(context)).sort(oldestFirst)
-      .map((row) => ({ ...row, stuckReasons: stuckReasons(row, context.now) }))
+      .map((row) => ({ ...row, stuckReasons: row.unread ? [] : stuckReasons(row, context.now) }))
     const stuck = rows.filter((row) => row.stuckReasons.length > 0)
     const calm = rows.filter((row) => row.stuckReasons.length === 0)
     const waiting = calm.filter(hasNamedWait)
     const unwaited = calm.filter((row) => !hasNamedWait(row))
-    const working = unwaited.filter((row) => row.active || (row.state === 'in_progress' && row.updatedAt !== null))
+    const working = unwaited.filter((row) => !row.unread && row.active || (row.state === 'in_progress' && row.updatedAt !== null))
     return { stuck: capped(stuck), working: capped(working),
       waiting: capped([...waiting.filter((row) => row.waitsOnHer), ...waiting.filter((row) => !row.waitsOnHer)]),
       notStarted: capped(unwaited.filter((row) => !working.includes(row))) }

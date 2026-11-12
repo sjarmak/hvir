@@ -592,7 +592,7 @@ test('a Stuck row explains itself: tracked bead for a convoy, owner seat, unclai
   assert.doesNotMatch(tracked.textContent, /input convoy/)
   tracked.querySelector('button').click()
   assert.deepEqual(opened, [['fx-t1', 's', { token: '', agent: false, title: '' }]])
-  assert.match(row('Stuck', 'fx-t2').textContent, /Title not read/)
+  assert.match(row('Not started or unknown', 'fx-t2').textContent, /Title not read/)
   assert.match(row('Stuck', 'fx-lead').textContent, /Owner: the Omni code lead \(leads the project; nobody assigned\)/)
   const flag = row('Stuck', 'fx-lead').querySelector('.projects-flag')
   assert.equal(flag.textContent, 'Nobody has recorded what this is waiting for')

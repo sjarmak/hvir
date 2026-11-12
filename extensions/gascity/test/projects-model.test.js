@@ -574,9 +574,11 @@ test('a synthetic convoy row shows the bead it tracks, once, with that bead\'s s
     urgent('fx-plain-convoy', { issue_type: 'convoy', dependencies: [{ depends_on_id: 'fx-x', type: 'tracks' }] }),
   ]
   input.linked = [urgent('fx-t3', { title: 'Tracked elsewhere', priority: 2, status: 'open' })]
-  const rows = buildDashboard(input).stuck.items
-  assert.deepEqual(rows.map((row) => row.id).sort(), ['fx-plain-convoy', 'fx-t1', 'fx-t2', 'fx-t3'])
+  const model = buildDashboard(input)
+  assert.deepEqual(model.stuck.items.map((row) => row.id).sort(), ['fx-plain-convoy', 'fx-t1', 'fx-t3'])
+  const rows = [...model.stuck.items, ...model.notStarted.items]
   const byId = (id) => rows.find((row) => row.id === id)
+  assert.deepEqual(model.notStarted.items.map((row) => row.id), ['fx-t2'])
   assert.deepEqual([byId('fx-t1').title, byId('fx-t1').state, byId('fx-t1').owner], ['Tracked work', 'in_progress', 'omni-pl'])
   assert.deepEqual([byId('fx-t2').title, byId('fx-t2').state, byId('fx-t2').store, byId('fx-t2').convoy], ['', '', 's2', 'fx-c2'])
   assert.deepEqual([byId('fx-t3').title, byId('fx-t3').state, byId('fx-t3').convoy], ['Tracked elsewhere', 'open', 'fx-c3'])
@@ -604,6 +606,21 @@ test('a convoy is judged by the bead it tracks: decisions, records, workflow ste
   const rows = [model.stuck, model.working, model.waiting, model.notStarted].flatMap((group) => group.items)
   assert.deepEqual(rows.map((row) => [row.id, row.store, row.state]).sort(), [['fx-cv-t-open', 's0', 'open'], ['fx-cv-t-unread', 's', '']])
   assert.ok(model.needsYou.some((entry) => entry.id === ask.id))
+})
+
+test('an unread convoy target takes no time, owner or wait from its convoy and is not started or unknown', () => {
+  const input = fresh()
+  input.urgent = [convoy('fx-cv-old', 'fx-cv-t-missing', { updated_at: '2026-10-27T08:00:00Z', assignee: 'omni-pl',
+    metadata: { 'gc.synthetic': 'true', 'gc.waiting_on': 'stephanie', 'proj.id': 'fx-project-1' } })]
+  const model = buildDashboard(input)
+  assert.deepEqual([model.stuck, model.working, model.waiting].flatMap((group) => group.items), [])
+  const [row] = model.notStarted.items
+  assert.deepEqual([row.id, row.store, row.convoy, row.unread, row.state, row.updatedAt, row.owner, row.ownerFrom, row.waitingOn, row.stuckReasons],
+    ['fx-cv-t-missing', 's', 'fx-cv-old', true, '', null, '', '', '', []])
+  const listed = fresh()
+  listed.urgent = [convoy('fx-cv-dep', 'fx-cv-t-dep', { dependencies: [{ issue_id: 'fx-cv-dep', depends_on_id: 'fx-cv-t-dep', type: 'tracks', status: 'open' }] })]
+  const dependency = buildDashboard(listed)
+  assert.deepEqual([dependency.stuck.items.length, dependency.notStarted.items.map((row) => [row.id, row.state, row.unread])], [0, [['fx-cv-t-dep', 'open', true]]])
 })
 
 test('a stuck row names its owner seat, falling back to the project lead, and an unclaimed pool route', () => {
