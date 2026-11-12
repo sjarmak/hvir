@@ -1,7 +1,7 @@
 ;(() => {
   const truthApi = typeof module === 'object' ? require('./projects-truth.js') : window.projectsTruth
   const needsApi = typeof module === 'object' ? require('./needs-model.js') : window.needsModel
-  const wordsApi = typeof module === 'object' ? require('./card-words.js') : window.cardWords
+  const waitApi = typeof module === 'object' ? require('./wait-model.js') : window.waitModel
   const meta = (bead, key) => bead?.metadata?.[key] ?? ''
   const tierLabel = (bead) => {
     const raw = bead?.metadata?.['gc.tier']
@@ -345,9 +345,6 @@
     return [...seen.values()]
   }
 
-  const namesHerFirst = (value) => value.toLowerCase().split(/[^\w-]/)[0] === truthApi.HER
-  const hasStepLabel = (bead) => (bead.labels ?? []).some((label) => String(label).toLowerCase() === needsApi.STEP_LABEL)
-
   const ownerOf = (bead, context) => {
     if (bead.assignee) return { owner: bead.assignee, ownerFrom: 'assignee' }
     const project = resolveProject(bead, context.index, context.projects) ?? context.projects.get(meta(bead, 'gc.project'))
@@ -355,44 +352,25 @@
     return lead ? { owner: lead, ownerFrom: 'project lead' } : { owner: '', ownerFrom: '' }
   }
 
-  const unclaimedPool = (bead, waitingOn) =>
-    !waitingOn && !bead.assignee ? String(meta(bead, 'gc.execution_routed_to')).trim() : ''
-
   const knownSeats = (input, index, projects) => new Set([...liveWorkers(input),
     ...[...projects.values()].map((project) => String(meta(project, 'proj.lead')).trim()),
     ...[...index.values()].map((bead) => bead.assignee)].filter(Boolean))
-
-  const waitKind = (row, context) => {
-    const token = wordsApi.waitToken(row.waitingOn)
-    if (row.waitsOnHer || row.waitingOn.toLowerCase().startsWith(truthApi.HER)) return 'her'
-    if (DEC_ID.test(token)) return 'decision'
-    if (row.unclaimedBy || context.index.get(token)?.assignee || context.seats.has(token)) return 'agent'
-    return ''
-  }
-
-  const waitedOverDay = (row, now) => row.updatedAt !== null && Date.parse(now) - Date.parse(row.updatedAt) > DAY_MS
 
   const waitTitleOf = (token, context) => {
     const target = token ? context.index.get(token) : undefined
     return target ? needsApi.cardText(target, context.texts) || String(target.title ?? '').trim() : ''
   }
 
-  const withBrokenWait = (context) => (row) => {
-    const kind = waitKind(row, context)
-    const token = wordsApi.waitToken(row.waitingOn)
-    return { ...row, waitKind: kind, waitToken: token, waitTitle: waitTitleOf(token, context),
-      likelyBroken: Boolean(kind) && waitedOverDay(row, context.now) }
-  }
-
   const urgentRow = (context) => (bead) => {
-    const stepLabel = hasStepLabel(bead)
-    const waitingOn = String(meta(bead, 'gc.waiting_on')).trim() || (stepLabel ? truthApi.HER : '')
-    return withBrokenWait(context)({ ...identity(bead), state: bead.status ?? '', convoy: bead.convoy ?? '', ...ownerOf(bead, context),
-      priority: Number(bead.priority), updatedAt: validTime(bead.updated_at) ? bead.updated_at : null,
-      waitingOn, waitsOnHer: stepLabel || namesHerFirst(waitingOn), unclaimedBy: unclaimedPool(bead, waitingOn),
-      routed: Boolean(String(meta(bead, 'gc.execution_routed_to')).trim()), assigned: Boolean(bead.assignee),
+    const isAgent = (token) => Boolean(context.index.get(token)?.assignee) || context.seats.has(token)
+    const wait = waitApi.waitOf(bead, context.now, isAgent)
+    const waitTitle = waitTitleOf(wait.waitToken, context)
+    return { ...identity(bead), state: bead.status ?? '', convoy: bead.convoy ?? '', ...ownerOf(bead, context),
+      priority: Number(bead.priority), ...wait, waitTitle,
+      waitTarget: { token: wait.waitToken, agent: Boolean(wait.waitToken) && isAgent(wait.waitToken), title: waitTitle },
+      routed: Boolean(waitApi.routeOf(bead)), assigned: Boolean(bead.assignee),
       active: context.active.has(beadKey(bead)),
-      cardText: needsApi.cardText(bead, context.texts) })
+      cardText: needsApi.cardText(bead, context.texts) }
   }
 
   const oldestFirst = (a, b) => (a.updatedAt === null) - (b.updatedAt === null) ||

@@ -43,6 +43,7 @@
     const age = row.updatedAt ? sinceWords(row.updatedAt, now) : ''
     const tail = `${age ? ` for ${age}` : ''}${row.likelyBroken ? ' — likely broken' : ''}`
     if (row.waitingOn) return `${namedWait(row)}${tail}`
+    if (row.waitUnreadable) return 'unknown, the wait note could not be read'
     if (row.unclaimedBy) return `a free worker in ${row.unclaimedBy}${tail}`
     if (!age) return 'nothing recorded — no movement recorded'
     return (row.stuckReasons ?? []).length > 0 ? `nothing recorded — it has not moved for ${age}` : `nothing recorded — it last moved ${age} ago`

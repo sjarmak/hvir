@@ -1,10 +1,7 @@
 ;(() => {
   const words = typeof module === 'object' ? require('./card-words.js') : window.cardWords
+  const waits = typeof module === 'object' ? require('./wait-model.js') : window.waitModel
   const STATUS_WORDS = Object.freeze({ open: 'Open', in_progress: 'In progress', blocked: 'Blocked', deferred: 'Deferred', closed: 'Closed' })
-  const DEC_ID = /^dec-[a-z0-9]+$/
-  const HER = 'stephanie'
-  const STEP_LABEL = 'needs/stephanie-step'
-  const DAY_MS = 86400000
   const COMMENT_CAP = 10
   const HEADING = /^#{1,6}\s+(.*)$/
   const BULLET = /^(?:[-*]|\d+[.)])\s+(.*)$/
@@ -47,24 +44,12 @@
       return [...sections.slice(0, -1), { ...last, text: last.text ? `${last.text} ${line}` : line }]
     }, [])
 
-  const metaText = (issue, key) => typeof issue.metadata?.[key] === 'string' ? issue.metadata[key].trim() : ''
   const validTime = (value) => typeof value === 'string' && Number.isFinite(Date.parse(value))
 
-  const waitKind = (stepLabel, waitingOn, token, unclaimedBy) => {
-    if (stepLabel || waitingOn.toLowerCase().startsWith(HER)) return 'her'
-    if (DEC_ID.test(token)) return 'decision'
-    return unclaimedBy || words.SEAT_ROLES[token] ? 'agent' : ''
-  }
-
-  const waitRow = (issue, now) => {
-    const stepLabel = (issue.labels ?? []).some((label) => String(label).toLowerCase() === STEP_LABEL)
-    const waitingOn = metaText(issue, 'gc.waiting_on') || (stepLabel ? HER : '')
-    const token = words.waitToken(waitingOn)
-    const unclaimedBy = !waitingOn && !issue.assignee ? metaText(issue, 'gc.execution_routed_to') : ''
-    const kind = waitKind(stepLabel, waitingOn, token, unclaimedBy)
-    const updatedAt = validTime(issue.updated_at) ? issue.updated_at : null
-    return { waitingOn, waitKind: kind, waitToken: token, waitTitle: '', unclaimedBy, updatedAt, stuckReasons: [],
-      likelyBroken: Boolean(kind) && updatedAt !== null && Date.parse(now) - Date.parse(updatedAt) > DAY_MS }
+  const waitRow = (issue, now, target) => {
+    const resolved = (token) => target?.token === token
+    const wait = waits.waitOf(issue, now, (token) => resolved(token) ? target.agent : Boolean(words.SEAT_ROLES[token]))
+    return { ...wait, waitTitle: resolved(wait.waitToken) ? target.title : '', stuckReasons: [] }
   }
 
   const statusWords = (issue, now) => {
@@ -83,7 +68,7 @@
     .map((entry) => ({ who: entry.author ? words.roleOf(entry.author) : 'author not recorded',
       when: stamp(entry.created_at, now), blocks: textBlocks(entry.text) }))
 
-  const pageOf = (issue, card, now) => {
+  const pageOf = (issue, card, now, target) => {
     const notes = textBlocks(issue.description)
     const details = card?.details ? detailSections(card.details) : []
     return {
@@ -92,7 +77,7 @@
       facts: [
         { label: 'Owner', text: issue.assignee ? words.roleOf(issue.assignee) : 'Nobody assigned' },
         { label: 'Status', text: statusWords(issue, now) },
-        { label: 'Waiting on', text: words.waitWords(waitRow(issue, now), now) },
+        { label: 'Waiting on', text: words.waitWords(waitRow(issue, now, target), now) },
       ],
       sections: details.length
         ? details.map(({ heading, text }) => ({ heading, blocks: [{ kind: 'para', text }] }))

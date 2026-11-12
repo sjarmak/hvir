@@ -165,7 +165,7 @@
     row.likelyBroken && flag('likely broken')].filter(Boolean)
 
   const urgentRow = (row, options, mode, now) => {
-    const open = () => options.onOpenBead?.(row.id, row.store)
+    const open = () => options.onOpenBead?.(row.id, row.store, row.waitTarget)
     return el('li', { title: row.id },
       row.cardText ? cardButton(row.cardText, row.id, open) : button(row.title || 'Title not read', row.id, open),
       statusLine(row, now), ...rowFlags(row, mode), stuckWhy(row))

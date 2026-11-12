@@ -62,10 +62,32 @@ test('a wait on a decision for over a day reads as likely broken', () => {
   assert.equal(page.facts[2].text, 'you (a decision) for 2 days — likely broken')
 })
 
+test('a wait on her reads by the exact first word, whatever its punctuation or case, and a look-alike name is not her', () => {
+  const old = '2026-11-10T21:00:00Z'
+  const wait = (value) => pageOf(issue({ updated_at: old, metadata: { 'gc.waiting_on': value } }), {}, NOW).facts[2].text
+  assert.equal(wait('(Stephanie) to pick'), '(you) to pick for 2 days — likely broken')
+  assert.equal(wait('stephanie-worker'), 'stephanie-worker for 2 days')
+})
+
+test('a wait note that is not a string reads as unknown on the bead page', () => {
+  for (const value of [{}, false, 17]) {
+    const page = pageOf(issue({ metadata: { 'gc.waiting_on': value } }), {}, NOW)
+    assert.equal(page.facts[2].text, 'unknown, the wait note could not be read')
+  }
+})
+
+test('the bead page uses the wait target the dashboard resolved, and only for the same target', () => {
+  const waiting = issue({ updated_at: '2026-11-10T21:00:00Z', metadata: { 'gc.waiting_on': 'worker-7' } })
+  const resolved = { token: 'worker-7', agent: true, title: 'Pool worker seven' }
+  assert.equal(pageOf(waiting, {}, NOW, resolved).facts[2].text, 'Pool worker seven for 2 days — likely broken')
+  assert.equal(pageOf(waiting, {}, NOW).facts[2].text, 'worker-7 for 2 days')
+  assert.equal(pageOf(waiting, {}, NOW, { ...resolved, token: 'worker-8' }).facts[2].text, 'worker-7 for 2 days')
+})
+
 test('the page renders bead text as text only, never as markup', (t) => {
   const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
   t.after(() => dom.window.close())
-  for (const file of ['view.js', 'needs-model.js', 'card-words.js', 'bead-page.js'])
+  for (const file of ['view.js', 'needs-model.js', 'card-words.js', 'wait-model.js', 'bead-page.js'])
     dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const hostile = '<img src=x onerror="window.hit=1"> **bold**'
   const page = dom.window.beadPage.pageOf(issue({ description: hostile,
@@ -87,6 +109,6 @@ test('the page renders bead text as text only, never as markup', (t) => {
 test('there are no original notes to fold when the page has none', (t) => {
   const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
   t.after(() => dom.window.close())
-  for (const file of ['view.js', 'card-words.js', 'bead-page.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  for (const file of ['view.js', 'card-words.js', 'wait-model.js', 'bead-page.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   assert.equal(dom.window.beadPage.renderOriginal(pageOf(issue(), {}, NOW)), null)
 })

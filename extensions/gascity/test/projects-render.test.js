@@ -569,7 +569,7 @@ const renderUrgent = (t, urgent, linked = []) => {
   for (const file of ['view.js', 'card-words.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
   const root = dom.window.document.querySelector('main')
   const opened = []
-  dom.window.projectsRender.renderDashboard(buildDashboard(input), root, { onOpenBead: (id, store) => opened.push([id, store]) })
+  dom.window.projectsRender.renderDashboard(buildDashboard(input), root, { onOpenBead: (...args) => opened.push(args) })
   const named = (name) => [...root.querySelectorAll(':scope > section')].find((node) => node.querySelector('h2').textContent.startsWith(name))
   const row = (name, id) => [...named(name).querySelectorAll('li')].find((node) => node.title === id)
   return { root, named, row, opened }
@@ -591,7 +591,7 @@ test('a Stuck row explains itself: tracked bead for a convoy, owner seat, unclai
   assert.match(tracked.textContent, /The real work.*Owner: the evals lead/s)
   assert.doesNotMatch(tracked.textContent, /input convoy/)
   tracked.querySelector('button').click()
-  assert.deepEqual(opened, [['fx-t1', 's']])
+  assert.deepEqual(opened, [['fx-t1', 's', { token: '', agent: false, title: '' }]])
   assert.match(row('Stuck', 'fx-t2').textContent, /Title not read/)
   assert.match(row('Stuck', 'fx-lead').textContent, /Owner: the Omni code lead \(leads the project; nobody assigned\)/)
   const flag = row('Stuck', 'fx-lead').querySelector('.projects-flag')
@@ -616,7 +616,9 @@ test('card text is the main open button of Stuck and Waiting on rows, with the s
   assert.equal(stuck.querySelector('.projects-flag').textContent, 'Nobody has recorded what this is waiting for')
   assert.match(stuck.querySelector('.projects-status-line').textContent, /^Owner: the Omni code lead · Waiting on: nothing recorded/)
   main.click()
-  assert.deepEqual(opened, [['fx-k1', 's']])
+  assert.deepEqual(opened, [['fx-k1', 's', { token: '', agent: false, title: '' }]])
+  row('Waiting on', 'fx-k2').querySelector('button').click()
+  assert.deepEqual(opened[1], ['fx-k2', 's', { token: 'omni-49z8xs', agent: false, title: '' }])
   const waiting = row('Waiting on', 'fx-k2')
   assert.equal(waiting.querySelector('button.projects-card-text').textContent, 'Waits for the warning fix.')
   assert.equal(waiting.querySelector('details'), null)

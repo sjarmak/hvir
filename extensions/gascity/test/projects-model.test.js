@@ -650,6 +650,8 @@ test('a wait on her, a decision or an agent for over a day is likely broken; a w
   input.urgent = [
     waits('fx-b-her', 'stephanie'),
     waits('fx-b-her-note', 'Stephanie: reload the extension'),
+    waits('fx-b-her-paren', '(stephanie)'),
+    waits('fx-b-her-lookalike', 'stephanie-worker'),
     waits('fx-b-her-new', 'stephanie', { updated_at: '2026-10-29T10:00:00Z' }),
     waits('fx-b-her-undated', 'stephanie', { updated_at: 'never' }),
     urgent('fx-b-step', { updated_at: old, labels: ['needs/stephanie-step'] }),
@@ -670,10 +672,39 @@ test('a wait on her, a decision or an agent for over a day is likely broken; a w
   const model = buildDashboard(input)
   const rows = [...model.stuck.items, ...model.waiting.items]
   const broken = rows.filter((row) => row.likelyBroken).map((row) => row.id).sort()
-  assert.deepEqual(broken, ['fx-b-bead-agent', 'fx-b-dec', 'fx-b-her', 'fx-b-her-note', 'fx-b-seat', 'fx-b-step', 'fx-b-unclaimed'])
+  assert.deepEqual(broken, ['fx-b-bead-agent', 'fx-b-dec', 'fx-b-her', 'fx-b-her-note', 'fx-b-her-paren', 'fx-b-seat', 'fx-b-step', 'fx-b-unclaimed'])
   const kind = (id) => rows.find((row) => row.id === id).waitKind
-  assert.deepEqual(['fx-b-her', 'fx-b-dec', 'fx-b-bead-agent', 'fx-b-seat', 'fx-b-unclaimed', 'fx-b-time', 'fx-b-quiet'].map(kind),
-    ['her', 'decision', 'agent', 'agent', 'agent', '', ''])
+  assert.deepEqual(['fx-b-her', 'fx-b-her-paren', 'fx-b-her-lookalike', 'fx-b-dec', 'fx-b-bead-agent', 'fx-b-seat', 'fx-b-unclaimed', 'fx-b-time', 'fx-b-quiet'].map(kind),
+    ['her', 'her', '', 'decision', 'agent', 'agent', 'agent', '', ''])
+  const onHer = (id) => rows.find((row) => row.id === id).waitsOnHer
+  assert.deepEqual(['fx-b-her-paren', 'fx-b-her-lookalike'].map(onHer), [true, false])
+})
+
+test('a wait note that is not a string is unknown, never a named wait, and does not hold work out of Stuck', () => {
+  const input = fresh()
+  input.urgent = [{}, false, 17, '  '].map((value, i) =>
+    urgent(`fx-bad-${i}`, { assignee: 'omni-pl', updated_at: '2026-10-29T08:00:00Z', metadata: { 'gc.waiting_on': value } }))
+  const model = buildDashboard(input)
+  assert.deepEqual(model.waiting.items, [])
+  assert.deepEqual(model.stuck.items.map((row) => [row.id, row.waitingOn, row.waitUnreadable, row.stuckReasons]), [
+    ['fx-bad-0', '', true, ['no-movement']],
+    ['fx-bad-1', '', true, ['no-movement']],
+    ['fx-bad-2', '', true, ['no-movement']],
+    ['fx-bad-3', '', false, ['no-movement']],
+  ])
+})
+
+test('each row carries the wait target the dashboard resolved, for the bead page to reuse', () => {
+  const input = fresh()
+  input.urgent = [
+    urgent('fx-tg-seat', { updated_at: '2026-10-27T08:00:00Z', metadata: { 'gc.waiting_on': 'fx-worker-a (rerun)' } }),
+    urgent('fx-tg-raw', { metadata: { 'gc.waiting_on': 'disk headroom' } }),
+  ]
+  const model = buildDashboard(input)
+  const rows = [...model.stuck.items, ...model.waiting.items]
+  const target = (id) => rows.find((row) => row.id === id).waitTarget
+  assert.deepEqual(target('fx-tg-seat'), { token: 'fx-worker-a', agent: true, title: '' })
+  assert.deepEqual(target('fx-tg-raw'), { token: 'disk', agent: false, title: '' })
 })
 
 test('in progress holds active work moved within the hour, stuck says why, and waiting keeps named waits that are not broken', () => {
