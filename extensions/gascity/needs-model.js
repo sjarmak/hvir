@@ -41,7 +41,32 @@
     return typeof value === 'string' ? value.trim() : ''
   }
 
-  function herSteps(issues) {
+  const CARD_TEXTS_RECORD = 'om-p86nj8'
+  const CARD_TEXTS_KEY = 'gc.card_texts'
+  const cardTexts = (entries, invalid) => Object.freeze({ texts: new Map(entries), invalid })
+
+  const parseCardTexts = (raw) => {
+    try {
+      const parsed = JSON.parse(raw)
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : null
+    } catch {
+      return null
+    }
+  }
+
+  function cardTextRecord(beads) {
+    const raw = beads.find((bead) => bead.id === CARD_TEXTS_RECORD)?.metadata?.[CARD_TEXTS_KEY]
+    if (raw === undefined) return cardTexts([], false)
+    const parsed = typeof raw === 'string' ? parseCardTexts(raw) : null
+    if (!parsed) return cardTexts([], true)
+    return cardTexts(Object.entries(parsed).filter(([, value]) => typeof value === 'string' && value.trim())
+      .map(([id, value]) => [id, value.trim()]), false)
+  }
+
+  const cardText = (issue, texts = new Map()) => metaText(issue, 'gc.card_text') || texts.get(issue?.id) || ''
+  const descriptionOf = (issue) => typeof issue?.description === 'string' ? issue.description : ''
+
+  function herSteps(issues, texts = new Map()) {
     return issues
       .filter((issue) => issue.status === 'open' && labelled(issue, STEP_LABEL))
       .map((issue) => ({
@@ -50,6 +75,8 @@
         store: issue.store,
         step: metaText(issue, 'gc.her_step'),
         scope: metaText(issue, 'gc.scope'),
+        cardText: cardText(issue, texts),
+        description: descriptionOf(issue),
       }))
   }
   const OPTIONS_KEY = 'gc.options'
@@ -117,6 +144,10 @@
     stepArgs,
     openAsks,
     herSteps,
+    CARD_TEXTS_RECORD,
+    cardTextRecord,
+    cardText,
+    descriptionOf,
     parseOptions,
     cardHash,
     validAnswer,

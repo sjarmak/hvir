@@ -601,6 +601,68 @@ test('a Stuck row explains itself: tracked bead for a convoy, owner seat, unclai
   assert.equal(routed.querySelector('.projects-flag'), null)
 })
 
+test('card text leads Stuck and Waiting on rows and folds title, ids, status line and description into details', (t) => {
+  const text = 'The bias run needs a rerun after the fix lands.'
+  const { row, opened } = renderUrgent(t, [
+    bead('fx-k1', { assignee: 'omni-pl', description: 'raw: rerun after omni-49z8xs', metadata: { 'gc.card_text': ` ${text} ` } }),
+    bead('fx-k2', { description: 'raw wait note', metadata: { 'gc.waiting_on': 'omni-49z8xs', 'gc.card_text': 'Waits for the warning fix.' } }),
+    bead('fx-k3', { metadata: {} }),
+  ])
+  const stuck = row('Stuck', 'fx-k1')
+  assert.equal(stuck.querySelector('.projects-card-text').textContent, text)
+  const details = stuck.querySelector('details')
+  assert.equal(details.open, false)
+  assert.match(details.textContent, /Title fx-k1.*fx-k1.*omni-pl.*no update for.*raw: rerun after omni-49z8xs/s)
+  assert.equal(stuck.querySelector('.projects-flag').textContent, 'no wait recorded')
+  assert.equal(details.contains(stuck.querySelector('.projects-flag')), false)
+  details.querySelector('button').click()
+  assert.deepEqual(opened, [['fx-k1', 's']])
+  const waiting = row('Waiting on', 'fx-k2')
+  assert.equal(waiting.querySelector('.projects-card-text').textContent, 'Waits for the warning fix.')
+  assert.match(waiting.querySelector('details').textContent, /Title fx-k2.*waiting on omni-49z8xs.*raw wait note/s)
+  const plain = row('Stuck', 'fx-k3')
+  assert.equal(plain.querySelector('details'), null)
+  assert.equal(plain.querySelector('.projects-card-text'), null)
+  assert.equal(plain.querySelector('button').textContent, 'Title fx-k3')
+})
+
+test('card text leads a Needs you row, keeps the answer buttons visible and folds title, id and description away', (t) => {
+  const input = structuredClone(fixture)
+  const ask = input.decisions.find((bead) => bead.status === 'open' && (bead.labels ?? []).includes('needs/stephanie') && !bead.metadata?.['gc.answered'])
+  ask.description = 'Raw decision body'
+  ask.metadata = { ...ask.metadata, 'gc.card_text': 'Pick the accent colour so the catalog can ship.' }
+  const model = buildDashboard(input)
+  assert.equal(model.needsYou.find((entry) => entry.id === ask.id).cardText, 'Pick the accent colour so the catalog can ship.')
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  dom.window.Date.now = () => Date.parse(fixture.now)
+  for (const file of ['view.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const root = dom.window.document.querySelector('main')
+  dom.window.projectsRender.renderDashboard(model, root, {})
+  const needs = [...root.querySelectorAll(':scope > section')].find((node) => node.querySelector('h2').textContent === 'Needs you')
+  const rows = [...needs.querySelectorAll(':scope > ul > li')]
+  const shown = rows.find((node) => node.querySelector('.projects-card-text'))
+  assert.equal(shown.querySelector('.projects-card-text').textContent, 'Pick the accent colour so the catalog can ship.')
+  const details = shown.querySelector(':scope > details')
+  assert.equal(details.open, false)
+  assert.match(details.textContent, new RegExp(`${ask.title}.*${ask.id}.*Raw decision body`, 's'))
+  assert.ok(rows.filter((node) => node !== shown).every((node) => node.querySelector(':scope > details') === null))
+})
+
+test('an unreadable card text record shows a warning under Needs you', (t) => {
+  const input = structuredClone(fixture)
+  input.artifacts = [...input.artifacts, { id: 'om-p86nj8', title: 'Card texts', status: 'open', labels: ['city-artifact'],
+    store: '/hq', metadata: { 'gc.card_texts': '{bad' } }]
+  const dom = new JSDOM('<main></main>', { runScripts: 'outside-only' })
+  t.after(() => dom.window.close())
+  for (const file of ['view.js', 'projects-render.js']) dom.window.eval(readFileSync(`${__dirname}/../${file}`, 'utf8'))
+  const root = dom.window.document.querySelector('main')
+  dom.window.projectsRender.renderDashboard(buildDashboard(input), root, {})
+  assert.match(root.textContent, /Card text record could not be read/)
+  dom.window.projectsRender.renderDashboard(buildDashboard(structuredClone(fixture)), root, {})
+  assert.doesNotMatch(root.textContent, /Card text record/)
+})
+
 test('in flight and queued say how many more rows are hidden, and an unread seat list changes the claim wording', (t) => {
   const input = structuredClone(fixture)
   input.seatJobs = []

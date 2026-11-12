@@ -361,7 +361,8 @@
     const waitingOn = String(meta(bead, 'gc.waiting_on')).trim() || (stepLabel ? truthApi.HER : '')
     return { ...identity(bead), state: bead.status ?? '', convoy: bead.convoy ?? '', ...ownerOf(bead, context),
       priority: Number(bead.priority), updatedAt: validTime(bead.updated_at) ? bead.updated_at : null,
-      waitingOn, waitsOnHer: stepLabel || namesHerFirst(waitingOn), unclaimedBy: unclaimedPool(bead, waitingOn) }
+      waitingOn, waitsOnHer: stepLabel || namesHerFirst(waitingOn), unclaimedBy: unclaimedPool(bead, waitingOn),
+      cardText: needsApi.cardText(bead, context.texts), description: needsApi.descriptionOf(bead) }
   }
 
   const oldestFirst = (a, b) => (a.updatedAt === null) - (b.updatedAt === null) ||
@@ -382,10 +383,11 @@
     const index = new Map(beads.map((bead) => [bead.id, bead]))
     const projects = new Map((input.projects ?? []).map((bead) => [bead.id, bead]))
     const states = input.refStates ?? {}
+    const cardTexts = needsApi.cardTextRecord(input.artifacts ?? [])
     const openDecisions = (input.decisions ?? []).filter((bead) => bead.status === 'open')
       .map((bead) => ({ ...bead, project: identity(projects.get(meta(bead, 'gc.project'))),
         refs: references([bead], states), needsYou: truthApi.waitsOnHer(bead), tier: tierLabel(bead),
-        inDelivery: truthApi.inDelivery(bead), ...withAnswerTo(bead, input.sessions) }))
+        inDelivery: truthApi.inDelivery(bead), cardText: needsApi.cardText(bead, cardTexts.texts), ...withAnswerTo(bead, input.sessions) }))
     const needsYou = openDecisions.filter((bead) => bead.needsYou)
     const inDelivery = openDecisions.filter((bead) => bead.inDelivery)
     const entries = collectActivity(input, index, projects)
@@ -396,9 +398,10 @@
       groups.get(card.lead).cards.push(card)
     }
     const stepBeads = new Map([...(input.herSteps ?? []), ...openDecisions].map((bead) => [`${bead.store}#${bead.id}`, bead]))
-    const herSteps = needsApi.herSteps([...stepBeads.values()])
+    const herSteps = needsApi.herSteps([...stepBeads.values()], cardTexts.texts)
     const stepsUnread = (input.unread ?? []).includes('herSteps')
-    return { now: input.now, ...urgentLists(input, input.decisions ?? [], { index, projects }), needsYou, inDelivery, herSteps, stepsUnread, cards: [...groups.values()], activeNow: groupActivity(entries),
+    return { now: input.now, ...urgentLists(input, input.decisions ?? [], { index, projects, texts: cardTexts.texts }), needsYou, inDelivery, herSteps, stepsUnread,
+      cardTextsInvalid: cardTexts.invalid, cards: [...groups.values()], activeNow: groupActivity(entries),
       outcomesShown: Array.isArray(input.outcomes) }
   }
 

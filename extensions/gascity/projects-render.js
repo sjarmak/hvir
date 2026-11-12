@@ -119,18 +119,28 @@
     return container
   }
 
-  const renderAsk = (ask, options, tagged = false) => el('li', {},
-    tagged && text(ask.project?.title ?? 'No project', 'projects-tag'),
-    ask.tier && text(ask.tier, 'projects-tag'),
-    button(ask.title, ask.id, () => options.onOpenBead?.(ask.id, ask.store)),
-    renderAnswer(ask, options),
-    renderAnswerTo(ask, options),
-    renderRefs(ask.refs, options))
+  const cardLead = (cardText) => paragraph(cardText, 'projects-card-text')
+  const cardDetails = (description, ...parts) => el('details', { className: 'projects-card-details' },
+    el('summary', {}, 'Details'), ...parts, description && paragraph(description, 'hvir-meta projects-card-raw'))
 
-  const renderStep = (entry, options) => el('li', { className: 'projects-step', title: entry.id },
-    entry.scope && text(entry.scope, 'projects-tag'),
-    button(entry.step || `No step written: ${entry.title || entry.id}`, entry.id, () => options.onOpenBead?.(entry.id, entry.store)),
-    text(entry.id, 'hvir-meta'))
+  const renderAsk = (ask, options, tagged = false) => {
+    const title = button(ask.title, ask.id, () => options.onOpenBead?.(ask.id, ask.store))
+    const actions = [renderAnswer(ask, options), renderAnswerTo(ask, options), renderRefs(ask.refs, options)]
+    return el('li', {},
+      tagged && text(ask.project?.title ?? 'No project', 'projects-tag'),
+      ask.tier && text(ask.tier, 'projects-tag'),
+      ...(ask.cardText
+        ? [cardLead(ask.cardText), ...actions, cardDetails(ask.description, title, text(` · ${ask.id}`, 'hvir-meta'))]
+        : [title, ...actions]))
+  }
+
+  const renderStep = (entry, options) => {
+    const parts = [button(entry.step || `No step written: ${entry.title || entry.id}`, entry.id, () => options.onOpenBead?.(entry.id, entry.store)),
+      text(entry.id, 'hvir-meta')]
+    return el('li', { className: 'projects-step', title: entry.id },
+      entry.scope && text(entry.scope, 'projects-tag'),
+      ...(entry.cardText ? [cardLead(entry.cardText), cardDetails(entry.description, ...parts)] : parts))
+  }
 
   const stepSection = (model, options) => ((model.herSteps ?? []).length > 0 || model.stepsUnread) &&
     section('Your next step', list((model.herSteps ?? []).map((entry) => renderStep(entry, options)), ''),
@@ -146,14 +156,19 @@
   const rowWait = (row, waiting) => {
     if (waiting) return [text(` · waiting on ${row.waitingOn}${row.updatedAt ? ` for ${age(row)}` : ''}`, 'projects-warning')]
     if (row.unclaimedBy) return [text(` · unclaimed by ${row.unclaimedBy} since ${row.updatedAt ? window.ago(row.updatedAt) : 'an unrecorded time'}`, 'projects-warning')]
-    return [text(' · ', 'hvir-meta'), flag('no wait recorded'),
-      text(row.updatedAt ? ` · no update for ${age(row)}` : ' · no update recorded', 'projects-warning')]
+    return [text(row.updatedAt ? ` · no update for ${age(row)}` : ' · no update recorded', 'projects-warning')]
   }
 
-  const urgentRow = (row, options, waiting) => el('li', { title: row.id },
-    button(row.title || 'Title not read', row.id, () => options.onOpenBead?.(row.id, row.store)),
-    rowMeta(row),
-    ...rowWait(row, waiting))
+  const rowFlags = (row, waiting) => [!waiting && !row.unclaimedBy && flag('no wait recorded')].filter(Boolean)
+
+  const urgentRow = (row, options, waiting) => {
+    const status = [button(row.title || 'Title not read', row.id, () => options.onOpenBead?.(row.id, row.store)),
+      rowMeta(row), ...rowWait(row, waiting)]
+    const flags = rowFlags(row, waiting)
+    return el('li', { title: row.id }, ...(row.cardText
+      ? [cardLead(row.cardText), ...flags, cardDetails(row.description, ...status)]
+      : [...status, ...flags]))
+  }
 
   const urgentSection = (title, group, empty, options, waiting) => {
     const rows = group?.items ?? []
@@ -346,7 +361,8 @@
       el('h3', {}, group.project?.title ?? 'No project'), list(group.items.map(renderActivity), 'No active agents')))
     root.replaceChildren(
       ...[stepSection(model, options)].filter(Boolean),
-      section('Needs you', list(model.needsYou.map((ask) => renderAsk(ask, options, true)), 'Nothing needs you')),
+      section('Needs you', list(model.needsYou.map((ask) => renderAsk(ask, options, true)), 'Nothing needs you'),
+        model.cardTextsInvalid && paragraph('Card text record could not be read', 'projects-warning')),
       ...urgentSections(model, options),
       section('Active now', el('div', { className: 'projects-active-grid' }, ...activeGroups),
         !activeGroups.length && paragraph('No active agents', 'hvir-meta'),
@@ -482,7 +498,8 @@
       paragraph(`${model.needsYou.length} need you · ${model.inDelivery.length} answered, waiting on agents`, 'projects-nav-counts'),
       overview,
       ...[stepSection(model, options)].filter(Boolean),
-      section('Needs you', list(model.needsYou.map((ask) => renderAsk(ask, options, true)), 'Nothing needs you')),
+      section('Needs you', list(model.needsYou.map((ask) => renderAsk(ask, options, true)), 'Nothing needs you'),
+        model.cardTextsInvalid && paragraph('Card text record could not be read', 'projects-warning')),
       ...urgentSections(model, options),
       ...liveGroups(model).map((group) => section(group.lead, el('ul', {}, ...group.cards.map((card) => navRow(card, options))))),
       ...archive(model, options, root))

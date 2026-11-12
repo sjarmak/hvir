@@ -603,6 +603,45 @@ test('a stuck row names its owner seat, falling back to the project lead, and an
   assert.equal(byId('fx-o-none').unclaimedBy, '')
 })
 
+const cardRecord = (texts) => ({ id: 'om-p86nj8', title: 'Card texts', status: 'open', labels: ['city-artifact', 'city-infra'],
+  store: '/hq', metadata: { 'gc.card_texts': typeof texts === 'string' ? texts : JSON.stringify(texts) } })
+
+test('card text comes from the bead itself first, then the card text record, else nothing', () => {
+  const input = fresh()
+  const ask = input.decisions.find((bead) => bead.status === 'open' && (bead.labels ?? []).includes('needs/stephanie') && !bead.metadata?.['gc.answered'])
+  const step = { id: 'dec-step', title: 'Step', status: 'open', labels: ['needs/stephanie-step'], store: '/rigs/decisions', metadata: {} }
+  input.herSteps = [step]
+  input.urgent = [
+    urgent('fx-own', { metadata: { 'gc.card_text': 'Own words.' } }),
+    urgent('fx-mapped'),
+    urgent('fx-none'),
+  ]
+  input.artifacts = [...input.artifacts, cardRecord({ 'fx-own': 'Map words lose.', 'fx-mapped': ' Map words. ', [ask.id]: 'Ask words.',
+    'dec-step': 'Step words.', 'fx-none': 7 })]
+  const model = buildDashboard(input)
+  const row = (id) => model.stuck.items.find((entry) => entry.id === id)
+  assert.equal(row('fx-own').cardText, 'Own words.')
+  assert.equal(row('fx-mapped').cardText, 'Map words.')
+  assert.equal(row('fx-none').cardText, '')
+  assert.equal(model.needsYou.find((entry) => entry.id === ask.id).cardText, 'Ask words.')
+  assert.equal(model.herSteps.find((entry) => entry.id === 'dec-step').cardText, 'Step words.')
+  assert.equal(model.cardTextsInvalid, false)
+  assert.ok(!cards(model).some((entry) => entry.artifacts.some((artifact) => artifact.id === 'om-p86nj8')))
+})
+
+test('an unreadable card text record leaves rows on their own text and says so', () => {
+  for (const broken of ['{not json', '[1,2]', 'null']) {
+    const input = fresh()
+    input.urgent = [urgent('fx-mapped')]
+    input.artifacts = [...input.artifacts, cardRecord(broken)]
+    const model = buildDashboard(input)
+    assert.equal(model.stuck.items[0].cardText, '')
+    assert.equal(model.cardTextsInvalid, true)
+  }
+  const absent = buildDashboard(fresh())
+  assert.equal(absent.cardTextsInvalid, false)
+})
+
 test('a claimed bead says "no live session" until seat jobs were actually read', () => {
   const claim = { id: 'fx-claimed', title: 'Claimed', status: 'in_progress', labels: [],
     metadata: { 'proj.id': 'fx-project-1' }, assignee: 'fx-gone' }

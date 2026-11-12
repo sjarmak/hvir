@@ -125,6 +125,14 @@
   border: 1px solid currentColor;
   border-radius: 4px;
   padding: 0 4px;
+  margin-left: 4px;
+}
+.projects-card-text {
+  margin: 0;
+  color: var(--text-strong);
+}
+.projects-card-details summary {
+  cursor: pointer;
 }
 .projects-error {
   color: var(--danger-text);

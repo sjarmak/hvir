@@ -82,9 +82,9 @@ test('herSteps keeps open step-labelled beads, answered or not, with her step an
     decision('dec-6', { labels: undefined }),
   ])
   assert.deepEqual(steps, [
-    { id: 'dec-1', title: 'Decision dec-1', store: '/rigs/decisions', step: 'run the login', scope: 'omni' },
-    { id: 'dec-2', title: 'Decision dec-2', store: '/rigs/decisions', step: 'pull the branch', scope: '' },
-    { id: 'dec-5', title: 'Decision dec-5', store: '/rigs/decisions', step: '', scope: '' },
+    { id: 'dec-1', title: 'Decision dec-1', store: '/rigs/decisions', step: 'run the login', scope: 'omni', cardText: '', description: '' },
+    { id: 'dec-2', title: 'Decision dec-2', store: '/rigs/decisions', step: 'pull the branch', scope: '', cardText: '', description: '' },
+    { id: 'dec-5', title: 'Decision dec-5', store: '/rigs/decisions', step: '', scope: '', cardText: '', description: '' },
   ])
 })
 
@@ -131,4 +131,29 @@ test('a labelled bead with no step written still shows, naming the gap without s
     assert.doesNotMatch(section.textContent, /undefined|null|false/)
     shown.dom.window.close()
   }
+})
+
+test('card text leads a step row and folds the step, id and raw description into details', (t) => {
+  const input = withStep()
+  const target = input.decisions.find((bead) => bead.id === 'fx-ask-answered')
+  target.description = 'Raw notes for the agent'
+  target.metadata = { ...target.metadata, 'gc.card_text': '  Open the shared sheet so the agents can start. Only you have access.  ' }
+  assert.equal(buildDashboard(input).herSteps[0].cardText, 'Open the shared sheet so the agents can start. Only you have access.')
+  const { dom, root, opened } = render(input, 'renderDashboard')
+  t.after(() => dom.window.close())
+  const row = root.querySelector('.projects-step')
+  assert.equal(row.querySelector('.projects-card-text').textContent, 'Open the shared sheet so the agents can start. Only you have access.')
+  const details = row.querySelector('details')
+  assert.equal(details.open, false)
+  assert.match(details.textContent, /open the sheet and share it.*fx-ask-answered.*Raw notes for the agent/s)
+  details.querySelector('button').click()
+  assert.equal(opened[0][0], 'fx-ask-answered')
+})
+
+test('a step row without card text renders as before, with no details', (t) => {
+  const { dom, root } = render(withStep(), 'renderDashboard')
+  t.after(() => dom.window.close())
+  const row = root.querySelector('.projects-step')
+  assert.equal(row.querySelector('details'), null)
+  assert.equal(row.querySelector('.projects-card-text'), null)
 })
