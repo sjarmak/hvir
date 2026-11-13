@@ -308,8 +308,8 @@ describe('Beads workspace extension package', () => {
       'needs-you': 1,
       'in-flight': 1,
       'dependency-ready': 1,
-      planned: 1,
-      blocked: 1,
+      planned: 2,
+      blocked: 0,
       'data-hygiene': 1,
     })
     expect(view.beads.sections.some((section) => section.key === 'orchestration')).toBe(
@@ -576,7 +576,14 @@ describe('Beads workspace extension package', () => {
         '--include-gates',
         '--include-infra',
       ],
-      ['list', '--format', 'digraph', '--flat', '--no-pager', '-n', '0'],
+      [
+        'list',
+        '--format',
+        '{{.IssueID}} dependsOn {{.DependsOnID}} {{.Type}}',
+        '--no-pager',
+        '-n',
+        '500',
+      ],
       ['gate', 'list', '--json'],
     ])
     expect(
