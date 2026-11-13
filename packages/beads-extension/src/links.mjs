@@ -1,8 +1,4 @@
 const MAX_URL_LENGTH = 2048
-const PACKAGE_ANALYTICS = Object.freeze({
-  baseUrl: 'https://sjarmak.omniapp.co',
-  dashboardId: 'gas-city-factory-rig-health',
-})
 
 export function beadEvalLink(metadata) {
   if (!metadata || !Object.hasOwn(metadata, 'eval.run_url')) return { kind: 'absent' }
@@ -11,11 +7,14 @@ export function beadEvalLink(metadata) {
   return origin === undefined ? { kind: 'invalid' } : { kind: 'available', url, origin }
 }
 
-export function packageAnalyticsUrl() {
-  const origin = safeHttpsOrigin(PACKAGE_ANALYTICS.baseUrl)
-  if (origin === undefined || origin !== PACKAGE_ANALYTICS.baseUrl) return undefined
-  const dashboardId = PACKAGE_ANALYTICS.dashboardId
-  if (!/^[A-Za-z0-9_.-]{1,64}$/u.test(dashboardId)) return undefined
+export function packageAnalyticsUrl(configuration) {
+  if (!configuration || typeof configuration !== 'object' || Array.isArray(configuration))
+    return undefined
+  const origin = safeHttpsOrigin(configuration.baseUrl)
+  if (origin === undefined || origin !== configuration.baseUrl) return undefined
+  const dashboardId = configuration.dashboardId
+  if (typeof dashboardId !== 'string' || !/^[A-Za-z0-9_.-]{1,64}$/u.test(dashboardId))
+    return undefined
   return `${origin}/dashboards/${encodeURIComponent(dashboardId)}`
 }
 
