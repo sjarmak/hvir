@@ -862,6 +862,23 @@ test('open work nobody owns is not Stuck as unowned until it has sat an hour, so
   assert.deepEqual(model.notStarted.items.map((row) => row.id), ['fx-u-dispatching'])
 })
 
+test('open work nobody owns with no readable update time ages from its creation, and with neither time it is Stuck', () => {
+  const input = fresh()
+  input.urgent = [
+    urgent('fx-u-created-old', { updated_at: 'never', created_at: '2026-10-20T09:00:00Z' }),
+    urgent('fx-u-created-new', { updated_at: undefined, created_at: '2026-10-29T11:57:00Z' }),
+    urgent('fx-u-no-times', { updated_at: undefined }),
+    urgent('fx-u-bad-times', { updated_at: '', created_at: 'soon' }),
+  ]
+  const model = buildDashboard(input)
+  assert.deepEqual(model.stuck.items.map((row) => [row.id, row.stuckReasons]).sort(), [
+    ['fx-u-bad-times', ['unowned']],
+    ['fx-u-created-old', ['unowned']],
+    ['fx-u-no-times', ['unowned']],
+  ])
+  assert.deepEqual(model.notStarted.items.map((row) => row.id), ['fx-u-created-new'])
+})
+
 test('open work nobody is assigned to but a live seat job is on is In progress, not unowned', () => {
   const input = fresh()
   input.inProgress = input.inProgress.filter((bead) => bead.id !== 'fx-seat-work')

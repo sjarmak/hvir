@@ -382,6 +382,7 @@
       waitNameTitles: wait.waitNames.map((name) => waitTitleOf(name, context)),
       waitTarget: { token: wait.waitToken, agent: Boolean(wait.waitToken) && isAgent(wait.waitToken), title: waitTitle },
       routed: Boolean(waitApi.routeOf(bead)), assigned: Boolean(bead.assignee),
+      createdAt: validTime(bead.created_at) ? bead.created_at : null,
       active: context.active.has(beadKey(bead)),
       cardText: needsApi.cardText(bead, context.texts) }
   }
@@ -398,12 +399,17 @@
 
   const stillOverHour = (row, now) => row.updatedAt !== null && Date.parse(now) - Date.parse(row.updatedAt) > HOUR_MS
 
+  const unownedOverHour = (row, now) => {
+    const since = row.updatedAt ?? row.createdAt
+    return since === null || Date.parse(now) - Date.parse(since) > HOUR_MS
+  }
+
   const hasNamedWait = (row) => Boolean(row.waitingOn || row.unclaimedBy)
 
   const stuckReasons = (row, now) => [
     row.likelyBroken && 'broken-wait',
     !hasNamedWait(row) && !row.active && stillOverHour(row, now) && 'no-movement',
-    !row.waitingOn && !row.active && row.state === 'open' && !row.assigned && !row.routed && stillOverHour(row, now) && 'unowned',
+    !row.waitingOn && !row.active && row.state === 'open' && !row.assigned && !row.routed && unownedOverHour(row, now) && 'unowned',
   ].filter(Boolean)
 
   const urgentLists = (input, decisions, context) => {
