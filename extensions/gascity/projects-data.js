@@ -55,26 +55,27 @@
     ? `Needs you read ${ageText(needs.readAt)}; other sections from ${ageText(shown.payload.now)}: ${reason}`
     : `showing data from ${ageText(shown.payload.now)}: ${reason}`
 
-  const readCity = async (workspace, args, parse, failures, connector = 'gc', options) => {
+  const readCity = async (workspace, { args, parse, connector = 'gc', field }, failures, options) => {
     try {
       return parse(await window.host.run(connector, workspace, args, options))
     } catch (error) {
       if (error.reason) failures.notRun = true
+      if (field) failures.unread.push(field)
       failures.errors.push(`${connector} ${args.slice(0, 2).join(' ')}: ${error.message}`)
       return connector === 'gc' ? [] : undefined
     }
   }
 
-  const read = async (workspace, { onNeeds } = {}) => {
+  const read = async (workspace, { onNeeds, lastGood } = {}) => {
     const deadline = Date.now() + REFRESH_DEADLINE_MS
     const connectors = await window.host.availability({ workspace })
     const missing = ['gc', 'bd'].find((name) => connectors[name] !== 'supported')
     if (missing) return { missing }
-    const failures = { errors: [], notRun: false }
+    const failures = { errors: [], notRun: false, unread: [] }
     const { errors } = failures
     const [city, sessions] = await Promise.all([
-      readCity(workspace, ['rig', 'list', '--json'], window.crewParse.parseRigList, failures),
-      readCity(workspace, ['session', 'list', '--json'], loader.liveSessions, failures),
+      readCity(workspace, { args: ['rig', 'list', '--json'], parse: window.crewParse.parseRigList }, failures),
+      readCity(workspace, { args: ['session', 'list', '--json'], parse: loader.liveSessions, field: 'sessions' }, failures),
     ])
     const stores = loader.storesFor(workspace, Array.isArray(city) ? {} : city)
     const requests = loader.storeRequests(stores)
@@ -100,23 +101,30 @@
     if (loader.ancestorRequests(reads).length)
       errors.push(`parent chains deeper than ${loader.ANCESTOR_ROUNDS} unread levels were not followed`)
     const outcomes = connectors[loader.OUTCOME_CONNECTOR] === 'supported'
-      ? await readCity(workspace, [...loader.OUTCOME_ARGS], loader.parseOutcomes, failures, loader.OUTCOME_CONNECTOR, options)
+      ? await readCity(workspace, { args: [...loader.OUTCOME_ARGS], parse: loader.parseOutcomes,
+        connector: loader.OUTCOME_CONNECTOR, field: 'outcomes' }, failures, options)
       : undefined
     const result = loader.assemblePayload({ now: new Date(Date.now()).toISOString(), reads, sessions, errors })
-    if (outcomes) result.payload.outcomes = outcomes
-    const conflicts = window.projectsModel.duplicateProjects(result.payload.projects)
+    const { payload, lastGood: kept, stale } = loader.keepLastGood({ lastGood, payload: { ...result.payload,
+      ...(outcomes ? { outcomes } : {}), unread: [...result.payload.unread, ...failures.unread] } })
+    const conflicts = window.projectsModel.duplicateProjects(payload.projects)
     if (conflicts.length) result.errors.push(`project id in several stores: ${conflicts.join(', ')}`)
     const projectsRead = reads.some((entry) => entry.key === 'projects' && !entry.error)
     const deferred = failures.notRun || reads.some((entry) => entry.notRun) ||
       !projectsRead
     const decisionReads = reads.filter((entry) => entry.key === 'decisions')
     const complete = !deferred && !failures.errors.length && decisionReads.length > 0 && decisionReads.every((entry) => !entry.error)
-    return { answerable, complete, model: window.projectsModel.buildDashboard(result.payload), payload: result.payload, errors: result.errors, sessions, deferred, projectsRead, needs }
+    return { answerable, complete, model: window.projectsModel.buildDashboard(payload), payload, errors: result.errors,
+      sessions: payload.sessions, deferred, projectsRead, needs, lastGood: kept, stale }
   }
+
+  const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+
+  const staleLine = ({ failedAt, readAt }) => window.el('p', { className: 'projects-warning projects-stale' },
+    `Couldn't refresh at ${clock(failedAt)}; showing what was read at ${clock(readAt)}`)
 
   const statusLine = (data, workspace, withCounts = true) => {
     const { model, payload, errors, sessions } = data
-    const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
     const time = clock(payload.now)
     const needsTime = data.needs ? clock(data.needs.readAt) : time
     const needsRead = needsTime === time ? '' : ` · Needs you read ${needsTime}`
@@ -177,6 +185,7 @@
         setStatus([note, extra].filter(Boolean).join(' · '))
         return
       }
+      if (data.stale) ui.projects.prepend(staleLine(data.stale))
       setStatus([note, statusLine(data, context.workspace, counts), extra].filter(Boolean).join(' · '))
     }
     const unrendered = new Set()
@@ -218,7 +227,7 @@
           show(shown, context, deferredNote(earlier, 'other sections refreshing…', needs))
         } else show(shown, context, `Needs you read ${ageText(needs.readAt)}; other sections loading…`)
       }
-      const data = await read(workspace, { onNeeds: publishNeeds })
+      const data = await read(workspace, { onNeeds: publishNeeds, lastGood: shownBy.get(workspace.id)?.lastGood })
       if (workspace.id !== shownId) return
       missing = data.missing
       ui.connect.hidden = !missing

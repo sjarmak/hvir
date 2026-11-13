@@ -154,9 +154,26 @@
     return { payload, errors: failures }
   }
 
+  const KEPT_FIELDS = Object.freeze([...fields, 'outcomes', 'sessions'])
+  const failedFields = (unread) => unread.includes('projects') ? [...unread, ...Object.values(LABEL_FIELDS)] : unread
+
+  const keepLastGood = ({ payload, lastGood = {} }) => {
+    const unread = payload.unread ?? []
+    const failed = failedFields(unread)
+    const kept = KEPT_FIELDS.filter((field) => failed.includes(field) && lastGood[field])
+    const fresh = KEPT_FIELDS.filter((field) => !failed.includes(field) && payload[field] !== undefined)
+    return {
+      payload: { ...payload, ...Object.fromEntries(kept.map((field) => [field, lastGood[field].value])),
+        unread: unread.filter((field) => !kept.includes(field)) },
+      lastGood: { ...lastGood, ...Object.fromEntries(fresh.map((field) => [field, { value: payload[field], at: payload.now }])) },
+      stale: kept.length ? { failedAt: payload.now, readAt: kept.map((field) => lastGood[field].at).sort()[0] } : null,
+    }
+  }
+
   const api = Object.freeze({
     labeledArgs, splitLabeled, inProgressArgs, urgentArgs, linkedArgs, showArgs, stepArgs, decisionArgs,
     ANCESTOR_ROUNDS, OUTCOME_CONNECTOR, OUTCOME_ARGS, parseOutcomes, storesFor, storeRequests, workflowRequests, ancestorRequests, liveSessions, assemblePayload,
+    keepLastGood,
   })
   if (node) module.exports = api
   else window.projectsLoad = api
