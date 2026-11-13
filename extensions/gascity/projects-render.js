@@ -85,15 +85,23 @@
       return true
     }
     const show = (result) => outcome.replaceChildren(outcomeNote({ phase: 'idle', result }))
-    const settle = async (choice) => {
-      disableAll(true)
-      const sha = await window.needsModel.cardHash(ask)
-      if (!sha) {
+    const fingerprint = async (submitting = false) => {
+      try {
+        const sha = await window.needsModel.cardHash(ask)
+        if (sha) return sha
+        throw new Error('This card cannot be fingerprinted')
+      } catch (error) {
+        if (!submitting && choiceButtons.some((node) => node.disabled)) return null
         disableAll(false)
         confirmBox.replaceChildren()
-        show({ exitCode: 2, line: 'This card cannot be fingerprinted, so no answer was sent' })
-        return
+        show({ exitCode: 2, line: `No answer was sent: ${error.message}` })
+        return null
       }
+    }
+    const settle = async (choice) => {
+      disableAll(true)
+      const sha = await fingerprint(true)
+      if (!sha) return
       key = store.keyOf(options.workspaceId, ask.id, sha)
       store.subscribe(key, sync)
       if (!store.begin(key)) return
@@ -115,11 +123,11 @@
     choiceButtons.push(...choices.map((choice) => button(
       `${choice.letter}: ${clip(choice.text, OPTION_LABEL_MAX)}`, choice.text, () => askToConfirm(choice))))
     container.prepend(...choiceButtons)
-    void window.needsModel.cardHash(ask).then((sha) => {
+    void fingerprint().then((sha) => {
       if (!sha) return
       key = store.keyOf(options.workspaceId, ask.id, sha)
       store.subscribe(key, sync)
-      sync(store.get(key))
+      if (!outcome.hasChildNodes()) sync(store.get(key))
     })
     return container
   }

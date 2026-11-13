@@ -25,6 +25,8 @@
   const actionBound = () => bound
   const onUnbound = (listener) => { unboundListeners.push(listener) }
 
+  const notSent = (reason) => Object.assign(new Error(`No answer was sent: ${reason}`), { dispatch: 'not-sent' })
+
   const requireBound = () => {
     if (!bound) throw Object.assign(new Error(UNBOUND_LINE), { dispatch: 'not-sent' })
   }
@@ -33,9 +35,9 @@
     requireBound()
     const { decId, letter, cardSha256 } = input ?? {}
     if (!window.needsModel.validAnswer(decId, letter, cardSha256))
-      throw new Error('The answer needs a decision id, one letter and the card hash')
+      throw notSent('The answer needs a decision id, one letter and the card hash')
     if (typeof actionId !== 'string' || actionId === '')
-      throw new Error('An answer can only be recorded from an action')
+      throw notSent('An answer can only be recorded from an action')
     const result = await host.run(CONNECTOR, workspace, [decId, letter, cardSha256], { exit: true, actionId, beforeSend: requireBound })
     return { exitCode: result.exitCode, line: outcomeLine(result) }
   }
@@ -56,12 +58,12 @@
   async function handle(bridge, invocation) {
     const key = keyOf(invocation)
     if (inFlight.has(key)) {
-      reply(bridge, invocation, { value: { unknown: true, line: UNKNOWN_LINE } })
+      reply(bridge, invocation, { value: failedValue(notSent('An answer for this card is already in flight')) })
       return
     }
     inFlight.add(key)
     try {
-      if (!invocation.context?.workspace) throw new Error('This action needs a workspace')
+      if (!invocation.context?.workspace) throw notSent('This action needs a workspace')
       const value = await record(window.host, invocation.context.workspace, invocation.input, invocation.id)
       reply(bridge, invocation, { value })
     } catch (error) {

@@ -213,7 +213,7 @@ test('a card whose text cannot be fingerprinted sends nothing and says so as an 
   assert.equal(calls.length, 0)
   const note = card().querySelector('.projects-answer-outcome p')
   assert.equal(note.dataset.state, 'error')
-  assert.match(note.textContent, /no answer was sent/)
+  assert.match(note.textContent, /No answer was sent: This card cannot be fingerprinted/)
 })
 
 const UNKNOWN = { unknown: true, line: 'Completion unknown; check the decision before answering again' }
@@ -325,4 +325,41 @@ test('a settled exit 0 stays locked across a refresh', async (t) => {
   await until(allDisabled(state))
   await until(outcomeNote(state))
   assert.equal(state.card().querySelector('.projects-answer-outcome p').textContent, 'Recorded a.')
+})
+
+for (const stage of ['confirmation', 'render']) test(`a fingerprint rejection during ${stage} is retryable`, async (t) => {
+  const state = page(t)
+  state.window.needsModel = { ...state.window.needsModel, cardHash: async () => { throw new Error('crypto unavailable') } }
+  if (stage === 'render') state.rerender()
+  else {
+    state.buttons()[0].click()
+    state.press('Confirm')
+  }
+  await until(outcomeNote(state))
+  assert.equal(outcomeNote(state)().textContent, 'No answer was sent: crypto unavailable')
+  assert.ok(state.buttons().every((node) => !node.disabled))
+  assert.equal(state.calls.length, 0)
+  state.window.needsModel = { ...state.window.needsModel, cardHash: async () => 'a'.repeat(64) }
+  await submit(state, 0, () => state.calls.length === 1)
+})
+
+for (const [extra, reason] of [
+  [{ context: {} }, 'This action needs a workspace'],
+  [{ input: {} }, 'The answer needs a decision id, one letter and the card hash'],
+  [{ id: '' }, 'An answer can only be recorded from an action'],
+]) test(`the card can retry a handler refusal: ${reason}`, async (t) => {
+  let state
+  const onAnswer = (decId, letter, cardSha256) => new Promise((resolve, reject) => {
+    const bridge = { send: (message) => message.error ? reject(new Error(message.error)) : resolve(message.value) }
+    void state.window.answerAction.handle(bridge, {
+      id: 'inv-1', input: { decId: 'dec-a1', letter, cardSha256 }, context: { workspace: { id: 'ws-1' } }, ...extra,
+    })
+  })
+  state = page(t, { onAnswer })
+  state.window.hvirExtension = { onMessage: (listener) => listener({ kind: 'hello', capabilities: ['connector.action-binding'] }) }
+  state.window.host = { run: () => { throw new Error('unexpected dispatch') } }
+  state.window.eval(readFileSync(`${__dirname}/../answer.js`, 'utf8'))
+  await submit(state)
+  assert.equal(outcomeNote(state)().textContent, `No answer was sent: ${reason}`)
+  assert.ok(state.buttons().every((node) => !node.disabled))
 })

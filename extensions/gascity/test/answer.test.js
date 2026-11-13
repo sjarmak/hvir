@@ -90,7 +90,7 @@ test('invalid input never reaches the connector', async () => {
   }
   assert.equal(state.calls.length, 0)
   assert.equal(state.sent.length, 6)
-  assert.ok(state.sent.every((message) => typeof message.error === 'string'))
+  assert.ok(state.sent.every((message) => message.value.notSent === true))
 })
 
 test('an invocation without a workspace, or for another action, does not run the connector', async () => {
@@ -102,7 +102,7 @@ test('an invocation without a workspace, or for another action, does not run the
   await settled()
   assert.equal(state.calls.length, 0)
   assert.equal(state.sent.length, 1)
-  assert.match(state.sent[0].error, /workspace/)
+  assert.match(state.sent[0].value.line, /workspace/)
 })
 
 test('a connector that did not run comes back as an action error', async () => {
@@ -179,13 +179,13 @@ test('an untagged error longer than 240 characters is cut to 240 before it is se
   assert.equal(state.sent[0].error.length, 240)
 })
 
-test('every error the handler sends fits the 240 character bridge limit', async () => {
+test('local refusals fit the result line limit', async () => {
   const state = load({ fail: new Error('y'.repeat(900)) })
   state.api.listen(state.window.hvirExtension)
   state.deliver(invocation({ decId: 'dec-a1', letter: 'a', cardSha256: SHA }, { context: {} }))
   state.deliver(invocation({ decId: 'bad' }))
   await settled()
-  assert.ok(state.sent.every((message) => message.error.length <= 240))
+  assert.ok(state.sent.every((message) => message.value.notSent && message.value.line.length <= 400))
 })
 
 test('a second submission for the same workspace, decision and hash while one is in flight never reaches the connector', async () => {
@@ -203,7 +203,8 @@ test('a second submission for the same workspace, decision and hash while one is
   assert.equal(state.calls.length, 1)
   assert.equal(state.sent.length, 1)
   assert.equal(state.sent[0].id, 'inv-2')
-  assert.equal(state.sent[0].value.unknown, true)
+  assert.equal(state.sent[0].value.notSent, true)
+  assert.equal(state.sent[0].value.line, 'No answer was sent: An answer for this card is already in flight')
   release()
   await settled()
   assert.equal(state.sent.length, 2)
@@ -238,7 +239,8 @@ test('concurrent answers with different letters for one workspace, decision and 
   assert.equal(state.calls[0][2][1], 'a')
   assert.equal(state.sent.length, 1)
   assert.equal(state.sent[0].id, 'inv-b')
-  assert.equal(state.sent[0].value.unknown, true)
+  assert.equal(state.sent[0].value.notSent, true)
+  assert.equal(state.sent[0].value.line, 'No answer was sent: An answer for this card is already in flight')
   release()
   await settled()
   assert.equal(state.sent.length, 2)
@@ -279,4 +281,14 @@ test('a later hello that drops connector.action-binding unbinds the answer again
   const state = load()
   state.deliver({ ...HELLO, capabilities: ['connector.execute'] })
   assert.equal(state.api.actionBound(), false)
+})
+
+for (const id of [undefined, '']) test(`missing action id ${JSON.stringify(id)} is explicitly unsent`, async () => {
+  const state = load()
+  await state.api.handle(state.window.hvirExtension,
+    invocation({ decId: 'dec-a1', letter: 'a', cardSha256: SHA }, { id }).invocation)
+  assert.equal(state.calls.length, 0)
+  assert.deepEqual(plain(state.sent[0].value), {
+    exitCode: 2, notSent: true, line: 'No answer was sent: An answer can only be recorded from an action',
+  })
 })
