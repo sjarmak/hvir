@@ -782,9 +782,8 @@ test('in progress holds active work moved within the hour, stuck says why, and w
     ['fx-p-broken', ['broken-wait']],
     ['fx-p-unowned-old', ['no-movement', 'unowned']],
     ['fx-p-quiet', ['no-movement']],
-    ['fx-p-unowned', ['unowned']],
   ])
-  assert.deepEqual(model.notStarted.items.map((row) => row.id), ['fx-p-open-new', 'fx-p-undated'])
+  assert.deepEqual(model.notStarted.items.map((row) => row.id), ['fx-p-open-new', 'fx-p-unowned', 'fx-p-undated'])
   const listed = [model.working, model.waiting, model.stuck, model.notStarted].flatMap((group) => group.items.map((row) => row.id))
   assert.deepEqual([...listed].sort(), input.urgent.map((bead) => bead.id).sort())
 })
@@ -803,6 +802,17 @@ test('a bead a live worker is on stays In progress however old its update, and a
   assert.deepEqual(ids(model.working), ['fx-a-session', 'fx-seat-work'])
   assert.deepEqual(model.stuck.items.map((row) => [row.id, row.stuckReasons]), [['fx-a-gone', ['no-movement']]])
   assert.deepEqual(ids(model.notStarted), ['fx-a-gone-undated'])
+})
+
+test('open work nobody owns is not Stuck as unowned until it has sat an hour, so a bead mid-dispatch stays quiet', () => {
+  const input = fresh()
+  input.urgent = [
+    urgent('fx-u-dispatching', { updated_at: '2026-10-29T11:57:00Z' }),
+    urgent('fx-u-hour', { updated_at: '2026-10-29T10:59:00Z' }),
+  ]
+  const model = buildDashboard(input)
+  assert.deepEqual(model.stuck.items.map((row) => [row.id, row.stuckReasons]), [['fx-u-hour', ['no-movement', 'unowned']]])
+  assert.deepEqual(model.notStarted.items.map((row) => row.id), ['fx-u-dispatching'])
 })
 
 test('open work nobody is assigned to but a live seat job is on is In progress, not unowned', () => {
