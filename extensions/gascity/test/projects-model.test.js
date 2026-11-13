@@ -573,12 +573,12 @@ test('a synthetic convoy row shows the bead it tracks, once, with that bead\'s s
     convoy('fx-c3', 'fx-t3'),
     urgent('fx-plain-convoy', { issue_type: 'convoy', dependencies: [{ depends_on_id: 'fx-x', type: 'tracks' }] }),
   ]
-  input.linked = [urgent('fx-t3', { title: 'Tracked elsewhere', priority: 2, status: 'open' })]
+  input.linked = [urgent('fx-t3', { title: 'Tracked elsewhere', priority: 1, status: 'open' })]
   const model = buildDashboard(input)
-  assert.deepEqual(model.stuck.items.map((row) => row.id).sort(), ['fx-plain-convoy', 'fx-t1', 'fx-t3'])
+  assert.deepEqual(model.stuck.items.map((row) => row.id).sort(), ['fx-t1', 'fx-t3'])
   const rows = [...model.stuck.items, ...model.notStarted.items]
   const byId = (id) => rows.find((row) => row.id === id)
-  assert.deepEqual(model.notStarted.items.map((row) => row.id), ['fx-t2'])
+  assert.deepEqual(model.notStarted.items.map((row) => row.id).sort(), ['fx-t2', 'fx-x'])
   assert.deepEqual([byId('fx-t1').title, byId('fx-t1').state, byId('fx-t1').owner], ['Tracked work', 'in_progress', 'omni-pl'])
   assert.deepEqual([byId('fx-t2').title, byId('fx-t2').state, byId('fx-t2').store, byId('fx-t2').convoy], ['', '', 's2', 'fx-c2'])
   assert.deepEqual([byId('fx-t3').title, byId('fx-t3').state, byId('fx-t3').convoy], ['Tracked elsewhere', 'open', 'fx-c3'])
@@ -600,7 +600,7 @@ test('a convoy is judged by the bead it tracks: decisions, records, workflow ste
     urgent('fx-cv-t-closed', { status: 'closed' }),
     urgent('fx-cv-t-record', { labels: ['city-milestone'] }),
     urgent('fx-cv-t-step', { metadata: { 'gc.root_bead_id': 'fx-root' } }),
-    urgent('fx-cv-t-open', { store: 's0', priority: 3 }),
+    urgent('fx-cv-t-open', { store: 's0', priority: 1 }),
   ]
   const model = buildDashboard(input)
   const rows = [model.stuck, model.working, model.waiting, model.notStarted].flatMap((group) => group.items)

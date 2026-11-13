@@ -22,6 +22,13 @@
 
   const NEEDS_KEYS = ['decisions', 'herSteps']
 
+  const readComments = async (workspace, payload, failed, deadline) => {
+    const requests = loader.commentRequests(window.projectsModel.buildDashboard(payload).stuck.items)
+    if (!requests.length) return {}
+    const options = { deadline: Math.min(deadline, Date.now() + loader.COMMENT_READ_MS) }
+    return loader.commentTimes(await readStores(workspace, requests, failed, options))
+  }
+
   const ageText = (since) => {
     const minutes = Math.floor((Date.now() - Date.parse(since)) / 60000)
     return minutes < 1 ? 'under a minute ago' : `${minutes} min ago`
@@ -113,13 +120,13 @@
         connector: loader.OUTCOME_CONNECTOR, field: 'outcomes' }, failures, options)
       : undefined
     const result = loader.assemblePayload({ now: new Date(Date.now()).toISOString(), reads, sessions, errors })
-    const { payload, lastGood: kept, stale, needsAt } = loader.keepLastGood({ lastGood, needsReadAt: needs?.readAt, payload: { ...result.payload,
+    const { payload: board, lastGood: kept, stale, needsAt } = loader.keepLastGood({ lastGood, needsReadAt: needs?.readAt, payload: { ...result.payload,
       ...(outcomes ? { outcomes } : {}), unread: [...result.payload.unread, ...failures.unread] } })
+    const payload = { ...board, commentedAt: await readComments(workspace, board, failures.failed, deadline) }
     const conflicts = window.projectsModel.duplicateProjects(payload.projects)
     if (conflicts.length) result.errors.push(`project id in several stores: ${conflicts.join(', ')}`)
     const projectsRead = reads.some((entry) => entry.key === 'projects' && !entry.error)
-    const deferred = failures.notRun || reads.some((entry) => entry.notRun) ||
-      !projectsRead
+    const deferred = failures.notRun || reads.some((entry) => entry.notRun) || !projectsRead
     const decisionReads = reads.filter((entry) => entry.key === 'decisions')
     const complete = !deferred && !failures.errors.length && decisionReads.length > 0 && decisionReads.every((entry) => !entry.error)
     return { answerable, complete, model: window.projectsModel.buildDashboard(payload), payload, errors: result.errors,

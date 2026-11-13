@@ -100,6 +100,18 @@
   const DEC_ID = /^dec-[a-z0-9]+$/
   const isDecision = (bead) => truthApi.isAsk(bead) || DEC_ID.test(bead.id)
 
+  const workCandidates = (input) => {
+    const claimed = new Set((input.inProgress ?? []).map(beadKey))
+    return [...new Map([...(input.inProgress ?? []), ...(input.urgent ?? []), ...(input.linked ?? [])]
+      .map((bead) => [beadKey(bead), { bead, claimed: claimed.has(beadKey(bead)) }])).values()]
+  }
+
+  const sessionBeads = (candidates, session) => {
+    const names = [...identities(session), session.session_name].filter(Boolean)
+    return candidates.filter(({ bead, claimed }) => (claimed && bead.status === 'in_progress' && names.includes(bead.assignee)) ||
+      (bead.status !== 'closed' && names.includes(meta(bead, 'gc.session_name')))).map(({ bead }) => bead)
+  }
+
   const collectActivity = (input, index, projects) => {
     const entries = []
     const add = (source, bead, kind) => {
@@ -119,13 +131,12 @@
       })
     }
     const seen = new Set()
+    const candidates = workCandidates(input)
     for (const session of input.sessions ?? []) {
       const key = session.id ?? session.name
       if (seen.has(key)) continue
       seen.add(key)
-      const assignees = identities(session)
-      const beads = (input.inProgress ?? []).filter((entry) =>
-        entry.status === 'in_progress' && assignees.includes(entry.assignee))
+      const beads = sessionBeads(candidates, session)
       for (const bead of beads.length ? beads : [undefined]) add(session, bead, 'session')
     }
     for (const { seat, label, job, alive } of input.seatJobs ?? []) {
@@ -322,8 +333,12 @@
   const trackedDependencies = (bead) => (bead.dependencies ?? [])
     .filter((dependency) => (dependency.type ?? dependency.dependency_type) === 'tracks')
 
-  const unreadTracked = (convoy, dependency) => ({ id: dependency.depends_on_id ?? dependency.id,
-    title: dependency.title ?? '', status: dependency.status ?? '', priority: convoy.priority, labels: [], metadata: {},
+  const URGENT_STATUSES = Object.freeze(['open', 'in_progress', 'blocked'])
+  const trackedId = (dependency) => dependency.depends_on_id ?? dependency.id
+  const isConvoy = (bead) => bead.issue_type === 'convoy' || isSyntheticConvoy(bead) || trackedDependencies(bead).length > 0
+
+  const unreadTracked = (convoy, dependency) => ({ id: trackedId(dependency),
+    title: dependency.title ?? '', status: dependency.status ?? '', priority: dependency.priority ?? convoy.priority, labels: [], metadata: {},
     ...(convoy.store === undefined ? {} : { store: convoy.store }), convoy: convoy.id, unread: true })
 
   const trackedTarget = (convoy, id, index) => {
@@ -333,28 +348,33 @@
     return new Set(candidates.map((candidate) => candidate.store)).size === 1 ? candidates[0] : undefined
   }
 
-  const folded = (bead, index) => {
-    const tracks = isSyntheticConvoy(bead) ? trackedDependencies(bead) : []
-    if (tracks.length !== 1 || !(tracks[0].depends_on_id ?? tracks[0].id)) return bead
-    const tracked = trackedTarget(bead, tracks[0].depends_on_id ?? tracks[0].id, index)
-    return tracked ? { ...tracked, store: tracked.store ?? bead.store, convoy: bead.id } : unreadTracked(bead, tracks[0])
-  }
+  const trackedBeads = (convoy, index) => trackedDependencies(convoy).filter(trackedId).map((dependency) => {
+    const target = trackedTarget(convoy, trackedId(dependency), index)
+    if (target) return { ...target, store: target.store ?? convoy.store, convoy: convoy.id }
+    return URGENT_STATUSES.includes(convoy.status) ? unreadTracked(convoy, dependency) : null
+  }).filter(Boolean)
+
+  const shownBeads = (bead, index) => isConvoy(bead) ? trackedBeads(bead, index) : [bead]
 
   const listable = (bead, known) => !known.has(beadKey(bead)) && !isRecord(bead) && !isWorkflowStep(bead) && !isDecision(bead)
-  const openWork = (bead) => ['open', 'in_progress'].includes(bead.status) || (bead.unread === true && bead.status === '')
+  const openWork = (bead) => URGENT_STATUSES.includes(bead.status) || (bead.unread === true && bead.status === '')
+  const urgentPriority = (bead) => ![null, undefined, ''].includes(bead.priority) && Number(bead.priority) <= 1
+  const urgentShown = (bead, known) => listable(bead, known) && !isConvoy(bead) && openWork(bead) && urgentPriority(bead)
+
+  const withCommentAge = (bead, commentedAt) => {
+    const commented = commentedAt[beadKey(bead)]
+    return validTime(commented) ? { ...bead, updated_at: newest([bead.updated_at, commented]) } : bead
+  }
 
   const urgentBeads = (input, decisions, index) => {
     const known = new Set(decisions.map(beadKey))
     const seen = new Map()
     for (const bead of [...(input.urgent ?? []), ...(input.inProgress ?? []), ...(input.linked ?? [])]) {
       if (!listable(bead, known)) continue
-      if (!['open', 'in_progress'].includes(bead.status) || !(Number(bead.priority) <= 1)) continue
-      if (bead.priority === null || bead.priority === '' || bead.priority === undefined) continue
-      const shown = folded(bead, index)
-      if (!listable(shown, known) || !openWork(shown)) continue
-      if (!seen.has(beadKey(shown))) seen.set(beadKey(shown), shown)
+      for (const shown of shownBeads(bead, index).filter((entry) => urgentShown(entry, known)))
+        if (!seen.has(beadKey(shown))) seen.set(beadKey(shown), shown)
     }
-    return [...seen.values()]
+    return [...seen.values()].map((bead) => withCommentAge(bead, input.commentedAt ?? {}))
   }
 
   const ownerOf = (bead, context) => {

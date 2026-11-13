@@ -13,12 +13,33 @@
   const labeledArgs = (path) => listArgs(path, ['--all', '--label-any', Object.keys(LABEL_FIELDS).join(',')])
   const inProgressArgs = (path) => listArgs(path, ['--all', '--status', 'in_progress'])
   const linkedArgs = (path, key) => listArgs(path, ['--status', 'open,in_progress,blocked,deferred', '--has-metadata-key', key])
-  const urgentArgs = (path) => listArgs(path, ['--status', 'open,in_progress', '--priority-max', '1'])
+  const urgentArgs = (path) => listArgs(path, ['--status', 'open,in_progress,blocked', '--priority-max', '1'])
   const showArgs = (path, ids) => ['-C', path, 'show', ...ids, '--json']
   const stepArgs = (path, id) => listArgs(path,
     ['--all', '--metadata-field', `gc.root_bead_id=${id}`])
   const decisionArgs = (path) => listArgs(path,
     ['--status', 'open', '--has-metadata-key', 'gc.project'])
+
+  const COMMENT_CAP = 50
+  const COMMENT_READ_MS = 10000
+
+  const commentRequests = (rows) => {
+    const byStore = new Map()
+    for (const row of rows.filter((entry) => typeof entry.store === 'string' && entry.store).slice(0, COMMENT_CAP))
+      byStore.set(row.store, [...(byStore.get(row.store) ?? []), row.id])
+    return [...byStore].map(([path, ids]) =>
+      ({ store: { name: path, path }, key: 'comments', args: [...showArgs(path, ids), '--include-comments'] }))
+  }
+
+  const newestComment = (bead) => (Array.isArray(bead?.comments) ? bead.comments : [])
+    .map((comment) => comment?.created_at)
+    .filter((at) => typeof at === 'string' && Number.isFinite(Date.parse(at)))
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0]
+
+  const commentTimes = (reads) => Object.fromEntries(reads
+    .filter((read) => read.key === 'comments' && !read.error && Array.isArray(read.value))
+    .flatMap((read) => read.value.map((bead) => [`${read.store.path}#${bead?.id}`, newestComment(bead)]))
+    .filter(([, at]) => at !== undefined))
 
   const storesFor = (workspace, city) => {
     const stores = [{ name: city.hqRigName ?? 'HQ', path: city.cityRoot ?? workspace.root.path }]
@@ -197,6 +218,7 @@
   }
 
   const api = Object.freeze({
+    COMMENT_CAP, COMMENT_READ_MS, commentRequests, commentTimes,
     labeledArgs, splitLabeled, inProgressArgs, urgentArgs, linkedArgs, showArgs, stepArgs, decisionArgs,
     ANCESTOR_ROUNDS, OUTCOME_CONNECTOR, OUTCOME_ARGS, parseOutcomes, storesFor, storeRequests, workflowRequests, ancestorRequests, liveSessions, assemblePayload,
     needsChecked, keepLastGood, NEEDS_CHECK_LIMIT_MS, staleText, needsUnchecked,

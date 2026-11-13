@@ -24,7 +24,7 @@ test('argument builders use explicit store scope and unlimited flat JSON lists',
     [...base, '--all', '--metadata-field', 'gc.root_bead_id=root', '-n', '0'])
   assert.deepEqual(loader.showArgs('/rig', ['a', 'b']), ['-C', '/rig', 'show', 'a', 'b', '--json'])
   assert.deepEqual(loader.urgentArgs('/rig'),
-    [...base, '--status', 'open,in_progress', '--priority-max', '1', '-n', '0'])
+    [...base, '--status', 'open,in_progress,blocked', '--priority-max', '1', '-n', '0'])
   assert.deepEqual(loader.decisionArgs('/rig'),
     [...base, '--status', 'open', '--has-metadata-key', 'gc.project', '-n', '0'])
 })

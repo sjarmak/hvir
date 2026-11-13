@@ -586,7 +586,7 @@ test('a Stuck row explains itself: tracked bead for a convoy, owner seat, unclai
       dependencies: [{ issue_id: 'fx-c2', depends_on_id: 'fx-t2', type: 'tracks' }] }),
     bead('fx-lead', { metadata: { 'proj.id': 'fx-project-1' } }),
     bead('fx-routed', { updated_at: '2026-10-29T09:00:00Z', metadata: { 'gc.execution_routed_to': 'rig/rig-worker' } }),
-  ], [bead('fx-t1', { title: 'The real work', status: 'in_progress', priority: 2, assignee: 'omni-evals-pl' })])
+  ], [bead('fx-t1', { title: 'The real work', status: 'in_progress', priority: 1, assignee: 'omni-evals-pl' })])
   const tracked = row('Stuck', 'fx-t1')
   assert.match(tracked.textContent, /The real work.*Owner: the evals lead/s)
   assert.doesNotMatch(tracked.textContent, /input convoy/)
