@@ -19,11 +19,13 @@
 
   const recordedWait = (bead) => {
     const waiting = bead?.metadata?.['gc.waiting_on']
-    return textOf(waiting) ? waiting : bead?.metadata?.['gc.blocked_on'] ?? waiting
+    const blocked = bead?.metadata?.['gc.blocked_on']
+    if (textOf(waiting) || blocked === undefined || blocked === null) return { raw: waiting, fromBlocked: false }
+    return { raw: blocked, fromBlocked: Boolean(textOf(blocked)) }
   }
 
   const waitOf = (bead, now, isAgent) => {
-    const raw = recordedWait(bead)
+    const { raw, fromBlocked } = recordedWait(bead)
     const stepLabel = (bead?.labels ?? []).some((label) => String(label).toLowerCase() === STEP_LABEL)
     const waitingOn = textOf(raw) || (stepLabel ? HER : '')
     const waitToken = words.waitToken(waitingOn)
@@ -34,7 +36,7 @@
       updatedAt: validTime(bead?.updated_at) ? bead.updated_at : null }
     const waitKind = kindOf(wait, isAgent)
     return { ...wait, waitKind,
-      likelyBroken: Boolean(waitKind) && wait.updatedAt !== null && Date.parse(now) - Date.parse(wait.updatedAt) > DAY_MS }
+      likelyBroken: Boolean(waitKind || fromBlocked) && wait.updatedAt !== null && Date.parse(now) - Date.parse(wait.updatedAt) > DAY_MS }
   }
 
   const api = Object.freeze({ HER, STEP_LABEL, routeOf, waitOf })

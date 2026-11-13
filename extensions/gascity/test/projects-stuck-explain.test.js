@@ -123,3 +123,41 @@ test('a folded convoy row shows the tracked bead owner and wait, not the convoy 
   row('fx-x-real').querySelector('button').click()
   assert.equal(opened[0][0], 'fx-x-real')
 })
+
+const RECENT = '2026-10-29T09:00:00Z'
+
+test('an old blocked_on wait in free text stays Stuck and is flagged likely broken', (t) => {
+  const { line, flags, row } = renderStuck(t, [
+    bead('fx-x-generic', { metadata: { 'gc.blocked_on': 'database recovery' } }),
+  ])
+  assert.match(line('fx-x-generic'), /Waiting on: database recovery for 2 days — likely broken/)
+  assert.ok(flags('fx-x-generic').includes('likely broken'))
+  assert.match(row('fx-x-generic').textContent, /Stuck because: waiting on a recorded wait for over a day/)
+})
+
+test('an old blocked_on wait on an unloaded bead stays Stuck and is flagged likely broken', (t) => {
+  const { flags } = renderStuck(t, [
+    bead('fx-x-unloaded', { metadata: { 'gc.blocked_on': 'fx-unloaded-blocker' } }),
+  ])
+  assert.ok(flags('fx-x-unloaded').includes('likely broken'))
+})
+
+test('a recent free-text blocked_on wait shows under Waiting, not Stuck', () => {
+  const input = structuredClone(fixture)
+  input.urgent = [bead('fx-x-recent', { updated_at: RECENT, metadata: { 'gc.blocked_on': 'database recovery' } })]
+  const model = buildDashboard(input)
+  assert.deepEqual(model.stuck.items.map((r) => r.id), [])
+  const waiting = model.waiting.items.find((r) => r.id === 'fx-x-recent')
+  assert.ok(waiting)
+  assert.equal(waiting.likelyBroken, false)
+})
+
+test('a recognized wait kind over a day keeps its kind and broken-wait reason', (t) => {
+  const input = structuredClone(fixture)
+  input.urgent = [bead('fx-x-known', { metadata: { 'gc.blocked_on': 'stephanie' } })]
+  const found = buildDashboard(input).stuck.items.find((r) => r.id === 'fx-x-known')
+  assert.equal(found.waitKind, 'her')
+  assert.deepEqual(found.stuckReasons, ['broken-wait'])
+  const { row } = renderStuck(t, input.urgent)
+  assert.match(row('fx-x-known').textContent, /Stuck because: waiting on you for over a day/)
+})

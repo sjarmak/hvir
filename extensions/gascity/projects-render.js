@@ -158,7 +158,7 @@
 
   const BROKEN_WAIT = Object.freeze({ her: 'you', decision: 'a decision', agent: 'an agent' })
   const STUCK_REASONS = Object.freeze({
-    'broken-wait': (row) => `waiting on ${BROKEN_WAIT[row.waitKind]} for over a day`,
+    'broken-wait': (row) => `waiting on ${BROKEN_WAIT[row.waitKind] ?? 'a recorded wait'} for over a day`,
     'no-movement': () => 'no movement for over an hour',
     unowned: () => 'open with no assignee and no route',
   })
