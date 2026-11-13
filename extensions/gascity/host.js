@@ -91,6 +91,8 @@ window.host = (() => {
         : stderr.trim().split('\n')[0] || `${connector} exited ${exitCode}`,
     )
     if (typeof report?.code === 'string') error.code = report.code
+    error.exitCode = exitCode
+    error.stderr = stderr
     return error
   }
 

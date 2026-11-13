@@ -388,6 +388,17 @@ test('stderr is read only when the program fails', async () => {
   assert.deepEqual(streams(failed.sent), ['stdout', 'stderr'])
 })
 
+test('a failed run carries its exit code and full stderr on the error', async () => {
+  const failed = loadBridge((message) => {
+    if (message.capability === 'connector.execute') return { ...completed('r3'), code: 4 }
+    if (message.input.release) return {}
+    return { data: message.input.stream === 'stderr' ? 'first\nboom\n' : '', nextOffset: null }
+  })
+  const error = await failed.host.run('gc', LOCAL, ['x']).catch((caught) => caught)
+  assert.equal(error.exitCode, 4)
+  assert.equal(error.stderr, 'first\nboom\n')
+})
+
 test('run with exit returns the exit code and both streams instead of throwing, and carries the action id', async () => {
   const stdout = { r1: 'Refused: card changed.\n' }
   const { host, sent } = loadBridge((message) => {

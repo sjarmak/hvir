@@ -54,6 +54,7 @@ const SCRIPTS = [
   'crew-parse',
   'needs-model',
   'projects-load',
+  'read-failures',
   'projects-truth',
   'projects-model',
   'answer-state',
@@ -106,6 +107,8 @@ const livePage = (t, { entry = 'projects' } = {}) => {
     inProgress: () => [],
     rigs,
     rigListFailing: false,
+    bdError: () => new Error('dolt server restarting'),
+    rigListError: () => new Error('fake rig-list failure'),
     bdCalls: [],
     during: () => {},
     at: (iso) => {
@@ -133,14 +136,14 @@ const livePage = (t, { entry = 'projects' } = {}) => {
         return { entries: page.outcomes }
       }
       if (args[0] !== 'rig') return { sessions: [] }
-      if (page.rigListFailing) throw new Error('fake rig-list failure')
+      if (page.rigListFailing) throw page.rigListError()
       return { rigs: page.rigs }
     },
   }
   window.bdRead = async (scope, args) => {
     page.bdCalls.push(args)
     page.during(args)
-    if (page.failing(args)) throw new Error('dolt server restarting')
+    if (page.failing(args)) throw page.bdError(args)
     return defaultRead(page, args)
   }
   window.bdNote = () => ''
@@ -183,8 +186,11 @@ const stepsText = (document) =>
     .map((node) => node.textContent)
     .join('\n')
 
+const statusText = (document) => document.getElementById('status').textContent
+
 module.exports = {
   EARLY,
+  statusText,
   workspace,
   isLabeled,
   isLinked,

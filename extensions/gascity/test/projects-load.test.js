@@ -159,7 +159,7 @@ const livePage = (t, page, script) => {
   const listeners = new Set()
   window.hvirExtension = { onMessage: (listener) => (listeners.add(listener), () => listeners.delete(listener)), send: () => {} }
   const deliver = (message) => [...listeners].forEach((listener) => listener(message))
-  for (const file of ['view', 'crew-parse', 'needs-model', 'projects-load', 'projects-truth', 'projects-model', 'answer-state', 'projects-render', 'answer', 'attach', 'projects-data', 'projects-seen']) {
+  for (const file of ['view', 'crew-parse', 'needs-model', 'projects-load', 'read-failures', 'projects-truth', 'projects-model', 'answer-state', 'projects-render', 'answer', 'attach', 'projects-data', 'projects-seen']) {
     window.eval(readFileSync(`${__dirname}/../${file}.js`, 'utf8'))
   }
   const page_ = { deliver, view: undefined, opened: [], connected: [], bd: 'supported', document: window.document, openRows: [fixture.decisions[0]] }

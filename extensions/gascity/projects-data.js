@@ -1,14 +1,21 @@
 ;(() => {
   const loader = window.projectsLoad
+  const readFailures = window.readFailures
+  const failureLogs = new Map()
+  const lastFailures = new Map()
+  const failureRecord = (workspaceId) => failureLogs.get(workspaceId) ?? []
 
   const REFRESH_DEADLINE_MS = 60000
 
-  const readStores = (workspace, requests, options) => Promise.all(requests.map(async (request) => {
+  const fieldOf = (key) => key === 'labeled' ? 'projects' : key
+
+  const readStores = (workspace, requests, failed, options) => Promise.all(requests.map(async (request) => {
     try {
       const value = await window.bdRead(workspace, request.args, options)
       if (!Array.isArray(value)) throw new Error('bd returned an unexpected JSON shape')
       return { ...request, value }
     } catch (error) {
+      failed.push(readFailures.entry({ at: Date.now(), field: fieldOf(request.key), connector: 'bd', args: request.args, error }))
       return { ...request, error: error.message, ...(error.reason ? { notRun: true } : {}) }
     }
   }))
@@ -60,6 +67,7 @@
     try {
       return parse(await window.host.run(connector, workspace, args, options))
     } catch (error) {
+      failures.failed.push(readFailures.entry({ at: Date.now(), field: field ?? args.slice(0, 2).join(' '), connector, args, error }))
       if (error.reason) failures.notRun = true
       if (field) failures.unread.push(field)
       failures.errors.push(`${connector} ${args.slice(0, 2).join(' ')}: ${error.message}`)
@@ -72,7 +80,7 @@
     const connectors = await window.host.availability({ workspace })
     const missing = ['gc', 'bd'].find((name) => connectors[name] !== 'supported')
     if (missing) return { missing }
-    const failures = { errors: [], notRun: false, unread: [] }
+    const failures = { errors: [], notRun: false, unread: [], failed: [] }
     const { errors } = failures
     const [city, sessions] = await Promise.all([
       readCity(workspace, { args: ['rig', 'list', '--json'], parse: window.crewParse.parseRigList, field: 'rigs' }, failures),
@@ -82,7 +90,7 @@
     const requests = loader.storeRequests(stores)
     const isNeeds = (request) => NEEDS_KEYS.includes(request.key)
     const answerable = connectors[window.answerAction.CONNECTOR] === 'supported'
-    const needsReads = await readStores(workspace, requests.filter(isNeeds))
+    const needsReads = await readStores(workspace, requests.filter(isNeeds), failures.failed)
     let needs
     if (loader.needsChecked(needsReads)) {
       const { payload, errors: needsErrors } = loader.assemblePayload({ now: new Date(Date.now()).toISOString(), reads: needsReads })
@@ -90,13 +98,13 @@
       await onNeeds?.(needs, sessions)
     }
     const options = { deadline }
-    const otherReads = await readStores(workspace, requests.filter((request) => !isNeeds(request)), options)
+    const otherReads = await readStores(workspace, requests.filter((request) => !isNeeds(request)), failures.failed, options)
     const reads = loader.splitLabeled([...needsReads, ...otherReads])
-    reads.push(...await readStores(workspace, loader.workflowRequests(reads), options))
+    reads.push(...await readStores(workspace, loader.workflowRequests(reads), failures.failed, options))
     for (let round = 0; round < loader.ANCESTOR_ROUNDS; round += 1) {
       const requests = loader.ancestorRequests(reads)
       if (!requests.length) break
-      reads.push(...await readStores(workspace, requests, options))
+      reads.push(...await readStores(workspace, requests, failures.failed, options))
     }
     if (loader.ancestorRequests(reads).length)
       errors.push(`parent chains deeper than ${loader.ANCESTOR_ROUNDS} unread levels were not followed`)
@@ -115,12 +123,23 @@
     const decisionReads = reads.filter((entry) => entry.key === 'decisions')
     const complete = !deferred && !failures.errors.length && decisionReads.length > 0 && decisionReads.every((entry) => !entry.error)
     return { answerable, complete, model: window.projectsModel.buildDashboard(payload), payload, errors: result.errors,
-      sessions: payload.sessions, deferred, projectsRead, needs, lastGood: kept, stale, needsAt }
+      sessions: payload.sessions, deferred, projectsRead, needs, lastGood: kept, stale, needsAt, failed: failures.failed }
   }
 
   const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 
   const staleLine = (stale) => window.el('p', { className: 'projects-warning projects-stale' }, loader.staleText(stale))
+
+  const noteFailures = (workspaceId, failed) => {
+    failureLogs.set(workspaceId, readFailures.record(failureRecord(workspaceId), failed))
+    if (failed.length) lastFailures.set(workspaceId, failed.at(-1))
+    else lastFailures.delete(workspaceId)
+  }
+
+  const failureNote = (workspaceId) => {
+    const failed = lastFailures.get(workspaceId)
+    return failed ? readFailures.text(failed) : undefined
+  }
 
   const statusLine = (data, workspace, withCounts = true) => {
     const { model, payload, errors, sessions } = data
@@ -183,11 +202,11 @@
       const note = render(data, ui.projects, shownActions, context)
       if (data.partial) {
         markLoading(ui.projects)
-        setStatus([note, extra].filter(Boolean).join(' · '))
+        setStatus([note, extra, failureNote(context.workspace.id)].filter(Boolean).join(' · '))
         return
       }
       if (data.stale) ui.projects.prepend(staleLine(data.stale))
-      setStatus([note, statusLine(data, context.workspace, counts), extra].filter(Boolean).join(' · '))
+      setStatus([note, statusLine(data, context.workspace, counts), extra, failureNote(context.workspace.id)].filter(Boolean).join(' · '))
     }
     const unrendered = new Set()
     const switchTo = (context) => {
@@ -229,6 +248,7 @@
         } else show(shown, context, `Needs you read ${ageText(needs.readAt)}; other sections loading…`)
       }
       const data = await read(workspace, { onNeeds: publishNeeds, lastGood: shownBy.get(workspace.id)?.lastGood })
+      if (data.failed) noteFailures(workspace.id, data.failed)
       if (workspace.id !== shownId) return
       missing = data.missing
       ui.connect.hidden = !missing
@@ -280,5 +300,5 @@
     })
   }
 
-  window.projectsData = Object.freeze({ read, statusLine, startProjectsView })
+  window.projectsData = Object.freeze({ read, statusLine, startProjectsView, failureRecord })
 })()
