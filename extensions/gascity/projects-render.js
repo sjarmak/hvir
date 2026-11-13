@@ -63,46 +63,54 @@
     return note
   }
 
+  const answerView = () => {
+    const choiceButtons = []
+    const confirmBox = el('div', { className: 'projects-confirm' })
+    const outcome = el('div', { className: 'projects-answer-outcome' })
+    const container = el('div', { className: 'projects-answer' }, confirmBox, outcome)
+    const view = { choiceButtons, confirmBox, outcome, container, generation: 0 }
+    view.disableAll = (disabled) => {
+      for (const node of [...choiceButtons, ...confirmBox.querySelectorAll('button')]) node.disabled = disabled
+    }
+    view.sync = (entry) => {
+      if (!container.isConnected) return false
+      const locked = entry.phase !== 'idle'
+      if (locked) view.generation++
+      view.disableAll(locked)
+      if (locked) confirmBox.replaceChildren()
+      outcome.replaceChildren(...(entry.result ? [outcomeNote(entry)] : []))
+      return true
+    }
+    return view
+  }
+
+  const answerFingerprint = (ask, view) => async (ready) => {
+    const generation = ++view.generation
+    const current = () => generation === view.generation && view.container.isConnected
+    let sha
+    try {
+      sha = await window.needsModel.cardHash(ask)
+      if (!sha) throw new Error('This card cannot be fingerprinted')
+    } catch (error) {
+      if (current()) {
+        view.confirmBox.replaceChildren()
+        view.sync({ phase: 'idle', result: { exitCode: 2, line: `No answer was sent: ${error.message}` } })
+      }
+      return
+    }
+    if (current()) ready(sha)
+  }
+
   const renderAnswer = (ask, options) => {
     if (!ask.needsYou || !options.onAnswer || ask.metadata?.['gc.answered']) return null
     const choices = window.needsModel.parseOptions(ask)
     if (choices.length === 0) return null
     const store = window.answerState
-    const choiceButtons = []
-    const confirmBox = el('div', { className: 'projects-confirm' })
-    const outcome = el('div', { className: 'projects-answer-outcome' })
-    const container = el('div', { className: 'projects-answer' }, confirmBox, outcome)
-    let key
-    const disableAll = (disabled) => {
-      for (const node of [...choiceButtons, ...confirmBox.querySelectorAll('button')]) node.disabled = disabled
-    }
-    const sync = (entry) => {
-      if (!container.isConnected) return false
-      const locked = entry.phase !== 'idle'
-      disableAll(locked)
-      if (locked) confirmBox.replaceChildren()
-      outcome.replaceChildren(...(entry.result ? [outcomeNote(entry)] : []))
-      return true
-    }
-    const show = (result) => outcome.replaceChildren(outcomeNote({ phase: 'idle', result }))
-    const fingerprint = async (submitting = false) => {
-      try {
-        const sha = await window.needsModel.cardHash(ask)
-        if (sha) return sha
-        throw new Error('This card cannot be fingerprinted')
-      } catch (error) {
-        if (!submitting && choiceButtons.some((node) => node.disabled)) return null
-        disableAll(false)
-        confirmBox.replaceChildren()
-        show({ exitCode: 2, line: `No answer was sent: ${error.message}` })
-        return null
-      }
-    }
-    const settle = async (choice) => {
-      disableAll(true)
-      const sha = await fingerprint(true)
-      if (!sha) return
-      key = store.keyOf(options.workspaceId, ask.id, sha)
+    const view = answerView()
+    const { choiceButtons, confirmBox, outcome, container, sync, disableAll } = view
+    const fingerprint = answerFingerprint(ask, view)
+    const settle = async (choice, sha) => {
+      const key = store.keyOf(options.workspaceId, ask.id, sha)
       store.subscribe(key, sync)
       if (!store.begin(key)) return
       let result
@@ -117,15 +125,17 @@
       outcome.replaceChildren()
       confirmBox.replaceChildren(
         paragraph(`Record ${choice.letter}: ${choice.text} as your answer to ${ask.title}?`),
-        button('Confirm', `Record ${choice.letter}`, () => void settle(choice)),
+        button('Confirm', `Record ${choice.letter}`, () => {
+          disableAll(true)
+          void fingerprint((sha) => void settle(choice, sha))
+        }),
         button('Cancel', 'Keep the card as it is', () => confirmBox.replaceChildren()))
     }
     choiceButtons.push(...choices.map((choice) => button(
       `${choice.letter}: ${clip(choice.text, OPTION_LABEL_MAX)}`, choice.text, () => askToConfirm(choice))))
     container.prepend(...choiceButtons)
-    void fingerprint().then((sha) => {
-      if (!sha) return
-      key = store.keyOf(options.workspaceId, ask.id, sha)
+    void fingerprint((sha) => {
+      const key = store.keyOf(options.workspaceId, ask.id, sha)
       store.subscribe(key, sync)
       if (!outcome.hasChildNodes()) sync(store.get(key))
     })

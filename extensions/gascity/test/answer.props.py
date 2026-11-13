@@ -35,6 +35,30 @@ def invalid_letters_are_retryable_without_dispatch(letter):
     assert result.returncode == 0, result.stderr
 
 
+@st.composite
+def fingerprint_schedules(draw):
+    count = draw(st.integers(min_value=2, max_value=5))
+    return (draw(st.permutations(range(count))),
+            draw(st.lists(st.booleans(), min_size=count, max_size=count)))
+
+
+@settings(max_examples=100, deadline=None, database=None, derandomize=True)
+@example(schedule=([0, 1], [True, False]))
+@given(schedule=fingerprint_schedules())
+def only_current_fingerprint_changes_submission(schedule):
+    script = """
+const { checkSchedule } = require('./extensions/gascity/test/fingerprint-race.test.js')
+const [order, successes] = JSON.parse(require('node:fs').readFileSync(0, 'utf8'))
+checkSchedule(order, successes).catch((error) => { console.error(error); process.exitCode = 1 })
+"""
+    result = subprocess.run(
+        ['node', '-e', script], cwd=ROOT, text=True, capture_output=True,
+        input=json.dumps(schedule), check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 if __name__ == '__main__':
     invalid_letters_are_retryable_without_dispatch()
-    print('answer properties: 1 passed (100 generated cases and 1 explicit regression)')
+    only_current_fingerprint_changes_submission()
+    print('answer properties: 2 passed (100 generated cases and 1 explicit regression each)')
