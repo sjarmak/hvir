@@ -17,8 +17,13 @@
     return wait.unclaimedBy || (wait.waitToken && isAgent(wait.waitToken)) || NAMES_SEAT.test(wait.waitingOn) ? 'agent' : ''
   }
 
+  const recordedWait = (bead) => {
+    const waiting = bead?.metadata?.['gc.waiting_on']
+    return textOf(waiting) ? waiting : bead?.metadata?.['gc.blocked_on'] ?? waiting
+  }
+
   const waitOf = (bead, now, isAgent) => {
-    const raw = bead?.metadata?.['gc.waiting_on']
+    const raw = recordedWait(bead)
     const stepLabel = (bead?.labels ?? []).some((label) => String(label).toLowerCase() === STEP_LABEL)
     const waitingOn = textOf(raw) || (stepLabel ? HER : '')
     const waitToken = words.waitToken(waitingOn)

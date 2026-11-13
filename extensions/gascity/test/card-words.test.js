@@ -17,8 +17,8 @@ test('spans read in whole minutes, hours or days', () => {
   assert.equal(spanWords(2 * 86400000 + 5), '2 days')
 })
 
-test('the missing-wait text is a sentence she can read', () => {
-  assert.equal(NO_WAIT, 'Nobody has recorded what this is waiting for')
+test('the missing-wait flag reads no wait recorded', () => {
+  assert.equal(NO_WAIT, 'no wait recorded')
 })
 
 test('a comma-separated wait reads every item, keeping a trailing parenthesised note as that item\'s note', () => {

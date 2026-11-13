@@ -5,7 +5,7 @@
     'omni-evals-pl': 'the evals lead',
     'city-infra-pl': 'the city infrastructure lead',
   })
-  const NO_WAIT = 'Nobody has recorded what this is waiting for'
+  const NO_WAIT = 'no wait recorded'
   const MINUTE_MS = 60000
   const HOUR_MS = 3600000
   const DAY_MS = 86400000
@@ -76,10 +76,10 @@
 
   const waitWords = (row, now) => {
     const age = row.updatedAt ? sinceWords(row.updatedAt, now) : ''
-    const tail = `${age ? ` for ${age}` : ''}${row.likelyBroken ? ' — likely broken' : ''}`
-    if (row.waitingOn) return `${namedWait(row)}${tail}`
+    const broken = row.likelyBroken ? ' — likely broken' : ''
+    if (row.waitingOn) return `${namedWait(row)}${age ? ` for ${age}` : ''}${broken}`
     if (row.waitUnreadable) return 'unknown, the wait note could not be read'
-    if (row.unclaimedBy) return `a free worker in ${row.unclaimedBy}${tail}`
+    if (row.unclaimedBy) return `unclaimed by ${row.unclaimedBy}${age ? ` since ${age} ago` : ''}${broken}`
     if (!age) return 'nothing recorded — no movement recorded'
     return (row.stuckReasons ?? []).length > 0 ? `nothing recorded — it has not moved for ${age}` : `nothing recorded — it last moved ${age} ago`
   }
