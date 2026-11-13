@@ -11,7 +11,23 @@ const TARGET_TOKEN = /^[\w.-]{0,128}$/
 const validTarget = (target) => target === undefined || (typeof target === 'object' && target !== null &&
   typeof target.token === 'string' && TARGET_TOKEN.test(target.token) && typeof target.agent === 'boolean' &&
   typeof target.title === 'string' && target.title.length <= 1000)
+const validInput = ({ id, rig, target }) => typeof id === 'string' && BEAD_ID.test(id) &&
+  (rig === undefined || (typeof rig === 'string' && RIG_PATH.test(rig))) && validTarget(target)
 let shownKey
+let wantedKey
+let requestId = 0
+
+function clear(title) {
+  ui.title.textContent = title
+  ui.meta.textContent = ''
+  ui.status.textContent = ''
+  ui.page.replaceChildren()
+  ui.original.replaceChildren()
+  ui.acceptance.textContent = ''
+  ui['acceptance-section'].hidden = true
+  ui.dependencies.replaceChildren()
+  ui['dependencies-section'].hidden = true
+}
 
 function render(issue, card, target) {
   document.title = issue.id
@@ -37,10 +53,9 @@ function render(issue, card, target) {
   ui['dependencies-section'].hidden = deps.length === 0
 }
 
-async function cardFor(workspace, issue) {
+function cardFor(issue, record) {
   const needs = window.needsModel
   try {
-    const [record] = await window.bdRead(workspace, ['show', needs.CARD_TEXTS_RECORD, '--json'])
     const cards = needs.cardTextRecord(record ? [record] : [])
     return { text: needs.cardText(issue, cards.texts), details: cards.details.get(issue.id) ?? '', invalid: cards.invalid || !record }
   } catch {
@@ -48,21 +63,35 @@ async function cardFor(workspace, issue) {
   }
 }
 
-async function load(context) {
-  const { id, rig, target } = context.input ?? {}
-  const key = `${rig ?? ''}#${id}#${JSON.stringify(target ?? null)}`
-  if (key === shownKey) return
-  if (typeof id !== 'string' || !BEAD_ID.test(id) || (rig !== undefined && (typeof rig !== 'string' || !RIG_PATH.test(rig))) || !validTarget(target)) {
-    ui.title.textContent = 'No bead selected'
-    return
-  }
+async function show(workspace, { id, rig, target }, key, request) {
+  const bd = (args) => window.host.run('bd', workspace, args)
   const scope = rig === undefined ? [] : ['-C', rig]
-  const [issue] = await window.bdRead(context.workspace, [...scope, 'show', id, '--json', '--include-comments'])
+  const [[issue], record] = await Promise.all([
+    bd([...scope, 'show', id, '--json', '--include-comments']),
+    bd(['show', window.needsModel.CARD_TEXTS_RECORD, '--json']).then(([found]) => found).catch(() => undefined),
+  ])
+  if (request !== requestId) return
   if (!issue) throw new Error(`${id} was not found in ${rig ?? "this workspace's beads"}`)
-  const card = await cardFor(context.workspace, issue)
   shownKey = key
-  ui.status.textContent = ''
-  render(issue, card, target)
+  render(issue, cardFor(issue, record), target)
+}
+
+function load(context) {
+  const input = context.input ?? {}
+  const key = `${input.rig ?? ''}#${input.id}#${JSON.stringify(input.target ?? null)}`
+  if (key === shownKey || key === wantedKey) return
+  const request = ++requestId
+  shownKey = undefined
+  wantedKey = undefined
+  if (!validInput(input)) return clear('No bead selected')
+  wantedKey = key
+  document.title = input.id
+  clear(`Loading ${input.id}…`)
+  show(context.workspace, input, key, request).catch((error) => {
+    if (request !== requestId) return
+    wantedKey = undefined
+    ui.status.textContent = error.message
+  })
 }
 
 window.startView({ load, onStatus: (text) => (ui.status.textContent = text) })
