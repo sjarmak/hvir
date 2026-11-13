@@ -68,7 +68,14 @@ function packageApi(): DependencyPackage {
     globalName: 'DependencyPackage',
     write: false,
   })
-  const context = { DependencyPackage: undefined as unknown, Date, Set, Map, URL }
+  const context = {
+    DependencyPackage: undefined as unknown,
+    Date,
+    Set,
+    Map,
+    URL,
+    TextEncoder,
+  }
   runInNewContext(result.outputFiles[0]!.text, context)
   return context.DependencyPackage as DependencyPackage
 }
@@ -78,6 +85,15 @@ const gcRig = {
   observedAt: 1,
   text: '{"ok":true,"city_path":"/city","rig":{"name":"city","path":"/city"}}',
 }
+
+const realTypedDependencies = [
+  'hvir-0zd6s dependsOn hvir-b7vxq blocks',
+  'hvir-0zd6s dependsOn hvir-ub3le blocks',
+  'hvir-0zd6s dependsOn hvir-yvvr6 tracks',
+  'hvir-3q34m dependsOn hvir-yvvr6 tracks',
+  'hvir-6wpc8.26 dependsOn hvir-6wpc8 parent-child',
+  'hvir-w00.5 dependsOn hvir-w00 parent-child',
+].join('\n')
 
 describe('Beads workspace dependencies', () => {
   it('restores blocker identity, unlocks, and the next unblock action', () => {
@@ -97,7 +113,17 @@ describe('Beads workspace dependencies', () => {
       bdReady: { observedAt: 100, text: '[]' },
       bdDependencies: {
         observedAt: 101,
-        text: 'blocker work\nwork downstream-1 downstream-2\n',
+        text: [
+          'work dependsOn blocker blocks',
+          'downstream-1 dependsOn work blocks',
+          'downstream-2 dependsOn work blocks',
+          'work dependsOn blocker blocks',
+          'work dependsOn work blocks',
+          'outside dependsOn work blocks',
+          'work dependsOn outside blocks',
+          'work dependsOn downstream-1 tracks',
+          'work dependsOn downstream-2 parent-child',
+        ].join('\n'),
       },
       gc: { observedAt: 100, text: '{"ok":true,"sessions":[]}' },
       gcRig,
@@ -130,41 +156,75 @@ describe('Beads workspace dependencies', () => {
     )
   })
 
-  it('preserves every dependency edge from digraph adjacency rows', () =>
+  it('reads only unique non-self blocks edges from real typed bd output', () => {
+    expect(api.parseDependencyEdges(realTypedDependencies, 1).edges).toEqual([
+      { blockerId: 'hvir-b7vxq', blockedId: 'hvir-0zd6s' },
+      { blockerId: 'hvir-ub3le', blockedId: 'hvir-0zd6s' },
+    ])
+  })
+
+  it('preserves exactly the unique blocks relation from typed rows', () =>
     hegel.test((tc) => {
       const rows = tc.draw(
         gs.arrays(
           gs.tuples(
             gs.fromRegex('[A-Za-z0-9][A-Za-z0-9._:-]{0,40}'),
-            gs.arrays(gs.fromRegex('[A-Za-z0-9][A-Za-z0-9._:-]{0,40}'), {
-              minSize: 1,
-              maxSize: 8,
-            }),
+            gs.fromRegex('[A-Za-z0-9][A-Za-z0-9._:-]{0,40}'),
+            gs.sampledFrom(['blocks', 'tracks', 'parent-child']),
           ),
           { maxSize: 30 },
         ),
       )
       const parsed = api.parseDependencyEdges(
-        rows.map(([blocker, blocked]) => [blocker, ...blocked].join(' ')).join('\n'),
+        rows
+          .map(([issueId, dependsOnId, type]) =>
+            [issueId, 'dependsOn', dependsOnId, type].join(' '),
+          )
+          .join('\n'),
         1,
       )
+      const expected = new Map<string, { blockerId: string; blockedId: string }>()
+      for (const [blockedId, blockerId, type] of rows) {
+        if (type !== 'blocks' || blockerId === blockedId) continue
+        expected.set(`${blockerId}\0${blockedId}`, { blockerId, blockedId })
+      }
       expect(parsed.edges).toEqual(
-        rows.flatMap(([blockerId, blocked]) =>
-          blocked.map((blockedId) => ({ blockerId, blockedId })),
-        ),
+        [...expected.values()],
       )
     }))
+
+  it('does not classify non-blocking dependency counts as Blocked', () => {
+    const view = api.buildReadSurface({
+      bd: {
+        observedAt: 1,
+        text: JSON.stringify([issue('tracked', 'open', { dependency_count: 1 })]),
+      },
+      bdReady: { observedAt: 1, text: '[]' },
+      bdDependencies: {
+        observedAt: 1,
+        text: 'tracked dependsOn parent tracks',
+      },
+      gc: { observedAt: 1, text: '{"ok":true,"sessions":[]}' },
+      gcRig,
+    })
+    expect(
+      view.beads.sections.find((section) => section.key === 'blocked')?.items,
+    ).toEqual([])
+    expect(
+      view.beads.sections.find((section) => section.key === 'planned')?.items,
+    ).toMatchObject([{ id: 'tracked' }])
+  })
 
   it.each([
     [
       'truncation',
       { outcome: 'completed', code: 0, truncated: true },
-      'bd output was truncated',
+      'Dependency read failed: bd output was truncated',
     ],
     [
       'command failure',
       { outcome: 'completed', code: 2, truncated: false, reason: 'graph failed' },
-      'graph failed',
+      'Dependency read failed: graph failed',
     ],
   ])(
     'keeps dependency %s separate and preserves prior facts',
@@ -173,7 +233,8 @@ describe('Beads workspace dependencies', () => {
         request(capability: string, input: unknown) {
           expect(capability).toBe('connector.execute')
           const request = input as { args: string[] }
-          if (request.args.includes('digraph')) return Promise.resolve(result)
+          if (request.args.includes('{{.IssueID}} dependsOn {{.DependsOnID}} {{.Type}}'))
+            return Promise.resolve(result)
           return Promise.resolve({ outcome: 'completed', code: 0, truncated: false })
         },
       }
@@ -183,7 +244,7 @@ describe('Beads workspace dependencies', () => {
           observedAt: 1,
         },
         bdReady: { text: '[]', observedAt: 1 },
-        bdDependencies: { text: 'blocker work', observedAt: 1 },
+        bdDependencies: { text: 'work dependsOn blocker blocks', observedAt: 1 },
         gc: { text: '{"ok":true,"sessions":[]}', observedAt: 1 },
         gcRig,
       })
@@ -212,6 +273,49 @@ describe('Beads workspace dependencies', () => {
       ).toMatchObject([{ id: 'work' }])
     },
   )
+
+  it('reports the bounded dependency row limit as a failed read', async () => {
+    const text = Array.from(
+      { length: 500 },
+      (_, index) => `blocked-${String(index)} dependsOn blocker-${String(index)} blocks`,
+    ).join('\n')
+    const result = {
+      receipt: 'dependency-output',
+      outcome: 'completed',
+      host: 'local',
+      code: 0,
+      signal: null,
+      truncated: false,
+      stdoutBytes: new TextEncoder().encode(text).byteLength,
+      stderrBytes: 0,
+    }
+    const client = {
+      request(capability: string, input: unknown) {
+        const request = input as {
+          args?: string[]
+          receipt?: string
+          release?: boolean
+          stream?: string
+        }
+        if (capability === 'connector.execute') {
+          if (request.args?.includes('{{.IssueID}} dependsOn {{.DependsOnID}} {{.Type}}'))
+            return Promise.resolve(result)
+          return Promise.resolve({ outcome: 'completed', code: 0, truncated: false })
+        }
+        if (request.release) return Promise.resolve(undefined)
+        const data = request.stream === 'stderr' ? '' : text
+        return Promise.resolve({ data, nextOffset: null, result })
+      },
+    }
+    const input = (await api.readWorkspace(
+      client,
+      { workspace: { host: 'local', id: 'workspace-1' } },
+      undefined,
+    )) as Parameters<DependencyPackage['buildReadSurface']>[0]
+    expect(input.bdDependenciesFailure?.message).toBe(
+      'Dependency read failed: result reached the 500-edge limit',
+    )
+  })
 })
 
 function issue(

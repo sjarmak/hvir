@@ -148,8 +148,7 @@ export function parseBeads(text, observedAt, readyText, dependencyEdges = []) {
     else if (issue.status === 'in_progress') key = 'in-flight'
     else if (
       issue.status === 'blocked' ||
-      issue.blockedBy.length > 0 ||
-      (issue.dependencyCount > 0 && !ready.has(issue.id))
+      issue.blockedBy.length > 0
     )
       key = 'blocked'
     else if (shipState(issue, category)) key = 'ready-to-ship'
@@ -173,11 +172,19 @@ export function parseBeads(text, observedAt, readyText, dependencyEdges = []) {
 }
 
 export function parseDependencyEdges(text, observedAt) {
-  const edges = text.split(/\r?\n/u).flatMap((line) => {
-    const [blockerId, ...blockedIds] = line.trim().split(/\s+/u)
-    if (!blockerId || !blockedIds.length) return []
-    return blockedIds.map((blockedId) => ({ blockerId, blockedId }))
-  })
+  const edges = []
+  const seen = new Set()
+  for (const line of text.split(/\r?\n/u)) {
+    if (!line.trim()) continue
+    const [blockedId, relation, blockerId, type, ...extra] = line.trim().split(/\s+/u)
+    if (!blockedId || relation !== 'dependsOn' || !blockerId || !type || extra.length)
+      throw new Error('Invalid dependency edge')
+    if (type !== 'blocks' || blockerId === blockedId) continue
+    const key = `${blockerId}\0${blockedId}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    edges.push({ blockerId, blockedId })
+  }
   return { state: edges.length ? 'ready' : 'empty', observedAt, edges }
 }
 
@@ -186,6 +193,7 @@ function enrichDependencies(issues, edges) {
   const blockedBy = new Map()
   const unlocks = new Map()
   for (const edge of edges) {
+    if (!byId.has(edge.blockedId) || !byId.has(edge.blockerId)) continue
     appendId(blockedBy, edge.blockedId, edge.blockerId)
     appendId(unlocks, edge.blockerId, edge.blockedId)
   }
