@@ -22,13 +22,11 @@
 
   const aboutNeeds = (error) => NEEDS_KEYS.some((key) => error.includes(`) ${key}: `))
 
-  const needsFreshStale = (stale) => stale && { failedAt: stale.failedAt, readAt: stale.readAt }
-
   const withFreshNeeds = (previous, needs) => {
     const payload = { ...previous.payload, decisions: needs.decisions, herSteps: needs.herSteps,
       unread: previous.payload.unread.filter((field) => !NEEDS_KEYS.includes(field)) }
     return { ...previous, payload, model: window.projectsModel.buildDashboard(payload), complete: false,
-      stale: needsFreshStale(previous.stale),
+      needsAt: needs.readAt,
       deferred: false, answerable: needs.answerable, needs,
       errors: [...previous.errors.filter((error) => !aboutNeeds(error)), ...needs.errors] }
   }
@@ -108,7 +106,7 @@
         connector: loader.OUTCOME_CONNECTOR, field: 'outcomes' }, failures, options)
       : undefined
     const result = loader.assemblePayload({ now: new Date(Date.now()).toISOString(), reads, sessions, errors })
-    const { payload, lastGood: kept, stale } = loader.keepLastGood({ lastGood, payload: { ...result.payload,
+    const { payload, lastGood: kept, stale, needsAt } = loader.keepLastGood({ lastGood, payload: { ...result.payload,
       ...(outcomes ? { outcomes } : {}), unread: [...result.payload.unread, ...failures.unread] } })
     const conflicts = window.projectsModel.duplicateProjects(payload.projects)
     if (conflicts.length) result.errors.push(`project id in several stores: ${conflicts.join(', ')}`)
@@ -118,7 +116,7 @@
     const decisionReads = reads.filter((entry) => entry.key === 'decisions')
     const complete = !deferred && !failures.errors.length && decisionReads.length > 0 && decisionReads.every((entry) => !entry.error)
     return { answerable, complete, model: window.projectsModel.buildDashboard(payload), payload, errors: result.errors,
-      sessions: payload.sessions, deferred, projectsRead, needs, lastGood: kept, stale }
+      sessions: payload.sessions, deferred, projectsRead, needs, lastGood: kept, stale, needsAt }
   }
 
   const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
@@ -181,7 +179,7 @@
     let shownId
     const show = (data, context, extra) => {
       const answering = data.answerable && window.answerAction.actionBound() ? { ...actions, workspaceId: context.workspace.id, onAnswer: window.answerAction.answerDecision } : actions
-      const needsUnchecked = loader.needsUnchecked(data.stale)
+      const needsUnchecked = loader.needsUnchecked(data.needsAt, Date.now())
       const shownActions = needsUnchecked ? { ...answering, needsUnchecked } : answering
       const note = render(data, ui.projects, shownActions, context)
       if (data.partial) {

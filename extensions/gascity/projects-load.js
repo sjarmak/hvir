@@ -154,30 +154,26 @@
     return { payload, errors: failures }
   }
 
-  const KEPT_GROUPS = Object.freeze({
-    board: Object.freeze([...fields, 'sessions']),
-    outcomes: Object.freeze(['outcomes']),
-  })
-  const NEEDS_GROUP = 'board'
+  const BOARD = Object.freeze([...fields, 'sessions', 'outcomes'])
+  const NEEDS_FIELDS = Object.freeze(['decisions', 'herSteps'])
   const NEEDS_CHECK_LIMIT_MS = 10 * 60000
   const failedFields = (unread) => unread.includes('projects') ? [...unread, ...Object.values(LABEL_FIELDS)] : unread
 
   const keepLastGood = ({ payload, lastGood = {} }) => {
     const unread = payload.unread ?? []
     const failed = failedFields(unread)
-    const groups = Object.entries(KEPT_GROUPS)
-    const failing = new Set(groups.filter(([, members]) => members.some((field) => failed.includes(field))).map(([name]) => name))
-    const kept = groups.filter(([name]) => failing.has(name) && lastGood[name])
-    const fresh = groups.filter(([name, members]) => !failing.has(name) && members.every((field) => payload[field] !== undefined))
-    const keptFields = kept.flatMap(([, members]) => members)
-    const snapshot = (members) => ({ values: Object.fromEntries(members.map((field) => [field, payload[field]])), at: payload.now })
-    const needsKept = kept.some(([name]) => name === NEEDS_GROUP)
+    const boardFailed = BOARD.some((field) => failed.includes(field))
+    const needsClean = NEEDS_FIELDS.every((field) => !failed.includes(field))
+    const needsAt = needsClean ? payload.now : lastGood.needsAt
+    const board = boardFailed ? lastGood.board : { values: Object.fromEntries(BOARD.map((field) => [field, payload[field]])), at: payload.now }
+    const nextLastGood = { ...lastGood, ...(board ? { board } : {}), ...(needsAt ? { needsAt } : {}) }
+    const kept = boardFailed && board
+    if (!kept) return { payload, lastGood: nextLastGood, stale: null, needsAt }
     return {
-      payload: { ...payload, ...Object.assign({}, ...kept.map(([name]) => lastGood[name].values)),
-        unread: unread.filter((field) => !keptFields.includes(field)) },
-      lastGood: { ...lastGood, ...Object.fromEntries(fresh.map(([name, members]) => [name, snapshot(members)])) },
-      stale: kept.length ? { failedAt: payload.now, readAt: kept.map(([name]) => lastGood[name].at).sort()[0],
-        ...(needsKept ? { needsReadAt: lastGood[NEEDS_GROUP].at } : {}) } : null,
+      payload: { ...payload, ...kept.values, unread: unread.filter((field) => !BOARD.includes(field)) },
+      lastGood: nextLastGood,
+      stale: { failedAt: payload.now, readAt: kept.at },
+      needsAt: kept.at,
     }
   }
 
@@ -188,10 +184,10 @@
   const staleText = ({ failedAt, readAt }, now = Date.now()) =>
     `Couldn't refresh at ${stamp(failedAt, now)}; showing what was read at ${stamp(readAt, now)}`
 
-  const needsUnchecked = (stale) => stale?.needsReadAt &&
-    Date.parse(stale.failedAt) - Date.parse(stale.needsReadAt) > NEEDS_CHECK_LIMIT_MS
-    ? `Couldn't check what needs you since ${dated(stale.needsReadAt)}`
-    : null
+  const needsUnchecked = (needsAt, now) => {
+    if (!needsAt) return "Couldn't check what needs you yet"
+    return now - Date.parse(needsAt) > NEEDS_CHECK_LIMIT_MS ? `Couldn't check what needs you since ${dated(needsAt)}` : null
+  }
 
   const api = Object.freeze({
     labeledArgs, splitLabeled, inProgressArgs, urgentArgs, linkedArgs, showArgs, stepArgs, decisionArgs,

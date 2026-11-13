@@ -231,3 +231,89 @@ test('the card-text record om-p86nj8 still names Waiting on rows through a kept 
   assert.match(document.body.textContent, /Rebuild the lantern index/)
   assert.ok(staleLine(document))
 })
+
+const outcome = (text) => ({
+  time: EARLY,
+  title: 'Index rebuild',
+  outcome: text,
+  projects: ['pj-1'],
+})
+
+test('a fresh outcome never sits beside a kept board it contradicts', async (t) => {
+  const live = livePage(t, { entry: 'project' })
+  const { document } = live
+  live.outcomes = [outcome('Rebuild of wk-1 queued.')]
+  await live.load()
+  assert.deepEqual(waitingRows(document), ['wk-1'])
+  assert.match(document.body.textContent, /Rebuild of wk-1 queued/)
+  live.at(LATE)
+  live.outcomes = [outcome('wk-1 is complete; no rebuild is pending.')]
+  live.failing = page.isLinked
+  await live.load()
+  assert.deepEqual(waitingRows(document), ['wk-1'])
+  assert.match(document.body.textContent, /Rebuild of wk-1 queued/)
+  assert.doesNotMatch(document.body.textContent, /wk-1 is complete/)
+  assert.ok(staleLine(document))
+})
+
+test('a failing outcomes read keeps the whole board from the same earlier read', async (t) => {
+  const live = livePage(t, { entry: 'project' })
+  const { document } = live
+  live.outcomes = [outcome('Rebuild of wk-1 queued.')]
+  await live.load()
+  live.at(LATE)
+  live.linked = () => []
+  live.outcomesFailing = true
+  await live.load()
+  assert.deepEqual(waitingRows(document), ['wk-1'])
+  assert.match(document.body.textContent, /Rebuild of wk-1 queued/)
+  assert.equal(
+    staleLine(document).textContent,
+    `Couldn't refresh at ${clock(LATE)}; showing what was read at ${clock(EARLY)}`,
+  )
+})
+
+const everyRead = () => true
+
+test('with no clean board ever, Needs you still escalates once every read fails for 48 hours', async (t) => {
+  const live = livePage(t)
+  const { document } = live
+  live.failing = page.isLinked
+  await live.load()
+  assert.match(page.needsText(document), /Nothing needs you/)
+  live.after(48 * HOUR)
+  live.failing = everyRead
+  await live.load()
+  const needs = page.needsText(document)
+  assert.doesNotMatch(needs, /Nothing needs you/)
+  assert.match(needs, new RegExp(`Couldn't check what needs you since ${dated(EARLY)}`))
+  assert.equal(staleLines(document).length, 1)
+})
+
+test('with no clean board, a decisions read failing for an hour names the last clean Needs-you read', async (t) => {
+  const live = livePage(t)
+  const { document } = live
+  live.failing = page.isLinked
+  await live.load()
+  live.after(HOUR)
+  live.failing = (args) => page.isLinked(args) || page.isDecisions(args)
+  await live.load()
+  const needs = page.needsText(document)
+  assert.doesNotMatch(needs, /Nothing needs you/)
+  assert.match(needs, new RegExp(`Couldn't check what needs you since ${dated(EARLY)}`))
+})
+
+for (const [name, failing] of [
+  ['decisions', page.isDecisions],
+  ['herSteps', page.isHerSteps],
+]) {
+  test(`a first load whose ${name} read fails says Needs you has not been checked yet`, async (t) => {
+    const live = livePage(t)
+    const { document } = live
+    live.failing = failing
+    await live.load()
+    const needs = page.needsText(document)
+    assert.doesNotMatch(needs, /Nothing needs you/)
+    assert.match(needs, /Couldn't check what needs you yet/)
+  })
+}

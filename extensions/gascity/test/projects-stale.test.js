@@ -3,6 +3,7 @@ const assert = require('node:assert/strict')
 const loader = require('../projects-load.js')
 
 const BOARD = [
+  'outcomes',
   'projects',
   'milestones',
   'artifacts',
@@ -16,14 +17,13 @@ const BOARD = [
   'urgent',
   'sessions',
 ]
-const KEPT = [...BOARD, 'outcomes']
 const EARLY = '2026-11-13T02:43:00.000Z'
 const LATE = '2026-11-13T02:48:00.000Z'
 
 const fullPayload = (now, tag) => ({
   now,
   unread: [],
-  ...Object.fromEntries(KEPT.map((field) => [field, [{ id: `${field}-${tag}` }]])),
+  ...Object.fromEntries(BOARD.map((field) => [field, [{ id: `${field}-${tag}` }]])),
 })
 
 const deepFreeze = (value) => {
@@ -34,17 +34,22 @@ const deepFreeze = (value) => {
   return value
 }
 
-test('a first read keeps the board and the outcomes as last good reads and is not stale', () => {
+test('a first read keeps the board with its outcomes as one last good read and is not stale', () => {
   const result = loader.keepLastGood({ payload: fullPayload(EARLY, 'a') })
   assert.equal(result.stale, null)
   assert.deepEqual(result.payload, fullPayload(EARLY, 'a'))
+  assert.deepEqual(Object.keys(result.lastGood).sort(), ['board', 'needsAt'])
   assert.equal(result.lastGood.board.at, EARLY)
+  assert.equal(result.lastGood.needsAt, EARLY)
+  assert.equal(result.needsAt, EARLY)
   for (const field of BOARD)
     assert.deepEqual(result.lastGood.board.values[field], [{ id: `${field}-a` }])
-  assert.deepEqual(result.lastGood.outcomes, {
-    values: { outcomes: [{ id: 'outcomes-a' }] },
-    at: EARLY,
-  })
+})
+
+test('a board read with no outcomes connector is still kept as a clean read', () => {
+  const result = loader.keepLastGood({ payload: { ...fullPayload(EARLY, 'a'), outcomes: undefined } })
+  assert.equal(result.lastGood.board.at, EARLY)
+  assert.equal(result.lastGood.board.values.outcomes, undefined)
 })
 
 for (const field of BOARD.filter((entry) => entry !== 'projects')) {
@@ -54,25 +59,29 @@ for (const field of BOARD.filter((entry) => entry !== 'projects')) {
     const result = loader.keepLastGood({ payload: failed, lastGood: first.lastGood })
     for (const member of BOARD)
       assert.deepEqual(result.payload[member], [{ id: `${member}-a` }])
-    assert.deepEqual(result.payload.outcomes, [{ id: 'outcomes-b' }])
     assert.deepEqual(result.payload.unread, [])
-    assert.deepEqual(result.stale, { failedAt: LATE, readAt: EARLY, needsReadAt: EARLY })
+    assert.deepEqual(result.stale, { failedAt: LATE, readAt: EARLY })
+    assert.equal(result.needsAt, EARLY)
     assert.deepEqual(result.lastGood.board, first.lastGood.board)
-    assert.deepEqual(result.lastGood.outcomes, {
-      values: { outcomes: [{ id: 'outcomes-b' }] },
-      at: LATE,
-    })
   })
 }
 
-test('a failed outcomes read keeps only the outcomes and leaves the board fresh', () => {
-  const first = loader.keepLastGood({ payload: fullPayload(EARLY, 'a') })
-  const failed = { ...fullPayload(LATE, 'b'), outcomes: undefined, unread: ['outcomes'] }
-  const result = loader.keepLastGood({ payload: failed, lastGood: first.lastGood })
-  assert.deepEqual(result.payload.outcomes, [{ id: 'outcomes-a' }])
-  for (const member of BOARD)
-    assert.deepEqual(result.payload[member], [{ id: `${member}-b` }])
-  assert.deepEqual(result.stale, { failedAt: LATE, readAt: EARLY })
+test('a fresh outcome saying a task is complete never meets the kept board that still shows it open', () => {
+  const open = { id: 'wk-1', status: 'open' }
+  const first = loader.keepLastGood({
+    payload: { ...fullPayload(EARLY, 'a'), linked: [open], outcomes: [{ title: 'wk-1 queued' }] },
+  })
+  const result = loader.keepLastGood({
+    payload: {
+      ...fullPayload(LATE, 'b'),
+      linked: [],
+      outcomes: [{ title: 'wk-1 is complete; no rebuild is pending.' }],
+      unread: ['linked'],
+    },
+    lastGood: first.lastGood,
+  })
+  assert.deepEqual(result.payload.linked, [open])
+  assert.deepEqual(result.payload.outcomes, [{ title: 'wk-1 queued' }])
 })
 
 test('a failed projects read keeps milestones, artifacts and the rest of the board from the same read', () => {
@@ -88,7 +97,7 @@ test('a failed projects read keeps milestones, artifacts and the rest of the boa
   for (const member of BOARD)
     assert.deepEqual(result.payload[member], [{ id: `${member}-a` }])
   assert.deepEqual(result.payload.unread, [])
-  assert.deepEqual(result.stale, { failedAt: LATE, readAt: EARLY, needsReadAt: EARLY })
+  assert.deepEqual(result.stale, { failedAt: LATE, readAt: EARLY })
 })
 
 test('a bead that is blocked in a fresh linked read never meets its stale in-progress copy', () => {
@@ -166,7 +175,8 @@ test('a board failing twice keeps the read from before both failures', () => {
   })
   assert.deepEqual(third.payload.linked, [{ id: 'linked-a' }])
   assert.deepEqual(third.payload.urgent, [{ id: 'urgent-a' }])
-  assert.deepEqual(third.stale, { failedAt: LATE, readAt: EARLY, needsReadAt: EARLY })
+  assert.deepEqual(third.stale, { failedAt: LATE, readAt: EARLY })
+  assert.equal(third.needsAt, EARLY)
 })
 
 test('a clean read after a failed one replaces the kept board and clears the stale mark', () => {
@@ -190,7 +200,7 @@ test('keepLastGood leaves frozen payloads and kept reads untouched for every fai
     loader.keepLastGood({ payload: deepFreeze(fullPayload(EARLY, 'a')) }).lastGood,
   )
   const before = JSON.stringify(first)
-  for (const field of KEPT) {
+  for (const field of BOARD) {
     const payload = deepFreeze({ ...fullPayload(LATE, 'b'), unread: [field] })
     const snapshot = JSON.stringify(payload)
     loader.keepLastGood({ payload, lastGood: first })
@@ -199,15 +209,48 @@ test('keepLastGood leaves frozen payloads and kept reads untouched for every fai
   }
 })
 
-test('the Needs-you check is unknown only when its kept read is older than ten minutes', () => {
+test('the Needs-you clean read time is tracked without any clean board', () => {
+  const first = loader.keepLastGood({
+    payload: { ...fullPayload(EARLY, 'a'), linked: [], unread: ['linked'] },
+  })
+  assert.equal(first.lastGood.board, undefined)
+  assert.equal(first.lastGood.needsAt, EARLY)
+  assert.equal(first.needsAt, EARLY)
+  const failed = loader.keepLastGood({
+    payload: { ...fullPayload(LATE, 'b'), unread: ['projects', 'decisions', 'herSteps', 'linked'] },
+    lastGood: first.lastGood,
+  })
+  assert.equal(failed.lastGood.needsAt, EARLY)
+  assert.equal(failed.needsAt, EARLY)
+  assert.equal(failed.stale, null)
+})
+
+for (const field of ['decisions', 'herSteps']) {
+  test(`a ${field} read that has never succeeded leaves no Needs-you read time`, () => {
+    const result = loader.keepLastGood({
+      payload: { ...fullPayload(EARLY, 'a'), unread: [field] },
+    })
+    assert.equal(result.needsAt, undefined)
+    assert.equal(result.lastGood.needsAt, undefined)
+  })
+}
+
+test('a clean Needs-you read beside a kept board reports the time of the board it shows', () => {
+  const first = loader.keepLastGood({ payload: fullPayload(EARLY, 'a') })
+  const result = loader.keepLastGood({
+    payload: { ...fullPayload(LATE, 'b'), unread: ['linked'] },
+    lastGood: first.lastGood,
+  })
+  assert.equal(result.lastGood.needsAt, LATE)
+  assert.equal(result.needsAt, EARLY)
+})
+
+test('Nothing needs you is allowed only for a clean read within the last ten minutes', () => {
   assert.equal(loader.NEEDS_CHECK_LIMIT_MS, 10 * 60000)
-  const at = (minutes) => new Date(Date.parse(EARLY) + minutes * 60000).toISOString()
-  assert.equal(loader.needsUnchecked(null), null)
-  assert.equal(loader.needsUnchecked({ failedAt: at(60), readAt: EARLY }), null)
-  assert.equal(
-    loader.needsUnchecked({ failedAt: at(10), readAt: EARLY, needsReadAt: EARLY }),
-    null,
-  )
+  const at = (minutes) => Date.parse(EARLY) + minutes * 60000
+  assert.equal(loader.needsUnchecked(EARLY, at(0)), null)
+  assert.equal(loader.needsUnchecked(EARLY, at(10)), null)
+  assert.equal(loader.needsUnchecked(undefined, at(0)), "Couldn't check what needs you yet")
   const since = new Date(EARLY).toLocaleString([], {
     month: 'short',
     day: 'numeric',
@@ -215,7 +258,7 @@ test('the Needs-you check is unknown only when its kept read is older than ten m
     minute: '2-digit',
   })
   assert.equal(
-    loader.needsUnchecked({ failedAt: at(11), readAt: EARLY, needsReadAt: EARLY }),
+    loader.needsUnchecked(EARLY, at(11)),
     `Couldn't check what needs you since ${since}`,
   )
 })

@@ -75,10 +75,11 @@ const defaultRead = (page, args) => {
   return []
 }
 
-const livePage = (t) => {
+const livePage = (t, { entry = 'projects' } = {}) => {
   const { JSDOM } = require('jsdom')
-  const dom = new JSDOM(readFileSync(`${__dirname}/../projects.html`, 'utf8'), {
+  const dom = new JSDOM(readFileSync(`${__dirname}/../${entry}.html`, 'utf8'), {
     runScripts: 'outside-only',
+    url: 'http://localhost/',
   })
   t.after(() => dom.window.close())
   const { window } = dom
@@ -100,6 +101,8 @@ const livePage = (t) => {
     asks: [],
     steps: [],
     linked: () => [baseWork(page)],
+    outcomes: undefined,
+    outcomesFailing: false,
     inProgress: () => [],
     at: (iso) => {
       page.clock = Date.parse(iso)
@@ -115,9 +118,18 @@ const livePage = (t) => {
     return { refresh: async () => {} }
   }
   window.host = {
-    availability: async () => ({ gc: 'supported', bd: 'supported' }),
-    run: async (connector, scope, args) =>
-      args[0] === 'rig' ? { rigs } : { sessions: [] },
+    availability: async () => ({
+      gc: 'supported',
+      bd: 'supported',
+      ...(page.outcomes ? { 'city-outcomes': 'supported' } : {}),
+    }),
+    run: async (connector, scope, args) => {
+      if (connector === 'city-outcomes') {
+        if (page.outcomesFailing) throw new Error('outcomes store restarting')
+        return { entries: page.outcomes }
+      }
+      return args[0] === 'rig' ? { rigs } : { sessions: [] }
+    },
   }
   window.bdRead = async (scope, args) => {
     if (page.failing(args)) throw new Error('dolt server restarting')
@@ -126,7 +138,7 @@ const livePage = (t) => {
   window.bdNote = () => ''
   window.openOwn = async () => {}
   window.connectHandler = () => async () => {}
-  window.eval(readFileSync(`${__dirname}/../projects.js`, 'utf8'))
+  window.eval(readFileSync(`${__dirname}/../${entry}.js`, 'utf8'))
   return page
 }
 
