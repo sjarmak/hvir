@@ -35,11 +35,12 @@ const deepFreeze = (value) => {
 }
 
 test('a first read keeps the board with its outcomes as one last good read and is not stale', () => {
-  const result = loader.keepLastGood({ payload: fullPayload(EARLY, 'a') })
+  const result = loader.keepLastGood({ payload: fullPayload(EARLY, 'a'), needsReadAt: EARLY })
   assert.equal(result.stale, null)
   assert.deepEqual(result.payload, fullPayload(EARLY, 'a'))
   assert.deepEqual(Object.keys(result.lastGood).sort(), ['board', 'needsAt'])
   assert.equal(result.lastGood.board.at, EARLY)
+  assert.equal(result.lastGood.board.needsAt, EARLY)
   assert.equal(result.lastGood.needsAt, EARLY)
   assert.equal(result.needsAt, EARLY)
   for (const field of BOARD)
@@ -54,7 +55,7 @@ test('a board read with no outcomes connector is still kept as a clean read', ()
 
 for (const field of BOARD.filter((entry) => entry !== 'projects')) {
   test(`a failed ${field} read puts back the whole board from the same earlier read, never a mix`, () => {
-    const first = loader.keepLastGood({ payload: fullPayload(EARLY, 'a') })
+    const first = loader.keepLastGood({ payload: fullPayload(EARLY, 'a'), needsReadAt: EARLY })
     const failed = { ...fullPayload(LATE, 'b'), [field]: [], unread: [field] }
     const result = loader.keepLastGood({ payload: failed, lastGood: first.lastGood })
     for (const member of BOARD)
@@ -163,7 +164,7 @@ test('a board that has never read cleanly stays unread and does not mark the vie
 })
 
 test('a board failing twice keeps the read from before both failures', () => {
-  const first = loader.keepLastGood({ payload: fullPayload(EARLY, 'a') })
+  const first = loader.keepLastGood({ payload: fullPayload(EARLY, 'a'), needsReadAt: EARLY })
   const middle = '2026-11-13T02:45:00.000Z'
   const second = loader.keepLastGood({
     payload: { ...fullPayload(middle, 'b'), linked: [], unread: ['linked'] },
@@ -212,6 +213,7 @@ test('keepLastGood leaves frozen payloads and kept reads untouched for every fai
 test('the Needs-you clean read time is tracked without any clean board', () => {
   const first = loader.keepLastGood({
     payload: { ...fullPayload(EARLY, 'a'), linked: [], unread: ['linked'] },
+    needsReadAt: EARLY,
   })
   assert.equal(first.lastGood.board, undefined)
   assert.equal(first.lastGood.needsAt, EARLY)
@@ -236,13 +238,74 @@ for (const field of ['decisions', 'herSteps']) {
 }
 
 test('a clean Needs-you read beside a kept board reports the time of the board it shows', () => {
-  const first = loader.keepLastGood({ payload: fullPayload(EARLY, 'a') })
+  const first = loader.keepLastGood({ payload: fullPayload(EARLY, 'a'), needsReadAt: EARLY })
   const result = loader.keepLastGood({
     payload: { ...fullPayload(LATE, 'b'), unread: ['linked'] },
     lastGood: first.lastGood,
+    needsReadAt: LATE,
   })
   assert.equal(result.lastGood.needsAt, LATE)
   assert.equal(result.needsAt, EARLY)
+})
+
+const BOARD_DONE = '2026-11-13T02:43:30.000Z'
+
+test('a clean board with no Needs-you read this refresh leaves the Needs-you time where it was', () => {
+  const none = loader.keepLastGood({ payload: fullPayload(EARLY, 'a') })
+  assert.equal(none.needsAt, undefined)
+  assert.equal(none.lastGood.needsAt, undefined)
+  assert.equal(none.lastGood.board.at, EARLY)
+  const first = loader.keepLastGood({ payload: fullPayload(EARLY, 'a'), needsReadAt: EARLY })
+  const later = loader.keepLastGood({ payload: fullPayload(LATE, 'b'), lastGood: first.lastGood })
+  assert.equal(later.needsAt, EARLY)
+  assert.equal(later.lastGood.needsAt, EARLY)
+  assert.equal(later.lastGood.board.needsAt, EARLY)
+})
+
+test('the Needs-you time is the time the Needs-you reads finished, not when the board finished', () => {
+  const result = loader.keepLastGood({ payload: fullPayload(BOARD_DONE, 'a'), needsReadAt: EARLY })
+  assert.equal(result.needsAt, EARLY)
+  assert.equal(result.lastGood.needsAt, EARLY)
+  assert.equal(result.lastGood.board.at, BOARD_DONE)
+  assert.equal(result.lastGood.board.needsAt, EARLY)
+})
+
+test('a kept board reports the Needs-you read time it was taken with, not its own finish time', () => {
+  const first = loader.keepLastGood({ payload: fullPayload(BOARD_DONE, 'a'), needsReadAt: EARLY })
+  const result = loader.keepLastGood({
+    payload: { ...fullPayload(LATE, 'b'), decisions: [], unread: ['decisions'] },
+    lastGood: first.lastGood,
+  })
+  assert.deepEqual(result.stale, { failedAt: LATE, readAt: BOARD_DONE })
+  assert.equal(result.needsAt, EARLY)
+})
+
+test('a failed rig list puts back the whole earlier board and leaves the Needs-you time alone', () => {
+  const first = loader.keepLastGood({ payload: fullPayload(EARLY, 'a'), needsReadAt: EARLY })
+  const result = loader.keepLastGood({
+    payload: { ...fullPayload(LATE, 'b'), unread: ['rigs'] },
+    lastGood: first.lastGood,
+  })
+  for (const member of BOARD)
+    assert.deepEqual(result.payload[member], [{ id: `${member}-a` }])
+  assert.deepEqual(result.payload.unread, [])
+  assert.deepEqual(result.stale, { failedAt: LATE, readAt: EARLY })
+  assert.equal(result.needsAt, EARLY)
+  assert.equal(result.lastGood.needsAt, EARLY)
+})
+
+test('Needs you counts as checked only when a decisions read and a herSteps read both ran cleanly', () => {
+  const ok = (key) => ({ key, value: [] })
+  const bad = (key) => ({ key, error: 'dolt server restarting' })
+  const notRun = (key) => ({ key, error: 'deadline passed', notRun: true })
+  assert.equal(loader.needsChecked([]), false)
+  assert.equal(loader.needsChecked([ok('decisions')]), false)
+  assert.equal(loader.needsChecked([ok('herSteps')]), false)
+  assert.equal(loader.needsChecked([ok('decisions'), ok('herSteps'), ok('decisions')]), true)
+  assert.equal(loader.needsChecked([ok('decisions'), bad('herSteps')]), false)
+  assert.equal(loader.needsChecked([ok('decisions'), ok('herSteps'), bad('decisions')]), false)
+  assert.equal(loader.needsChecked([notRun('decisions'), ok('herSteps')]), false)
+  assert.equal(loader.needsChecked([ok('decisions'), ok('herSteps'), bad('linked')]), true)
 })
 
 test('Nothing needs you is allowed only for a clean read within the last ten minutes', () => {

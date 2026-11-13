@@ -155,25 +155,32 @@
   }
 
   const BOARD = Object.freeze([...fields, 'sessions', 'outcomes'])
+  const BOARD_INPUTS = Object.freeze([...BOARD, 'rigs'])
   const NEEDS_FIELDS = Object.freeze(['decisions', 'herSteps'])
   const NEEDS_CHECK_LIMIT_MS = 10 * 60000
   const failedFields = (unread) => unread.includes('projects') ? [...unread, ...Object.values(LABEL_FIELDS)] : unread
 
-  const keepLastGood = ({ payload, lastGood = {} }) => {
+  const needsChecked = (reads) => {
+    const needsReads = reads.filter((read) => NEEDS_FIELDS.includes(read.key))
+    return NEEDS_FIELDS.every((field) => needsReads.some((read) => read.key === field)) &&
+      needsReads.every((read) => !read.error)
+  }
+
+  const keepLastGood = ({ payload, lastGood = {}, needsReadAt }) => {
     const unread = payload.unread ?? []
     const failed = failedFields(unread)
-    const boardFailed = BOARD.some((field) => failed.includes(field))
-    const needsClean = NEEDS_FIELDS.every((field) => !failed.includes(field))
-    const needsAt = needsClean ? payload.now : lastGood.needsAt
-    const board = boardFailed ? lastGood.board : { values: Object.fromEntries(BOARD.map((field) => [field, payload[field]])), at: payload.now }
+    const boardFailed = BOARD_INPUTS.some((field) => failed.includes(field))
+    const needsAt = needsReadAt ?? lastGood.needsAt
+    const board = boardFailed ? lastGood.board
+      : { values: Object.fromEntries(BOARD.map((field) => [field, payload[field]])), at: payload.now, ...(needsAt ? { needsAt } : {}) }
     const nextLastGood = { ...lastGood, ...(board ? { board } : {}), ...(needsAt ? { needsAt } : {}) }
     const kept = boardFailed && board
     if (!kept) return { payload, lastGood: nextLastGood, stale: null, needsAt }
     return {
-      payload: { ...payload, ...kept.values, unread: unread.filter((field) => !BOARD.includes(field)) },
+      payload: { ...payload, ...kept.values, unread: unread.filter((field) => !BOARD_INPUTS.includes(field)) },
       lastGood: nextLastGood,
       stale: { failedAt: payload.now, readAt: kept.at },
-      needsAt: kept.at,
+      needsAt: kept.needsAt,
     }
   }
 
@@ -192,7 +199,7 @@
   const api = Object.freeze({
     labeledArgs, splitLabeled, inProgressArgs, urgentArgs, linkedArgs, showArgs, stepArgs, decisionArgs,
     ANCESTOR_ROUNDS, OUTCOME_CONNECTOR, OUTCOME_ARGS, parseOutcomes, storesFor, storeRequests, workflowRequests, ancestorRequests, liveSessions, assemblePayload,
-    keepLastGood, NEEDS_CHECK_LIMIT_MS, staleText, needsUnchecked,
+    needsChecked, keepLastGood, NEEDS_CHECK_LIMIT_MS, staleText, needsUnchecked,
   })
   if (node) module.exports = api
   else window.projectsLoad = api

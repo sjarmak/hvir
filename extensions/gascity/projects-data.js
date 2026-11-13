@@ -75,7 +75,7 @@
     const failures = { errors: [], notRun: false, unread: [] }
     const { errors } = failures
     const [city, sessions] = await Promise.all([
-      readCity(workspace, { args: ['rig', 'list', '--json'], parse: window.crewParse.parseRigList }, failures),
+      readCity(workspace, { args: ['rig', 'list', '--json'], parse: window.crewParse.parseRigList, field: 'rigs' }, failures),
       readCity(workspace, { args: ['session', 'list', '--json'], parse: loader.liveSessions, field: 'sessions' }, failures),
     ])
     const stores = loader.storesFor(workspace, Array.isArray(city) ? {} : city)
@@ -83,9 +83,8 @@
     const isNeeds = (request) => NEEDS_KEYS.includes(request.key)
     const answerable = connectors[window.answerAction.CONNECTOR] === 'supported'
     const needsReads = await readStores(workspace, requests.filter(isNeeds))
-    const needsFresh = needsReads.some((entry) => entry.key === 'decisions') && needsReads.every((entry) => !entry.error)
     let needs
-    if (needsFresh) {
+    if (loader.needsChecked(needsReads)) {
       const { payload, errors: needsErrors } = loader.assemblePayload({ now: new Date(Date.now()).toISOString(), reads: needsReads })
       needs = { readAt: payload.now, decisions: payload.decisions, herSteps: payload.herSteps, errors: needsErrors, answerable }
       await onNeeds?.(needs, sessions)
@@ -106,7 +105,7 @@
         connector: loader.OUTCOME_CONNECTOR, field: 'outcomes' }, failures, options)
       : undefined
     const result = loader.assemblePayload({ now: new Date(Date.now()).toISOString(), reads, sessions, errors })
-    const { payload, lastGood: kept, stale, needsAt } = loader.keepLastGood({ lastGood, payload: { ...result.payload,
+    const { payload, lastGood: kept, stale, needsAt } = loader.keepLastGood({ lastGood, needsReadAt: needs?.readAt, payload: { ...result.payload,
       ...(outcomes ? { outcomes } : {}), unread: [...result.payload.unread, ...failures.unread] } })
     const conflicts = window.projectsModel.duplicateProjects(payload.projects)
     if (conflicts.length) result.errors.push(`project id in several stores: ${conflicts.join(', ')}`)

@@ -104,6 +104,10 @@ const livePage = (t, { entry = 'projects' } = {}) => {
     outcomes: undefined,
     outcomesFailing: false,
     inProgress: () => [],
+    rigs,
+    rigListFailing: false,
+    bdCalls: [],
+    during: () => {},
     at: (iso) => {
       page.clock = Date.parse(iso)
     },
@@ -128,10 +132,14 @@ const livePage = (t, { entry = 'projects' } = {}) => {
         if (page.outcomesFailing) throw new Error('outcomes store restarting')
         return { entries: page.outcomes }
       }
-      return args[0] === 'rig' ? { rigs } : { sessions: [] }
+      if (args[0] !== 'rig') return { sessions: [] }
+      if (page.rigListFailing) throw new Error('fake rig-list failure')
+      return { rigs: page.rigs }
     },
   }
   window.bdRead = async (scope, args) => {
+    page.bdCalls.push(args)
+    page.during(args)
     if (page.failing(args)) throw new Error('dolt server restarting')
     return defaultRead(page, args)
   }
