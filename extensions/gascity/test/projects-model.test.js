@@ -511,7 +511,7 @@ test('stuck lists urgent open work with no waiting note, oldest update first, an
   assert.deepEqual(model.waiting.items.map((row) => [row.id, row.waitingOn]), [['fx-u-wait', 'omni-49z8xs']])
 })
 
-test('waiting lists what waits on her first, longest waiting first, then the other waits in their usual order', () => {
+test('waiting lists what waits on her first, longest waiting first, then the other waits most recently changed first', () => {
   const input = fresh()
   input.urgent = [
     urgent('fx-w-agent-old', { metadata: { 'gc.waiting_on': 'omni-pl' }, updated_at: '2026-10-28T15:00:00Z' }),
@@ -527,7 +527,7 @@ test('waiting lists what waits on her first, longest waiting first, then the oth
   const model = buildDashboard(input)
   assert.deepEqual(model.waiting.items.map((row) => row.id), [
     'fx-w-her-note', 'fx-w-her-caps', 'fx-w-step', 'fx-w-her-new', 'fx-w-undated',
-    'fx-w-named', 'fx-w-agent-old', 'fx-w-agent-tie', 'fx-w-time',
+    'fx-w-agent-tie', 'fx-w-time', 'fx-w-agent-old', 'fx-w-named',
   ])
   assert.equal(model.waiting.items.find((row) => row.id === 'fx-w-step').waitingOn, 'stephanie')
   assert.ok(!model.stuck.items.some((row) => row.id === 'fx-w-step'))
@@ -836,6 +836,19 @@ test('a wait naming a seat or seats is a wait on an agent, so over a day it is S
   assert.deepEqual(['fx-s-seat', 'fx-s-seats', 'fx-s-named', 'fx-s-fresh', 'fx-s-word'].map(kind), ['agent', 'agent', 'agent', 'agent', ''])
   assert.deepEqual(model.stuck.items.map((row) => [row.id, row.stuckReasons]).sort(),
     [['fx-s-named', ['broken-wait']], ['fx-s-seat', ['broken-wait']], ['fx-s-seats', ['broken-wait']]])
+})
+
+test('Waiting on lists the most recently changed first, so the rows past the cap are the oldest', () => {
+  const input = fresh()
+  const minute = (n) => new Date(Date.parse('2026-10-29T11:59:00Z') - n * 60000).toISOString()
+  const waits = (n, waitingOn = 'time') => urgent(`fx-wo-${String(n).padStart(2, '0')}`, { assignee: 'omni-pl',
+    updated_at: minute(n), metadata: { 'gc.waiting_on': waitingOn } })
+  input.urgent = [...Array.from({ length: 52 }, (_, n) => waits(n)), waits(60, 'stephanie')]
+  const model = buildDashboard(input)
+  const ids = model.waiting.items.map((row) => row.id)
+  assert.equal(model.waiting.more, 3)
+  assert.deepEqual(ids.slice(0, 3), ['fx-wo-60', 'fx-wo-00', 'fx-wo-01'])
+  assert.equal(ids.at(-1), 'fx-wo-48')
 })
 
 test('open work nobody owns is not Stuck as unowned until it has sat an hour, so a bead mid-dispatch stays quiet', () => {

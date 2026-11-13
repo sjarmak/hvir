@@ -389,6 +389,9 @@
   const oldestFirst = (a, b) => (a.updatedAt === null) - (b.updatedAt === null) ||
     Date.parse(a.updatedAt) - Date.parse(b.updatedAt) || a.id.localeCompare(b.id)
 
+  const newestFirst = (a, b) => (a.updatedAt === null) - (b.updatedAt === null) ||
+    Date.parse(b.updatedAt) - Date.parse(a.updatedAt) || a.id.localeCompare(b.id)
+
   const capped = (rows) => ({ items: rows.slice(0, STUCK_CAP), more: Math.max(0, rows.length - STUCK_CAP) })
 
   const HOUR_MS = 3600000
@@ -412,7 +415,7 @@
     const unwaited = calm.filter((row) => !hasNamedWait(row))
     const working = unwaited.filter((row) => !row.unread && row.active || (row.state === 'in_progress' && row.updatedAt !== null))
     return { stuck: capped(stuck), working: capped(working),
-      waiting: capped([...waiting.filter((row) => row.waitsOnHer), ...waiting.filter((row) => !row.waitsOnHer)]),
+      waiting: capped([...waiting.filter((row) => row.waitsOnHer), ...waiting.filter((row) => !row.waitsOnHer).sort(newestFirst)]),
       notStarted: capped(unwaited.filter((row) => !working.includes(row))) }
   }
 
