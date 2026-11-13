@@ -142,9 +142,9 @@ test('an old blocked_on wait on an unloaded bead stays Stuck and is flagged like
   assert.ok(flags('fx-x-unloaded').includes('likely broken'))
 })
 
-test('a recent free-text blocked_on wait shows under Waiting, not Stuck', () => {
+test('a recent free-text blocked_on wait on an owned item shows under Waiting, not Stuck', () => {
   const input = structuredClone(fixture)
-  input.urgent = [bead('fx-x-recent', { updated_at: RECENT, metadata: { 'gc.blocked_on': 'database recovery' } })]
+  input.urgent = [bead('fx-x-recent', { assignee: 'omni-pl', updated_at: RECENT, metadata: { 'gc.blocked_on': 'database recovery' } })]
   const model = buildDashboard(input)
   assert.deepEqual(model.stuck.items.map((r) => r.id), [])
   const waiting = model.waiting.items.find((r) => r.id === 'fx-x-recent')
@@ -157,7 +157,45 @@ test('a recognized wait kind over a day keeps its kind and broken-wait reason', 
   input.urgent = [bead('fx-x-known', { metadata: { 'gc.blocked_on': 'stephanie' } })]
   const found = buildDashboard(input).stuck.items.find((r) => r.id === 'fx-x-known')
   assert.equal(found.waitKind, 'her')
-  assert.deepEqual(found.stuckReasons, ['broken-wait'])
+  assert.deepEqual(found.stuckReasons, ['broken-wait', 'unowned'])
   const { row } = renderStuck(t, input.urgent)
   assert.match(row('fx-x-known').textContent, /Stuck because: waiting on you for over a day/)
 })
+
+const unownedBlocked = (id, extra) => bead(id, { metadata: { 'gc.blocked_on': 'database recovery' }, ...extra })
+
+for (const [name, extra] of [
+  ['with no updated_at', { updated_at: undefined }],
+  ['with an invalid updated_at', { updated_at: 'not a time' }],
+  ['updated recently', { updated_at: RECENT }],
+]) {
+  test(`an unowned, unrouted item with only a blocked_on wait ${name} stays Stuck as unowned`, (t) => {
+    const input = structuredClone(fixture)
+    input.urgent = [unownedBlocked('fx-x-unowned', extra)]
+    const model = buildDashboard(input)
+    const found = model.stuck.items.find((r) => r.id === 'fx-x-unowned')
+    assert.ok(found, 'fx-x-unowned is in Stuck')
+    assert.ok(found.stuckReasons.includes('unowned'))
+    assert.ok(!model.waiting.items.some((r) => r.id === 'fx-x-unowned'))
+    const { line, row } = renderStuck(t, input.urgent)
+    assert.match(line('fx-x-unowned'), /Waiting on: database recovery/)
+    assert.match(row('fx-x-unowned').textContent, /Stuck because: [^·]*open with no assignee and no route/)
+  })
+}
+
+for (const [name, extra] of [
+  ['no updated_at', { updated_at: undefined }],
+  ['an invalid updated_at', { updated_at: 'not a time' }],
+]) {
+  test(`an unowned blocked_on wait with ${name} does not claim to be over a day old`, (t) => {
+    const input = structuredClone(fixture)
+    input.urgent = [unownedBlocked('fx-x-ageless', extra)]
+    const found = buildDashboard(input).stuck.items.find((r) => r.id === 'fx-x-ageless')
+    assert.ok(found, 'fx-x-ageless is in Stuck')
+    assert.equal(found.likelyBroken, false)
+    assert.ok(!found.stuckReasons.includes('broken-wait'))
+    const { row, flags } = renderStuck(t, input.urgent)
+    assert.doesNotMatch(row('fx-x-ageless').textContent, /over a day/)
+    assert.ok(!flags('fx-x-ageless').includes('likely broken'))
+  })
+}
