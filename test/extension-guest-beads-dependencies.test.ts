@@ -193,13 +193,16 @@ describe('Beads workspace dependencies', () => {
       )
     }))
 
-  it('does not classify non-blocking dependency counts as Blocked', () => {
+  it('keeps a ready bead with only a tracks dependency Dependency-ready', () => {
     const view = api.buildReadSurface({
       bd: {
         observedAt: 1,
         text: JSON.stringify([issue('tracked', 'open', { dependency_count: 1 })]),
       },
-      bdReady: { observedAt: 1, text: '[]' },
+      bdReady: {
+        observedAt: 1,
+        text: JSON.stringify([issue('tracked', 'open', { dependency_count: 1 })]),
+      },
       bdDependencies: {
         observedAt: 1,
         text: 'tracked dependsOn parent tracks',
@@ -211,9 +214,44 @@ describe('Beads workspace dependencies', () => {
       view.beads.sections.find((section) => section.key === 'blocked')?.items,
     ).toEqual([])
     expect(
-      view.beads.sections.find((section) => section.key === 'planned')?.items,
+      view.beads.sections.find((section) => section.key === 'dependency-ready')?.items,
     ).toMatchObject([{ id: 'tracked' }])
   })
+
+  it('keeps an unresolved dependency Blocked when the typed edge read fails', () => {
+    const view = api.buildReadSurface({
+      bd: {
+        observedAt: 1,
+        text: JSON.stringify([issue('work', 'open', { dependency_count: 1 })]),
+      },
+      bdReady: { observedAt: 1, text: '[]' },
+      bdDependenciesFailure: { observedAt: 1, message: 'Dependency read failed' },
+      gc: { observedAt: 1, text: '{"ok":true,"sessions":[]}' },
+      gcRig,
+    })
+    expect(view.dependencies).toMatchObject({ state: 'error', edges: [] })
+    expect(
+      view.beads.sections.find((section) => section.key === 'blocked')?.items,
+    ).toMatchObject([{ id: 'work' }])
+  })
+
+  it('uses ready membership as the dependency-count blocker oracle', () =>
+    hegel.test((tc) => {
+      const dependencyCount = tc.draw(gs.integers({ minValue: 1, maxValue: 20 }))
+      const isReady = tc.draw(gs.booleans())
+      const work = issue('work', 'open', { dependency_count: dependencyCount })
+      const view = api.buildReadSurface({
+        bd: { observedAt: 1, text: JSON.stringify([work]) },
+        bdReady: { observedAt: 1, text: JSON.stringify(isReady ? [work] : []) },
+        bdDependencies: { observedAt: 1, text: '' },
+        gc: { observedAt: 1, text: '{"ok":true,"sessions":[]}' },
+        gcRig,
+      })
+      const section = isReady ? 'dependency-ready' : 'blocked'
+      expect(
+        view.beads.sections.find((candidate) => candidate.key === section)?.items,
+      ).toMatchObject([{ id: 'work' }])
+    }))
 
   it.each([
     [

@@ -148,7 +148,8 @@ export function parseBeads(text, observedAt, readyText, dependencyEdges = []) {
     else if (issue.status === 'in_progress') key = 'in-flight'
     else if (
       issue.status === 'blocked' ||
-      issue.blockedBy.length > 0
+      issue.blockedBy.length > 0 ||
+      (issue.dependencyCount > 0 && !ready.has(issue.id))
     )
       key = 'blocked'
     else if (shipState(issue, category)) key = 'ready-to-ship'

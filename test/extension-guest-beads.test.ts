@@ -318,8 +318,8 @@ describe('Beads workspace extension package', () => {
       'needs-you': 1,
       'in-flight': 1,
       'dependency-ready': 1,
-      planned: 2,
-      blocked: 0,
+      planned: 1,
+      blocked: 1,
       'data-hygiene': 1,
     })
     expect(view.beads.sections.some((section) => section.key === 'orchestration')).toBe(
