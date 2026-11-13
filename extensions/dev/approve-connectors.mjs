@@ -1,6 +1,7 @@
 import { Buffer } from 'node:buffer'
 import { execFileSync } from 'node:child_process'
 import console from 'node:console'
+import { randomUUID } from 'node:crypto'
 import { promises as fs } from 'node:fs'
 import process from 'node:process'
 import { homedir } from 'node:os'
@@ -331,15 +332,26 @@ export function hostRunning(profile) {
   }
 }
 
-export async function writeJsonFile(target, value) {
-  const temp = join(dirname(target), `.${basename(target)}.${process.pid}.tmp`)
-  await fs.writeFile(temp, JSON.stringify(value), { mode: 0o644 })
-  await fs.rename(temp, target)
+export async function writeJsonFile(target, value, mode) {
+  const temp = join(dirname(target), `.${basename(target)}.${randomUUID()}.tmp`)
+  const file = await fs.open(temp, 'wx', mode ?? 0o644)
+  try {
+    try {
+      if (mode !== undefined) await file.chmod(mode)
+      await file.writeFile(JSON.stringify(value))
+    } finally {
+      await file.close()
+    }
+    await fs.rename(temp, target)
+  } catch (reason) {
+    await fs.rm(temp, { force: true })
+    throw reason
+  }
   return target
 }
 
 export function writeApprovals(profile, approvals) {
-  return writeJsonFile(join(profile, 'extension-state', 'connectors.json'), approvals)
+  return writeJsonFile(join(profile, 'extension-state', 'connectors.json'), approvals, 0o600)
 }
 
 export async function stamp({

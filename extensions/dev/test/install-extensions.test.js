@@ -2,8 +2,10 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
+import process from 'node:process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { writeApprovals } from '../approve-connectors.mjs'
 import { installPackages, provision, readConfig } from '../install-extensions.mjs'
 
 const manifest = {
@@ -246,3 +248,55 @@ for (const host of ['local', 'work']) {
     })
   }
 }
+
+for (const seeded of [true, false]) {
+  test(`provision writes private connector approvals, seeded: ${seeded}`, async (t) => {
+    const { root, config, profile, bin } = await fixture()
+    t.after(() => fs.rm(root, { recursive: true, force: true }))
+    const store = join(profile, 'extension-state', 'connectors.json')
+    await fs.mkdir(join(profile, 'extension-state'), { recursive: true })
+    if (seeded) await fs.writeFile(store, '[]', { mode: 0o600 })
+    const previous = process.umask(0o022)
+    try {
+      const result = await provision({
+        config, profile, host: '', validate: fakeValidate,
+        lookup: (name) => join(bin, name),
+      })
+      assert.deepEqual(JSON.parse(await fs.readFile(store, 'utf8')), result.approvals.approvals)
+      assert.equal((await fs.stat(store)).mode & 0o777, 0o600)
+    } finally {
+      process.umask(previous)
+    }
+  })
+}
+
+for (const mask of [0o000, 0o777]) {
+  test(`connector permissions are independent of umask ${mask.toString(8)}`, async (t) => {
+    const { root, profile } = await fixture()
+    t.after(() => fs.rm(root, { recursive: true, force: true }))
+    await fs.mkdir(join(profile, 'extension-state'), { recursive: true })
+    const previous = process.umask(mask)
+    try {
+      const store = await writeApprovals(profile, [])
+      assert.equal((await fs.stat(store)).mode & 0o777, 0o600)
+    } finally {
+      process.umask(previous)
+    }
+  })
+}
+
+test('failed connector rename preserves the store and removes the temporary file', async (t) => {
+  const { root, profile } = await fixture()
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const directory = join(profile, 'extension-state')
+  await fs.mkdir(directory, { recursive: true })
+  const store = join(directory, 'connectors.json')
+  const original = '[{"configuration":{"args":["saved"],"env":{"TOKEN":"secret"}}}]'
+  await fs.writeFile(store, original, { mode: 0o600 })
+  const failure = new Error('simulated rename failure')
+  t.mock.method(fs, 'rename', async () => { throw failure })
+  await assert.rejects(writeApprovals(profile, []), (reason) => reason === failure)
+  assert.equal(await fs.readFile(store, 'utf8'), original)
+  assert.equal((await fs.stat(store)).mode & 0o777, 0o600)
+  assert.deepEqual(await fs.readdir(directory), ['connectors.json'])
+})
