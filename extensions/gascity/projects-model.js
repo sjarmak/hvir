@@ -335,7 +335,7 @@
 
   const URGENT_STATUSES = Object.freeze(['open', 'in_progress', 'blocked'])
   const trackedId = (dependency) => dependency.depends_on_id ?? dependency.id
-  const isConvoy = (bead) => bead.issue_type === 'convoy' || isSyntheticConvoy(bead) || trackedDependencies(bead).length > 0
+  const isConvoy = (bead) => bead.issue_type === 'convoy' || isSyntheticConvoy(bead)
 
   const unreadTracked = (convoy, dependency) => ({ id: trackedId(dependency),
     title: dependency.title ?? '', status: dependency.status ?? '', priority: dependency.priority ?? convoy.priority, labels: [], metadata: {},
@@ -426,10 +426,10 @@
 
   const hasNamedWait = (row) => Boolean(row.waitingOn || row.unclaimedBy)
 
-  const stuckReasons = (row, now) => [
+  const stuckReasons = (row, now) => row.active ? [] : [
     row.likelyBroken && 'broken-wait',
-    !hasNamedWait(row) && !row.active && stillOverHour(row, now) && 'no-movement',
-    !row.waitingOn && !row.active && row.state === 'open' && !row.assigned && !row.routed && unownedOverHour(row, now) && 'unowned',
+    !hasNamedWait(row) && stillOverHour(row, now) && 'no-movement',
+    !row.waitingOn && row.state === 'open' && !row.assigned && !row.routed && unownedOverHour(row, now) && 'unowned',
   ].filter(Boolean)
 
   const urgentLists = (input, decisions, context) => {

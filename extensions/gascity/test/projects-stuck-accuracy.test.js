@@ -24,6 +24,34 @@ const allRows = (model) =>
   )
 const stuckIds = (model) => model.stuck.items.map((row) => row.id)
 
+test('an ordinary task with a tracks edge to an unloaded item is not a convoy and stays in Stuck', () => {
+  const input = fresh()
+  input.urgent = [
+    urgent('fx-task-tracks', {
+      issue_type: 'task',
+      dependencies: tracks('fx-task-tracks', 'fx-unloaded'),
+    }),
+  ]
+  const model = buildDashboard(input)
+  assert.deepEqual(stuckIds(model), ['fx-task-tracks'])
+  assert.ok(!allRows(model).some((row) => row.id === 'fx-unloaded'))
+})
+
+test('an item a live session runs is never stuck, even when its named wait is over a day old', () => {
+  const input = fresh()
+  input.urgent = [
+    urgent('fx-live-wait', {
+      updated_at: '2026-10-27T08:00:00Z',
+      metadata: { 'gc.session_name': 'fx-worker-a', 'gc.waiting_on': 'stephanie' },
+    }),
+  ]
+  const model = buildDashboard(input)
+  const row = allRows(model).find((entry) => entry.id === 'fx-live-wait')
+  assert.equal(row.active, true)
+  assert.deepEqual(row.stuckReasons, [])
+  assert.deepEqual(stuckIds(model), [])
+})
+
 test('a convoy is never its own row, whatever its type, synthetic flag or number of tracked items', () => {
   const input = fresh()
   input.urgent = [
@@ -38,27 +66,17 @@ test('a convoy is never its own row, whatever its type, synthetic flag or number
       metadata: { 'gc.synthetic': 'true' },
       dependencies: tracks('fx-cv-two', 'fx-b', 'fx-c'),
     }),
-    urgent('fx-cv-tracks-only', {
-      title: '',
-      dependencies: tracks('fx-cv-tracks-only', 'fx-d'),
-    }),
     urgent('fx-cv-lost', {
       issue_type: 'convoy',
       dependencies: tracks('fx-cv-lost', 'fx-missing'),
     }),
   ]
-  input.linked = ['fx-a', 'fx-b', 'fx-c', 'fx-d'].map((id) => urgent(id))
+  input.linked = ['fx-a', 'fx-b', 'fx-c'].map((id) => urgent(id))
   const model = buildDashboard(input)
   const ids = allRows(model).map((row) => row.id)
-  for (const convoy of [
-    'fx-cv-typed',
-    'fx-cv-empty',
-    'fx-cv-two',
-    'fx-cv-tracks-only',
-    'fx-cv-lost',
-  ])
+  for (const convoy of ['fx-cv-typed', 'fx-cv-empty', 'fx-cv-two', 'fx-cv-lost'])
     assert.ok(!ids.includes(convoy), convoy)
-  assert.deepEqual(stuckIds(model).sort(), ['fx-a', 'fx-b', 'fx-c', 'fx-d'])
+  assert.deepEqual(stuckIds(model).sort(), ['fx-a', 'fx-b', 'fx-c'])
   assert.ok(!stuckIds(model).includes('fx-missing'))
   assert.ok(allRows(model).every((row) => row.title !== '' || row.unread))
 })
