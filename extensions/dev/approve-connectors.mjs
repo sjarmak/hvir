@@ -17,6 +17,7 @@ export function defaultProfile() {
 export function normalizeDeclaration(declaration) {
   return {
     ...(declaration.setup ? { setup: { executable: declaration.setup.executable } } : {}),
+    ...(declaration.actions ? { actions: [...declaration.actions] } : {}),
     id: declaration.id,
     description: declaration.description,
     context: declaration.context,
@@ -111,7 +112,8 @@ export async function developmentInstallations(profile) {
       installationId: installation.installationId,
       packageId: manifest.id,
       packageDir,
-      connectors: (manifest.connectors ?? []).map(normalizeDeclaration),
+      connectors: [...(manifest.connectors ?? []), ...(manifest.actionConnectors ?? [])]
+        .map(normalizeDeclaration),
     })
   }
   return installations
@@ -170,7 +172,7 @@ export async function remoteHostsFromProjects(profile) {
 function remoteRequests(saved, installations, host) {
   const requests = new Set()
   for (const installation of installations)
-    for (const declaration of installation.connectors) {
+    for (const declaration of installation.connectors.filter((item) => !item.actions)) {
       if (declaration.setup) requests.add(declaration.setup.executable)
       const prior = saved.find((entry) =>
         sameKey(entry, installation.installationId, declaration.id, host),
@@ -230,7 +232,7 @@ export async function planApprovals({
   const next = []
   const report = []
   for (const installation of installations) {
-    for (const declaration of installation.connectors) {
+    for (const declaration of installation.connectors.filter((item) => !item.actions)) {
       const key = [installation.installationId, declaration.id, LOCAL_HOST]
       managed.add(JSON.stringify(key))
       const prior = saved.find((entry) => sameKey(entry, ...key))
@@ -296,14 +298,15 @@ export async function planApprovals({
         !managed.has(
           JSON.stringify([entry.installationId, entry.connector, entry.host]),
         ) &&
-        (entry.host !== LOCAL_HOST ||
+        (declarationFor(entry)?.actions ||
+          entry.host !== LOCAL_HOST ||
           !installations.some((item) => item.installationId === entry.installationId)),
     )
     .flatMap((entry) => {
       if (!installations.some((item) => item.installationId === entry.installationId))
         return [entry]
       const declaration = declarationFor(entry)
-      return declaration ? [{ ...entry, declaration }] : []
+      return declaration?.actions ? [entry] : declaration ? [{ ...entry, declaration }] : []
     })
   const approvals = [...retained, ...next]
   const bytes = Buffer.byteLength(JSON.stringify(approvals))

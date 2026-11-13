@@ -85,10 +85,15 @@ test('hvir-answer is an action connector with no setup hint and describes itself
   assert.equal(connectors.some((item) => item.id === 'hvir-answer'), false)
   const answer = (manifest.actionConnectors ?? []).find((item) => item.id === 'hvir-answer')
   assert.equal(manifest.actionConnectors.length, 1)
-  assert.equal(answer.setup, undefined)
-  assert.equal(answer.context, 'workspace')
-  assert.ok(answer.description.length <= CONNECTOR_DESCRIPTION)
-  assert.match(answer.description, /answer/i)
+  assert.deepEqual(answer, {
+    id: 'hvir-answer',
+    description: "Records your answer to a Gas City decision when you click an answer button on a Needs you card and confirm. It runs the city's hvir-answer program once, with the decision, the letter and a card fingerprint.",
+    context: 'workspace',
+    timeoutMs: 120000,
+    outputBytes: 65536,
+    environment: ['GC_CITY', 'PATH'],
+    actions: ['answer-decision'],
+  })
   assert.ok(connectors.filter((item) => item.setup).length <= 4)
 })
 

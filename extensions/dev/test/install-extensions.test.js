@@ -184,3 +184,65 @@ test('provision also stamps the connector approvals', async () => {
   })
   assert.equal(again.agentAccessWritten, false)
 })
+
+const answer = {
+  id: 'hvir-answer',
+  description: 'Record your answer',
+  context: 'workspace',
+  timeoutMs: 120000,
+  outputBytes: 65536,
+  environment: ['GC_CITY', 'PATH'],
+  actions: ['answer-decision'],
+}
+
+function answerApproval(installationId, host) {
+  return {
+    installationId,
+    connector: answer.id,
+    host,
+    executable: '/missing/hvir-answer',
+    canonicalExecutable: '/missing/original/hvir-answer',
+    configuration: { args: ['--selected'], env: { GC_CITY: '/chosen/city' } },
+    declaration: { actions: [...answer.actions], ...answer },
+  }
+}
+
+for (const host of ['local', 'work']) {
+  for (const changed of [false, true]) {
+    test(`provision preserves ${host} action approval unchanged, declaration changed: ${changed}`, async () => {
+      const { config, profile, bin, packageDir } = await fixture()
+      const manifestPath = join(packageDir, 'hvir-extension.json')
+      const initial = { ...manifest, actionConnectors: [answer] }
+      const settings = JSON.parse(await fs.readFile(config, 'utf8'))
+      await fs.writeFile(config, JSON.stringify({ ...settings, hosts: ['work'] }))
+      await fs.writeFile(manifestPath, JSON.stringify(initial))
+      const options = {
+        config, profile, host: '',
+        lookup: (name) => join(bin, name),
+        validate: (_host, directory) => ({
+          packageId: manifest.id,
+          revision: createHash('sha256').update(directory + 'before').digest('hex'),
+        }),
+        remoteLookup: (_host, requests) => {
+          assert.deepEqual(requests, ['sample-tool'])
+          return new Map()
+        },
+      }
+      const first = await provision(options)
+      const store = join(profile, 'extension-state', 'connectors.json')
+      const saved = answerApproval(first.installations[0].installationId, host)
+      const bytes = JSON.stringify(saved)
+      assert.equal(first.approvals.approvals.some((row) => row.connector === answer.id), false)
+      await fs.writeFile(store, JSON.stringify([...first.approvals.approvals, saved]))
+      const updated = changed ? { ...answer, actions: ['another-action'], environment: [] } : answer
+      await fs.writeFile(manifestPath, JSON.stringify({ ...initial, version: '2.0.0', actionConnectors: [updated] }))
+      const result = await provision({ ...options, validate: fakeValidate })
+      assert.equal(result.report[0].change, 'updated')
+      const rows = JSON.parse(await fs.readFile(store, 'utf8'))
+      assert.equal(JSON.stringify(rows.find((row) => row.connector === answer.id)), bytes)
+      assert.equal(result.approvals.dropped, 0)
+      assert.equal(result.approvals.report.some((row) => row.connector === answer.id), false)
+      assert.equal(result.approvals.report[0].change, 'unchanged')
+    })
+  }
+}
