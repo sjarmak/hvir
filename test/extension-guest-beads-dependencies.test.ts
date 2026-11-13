@@ -267,13 +267,36 @@ describe('Beads workspace dependencies', () => {
   ])(
     'keeps dependency %s separate and preserves prior facts',
     async (_, result, message) => {
+      const dependencyText = 'partial dependsOn blocker blocks'
+      const dependencyResult = result.truncated
+        ? {
+            ...result,
+            receipt: 'dependency-output',
+            host: 'local',
+            signal: null,
+            stdoutBytes: new TextEncoder().encode(dependencyText).byteLength,
+            stderrBytes: 0,
+          }
+        : result
       const client = {
         request(capability: string, input: unknown) {
-          expect(capability).toBe('connector.execute')
-          const request = input as { args: string[] }
-          if (request.args.includes('{{.IssueID}} dependsOn {{.DependsOnID}} {{.Type}}'))
-            return Promise.resolve(result)
-          return Promise.resolve({ outcome: 'completed', code: 0, truncated: false })
+          const request = input as {
+            args?: string[]
+            release?: boolean
+            stream?: string
+          }
+          if (capability === 'connector.execute') {
+            if (request.args?.includes('{{.IssueID}} dependsOn {{.DependsOnID}} {{.Type}}'))
+              return Promise.resolve(dependencyResult)
+            return Promise.resolve({ outcome: 'completed', code: 0, truncated: false })
+          }
+          expect(capability).toBe('connector.output')
+          if (request.release) return Promise.resolve(undefined)
+          return Promise.resolve({
+            data: request.stream === 'stderr' ? '' : dependencyText,
+            nextOffset: null,
+            result: dependencyResult,
+          })
         },
       }
       const previous = api.buildReadSurface({
@@ -312,48 +335,6 @@ describe('Beads workspace dependencies', () => {
     },
   )
 
-  it('reports the bounded dependency row limit as a failed read', async () => {
-    const text = Array.from(
-      { length: 500 },
-      (_, index) => `blocked-${String(index)} dependsOn blocker-${String(index)} blocks`,
-    ).join('\n')
-    const result = {
-      receipt: 'dependency-output',
-      outcome: 'completed',
-      host: 'local',
-      code: 0,
-      signal: null,
-      truncated: false,
-      stdoutBytes: new TextEncoder().encode(text).byteLength,
-      stderrBytes: 0,
-    }
-    const client = {
-      request(capability: string, input: unknown) {
-        const request = input as {
-          args?: string[]
-          receipt?: string
-          release?: boolean
-          stream?: string
-        }
-        if (capability === 'connector.execute') {
-          if (request.args?.includes('{{.IssueID}} dependsOn {{.DependsOnID}} {{.Type}}'))
-            return Promise.resolve(result)
-          return Promise.resolve({ outcome: 'completed', code: 0, truncated: false })
-        }
-        if (request.release) return Promise.resolve(undefined)
-        const data = request.stream === 'stderr' ? '' : text
-        return Promise.resolve({ data, nextOffset: null, result })
-      },
-    }
-    const input = (await api.readWorkspace(
-      client,
-      { workspace: { host: 'local', id: 'workspace-1' } },
-      undefined,
-    )) as Parameters<DependencyPackage['buildReadSurface']>[0]
-    expect(input.bdDependenciesFailure?.message).toBe(
-      'Dependency read failed: result reached the 500-edge limit',
-    )
-  })
 })
 
 function issue(

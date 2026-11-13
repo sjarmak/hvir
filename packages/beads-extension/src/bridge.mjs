@@ -1,6 +1,5 @@
 import { readConnectorOutput } from '../../../src/shared/extensions/connector-output.mjs'
 
-const dependencyLimit = 500
 const dependencyFormat = '{{.IssueID}} dependsOn {{.DependsOnID}} {{.Type}}'
 
 export async function readWorkspace(client, context, previous) {
@@ -31,13 +30,15 @@ export async function readWorkspace(client, context, previous) {
       '--include-gates',
       '--include-infra',
     ]),
-    readDependencies(client, context, [
+    runConnector(client, context, 'bd', [
       'list',
       '--format',
       dependencyFormat,
       '--no-pager',
       '-n',
-      String(dependencyLimit),
+      '0',
+      '--include-gates',
+      '--include-infra',
     ]),
     runConnector(client, context, 'gc', ['session', 'list', '--json']),
     runConnector(client, context, 'gc', ['rig', 'status', '--json']),
@@ -74,14 +75,6 @@ export async function readWorkspace(client, context, previous) {
       : { bdGates: { text: bdGates.value, observedAt } }),
     previous,
   }
-}
-
-async function readDependencies(client, context, args) {
-  const output = await runConnector(client, context, 'bd', args)
-  const rows = output.split(/\r?\n/u).filter((line) => line.trim()).length
-  if (rows >= dependencyLimit)
-    throw new Error(`result reached the ${String(dependencyLimit)}-edge limit`)
-  return output
 }
 
 async function runConnector(client, context, connector, args) {
