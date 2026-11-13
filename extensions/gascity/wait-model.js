@@ -22,8 +22,9 @@
     const stepLabel = (bead?.labels ?? []).some((label) => String(label).toLowerCase() === STEP_LABEL)
     const waitingOn = textOf(raw) || (stepLabel ? HER : '')
     const waitToken = words.waitToken(waitingOn)
-    const waitNames = words.waitNames(waitingOn)
-    const wait = { waitingOn, waitNames, waitUnreadable: raw !== undefined && raw !== null && typeof raw !== 'string', waitToken,
+    const waitItems = words.waitItems(waitingOn)
+    const waitNames = waitItems.map((item) => item.name)
+    const wait = { waitingOn, waitNames, waitNotes: waitItems.map((item) => item.note), waitUnreadable: raw !== undefined && raw !== null && typeof raw !== 'string', waitToken,
       waitsOnHer: stepLabel || waitNames.some(namesHer), unclaimedBy: !waitingOn && !bead?.assignee ? routeOf(bead) : '',
       updatedAt: validTime(bead?.updated_at) ? bead.updated_at : null }
     const waitKind = kindOf(wait, isAgent)

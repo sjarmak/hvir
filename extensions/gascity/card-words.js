@@ -13,13 +13,35 @@
   const roleOf = (name) => SEAT_ROLES[name] ?? name
   const waitToken = (waitingOn) => (String(waitingOn ?? '').match(/[\w.-]+/)?.[0] ?? '').replace(/\.+$/, '')
   const NAME = /^[\w.-]+$/
-  const waitNames = (waitingOn) => {
-    const text = String(waitingOn ?? '')
-    const parts = text.split(/[\s,]+/).filter(Boolean).map((part) => part.replace(/\.+$/, ''))
-    if (text.includes(',') && parts.length > 1 && parts.every((part) => NAME.test(part))) return parts
-    const token = waitToken(text)
-    return token ? [token] : []
+  const NOTED = /^([^()]*?)\s*(?:\((.*)\))?$/s
+  const topLevelItems = (text) => {
+    const items = ['']
+    let depth = 0
+    for (const char of text) {
+      depth += char === '(' ? 1 : char === ')' ? -1 : 0
+      if (depth < 0) return null
+      if (char === ',' && depth === 0) items.push('')
+      else items[items.length - 1] += char
+    }
+    return depth === 0 ? items : null
   }
+  const itemNames = (item) => {
+    const text = item.trim().replace(/\.+$/, '')
+    if (!text) return []
+    const [, names = '', note = ''] = text.match(NOTED) ?? []
+    const parts = names.split(/\s+/).filter(Boolean).map((part) => part.replace(/\.+$/, ''))
+    if (parts.length === 0 || !parts.every((part) => NAME.test(part))) return null
+    return parts.map((name, at) => ({ name, note: at === parts.length - 1 ? note.trim() : '' }))
+  }
+  const waitItems = (waitingOn) => {
+    const text = String(waitingOn ?? '')
+    const read = text.includes(',') ? topLevelItems(text)?.map(itemNames) : null
+    const items = read && read.every(Boolean) ? read.flat() : []
+    if (items.length > 1) return items
+    const token = waitToken(text)
+    return token ? [{ name: token, note: '' }] : []
+  }
+  const waitNames = (waitingOn) => waitItems(waitingOn).map((item) => item.name)
   const unit = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`
 
   const spanWords = (ms) => {
@@ -46,7 +68,8 @@
 
   const namedWait = (row) => {
     const names = row.waitNames ?? []
-    if (names.length > 1) return names.map((name, at) => listedName(name, row.waitNameTitles?.[at])).join('; ')
+    const noted = (name, at) => row.waitNotes?.[at] ? `${name} (${row.waitNotes[at]})` : name
+    if (names.length > 1) return names.map((name, at) => noted(listedName(name, row.waitNameTitles?.[at]), at)).join('; ')
     const words = targetWords(row)
     return words && row.waitToken ? row.waitingOn.replace(row.waitToken, words) : row.waitingOn
   }
@@ -63,7 +86,7 @@
 
   const statusLine = (row, now) => `Owner: ${ownerWords(row)} · Waiting on: ${waitWords(row, now)}`
 
-  const api = Object.freeze({ SEAT_ROLES, NO_WAIT, roleOf, waitToken, waitNames, spanWords, sinceWords, ownerWords, waitWords, statusLine })
+  const api = Object.freeze({ SEAT_ROLES, NO_WAIT, roleOf, waitToken, waitItems, waitNames, spanWords, sinceWords, ownerWords, waitWords, statusLine })
   if (typeof module === 'object') module.exports = api
   else window.cardWords = api
 })()

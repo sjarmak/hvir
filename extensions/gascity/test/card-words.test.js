@@ -1,6 +1,6 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const { roleOf, spanWords, NO_WAIT } = require('../card-words.js')
+const { roleOf, spanWords, NO_WAIT, waitItems, waitNames } = require('../card-words.js')
 
 test('seat names read as plain roles and unknown names stay as they are', () => {
   assert.deepEqual(['mayor', 'omni-pl', 'omni-evals-pl', 'city-infra-pl', 'fx-pool-2'].map(roleOf),
@@ -19,4 +19,20 @@ test('spans read in whole minutes, hours or days', () => {
 
 test('the missing-wait text is a sentence she can read', () => {
   assert.equal(NO_WAIT, 'Nobody has recorded what this is waiting for')
+})
+
+test('a comma-separated wait reads every item, keeping a trailing parenthesised note as that item\'s note', () => {
+  assert.deepEqual(waitItems('fx-a, dec-p0q8 (her: approve), stephanie'),
+    [{ name: 'fx-a', note: '' }, { name: 'dec-p0q8', note: 'her: approve' }, { name: 'stephanie', note: '' }])
+  assert.deepEqual(waitItems('fx-a (blocked on x, y), Stephanie.'),
+    [{ name: 'fx-a', note: 'blocked on x, y' }, { name: 'Stephanie', note: '' }])
+  assert.deepEqual(waitNames('fx-dep-a,fx-dep-b, stephanie'), ['fx-dep-a', 'fx-dep-b', 'stephanie'])
+  assert.deepEqual(waitNames('fx-a,, fx-b.'), ['fx-a', 'fx-b'])
+})
+
+test('a wait that is not a list of names, or whose parentheses do not close, reads as its first name', () => {
+  assert.deepEqual(waitItems('omni-pl (reviewing)'), [{ name: 'omni-pl', note: '' }])
+  assert.deepEqual(waitNames('fx-a (oops, stephanie'), ['fx-a'])
+  assert.deepEqual(waitNames('fx-a, then ask stephanie (later'), ['fx-a'])
+  assert.deepEqual(waitNames(''), [])
 })

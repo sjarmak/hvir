@@ -820,6 +820,19 @@ test('a wait naming several beads and her reads every name, sorts with her waits
   assert.equal(statusLine(row, input.now), 'Owner: the Omni code lead · Waiting on: Ship A, then B; fx-dep-b; you for 1 hour')
 })
 
+test('a wait list with a noted item still reads every name, so her name in it makes it her wait', () => {
+  const { statusLine } = require('../card-words.js')
+  const input = fresh()
+  const waits = (id, updated) => urgent(id, { assignee: 'omni-pl', updated_at: updated,
+    metadata: { 'gc.waiting_on': 'fx-a, dec-p0q8 (her: approve), stephanie' } })
+  input.urgent = [waits('fx-n-fresh', '2026-10-29T11:00:00Z'), waits('fx-n-old', '2026-10-27T10:00:00Z')]
+  const model = buildDashboard(input)
+  const row = model.waiting.items.find((entry) => entry.id === 'fx-n-fresh')
+  assert.deepEqual([row.waitsOnHer, row.waitKind, row.waitNames], [true, 'her', ['fx-a', 'dec-p0q8', 'stephanie']])
+  assert.equal(statusLine(row, input.now), 'Owner: the Omni code lead · Waiting on: fx-a; dec-p0q8 (her: approve); you for 1 hour')
+  assert.deepEqual(model.stuck.items.map((entry) => [entry.id, entry.stuckReasons]), [['fx-n-old', ['broken-wait']]])
+})
+
 test('a wait naming a seat or seats is a wait on an agent, so over a day it is Stuck as broken', () => {
   const input = fresh()
   const waits = (id, waitingOn, updated) => urgent(id, { status: 'in_progress', assignee: 'omni-pl', updated_at: updated,
