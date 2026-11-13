@@ -547,7 +547,7 @@ describe('Beads workspace extension package', () => {
     ).toBe(0)
   })
 
-  it('reads the authoritative ready set through the bounded bd connector', async () => {
+  it('reads authoritative bead and dependency sets through the bd connector', async () => {
     const calls: { connector: string; args: string[] }[] = []
     const client = {
       request(capability: string, input: unknown) {
@@ -592,7 +592,9 @@ describe('Beads workspace extension package', () => {
         '{{.IssueID}} dependsOn {{.DependsOnID}} {{.Type}}',
         '--no-pager',
         '-n',
-        '500',
+        '0',
+        '--include-gates',
+        '--include-infra',
       ],
       ['gate', 'list', '--json'],
     ])
