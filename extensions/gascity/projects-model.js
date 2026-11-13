@@ -379,6 +379,7 @@
     const waitTitle = waitTitleOf(wait.waitToken, context)
     return { ...identity(bead), state: bead.status ?? '', convoy: bead.convoy ?? '', unread: bead.unread === true, ...ownerOf(bead, context),
       priority: Number(bead.priority), ...wait, waitTitle,
+      waitNameTitles: wait.waitNames.map((name) => waitTitleOf(name, context)),
       waitTarget: { token: wait.waitToken, agent: Boolean(wait.waitToken) && isAgent(wait.waitToken), title: waitTitle },
       routed: Boolean(waitApi.routeOf(bead)), assigned: Boolean(bead.assignee),
       active: context.active.has(beadKey(bead)),

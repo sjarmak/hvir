@@ -12,6 +12,14 @@
 
   const roleOf = (name) => SEAT_ROLES[name] ?? name
   const waitToken = (waitingOn) => (String(waitingOn ?? '').match(/[\w.-]+/)?.[0] ?? '').replace(/\.+$/, '')
+  const NAME = /^[\w.-]+$/
+  const waitNames = (waitingOn) => {
+    const text = String(waitingOn ?? '')
+    const parts = text.split(/[\s,]+/).filter(Boolean).map((part) => part.replace(/\.+$/, ''))
+    if (text.includes(',') && parts.length > 1 && parts.every((part) => NAME.test(part))) return parts
+    const token = waitToken(text)
+    return token ? [token] : []
+  }
   const unit = (count, word) => `${count} ${word}${count === 1 ? '' : 's'}`
 
   const spanWords = (ms) => {
@@ -34,7 +42,11 @@
     return row.waitTitle || SEAT_ROLES[row.waitToken] || ''
   }
 
+  const listedName = (name, title) => name.toLowerCase() === 'stephanie' ? 'you' : title || SEAT_ROLES[name] || name
+
   const namedWait = (row) => {
+    const names = row.waitNames ?? []
+    if (names.length > 1) return names.map((name, at) => listedName(name, row.waitNameTitles?.[at])).join('; ')
     const words = targetWords(row)
     return words && row.waitToken ? row.waitingOn.replace(row.waitToken, words) : row.waitingOn
   }
@@ -51,7 +63,7 @@
 
   const statusLine = (row, now) => `Owner: ${ownerWords(row)} · Waiting on: ${waitWords(row, now)}`
 
-  const api = Object.freeze({ SEAT_ROLES, NO_WAIT, roleOf, waitToken, spanWords, sinceWords, ownerWords, waitWords, statusLine })
+  const api = Object.freeze({ SEAT_ROLES, NO_WAIT, roleOf, waitToken, waitNames, spanWords, sinceWords, ownerWords, waitWords, statusLine })
   if (typeof module === 'object') module.exports = api
   else window.cardWords = api
 })()

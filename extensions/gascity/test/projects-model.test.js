@@ -804,6 +804,22 @@ test('a bead a live worker is on stays In progress however old its update, and a
   assert.deepEqual(ids(model.notStarted), ['fx-a-gone-undated'])
 })
 
+test('a wait naming several beads and her reads every name, sorts with her waits and lists them all', () => {
+  const { statusLine } = require('../card-words.js')
+  const input = fresh()
+  input.ancestors = [...(input.ancestors ?? []), urgent('fx-dep-a', { title: 'Ship A, then B' })]
+  input.urgent = [
+    urgent('fx-w-plain', { assignee: 'omni-pl', updated_at: '2026-10-29T11:00:00Z', metadata: { 'gc.waiting_on': 'omni-pl' } }),
+    urgent('fx-w-many', { assignee: 'omni-pl', updated_at: '2026-10-29T11:00:00Z',
+      metadata: { 'gc.waiting_on': 'fx-dep-a,fx-dep-b, stephanie' } }),
+  ]
+  const model = buildDashboard(input)
+  const row = model.waiting.items.find((entry) => entry.id === 'fx-w-many')
+  assert.deepEqual(model.waiting.items.map((entry) => entry.id), ['fx-w-many', 'fx-w-plain'])
+  assert.deepEqual([row.waitsOnHer, row.waitKind, row.waitNames], [true, 'her', ['fx-dep-a', 'fx-dep-b', 'stephanie']])
+  assert.equal(statusLine(row, input.now), 'Owner: the Omni code lead · Waiting on: Ship A, then B; fx-dep-b; you for 1 hour')
+})
+
 test('open work nobody owns is not Stuck as unowned until it has sat an hour, so a bead mid-dispatch stays quiet', () => {
   const input = fresh()
   input.urgent = [
