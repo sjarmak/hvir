@@ -154,26 +154,49 @@
     return { payload, errors: failures }
   }
 
-  const KEPT_FIELDS = Object.freeze([...fields, 'outcomes', 'sessions'])
+  const KEPT_GROUPS = Object.freeze({
+    board: Object.freeze([...fields, 'sessions']),
+    outcomes: Object.freeze(['outcomes']),
+  })
+  const NEEDS_GROUP = 'board'
+  const NEEDS_CHECK_LIMIT_MS = 10 * 60000
   const failedFields = (unread) => unread.includes('projects') ? [...unread, ...Object.values(LABEL_FIELDS)] : unread
 
   const keepLastGood = ({ payload, lastGood = {} }) => {
     const unread = payload.unread ?? []
     const failed = failedFields(unread)
-    const kept = KEPT_FIELDS.filter((field) => failed.includes(field) && lastGood[field])
-    const fresh = KEPT_FIELDS.filter((field) => !failed.includes(field) && payload[field] !== undefined)
+    const groups = Object.entries(KEPT_GROUPS)
+    const failing = new Set(groups.filter(([, members]) => members.some((field) => failed.includes(field))).map(([name]) => name))
+    const kept = groups.filter(([name]) => failing.has(name) && lastGood[name])
+    const fresh = groups.filter(([name, members]) => !failing.has(name) && members.every((field) => payload[field] !== undefined))
+    const keptFields = kept.flatMap(([, members]) => members)
+    const snapshot = (members) => ({ values: Object.fromEntries(members.map((field) => [field, payload[field]])), at: payload.now })
+    const needsKept = kept.some(([name]) => name === NEEDS_GROUP)
     return {
-      payload: { ...payload, ...Object.fromEntries(kept.map((field) => [field, lastGood[field].value])),
-        unread: unread.filter((field) => !kept.includes(field)) },
-      lastGood: { ...lastGood, ...Object.fromEntries(fresh.map((field) => [field, { value: payload[field], at: payload.now }])) },
-      stale: kept.length ? { failedAt: payload.now, readAt: kept.map((field) => lastGood[field].at).sort()[0] } : null,
+      payload: { ...payload, ...Object.assign({}, ...kept.map(([name]) => lastGood[name].values)),
+        unread: unread.filter((field) => !keptFields.includes(field)) },
+      lastGood: { ...lastGood, ...Object.fromEntries(fresh.map(([name, members]) => [name, snapshot(members)])) },
+      stale: kept.length ? { failedAt: payload.now, readAt: kept.map(([name]) => lastGood[name].at).sort()[0],
+        ...(needsKept ? { needsReadAt: lastGood[NEEDS_GROUP].at } : {}) } : null,
     }
   }
+
+  const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const dated = (iso) => new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  const stamp = (iso, now) => new Date(iso).toDateString() === new Date(now).toDateString() ? clock(iso) : dated(iso)
+
+  const staleText = ({ failedAt, readAt }, now = Date.now()) =>
+    `Couldn't refresh at ${stamp(failedAt, now)}; showing what was read at ${stamp(readAt, now)}`
+
+  const needsUnchecked = (stale) => stale?.needsReadAt &&
+    Date.parse(stale.failedAt) - Date.parse(stale.needsReadAt) > NEEDS_CHECK_LIMIT_MS
+    ? `Couldn't check what needs you since ${dated(stale.needsReadAt)}`
+    : null
 
   const api = Object.freeze({
     labeledArgs, splitLabeled, inProgressArgs, urgentArgs, linkedArgs, showArgs, stepArgs, decisionArgs,
     ANCESTOR_ROUNDS, OUTCOME_CONNECTOR, OUTCOME_ARGS, parseOutcomes, storesFor, storeRequests, workflowRequests, ancestorRequests, liveSessions, assemblePayload,
-    keepLastGood,
+    keepLastGood, NEEDS_CHECK_LIMIT_MS, staleText, needsUnchecked,
   })
   if (node) module.exports = api
   else window.projectsLoad = api

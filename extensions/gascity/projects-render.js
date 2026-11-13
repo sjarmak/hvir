@@ -5,6 +5,9 @@
   const list = (items, empty) => el('ul', {}, ...(
     items.length ? items : [el('li', { className: 'hvir-meta' }, empty)]))
   const section = (title, ...children) => el('section', {}, el('h2', {}, title), ...children)
+  const needsList = (items, options = {}) => options.needsUnchecked
+    ? [paragraph(options.needsUnchecked, 'projects-warning projects-needs-unchecked'), items.length > 0 && el('ul', {}, ...items)]
+    : [list(items, 'Nothing needs you')]
   const chip = (state) => {
     const node = text(state.replaceAll('-', ' '), 'projects-chip')
     node.dataset.state = state
@@ -238,8 +241,8 @@
     card.state !== card.derivedState && paragraph(`Lead's record says ${card.state.replaceAll('-', ' ')}`, 'hvir-meta'),
     section('Dates', renderDates(card)),
     section('Milestones', list(card.milestoneList.map((entry) => renderMilestone(entry, options)), 'No milestones')),
-    section('Needs you', list(card.decisions.filter((ask) => ask.needsYou)
-      .map((ask) => renderAsk(ask, options)), 'Nothing needs you')),
+    section('Needs you', ...needsList(card.decisions.filter((ask) => ask.needsYou)
+      .map((ask) => renderAsk(ask, options)), options)),
     section('Answered, waiting on agents', list(card.decisions.filter((ask) => ask.inDelivery)
       .map((ask) => renderAsk(ask, options)), 'Nothing waiting')),
     card.decisions.some((ask) => !ask.needsYou && !ask.inDelivery) && section('Other open decisions',
@@ -366,7 +369,7 @@
       el('h3', {}, group.project?.title ?? 'No project'), list(group.items.map(renderActivity), 'No active agents')))
     root.replaceChildren(
       ...[stepSection(model, options)].filter(Boolean),
-      section('Needs you', list(model.needsYou.map((ask) => renderAsk(ask, options, true)), 'Nothing needs you'),
+      section('Needs you', ...needsList(model.needsYou.map((ask) => renderAsk(ask, options, true)), options),
         model.cardTextsInvalid && paragraph('Card text record could not be read', 'projects-warning')),
       ...urgentSections(model, options),
       section('Active now', el('div', { className: 'projects-active-grid' }, ...activeGroups),
@@ -425,7 +428,7 @@
     const pick = (test) => card.decisions.filter(test).map((ask) => renderAsk(ask, options))
     const other = pick((ask) => !ask.needsYou && !ask.inDelivery)
     return [
-      section('Needs you', list(pick((ask) => ask.needsYou), 'Nothing needs you')),
+      section('Needs you', ...needsList(pick((ask) => ask.needsYou), options)),
       section('Answered, waiting on agents', list(pick((ask) => ask.inDelivery), 'Nothing waiting')),
       other.length > 0 && section('Other open decisions', list(other, '')),
     ].filter(Boolean)
@@ -503,7 +506,7 @@
       paragraph(`${model.needsYou.length} need you · ${model.inDelivery.length} answered, waiting on agents`, 'projects-nav-counts'),
       overview,
       ...[stepSection(model, options)].filter(Boolean),
-      section('Needs you', list(model.needsYou.map((ask) => renderAsk(ask, options, true)), 'Nothing needs you'),
+      section('Needs you', ...needsList(model.needsYou.map((ask) => renderAsk(ask, options, true)), options),
         model.cardTextsInvalid && paragraph('Card text record could not be read', 'projects-warning')),
       ...urgentSections(model, options),
       ...liveGroups(model).map((group) => section(group.lead, el('ul', {}, ...group.cards.map((card) => navRow(card, options))))),
@@ -515,7 +518,7 @@
     const back = button('← All projects', 'Back to the overview', () => options.onOpenOverview?.())
     back.classList.add('projects-back')
     const asks = model.needsYou.filter((ask) => ask.metadata?.['gc.project'] === id)
-    root.replaceChildren(back, section('Needs you', list(asks.map((ask) => renderAsk(ask, options)), 'Nothing needs you')),
+    root.replaceChildren(back, section('Needs you', ...needsList(asks.map((ask) => renderAsk(ask, options)), options)),
       el('section', { className: 'projects-loading' }, paragraph('Loading the rest of this project…', 'hvir-meta')))
   }
 

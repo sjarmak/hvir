@@ -22,10 +22,13 @@
 
   const aboutNeeds = (error) => NEEDS_KEYS.some((key) => error.includes(`) ${key}: `))
 
+  const needsFreshStale = (stale) => stale && { failedAt: stale.failedAt, readAt: stale.readAt }
+
   const withFreshNeeds = (previous, needs) => {
     const payload = { ...previous.payload, decisions: needs.decisions, herSteps: needs.herSteps,
       unread: previous.payload.unread.filter((field) => !NEEDS_KEYS.includes(field)) }
     return { ...previous, payload, model: window.projectsModel.buildDashboard(payload), complete: false,
+      stale: needsFreshStale(previous.stale),
       deferred: false, answerable: needs.answerable, needs,
       errors: [...previous.errors.filter((error) => !aboutNeeds(error)), ...needs.errors] }
   }
@@ -120,8 +123,7 @@
 
   const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 
-  const staleLine = ({ failedAt, readAt }) => window.el('p', { className: 'projects-warning projects-stale' },
-    `Couldn't refresh at ${clock(failedAt)}; showing what was read at ${clock(readAt)}`)
+  const staleLine = (stale) => window.el('p', { className: 'projects-warning projects-stale' }, loader.staleText(stale))
 
   const statusLine = (data, workspace, withCounts = true) => {
     const { model, payload, errors, sessions } = data
@@ -178,7 +180,9 @@
     const shownBy = new Map()
     let shownId
     const show = (data, context, extra) => {
-      const shownActions = data.answerable && window.answerAction.actionBound() ? { ...actions, workspaceId: context.workspace.id, onAnswer: window.answerAction.answerDecision } : actions
+      const answering = data.answerable && window.answerAction.actionBound() ? { ...actions, workspaceId: context.workspace.id, onAnswer: window.answerAction.answerDecision } : actions
+      const needsUnchecked = loader.needsUnchecked(data.stale)
+      const shownActions = needsUnchecked ? { ...answering, needsUnchecked } : answering
       const note = render(data, ui.projects, shownActions, context)
       if (data.partial) {
         markLoading(ui.projects)
@@ -256,12 +260,14 @@
       }
       if (data.deferred && previous) {
         const reason = data.errors[0] ?? 'no project list read'
-        const shown = data.needs ? withFreshNeeds(previous, data.needs) : previous
+        const kept = { ...previous, lastGood: data.lastGood,
+          stale: data.stale ?? { failedAt: data.payload.now, readAt: previous.payload.now } }
+        const shown = data.needs ? withFreshNeeds(kept, data.needs) : kept
         if (data.needs) {
           await reconcileAnswers(workspace.id, shown, readStartedAt)
           if (workspace.id !== shownId) return
-          shownBy.set(workspace.id, shown)
         }
+        shownBy.set(workspace.id, shown)
         show(shown, context, deferredNote(previous, reason, data.needs))
         return
       }

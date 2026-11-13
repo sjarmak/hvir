@@ -1,9 +1,8 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
-const { readFileSync } = require('node:fs')
 const loader = require('../projects-load.js')
 
-const KEPT = [
+const BOARD = [
   'projects',
   'milestones',
   'artifacts',
@@ -15,9 +14,9 @@ const KEPT = [
   'workflowSteps',
   'ancestors',
   'urgent',
-  'outcomes',
   'sessions',
 ]
+const KEPT = [...BOARD, 'outcomes']
 const EARLY = '2026-11-13T02:43:00.000Z'
 const LATE = '2026-11-13T02:48:00.000Z'
 
@@ -27,29 +26,56 @@ const fullPayload = (now, tag) => ({
   ...Object.fromEntries(KEPT.map((field) => [field, [{ id: `${field}-${tag}` }]])),
 })
 
-test('a first read keeps every cleanly read field as the last good read and is not stale', () => {
+const deepFreeze = (value) => {
+  if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value)
+    Object.values(value).forEach(deepFreeze)
+  }
+  return value
+}
+
+test('a first read keeps the board and the outcomes as last good reads and is not stale', () => {
   const result = loader.keepLastGood({ payload: fullPayload(EARLY, 'a') })
   assert.equal(result.stale, null)
   assert.deepEqual(result.payload, fullPayload(EARLY, 'a'))
-  for (const field of KEPT)
-    assert.deepEqual(result.lastGood[field], { value: [{ id: `${field}-a` }], at: EARLY })
+  assert.equal(result.lastGood.board.at, EARLY)
+  for (const field of BOARD)
+    assert.deepEqual(result.lastGood.board.values[field], [{ id: `${field}-a` }])
+  assert.deepEqual(result.lastGood.outcomes, {
+    values: { outcomes: [{ id: 'outcomes-a' }] },
+    at: EARLY,
+  })
 })
 
-for (const field of KEPT.filter((entry) => entry !== 'projects')) {
-  test(`a failed ${field} read keeps that field's last good read and marks the view stale`, () => {
+for (const field of BOARD.filter((entry) => entry !== 'projects')) {
+  test(`a failed ${field} read puts back the whole board from the same earlier read, never a mix`, () => {
     const first = loader.keepLastGood({ payload: fullPayload(EARLY, 'a') })
     const failed = { ...fullPayload(LATE, 'b'), [field]: [], unread: [field] }
     const result = loader.keepLastGood({ payload: failed, lastGood: first.lastGood })
-    assert.deepEqual(result.payload[field], [{ id: `${field}-a` }])
+    for (const member of BOARD)
+      assert.deepEqual(result.payload[member], [{ id: `${member}-a` }])
+    assert.deepEqual(result.payload.outcomes, [{ id: 'outcomes-b' }])
     assert.deepEqual(result.payload.unread, [])
-    for (const other of KEPT.filter((entry) => entry !== field))
-      assert.deepEqual(result.payload[other], [{ id: `${other}-b` }])
-    assert.deepEqual(result.stale, { failedAt: LATE, readAt: EARLY })
-    assert.deepEqual(result.lastGood[field], { value: [{ id: `${field}-a` }], at: EARLY })
+    assert.deepEqual(result.stale, { failedAt: LATE, readAt: EARLY, needsReadAt: EARLY })
+    assert.deepEqual(result.lastGood.board, first.lastGood.board)
+    assert.deepEqual(result.lastGood.outcomes, {
+      values: { outcomes: [{ id: 'outcomes-b' }] },
+      at: LATE,
+    })
   })
 }
 
-test('a failed projects read keeps the milestones and artifacts from the same labelled read too', () => {
+test('a failed outcomes read keeps only the outcomes and leaves the board fresh', () => {
+  const first = loader.keepLastGood({ payload: fullPayload(EARLY, 'a') })
+  const failed = { ...fullPayload(LATE, 'b'), outcomes: undefined, unread: ['outcomes'] }
+  const result = loader.keepLastGood({ payload: failed, lastGood: first.lastGood })
+  assert.deepEqual(result.payload.outcomes, [{ id: 'outcomes-a' }])
+  for (const member of BOARD)
+    assert.deepEqual(result.payload[member], [{ id: `${member}-b` }])
+  assert.deepEqual(result.stale, { failedAt: LATE, readAt: EARLY })
+})
+
+test('a failed projects read keeps milestones, artifacts and the rest of the board from the same read', () => {
   const first = loader.keepLastGood({ payload: fullPayload(EARLY, 'a') })
   const failed = {
     ...fullPayload(LATE, 'b'),
@@ -59,23 +85,75 @@ test('a failed projects read keeps the milestones and artifacts from the same la
     unread: ['projects'],
   }
   const result = loader.keepLastGood({ payload: failed, lastGood: first.lastGood })
-  for (const field of ['projects', 'milestones', 'artifacts'])
-    assert.deepEqual(result.payload[field], [{ id: `${field}-a` }])
-  assert.deepEqual(result.payload.linked, [{ id: 'linked-b' }])
+  for (const member of BOARD)
+    assert.deepEqual(result.payload[member], [{ id: `${member}-a` }])
   assert.deepEqual(result.payload.unread, [])
-  assert.deepEqual(result.stale, { failedAt: LATE, readAt: EARLY })
+  assert.deepEqual(result.stale, { failedAt: LATE, readAt: EARLY, needsReadAt: EARLY })
 })
 
-test('a field that has never read cleanly stays unread and does not mark the view stale', () => {
+test('a bead that is blocked in a fresh linked read never meets its stale in-progress copy', () => {
+  const inProgress = { id: 'wk-1', status: 'in_progress', store: '/rigs/lead' }
+  const blocked = { ...inProgress, status: 'blocked' }
+  const first = loader.keepLastGood({
+    payload: {
+      ...fullPayload(EARLY, 'a'),
+      linked: [inProgress],
+      inProgress: [inProgress],
+    },
+  })
+  const result = loader.keepLastGood({
+    payload: {
+      ...fullPayload(LATE, 'b'),
+      linked: [blocked],
+      inProgress: [],
+      unread: ['inProgress'],
+    },
+    lastGood: first.lastGood,
+  })
+  assert.deepEqual(result.payload.linked, [inProgress])
+  assert.deepEqual(result.payload.inProgress, [inProgress])
+})
+
+test('an answered decision is never shown beside the fresh step that followed its answer', () => {
+  const ask = { id: 'dec-1', status: 'open', labels: ['needs/stephanie'] }
+  const followUp = { id: 'dec-2', status: 'open', labels: ['needs/stephanie-step'] }
+  const first = loader.keepLastGood({
+    payload: { ...fullPayload(EARLY, 'a'), decisions: [ask], herSteps: [] },
+  })
+  const result = loader.keepLastGood({
+    payload: {
+      ...fullPayload(LATE, 'b'),
+      decisions: [],
+      herSteps: [followUp],
+      unread: ['decisions'],
+    },
+    lastGood: first.lastGood,
+  })
+  assert.deepEqual(result.payload.decisions, [ask])
+  assert.deepEqual(result.payload.herSteps, [])
+})
+
+test('a deleted project and its waits leave together or not at all', () => {
+  const first = loader.keepLastGood({ payload: fullPayload(EARLY, 'a') })
+  const result = loader.keepLastGood({
+    payload: { ...fullPayload(LATE, 'b'), projects: [], linked: [], unread: ['linked'] },
+    lastGood: first.lastGood,
+  })
+  assert.deepEqual(result.payload.projects, [{ id: 'projects-a' }])
+  assert.deepEqual(result.payload.linked, [{ id: 'linked-a' }])
+})
+
+test('a board that has never read cleanly stays unread and does not mark the view stale', () => {
   const failed = { ...fullPayload(EARLY, 'a'), linked: [], unread: ['linked'] }
   const result = loader.keepLastGood({ payload: failed })
   assert.deepEqual(result.payload.linked, [])
+  assert.deepEqual(result.payload.decisions, [{ id: 'decisions-a' }])
   assert.deepEqual(result.payload.unread, ['linked'])
   assert.equal(result.stale, null)
-  assert.equal(result.lastGood.linked, undefined)
+  assert.equal(result.lastGood.board, undefined)
 })
 
-test('a field failing twice keeps the read from before both failures', () => {
+test('a board failing twice keeps the read from before both failures', () => {
   const first = loader.keepLastGood({ payload: fullPayload(EARLY, 'a') })
   const middle = '2026-11-13T02:45:00.000Z'
   const second = loader.keepLastGood({
@@ -83,14 +161,15 @@ test('a field failing twice keeps the read from before both failures', () => {
     lastGood: first.lastGood,
   })
   const third = loader.keepLastGood({
-    payload: { ...fullPayload(LATE, 'c'), linked: [], unread: ['linked'] },
+    payload: { ...fullPayload(LATE, 'c'), urgent: [], unread: ['urgent'] },
     lastGood: second.lastGood,
   })
   assert.deepEqual(third.payload.linked, [{ id: 'linked-a' }])
-  assert.deepEqual(third.stale, { failedAt: LATE, readAt: EARLY })
+  assert.deepEqual(third.payload.urgent, [{ id: 'urgent-a' }])
+  assert.deepEqual(third.stale, { failedAt: LATE, readAt: EARLY, needsReadAt: EARLY })
 })
 
-test('a clean read after a failed one replaces the kept field and clears the stale mark', () => {
+test('a clean read after a failed one replaces the kept board and clears the stale mark', () => {
   const first = loader.keepLastGood({ payload: fullPayload(EARLY, 'a') })
   const failed = loader.keepLastGood({
     payload: { ...fullPayload(LATE, 'b'), linked: [], unread: ['linked'] },
@@ -103,174 +182,61 @@ test('a clean read after a failed one replaces the kept field and clears the sta
   })
   assert.equal(result.stale, null)
   assert.deepEqual(result.payload.linked, [{ id: 'linked-c' }])
-  assert.deepEqual(result.lastGood.linked, { value: [{ id: 'linked-c' }], at: later })
+  assert.equal(result.lastGood.board.at, later)
 })
 
-const workspace = {
-  id: 'city',
-  host: 'ssh-test',
-  root: { host: 'ssh-test', path: '/city' },
-}
-const rigs = [
-  { name: 'city', path: '/city', hq: true },
-  { name: 'lead', path: '/rigs/lead' },
-  { name: 'decisions', path: '/rigs/decisions' },
-]
-const project = {
-  id: 'pj-1',
-  title: 'Lantern catalog',
-  status: 'open',
-  labels: ['city-project'],
-  metadata: { 'proj.lead': 'lead-a', 'proj.state': 'waiting', 'proj.waiting_on': 'wk-1' },
-}
-
-const isLinked = (args) =>
-  args.includes('--has-metadata-key') &&
-  args.includes('open,in_progress,blocked,deferred')
-const isInProgress = (args) =>
-  args.includes('in_progress') && args.includes('--all') && !args.includes('--label-any')
-const isUrgent = (args) => args.includes('--priority-max')
-const isDecisions = (args) =>
-  args[1] === '/rigs/decisions' &&
-  !args.includes('--label-any') &&
-  !isLinked(args) &&
-  !isUrgent(args) &&
-  !isInProgress(args)
-
-const livePage = (t) => {
-  const { JSDOM } = require('jsdom')
-  const dom = new JSDOM(readFileSync(`${__dirname}/../projects.html`, 'utf8'), {
-    runScripts: 'outside-only',
-  })
-  t.after(() => dom.window.close())
-  const { window } = dom
-  Object.defineProperty(window, 'crypto', {
-    value: require('node:crypto').webcrypto,
-    configurable: true,
-  })
-  Object.defineProperty(window, 'TextEncoder', { value: TextEncoder, configurable: true })
-  window.hvirExtension = { onMessage: () => () => {}, send: () => {} }
-  for (const file of [
-    'view',
-    'card-words',
-    'wait-model',
-    'crew-parse',
-    'needs-model',
-    'projects-load',
-    'projects-truth',
-    'projects-model',
-    'answer-state',
-    'projects-render',
-    'answer',
-    'attach',
-    'projects-data',
-    'projects-seen',
-  ])
-    window.eval(readFileSync(`${__dirname}/../${file}.js`, 'utf8'))
-  const page = {
-    view: undefined,
-    failing: () => false,
-    document: window.document,
-    clock: Date.parse(EARLY),
+test('keepLastGood leaves frozen payloads and kept reads untouched for every failed field', () => {
+  const first = deepFreeze(
+    loader.keepLastGood({ payload: deepFreeze(fullPayload(EARLY, 'a')) }).lastGood,
+  )
+  const before = JSON.stringify(first)
+  for (const field of KEPT) {
+    const payload = deepFreeze({ ...fullPayload(LATE, 'b'), unread: [field] })
+    const snapshot = JSON.stringify(payload)
+    loader.keepLastGood({ payload, lastGood: first })
+    assert.equal(JSON.stringify(payload), snapshot)
+    assert.equal(JSON.stringify(first), before)
   }
-  window.Date.now = () => page.clock
-  window.startView = (options) => {
-    page.view = options
-    return { refresh: async () => {} }
-  }
-  window.host = {
-    availability: async () => ({ gc: 'supported', bd: 'supported' }),
-    run: async (connector, scope, args) =>
-      args[0] === 'rig' ? { rigs } : { sessions: [] },
-  }
-  window.bdRead = async (scope, args) => {
-    if (page.failing(args)) throw new Error('dolt server restarting')
-    if (args.includes('--label-any')) return args[1] === '/city' ? [project] : []
-    if (isLinked(args) && args[1] === '/rigs/lead' && args.includes('proj.id'))
-      return [
-        {
-          id: 'wk-1',
-          title: 'Index rebuild',
-          status: 'open',
-          priority: 1,
-          updated_at: new Date(page.clock).toISOString(),
-          metadata: { 'proj.id': 'pj-1', 'gc.waiting_on': 'lead-a' },
-        },
-      ]
-    return []
-  }
-  window.bdNote = () => ''
-  window.openOwn = async () => {}
-  window.connectHandler = () => async () => {}
-  window.eval(readFileSync(`${__dirname}/../projects.js`, 'utf8'))
-  return page
-}
-
-const clock = (iso) =>
-  new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-const chipOf = (document) =>
-  document.querySelector('.projects-nav-row .projects-chip')?.dataset.state
-const waitingRows = (document) =>
-  [...document.querySelectorAll('section')]
-    .filter((node) => node.querySelector('h2')?.textContent.startsWith('Waiting on'))
-    .flatMap((node) => [...node.querySelectorAll('li')].map((row) => row.title))
-const staleLine = (document) => document.querySelector('#projects .projects-stale')
-
-const reads = {
-  linked: isLinked,
-  inProgress: isInProgress,
-  urgent: isUrgent,
-  decisions: isDecisions,
-}
-
-for (const [name, failing] of Object.entries(reads)) {
-  test(`a refresh whose ${name} read fails keeps the cards and Waiting on, and says what time it shows`, async (t) => {
-    const page = livePage(t)
-    const { document } = page
-    await page.view.load({ workspace })
-    const before = { chip: chipOf(document), waiting: waitingRows(document) }
-    assert.equal(before.chip, 'waiting')
-    assert.deepEqual(before.waiting, ['wk-1'])
-    assert.equal(staleLine(document), null)
-    page.clock = Date.parse(LATE)
-    page.failing = failing
-    await page.view.load({ workspace })
-    assert.equal(chipOf(document), before.chip)
-    assert.deepEqual(waitingRows(document), before.waiting)
-    const line = staleLine(document)
-    assert.ok(line.classList.contains('projects-warning'))
-    assert.equal(
-      line.textContent,
-      `Couldn't refresh at ${clock(LATE)}; showing what was read at ${clock(EARLY)}`,
-    )
-  })
-}
-
-test('a first load whose linked read fails shows the cards as unread with no stale line', async (t) => {
-  const page = livePage(t)
-  const { document } = page
-  page.failing = isLinked
-  await page.view.load({ workspace })
-  assert.equal(chipOf(document), 'unread')
-  assert.deepEqual(waitingRows(document), [])
-  assert.equal(staleLine(document), null)
 })
 
-test('a good refresh after a failed one removes the stale line and shows the new read', async (t) => {
-  const page = livePage(t)
-  const { document } = page
-  await page.view.load({ workspace })
-  page.clock = Date.parse(LATE)
-  page.failing = isLinked
-  await page.view.load({ workspace })
-  assert.ok(staleLine(document))
-  page.clock = Date.parse('2026-11-13T02:50:00.000Z')
-  page.failing = () => false
-  project.metadata = { ...project.metadata, 'proj.waiting_on': 'none' }
-  t.after(() => {
-    project.metadata = { ...project.metadata, 'proj.waiting_on': 'wk-1' }
+test('the Needs-you check is unknown only when its kept read is older than ten minutes', () => {
+  assert.equal(loader.NEEDS_CHECK_LIMIT_MS, 10 * 60000)
+  const at = (minutes) => new Date(Date.parse(EARLY) + minutes * 60000).toISOString()
+  assert.equal(loader.needsUnchecked(null), null)
+  assert.equal(loader.needsUnchecked({ failedAt: at(60), readAt: EARLY }), null)
+  assert.equal(
+    loader.needsUnchecked({ failedAt: at(10), readAt: EARLY, needsReadAt: EARLY }),
+    null,
+  )
+  const since = new Date(EARLY).toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
   })
-  await page.view.load({ workspace })
-  assert.equal(staleLine(document), null)
-  assert.equal(chipOf(document), 'queued')
+  assert.equal(
+    loader.needsUnchecked({ failedAt: at(11), readAt: EARLY, needsReadAt: EARLY }),
+    `Couldn't check what needs you since ${since}`,
+  )
+})
+
+test('a stale warning shows the date only for a time that is not from today', () => {
+  const clock = (iso) =>
+    new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  const dated = (iso) =>
+    new Date(iso).toLocaleString([], {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    })
+  const late = new Date(Date.parse(EARLY) + 48 * 3600000).toISOString()
+  assert.equal(
+    loader.staleText({ failedAt: LATE, readAt: EARLY }, Date.parse(LATE)),
+    `Couldn't refresh at ${clock(LATE)}; showing what was read at ${clock(EARLY)}`,
+  )
+  assert.equal(
+    loader.staleText({ failedAt: late, readAt: EARLY }, Date.parse(late)),
+    `Couldn't refresh at ${clock(late)}; showing what was read at ${dated(EARLY)}`,
+  )
 })
