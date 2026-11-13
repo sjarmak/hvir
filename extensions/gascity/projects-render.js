@@ -72,10 +72,10 @@
     view.disableAll = (disabled) => {
       for (const node of [...choiceButtons, ...confirmBox.querySelectorAll('button')]) node.disabled = disabled
     }
-    view.sync = (entry) => {
-      if (!container.isConnected) return false
+    view.sync = (entry, initial = false) => {
+      if (!initial && !container.isConnected) return false
       const locked = entry.phase !== 'idle'
-      if (locked) view.generation++
+      view.generation++
       view.disableAll(locked)
       if (locked) confirmBox.replaceChildren()
       outcome.replaceChildren(...(entry.result ? [outcomeNote(entry)] : []))
@@ -84,9 +84,9 @@
     return view
   }
 
-  const answerFingerprint = (ask, view) => async (ready) => {
+  const answerFingerprint = (ask, view, card) => async (ready) => {
     const generation = ++view.generation
-    const current = () => generation === view.generation && view.container.isConnected
+    const current = () => generation === view.generation && view.container.isConnected && window.answerState.get(card).phase === 'idle'
     let sha
     try {
       sha = await window.needsModel.cardHash(ask)
@@ -108,11 +108,11 @@
     const store = window.answerState
     const view = answerView()
     const { choiceButtons, confirmBox, outcome, container, sync, disableAll } = view
-    const fingerprint = answerFingerprint(ask, view)
+    const card = JSON.stringify([options.workspaceId, ask.id, ask.title, ask.description ?? '', choices])
+    const fingerprint = answerFingerprint(ask, view, card)
     const settle = async (choice, sha) => {
       const key = store.keyOf(options.workspaceId, ask.id, sha)
-      store.subscribe(key, sync)
-      if (!store.begin(key)) return
+      if (!store.begin(key, card)) return
       let result
       try {
         result = await options.onAnswer(ask.id, choice.letter, sha)
@@ -134,9 +134,10 @@
     choiceButtons.push(...choices.map((choice) => button(
       `${choice.letter}: ${clip(choice.text, OPTION_LABEL_MAX)}`, choice.text, () => askToConfirm(choice))))
     container.prepend(...choiceButtons)
+    store.subscribe(card, sync)
+    sync(store.get(card), true)
     void fingerprint((sha) => {
       const key = store.keyOf(options.workspaceId, ask.id, sha)
-      store.subscribe(key, sync)
       if (!outcome.hasChildNodes()) sync(store.get(key))
     })
     return container

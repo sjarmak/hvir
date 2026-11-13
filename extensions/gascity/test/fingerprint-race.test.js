@@ -25,16 +25,19 @@ const racePage = () => {
   const ask = { id: 'dec-1', title: 'Choose', description: '', needsYou: true,
     metadata: { 'gc.project': 'proj-1', 'gc.options': '[{"letter":"a","text":"Yes"}]' },
     refs: { prs: [], issues: [], invalid: [] } }
-  window.projectsRender.renderProjectNeeds({ needsYou: [ask] }, 'proj-1', window.document.querySelector('main'), {
-    workspaceId: 'ws-1', onAnswer: (...args) => { calls.push(args); return deferred().promise },
-  })
+  const answer = deferred()
+  const render = () => window.projectsRender.renderProjectNeeds(
+    { needsYou: [ask] }, 'proj-1', window.document.querySelector('main'), {
+      workspaceId: 'ws-1', onAnswer: (...args) => { calls.push(args); return answer.promise },
+    })
+  render()
   const choice = window.document.querySelector('.projects-answer > button')
   choice.click()
   const confirm = window.document.querySelector('.projects-confirm button')
   const start = () => confirm.dispatchEvent(new window.Event('click'))
-  const snapshot = () => ({ disabled: choice.disabled, calls: calls.length,
+  const snapshot = () => ({ disabled: window.document.querySelector('.projects-answer > button').disabled, calls: calls.length,
     status: window.document.querySelector('.projects-answer-outcome').textContent })
-  return { fingerprints, calls, start, snapshot, close: () => window.close() }
+  return { fingerprints, calls, start, snapshot, render, answer, close: () => window.close() }
 }
 
 const complete = async (pending, success, reason = 'stale failure') => {
@@ -60,9 +63,39 @@ const checkSchedule = async (order, successes) => {
   }
 }
 
-module.exports = { checkSchedule }
+const checkRerender = async (success = false, finishFirst = false, result) => {
+  const page = racePage()
+  try {
+    await complete(page.fingerprints[0], true)
+    page.start()
+    await complete(page.fingerprints[1], true)
+    assert.equal(page.calls.length, 1)
+    page.render()
+    const settled = { disabled: result?.exitCode !== 2, calls: 1,
+      status: result?.line ?? 'Completion unknown; check the decision before answering again' }
+    const finish = async () => {
+      if (result) page.answer.resolve(result)
+      else page.answer.reject(new Error('transport lost'))
+      await flush()
+    }
+    if (finishFirst) await finish()
+    await complete(page.fingerprints[2], success, 'crypto unavailable')
+    assert.deepEqual(page.snapshot(), finishFirst ? settled : { disabled: true, calls: 1, status: '' })
+    if (!finishFirst) await finish()
+    assert.deepEqual(page.snapshot(), settled)
+  } finally {
+    page.close()
+  }
+}
+
+module.exports = { checkSchedule, checkRerender }
 
 if (require.main === module) {
+  test('the five-step rerender race preserves dispatch and its unknown outcome', () => checkRerender())
+
+  test('a late render rejection cannot replace the dispatched answer refusal', () =>
+    checkRerender(false, true, { exitCode: 2, notSent: true, line: 'No answer was sent: unapproved' }))
+
   test('a stale render fingerprint cannot unlock a pending confirmation', async (t) => {
     const page = racePage()
     t.after(page.close)

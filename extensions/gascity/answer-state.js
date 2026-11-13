@@ -2,10 +2,11 @@
 ;(() => {
   const entries = new Map()
   const listeners = new Map()
+  const cards = new Map()
 
   const keyOf = (workspaceId, decId, cardSha256) => `${workspaceId}|${decId}|${cardSha256}`
   const IDLE = Object.freeze({ phase: 'idle' })
-  const get = (key) => entries.get(key) ?? IDLE
+  const get = (key) => entries.get(cards.get(key) ?? key) ?? IDLE
 
   const phaseOf = (result) => {
     if (result.unknown) return 'unknown'
@@ -26,11 +27,13 @@
     if (entry.phase === 'idle' && entry.result === undefined) entries.delete(key)
     else entries.set(key, entry)
     notify(key)
+    for (const [card, submission] of cards) if (submission === key) notify(card)
     return get(key)
   }
 
-  const begin = (key) => {
+  const begin = (key, card) => {
     if (get(key).phase !== 'idle') return false
+    if (card) cards.set(card, key)
     set(key, { phase: 'pending' })
     return true
   }

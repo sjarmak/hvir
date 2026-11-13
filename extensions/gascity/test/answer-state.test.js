@@ -136,3 +136,19 @@ test('subscribing the same listener twice delivers each change once', () => {
   state.begin(key)
   assert.equal(heard, 1)
 })
+
+test('a card subscribes before its submission key exists and follows reconciliation', () => {
+  const state = load()
+  const key = state.keyOf('w1', 'dec-a', SHA)
+  const card = JSON.stringify(['w1', 'dec-a', 'Choose', '', [{ letter: 'a', text: 'Yes' }]])
+  const heard = []
+  state.subscribe(card, (entry) => (heard.push(entry.phase), true))
+  assert.equal(state.get(card).phase, 'idle')
+  state.begin(key, card)
+  assert.equal(state.get(card), state.get(key))
+  state.finish(key, { unknown: true, line: 'u' }, 100)
+  assert.equal(state.get(card), state.get(key))
+  state.reconcile('w1', read(key))
+  assert.equal(state.get(card).phase, 'idle')
+  assert.deepEqual(heard, ['pending', 'unknown', 'idle'])
+})
