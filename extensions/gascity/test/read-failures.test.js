@@ -1,5 +1,8 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
+const { readFileSync } = require('node:fs')
+const { join } = require('node:path')
+const vm = require('node:vm')
 const failures = require('../read-failures.js')
 const loader = require('../projects-load.js')
 const page = require('./stale-page.js')
@@ -22,8 +25,45 @@ const timedOut = () => {
   return error
 }
 
+const STDOUT_SECRET = 'API_TOKEN=SYNTHETIC_SECRET_ONLY_ON_STDOUT'
+
+const hostAnswering = ({ code, stdout, stderr }) => {
+  const listeners = new Set()
+  const answer = (message) => {
+    if (message.capability === 'connector.execute')
+      return { outcome: 'completed', receipt: 'r1', code, truncated: false }
+    if (message.input.release) return {}
+    return { data: message.input.stream === 'stdout' ? stdout : stderr, nextOffset: null }
+  }
+  const bridge = {
+    onMessage: (listener) => (listeners.add(listener), () => listeners.delete(listener)),
+    send: (message) => {
+      const value = answer(message)
+      queueMicrotask(() =>
+        listeners.forEach((listener) =>
+          listener({ kind: 'result', id: message.id, ok: true, value }),
+        ),
+      )
+    },
+  }
+  const window = { hvirExtension: bridge, setTimeout }
+  vm.runInNewContext(readFileSync(join(__dirname, '..', 'host.js'), 'utf8'), { window })
+  return window.host
+}
+
+const thrownBy = async (host) => {
+  try {
+    await host.run('bd', { id: 'ws', host: 'local' }, ['list', '--json'])
+  } catch (error) {
+    return error
+  }
+  throw new Error('expected the run to fail')
+}
+
 const recordOf = (live) =>
-  JSON.parse(JSON.stringify(live.document.defaultView.projectsData.failureRecord(workspace.id)))
+  JSON.parse(
+    JSON.stringify(live.document.defaultView.projectsData.failureRecord(workspace.id)),
+  )
 
 test('an entry carries the UTC time, field, command, exit code and the stderr tail', () => {
   const entry = failures.entry({
@@ -214,4 +254,65 @@ test('the pane record stays bounded across many failed refreshes', async (t) => 
     entries.at(-1).time,
     new Date(Date.parse(EARLY) + 11 * 60000).toISOString(),
   )
+})
+
+test('a message the connector reported only on stdout is not recorded or shown', async () => {
+  const error = await thrownBy(hostAnswering({
+    code: 1,
+    stdout: JSON.stringify({ error: { message: STDOUT_SECRET } }),
+    stderr: '',
+  }))
+  assert.equal(error.message, STDOUT_SECRET)
+  const entry = failures.entry({ at: Date.parse(LATE), field: 'decisions', connector: 'bd', args: ['list', '--json'], error })
+  assert.equal(entry.exitCode, 1)
+  assert.equal(entry.stderr, '')
+  assert.equal(entry.message, failures.NOT_FROM_STDERR)
+  assert.equal(JSON.stringify(entry).includes('SYNTHETIC_SECRET'), false)
+  assert.equal(failures.text(entry).includes('SYNTHETIC_SECRET'), false)
+  assert.equal(failures.text(entry), `Last failed read 02:48:00 UTC, decisions: ${failures.NOT_FROM_STDERR}`)
+})
+
+test('a stdout report is dropped even when stderr has other text', async () => {
+  const error = await thrownBy(hostAnswering({
+    code: 1,
+    stdout: JSON.stringify({ error: STDOUT_SECRET }),
+    stderr: 'warning: slow store\n',
+  }))
+  const entry = failures.entry({ at: 0, field: 'linked', connector: 'bd', args: [], error })
+  assert.equal(entry.message, failures.NOT_FROM_STDERR)
+  assert.equal(entry.stderr, 'warning: slow store\n')
+  assert.equal(JSON.stringify(entry).includes('SYNTHETIC_SECRET'), false)
+})
+
+test('a message taken from stderr through the host is kept', async () => {
+  const error = await thrownBy(hostAnswering({ code: 2, stdout: '', stderr: '\nError: store locked\nmore\n' }))
+  const entry = failures.entry({ at: 0, field: 'linked', connector: 'bd', args: [], error })
+  assert.equal(entry.message, 'Error: store locked')
+})
+
+test('the deadline reason is kept as the message', () => {
+  const entry = failures.entry({ at: 0, field: 'linked', connector: 'bd', args: [], error: timedOut() })
+  assert.equal(entry.message, 'did not run: the refresh deadline passed')
+})
+
+test('a message from neither stderr nor a pane reason is replaced', () => {
+  const entry = failures.entry({ at: 0, field: 'linked', connector: 'bd', args: [], error: new Error(STDOUT_SECRET) })
+  assert.equal(entry.message, failures.NOT_FROM_STDERR)
+})
+
+test('a failed decisions read whose report came on stdout keeps it out of the record and status line', async (t) => {
+  const live = livePage(t)
+  await live.load()
+  live.at(LATE)
+  live.failing = page.isDecisions
+  live.bdError = () => {
+    const error = new Error(STDOUT_SECRET)
+    error.exitCode = 1
+    error.stderr = ''
+    return error
+  }
+  await live.load()
+  assert.equal(JSON.stringify(recordOf(live)).includes('SYNTHETIC_SECRET'), false)
+  assert.doesNotMatch(statusText(live.document), /Last failed read[^\n]*SYNTHETIC_SECRET/)
+  assert.match(statusText(live.document), /Last failed read 02:48:00 UTC, decisions: error message not from stderr \(not recorded\)/)
 })
