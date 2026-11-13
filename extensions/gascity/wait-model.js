@@ -4,6 +4,7 @@
   const STEP_LABEL = 'needs/stephanie-step'
   const DEC_ID = /^dec-[a-z0-9]+$/
   const DAY_MS = 86400000
+  const NAMES_SEAT = /(^|[^\w-])seats?($|[^\w-])/i
 
   const textOf = (value) => typeof value === 'string' ? value.trim() : ''
   const validTime = (value) => typeof value === 'string' && Number.isFinite(Date.parse(value))
@@ -13,7 +14,7 @@
   const kindOf = (wait, isAgent) => {
     if (wait.waitsOnHer) return 'her'
     if (DEC_ID.test(wait.waitToken)) return 'decision'
-    return wait.unclaimedBy || (wait.waitToken && isAgent(wait.waitToken)) ? 'agent' : ''
+    return wait.unclaimedBy || (wait.waitToken && isAgent(wait.waitToken)) || NAMES_SEAT.test(wait.waitingOn) ? 'agent' : ''
   }
 
   const waitOf = (bead, now, isAgent) => {

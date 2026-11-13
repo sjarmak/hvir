@@ -820,6 +820,24 @@ test('a wait naming several beads and her reads every name, sorts with her waits
   assert.equal(statusLine(row, input.now), 'Owner: the Omni code lead · Waiting on: Ship A, then B; fx-dep-b; you for 1 hour')
 })
 
+test('a wait naming a seat or seats is a wait on an agent, so over a day it is Stuck as broken', () => {
+  const input = fresh()
+  const waits = (id, waitingOn, updated) => urgent(id, { status: 'in_progress', assignee: 'omni-pl', updated_at: updated,
+    metadata: { 'gc.waiting_on': waitingOn } })
+  input.urgent = [
+    waits('fx-s-seat', 'seat start-context measurements at next starts of mayor/omni-pl', '2026-10-27T10:00:00Z'),
+    waits('fx-s-seats', 'seats', '2026-10-27T10:00:00Z'),
+    waits('fx-s-named', 'fx-unknown-pl seat', '2026-10-27T10:00:00Z'),
+    waits('fx-s-fresh', 'seats', '2026-10-29T10:00:00Z'),
+    waits('fx-s-word', 'seating chart', '2026-10-27T10:00:00Z'),
+  ]
+  const model = buildDashboard(input)
+  const kind = (id) => [...model.stuck.items, ...model.waiting.items].find((row) => row.id === id).waitKind
+  assert.deepEqual(['fx-s-seat', 'fx-s-seats', 'fx-s-named', 'fx-s-fresh', 'fx-s-word'].map(kind), ['agent', 'agent', 'agent', 'agent', ''])
+  assert.deepEqual(model.stuck.items.map((row) => [row.id, row.stuckReasons]).sort(),
+    [['fx-s-named', ['broken-wait']], ['fx-s-seat', ['broken-wait']], ['fx-s-seats', ['broken-wait']]])
+})
+
 test('open work nobody owns is not Stuck as unowned until it has sat an hour, so a bead mid-dispatch stays quiet', () => {
   const input = fresh()
   input.urgent = [
