@@ -350,8 +350,15 @@ export async function writeJsonFile(target, value, mode) {
   return target
 }
 
-export function writeApprovals(profile, approvals) {
-  return writeJsonFile(join(profile, 'extension-state', 'connectors.json'), approvals, 0o600)
+export async function writeApprovals(profile, approvals) {
+  const target = join(profile, 'extension-state', 'connectors.json')
+  let mode = 0o600
+  try {
+    mode &= (await fs.stat(target)).mode
+  } catch (reason) {
+    if (reason.code !== 'ENOENT') throw reason
+  }
+  return writeJsonFile(target, approvals, mode)
 }
 
 export async function stamp({
