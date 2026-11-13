@@ -186,8 +186,8 @@
       if (!current.split(' · ').includes(text)) setStatus(current ? `${current} · ${text}` : text)
     }
     const actions = {
-      onOpenBead: (id, store, target) => window.openOwn('bead', { id, rig: store, ...(target ? { target } : {}) })
-        .catch((error) => setStatus(`Could not open ${id}: ${error.message}`)),
+      onOpenBead: (id, store, target, onRefused) => window.openOwn('bead', { id, rig: store, ...(target ? { target } : {}) })
+        .catch((error) => { setStatus(`Could not open ${id}: ${error.message}`); onRefused?.(error.message) }),
       onOpenRef: (ref) => ref.kind === 'pr'
         ? window.openOwn('pull', { repo: `${ref.owner}/${ref.repo}`, number: ref.number })
           .catch((error) => setStatus(`Could not open ${ref.key}: ${error.message}`))

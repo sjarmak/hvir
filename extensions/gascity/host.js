@@ -4,6 +4,26 @@ window.host = (() => {
   const bridge = window.hvirExtension
   const prefix = `h${Math.random().toString(36).slice(2, 8)}`
   let serial = 0
+  const pending = new Map()
+  let stopped
+  const dispose = (message) => {
+    if (stopped) return
+    stopped = Object.assign(new Error(message), { dispatch: 'not-sent' })
+    for (const request of pending.values())
+      request.reject(Object.assign(new Error(message), { dispatch: request.dispatch }))
+    pending.clear()
+    unsubscribe()
+  }
+  const unsubscribe = bridge.onMessage((message) => {
+    if (message.kind === 'revoked') return dispose('Extension view was revoked')
+    if (message.kind !== 'result') return
+    const request = pending.get(message.id)
+    if (!request) return
+    pending.delete(message.id)
+    if (message.ok) request.resolve(message.value)
+    else request.reject(new Error(message.error))
+  })
+  window.addEventListener?.('pagehide', () => dispose('Extension view was disposed'), { once: true })
   /**
    * The bridge throws past 30 messages per second, and every output page is one message.
    * Keep a sliding window under that so large reads slow down instead of failing.
@@ -13,6 +33,7 @@ window.host = (() => {
 
   async function paced() {
     for (;;) {
+      if (stopped) throw stopped
       const now = Date.now()
       while (sent.length && now - sent[0] >= 1000) sent.shift()
       if (sent.length < MESSAGES_PER_SECOND) {
@@ -32,18 +53,20 @@ window.host = (() => {
   }
 
   async function request(capability, input, actionId, beforeSend, deadline = Infinity) {
-    await paced()
-    if (Date.now() >= deadline) throw pastDeadline('not-sent')
-    beforeSend?.()
+    if (stopped) throw stopped
     const id = `${prefix}-${++serial}`
     return new Promise((resolve, reject) => {
-      const unsubscribe = bridge.onMessage((message) => {
-        if (message.kind !== 'result' || message.id !== id) return
-        unsubscribe()
-        if (message.ok) resolve(message.value)
-        else reject(new Error(message.error))
+      pending.set(id, { resolve, reject, dispatch: 'not-sent' })
+      paced().then(() => {
+        if (stopped) throw stopped
+        if (Date.now() >= deadline) throw pastDeadline('not-sent')
+        beforeSend?.()
+        pending.set(id, { resolve, reject, dispatch: 'unknown' })
+        bridge.send({ kind: 'request', id, capability, ...(input ? { input } : {}), ...(actionId ? { actionId } : {}) })
+      }).catch((error) => {
+        pending.delete(id)
+        reject(error)
       })
-      bridge.send({ kind: 'request', id, capability, ...(input ? { input } : {}), ...(actionId ? { actionId } : {}) })
     })
   }
 

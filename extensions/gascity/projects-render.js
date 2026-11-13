@@ -149,12 +149,32 @@
     return node
   }
 
+  const OPEN_REFUSALS = [
+    'Extension subscription limit exceeded',
+    'Close an extension view before opening another',
+    'This view is opening or stopped',
+    'Extension view was revoked',
+    'Extension view was disposed',
+  ]
+
   const renderAsk = (ask, options, tagged = false) => {
-    const open = () => options.onOpenBead?.(ask.id, ask.store)
+    const refusal = el('p', { className: 'projects-warning', role: 'status', hidden: true })
+    let generation = 0
+    const open = () => {
+      const clicked = ++generation
+      refusal.hidden = true
+      refusal.textContent = ''
+      return options.onOpenBead?.(ask.id, ask.store, undefined, (message) => {
+        if (clicked !== generation) return
+        refusal.textContent = OPEN_REFUSALS.find((text) => message.startsWith(text)) ?? 'hvir refused to open this page'
+        refusal.hidden = false
+      })
+    }
     return el('li', { title: ask.id },
       tagged && text(ask.project?.title ?? 'No project', 'projects-tag'),
       ask.tier && text(ask.tier, 'projects-tag'),
       ask.cardText ? cardButton(ask.cardText, ask.id, open) : button(ask.title, ask.id, open),
+      refusal,
       renderAnswer(ask, options),
       renderAnswerTo(ask, options),
       renderRefs(ask.refs, options))
